@@ -5,7 +5,7 @@ import { ANIMATIONS } from '../animationsRegistry';
 
 const SKIN_PRESETS = [
   { name: 'Original', value: '#ffffff' },
-  { name: 'Fair', value: '#BCC68B' },
+  { name: 'Fair', value: '#FFE5E5' },
   { name: 'Tan', value: '#d89c7b' },
   { name: 'Bronze', value: '#a3654a' },
   { name: 'Cocoa', value: '#593424' }
@@ -18,7 +18,7 @@ const ControlDashboard = ({
   modelName,
   lmstudioUrl,
   onProfileUpdate,
-  skinToneColor = '#BCC68B',
+  skinToneColor = '#FFE5E5',
   onSkinToneChange,
   disabledAnimations = [],
   onToggleAnimation,
@@ -79,7 +79,7 @@ const ControlDashboard = ({
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [newInterestText, setNewInterestText] = useState('');
-  
+
   // Custom Facts Edit State
   const [isAddingFact, setIsAddingFact] = useState(false);
   const [newFactKey, setNewFactKey] = useState('');
@@ -168,8 +168,8 @@ const ControlDashboard = ({
       });
       if (res.ok) {
         const data = await res.json();
-        setCrawlerStatus(prev => ({ 
-          ...prev, 
+        setCrawlerStatus(prev => ({
+          ...prev,
           paused: data.settings.crawler_paused,
           tagger_paused: data.settings.tagger_paused
         }));
@@ -191,8 +191,8 @@ const ControlDashboard = ({
       });
       if (res.ok) {
         const data = await res.json();
-        setCrawlerStatus(prev => ({ 
-          ...prev, 
+        setCrawlerStatus(prev => ({
+          ...prev,
           paused: data.settings.crawler_paused,
           tagger_paused: data.settings.tagger_paused
         }));
@@ -387,7 +387,7 @@ const ControlDashboard = ({
                   <User className="w-4 h-4" />
                   <span className="card-group-title">User Identity Card</span>
                 </div>
-                
+
                 {/* Preferred Name */}
                 <div className="identity-field">
                   <span className="field-label">Preferred Name</span>
@@ -491,7 +491,7 @@ const ControlDashboard = ({
                       No interests recorded yet.
                     </span>
                   )}
-                  
+
                   {/* Add Interest Field */}
                   <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                     <input
@@ -565,7 +565,7 @@ const ControlDashboard = ({
                             </button>
                           </div>
                         </div>
-                        
+
                         {editingFactKey === key ? (
                           <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                             <input
@@ -816,7 +816,7 @@ const ControlDashboard = ({
                 {/* Skin Tone Customization */}
                 <div className="identity-field" style={{ marginTop: '10px' }}>
                   <span className="field-label">Avatar Skin Color</span>
-                  
+
                   {/* Presets */}
                   <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '4px' }}>
                     {SKIN_PRESETS.map((preset) => (
@@ -832,7 +832,7 @@ const ControlDashboard = ({
                           borderRadius: '6px',
                           border: skinToneColor === preset.value ? '2px solid #2dd4bf' : '1px solid rgba(255,255,255,0.15)',
                           background: preset.value === '#ffffff' ? '#ffffff' : preset.value,
-                          color: preset.value === '#ffffff' || preset.value === '#BCC68B' || preset.value === '#d89c7b' ? '#111' : '#fff',
+                          color: preset.value === '#ffffff' || preset.value === '#FFE5E5' || preset.value === '#d89c7b' ? '#111' : '#fff',
                           cursor: 'pointer',
                           textAlign: 'center',
                           boxShadow: skinToneColor === preset.value ? '0 0 8px rgba(45, 212, 191, 0.4)' : 'none',
@@ -973,236 +973,236 @@ const ControlDashboard = ({
                   <span className="card-group-title">Background File Crawler</span>
                 </div>
 
-                  {/* Crawler Status Stats */}
-                  <div className="spec-list-table" style={{ marginTop: '8px' }}>
-                    <div className="spec-row">
-                      <span className="spec-label">File Crawler Status</span>
-                      <span className="spec-val font-semibold" style={{ color: crawlerStatus.paused ? '#c084fc' : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle' ? '#38bdf8' : '#2dd4bf') }}>
-                        {crawlerStatus.paused ? 'Paused' : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle' ? `Scanning ${crawlerStatus.roots_current}/${crawlerStatus.roots_total}` : 'Idle / Watching')}
-                      </span>
-                    </div>
-                    <div className="spec-row">
-                      <span className="spec-label">Priority Scan Status</span>
-                      <span className="spec-val font-semibold" style={{ color: crawlerStatus.first_time_priority_done ? '#2dd4bf' : '#38bdf8' }}>
-                        {crawlerStatus.first_time_priority_done ? 'Completed' : 'Pending / Scanning'}
-                      </span>
-                    </div>
-                    <div className="spec-row">
-                      <span className="spec-label">Initial Full Cycle</span>
-                      <span className="spec-val font-semibold" style={{ color: crawlerStatus.first_cycle_done ? '#2dd4bf' : '#38bdf8' }}>
-                        {crawlerStatus.first_cycle_done ? 'Completed' : 'Scanning'}
-                      </span>
-                    </div>
-                    <div className="spec-row">
-                      <span className="spec-label">Real-time Watchdog</span>
-                      <span className="spec-val font-semibold" style={{ color: crawlerStatus.watchdog_active ? '#2dd4bf' : '#ef4444' }}>
-                        {crawlerStatus.watchdog_active ? 'Online' : 'Offline'}
-                      </span>
-                    </div>
-                    <div className="spec-row">
-                      <span className="spec-label">AI Tagger Status</span>
-                      <span className="spec-val font-semibold" style={{ color: crawlerStatus.tagger_paused ? '#c084fc' : '#2dd4bf' }}>
-                        {crawlerStatus.tagger_paused ? 'Paused' : 'Active / Enriching'}
-                      </span>
-                    </div>
-                    <div className="spec-row">
-                      <span className="spec-label">Total Indexed Files</span>
-                      <span className="spec-val font-semibold">{crawlerStatus.total_files}</span>
-                    </div>
-                    <div className="spec-row">
-                      <span className="spec-label">Pending AI Tags</span>
-                      <span className="spec-val font-semibold">{crawlerStatus.pending_enrichment}</span>
-                    </div>
+                {/* Crawler Status Stats */}
+                <div className="spec-list-table" style={{ marginTop: '8px' }}>
+                  <div className="spec-row">
+                    <span className="spec-label">File Crawler Status</span>
+                    <span className="spec-val font-semibold" style={{ color: crawlerStatus.paused ? '#c084fc' : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle' ? '#38bdf8' : '#2dd4bf') }}>
+                      {crawlerStatus.paused ? 'Paused' : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle' ? `Scanning ${crawlerStatus.roots_current}/${crawlerStatus.roots_total}` : 'Idle / Watching')}
+                    </span>
                   </div>
-
-                  {/* Crawler Buttons */}
-                  <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <button
-                      onClick={handleToggleCrawlerStatus}
-                      className="glass-button"
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        fontSize: '0.78rem',
-                        borderRadius: '8px',
-                        fontWeight: 600,
-                        background: crawlerStatus.paused 
-                          ? 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)'
-                          : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                        color: 'white',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: crawlerStatus.paused
-                          ? '0 4px 12px rgba(124, 58, 237, 0.3)'
-                          : '0 4px 12px rgba(239, 68, 68, 0.3)',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${!crawlerStatus.paused ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
-                      <span>{crawlerStatus.paused ? 'Resume File Crawler' : 'Pause File Crawler'}</span>
-                    </button>
-
-                    <button
-                      onClick={handleToggleTaggerStatus}
-                      className="glass-button"
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        fontSize: '0.78rem',
-                        borderRadius: '8px',
-                        fontWeight: 600,
-                        background: crawlerStatus.tagger_paused 
-                          ? 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)'
-                          : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                        color: 'white',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: crawlerStatus.tagger_paused
-                          ? '0 4px 12px rgba(124, 58, 237, 0.3)'
-                          : '0 4px 12px rgba(239, 68, 68, 0.3)',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${!crawlerStatus.tagger_paused ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
-                      <span>{crawlerStatus.tagger_paused ? 'Resume Metadata Tagger' : 'Pause Metadata Tagger'}</span>
-                    </button>
-
-                    <button
-                      onClick={handleTriggerRecrawl}
-                      className="glass-button"
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        fontSize: '0.78rem',
-                        borderRadius: '8px',
-                        fontWeight: 600,
-                        background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
-                        color: 'white',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: '0 4px 12px rgba(20, 184, 166, 0.3)',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Force Full Recrawl</span>
-                    </button>
+                  <div className="spec-row">
+                    <span className="spec-label">Priority Scan Status</span>
+                    <span className="spec-val font-semibold" style={{ color: crawlerStatus.first_time_priority_done ? '#2dd4bf' : '#38bdf8' }}>
+                      {crawlerStatus.first_time_priority_done ? 'Completed' : 'Pending / Scanning'}
+                    </span>
                   </div>
+                  <div className="spec-row">
+                    <span className="spec-label">Initial Full Cycle</span>
+                    <span className="spec-val font-semibold" style={{ color: crawlerStatus.first_cycle_done ? '#2dd4bf' : '#38bdf8' }}>
+                      {crawlerStatus.first_cycle_done ? 'Completed' : 'Scanning'}
+                    </span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">Real-time Watchdog</span>
+                    <span className="spec-val font-semibold" style={{ color: crawlerStatus.watchdog_active ? '#2dd4bf' : '#ef4444' }}>
+                      {crawlerStatus.watchdog_active ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">AI Tagger Status</span>
+                    <span className="spec-val font-semibold" style={{ color: crawlerStatus.tagger_paused ? '#c084fc' : '#2dd4bf' }}>
+                      {crawlerStatus.tagger_paused ? 'Paused' : 'Active / Enriching'}
+                    </span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">Total Indexed Files</span>
+                    <span className="spec-val font-semibold">{crawlerStatus.total_files}</span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">Pending AI Tags</span>
+                    <span className="spec-val font-semibold">{crawlerStatus.pending_enrichment}</span>
+                  </div>
+                </div>
+
+                {/* Crawler Buttons */}
+                <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <button
+                    onClick={handleToggleCrawlerStatus}
+                    className="glass-button"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      fontSize: '0.78rem',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      background: crawlerStatus.paused
+                        ? 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)'
+                        : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                      color: 'white',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      boxShadow: crawlerStatus.paused
+                        ? '0 4px 12px rgba(124, 58, 237, 0.3)'
+                        : '0 4px 12px rgba(239, 68, 68, 0.3)',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${!crawlerStatus.paused ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
+                    <span>{crawlerStatus.paused ? 'Resume File Crawler' : 'Pause File Crawler'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleToggleTaggerStatus}
+                    className="glass-button"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      fontSize: '0.78rem',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      background: crawlerStatus.tagger_paused
+                        ? 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)'
+                        : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                      color: 'white',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      boxShadow: crawlerStatus.tagger_paused
+                        ? '0 4px 12px rgba(124, 58, 237, 0.3)'
+                        : '0 4px 12px rgba(239, 68, 68, 0.3)',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${!crawlerStatus.tagger_paused ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
+                    <span>{crawlerStatus.tagger_paused ? 'Resume Metadata Tagger' : 'Pause Metadata Tagger'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleTriggerRecrawl}
+                    className="glass-button"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      fontSize: '0.78rem',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+                      color: 'white',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      boxShadow: '0 4px 12px rgba(20, 184, 166, 0.3)',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Force Full Recrawl</span>
+                  </button>
+                </div>
               </div>
 
               {/* Live Paths Diagnostic */}
-               <div className="card-group" style={{ marginTop: '12px' }}>
-                 <div className="card-group-header">
-                   <HardDrive className="w-4 h-4" />
-                   <span className="card-group-title">Live Paths Diagnostic</span>
-                 </div>
-                 
-                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
-                   <div>
-                     <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>1. File Crawler Walk Path:</span>
-                     <div 
-                       style={{
-                         background: 'rgba(0, 0, 0, 0.3)',
-                         border: '1px solid rgba(255, 255, 255, 0.08)',
-                         borderRadius: '6px',
-                         padding: '8px',
-                         fontSize: '0.70rem',
-                         fontFamily: 'monospace',
-                         wordBreak: 'break-all',
-                         maxHeight: '80px',
-                         overflowY: 'auto',
-                         color: '#cbd5e1',
-                         lineHeight: '1.3',
-                         marginTop: '2px'
-                       }}
-                     >
-                       {crawlerStatus.current_path || 'Idle'}
-                     </div>
-                   </div>
+              <div className="card-group" style={{ marginTop: '12px' }}>
+                <div className="card-group-header">
+                  <HardDrive className="w-4 h-4" />
+                  <span className="card-group-title">Live Paths Diagnostic</span>
+                </div>
 
-                   <div>
-                     <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>2. AI Metadata Tagger Path:</span>
-                     <div 
-                       style={{
-                         background: 'rgba(0, 0, 0, 0.3)',
-                         border: '1px solid rgba(255, 255, 255, 0.08)',
-                         borderRadius: '6px',
-                         padding: '8px',
-                         fontSize: '0.70rem',
-                         fontFamily: 'monospace',
-                         wordBreak: 'break-all',
-                         maxHeight: '80px',
-                         overflowY: 'auto',
-                         color: '#cbd5e1',
-                         lineHeight: '1.3',
-                         marginTop: '2px'
-                       }}
-                     >
-                       {crawlerStatus.current_tagger_path || 'Idle'}
-                     </div>
-                   </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                  <div>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>1. File Crawler Walk Path:</span>
+                    <div
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '6px',
+                        padding: '8px',
+                        fontSize: '0.70rem',
+                        fontFamily: 'monospace',
+                        wordBreak: 'break-all',
+                        maxHeight: '80px',
+                        overflowY: 'auto',
+                        color: '#cbd5e1',
+                        lineHeight: '1.3',
+                        marginTop: '2px'
+                      }}
+                    >
+                      {crawlerStatus.current_path || 'Idle'}
+                    </div>
+                  </div>
 
-                   <div>
-                     <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>3. Completed Target Roots ({crawlerStatus.completed_roots?.length || 0}):</span>
-                     <div 
-                       style={{
-                         background: 'rgba(0, 0, 0, 0.3)',
-                         border: '1px solid rgba(255, 255, 255, 0.08)',
-                         borderRadius: '6px',
-                         padding: '8px',
-                         fontSize: '0.70rem',
-                         fontFamily: 'monospace',
-                         wordBreak: 'break-all',
-                         maxHeight: '60px',
-                         overflowY: 'auto',
-                         color: '#cbd5e1',
-                         lineHeight: '1.3',
-                         marginTop: '2px'
-                       }}
-                     >
-                       {crawlerStatus.completed_roots && crawlerStatus.completed_roots.length > 0 
-                         ? crawlerStatus.completed_roots.join(', ') 
-                         : 'None'}
-                     </div>
-                   </div>
+                  <div>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>2. AI Metadata Tagger Path:</span>
+                    <div
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '6px',
+                        padding: '8px',
+                        fontSize: '0.70rem',
+                        fontFamily: 'monospace',
+                        wordBreak: 'break-all',
+                        maxHeight: '80px',
+                        overflowY: 'auto',
+                        color: '#cbd5e1',
+                        lineHeight: '1.3',
+                        marginTop: '2px'
+                      }}
+                    >
+                      {crawlerStatus.current_tagger_path || 'Idle'}
+                    </div>
+                  </div>
 
-                   <div>
-                     <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>4. Remaining Target Roots ({crawlerStatus.remaining_roots?.length || 0}):</span>
-                     <div 
-                       style={{
-                         background: 'rgba(0, 0, 0, 0.3)',
-                         border: '1px solid rgba(255, 255, 255, 0.08)',
-                         borderRadius: '6px',
-                         padding: '8px',
-                         fontSize: '0.70rem',
-                         fontFamily: 'monospace',
-                         wordBreak: 'break-all',
-                         maxHeight: '60px',
-                         overflowY: 'auto',
-                         color: '#cbd5e1',
-                         lineHeight: '1.3',
-                         marginTop: '2px'
-                       }}
-                     >
-                       {crawlerStatus.remaining_roots && crawlerStatus.remaining_roots.length > 0 
-                         ? crawlerStatus.remaining_roots.join(', ') 
-                         : 'None'}
-                     </div>
-                   </div>
-                 </div>
-               </div>
+                  <div>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>3. Completed Target Roots ({crawlerStatus.completed_roots?.length || 0}):</span>
+                    <div
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '6px',
+                        padding: '8px',
+                        fontSize: '0.70rem',
+                        fontFamily: 'monospace',
+                        wordBreak: 'break-all',
+                        maxHeight: '60px',
+                        overflowY: 'auto',
+                        color: '#cbd5e1',
+                        lineHeight: '1.3',
+                        marginTop: '2px'
+                      }}
+                    >
+                      {crawlerStatus.completed_roots && crawlerStatus.completed_roots.length > 0
+                        ? crawlerStatus.completed_roots.join(', ')
+                        : 'None'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>4. Remaining Target Roots ({crawlerStatus.remaining_roots?.length || 0}):</span>
+                    <div
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '6px',
+                        padding: '8px',
+                        fontSize: '0.70rem',
+                        fontFamily: 'monospace',
+                        wordBreak: 'break-all',
+                        maxHeight: '60px',
+                        overflowY: 'auto',
+                        color: '#cbd5e1',
+                        lineHeight: '1.3',
+                        marginTop: '2px'
+                      }}
+                    >
+                      {crawlerStatus.remaining_roots && crawlerStatus.remaining_roots.length > 0
+                        ? crawlerStatus.remaining_roots.join(', ')
+                        : 'None'}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </>
           ) : (
             <>
@@ -1212,7 +1212,7 @@ const ControlDashboard = ({
                   <HardDrive className="w-4 h-4" />
                   <span className="card-group-title">Platform Specifications</span>
                 </div>
-                
+
                 <div className="spec-list-table">
                   <div className="spec-row">
                     <span className="spec-label">LM Studio URL</span>

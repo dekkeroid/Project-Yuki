@@ -1698,7 +1698,7 @@ const AvatarViewer = ({
               let floatLegAngle = 0;
               const enableFloatingIdle = !disabledAnimationsRef.current.includes('floating') && (window.yukiDebugToggles ? window.yukiDebugToggles.floatingIdle !== false : true);
               if (enableFloatingIdle && isElectronMode && !isWalkingRef.current && dragStateProgress === 0 && !knockActive && !isSleeping) {
-                floatOffsetY = Math.sin(time * 1.1) * 0.01; // gently hover 1.8cm up/down (more subtle)
+                floatOffsetY = Math.sin(time * 1.1) * 0.015; // gently hover 1.8cm up/down (more subtle)
                 floatOffsetX = Math.cos(time * 0.6) * 0.01;  // gently drift 1cm side-to-side (more subtle)
                 floatLegAngle = Math.sin(time * 1.2 - 0.5) * 0.02; // leg drag lag (more subtle)
               }

@@ -8,7 +8,7 @@ import { ANIMATIONS } from './animationsRegistry';
 
 const SKIN_PRESETS = [
   { name: 'Original', value: '#ffffff' },
-  { name: 'Fair', value: '#BCC68B' },
+  { name: 'Fair', value: '#FFE5E5' },
   { name: 'Tan', value: '#d89c7b' },
   { name: 'Bronze', value: '#a3654a' },
   { name: 'Cocoa', value: '#593424' }
@@ -2322,7 +2322,7 @@ const App = () => {
                                 borderRadius: '4px',
                                 border: avatarSkinToneColor === preset.value ? '1.5px solid #2dd4bf' : '1px solid rgba(255,255,255,0.12)',
                                 background: preset.value === '#ffffff' ? '#ffffff' : preset.value,
-                                color: preset.value === '#ffffff' || preset.value === '#BCC68B' || preset.value === '#d89c7b' ? '#111' : '#fff',
+                                color: preset.value === '#ffffff' || preset.value === '#FFE5E5' || preset.value === '#d89c7b' ? '#111' : '#fff',
                                 cursor: 'pointer',
                                 textAlign: 'center',
                                 transition: 'all 0.1s'
