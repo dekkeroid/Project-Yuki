@@ -1,0 +1,37 @@
+# Node dependencies
+node_modules/
+frontend/dist/
+
+# Python caching and environments
+__pycache__/
+*.pyc
+.env
+venv/
+.venv/
+
+# Local databases and logs (Crucial for your app)
+yuki_files.db
+yuki_files.db-wal
+yuki_files.db-shm
+yuki_crawler.log
+
+# Ignore all 3D VRM characters globally
+*.vrm
+
+# EXCEPT for the explicit default character asset
+!frontend/public/models/default.vrm
+
+# Python testing sandbox files (Scratch directory)
+backend/scratch/
+backend/test.mp3
+
+# Virtual Environment configuration tracking
+backend/venv/
+backend/.venv/
+
+# Local personal runtime states
+backend/profile.json
+
+# Ignore local local Kokoro AI model weights and audio binary matrices
+backend/app/voice/*.onnx
+backend/app/voice/*.bin

@@ -1,0 +1,11 @@
+fastapi>=0.100.0
+uvicorn>=0.22.0
+websockets>=11.0
+pydantic>=2.0.0
+requests>=2.31.0
+edge-tts>=6.1.9
+aiohttp>=3.8.0
+python-multipart>=0.0.6
+kokoro-onnx>=0.3.0
+onnxruntime>=1.16.0
+soundfile>=0.12.0

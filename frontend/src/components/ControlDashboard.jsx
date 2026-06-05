@@ -1,0 +1,1250 @@
+import React, { useState, useEffect } from 'react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, UserCheck, Plus, Trash, Mic } from 'lucide-react';
+import { API_BASE } from '../api';
+import { ANIMATIONS } from '../animationsRegistry';
+
+const SKIN_PRESETS = [
+  { name: 'Original', value: '#ffffff' },
+  { name: 'Fair', value: '#BCC68B' },
+  { name: 'Tan', value: '#d89c7b' },
+  { name: 'Bronze', value: '#a3654a' },
+  { name: 'Cocoa', value: '#593424' }
+];
+
+const ControlDashboard = ({
+  profile,
+  backendStatus,
+  onResetProfile,
+  modelName,
+  lmstudioUrl,
+  onProfileUpdate,
+  skinToneColor = '#BCC68B',
+  onSkinToneChange,
+  disabledAnimations = [],
+  onToggleAnimation,
+  micDevices = [],
+  selectedMicDeviceId = '',
+  onMicDeviceChange,
+  onRefreshMicDevices
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('memory');
+
+  // Model selector state removed
+
+  // Settings State
+  const [settings, setSettings] = useState({
+    llm_model: '',
+    tts_voice: 'en-US-AnaNeural',
+    tts_rate: '+15%',
+    character_name: 'Yuki',
+    character_persona: '',
+    crawler_paused: false,
+    tagger_paused: false
+  });
+
+  // Local Character States
+  const [charName, setCharName] = useState('Yuki');
+  const [charPersona, setCharPersona] = useState('');
+
+  const [crawlerStatus, setCrawlerStatus] = useState({
+    paused: false,
+    tagger_paused: false,
+    current_path: 'Idle',
+    current_tagger_path: 'Idle',
+    total_files: 0,
+    pending_enrichment: 0,
+    initial_crawl_completed: false,
+    first_time_priority_done: false,
+    first_cycle_done: false,
+    completed_roots: [],
+    remaining_roots: [],
+    roots_total: 0,
+    roots_current: 0,
+    current_root_path: 'Idle',
+    watchdog_active: false
+  });
+
+  // Sync character local states when settings change
+  useEffect(() => {
+    if (settings.character_name) {
+      setCharName(settings.character_name);
+    }
+    if (settings.character_persona) {
+      setCharPersona(settings.character_persona);
+    }
+  }, [settings]);
+
+  // Profile Edit State
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [newInterestText, setNewInterestText] = useState('');
+  
+  // Custom Facts Edit State
+  const [isAddingFact, setIsAddingFact] = useState(false);
+  const [newFactKey, setNewFactKey] = useState('');
+  const [newFactVal, setNewFactVal] = useState('');
+  const [editingFactKey, setEditingFactKey] = useState(null);
+  const [editingFactValue, setEditingFactValue] = useState('');
+
+  const interests = profile.user_interests || [];
+  const customFacts = profile.custom_facts || {};
+
+
+
+  const TTS_VOICES = [
+    { label: 'Sarah (US Female - Soft/Cute)', value: 'af_sarah' },
+    { label: 'Sky (US Female - Natural)', value: 'af_sky' },
+    { label: 'Bella (US Female - Warm)', value: 'af_bella' },
+    { label: 'Isabella (UK Female - Crisp)', value: 'bf_isabella' },
+    { label: 'Alice (UK Female - Clear)', value: 'bf_alice' },
+    { label: 'Lily (UK Female - Gentle)', value: 'bf_lily' },
+    { label: 'Alpha (JP Female - Bright)', value: 'jf_alpha' },
+    { label: 'Glowing (JP Female - Cute)', value: 'jf_glowing' },
+    { label: 'Yasmin (JP Female - Soft)', value: 'jf_yasmin' }
+  ];
+
+  const TTS_RATES = [
+    { label: 'Slow (0.8x)', value: '0.8' },
+    { label: 'Normal (1.0x)', value: '1.0' },
+    { label: 'Snappy (1.1x)', value: '1.1' },
+    { label: 'Fast (1.2x)', value: '1.2' },
+    { label: 'Faster (1.4x)', value: '1.4' },
+  ];
+
+
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/settings`);
+      if (res.ok) {
+        const data = await res.json();
+        setSettings(data);
+      }
+    } catch (e) {
+      console.warn('Could not fetch settings:', e);
+    }
+  };
+
+  const handleUpdateSetting = async (key, value) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSettings(data.settings);
+        if (key === 'llm_model') {
+          setActiveModel(data.settings.llm_model);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to update setting:', e);
+    }
+  };
+
+  const fetchCrawlerStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/crawler/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setCrawlerStatus(data);
+      }
+    } catch (e) {
+      console.warn('Could not fetch crawler status:', e);
+    }
+  };
+
+  const handleToggleCrawlerStatus = async () => {
+    const nextPausedValue = !crawlerStatus.paused;
+    setCrawlerStatus(prev => ({ ...prev, paused: nextPausedValue }));
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ crawler_paused: nextPausedValue }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCrawlerStatus(prev => ({ 
+          ...prev, 
+          paused: data.settings.crawler_paused,
+          tagger_paused: data.settings.tagger_paused
+        }));
+        setSettings(data.settings);
+      }
+    } catch (e) {
+      console.error('Failed to update crawler pause state:', e);
+    }
+  };
+
+  const handleToggleTaggerStatus = async () => {
+    const nextPausedValue = !crawlerStatus.tagger_paused;
+    setCrawlerStatus(prev => ({ ...prev, tagger_paused: nextPausedValue }));
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tagger_paused: nextPausedValue }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCrawlerStatus(prev => ({ 
+          ...prev, 
+          paused: data.settings.crawler_paused,
+          tagger_paused: data.settings.tagger_paused
+        }));
+        setSettings(data.settings);
+      }
+    } catch (e) {
+      console.error('Failed to update tagger pause state:', e);
+    }
+  };
+
+  const handleTriggerRecrawl = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/crawler/recrawl`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        fetchCrawlerStatus();
+      }
+    } catch (e) {
+      console.error('Failed to trigger recrawl:', e);
+    }
+  };
+
+
+
+  const handleUpdateProfile = async (updates) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/profile/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (onProfileUpdate) {
+          onProfileUpdate(data.profile);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to update profile:', e);
+    }
+  };
+
+  const handleSaveName = async () => {
+    if (!editedName.trim()) return;
+    await handleUpdateProfile({ user_name: editedName.trim() });
+    setIsEditingName(false);
+  };
+
+  const handleAddInterest = async (e) => {
+    if (e.key === 'Enter' || e.type === 'click') {
+      e.preventDefault();
+      if (!newInterestText.trim()) return;
+      if (interests.includes(newInterestText.trim())) return;
+      const updatedInterests = [...interests, newInterestText.trim()];
+      await handleUpdateProfile({ user_interests: updatedInterests });
+      setNewInterestText('');
+    }
+  };
+
+  const handleRemoveInterest = async (interestToRemove) => {
+    const updatedInterests = interests.filter(i => i !== interestToRemove);
+    await handleUpdateProfile({ user_interests: updatedInterests });
+  };
+
+  const handleDeleteFact = async (factKey) => {
+    const updatedFacts = { ...customFacts };
+    delete updatedFacts[factKey];
+    await handleUpdateProfile({ custom_facts: updatedFacts });
+  };
+
+  const handleAddFact = async (e) => {
+    e.preventDefault();
+    if (!newFactKey.trim() || !newFactVal.trim()) return;
+    const updatedFacts = { ...customFacts, [newFactKey.trim()]: newFactVal.trim() };
+    await handleUpdateProfile({ custom_facts: updatedFacts });
+    setNewFactKey('');
+    setNewFactVal('');
+    setIsAddingFact(false);
+  };
+
+  const handleStartEditFact = (key, val) => {
+    setEditingFactKey(key);
+    setEditingFactValue(val);
+  };
+
+  const handleSaveFact = async (key) => {
+    const updatedFacts = { ...customFacts, [key]: editingFactValue.trim() };
+    await handleUpdateProfile({ custom_facts: updatedFacts });
+    setEditingFactKey(null);
+    setEditingFactValue('');
+  };
+
+  // Fetch settings / crawler status on open & handle crawler polling
+  useEffect(() => {
+    let interval = null;
+    if (isOpen) {
+      if (activeTab === 'crawler') {
+        fetchCrawlerStatus();
+        interval = setInterval(fetchCrawlerStatus, 2500);
+      } else {
+        fetchSettings();
+      }
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isOpen, activeTab]);
+
+  return (
+    <>
+      {/* Settings Toggle Trigger Button (Top-Right Corner) */}
+      <div className="dashboard-trigger-top">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className={`trigger-gear-btn glass-panel ${isOpen ? 'active' : ''}`}
+          title="Yuki Settings & Memory"
+        >
+          <Settings className={`w-5 h-5 ${isOpen ? 'rotate-45' : ''}`} style={{ transition: 'transform 0.3s' }} />
+        </button>
+      </div>
+
+      {/* Slide-out Settings Panel (Left side) */}
+      <div
+        className="slide-panel-left glass-panel"
+        style={{
+          transform: isOpen ? 'translateX(0)' : 'translateX(calc(-100% - 24px))',
+          opacity: isOpen ? 1 : 0
+        }}
+      >
+        {/* Header */}
+        <div className="panel-header">
+          <div className="panel-title-wrapper">
+            <Database className="w-5 h-5 text-teal-400" />
+            <div>
+              <h3 className="panel-title" style={{ fontSize: '0.85rem' }}>System Core & Memory</h3>
+              <p style={{ margin: 0, fontSize: '10px', color: 'var(--text-muted)' }}>Yuki Brain Module Settings</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Connection Status Widget */}
+        <div className="dashboard-stats-row">
+          <div className="stat-widget">
+            <span className="stat-label">Brain Connection</span>
+            <div className="stat-value-wrapper">
+              <span className={`status-dot ${backendStatus === 'online' ? 'online breathing' : 'offline'}`}></span>
+              <span className="stat-value">{backendStatus}</span>
+            </div>
+          </div>
+          <div className="stat-widget">
+            <span className="stat-label">Interactions</span>
+            <span className="stat-value">{profile.interaction_count || 0} cycles</span>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="tab-nav-bar">
+          <button
+            onClick={() => setActiveTab('memory')}
+            className={`tab-btn ${activeTab === 'memory' ? 'active' : ''}`}
+          >
+            Memories
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
+          >
+            Settings
+          </button>
+          <button
+            onClick={() => setActiveTab('crawler')}
+            className={`tab-btn ${activeTab === 'crawler' ? 'active' : ''}`}
+          >
+            Crawler
+          </button>
+          <button
+            onClick={() => setActiveTab('config')}
+            className={`tab-btn ${activeTab === 'config' ? 'active' : ''}`}
+          >
+            System Info
+          </button>
+        </div>
+
+        {/* Tab Contents */}
+        <div className="tab-panel-body">
+          {activeTab === 'memory' ? (
+            <>
+              {/* User Identity Card */}
+              <div className="card-group">
+                <div className="card-group-header">
+                  <User className="w-4 h-4" />
+                  <span className="card-group-title">User Identity Card</span>
+                </div>
+                
+                {/* Preferred Name */}
+                <div className="identity-field">
+                  <span className="field-label">Preferred Name</span>
+                  {isEditingName ? (
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <input
+                        type="text"
+                        value={editedName}
+                        onChange={(e) => setEditedName(e.target.value)}
+                        className="glass-input"
+                        style={{ padding: '4px 8px', fontSize: '0.85rem', flex: 1 }}
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleSaveName}
+                        style={{
+                          background: 'var(--accent-teal)',
+                          color: '#0b0813',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '4px 12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          fontSize: '0.75rem',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setIsEditingName(false)}
+                        style={{
+                          background: 'rgba(255,255,255,0.1)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '4px 12px',
+                          cursor: 'pointer',
+                          fontSize: '0.75rem'
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px' }}>
+                      <span className="field-val">{profile.user_name || 'Master'}</span>
+                      <button
+                        onClick={() => {
+                          setEditedName(profile.user_name || 'Master');
+                          setIsEditingName(true);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--accent-purple)',
+                          cursor: 'pointer',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          textDecoration: 'underline',
+                          padding: 0
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* User Interests */}
+                <div className="identity-field" style={{ marginTop: '4px' }}>
+                  <span className="field-label">Interests</span>
+                  {interests.length > 0 ? (
+                    <div className="interests-pill-box">
+                      {interests.map((int, i) => (
+                        <span key={i} className="interest-pill" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {int}
+                          <button
+                            onClick={() => handleRemoveInterest(int)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#fca5a5',
+                              cursor: 'pointer',
+                              padding: '0 2px',
+                              fontSize: '11px',
+                              lineHeight: 1,
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}
+                            title={`Remove ${int}`}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0' }}>
+                      No interests recorded yet.
+                    </span>
+                  )}
+                  
+                  {/* Add Interest Field */}
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                    <input
+                      type="text"
+                      placeholder="Add interest..."
+                      value={newInterestText}
+                      onChange={(e) => setNewInterestText(e.target.value)}
+                      onKeyDown={handleAddInterest}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', flex: 1 }}
+                    />
+                    <button
+                      onClick={handleAddInterest}
+                      className="glass-button"
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '0.75rem',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)'
+                      }}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Facts Log */}
+              <div className="card-group">
+                <div className="card-group-header teal">
+                  <Database className="w-4 h-4" />
+                  <span className="card-group-title">Episodic Facts</span>
+                </div>
+
+                {Object.keys(customFacts).length > 0 ? (
+                  <div className="mono-logs-container">
+                    {Object.entries(customFacts).map(([key, val]) => (
+                      <div key={key} className="log-entry-block">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span className="log-entry-key" style={{ wordBreak: 'break-all', fontSize: '0.72rem' }}>{key}</span>
+                          <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                            {editingFactKey !== key && (
+                              <button
+                                onClick={() => handleStartEditFact(key, val)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--accent-purple)',
+                                  cursor: 'pointer',
+                                  fontSize: '10px',
+                                  textDecoration: 'underline',
+                                  padding: 0
+                                }}
+                              >
+                                Edit
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteFact(key)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#f87171',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                textDecoration: 'underline',
+                                padding: 0
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {editingFactKey === key ? (
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                            <input
+                              type="text"
+                              value={editingFactValue}
+                              onChange={(e) => setEditingFactValue(e.target.value)}
+                              className="glass-input"
+                              style={{ padding: '4px 8px', fontSize: '0.78rem', flex: 1, fontFamily: 'monospace' }}
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleSaveFact(key)}
+                              style={{
+                                background: 'var(--accent-teal)',
+                                color: '#0b0813',
+                                border: 'none',
+                                borderRadius: '6px',
+                                padding: '4px 10px',
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingFactKey(null)}
+                              style={{
+                                background: 'rgba(255,255,255,0.1)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                padding: '4px 10px',
+                                fontSize: '0.72rem',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="log-entry-val" style={{ wordBreak: 'break-word', marginTop: '2px', fontSize: '0.75rem' }}>{val}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    Yuki has not saved any persistent facts about you yet. Try telling her: "My favorite language is JavaScript" or "I am from Seattle".
+                  </span>
+                )}
+
+                {/* Add Custom Fact Dialog / Button */}
+                {isAddingFact ? (
+                  <form onSubmit={handleAddFact} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px', padding: '10px', background: 'rgba(0,0,0,0.2)', border: '1px dashed rgba(255,255,255,0.15)', borderRadius: '8px' }}>
+                    <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--accent-teal)', textTransform: 'uppercase' }}>Add Custom Fact</span>
+                    <input
+                      type="text"
+                      placeholder="Fact Key (e.g. Favorite Food)"
+                      value={newFactKey}
+                      onChange={(e) => setNewFactKey(e.target.value)}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem' }}
+                      required
+                    />
+                    <input
+                      type="text"
+                      placeholder="Fact Value (e.g. Spicy Ramen)"
+                      value={newFactVal}
+                      onChange={(e) => setNewFactVal(e.target.value)}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem' }}
+                      required
+                    />
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="submit"
+                        style={{
+                          background: 'var(--accent-teal)',
+                          color: '#0b0813',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '6px 12px',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          flex: 1
+                        }}
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingFact(false)}
+                        style={{
+                          background: 'rgba(255,255,255,0.1)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '6px 12px',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                          flex: 1
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <button
+                    onClick={() => setIsAddingFact(true)}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px dashed rgba(255,255,255,0.15)',
+                      color: 'var(--text-muted)',
+                      borderRadius: '8px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      marginTop: '4px',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseOver={e => {
+                      e.currentTarget.style.background = 'rgba(45, 212, 191, 0.05)';
+                      e.currentTarget.style.color = 'white';
+                      e.currentTarget.style.borderColor = 'rgba(45, 212, 191, 0.4)';
+                    }}
+                    onMouseOut={e => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                      e.currentTarget.style.color = 'var(--text-muted)';
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                    }}
+                  >
+                    + Add Custom Fact
+                  </button>
+                )}
+              </div>
+            </>
+          ) : activeTab === 'settings' ? (
+            <>
+              {/* Settings Group */}
+              <div className="card-group">
+                <div className="card-group-header">
+                  <Cpu className="w-4 h-4" />
+                  <span className="card-group-title">Yuki Assistant Settings</span>
+                </div>
+
+
+
+                {/* TTS Voice Selection */}
+                <div className="identity-field" style={{ marginTop: '4px' }}>
+                  <span className="field-label">Speech Synthesis Voice</span>
+                  <select
+                    value={settings.tts_voice}
+                    onChange={(e) => handleUpdateSetting('tts_voice', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.78rem',
+                      outline: 'none',
+                      cursor: 'pointer',
+                      marginTop: '2px'
+                    }}
+                  >
+                    {TTS_VOICES.map((v) => (
+                      <option key={v.value} value={v.value} style={{ background: '#0b0813', color: 'white' }}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* TTS Speech Speed Rate */}
+                <div className="identity-field" style={{ marginTop: '4px' }}>
+                  <span className="field-label">Speech Delivery Rate</span>
+                  <select
+                    value={settings.tts_rate}
+                    onChange={(e) => handleUpdateSetting('tts_rate', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.78rem',
+                      outline: 'none',
+                      cursor: 'pointer',
+                      marginTop: '2px'
+                    }}
+                  >
+                    {TTS_RATES.map((r) => (
+                      <option key={r.value} value={r.value} style={{ background: '#0b0813', color: 'white' }}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Microphone Input Device */}
+                <div className="identity-field" style={{ marginTop: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Mic style={{ width: '13px', height: '13px', color: '#a78bfa' }} />
+                      Microphone Input Device
+                    </span>
+                    <button
+                      type="button"
+                      onClick={onRefreshMicDevices}
+                      title="Refresh device list"
+                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                    >
+                      <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
+                    </button>
+                  </div>
+                  <select
+                    value={selectedMicDeviceId}
+                    onChange={(e) => onMicDeviceChange && onMicDeviceChange(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.78rem',
+                      outline: 'none',
+                      cursor: 'pointer',
+                      marginTop: '4px'
+                    }}
+                  >
+                    <option value="" style={{ background: '#0b0813', color: 'white' }}>🎙️ System Default</option>
+                    {micDevices.map((d) => (
+                      <option key={d.deviceId} value={d.deviceId} style={{ background: '#0b0813', color: 'white' }}>
+                        {d.label || `Microphone (${d.deviceId.slice(0, 8)}...)`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Skin Tone Customization */}
+                <div className="identity-field" style={{ marginTop: '10px' }}>
+                  <span className="field-label">Avatar Skin Color</span>
+                  
+                  {/* Presets */}
+                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '4px' }}>
+                    {SKIN_PRESETS.map((preset) => (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => onSkinToneChange && onSkinToneChange(preset.value)}
+                        style={{
+                          flex: '1 1 auto',
+                          padding: '5px 6px',
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          borderRadius: '6px',
+                          border: skinToneColor === preset.value ? '2px solid #2dd4bf' : '1px solid rgba(255,255,255,0.15)',
+                          background: preset.value === '#ffffff' ? '#ffffff' : preset.value,
+                          color: preset.value === '#ffffff' || preset.value === '#BCC68B' || preset.value === '#d89c7b' ? '#111' : '#fff',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          boxShadow: skinToneColor === preset.value ? '0 0 8px rgba(45, 212, 191, 0.4)' : 'none',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Custom color input */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Custom Color:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                      <input
+                        type="color"
+                        value={skinToneColor}
+                        onChange={(e) => onSkinToneChange && onSkinToneChange(e.target.value)}
+                        style={{
+                          border: 'none',
+                          width: '30px',
+                          height: '30px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          background: 'none',
+                          padding: 0
+                        }}
+                      />
+                      <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#ccc', fontWeight: 600 }}>
+                        {skinToneColor.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Companion Character settings card group */}
+              <div className="card-group" style={{ marginTop: '12px' }}>
+                <div className="card-group-header">
+                  <UserCheck className="w-4 h-4" />
+                  <span className="card-group-title">Companion Persona Settings</span>
+                </div>
+
+                <div className="identity-field">
+                  <span className="field-label">Companion Name</span>
+                  <input
+                    type="text"
+                    value={charName}
+                    onChange={(e) => setCharName(e.target.value)}
+                    className="glass-input"
+                    style={{ padding: '6px 10px', fontSize: '0.78rem', marginTop: '2px' }}
+                  />
+                </div>
+
+                <div className="identity-field" style={{ marginTop: '4px' }}>
+                  <span className="field-label">Persona Prompt Instructions</span>
+                  <textarea
+                    value={charPersona}
+                    onChange={(e) => setCharPersona(e.target.value)}
+                    className="glass-input"
+                    style={{
+                      padding: '8px 10px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'monospace',
+                      minHeight: '120px',
+                      resize: 'vertical',
+                      marginTop: '2px',
+                      lineHeight: '1.4'
+                    }}
+                  />
+                </div>
+
+                <button
+                  onClick={async () => {
+                    await handleUpdateSetting('character_name', charName);
+                    await handleUpdateSetting('character_persona', charPersona);
+                    alert("Character settings updated successfully!");
+                  }}
+                  className="glass-button"
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: '0.75rem',
+                    borderRadius: '10px',
+                    marginTop: '4px',
+                    background: 'linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)',
+                    boxShadow: '0 4px 12px rgba(13,148,136,0.3)',
+                  }}
+                >
+                  Save Character Specs
+                </button>
+              </div>
+
+              {/* Dynamic Animations Toggles */}
+              <div className="card-group" style={{ marginTop: '12px' }}>
+                <div className="card-group-header">
+                  <Cpu className="w-4 h-4 text-violet-400" />
+                  <span className="card-group-title">Animations Toggle</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {ANIMATIONS.map((anim) => {
+                    const isEnabled = !disabledAnimations.includes(anim.name);
+                    const displayName = anim.name
+                      .split('_')
+                      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                      .join(' ');
+                    return (
+                      <div key={anim.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0, 0, 0, 0.2)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#cbd5e1', fontWeight: '500' }}>{displayName}</span>
+                        <input
+                          type="checkbox"
+                          style={{ cursor: 'pointer', accentColor: '#a855f7' }}
+                          checked={isEnabled}
+                          onChange={() => onToggleAnimation && onToggleAnimation(anim.name)}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Format / Wipe memory action at bottom of settings */}
+              <button
+                onClick={onResetProfile}
+                className="panel-btn-action"
+                style={{ marginTop: 'auto' }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Format Memory Matrix</span>
+              </button>
+            </>
+          ) : activeTab === 'crawler' ? (
+            <>
+              {/* Crawler Diagnostics Group */}
+              <div className="card-group">
+                <div className="card-group-header teal">
+                  <RefreshCw className="w-4 h-4" />
+                  <span className="card-group-title">Background File Crawler</span>
+                </div>
+
+                  {/* Crawler Status Stats */}
+                  <div className="spec-list-table" style={{ marginTop: '8px' }}>
+                    <div className="spec-row">
+                      <span className="spec-label">File Crawler Status</span>
+                      <span className="spec-val font-semibold" style={{ color: crawlerStatus.paused ? '#c084fc' : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle' ? '#38bdf8' : '#2dd4bf') }}>
+                        {crawlerStatus.paused ? 'Paused' : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle' ? `Scanning ${crawlerStatus.roots_current}/${crawlerStatus.roots_total}` : 'Idle / Watching')}
+                      </span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">Priority Scan Status</span>
+                      <span className="spec-val font-semibold" style={{ color: crawlerStatus.first_time_priority_done ? '#2dd4bf' : '#38bdf8' }}>
+                        {crawlerStatus.first_time_priority_done ? 'Completed' : 'Pending / Scanning'}
+                      </span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">Initial Full Cycle</span>
+                      <span className="spec-val font-semibold" style={{ color: crawlerStatus.first_cycle_done ? '#2dd4bf' : '#38bdf8' }}>
+                        {crawlerStatus.first_cycle_done ? 'Completed' : 'Scanning'}
+                      </span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">Real-time Watchdog</span>
+                      <span className="spec-val font-semibold" style={{ color: crawlerStatus.watchdog_active ? '#2dd4bf' : '#ef4444' }}>
+                        {crawlerStatus.watchdog_active ? 'Online' : 'Offline'}
+                      </span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">AI Tagger Status</span>
+                      <span className="spec-val font-semibold" style={{ color: crawlerStatus.tagger_paused ? '#c084fc' : '#2dd4bf' }}>
+                        {crawlerStatus.tagger_paused ? 'Paused' : 'Active / Enriching'}
+                      </span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">Total Indexed Files</span>
+                      <span className="spec-val font-semibold">{crawlerStatus.total_files}</span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">Pending AI Tags</span>
+                      <span className="spec-val font-semibold">{crawlerStatus.pending_enrichment}</span>
+                    </div>
+                  </div>
+
+                  {/* Crawler Buttons */}
+                  <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button
+                      onClick={handleToggleCrawlerStatus}
+                      className="glass-button"
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        fontSize: '0.78rem',
+                        borderRadius: '8px',
+                        fontWeight: 600,
+                        background: crawlerStatus.paused 
+                          ? 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)'
+                          : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        color: 'white',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: crawlerStatus.paused
+                          ? '0 4px 12px rgba(124, 58, 237, 0.3)'
+                          : '0 4px 12px rgba(239, 68, 68, 0.3)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${!crawlerStatus.paused ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
+                      <span>{crawlerStatus.paused ? 'Resume File Crawler' : 'Pause File Crawler'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleToggleTaggerStatus}
+                      className="glass-button"
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        fontSize: '0.78rem',
+                        borderRadius: '8px',
+                        fontWeight: 600,
+                        background: crawlerStatus.tagger_paused 
+                          ? 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)'
+                          : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        color: 'white',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: crawlerStatus.tagger_paused
+                          ? '0 4px 12px rgba(124, 58, 237, 0.3)'
+                          : '0 4px 12px rgba(239, 68, 68, 0.3)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${!crawlerStatus.tagger_paused ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
+                      <span>{crawlerStatus.tagger_paused ? 'Resume Metadata Tagger' : 'Pause Metadata Tagger'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleTriggerRecrawl}
+                      className="glass-button"
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        fontSize: '0.78rem',
+                        borderRadius: '8px',
+                        fontWeight: 600,
+                        background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+                        color: 'white',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: '0 4px 12px rgba(20, 184, 166, 0.3)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Force Full Recrawl</span>
+                    </button>
+                  </div>
+              </div>
+
+              {/* Live Paths Diagnostic */}
+               <div className="card-group" style={{ marginTop: '12px' }}>
+                 <div className="card-group-header">
+                   <HardDrive className="w-4 h-4" />
+                   <span className="card-group-title">Live Paths Diagnostic</span>
+                 </div>
+                 
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                   <div>
+                     <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>1. File Crawler Walk Path:</span>
+                     <div 
+                       style={{
+                         background: 'rgba(0, 0, 0, 0.3)',
+                         border: '1px solid rgba(255, 255, 255, 0.08)',
+                         borderRadius: '6px',
+                         padding: '8px',
+                         fontSize: '0.70rem',
+                         fontFamily: 'monospace',
+                         wordBreak: 'break-all',
+                         maxHeight: '80px',
+                         overflowY: 'auto',
+                         color: '#cbd5e1',
+                         lineHeight: '1.3',
+                         marginTop: '2px'
+                       }}
+                     >
+                       {crawlerStatus.current_path || 'Idle'}
+                     </div>
+                   </div>
+
+                   <div>
+                     <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>2. AI Metadata Tagger Path:</span>
+                     <div 
+                       style={{
+                         background: 'rgba(0, 0, 0, 0.3)',
+                         border: '1px solid rgba(255, 255, 255, 0.08)',
+                         borderRadius: '6px',
+                         padding: '8px',
+                         fontSize: '0.70rem',
+                         fontFamily: 'monospace',
+                         wordBreak: 'break-all',
+                         maxHeight: '80px',
+                         overflowY: 'auto',
+                         color: '#cbd5e1',
+                         lineHeight: '1.3',
+                         marginTop: '2px'
+                       }}
+                     >
+                       {crawlerStatus.current_tagger_path || 'Idle'}
+                     </div>
+                   </div>
+
+                   <div>
+                     <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>3. Completed Target Roots ({crawlerStatus.completed_roots?.length || 0}):</span>
+                     <div 
+                       style={{
+                         background: 'rgba(0, 0, 0, 0.3)',
+                         border: '1px solid rgba(255, 255, 255, 0.08)',
+                         borderRadius: '6px',
+                         padding: '8px',
+                         fontSize: '0.70rem',
+                         fontFamily: 'monospace',
+                         wordBreak: 'break-all',
+                         maxHeight: '60px',
+                         overflowY: 'auto',
+                         color: '#cbd5e1',
+                         lineHeight: '1.3',
+                         marginTop: '2px'
+                       }}
+                     >
+                       {crawlerStatus.completed_roots && crawlerStatus.completed_roots.length > 0 
+                         ? crawlerStatus.completed_roots.join(', ') 
+                         : 'None'}
+                     </div>
+                   </div>
+
+                   <div>
+                     <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>4. Remaining Target Roots ({crawlerStatus.remaining_roots?.length || 0}):</span>
+                     <div 
+                       style={{
+                         background: 'rgba(0, 0, 0, 0.3)',
+                         border: '1px solid rgba(255, 255, 255, 0.08)',
+                         borderRadius: '6px',
+                         padding: '8px',
+                         fontSize: '0.70rem',
+                         fontFamily: 'monospace',
+                         wordBreak: 'break-all',
+                         maxHeight: '60px',
+                         overflowY: 'auto',
+                         color: '#cbd5e1',
+                         lineHeight: '1.3',
+                         marginTop: '2px'
+                       }}
+                     >
+                       {crawlerStatus.remaining_roots && crawlerStatus.remaining_roots.length > 0 
+                         ? crawlerStatus.remaining_roots.join(', ') 
+                         : 'None'}
+                     </div>
+                   </div>
+                 </div>
+               </div>
+            </>
+          ) : (
+            <>
+              {/* Connection Specs */}
+              <div className="card-group">
+                <div className="card-group-header teal">
+                  <HardDrive className="w-4 h-4" />
+                  <span className="card-group-title">Platform Specifications</span>
+                </div>
+                
+                <div className="spec-list-table">
+                  <div className="spec-row">
+                    <span className="spec-label">LM Studio URL</span>
+                    <span className="spec-val" style={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all' }}>
+                      {lmstudioUrl || 'http://localhost:1234'}
+                    </span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">Host OS</span>
+                    <span className="spec-val">Windows 10/11</span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">Audio Output</span>
+                    <span className="spec-val">Web Audio Synthesizer</span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">STT Listener</span>
+                    <span className="spec-val">Web Speech API</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="dashboard-footer">
+          Yuki Desktop Companion v1.0.0 (Agentic Node)
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default ControlDashboard;
