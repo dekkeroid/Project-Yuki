@@ -998,7 +998,10 @@ const App = () => {
       } else if (msg.type === 'status') {
         if (msg.status === 'thinking') {
           setIsThinking(true);
-          setCurrentSpeechText('');
+          // Don't clear speech text if audio is currently playing
+          if (!isPlayingRef.current && !isYukiSpeakingRef.current) {
+            setCurrentSpeechText('');
+          }
           currentResponseTextRef.current = '';
           hasReceivedAudioRef.current = false;
         } else if (msg.status === 'idle') {
@@ -1029,7 +1032,7 @@ const App = () => {
         hasReceivedAudioRef.current = true;
         // Log TTS metadata for diagnostics
         try {
-          console.log(`[TTS] audio_chunk received idx=${msg.index} backend=${msg.tts_backend || 'unknown'} time_ms=${msg.tts_time_ms || 0} text="${(msg.text||'').slice(0,80)}"`);
+          console.log(`[TTS] audio_chunk received idx=${msg.index} backend=${msg.tts_backend || 'unknown'} time_ms=${msg.tts_time_ms || 0} text="${(msg.text || '').slice(0, 80)}"`);
         } catch (e) { /* ignore logging errors */ }
         queueAudioChunk(msg.audio_url, msg.text, msg.index);
       } else if (msg.type === 'stream_done') {
@@ -1045,7 +1048,7 @@ const App = () => {
           return newMessages;
         });
         if (!hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice) {
-          console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0,80)}"`);
+          console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0, 80)}"`);
           speakTextNatively(currentResponseTextRef.current);
         }
       } else if (msg.type === 'tool_result') {
