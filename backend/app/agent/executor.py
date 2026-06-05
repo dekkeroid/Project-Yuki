@@ -3,6 +3,7 @@ import re
 import requests
 import aiohttp
 import asyncio
+import concurrent.futures
 import inspect
 import os
 from typing import Dict, Any, List, Tuple
@@ -388,7 +389,10 @@ class AgentExecutor:
             cmd_prefix = '/play ' if play_mode else '/open '
             query = user_message[len(cmd_prefix):].strip()
             
-            resolved_path = resolve_best_file_no_llm(query, play_mode=play_mode)
+            print(f"[Executor] Running non-LLM resolver in thread for query='{query}' play_mode={play_mode}")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(resolve_best_file_no_llm, query, play_mode)
+                resolved_path = future.result()
             if resolved_path:
                 try:
                     os.startfile(resolved_path)
@@ -675,8 +679,9 @@ class AgentExecutor:
             query = user_message[len(cmd_prefix):].strip()
             
             yield "tool_start", "resolve_best_file_no_llm", "local"
-            
-            resolved_path = resolve_best_file_no_llm(query, play_mode=play_mode)
+            # Offload the potentially blocking DB/search work to a thread to avoid
+            # blocking the event loop and delaying websocket token sends.
+            resolved_path = await asyncio.to_thread(resolve_best_file_no_llm, query, play_mode)
             if resolved_path:
                 try:
                     os.startfile(resolved_path)

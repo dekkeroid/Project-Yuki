@@ -13,6 +13,7 @@ let currentHeight = DEFAULT_WINDOW_HEIGHT;
 let mainWindow = null;
 let tray = null;
 let yukiVisible = true;       // tracks our logical show/hide state
+let alwaysOnTopEnabled = true;
 let fullscreenPollTimer = null;
 
 // ---------- Vite port detection ----------
@@ -202,6 +203,22 @@ function createWindow() {
     }
   });
 
+  ipcMain.on('set-always-on-top', (event, enabled) => {
+    alwaysOnTopEnabled = Boolean(enabled);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (alwaysOnTopEnabled) {
+        mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      } else {
+        mainWindow.setAlwaysOnTop(false);
+      }
+      mainWindow.webContents.send('always-on-top-changed', { enabled: alwaysOnTopEnabled });
+    }
+  });
+
+  ipcMain.handle('get-always-on-top-state', () => {
+    return alwaysOnTopEnabled;
+  });
+
   ipcMain.on('minimize-window', () => {
     if (mainWindow) mainWindow.minimize();
   });
@@ -299,6 +316,14 @@ function createWindow() {
 
   powerMonitor.on('on-ac', onAC);
   powerMonitor.on('on-battery', onBattery);
+
+  mainWindow.on('focus', () => {
+    if (!alwaysOnTopEnabled && mainWindow && !mainWindow.isDestroyed()) {
+      alwaysOnTopEnabled = true;
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      mainWindow.webContents.send('always-on-top-changed', { enabled: true });
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;

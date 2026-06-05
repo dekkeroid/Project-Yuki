@@ -242,7 +242,9 @@ def build_all_targets() -> List[str]:
                 level1_path = os.path.join(drive, level1_name)
                 if not os.path.isdir(level1_path):
                     continue
-                
+                if _contains_blacklisted_dir_component(level1_path):
+                    continue
+
                 level1_lower = level1_path.lower()
                 if any(level1_lower == e or level1_lower.startswith(e + os.sep) for e in excluded_lower):
                     continue
@@ -255,6 +257,8 @@ def build_all_targets() -> List[str]:
                         # If subfolders exist, register each Level 2 folder as an independent target
                         for level2_name in sorted(subdirs):
                             level2_path = os.path.join(level1_path, level2_name)
+                            if _contains_blacklisted_dir_component(level2_path):
+                                continue
                             level2_lower = level2_path.lower()
                             
                             if any(level2_lower == e or level2_lower.startswith(e + os.sep) for e in excluded_lower):
@@ -286,6 +290,47 @@ EXCLUDED_DIRS = [
     "D:\\DeliveryOptimization",     # Windows Delivery Optimization cache
     "D:\\$RECYCLE.BIN",             # Recycle Bin
 ]
+
+# Every single word here will only trigger a skip if the folder name is an EXACT match
+DIR_BLACKLIST_KEYWORDS = {
+    # System folder names
+    "windows", "appdata", "programdata", "$recycle.bin", "system volume information",
+    "deliveryoptimization", "msdownld.tmp",
+    
+    # Generic temporary / backup folder names
+    "stg-backup", "dist", "build", "assets", "temp", "tmp", "cache", "backup",
+    
+    # Dev environments and dependencies
+    "node_modules", ".venv", "venv", "env", "target", "bin", "obj", "out", "src",
+    "site-packages", "packages", "library", "projectsettings", "plugins", "libcache","corelibs","lib"
+}
+
+def _contains_blacklisted_dir_component(path: str) -> bool:
+    """
+    Returns True ONLY if a directory component exactly matches a blacklisted keyword,
+    or begins with standard hidden/system prefixes (. or _)
+    """
+    path_lower = path.lower()
+    try:
+        parts = Path(path_lower).parts
+    except Exception:
+        parts = re.split(r"[\\/]+", path_lower)
+
+    for part in parts:
+        # Clean off trailing slashes, spaces, or drive designators (e.g., 'd:')
+        part = part.strip("\\/ :")
+        if not part:
+            continue
+            
+        # 1. THE EXACT MATCH CHECK
+        if part in DIR_BLACKLIST_KEYWORDS:
+            return True
+            
+        # 2. WILDCARD SYSTEM CHECKS (Keep these to catch hidden paths like .git or __pycache__)
+        if part.startswith(".") or part.startswith("_"):
+            return True
+
+    return False
 
 def resolve_crawl_targets():
     """
@@ -427,6 +472,10 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
     CRAWL_ROOTS_CURRENT_PATH = root_dir
     if not os.path.exists(root_dir):
         return
+
+    if _contains_blacklisted_dir_component(root_dir):
+        log_message(f"[Crawler] Skipping blacklisted root path: {root_dir}")
+        return
         
     all_seen_file_paths = set()
     folders_scanned = 0
@@ -462,6 +511,9 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
             os.path.join(root, d).lower() == e or os.path.join(root, d).lower().startswith(e + os.sep)
             for e in excluded_lower
         )]
+
+        # Filter out blacklisted directory names before recursing
+        dirs[:] = [d for d in dirs if not _contains_blacklisted_dir_component(os.path.join(root, d))]
 
         # Check if current directory path is safe
         if not _is_safe_path(root, write_operation=False):

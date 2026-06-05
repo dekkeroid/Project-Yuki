@@ -53,5 +53,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('yuki-system-idle', handler);
     };
   },
+  setAlwaysOnTop: (enabled) => {
+    ipcRenderer.send('set-always-on-top', Boolean(enabled));
+  },
+  getAlwaysOnTopState: () => {
+    return ipcRenderer.invoke('get-always-on-top-state');
+  },
+  onAlwaysOnTopChanged: (callback) => {
+    const handler = (event, data) => callback(data.enabled);
+    ipcRenderer.on('always-on-top-changed', handler);
+    return () => {
+      ipcRenderer.removeListener('always-on-top-changed', handler);
+    };
+  },
   isElectron: true
 });

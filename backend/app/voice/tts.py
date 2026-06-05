@@ -5,6 +5,7 @@ from pathlib import Path
 import soundfile as sf
 from kokoro_onnx import Kokoro
 from app import config
+import time
 
 VOICE_DIR = Path(__file__).parent.resolve()
 MODEL_PATH = VOICE_DIR / "kokoro-v1.0.onnx"
@@ -173,6 +174,8 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
             speed_factor = float(rate)
 
     try:
+        t0 = time.time()
+        print(f"[TTS] generate_speech_bytes start voice={kokoro_voice} lang={lang_code} rate={speed_factor} text='{text[:80]}'")
         kokoro = get_kokoro()
         # Generate samples (numpy array) and sample rate
         samples, sample_rate = kokoro.create(text, voice=kokoro_voice, speed=speed_factor, lang=lang_code)
@@ -180,6 +183,8 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
         # Write to WAV bytes in-memory
         audio_buffer = io.BytesIO()
         sf.write(audio_buffer, samples, sample_rate, format='WAV')
+        t_elapsed = time.time() - t0
+        print(f"[TTS] generate_speech_bytes finished time_ms={int(t_elapsed*1000)} text_len={len(text)}")
         return audio_buffer.getvalue()
     except Exception as e:
         print(f"[TTS] Kokoro Generation Error: {e}")

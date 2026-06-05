@@ -2,6 +2,7 @@ import base64
 import time
 import urllib.parse
 import asyncio
+import re
 import sys
 import logging
 import requests as http_requests
@@ -58,6 +59,29 @@ global_chat_history: List[Dict[str, str]] = []
 tts_online_status = True
 
 active_websockets: List[WebSocket] = []
+
+
+def make_speech_friendly(text: str) -> str:
+    if not text:
+        return ""
+    normalized = text.strip()
+    lower = normalized.lower()
+
+    if lower.startswith("error:") or lower.startswith("failed:"):
+        if "cannot connect to host" in lower or "connect call failed" in lower:
+            return "Error: Unable to connect to the local backend server."
+        if "timeout" in lower:
+            return "Error: A timeout occurred while contacting the server."
+        if ":" in normalized:
+            return normalized.split(":", 1)[0].strip() + "."
+        return normalized
+
+    # Replace raw IP addresses with localhost for speech clarity.
+    normalized = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "localhost", normalized)
+    # Remove parenthesized and bracketed details that are usually technical noise.
+    normalized = re.sub(r"\s*[\(\[][^)\]]*[\)\]]", "", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
 
 async def broadcast_profile_update():
     payload = {
@@ -415,16 +439,27 @@ async def websocket_endpoint(websocket: WebSocket):
                         if not tts_online_status:
                             return None
                         try:
+                            speech_text = make_speech_friendly(sentence_text)
                             # Use a timeout of 10.0 seconds for local Kokoro call (longer for first call)
-                            audio_bytes = await asyncio.wait_for(generate_speech_bytes(sentence_text), timeout=10.0)
+                            t_start = time.time()
+                            print(f"[TTS][QUEUE] Queued TTS idx={idx} text='{sentence_text[:80]}' speech_text='{speech_text[:80]}'")
+                            # Mark which backend we expect to use at the time of synthesis
+                            expected_backend = 'kokoro' if tts_online_status else 'backend-disabled'
+                            audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=10.0)
+                            t_elapsed = time.time() - t_start
                             if audio_bytes:
                                 audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                                 audio_url = f"data:audio/wav;base64,{audio_base64}"
+                                print(f"[TTS][DONE] idx={idx} backend={expected_backend} time_ms={int(t_elapsed*1000)} text='{speech_text[:80]}'")
                                 return {
                                     "type": "audio_chunk",
                                     "audio_url": audio_url,
                                     "index": idx,
-                                    "text": sentence_text
+                                    "text": sentence_text,
+                                    "speech_text": speech_text,
+                                    "tts_backend": expected_backend,
+                                    "tts_time_ms": int(t_elapsed*1000),
+                                    "requested_text": sentence_text
                                 }
                         except Exception as e:
                             print(f"TTS Synthesis timeout/error for '{sentence_text}': {e}. Disabling backend TTS.")

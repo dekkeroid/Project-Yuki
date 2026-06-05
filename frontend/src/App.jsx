@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Footprints, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff } from 'lucide-react';
+import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Footprints, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff } from 'lucide-react';
 import AvatarViewer from './components/AvatarViewer';
 import ChatOverlay, { SLASH_COMMANDS } from './components/ChatOverlay';
 import ControlDashboard from './components/ControlDashboard';
@@ -115,6 +115,31 @@ const cleanTextForTTS = (text) => {
 
   // 5. Replace multiple spaces with a single space
   return clean.replace(/\s+/g, ' ').trim();
+};
+
+const getSpeechFriendlyText = (text) => {
+  if (!text) return '';
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (lower.startsWith('error:') || lower.startsWith('failed:')) {
+    if (lower.includes('cannot connect to host') || lower.includes('connect call failed')) {
+      return 'Error: Unable to connect to the local server.';
+    }
+    if (lower.includes('timeout')) {
+      return 'Error: A timeout occurred while contacting the server.';
+    }
+    if (trimmed.includes(':')) {
+      return trimmed.split(':', 1)[0].trim() + '.';
+    }
+    return trimmed;
+  }
+
+  let clean = trimmed.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, 'localhost');
+  clean = clean.replace(/\([^)]*\)/g, '');
+  clean = clean.replace(/\[[^\]]*\]/g, '');
+  clean = clean.replace(/\s+/g, ' ').trim();
+  return clean;
 };
 
 const App = () => {
@@ -294,6 +319,7 @@ const App = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isTopmostDisabled, setIsTopmostDisabled] = useState(false);
 
   // Desktop positioning and alignment
   useEffect(() => {
@@ -321,6 +347,43 @@ const App = () => {
       };
     }
   }, []);
+
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    let cleanup = null;
+
+    const syncTopmostState = async () => {
+      try {
+        if (window.electronAPI.getAlwaysOnTopState) {
+          const enabled = await window.electronAPI.getAlwaysOnTopState();
+          setIsTopmostDisabled(enabled === false);
+        }
+      } catch (err) {
+        console.warn('Could not fetch always-on-top state:', err);
+      }
+    };
+
+    syncTopmostState();
+
+    if (window.electronAPI.onAlwaysOnTopChanged) {
+      cleanup = window.electronAPI.onAlwaysOnTopChanged((enabled) => {
+        setIsTopmostDisabled(enabled === false);
+      });
+    }
+
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, []);
+
+  const handleToggleAlwaysOnTop = () => {
+    if (!window.electronAPI || !window.electronAPI.setAlwaysOnTop) return;
+
+    const enabled = isTopmostDisabled;
+    window.electronAPI.setAlwaysOnTop(enabled);
+    setIsTopmostDisabled(!enabled);
+  };
 
   const handleFileDropped = (name, contents) => {
     if (!contents || !contents.trim()) return;
@@ -818,8 +881,8 @@ const App = () => {
       nativeSpeechIntervalRef.current = null;
     }
 
-    // 2. Filter actions and emojis from text
-    const cleanText = cleanTextForTTS(text);
+    // 2. Filter actions, emojis and technical noise from text
+    const cleanText = cleanTextForTTS(getSpeechFriendlyText(text));
     if (!cleanText) {
       setAudioLevel(0);
       return;
@@ -964,6 +1027,10 @@ const App = () => {
         });
       } else if (msg.type === 'audio_chunk') {
         hasReceivedAudioRef.current = true;
+        // Log TTS metadata for diagnostics
+        try {
+          console.log(`[TTS] audio_chunk received idx=${msg.index} backend=${msg.tts_backend || 'unknown'} time_ms=${msg.tts_time_ms || 0} text="${(msg.text||'').slice(0,80)}"`);
+        } catch (e) { /* ignore logging errors */ }
         queueAudioChunk(msg.audio_url, msg.text, msg.index);
       } else if (msg.type === 'stream_done') {
         setIsThinking(false);
@@ -978,6 +1045,7 @@ const App = () => {
           return newMessages;
         });
         if (!hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice) {
+          console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0,80)}"`);
           speakTextNatively(currentResponseTextRef.current);
         }
       } else if (msg.type === 'tool_result') {
@@ -1714,6 +1782,13 @@ const App = () => {
             title="Settings"
           >
             <Settings className="w-5 h-5" />
+          </button>
+          <button
+            className={`desktop-menu-btn ${isTopmostDisabled ? 'active' : ''}`}
+            onClick={handleToggleAlwaysOnTop}
+            title={isTopmostDisabled ? 'Enable always-on-top' : 'Disable always-on-top'}
+          >
+            {isTopmostDisabled ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
           </button>
           <button
             className={`desktop-menu-btn ${isVoiceCommandMode ? 'active' : ''}`}
