@@ -199,11 +199,10 @@ PRIORITY_FOLDERS = []
 def build_all_targets() -> List[str]:
     """
     Builds the ordered list of scan root targets.
-    Every non-C drive is expanded into its direct subdirectories so that each
-    subdir is tracked individually in completed_roots — giving subfolder-level
-    resume granularity without any extra DB state.
-    Works dynamically: whatever drives exist on the machine are expanded.
-    Order: priority folders → each drive's subdirs (alphabetically) → C:\\ user folders.
+    Expands every non-C drive into its direct subdirectories AND their immediate
+    subfolders (Level 2 subdirectories) so that each subfolder is tracked individually
+    in completed_roots — giving highly granular resume checkpointing.
+    Order: priority folders → each drive's nested subdirs → C:\\ user folders.
     """
     targets: List[str] = []
     excluded_lower = [e.lower() for e in EXCLUDED_DIRS]
@@ -216,23 +215,44 @@ def build_all_targets() -> List[str]:
     for p in PRIORITY_FOLDERS:
         _add(p)
 
-    # 2. Expand every non-C drive into its direct subdirs for per-folder resume checkpointing
+    # 2. Expand every non-C drive into Level 1 and Level 2 subdirectories
     for drive in CRAWL_DRIVES:
         if not os.path.exists(drive):
             continue
         try:
-            for name in sorted(os.listdir(drive)):
-                subdir_path = os.path.join(drive, name)
-                if not os.path.isdir(subdir_path):
+            # Gather top-level directories (Level 1)
+            for level1_name in sorted(os.listdir(drive)):
+                level1_path = os.path.join(drive, level1_name)
+                if not os.path.isdir(level1_path):
                     continue
-                subdir_lower = subdir_path.lower()
-                # Skip excluded dirs
-                if any(subdir_lower == e or subdir_lower.startswith(e + os.sep)
-                       for e in excluded_lower):
+                
+                level1_lower = level1_path.lower()
+                if any(level1_lower == e or level1_lower.startswith(e + os.sep) for e in excluded_lower):
                     continue
-                _add(subdir_path)
+
+                # Go one step better: check for immediate subfolders (Level 2)
+                try:
+                    subdirs = [d for d in os.listdir(level1_path) if os.path.isdir(os.path.join(level1_path, d))]
+                    
+                    if subdirs:
+                        # If subfolders exist, register each Level 2 folder as an independent target
+                        for level2_name in sorted(subdirs):
+                            level2_path = os.path.join(level1_path, level2_name)
+                            level2_lower = level2_path.lower()
+                            
+                            if any(level2_lower == e or level2_lower.startswith(e + os.sep) for e in excluded_lower):
+                                continue
+                            _add(level2_path)
+                    else:
+                        # Fallback: if Level 1 folder has no subdirectories, add it as a target
+                        _add(level1_path)
+                except Exception:
+                    # If reading Level 2 fails (permissions, etc.), fall back to adding Level 1
+                    _add(level1_path)
+                    
         except Exception:
-            _add(drive)  # fallback: treat the drive as a single root if listing fails
+            # Critical fallback: treat the entire drive root as a fallback single target
+            _add(drive)
 
     # 3. C:\\ user folders
     for f in CRAWL_FOLDERS:
@@ -247,7 +267,7 @@ EXCLUDED_DIRS = [
     "D:\\WindowsApps",              # UWP app binaries (system-managed)
     "D:\\msdownld.tmp",             # IE/Edge temporary download folder
     "D:\\DeliveryOptimization",     # Windows Delivery Optimization cache
-    "D:\\MapData",                  # GPS/navigation map tile cache
+    "D:\\$RECYCLE.BIN",             # Recycle Bin
 ]
 
 def resolve_crawl_targets():
@@ -434,7 +454,7 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
         dirs[:] = [d for d in dirs if _is_safe_path(os.path.join(root, d), write_operation=False)]
         
         # Pacing sleep to prevent high CPU/disk usage (0.25 seconds for low intensity)
-        time.sleep(0.25)
+        time.sleep(0.2)
         
         try:
             stat_info = os.stat(root)
@@ -527,6 +547,34 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
     if orphans:
         log_message(f"[Crawler] Found {len(orphans)} deleted files under '{root_dir}'. Removing from database...")
         db.delete_files_by_paths(orphans)
+        
+    # --- Clean up Zombie Directories Cache ---
+    conn = db.get_connection()
+    cached_dirs = conn.execute("SELECT path FROM directories WHERE path LIKE ?", (search_prefix + "%",)).fetchall()
+    conn.close()
+    
+    dead_directories = []
+    for row in cached_dirs:
+        dir_path = row["path"]
+        # If the folder no longer physically exists on your hard drive, mark it for execution
+        if not os.path.exists(dir_path):
+            dead_directories.append(dir_path)
+            
+    if dead_directories:
+        log_message(f"[Crawler] Found {len(dead_directories)} deleted folders under '{root_dir}'. Purging directory cache...")
+        conn = db.get_connection()
+        try:
+            # Batch delete dead directory rows from cache
+            batch_size = 500
+            for i in range(0, len(dead_directories), batch_size):
+                batch = dead_directories[i:i+batch_size]
+                placeholders = ",".join("?" for _ in batch)
+                conn.execute(f"DELETE FROM directories WHERE path IN ({placeholders})", batch)
+            conn.commit()
+        except Exception as e:
+            log_message(f"[Crawler] Error purging dead directories cache: {e}")
+        finally:
+            conn.close()
         
     log_message(f"[Crawler] Root '{root_dir}' scan summary: Scanned={folders_scanned}, Skipped={folders_skipped}, TotalFiles={total_files_scanned}, New={new_files_indexed}, Mod={modified_files_updated}, Deleted={len(orphans)}")
 

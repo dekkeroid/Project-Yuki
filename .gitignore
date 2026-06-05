@@ -35,3 +35,5 @@ backend/profile.json
 # Ignore local local Kokoro AI model weights and audio binary matrices
 backend/app/voice/*.onnx
 backend/app/voice/*.bin
+
+*.bat
