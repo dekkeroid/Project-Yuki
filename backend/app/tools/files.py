@@ -300,80 +300,112 @@ def query_database_union(parsed: Dict, limit_raw: int = 100) -> List[Dict]:
 def _density_score(candidate: Dict, parsed: Dict) -> tuple:
     """
     Scores a candidate by counting keyword hits across its text fields.
-    Returns (score: float, title_file_hits: int) where title_file_hits counts
-    how many title words matched specifically in file_name or file_path.
-
-    title word in file_name      -> +15.0  (5x boost)
-    title word in parent_folder  -> +10.0  (5x boost)
-    title word in metadata only  ->  +5.0  (5x boost)
-    path  word match             -> +10.0  (5x boost)
-    genre word match             ->  +1.5  (unchanged)
-    episode match                -> +25.0 .. +50.0
+    Returns (score: float, title_file_hits: int, tie_breaker: int).
     """
-    file_name_lower   = (candidate.get("file_name",        "") or "").lower()
-    parent_lower      = (candidate.get("parent_folder",    "") or "").lower()
-    file_path_lower   = (candidate.get("file_path",        "") or "").lower()
+    file_name_lower   = (candidate.get("file_name", "") or "").lower()
+    # Strip extension for exact 1:1 name matching
+    file_name_no_ext, _ = os.path.splitext(file_name_lower)
+    
+    parent_lower      = (candidate.get("parent_folder", "") or "").lower()
+    file_path_lower   = (candidate.get("file_path", "") or "").lower()
+    # Extract the full directory path to catch grand-parent folders like "game folder"
+    dir_path_lower    = os.path.dirname(file_path_lower)
+    
     meta_combined     = " ".join([
-        candidate.get("title",            "") or "",
+        candidate.get("title", "") or "",
         candidate.get("alternate_titles", "") or "",
-        candidate.get("genre_or_tags",    "") or "",
+        candidate.get("genre_or_tags", "") or "",
     ]).lower()
 
     score = 0.0
-    title_file_hits = 0  # matches in file_name OR file_path (not just metadata)
-
-    for w in parsed.get("title", []):
-        in_name   = w in file_name_lower
-        in_folder = w in parent_lower
-        in_path   = w in file_path_lower
-        in_meta   = w in meta_combined
-
-        if in_name:
+    title_file_hits = 0
+    matched_title_words = 0
+    
+    title_words = parsed.get("title", [])
+    exact_phrase = " ".join(title_words).strip()
+    
+    # 1. THE EXACT MATCH NUKE
+    if exact_phrase:
+        if exact_phrase == file_name_no_ext:
+            score += 500.0  # Undisputed king (e.g., "tsukihime cake.exe" for search "tsukihime cake")
+            title_file_hits += len(title_words)
+        elif exact_phrase in file_name_lower:
+            score += 150.0  # Contains the phrase (e.g., "tsukihime cake bro.txt")
+            title_file_hits += len(title_words)
+        elif exact_phrase in parent_lower:
+            score += 100.0  # The immediate folder is exactly the phrase
+        elif exact_phrase in dir_path_lower:
+            score += 50.0   # The phrase is somewhere in the full path
+            
+    # 2. INDIVIDUAL WORD SCORING (Additive)
+    for w in title_words:
+        word_matched = False
+        w_pattern = rf'\b{re.escape(w)}\b'
+        
+        # File name match
+        if re.search(w_pattern, file_name_lower):
+            score += 40.0
+            word_matched = True
+        elif w in file_name_lower:
             score += 15.0
-            title_file_hits += 1
-        elif in_folder:
+            word_matched = True
+            
+        # Full Directory Path match (Catches "game" in "d:\game folder\tsukihime\")
+        if re.search(w_pattern, dir_path_lower):
+            score += 25.0
+            word_matched = True
+        elif w in dir_path_lower:
             score += 10.0
-            title_file_hits += 1
-        elif in_path:
-            score += 10.0
-            title_file_hits += 1
-        elif in_meta:
+            
+        # Metadata match
+        if w in meta_combined:
             score += 5.0
-            # meta-only hits do NOT count toward the quality gate
+            
+        if word_matched:
+            matched_title_words += 1
+            title_file_hits += 1
 
+    # 3. SYNERGY MULTIPLIER
+    # If the search has multiple words, heavily reward files where ALL words are found
+    if len(title_words) > 1 and matched_title_words > 0:
+        match_ratio = matched_title_words / len(title_words)
+        if match_ratio == 1.0:
+            score *= 2.5  # 2.5x boost if every query word exists across the file/path
+        else:
+            score *= (1.0 + match_ratio)
+
+    # 4. PATH AND GENRE HINTS
     for w in parsed.get("path", []):
-        if w in file_path_lower or w in parent_lower:
+        if w in file_path_lower:
             score += 10.0
 
-    # Genre words: high score if they hit file_name/folder (literal match like "Romantic Night.mp4"),
-    # low score if they only match the genre_or_tags metadata column.
     for w in parsed.get("genre", []):
-        in_name   = w in file_name_lower
-        in_folder = w in parent_lower
-        in_tags   = w in meta_combined
-        if in_name:
-            score += 12.0   # file literally named after the mood/genre
-        elif in_folder:
+        if re.search(rf'\b{re.escape(w)}\b', file_name_lower):
+            score += 12.0
+        elif w in dir_path_lower:
             score += 8.0
-        elif in_tags:
-            score += 3.0    # tagged with this mood/genre
+        elif w in meta_combined:
+            score += 3.0
 
+    # 5. EPISODE MATCHING
     episode = parsed.get("episode")
     if episode:
-        ep_str   = str(episode).lower()
+        ep_str = str(episode).lower()
         ep_num_m = re.search(r'(\d+)$', ep_str)
-        ep_num   = ep_num_m.group(1) if ep_num_m else None
+        ep_num = ep_num_m.group(1) if ep_num_m else None
         if ep_str in file_name_lower:
             score += 50.0
-        elif ep_num and re.search(
-            rf'(?:ep|episode|e|s\d{{2}}e|part|pt|vol|_|\s|-|\.)0*{ep_num}(?:\D|$)',
-            file_name_lower
-        ):
+        elif ep_num and re.search(rf'(?:ep|episode|e|s\d{{2}}e|part|pt|vol|_|\s|-|\.)0*{ep_num}(?:\D|$)', file_name_lower):
             score += 45.0
         elif ep_num and ep_num in re.findall(r'\d+', file_name_lower):
             score += 25.0
 
-    return score, title_file_hits
+    # TIE BREAKER: Negative path length favors shorter, more direct paths
+    tie_breaker = -len(file_path_lower)
+    
+    # print(f"[Density-Score] file='{file_name_lower}' score={score:.1f} matched_words={matched_title_words}/{len(title_words)}")
+
+    return score, title_file_hits, tie_breaker
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +510,7 @@ def resolve_best_file(query: str, start_directory: str = None) -> Optional[str]:
     parsed = parse_query_with_llm(clean_query)
 
     # Step 2 — DB union
-    raw_candidates = query_database_union(parsed, limit_raw=300)
+    raw_candidates = query_database_union(parsed, limit_raw=2000)
 
     if start_directory and start_directory.strip():
         base = os.path.abspath(start_directory.strip()).lower()
@@ -497,8 +529,11 @@ def resolve_best_file(query: str, start_directory: str = None) -> Optional[str]:
     for c in safe_existing:
         score, title_file_hits = _density_score(c, parsed)
         c["_density"]         = score
+        c["_tie_breaker"]     = tie_breaker
         c["_title_file_hits"] = title_file_hits
-    safe_existing.sort(key=lambda x: x["_density"], reverse=True)
+
+    # Sort by score descending, then by tie_breaker descending (shorter paths win)
+    safe_existing.sort(key=lambda x: (x["_density"], x["_tie_breaker"]), reverse=True)
     top50 = safe_existing[:50]
 
     print(f"[Search] Top-50 candidates (density score / file_hits):")
@@ -622,7 +657,7 @@ def resolve_best_file_no_llm(query: str, play_mode: bool = False, start_director
     parsed = parse_query_with_llm(clean_query)
 
     # Step 2 — DB union search
-    raw_candidates = query_database_union(parsed, limit_raw=300)
+    raw_candidates = query_database_union(parsed, limit_raw=2000)
 
     if start_directory and start_directory.strip():
         base = os.path.abspath(start_directory.strip()).lower()
@@ -639,9 +674,10 @@ def resolve_best_file_no_llm(query: str, play_mode: bool = False, start_director
 
     # Step 3 — Density ranking + extension boost for play mode
     for c in safe_existing:
-        score, title_file_hits = _density_score(c, parsed)
+        # Unpack the 3 values from our new density scorer
+        score, title_file_hits, tie_breaker = _density_score(c, parsed)
         
-        # Apply play mode prioritisation
+        # Apply your original play mode prioritization
         boost = 0.0
         if play_mode:
             file_path_lower = c["file_path"].lower()
@@ -651,12 +687,20 @@ def resolve_best_file_no_llm(query: str, play_mode: bool = False, start_director
             elif ext == '.mp3':
                 boost = 50.0
                 
+        # Add the boost to the new base score
         c["_density"]         = score + boost
         c["_raw_density"]     = score
+        c["_tie_breaker"]     = tie_breaker
         c["_title_file_hits"] = title_file_hits
 
-    # Sort by final score (density + boost) descending
-    safe_existing.sort(key=lambda x: x["_density"], reverse=True)
+    # Sort by final score (density + boost) descending, then by tie-breaker (shorter path)
+    safe_existing.sort(key=lambda x: (x["_density"], x["_tie_breaker"]), reverse=True)
+
+    top50 = safe_existing[:50]
+    
+    print(f"\n[Search-NoLLM] Top-50 candidates (Final Score [Raw] / file_hits):")
+    for c in top50:
+        print(f"  Score: {c['_density']:5.1f} [{c['_raw_density']:5.1f}] | Hits: {c['_title_file_hits']} | Path: {c['file_path']}")
     
     # Check quality gate on the raw density score to make sure title words match
     # (If the highest raw density has 0 title hits, we check quality)
@@ -669,7 +713,7 @@ def resolve_best_file_no_llm(query: str, play_mode: bool = False, start_director
             return None
 
     best = safe_existing[0]
-    print(f"[Search-NoLLM] Resolved to: '{best['file_path']}' with score={best['_density']} (raw={best['_raw_density']})")
+    print(f"[Search-NoLLM] !!!play modee='{play_mode}'!!! Resolved to: '{best['file_path']}' with score={best['_density']} (raw={best['_raw_density']})")
     return best["file_path"]
 
 
