@@ -322,6 +322,36 @@ const AvatarViewer = ({
         setHasVrm(true);
         setLoading(false);
 
+        // --- FIX A START: Force Advanced Mipmap Filtering ---
+        if (vrm.scene && isElectron) {
+          vrm.scene.traverse((child) => {
+            if (child.isMesh && child.material) {
+              const materials = Array.isArray(child.material) ? child.material : [child.material];
+
+              materials.forEach((mat) => {
+                // Target core rendering maps along with custom Pixiv MToon shader extensions
+                const textureKeys = [
+                  'map',
+                  'shadeTexture',
+                  'rimTexture',
+                  'outlineWidthMultiplyTexture',
+                  'shadeMultiplierTexture'
+                ];
+
+                textureKeys.forEach((key) => {
+                  if (mat[key] && mat[key].isTexture) {
+                    mat[key].generateMipmaps = true;               // Calculate downscaled matrices
+                    mat[key].minFilter = THREE.LinearMipmapLinearFilter; // Trilinear filtering smoothstep
+                    mat[key].magFilter = THREE.LinearFilter;
+                    mat[key].needsUpdate = true;                     // Push data block clear to GPU
+                  }
+                });
+              });
+            }
+          });
+        }
+        // --- FIX A END ---
+
         // Turn around the avatar to face the camera
         if (vrm.scene) {
           vrm.scene.rotation.y = Math.PI;
@@ -519,6 +549,7 @@ const AvatarViewer = ({
       antialias: true,
       alpha: true,
       premultipliedAlpha: false,
+      powerPreference: "high-performance",
     });
     // CRITICAL: set clear color to fully transparent so the desktop shows through
     renderer.setClearColor(0x000000, 0);
@@ -1070,14 +1101,14 @@ const AvatarViewer = ({
           const baseCameraZ = 2.2;
 
           let headY = 1.4; // default unscaled head height
-          if (vrmRef.current) {
-            const headNode = getBoneNode(vrmRef.current, 'head');
-            if (headNode) {
-              const tempV = new THREE.Vector3();
-              headNode.getWorldPosition(tempV);
-              headY = tempV.y / scaleRef.current; // get unscaled head height
-            }
-          }
+          // if (vrmRef.current) {
+          //   const headNode = getBoneNode(vrmRef.current, 'head');
+          //   if (headNode) {
+          //     const tempV = new THREE.Vector3();
+          //     headNode.getWorldPosition(tempV);
+          //     headY = tempV.y / scaleRef.current; // get unscaled head height
+          //   }
+          // }
 
           controls.target.set(0, (headY - baseTargetOffset) * scaleRef.current, 0);
           camera.position.set(0, (headY - baseCameraOffset) * scaleRef.current, baseCameraZ * scaleRef.current);
@@ -1667,7 +1698,7 @@ const AvatarViewer = ({
               let floatLegAngle = 0;
               const enableFloatingIdle = !disabledAnimationsRef.current.includes('floating') && (window.yukiDebugToggles ? window.yukiDebugToggles.floatingIdle !== false : true);
               if (enableFloatingIdle && isElectronMode && !isWalkingRef.current && dragStateProgress === 0 && !knockActive && !isSleeping) {
-                floatOffsetY = Math.sin(time * 1.2) * 0.018; // gently hover 1.8cm up/down (more subtle)
+                floatOffsetY = Math.sin(time * 1.1) * 0.01; // gently hover 1.8cm up/down (more subtle)
                 floatOffsetX = Math.cos(time * 0.6) * 0.01;  // gently drift 1cm side-to-side (more subtle)
                 floatLegAngle = Math.sin(time * 1.2 - 0.5) * 0.02; // leg drag lag (more subtle)
               }
