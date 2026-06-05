@@ -181,15 +181,32 @@ def log_message(message: str):
 # Categories mapped by file extensions
 EXT_CATEGORIES = {
     # Songs / Audio
-    '.mp3': 'song', '.wav': 'song', '.flac': 'song', '.m4a': 'song', '.ogg': 'song', '.wma': 'song',
+    '.mp3': 'song', '.wav': 'song', '.flac': 'song', '.m4a': 'song', 
+    '.ogg': 'song', '.wma': 'song', '.aac': 'song', '.opus': 'song',
+    
     # Movies / Video
-    '.mp4': 'movie', '.mkv': 'movie', '.avi': 'movie', '.mov': 'movie', '.wmv': 'movie', '.flv': 'movie', '.webm': 'movie',
+    '.mp4': 'movie', '.mkv': 'movie', '.avi': 'movie', '.mov': 'movie', 
+    '.wmv': 'movie', '.flv': 'movie', '.webm': 'movie', '.m4v': 'movie', 
+    '.ts': 'movie',
+    
     # Photos / Images
-    '.jpg': 'photo', '.jpeg': 'photo', '.png': 'photo', '.gif': 'photo', '.bmp': 'photo', '.heic': 'photo', '.tiff': 'photo',
+    '.jpg': 'photo', '.jpeg': 'photo', '.png': 'photo', '.gif': 'photo', 
+    '.bmp': 'photo', '.heic': 'photo', '.tiff': 'photo', '.webp': 'photo', 
+    '.svg': 'photo', '.avif': 'photo',
+    
     # Documents
-    '.pdf': 'document', '.txt': 'document', '.docx': 'document', '.xlsx': 'document', '.pptx': 'document', '.md': 'document', '.rtf': 'document',
-    # Game launching executable
-    '.exe': 'game'
+    '.pdf': 'document', '.txt': 'document', '.docx': 'document', 
+    '.xlsx': 'document', '.pptx': 'document', '.md': 'document', 
+    '.rtf': 'document', '.csv': 'document', '.epub': 'document', 
+    '.doc': 'document', '.xls': 'document', '.ppt': 'document',
+    
+    # Archives / Compressed
+    '.zip': 'archive', '.rar': 'archive', '.7z': 'archive',
+    
+    # Application Launchers, Installers, and Scripts
+    '.exe': 'program', '.lnk': 'program', '.bat': 'program', '.cmd': 'program',
+    '.ps1': 'program', '.msi': 'program', '.msix': 'program', '.appx': 'program',
+    '.jar': 'program', '.pyw': 'program', '.vbs': 'program'
 }
 
 CRAWL_DRIVES = []
@@ -325,21 +342,22 @@ def guess_category(file_path: str, ext: str, size: int = 0) -> str:
     Determines category based on extension, size, and directory context.
     """
     ext_lower = ext.lower()
-    category = EXT_CATEGORIES.get(ext_lower, "other")
+    # Since we whitelist, it will always find a match. Fallback to "other" is just defensive now.
+    category = EXT_CATEGORIES.get(ext_lower, "other") 
     
-    # Sound effect vs Song heuristic for OGG files (less than 1MB is likely an asset/effect)
+    # Sound effect vs Song heuristic for OGG files
     if ext_lower == '.ogg' and size < 1024 * 1024:
         category = "other"
         
-    # Game executables heuristics
-    if category == "game":
+    # Program/Executable heuristics
+    if category == "program":
         path_lower = file_path.lower()
         is_game_dir = _is_game_or_program_dir(file_path)
         if not is_game_dir:
-            # Exclude standard program file system paths or windows tools
             category = "other"
             
     return category
+
 
 def parse_filename_metadata(filename: str) -> Dict[str, Any]:
     """
@@ -487,6 +505,11 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
             _, ext = os.path.splitext(file)
             ext_lower = ext.lower()
             
+            # ─── PURE WHITELIST GUARD CLAUSE ───
+            # If the extension isn't explicitly tracked in your categories, skip it instantly!
+            if ext_lower not in EXT_CATEGORIES:
+                continue
+                
             if is_game_program_path and ext_lower != '.exe':
                 continue
                 
@@ -850,7 +873,7 @@ def run_metadata_enrichment_loop():
                         
                     # Let LLM dynamically refine category (e.g. video song from movie to song)
                     ai_cat = data.get("category")
-                    if ai_cat in ('song', 'movie', 'other'):
+                    if ai_cat in ('song', 'movie', 'program', 'game' , 'games', 'other'):
                         category = ai_cat
                         
                     log_message(f"[Tagger] Received reply from LM Studio for '{file_name}' at '{file_path}' - received from llm")
