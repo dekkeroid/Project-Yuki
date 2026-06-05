@@ -527,7 +527,7 @@ def resolve_best_file(query: str, start_directory: str = None) -> Optional[str]:
 
     # Step 3 — density ranking → top 50
     for c in safe_existing:
-        score, title_file_hits = _density_score(c, parsed)
+        score, title_file_hits, tie_breaker = _density_score(c, parsed)
         c["_density"]         = score
         c["_tie_breaker"]     = tie_breaker
         c["_title_file_hits"] = title_file_hits
