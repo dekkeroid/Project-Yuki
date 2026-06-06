@@ -367,7 +367,7 @@ def resolve_crawl_targets():
     # 2. Add C: drive user directories
     user_profile = os.environ.get("USERPROFILE")
     if user_profile:
-        folders = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos"]
+        folders = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos", "OneDrive"]
         for folder in folders:
             folder_path = os.path.join(user_profile, folder)
             if os.path.exists(folder_path):
