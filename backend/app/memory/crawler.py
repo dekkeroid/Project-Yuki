@@ -682,7 +682,8 @@ def run_crawl():
         first_cycle_done_init = (db.get_crawler_state("first_cycle_done") == "true")
         if first_cycle_done_init:
             log_message("[Crawler] First cycle already done. Starting watchdog service on startup.")
-            start_watchdog_services()
+            if not start_watchdog_services():
+                log_message("[Crawler] ERROR: Watchdog failed to start on startup!")
             
         # Check reset flag
         if FORCE_RESET_FLAG:
@@ -803,7 +804,8 @@ def run_crawl():
         db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
         
         # Start watchdog service
-        start_watchdog_services()
+        if not start_watchdog_services():
+            log_message("[Crawler] ERROR: Watchdog failed to start after cycle completion!")
         log_message("[Crawler] Crawler cycle finished. Going to sleep (Watchdog is active).")
         
     except CrawlAbortException:
@@ -1009,43 +1011,58 @@ class YukiFileSystemHandler(FileSystemEventHandler):
 
 WATCHDOG_OBSERVER = None
 
-def start_watchdog_services():
+def start_watchdog_services() -> bool:
     global WATCHDOG_OBSERVER
     if WATCHDOG_OBSERVER is not None:
-        return
+        if WATCHDOG_OBSERVER.is_alive():
+            log_message("[Watchdog] Already running.")
+            return True
+        else:
+            log_message("[Watchdog] Previous observer dead, restarting...")
+            WATCHDOG_OBSERVER = None
     log_message("[Watchdog] Initializing background event listener...")
-    resolve_crawl_targets()
-    observer = Observer()
-    handler = YukiFileSystemHandler()
-    
-    scan_queue = []
-    scan_queue.extend(PRIORITY_FOLDERS)
-    for d in CRAWL_DRIVES:
-        if d not in scan_queue:
-            scan_queue.append(d)
-    for hd in db.get_hot_directories():
-        if hd not in scan_queue and os.path.exists(hd):
-            scan_queue.append(hd)
-    for f in CRAWL_FOLDERS:
-        if f not in scan_queue:
-            scan_queue.append(f)
-            
-    monitored_paths = 0
-    for target in scan_queue:
-        if os.path.exists(target):
-            try:
-                observer.schedule(handler, target, recursive=True)
-                log_message(f"[Watchdog] Listening for file events on: '{target}'")
-                monitored_paths += 1
-            except Exception as e:
-                log_message(f"[Watchdog] Failed to schedule path {target}: {e}")
+    try:
+        resolve_crawl_targets()
+        observer = Observer()
+        handler = YukiFileSystemHandler()
+        
+        scan_queue = []
+        scan_queue.extend(PRIORITY_FOLDERS)
+        for d in CRAWL_DRIVES:
+            if d not in scan_queue:
+                scan_queue.append(d)
+        hot_dirs = db.get_hot_directories()
+        if hot_dirs:
+            log_message(f"[Watchdog] {len(hot_dirs)} hot directories tracked (covered by recursive root watches)")
+        for f in CRAWL_FOLDERS:
+            if f not in scan_queue:
+                scan_queue.append(f)
                 
-    if monitored_paths > 0:
-        observer.start()
-        WATCHDOG_OBSERVER = observer
-        log_message("[Watchdog] Observer started successfully.")
-    else:
-        log_message("[Watchdog] No valid paths found to observe.")
+        monitored_paths = 0
+        scheduled = []
+        for target in scan_queue:
+            if os.path.exists(target):
+                try:
+                    observer.schedule(handler, target, recursive=True)
+                    scheduled.append(target)
+                    monitored_paths += 1
+                except Exception as e:
+                    log_message(f"[Watchdog] Failed to schedule path {target}: {e}")
+        
+        if scheduled:
+            log_message(f"[Watchdog] Listening on {len(scheduled)} root paths: {', '.join(scheduled[:5])}{'...' if len(scheduled) > 5 else ''}")
+                    
+        if monitored_paths > 0:
+            observer.start()
+            WATCHDOG_OBSERVER = observer
+            log_message("[Watchdog] Observer started successfully.")
+            return True
+        else:
+            log_message("[Watchdog] No valid paths found to observe.")
+            return False
+    except Exception as e:
+        log_message(f"[Watchdog] Failed to start: {e}")
+        return False
 
 def get_crawler_status_metrics() -> Dict[str, Any]:
     global CRAWL_ROOTS_TOTAL, CRAWL_ROOTS_CURRENT, CRAWL_ROOTS_CURRENT_PATH

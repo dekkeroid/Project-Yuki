@@ -95,6 +95,14 @@ async def broadcast_profile_update():
             if ws in active_websockets:
                 active_websockets.remove(ws)
 
+async def broadcast_ws(payload: dict):
+    for ws in list(active_websockets):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            if ws in active_websockets:
+                active_websockets.remove(ws)
+
 @app.on_event("startup")
 async def check_tts_connectivity():
     global tts_online_status
@@ -137,6 +145,38 @@ async def check_tts_connectivity():
     
     print("Offline local neural TTS service is unavailable. Enabling offline browser fallback by default.")
     tts_online_status = False
+
+async def test_and_announce_voice_change(new_voice: str, new_rate: str = None):
+    global tts_online_status
+    try:
+        test_text = f"Voice changed to {new_voice.replace('_', ' ').replace('af ', '').replace('bf ', '').replace('jf ', '').title()}."
+        audio_bytes = await asyncio.wait_for(generate_speech_bytes(test_text, voice=new_voice, rate=new_rate), timeout=15.0)
+        if audio_bytes:
+            import base64
+            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+            audio_url = f"data:audio/wav;base64,{audio_base64}"
+            await broadcast_ws({
+                "type": "audio_chunk",
+                "audio_url": audio_url,
+                "index": -1,
+                "text": test_text,
+                "speech_text": test_text,
+                "tts_backend": "kokoro",
+                "tts_time_ms": 0,
+                "requested_text": test_text
+            })
+            # Send stream_done so frontend clears speech bubble
+            await broadcast_ws({
+                "type": "stream_done",
+                "response_time": 0
+            })
+            print(f"[TTS] Voice change confirmed and announced: {new_voice}")
+            tts_online_status = True
+        else:
+            tts_online_status = False
+    except Exception as e:
+        print(f"[TTS] Voice change test failed for {new_voice}: {e}")
+        tts_online_status = False
 
 @app.get("/health")
 def health_check():
@@ -229,7 +269,9 @@ async def update_settings(req: SettingsUpdateRequest):
         
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True
-        asyncio.create_task(check_tts_connectivity())
+        new_voice = req.tts_voice.strip() if req.tts_voice is not None else config.TTS_VOICE
+        new_rate = req.tts_rate.strip() if req.tts_rate is not None else config.TTS_RATE
+        asyncio.create_task(test_and_announce_voice_change(new_voice, new_rate))
     
     await broadcast_profile_update()
     
@@ -265,6 +307,27 @@ async def tts_endpoint(text: str, voice: Optional[str] = None):
         return Response(status_code=500, content="Failed to generate speech audio.")
         
     return Response(content=audio_bytes, media_type="audio/wav")
+
+@app.post("/api/tts/test")
+async def tts_test_endpoint(req: SettingsUpdateRequest):
+    """
+    Tests TTS with a specific voice/rate without saving settings.
+    """
+    global tts_online_status
+    if not tts_online_status:
+        return Response(status_code=500, content="TTS service is currently offline.")
+    
+    test_voice = req.tts_voice or config.TTS_VOICE
+    test_rate = req.tts_rate or config.TTS_RATE
+    test_text = f"Testing voice {test_voice.replace('_', ' ').replace('af ', '').replace('bf ', '').replace('jf ', '').title()}."
+    
+    try:
+        audio_bytes = await asyncio.wait_for(generate_speech_bytes(test_text, voice=test_voice, rate=test_rate), timeout=15.0)
+        if not audio_bytes:
+            return Response(status_code=500, content="Failed to generate speech audio.")
+        return Response(content=audio_bytes, media_type="audio/wav")
+    except Exception as e:
+        return Response(status_code=500, content=f"TTS test failed: {e}")
 
 @app.get("/api/profile")
 def get_profile():
