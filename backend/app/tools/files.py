@@ -717,10 +717,110 @@ def resolve_best_file_no_llm(query: str, play_mode: bool = False, start_director
     return best["file_path"]
 
 
+def _get_steam_appid(game_exe_path: str) -> str | None:
+    """
+    Try to find Steam AppID for a game executable.
+    Checks for steam_appid.txt in game dir and parent dirs, and .acf files in steamapps.
+    """
+    print(f"[STEAM DEBUG] Finding AppID for: {game_exe_path}")
+    try:
+        game_dir = os.path.dirname(game_exe_path)
+        # 1. Check for steam_appid.txt in game directory and parents (up to 3 levels)
+        for i in range(4):
+            appid_file = os.path.join(game_dir, "steam_appid.txt")
+            print(f"[STEAM DEBUG] Checking level {i}: {appid_file} (exists={os.path.isfile(appid_file)})")
+            if os.path.isfile(appid_file):
+                with open(appid_file, "r", encoding="utf-8", errors="ignore") as f:
+                    appid = f.read().strip()
+                    print(f"[STEAM DEBUG] Found steam_appid.txt: '{appid}'")
+                    if appid.isdigit():
+                        print(f"[STEAM DEBUG] Valid AppID from steam_appid.txt: {appid}")
+                        return appid
+            parent = os.path.dirname(game_dir)
+            if parent == game_dir:
+                break
+            game_dir = parent
+        
+        # 2. Check .acf files in steamapps folders
+        # Game exe is typically at: <steam_root>/steamapps/common/<game>/<game>.exe
+        # Need to go up 3 levels: exe_dir -> game_dir -> common_dir -> steamapps_dir
+        game_dir = os.path.dirname(os.path.dirname(os.path.dirname(game_exe_path)))  # Go up to steamapps
+        steamapps_dir = game_dir
+        print(f"[STEAM DEBUG] Checking steamapps dir: {steamapps_dir} (exists={os.path.isdir(steamapps_dir)})")
+        if os.path.isdir(steamapps_dir):
+            # Get game folder name and exe name for matching
+            exe_name = os.path.basename(game_exe_path).lower()
+            game_folder_name = os.path.basename(os.path.dirname(game_exe_path)).lower()
+            print(f"[STEAM DEBUG] Matching against exe_name='{exe_name}', game_folder='{game_folder_name}'")
+            
+            for acf_file in os.listdir(steamapps_dir):
+                if acf_file.endswith(".acf"):
+                    acf_path = os.path.join(steamapps_dir, acf_file)
+                    try:
+                        with open(acf_path, "r", encoding="utf-8", errors="ignore") as f:
+                            content = f.read()
+                            # Parse ACF for appid and installdir (most reliable match)
+                            import re
+                            appid_match = re.search(r'"appid"\s+"(\d+)"', content)
+                            installdir_match = re.search(r'"installdir"\s+"([^"]+)"', content)
+                            
+                            if appid_match:
+                                appid = appid_match.group(1)
+                                
+                                # Check installdir against game folder name (most reliable)
+                                if installdir_match:
+                                    acf_installdir = installdir_match.group(1)
+                                    print(f"[STEAM DEBUG] ACF {acf_file}: appid={appid}, installdir='{acf_installdir}', our_folder='{game_folder_name}'")
+                                    if acf_installdir.lower() == game_folder_name.lower():
+                                        print(f"[STEAM DEBUG] Exact installdir match! AppID: {appid}")
+                                        return appid
+                                    # Also check if game folder name contains installdir or vice versa
+                                    if game_folder_name.lower() in acf_installdir.lower() or acf_installdir.lower() in game_folder_name.lower():
+                                        print(f"[STEAM DEBUG] Partial installdir match! AppID: {appid}")
+                                        return appid
+                                    # installdir exists but doesn't match - SKIP this ACF, don't fall through
+                                    print(f"[STEAM DEBUG] installdir mismatch, skipping ACF {acf_file}")
+                                    continue
+                                
+                                # NO installdir field in ACF - check name as fallback
+                                name_match = re.search(r'"name"\s+"([^"]+)"', content)
+                                if name_match:
+                                    acf_name = name_match.group(1)
+                                    print(f"[STEAM DEBUG] ACF {acf_file} (no installdir): name='{acf_name}'")
+                                    if game_folder_name.lower() in acf_name.lower() or acf_name.lower() in game_folder_name.lower():
+                                        print(f"[STEAM DEBUG] Name match! AppID: {appid}")
+                                        return appid
+                                
+                                # Last resort: appmanifest_<appid>.acf filename (only if no installdir)
+                                if acf_file.startswith("appmanifest_") and acf_file.endswith(".acf"):
+                                    print(f"[STEAM DEBUG] ACF filename match (no installdir fallback): {acf_file} -> AppID: {appid}")
+                                    return appid
+                    except Exception as e:
+                        print(f"[STEAM DEBUG] Error reading ACF {acf_file}: {e}")
+                        continue
+    except Exception as e:
+        print(f"[STEAM DEBUG] Exception in _get_steam_appid: {e}")
+    print(f"[STEAM DEBUG] No AppID found for {game_exe_path}")
+    return None
+
+
+def _launch_steam_game(appid: str) -> bool:
+    """Launch a Steam game via steam:// protocol."""
+    print(f"[STEAM DEBUG] Launching via steam://run/{appid}")
+    try:
+        os.startfile(f"steam://run/{appid}")
+        print(f"[STEAM DEBUG] steam://run/{appid} launched successfully")
+        return True
+    except Exception as e:
+        print(f"[STEAM DEBUG] Failed to launch steam://run/{appid}: {e}")
+        return False
+
+
 def open_or_play_file(file_path_or_query: str) -> str:
     """
     Opens or plays a file. Accepts a direct path or a natural-language query.
     Uses the multi-stage LLM pipeline to resolve the best match.
+    Handles Steam games via steam:// protocol.
     """
     if not file_path_or_query or not file_path_or_query.strip():
         return "Error: File path or query must not be empty."
@@ -731,6 +831,17 @@ def open_or_play_file(file_path_or_query: str) -> str:
     if os.path.exists(clean) and os.path.isfile(clean):
         if not _is_safe_path(clean):
             return f"Access Denied: Opening sensitive system file '{clean}' is blocked."
+        
+        # Check if it's a Steam game and launch via Steam protocol
+        print(f"[STEAM DEBUG] open_or_play_file: clean='{clean}', is_exe={clean.lower().endswith('.exe')}")
+        if clean.lower().endswith(".exe"):
+            appid = _get_steam_appid(clean)
+            if appid:
+                if _launch_steam_game(appid):
+                    return f"Success: Launched Steam game (AppID: {appid}) via Steam."
+            else:
+                print(f"[STEAM DEBUG] No Steam AppID found, falling back to os.startfile")
+        
         try:
             os.startfile(clean)
             return f"Success: Opened '{clean}'."
@@ -738,8 +849,18 @@ def open_or_play_file(file_path_or_query: str) -> str:
             return f"Failed to open '{clean}': {e}"
 
     resolved = resolve_best_file(clean)
+    print(f"[STEAM DEBUG] Resolved file: {resolved}")
     if not resolved:
         return f"Error: Could not find any files matching '{file_path_or_query}' on your system."
+
+    # Check if resolved file is a Steam game
+    if resolved.lower().endswith(".exe"):
+        appid = _get_steam_appid(resolved)
+        if appid:
+            if _launch_steam_game(appid):
+                return f"Success: Found best matching file and launched Steam game (AppID: {appid}) via Steam."
+            else:
+                print(f"[STEAM DEBUG] No Steam AppID found for resolved file, falling back to os.startfile")
 
     try:
         os.startfile(resolved)

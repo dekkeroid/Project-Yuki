@@ -466,18 +466,9 @@ class AgentExecutor:
             cmd_prefix = '/play ' if play_mode else '/open '
             query = user_message[len(cmd_prefix):].strip()
             
-            print(f"[Executor] Running non-LLM resolver in thread for query='{query}' play_mode={play_mode}")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(resolve_best_file_no_llm, query, play_mode)
-                resolved_path = future.result()
-            if resolved_path:
-                try:
-                    os.startfile(resolved_path)
-                    response_text = f"Success: Found best matching file and opened '{resolved_path}'."
-                except Exception as e:
-                    response_text = f"Failed to open '{resolved_path}': {str(e)}"
-            else:
-                response_text = f"Error: Could not find any files matching '{query}' on your system."
+            print(f"[Executor] Running non-LLM resolver for query='{query}' play_mode={play_mode}")
+            # Use open_or_play_file which handles Steam games properly
+            response_text = open_or_play_file(query)
             
             final_history = list(chat_history) + [
                 {"role": "user", "content": user_message},
@@ -762,18 +753,9 @@ class AgentExecutor:
             cmd_prefix = '/play ' if play_mode else '/open '
             query = user_message[len(cmd_prefix):].strip()
             
-            yield "tool_start", "resolve_best_file_no_llm", "local"
-            # Offload the potentially blocking DB/search work to a thread to avoid
-            # blocking the event loop and delaying websocket token sends.
-            resolved_path = await asyncio.to_thread(resolve_best_file_no_llm, query, play_mode)
-            if resolved_path:
-                try:
-                    os.startfile(resolved_path)
-                    response_text = f"Success: Found best matching file and opened '{resolved_path}'."
-                except Exception as e:
-                    response_text = f"Failed to open '{resolved_path}': {str(e)}"
-            else:
-                response_text = f"Error: Could not find any files matching '{query}' on your system."
+            print(f"[Executor Stream] Running non-LLM resolver for query='{query}' play_mode={play_mode}")
+            # Use open_or_play_file which handles Steam games properly
+            response_text = await asyncio.to_thread(open_or_play_file, query)
             
             yield "tool_result", response_text, "local"
             yield "token", response_text, "local"

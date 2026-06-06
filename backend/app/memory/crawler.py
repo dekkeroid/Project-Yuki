@@ -226,7 +226,7 @@ EXT_CATEGORIES = {
     # Application Launchers, Installers, and Scripts
     '.exe': 'program', '.lnk': 'program', '.bat': 'program', '.cmd': 'program',
     '.ps1': 'program', '.msi': 'program', '.msix': 'program', '.appx': 'program',
-    '.jar': 'program', '.pyw': 'program', '.vbs': 'program'
+    '.jar': 'program', '.pyw': 'program', '.vbs': 'program', '.url': 'program'
 }
 
 CRAWL_DRIVES = []
@@ -323,7 +323,7 @@ DIR_BLACKLIST_KEYWORDS = {
     # Dev environments and dependencies
     "node_modules", ".venv", "venv", "extensions" , "env", "target", "bin", "obj", "out", 
     "src","site-packages", "packages", "library", "projectsettings", "plugins", 
-    "libcache","librarycache","appcache","httpcache","corelibs","lib",
+    "libcache","librarycache","appcache","httpcache","corelibs","lib", "mdf", "resource"
 }
 
 def _contains_blacklisted_dir_component(path: str) -> bool:
