@@ -63,6 +63,83 @@ class AgentExecutor:
             })
         }
 
+    async def ensure_model_loaded(self, model_name: str) -> bool:
+        """
+        Dynamically discovers the correct model key inside LM Studio using regex 
+        and auto-loads the model if it's currently offline.
+        """
+        import aiohttp
+        import re
+
+        lm_studio_identifier = None
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                # 1. Ask LM Studio for a complete list of downloaded/available models
+                async with session.get(f"{config.LMSTUDIO_URL}/api/v1/models", timeout=5) as resp:
+                    if resp.status != 200:
+                        print(f"[LM Studio] Failed to fetch models list. Status: {resp.status}")
+                        return False
+                    
+                    payload_data = await resp.json()
+                    # Support both standard OpenAI arrays and LM Studio nested object schemas
+                    available_models = payload_data.get("data", [])
+                    if isinstance(payload_data, dict) and not available_models:
+                        # Fallback if the data list is nested differently
+                        available_models = payload_data.get("models", [])
+
+                # 2. Use Regex matching to isolate the right structural key
+                search_keyword = "ministral" if "ministra" in model_name.lower() else "nemotron"
+                pattern = re.compile(rf".*{search_keyword}.*", re.IGNORECASE)
+
+                print(f"[LM Studio] Scanning {len(available_models)} downloaded models for keyword '{search_keyword}'...")
+
+                for model_entry in available_models:
+                    # Check every possible identifier field LM Studio uses across versions
+                    model_key = model_entry.get("id") or model_entry.get("key") or model_entry.get("path") or ""
+                    print(f"[LM Studio]   -> Found Library Entry: '{model_key}'")
+
+                    if model_key and pattern.match(model_key):
+                        lm_studio_identifier = model_key
+                        
+                        # Fix: Check the active instance parameters securely
+                        # If the model state is explicitly loaded, or has active tracking instances, bypass loading
+                        is_loaded = (
+                            model_entry.get("loaded", False) == True or 
+                            model_entry.get("state") == "loaded" or 
+                            bool(model_entry.get("loaded_instances"))
+                        )
+                        
+                        if is_loaded:
+                            print(f"[LM Studio] Discovery Success: '{model_name}' maps to active instance '{lm_studio_identifier}'. Skipping load sequence.")
+                            return True
+                        break
+
+                # Fallback safety buffer if your library scan yields nothing
+                if not lm_studio_identifier:
+                    print(f"[LM Studio] Discoverer Warning: Regex could not find an internal match for keyword '{search_keyword}'.")
+                    lm_studio_identifier = model_name
+
+                # 3. Fire the auto-load request with the dynamic matching key
+                print(f"[LM Studio] Model '{model_name}' is offline. Automatically loading: '{lm_studio_identifier}'...")
+                payload = {
+                    "model": lm_studio_identifier
+                }
+
+                print(f"llm mode==== '{lm_studio_identifier}'")
+                
+                async with session.post(f"{config.LMSTUDIO_URL}/api/v1/models/load", json=payload, timeout=45) as load_resp:
+                    if load_resp.status == 200:
+                        print(f"[LM Studio] Successfully auto-loaded model: '{lm_studio_identifier}'")
+                        return True
+                    else:
+                        error_body = await load_resp.text()
+                        print(f"[LM Studio] Failed to auto-load. HTTP {load_resp.status}: {error_body}")
+                        return False
+        except Exception as e:
+            print(f"[LM Studio] Error checking/loading model framework: {e}")
+            return False
+
     async def get_friendly_error_explanation(self, exception_msg: str) -> str:
         """
         Asks the LLM to explain a Python exception in a friendly way for the user.
@@ -542,6 +619,13 @@ class AgentExecutor:
         Routes the streaming request based on task complexity.
         Respects config.LLM_MODE override (0=auto, 1=force simple, 2=force complex, 3=smart single).
         """
+
+        # ---- NEW: RUNTIME AUTO-LOAD SAFETY NET ----
+        # Before sending the request, double check that our targeted model is running
+        target_model = config.LLM_MODEL_COMPLEX if (config.LLM_MODE == 2 or (config.LLM_MODE == 0 and self._classify_task(user_message) == "complex")) else config.LLM_MODEL
+        await self.ensure_model_loaded(target_model)
+        # -------------------------------------------
+        
         if config.LLM_MODE == 1:
             backend = "simple"
         elif config.LLM_MODE == 2:

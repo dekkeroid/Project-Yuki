@@ -118,6 +118,12 @@ async def check_tts_connectivity():
     except Exception as e:
         print(f"Failed to start crawler services: {e}")
 
+    # ---- NEW: DYNAMIC LM STUDIO AUTO-LOAD CALL ----
+    print(f"Verifying brain state. Checking if model '{config.LLM_MODEL}' is loaded in LM Studio...")
+    # Trigger our newly created helper function asynchronously
+    await agent_executor.ensure_model_loaded(config.LLM_MODEL)
+    # -----------------------------------------------
+
     print("Initializing local Kokoro-ONNX neural TTS engine...")
     try:
         # Verify local model initialization and speech generation (large timeout for initial load/download)

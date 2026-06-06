@@ -717,6 +717,7 @@ const App = () => {
   const recognitionRef = useRef(null);
   const socketRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+  const ttsStreamActiveRef = useRef(false);
 
   // Talk Mode — persists between render cycles via ref so callbacks don't get stale closures
   const isTalkModeRef = useRef(false);
@@ -852,7 +853,9 @@ const App = () => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
       isYukiSpeakingRef.current = false;
-      setCurrentSpeechText('');
+      if (!ttsStreamActiveRef.current) {
+        setCurrentSpeechText('');
+      }
       setAudioLevel(0);
 
       // If Talk Mode or Voice Command Mode is active and we're not already mid-listen, restart listening
@@ -998,8 +1001,8 @@ const App = () => {
       } else if (msg.type === 'status') {
         if (msg.status === 'thinking') {
           setIsThinking(true);
-          // Don't clear speech text if audio is currently playing
-          if (!isPlayingRef.current && !isYukiSpeakingRef.current) {
+          // Don't clear speech text if audio is currently playing or if the TTS stream is still active
+          if (!isPlayingRef.current && !isYukiSpeakingRef.current && !ttsStreamActiveRef.current) {
             setCurrentSpeechText('');
           }
           currentResponseTextRef.current = '';
@@ -1029,6 +1032,7 @@ const App = () => {
           return newMessages;
         });
       } else if (msg.type === 'audio_chunk') {
+        ttsStreamActiveRef.current = true;
         hasReceivedAudioRef.current = true;
         // Log TTS metadata for diagnostics
         try {
@@ -1037,6 +1041,10 @@ const App = () => {
         queueAudioChunk(msg.audio_url, msg.text, msg.index);
       } else if (msg.type === 'stream_done') {
         setIsThinking(false);
+        ttsStreamActiveRef.current = false;
+        if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
+          setCurrentSpeechText('');
+        }
         setMessages((prev) => {
           const newMessages = [...prev];
           if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
@@ -1080,6 +1088,7 @@ const App = () => {
           content: msg.result
         }]);
       } else if (msg.type === 'speech') {
+        ttsStreamActiveRef.current = true;
         setIsThinking(false);
         hasReceivedAudioRef.current = true;
         setMessages((prev) => [...prev, {
@@ -1420,6 +1429,7 @@ const App = () => {
     // Clear queue and stop playback
     audioQueueRef.current = [];
     isPlayingRef.current = false;
+    ttsStreamActiveRef.current = false;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = "";
@@ -1673,6 +1683,7 @@ const App = () => {
     // Clear queue and stop playback
     audioQueueRef.current = [];
     isPlayingRef.current = false;
+    ttsStreamActiveRef.current = false;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = "";

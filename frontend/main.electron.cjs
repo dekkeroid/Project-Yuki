@@ -2,6 +2,24 @@ const { app, BrowserWindow, ipcMain, screen, globalShortcut, powerMonitor, Menu,
 const path = require('path');
 const http = require('http');
 
+// ---------- Chromium Performance & VRAM Optimization Switches ----------
+// 1. Hard limit the Javascript V8 engine heap size to 1.2GB to stop virtual memory bloating
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=1200');
+
+// 2. Disable asset/network caching so temporary audio/data clips don't save to disk
+app.commandLine.appendSwitch('disable-http-cache');
+
+// 3. Set a strict ceiling on generic disk caching (104857600 Bytes = 100 MB)
+app.commandLine.appendSwitch('disk-cache-size', '104857600');
+
+// 4. Force the 3D renderer to compile shaders directly in VRAM instead of creating massive cache files on C:
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+
+// 5. Prevent over-allocation of background rendering threads
+app.commandLine.appendSwitch('disable-background-networking');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+// ------------------------------------------------------------------------
+
 // Window Dimensions Configuration
 const DEFAULT_WINDOW_WIDTH = 320;
 const DEFAULT_WINDOW_HEIGHT = 605;
@@ -405,5 +423,16 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  // Clean session cleanup routine added here to clear active cache blocks on close
+  const { session } = require('electron');
+  try {
+    session.defaultSession.clearCache();
+    session.defaultSession.clearStorageData({
+      storages: ['appcache', 'filesystem', 'shadercache']
+    });
+  } catch (e) {
+    console.warn("Failed cache wipe during window close sequence:", e);
+  }
+
   if (process.platform !== 'darwin') app.quit();
 });
