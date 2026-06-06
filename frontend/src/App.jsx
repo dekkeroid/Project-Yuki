@@ -136,8 +136,6 @@ const getSpeechFriendlyText = (text) => {
   }
 
   let clean = trimmed.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, 'localhost');
-  clean = clean.replace(/\([^)]*\)/g, '');
-  clean = clean.replace(/\[[^\]]*\]/g, '');
   clean = clean.replace(/\s+/g, ' ').trim();
   return clean;
 };
@@ -718,6 +716,7 @@ const App = () => {
   const socketRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const ttsStreamActiveRef = useRef(false);
+  const streamDoneReceivedRef = useRef(false);
 
   // Talk Mode — persists between render cycles via ref so callbacks don't get stale closures
   const isTalkModeRef = useRef(false);
@@ -853,10 +852,13 @@ const App = () => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
       isYukiSpeakingRef.current = false;
-      if (!ttsStreamActiveRef.current) {
-        setCurrentSpeechText('');
-      }
       setAudioLevel(0);
+
+      // Clear speech bubble if stream_done was received and no more audio queued
+      if (streamDoneReceivedRef.current) {
+        setCurrentSpeechText('');
+        streamDoneReceivedRef.current = false;
+      }
 
       // If Talk Mode or Voice Command Mode is active and we're not already mid-listen, restart listening
       if ((isTalkModeRef.current || isVoiceCommandModeRef.current) && !pendingListenRef.current) {
@@ -1042,6 +1044,8 @@ const App = () => {
       } else if (msg.type === 'stream_done') {
         setIsThinking(false);
         ttsStreamActiveRef.current = false;
+        streamDoneReceivedRef.current = true;
+        // Clear speech if all audio has finished playing
         if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
           setCurrentSpeechText('');
         }
