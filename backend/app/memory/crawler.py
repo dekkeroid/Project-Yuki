@@ -178,6 +178,16 @@ def log_message(message: str):
     except Exception:
         pass
 
+def log_memory_stats(context: str = ""):
+    """Log current process memory usage (RSS, VMS, pagefile)"""
+    try:
+        import psutil, os
+        p = psutil.Process(os.getpid())
+        mi = p.memory_info()
+        log_message(f"[MEM] {context} RSS={mi.rss/1024/1024:.1f}MB VMS={mi.vms/1024/1024:.1f}MB Pagefile={getattr(mi, 'pagefile', 0)/1024/1024:.1f}MB Private={getattr(mi, 'private', 0)/1024/1024:.1f}MB")
+    except Exception as e:
+        log_message(f"[MEM] Failed to log memory: {e}")
+
 # Categories mapped by file extensions
 EXT_CATEGORIES = {
     # Songs / Audio
@@ -468,13 +478,16 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
     Crawls a single target root directory, indexes files, and runs target-specific orphan cleanup.
     """
     global CURRENT_CRAWL_PATH, CRAWL_ROOTS_CURRENT_PATH
+    log_memory_stats(f"scan_target_root START {root_dir}")
     
     CRAWL_ROOTS_CURRENT_PATH = root_dir
     if not os.path.exists(root_dir):
+        log_memory_stats(f"scan_target_root SKIP (not exists) {root_dir}")
         return
 
     if _contains_blacklisted_dir_component(root_dir):
         log_message(f"[Crawler] Skipping blacklisted root path: {root_dir}")
+        log_memory_stats(f"scan_target_root SKIP (blacklisted) {root_dir}")
         return
         
     all_seen_file_paths = set()
@@ -652,6 +665,7 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
             conn.close()
         
     log_message(f"[Crawler] Root '{root_dir}' scan summary: Scanned={folders_scanned}, Skipped={folders_skipped}, TotalFiles={total_files_scanned}, New={new_files_indexed}, Mod={modified_files_updated}, Deleted={len(orphans)}")
+    log_memory_stats(f"scan_target_root END {root_dir}")
 
 def sleep_pacing_between_cycles(seconds: float):
     global CURRENT_CRAWL_PATH
@@ -676,6 +690,7 @@ def run_crawl():
     global CURRENT_CRAWL_PATH, INITIAL_CRAWL_COMPLETED, CRAWL_ROOTS_TOTAL, CRAWL_ROOTS_CURRENT, CRAWL_ROOTS_CURRENT_PATH, FORCE_RESET_FLAG, STARTUP_PRIORITY_SCAN_COMPLETED
     
     try:
+        log_memory_stats("run_crawl START")
         resolve_crawl_targets()
         
         # Start watchdog immediately if we've already done a full first cycle
@@ -730,6 +745,7 @@ def run_crawl():
         # Build targets — D:\\ is expanded into direct subdirs for subfolder-level resume
         all_targets = build_all_targets()
         CRAWL_ROOTS_TOTAL = len(all_targets)
+        log_memory_stats(f"build_all_targets DONE roots={CRAWL_ROOTS_TOTAL}")
         
         # If the first cycle is already complete, run the startup priority folders sweep and exit
         if first_cycle_done:
@@ -807,6 +823,7 @@ def run_crawl():
         if not start_watchdog_services():
             log_message("[Crawler] ERROR: Watchdog failed to start after cycle completion!")
         log_message("[Crawler] Crawler cycle finished. Going to sleep (Watchdog is active).")
+        log_memory_stats("run_crawl CYCLE_COMPLETE")
         
     except CrawlAbortException:
         log_message("[Crawler] Crawl walk aborted for reset.")
@@ -824,6 +841,7 @@ def run_crawl():
         
     CURRENT_CRAWL_PATH = "Idle"
     CRAWL_ROOTS_CURRENT_PATH = "Idle"
+    log_memory_stats("run_crawl END")
 
 # --- Asynchronous AI Metadata Enrichment Worker ---
 
@@ -1013,9 +1031,11 @@ WATCHDOG_OBSERVER = None
 
 def start_watchdog_services() -> bool:
     global WATCHDOG_OBSERVER
+    log_memory_stats("start_watchdog_services START")
     if WATCHDOG_OBSERVER is not None:
         if WATCHDOG_OBSERVER.is_alive():
             log_message("[Watchdog] Already running.")
+            log_memory_stats("start_watchdog_services ALREADY_RUNNING")
             return True
         else:
             log_message("[Watchdog] Previous observer dead, restarting...")
@@ -1023,6 +1043,7 @@ def start_watchdog_services() -> bool:
     log_message("[Watchdog] Initializing background event listener...")
     try:
         resolve_crawl_targets()
+        log_memory_stats("start_watchdog_services AFTER_RESOLVE_TARGETS")
         observer = Observer()
         handler = YukiFileSystemHandler()
         
@@ -1056,12 +1077,15 @@ def start_watchdog_services() -> bool:
             observer.start()
             WATCHDOG_OBSERVER = observer
             log_message("[Watchdog] Observer started successfully.")
+            log_memory_stats("start_watchdog_services OBSERVER_STARTED")
             return True
         else:
             log_message("[Watchdog] No valid paths found to observe.")
+            log_memory_stats("start_watchdog_services NO_PATHS")
             return False
     except Exception as e:
         log_message(f"[Watchdog] Failed to start: {e}")
+        log_memory_stats("start_watchdog_services EXCEPTION")
         return False
 
 def get_crawler_status_metrics() -> Dict[str, Any]:

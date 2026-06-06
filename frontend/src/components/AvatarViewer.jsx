@@ -9,6 +9,7 @@ import { ANIMATIONS } from '../animationsRegistry';
 // Default Window Dimensions Configuration (Electron Mode)
 const ELECTRON_WINDOW_WIDTH = 320;
 const ELECTRON_WINDOW_HEIGHT = 605;
+const YUKI_SCALE_REDUCER = 0.9; // Reduce avatar size relative to window
 const windowWidthExtra = 0;
 
 const AvatarViewer = ({
@@ -41,7 +42,7 @@ const AvatarViewer = ({
   const isIgnoringMouseRef = useRef(false);
   const cursorOffsetRef = useRef({ x: 0, y: 0 });
   const lastMouseMoveTimeRef = useRef(0);
-  const canvasRectRef = useRef({ left: 0, top: 0, width: 320, height: 605 });
+  const canvasRectRef = useRef({ left: 0, top: 0, width: ELECTRON_WINDOW_WIDTH, height: ELECTRON_WINDOW_HEIGHT });
   const lastRaycastTimeRef = useRef(0);
   const lastRaycastHitRef = useRef(false);
 
@@ -56,7 +57,7 @@ const AvatarViewer = ({
   const expressionRef = useRef(expression);
   const cpuLoadRef = useRef(cpuLoad);
   const systemIdleTimeRef = useRef(systemIdleTime);
-  const scaleRef = useRef(isElectron ? (window.innerHeight / 605) : scale);
+  const scaleRef = useRef(isElectron ? (window.innerHeight / ELECTRON_WINDOW_HEIGHT) : scale);
   const skinToneRef = useRef(skinToneColor);
   const disabledAnimationsRef = useRef(disabledAnimations || []);
 
@@ -815,8 +816,8 @@ const AvatarViewer = ({
 
       // Fast path: 2D bounding box check to bypass raycasting during rapid pointer moves.
       // Yuki is centered horizontally and spans from ~100px to the bottom of the window viewport.
-      const currentWidth = isElectron ? window.innerWidth : (containerRef.current ? containerRef.current.clientWidth : 320);
-      const currentHeight = isElectron ? window.innerHeight : (containerRef.current ? containerRef.current.clientHeight : 605);
+      const currentWidth = isElectron ? window.innerWidth : (containerRef.current ? containerRef.current.clientWidth : ELECTRON_WINDOW_WIDTH);
+      const currentHeight = isElectron ? window.innerHeight : (containerRef.current ? containerRef.current.clientHeight : ELECTRON_WINDOW_HEIGHT);
       const bodyWidthLimit = 90 * scaleRef.current;
       const isOverYuki2D = (
         clientX >= (currentWidth / 2 - bodyWidthLimit) &&
@@ -1028,7 +1029,7 @@ const AvatarViewer = ({
     const handleResize = () => {
       if (!containerRef.current) return;
       if (isElectron) {
-        scaleRef.current = window.innerHeight / 605;
+        scaleRef.current = window.innerHeight / ELECTRON_WINDOW_HEIGHT;
       }
       const width = isElectron ? window.innerWidth : containerRef.current.clientWidth;
       const height = isElectron ? window.innerHeight : containerRef.current.clientHeight;
@@ -1098,9 +1099,12 @@ const AvatarViewer = ({
         if (isElectron && controls && camera) {
           const baseTargetOffset = 0.55;
           const baseCameraOffset = 0.45;
-          const baseCameraZ = 2.2;
+          // const baseCameraZ = 2.2;
 
-          let headY = 1.4; // default unscaled head height
+          // Divide distance by reducer. If reducer is 0.8, camera moves back, making her smaller.
+          const baseCameraZ = 2.2 / YUKI_SCALE_REDUCER;
+
+          let headY = 1.45; // default unscaled head height
           // if (vrmRef.current) {
           //   const headNode = getBoneNode(vrmRef.current, 'head');
           //   if (headNode) {
