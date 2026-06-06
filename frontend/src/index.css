@@ -1135,7 +1135,7 @@ body.desktop-overlay .interactive-element {
 /* Floating Vertical Menu near Yuki's body */
 .desktop-overlay-menu {
   position: absolute;
-  right: 16px;
+  right: 40px;
   top: 50%;
   transform: translateY(-50%) translateX(20px);
   display: flex;

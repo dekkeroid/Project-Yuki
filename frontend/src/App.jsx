@@ -6,6 +6,8 @@ import ControlDashboard from './components/ControlDashboard';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 
+let stream_end_exception = false;
+
 const SKIN_PRESETS = [
   { name: 'Original', value: '#ffffff' },
   { name: 'Fair', value: '#FFE5E5' },
@@ -599,6 +601,7 @@ const App = () => {
         nativeSpeechIntervalRef.current = null;
       }
       setCurrentSpeechText('');
+      console.log("Clear queue and stop playback");
       setAudioLevel(0);
       setAvatarExpression('neutral');
     }
@@ -856,10 +859,14 @@ const App = () => {
 
       // Clear speech bubble if stream_done was received and no more audio queued
       if (streamDoneReceivedRef.current) {
-        setCurrentSpeechText('');
+        if (stream_end_exception) {
+          setTimeout(() => { setCurrentSpeechText(''); }, 4000);
+          stream_end_exception = false;
+        }
+        else setCurrentSpeechText('');
+        console.log("playNextAudio");
         streamDoneReceivedRef.current = false;
       }
-
       // If Talk Mode or Voice Command Mode is active and we're not already mid-listen, restart listening
       if ((isTalkModeRef.current || isVoiceCommandModeRef.current) && !pendingListenRef.current) {
         pendingListenRef.current = true;
@@ -928,6 +935,7 @@ const App = () => {
     utterance.onend = () => {
       setAudioLevel(0);
       setCurrentSpeechText('');
+      console.log("utterance");
       if (nativeSpeechIntervalRef.current) {
         clearInterval(nativeSpeechIntervalRef.current);
         nativeSpeechIntervalRef.current = null;
@@ -949,6 +957,7 @@ const App = () => {
       console.warn("Native TTS utterance error:", e);
       setAudioLevel(0);
       setCurrentSpeechText('');
+      console.log("utterance error");
       if (nativeSpeechIntervalRef.current) {
         clearInterval(nativeSpeechIntervalRef.current);
         nativeSpeechIntervalRef.current = null;
@@ -1006,6 +1015,7 @@ const App = () => {
           // Don't clear speech text if audio is currently playing or if the TTS stream is still active
           if (!isPlayingRef.current && !isYukiSpeakingRef.current && !ttsStreamActiveRef.current) {
             setCurrentSpeechText('');
+            console.log("status");
           }
           currentResponseTextRef.current = '';
           hasReceivedAudioRef.current = false;
@@ -1046,9 +1056,13 @@ const App = () => {
         ttsStreamActiveRef.current = false;
         streamDoneReceivedRef.current = true;
         // Clear speech if all audio has finished playing
+        console.log('stream done1');
         if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
           setCurrentSpeechText('');
+          console.log('stream done2');
         }
+        else stream_end_exception = true;
+
         setMessages((prev) => {
           const newMessages = [...prev];
           if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
@@ -1232,6 +1246,7 @@ const App = () => {
         nativeSpeechIntervalRef.current = null;
       }
       setCurrentSpeechText('');
+      console.log("immediately to handle interruption and clear old bubbles");
 
       sendMessageText(transcript);
     };
@@ -1346,6 +1361,7 @@ const App = () => {
         nativeSpeechIntervalRef.current = null;
       }
       setCurrentSpeechText('');
+      console.log("ENTER Talk Mode");
 
       isTalkModeRef.current = true;
       setIsTalkMode(true);
@@ -1408,6 +1424,7 @@ const App = () => {
         nativeSpeechIntervalRef.current = null;
       }
       setCurrentSpeechText('');
+      console.log("ENTER Voice Command Mode");
 
       isVoiceCommandModeRef.current = true;
       setIsVoiceCommandMode(true);
@@ -1444,6 +1461,7 @@ const App = () => {
       nativeSpeechIntervalRef.current = null;
     }
     setCurrentSpeechText('');
+    console.log("Clear queue and stop playback");
 
     // Command feature: execute command if matching slash command, else treat as normal prompt
     if (text.startsWith('/')) {
@@ -1699,6 +1717,7 @@ const App = () => {
     }
     setMessages([]);
     setCurrentSpeechText('');
+    console.log(" Clear queue and stop playback");
     setAvatarExpression('neutral');
     setAudioLevel(0);
     setIsThinking(false);

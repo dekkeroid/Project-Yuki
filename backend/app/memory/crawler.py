@@ -36,6 +36,13 @@ class CrawlAbortException(Exception):
 FORCE_RESET_FLAG = False
 STARTUP_PRIORITY_SCAN_COMPLETED = False
 
+def _set_force_reset_flag(value: bool, context: str = ""):
+    """Set FORCE_RESET_FLAG with logging."""
+    global FORCE_RESET_FLAG
+    if FORCE_RESET_FLAG != value:
+        log_message(f"[DEBUG] FORCE_RESET_FLAG: {FORCE_RESET_FLAG} -> {value} ({context})")
+        FORCE_RESET_FLAG = value
+
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [
         ("cbSize", ctypes.c_uint),
@@ -99,16 +106,19 @@ def check_idle_and_game_pacing():
     """
     global CURRENT_CRAWL_PATH
     if FORCE_RESET_FLAG:
+        log_message("[DEBUG] check_idle_and_game_pacing: FORCE_RESET_FLAG=True, raising CrawlAbortException")
         raise CrawlAbortException()
         
     was_suspended = False
     while True:
         if FORCE_RESET_FLAG:
+            log_message("[DEBUG] check_idle_and_game_pacing (loop): FORCE_RESET_FLAG=True, raising CrawlAbortException")
             raise CrawlAbortException()
             
         # 1. Check if user paused crawler manually
         while FILE_CRAWLER_PAUSED:
             if FORCE_RESET_FLAG:
+                log_message("[DEBUG] check_idle_and_game_pacing (paused): FORCE_RESET_FLAG=True, raising CrawlAbortException")
                 raise CrawlAbortException()
             CURRENT_CRAWL_PATH = "Paused by user"
             time.sleep(1)
@@ -308,11 +318,12 @@ DIR_BLACKLIST_KEYWORDS = {
     "deliveryoptimization", "msdownld.tmp",
     
     # Generic temporary / backup folder names
-    "stg-backup", "dist", "build", "assets", "temp", "tmp", "cache", "backup",
+    "stg-backup", "dist", "build", "assets","res", "fonts","koe","temp", "tmp", "cache", "backup",
     
     # Dev environments and dependencies
-    "node_modules", ".venv", "venv", "env", "target", "bin", "obj", "out", "src",
-    "site-packages", "packages", "library", "projectsettings", "plugins", "libcache","corelibs","lib"
+    "node_modules", ".venv", "venv", "extensions" , "env", "target", "bin", "obj", "out", 
+    "src","site-packages", "packages", "library", "projectsettings", "plugins", 
+    "libcache","librarycache","appcache","httpcache","corelibs","lib",
 }
 
 def _contains_blacklisted_dir_component(path: str) -> bool:
@@ -503,167 +514,162 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
         
     excluded_lower = [e.lower() for e in EXCLUDED_DIRS]
 
-    for root, dirs, files in os.walk(root_dir):
-        check_idle_and_game_pacing()
-        CURRENT_CRAWL_PATH = root
+    # Single connection for entire scan
+    conn = db.get_connection()
+    try:
+        for root, dirs, files in os.walk(root_dir):
+            check_idle_and_game_pacing()
+            CURRENT_CRAWL_PATH = root
 
-        # Skip if the current root itself is an excluded directory
-        root_lower = root.lower()
-        if any(root_lower == e or root_lower.startswith(e + os.sep) for e in excluded_lower):
-            dirs[:] = []  # Don't recurse into it
-            continue
-
-        # Exclude priority folders from other roots to avoid duplicate scans
-        dirs[:] = [d for d in dirs if not any(
-            root_dir.lower() != pf.lower() and os.path.join(root, d).lower() == pf.lower()
-            for pf in PRIORITY_FOLDERS
-        )]
-
-        # Filter out excluded directories before recursing
-        dirs[:] = [d for d in dirs if not any(
-            os.path.join(root, d).lower() == e or os.path.join(root, d).lower().startswith(e + os.sep)
-            for e in excluded_lower
-        )]
-
-        # Filter out blacklisted directory names before recursing
-        dirs[:] = [d for d in dirs if not _contains_blacklisted_dir_component(os.path.join(root, d))]
-
-        # Check if current directory path is safe
-        if not _is_safe_path(root, write_operation=False):
-            dirs[:] = []  # Don't recurse
-            continue
-
-        # Filter directories in-place to avoid recursing into sensitive system folders
-        dirs[:] = [d for d in dirs if _is_safe_path(os.path.join(root, d), write_operation=False)]
-        
-        # Pacing sleep to prevent high CPU/disk usage (0.25 seconds for low intensity)
-        time.sleep(0.2)
-        
-        try:
-            stat_info = os.stat(root)
-            current_mtime = stat_info.st_mtime
-        except Exception:
-            continue
-            
-        # Check cached folder details
-        cached_dir = db.get_directory(root)
-        
-        # Smart Folder Skip Optimization:
-        if cached_dir and cached_dir["last_modified"] == current_mtime:
-            folders_skipped += 1
-            conn = db.get_connection()
-            cached_files = conn.execute("SELECT file_path FROM files WHERE file_path LIKE ?", (os.path.join(root, "%"),)).fetchall()
-            conn.close()
-            for cf in cached_files:
-                if os.path.dirname(cf["file_path"]) == root:
-                    all_seen_file_paths.add(cf["file_path"])
-                    total_files_scanned += 1
-            continue
-            
-        folders_scanned += 1
-        folder_changes_detected = False
-        is_game_program_path = _is_game_or_program_dir(root)
-        
-        for file in files:
-            full_path = os.path.join(root, file)
-            CURRENT_CRAWL_PATH = full_path
-            _, ext = os.path.splitext(file)
-            ext_lower = ext.lower()
-            
-            # ─── PURE WHITELIST GUARD CLAUSE ───
-            # If the extension isn't explicitly tracked in your categories, skip it instantly!
-            if ext_lower not in EXT_CATEGORIES:
+            # Skip if the current root itself is an excluded directory
+            root_lower = root.lower()
+            if any(root_lower == e or root_lower.startswith(e + os.sep) for e in excluded_lower):
+                dirs[:] = []  # Don't recurse into it
                 continue
-                
-            if is_game_program_path and ext_lower != '.exe':
+
+            # Exclude priority folders from other roots to avoid duplicate scans
+            dirs[:] = [d for d in dirs if not any(
+                root_dir.lower() != pf.lower() and os.path.join(root, d).lower() == pf.lower()
+                for pf in PRIORITY_FOLDERS
+            )]
+
+            # Filter out excluded directories before recursing
+            dirs[:] = [d for d in dirs if not any(
+                os.path.join(root, d).lower() == e or os.path.join(root, d).lower().startswith(e + os.sep)
+                for e in excluded_lower
+            )]
+
+            # Filter out blacklisted directory names before recursing
+            dirs[:] = [d for d in dirs if not _contains_blacklisted_dir_component(os.path.join(root, d))]
+
+            # Check if current directory path is safe
+            if not _is_safe_path(root, write_operation=False):
+                dirs[:] = []  # Don't recurse
                 continue
-                
-            all_seen_file_paths.add(full_path)
-            total_files_scanned += 1
+
+            # Filter directories in-place to avoid recursing into sensitive system folders
+            dirs[:] = [d for d in dirs if _is_safe_path(os.path.join(root, d), write_operation=False)]
+            
+            # Pacing sleep to prevent high CPU/disk usage (0.25 seconds for low intensity)
+            time.sleep(0.2)
             
             try:
-                file_stat = os.stat(full_path)
-                f_size = file_stat.st_size
-                f_mtime = file_stat.st_mtime
+                stat_info = os.stat(root)
+                current_mtime = stat_info.st_mtime
             except Exception:
                 continue
                 
-            category = guess_category(full_path, ext, f_size)
-            parent_folder = db.get_clean_parent_folder(full_path)
+            # Check cached folder details
+            cached_dir = db.get_directory(root)
             
-            existing_file = db.get_file_by_path(full_path)
-            if not existing_file:
-                folder_changes_detected = True
-                new_files_indexed += 1
-                log_message(f"[Crawler] [NEW] Indexed file: '{full_path}' (guessed category: {category}) - successfully added to db")
-                file_id = db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category)
+            # Smart Folder Skip Optimization: use shared connection
+            if cached_dir and cached_dir["last_modified"] == current_mtime:
+                folders_skipped += 1
+                # Use streaming query instead of fetchall()
+                like_pattern = os.path.join(root, "%")
+                for row in conn.execute("SELECT file_path FROM files WHERE file_path LIKE ?", (like_pattern,)):
+                    cf_path = row["file_path"]
+                    if os.path.dirname(cf_path) == root:
+                        all_seen_file_paths.add(cf_path)
+                        total_files_scanned += 1
+                continue
                 
-                if file_id != -1 and category in ('movie', 'song'):
-                    meta = parse_filename_metadata(file)
-                    db.upsert_metadata(
-                        file_id, 
-                        meta["title"], 
-                        meta["artist_or_creator"], 
-                        meta["genre_or_tags"], 
-                        meta["release_year"], 
-                        meta["alternate_titles"],
-                        enriched=0
-                    )
-            elif existing_file["size"] != f_size or existing_file["last_modified"] != f_mtime:
-                folder_changes_detected = True
-                modified_files_updated += 1
-                log_message(f"[Crawler] [MODIFIED] Updated stats for file: '{full_path}' - successfully added to db")
-                db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category)
-        
-        change_increment = 1 if folder_changes_detected else 0
-        db.upsert_directory(root, current_mtime, change_increment)
-        
-    # --- Localized Orphan File Cleanup ---
-    conn = db.get_connection()
-    search_prefix = root_dir if root_dir.endswith(os.sep) else root_dir + os.sep
-    cached_files = conn.execute("SELECT file_path FROM files WHERE file_path LIKE ?", (search_prefix + "%",)).fetchall()
-    conn.close()
-    
-    orphans = []
-    for row in cached_files:
-        path = row["file_path"]
-        if should_handle_orphan(path, root_dir, all_targets):
-            if path not in all_seen_file_paths:
-                if not os.path.exists(path):
-                    orphans.append(path)
-                    
-    if orphans:
-        log_message(f"[Crawler] Found {len(orphans)} deleted files under '{root_dir}'. Removing from database...")
-        db.delete_files_by_paths(orphans)
-        
-    # --- Clean up Zombie Directories Cache ---
-    conn = db.get_connection()
-    cached_dirs = conn.execute("SELECT path FROM directories WHERE path LIKE ?", (search_prefix + "%",)).fetchall()
-    conn.close()
-    
-    dead_directories = []
-    for row in cached_dirs:
-        dir_path = row["path"]
-        # If the folder no longer physically exists on your hard drive, mark it for execution
-        if not os.path.exists(dir_path):
-            dead_directories.append(dir_path)
+            folders_scanned += 1
+            folder_changes_detected = False
+            is_game_program_path = _is_game_or_program_dir(root)
             
-    if dead_directories:
-        log_message(f"[Crawler] Found {len(dead_directories)} deleted folders under '{root_dir}'. Purging directory cache...")
-        conn = db.get_connection()
-        try:
-            # Batch delete dead directory rows from cache
-            batch_size = 500
-            for i in range(0, len(dead_directories), batch_size):
-                batch = dead_directories[i:i+batch_size]
-                placeholders = ",".join("?" for _ in batch)
-                conn.execute(f"DELETE FROM directories WHERE path IN ({placeholders})", batch)
-            conn.commit()
-        except Exception as e:
-            log_message(f"[Crawler] Error purging dead directories cache: {e}")
-        finally:
-            conn.close()
+            for file in files:
+                full_path = os.path.join(root, file)
+                CURRENT_CRAWL_PATH = full_path
+                _, ext = os.path.splitext(file)
+                ext_lower = ext.lower()
+                
+                # ─── PURE WHITELIST GUARD CLAUSE ───
+                # If the extension isn't explicitly tracked in your categories, skip it instantly!
+                if ext_lower not in EXT_CATEGORIES:
+                    continue
+                    
+                if is_game_program_path and ext_lower != '.exe':
+                    continue
+                    
+                all_seen_file_paths.add(full_path)
+                total_files_scanned += 1
+                
+                try:
+                    file_stat = os.stat(full_path)
+                    f_size = file_stat.st_size
+                    f_mtime = file_stat.st_mtime
+                except Exception:
+                    continue
+                    
+                category = guess_category(full_path, ext, f_size)
+                parent_folder = db.get_clean_parent_folder(full_path)
+                
+                existing_file = db.get_file_by_path(full_path)
+                if not existing_file:
+                    folder_changes_detected = True
+                    new_files_indexed += 1
+                    log_message(f"[Crawler] [NEW] Indexed file: '{full_path}' (guessed category: {category}) - successfully added to db")
+                    file_id = db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category)
+                    
+                    if file_id != -1 and category in ('movie', 'song'):
+                        meta = parse_filename_metadata(file)
+                        db.upsert_metadata(
+                            file_id, 
+                            meta["title"], 
+                            meta["artist_or_creator"], 
+                            meta["genre_or_tags"], 
+                            meta["release_year"], 
+                            meta["alternate_titles"],
+                            enriched=0
+                        )
+                elif existing_file["size"] != f_size or existing_file["last_modified"] != f_mtime:
+                    folder_changes_detected = True
+                    modified_files_updated += 1
+                    log_message(f"[Crawler] [MODIFIED] Updated stats for file: '{full_path}' - successfully added to db")
+                    db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category)
+            
+            change_increment = 1 if folder_changes_detected else 0
+            db.upsert_directory(root, current_mtime, change_increment)
+            
+        # --- Localized Orphan File Cleanup (streaming) ---
+        search_prefix = root_dir if root_dir.endswith(os.sep) else root_dir + os.sep
+        like_pattern = search_prefix + "%"
         
+        orphans = []
+        for row in conn.execute("SELECT file_path FROM files WHERE file_path LIKE ?", (like_pattern,)):
+            path = row["file_path"]
+            if should_handle_orphan(path, root_dir, all_targets):
+                if path not in all_seen_file_paths:
+                    if not os.path.exists(path):
+                        orphans.append(path)
+                        
+        if orphans:
+            log_message(f"[Crawler] Found {len(orphans)} deleted files under '{root_dir}'. Removing from database...")
+            db.delete_files_by_paths(orphans)
+            
+        # --- Clean up Zombie Directories Cache (streaming) ---
+        dead_directories = []
+        for row in conn.execute("SELECT path FROM directories WHERE path LIKE ?", (like_pattern,)):
+            dir_path = row["path"]
+            if not os.path.exists(dir_path):
+                dead_directories.append(dir_path)
+                
+        if dead_directories:
+            log_message(f"[Crawler] Found {len(dead_directories)} deleted folders under '{root_dir}'. Purging directory cache...")
+            try:
+                batch_size = 500
+                for i in range(0, len(dead_directories), batch_size):
+                    batch = dead_directories[i:i+batch_size]
+                    placeholders = ",".join("?" for _ in batch)
+                    conn.execute(f"DELETE FROM directories WHERE path IN ({placeholders})", batch)
+                conn.commit()
+            except Exception as e:
+                log_message(f"[Crawler] Error purging dead directories cache: {e}")
+                
+    finally:
+        conn.close()
+            
     log_message(f"[Crawler] Root '{root_dir}' scan summary: Scanned={folders_scanned}, Skipped={folders_skipped}, TotalFiles={total_files_scanned}, New={new_files_indexed}, Mod={modified_files_updated}, Deleted={len(orphans)}")
     log_memory_stats(f"scan_target_root END {root_dir}")
 
@@ -672,6 +678,7 @@ def sleep_pacing_between_cycles(seconds: float):
     start_t = time.time()
     while time.time() - start_t < seconds:
         if FORCE_RESET_FLAG:
+            log_message("[DEBUG] sleep_pacing_between_cycles: FORCE_RESET_FLAG=True, raising CrawlAbortException")
             raise CrawlAbortException()
         if FILE_CRAWLER_PAUSED:
             CURRENT_CRAWL_PATH = "Paused by user"
@@ -695,14 +702,17 @@ def run_crawl():
         
         # Start watchdog immediately if we've already done a full first cycle
         first_cycle_done_init = (db.get_crawler_state("first_cycle_done") == "true")
+        log_message(f"[DEBUG] Startup check: first_cycle_done from DB = {first_cycle_done_init}")
         if first_cycle_done_init:
             log_message("[Crawler] First cycle already done. Starting watchdog service on startup.")
             if not start_watchdog_services():
                 log_message("[Crawler] ERROR: Watchdog failed to start on startup!")
+        else:
+            log_message("[DEBUG] first_cycle_done is false, watchdog NOT started on startup")
             
         # Check reset flag
         if FORCE_RESET_FLAG:
-            FORCE_RESET_FLAG = False
+            _set_force_reset_flag(False, "run_crawl entry - FORCE_RESET_FLAG was True")
             log_message("[Crawler] Reset flag detected. Resetting crawler state and clearing directories cache to run a fresh scan...")
             db.set_crawler_state("first_time_priority_done", "false")
             db.set_crawler_state("first_cycle_done", "false")
@@ -719,9 +729,11 @@ def run_crawl():
         conn = db.get_connection()
         files_count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         conn.close()
+        log_message(f"[DEBUG] Startup files_count = {files_count}")
         
         if files_count == 0:
             log_message("[Crawler] Database files table is empty! Resetting crawler state and clearing directories cache to trigger a full re-index.")
+            log_message("[DEBUG] Empty files table -> setting first_time_priority_done=false, first_cycle_done=false")
             db.set_crawler_state("first_time_priority_done", "false")
             db.set_crawler_state("first_cycle_done", "false")
             db.set_crawler_state("completed_roots_in_cycle", "[]")
@@ -738,23 +750,41 @@ def run_crawl():
         # Fetch state from DB
         first_time_priority_done = (db.get_crawler_state("first_time_priority_done") == "true")
         first_cycle_done = (db.get_crawler_state("first_cycle_done") == "true")
+        log_message(f"[DEBUG] State from DB: first_time_priority_done={first_time_priority_done}, first_cycle_done={first_cycle_done}")
         
         completed_roots_str = db.get_crawler_state("completed_roots_in_cycle")
         completed_roots = json.loads(completed_roots_str) if completed_roots_str else []
+        log_message(f"[DEBUG] completed_roots_in_cycle count: {len(completed_roots)}")
         
         # Build targets — D:\\ is expanded into direct subdirs for subfolder-level resume
         all_targets = build_all_targets()
         CRAWL_ROOTS_TOTAL = len(all_targets)
         log_memory_stats(f"build_all_targets DONE roots={CRAWL_ROOTS_TOTAL}")
         
-        # If the first cycle is already complete, run the startup priority folders sweep and exit
+        # If the first cycle is already complete, run a full new cycle (but keep first_cycle_done/first_time_priority_done as true)
         if first_cycle_done:
-            log_message("[Crawler] First cycle is complete. Running startup sweep of priority folders...")
-            for idx, root_dir in enumerate(PRIORITY_FOLDERS):
+            log_message("[Crawler] First cycle is complete. Starting a new full crawl cycle...")
+            completed_roots = []
+            db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
+            
+            for idx, root_dir in enumerate(all_targets):
+                log_message(f"[DEBUG] New cycle: scanning root {idx+1}/{len(all_targets)}: {root_dir}")
                 check_idle_and_game_pacing()
                 CRAWL_ROOTS_CURRENT = idx + 1
                 scan_target_root(root_dir, all_targets)
-            log_message("[Crawler] Startup sweep of priority folders completed. Crawler going to sleep (Watchdog is active).")
+                completed_roots.append(root_dir)
+                db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
+            
+            # Cycle complete - clear completed roots but keep first_cycle_done/first_time_priority_done true
+            completed_roots = []
+            db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
+            
+            # Start watchdog service
+            if not start_watchdog_services():
+                log_message("[Crawler] ERROR: Watchdog failed to start after cycle completion!")
+            log_message("[Crawler] Crawler cycle finished. Going to sleep (Watchdog is active).")
+            log_memory_stats("run_crawl CYCLE_COMPLETE")
+            
             CURRENT_CRAWL_PATH = "Idle"
             CRAWL_ROOTS_CURRENT_PATH = "Idle"
             return
@@ -766,10 +796,12 @@ def run_crawl():
             
             # Scan priority folders
             for idx, root_dir in enumerate(priority_targets):
+                log_message(f"[DEBUG] Priority scan: scanning root {idx+1}/{len(priority_targets)}: {root_dir}")
                 check_idle_and_game_pacing()
                 CRAWL_ROOTS_CURRENT = idx + 1
                 
                 if root_dir in completed_roots:
+                    log_message(f"[DEBUG] Priority scan: skipping already completed root: {root_dir}")
                     continue
                     
                 scan_target_root(root_dir, all_targets)
@@ -789,6 +821,7 @@ def run_crawl():
         if not STARTUP_PRIORITY_SCAN_COMPLETED and not first_time_priority_done:
             log_message("[Crawler] App startup: performing initial sweep of priority folders...")
             for idx, root_dir in enumerate(PRIORITY_FOLDERS):
+                log_message(f"[DEBUG] Startup sweep: scanning root {idx+1}/{len(PRIORITY_FOLDERS)}: {root_dir}")
                 check_idle_and_game_pacing()
                 CRAWL_ROOTS_CURRENT = idx + 1
                 scan_target_root(root_dir, all_targets)
@@ -799,10 +832,12 @@ def run_crawl():
         log_message(f"[Crawler] Running/Resuming cycle (completed: {len(completed_roots)}/{len(all_targets)})...")
         
         for idx, root_dir in enumerate(all_targets):
+            log_message(f"[DEBUG] Resume cycle: scanning root {idx+1}/{len(all_targets)}: {root_dir}")
             check_idle_and_game_pacing()
             CRAWL_ROOTS_CURRENT = idx + 1
             
             if root_dir in completed_roots:
+                log_message(f"[DEBUG] Resume cycle: skipping already completed root: {root_dir}")
                 continue
                 
             scan_target_root(root_dir, all_targets)
@@ -826,11 +861,11 @@ def run_crawl():
         log_memory_stats("run_crawl CYCLE_COMPLETE")
         
     except CrawlAbortException:
-        log_message("[Crawler] Crawl walk aborted for reset.")
+        log_message("[Crawler] Crawl walk aborted for reset (CrawlAbortException caught).")
         db.set_crawler_state("first_time_priority_done", "false")
         db.set_crawler_state("first_cycle_done", "false")
         db.set_crawler_state("completed_roots_in_cycle", "[]")
-        FORCE_RESET_FLAG = False
+        _set_force_reset_flag(False, "CrawlAbortException handler")
         STARTUP_PRIORITY_SCAN_COMPLETED = False
         # Re-trigger crawl walk from scratch
         crawl_thread = threading.Thread(target=run_crawl, name="YukiFileCrawler", daemon=True)
@@ -1127,7 +1162,8 @@ def force_recrawl():
             pass
         WATCHDOG_OBSERVER = None
         
-    FORCE_RESET_FLAG = True
+    _set_force_reset_flag(True, "force_recrawl() called")
+    log_message("[Crawler] Manual full recrawl requested via force_recrawl().")
     
     # Ensure crawler is running
     if CRAWL_THREAD is None or not CRAWL_THREAD.is_alive():
@@ -1137,7 +1173,7 @@ def force_recrawl():
         db.set_crawler_state("completed_roots_in_cycle", "[]")
         global STARTUP_PRIORITY_SCAN_COMPLETED
         STARTUP_PRIORITY_SCAN_COMPLETED = False
-        FORCE_RESET_FLAG = False
+        _set_force_reset_flag(False, "force_recrawl() - thread not alive, starting fresh")
         CRAWL_THREAD = threading.Thread(target=run_crawl, name="YukiFileCrawler", daemon=True)
         CRAWL_THREAD.start()
 
