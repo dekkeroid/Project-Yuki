@@ -558,7 +558,7 @@ const AvatarViewer = ({
       isElectron ? window.innerWidth : containerRef.current.clientWidth,
       isElectron ? window.innerHeight : containerRef.current.clientHeight
     );
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); //changed it from 2
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); //changed it from 2 redering density
     renderer.shadowMap.enabled = !isElectron; // shadows cause issues on transparent bg
 
     // Cache the initial canvas rect to avoid layout thrashing in handleMouseMove
@@ -1053,7 +1053,7 @@ const AvatarViewer = ({
     // 9. Main Render Loop
     const clock = clockRef.current;
 
-    const targetFPS = 45;
+    const targetFPS = 50;
     const frameDelay = 1 / targetFPS;
     let accumulatedTime = 0;
 

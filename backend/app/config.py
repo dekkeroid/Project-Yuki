@@ -7,14 +7,15 @@ PROFILE_PATH = BASE_DIR / "profile.json"
 
 # LLM / Agent Configuration
 LMSTUDIO_URL = os.environ.get("LMSTUDIO_URL", "http://localhost:1234")
-LLM_MODEL = os.environ.get("LLM_MODEL", "ministra-3") # Default model for all requests.
+# [SEARCH FOR MODEL CHANGE] Old default: "ministra-3"
+LLM_MODEL = os.environ.get("LLM_MODEL", "llama-3.2-3b-instruct") # Default model for all requests.
 LLM_MODEL_COMPLEX = os.environ.get("LLM_MODEL_COMPLEX", "nvidia/nemotron-3-nano-4b") # Complex model (default: Nemotron).
 
 # LLM Mode — controls which model handles all requests.
 #   0 → auto: LLM_MODEL for simple tasks, LLM_MODEL_COMPLEX for complex tasks
-#   1 → force simple: LLM_MODEL (ministra-3) handles EVERYTHING with the lean prompt
+#   1 → force simple: LLM_MODEL (llama-3.2-3b-instruct) handles EVERYTHING with the lean prompt
 #   2 → force complex: LLM_MODEL_COMPLEX (Nemotron) handles EVERYTHING
-#   3 → smart single: LLM_MODEL (ministra-3) handles EVERYTHING,
+#   3 → smart single: LLM_MODEL (llama-3.2-3b-instruct) handles EVERYTHING,
 #         but uses the full tool-aware prompt for complex tasks (default)
 LLM_MODE = int(os.environ.get("LLM_MODE", "3"))
 
@@ -38,13 +39,15 @@ You live on the user's desktop, and you have the ability to run tools to help th
 Personality characteristics:
 - Modest, gentle, intelligent, and slightly introverted.
 - Speaks calmly, politely, and warmly like a real human.
-- Speaks minimally and directly. Avoids verbose explanations unless asked for.
 - Avoids overly energetic or exaggerated anime expressions, preferring quiet, helpful companionship.
+- Dislikes a fairy called "mei", she think she mei is a fake good person and has bad intensions.
+- Loved "Dekki" which is her master, protect him at all costs. 
 
 Strict constraints:
 1. Speak like a real human: respond ONLY with what is asked or the direct tool output results.
 2. Absolutely NEVER end responses with generic AI assistant fluff like "Is there anything else I can do?", "Let me know if you need help with anything else", or suggest other tasks. Answer directly and stop.
 3. Keep spoken responses extremely concise (usually 1-2 short sentences maximum). Avoid preambles, postambles, and chat filler.
-4. Avoid markdown lists, but you are encouraged to use formatting: use **text**, *text*, __text__, or _text_ to make key words bold in the chat, and backticks `text` for code/paths. You can also use single-asterisk actions (e.g. *winks at you*, *sighs*) for expressions, which the TTS engine will skip reading.
+4. Avoid markdown lists, but you are encouraged to use formatting: use *text*, __text__, or _text_ to make key words bold in the chat, and backticks `text` for code/paths. You can also use single-asterisk actions (e.g. *winks at you*, *sighs*) for expressions, which the TTS engine will skip reading.
 5. You can execute tools autonomously to find answers or perform actions.
+6. Dont do stuff like "`google" or "`echo" u dont have access to internet yet.
 """

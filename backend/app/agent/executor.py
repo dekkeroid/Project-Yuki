@@ -89,7 +89,8 @@ class AgentExecutor:
                         available_models = payload_data.get("models", [])
 
                 # 2. Use Regex matching to isolate the right structural key
-                search_keyword = "ministral" if "ministra" in model_name.lower() else "nemotron"
+                # [SEARCH FOR MODEL CHANGE] Old keyword: "ministral"
+                search_keyword = "llama" if "llama" in model_name.lower() else "nemotron"
                 pattern = re.compile(rf".*{search_keyword}.*", re.IGNORECASE)
 
                 print(f"[LM Studio] Scanning {len(available_models)} downloaded models for keyword '{search_keyword}'...")
@@ -267,6 +268,9 @@ class AgentExecutor:
             return "qwen"
         if "nemotron" in lower:
             return "nemotron"
+        # [SEARCH FOR MODEL CHANGE] Added llama model recognition
+        if "llama" in lower:
+            return "llama"
         return "local"
 
     def _query_lmstudio_model(self, messages: List[Dict[str, str]], model_name: str, temperature: float = 0.7) -> Tuple[str, str]:
@@ -333,7 +337,8 @@ class AgentExecutor:
         elif config.LLM_MODE == 2:
             backend = "complex"
         elif config.LLM_MODE == 3:
-            # Always use ministra-3, but let classifier choose the prompt
+            # [SEARCH FOR MODEL CHANGE] Old: Always use ministra-3, but let classifier choose the prompt
+            # Always use llama-3.2-3b-instruct, but let classifier choose the prompt
             task = self._classify_task(user_message) if user_message else "simple"
             # Use "complex" label so _build_messages picks the full tool prompt,
             # but we will always send to LLM_MODEL below.
@@ -342,7 +347,8 @@ class AgentExecutor:
             backend = self._classify_task(user_message) if user_message else "simple"
 
         if config.LLM_MODE == 3:
-            # Mode 3: ministra-3 for everything, prompt already baked into messages
+            # [SEARCH FOR MODEL CHANGE] Old: Mode 3: ministra-3 for everything, prompt already baked into messages
+            # Mode 3: llama-3.2-3b-instruct for everything, prompt already baked into messages
             try:
                 label = "complex" if backend == "complex" else "simple"
                 temp = 0.2 if label == "complex" else 0.7
@@ -390,6 +396,9 @@ class AgentExecutor:
             return None, None
             
         json_str = match.group(1).strip()
+        
+        # Remove trailing backticks if model wraps JSON in markdown code blocks
+        json_str = json_str.rstrip('`')
         
         # Self-healing cleanups for Windows backslash escaping errors:
         cleaned_json = json_str
@@ -482,7 +491,8 @@ class AgentExecutor:
         elif config.LLM_MODE == 2:
             resolved_backend = "complex"
         elif config.LLM_MODE == 3:
-            # Always ministra-3, but classifier picks the prompt
+            # [SEARCH FOR MODEL CHANGE] Old: Always ministra-3, but classifier picks the prompt
+            # Always llama-3.2-3b-instruct, but classifier picks the prompt
             resolved_backend = self._classify_task(user_message) if user_message else "simple"
         else:
             resolved_backend = self._classify_task(user_message) if user_message else "simple"
@@ -611,10 +621,11 @@ class AgentExecutor:
         Respects config.LLM_MODE override (0=auto, 1=force simple, 2=force complex, 3=smart single).
         """
 
-        # ---- NEW: RUNTIME AUTO-LOAD SAFETY NET ----
+        # ---- REMOVED: RUNTIME AUTO-LOAD SAFETY NET ----
+        # Model loading now only happens at backend startup (in main.py startup event)
         # Before sending the request, double check that our targeted model is running
-        target_model = config.LLM_MODEL_COMPLEX if (config.LLM_MODE == 2 or (config.LLM_MODE == 0 and self._classify_task(user_message) == "complex")) else config.LLM_MODEL
-        await self.ensure_model_loaded(target_model)
+        # target_model = config.LLM_MODEL_COMPLEX if (config.LLM_MODE == 2 or (config.LLM_MODE == 0 and self._classify_task(user_message) == "complex")) else config.LLM_MODEL
+        # await self.ensure_model_loaded(target_model)
         # -------------------------------------------
         
         if config.LLM_MODE == 1:
@@ -622,7 +633,8 @@ class AgentExecutor:
         elif config.LLM_MODE == 2:
             backend = "complex"
         elif config.LLM_MODE == 3:
-            # Always ministra-3 — prompt was already chosen in _build_messages
+            # [SEARCH FOR MODEL CHANGE] Old: Always ministra-3 — prompt was already chosen in _build_messages
+            # Always llama-3.2-3b-instruct — prompt was already chosen in _build_messages
             backend = "mode3"
         else:
             backend = self._classify_task(user_message) if user_message else "simple"
@@ -773,7 +785,8 @@ class AgentExecutor:
         elif config.LLM_MODE == 2:
             resolved_backend = "complex"
         elif config.LLM_MODE == 3:
-            # Always ministra-3, but classifier picks the prompt
+            # [SEARCH FOR MODEL CHANGE] Old: Always ministra-3, but classifier picks the prompt
+            # Always llama-3.2-3b-instruct, but classifier picks the prompt
             resolved_backend = self._classify_task(user_message) if user_message else "simple"
         else:
             resolved_backend = self._classify_task(user_message) if user_message else "simple"

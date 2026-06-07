@@ -193,7 +193,8 @@ def get_available_models():
     Returns the curated list of available models.
     """
     models = [
-        {"name": "ministra-3", "type": "lmstudio"},
+        # [SEARCH FOR MODEL CHANGE] Old: {"name": "ministra-3", "type": "lmstudio"},
+        {"name": "llama-3.2-3b-instruct", "type": "lmstudio"},
         {"name": "nvidia/nemotron-3-nano-4b", "type": "lmstudio"}
     ]
     return {"models": models, "active": config.LLM_MODEL}
@@ -374,7 +375,8 @@ async def reset_profile():
         "custom_facts": {},
         "interaction_count": 0,
         "settings": {
-            "llm_model": "ministra-3",
+            # [SEARCH FOR MODEL CHANGE] Old: "llm_model": "ministra-3",
+            "llm_model": "llama-3.2-3b-instruct",
             "tts_voice": "af_sarah",
             "tts_rate": "1.0",
             "character_name": "Yuki",

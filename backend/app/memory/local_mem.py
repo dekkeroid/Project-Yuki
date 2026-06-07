@@ -14,7 +14,8 @@ class MemoryManager:
             "custom_facts": {},
             "interaction_count": 0,
             "settings": {
-                "llm_model": "ministra-3",
+                # [SEARCH FOR MODEL CHANGE] Old: "llm_model": "ministra-3",
+                "llm_model": "llama-3.2-3b-instruct",
                 "tts_voice": "af_sarah",
                 "tts_rate": "1.0",
                 "character_name": "Yuki",
