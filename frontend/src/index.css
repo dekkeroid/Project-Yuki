@@ -943,15 +943,20 @@ body {
 
   .app-viewport {
     min-height: 100vh;
-    overflow: visible;
+    overflow-y: hidden;
   }
 
   .top-header {
-    top: 12px;
-    left: 12px;
-    right: 12px;
-    padding: 12px;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    padding: 10px;
     gap: 10px;
+    z-index: 5;
+  }
+
+  .top-header h1 {
+    font-size: 0.75rem;
   }
 
   .chat-overlay-container {
@@ -971,6 +976,11 @@ body {
     transform: translateX(-50%);
     width: calc(100% - 24px);
     max-width: none;
+  }
+
+  /* Ensure the dashboard/settings trigger remains accessible */
+  .dashboard-trigger-top {
+    z-index: 100;
   }
 
   .speech-bubble-floating,
@@ -1013,7 +1023,11 @@ body {
 
   .panel-trigger-bottom {
     position: fixed;
-    z-index: 30;
+    z-index: 100;
+    display: flex;
+    flex-wrap: wrap;
+    /* Allows buttons to wrap to a new line */
+    gap: 10px;
   }
 
   .audio-control-hub {
@@ -1465,4 +1479,151 @@ body.desktop-overlay .interactive-element {
 
 .desktop-textarea:focus {
   border-color: var(--accent-purple);
+}
+
+
+@media (max-width: 768px) {
+  body {
+    min-height: auto;
+    overflow: auto;
+  }
+
+  #root {
+    width: 100%;
+    height: auto;
+  }
+
+  .app-viewport {
+    min-height: 100vh;
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 1. Shrink and anchor the header so it doesn't block top buttons */
+  .top-header {
+    position: relative;
+    /* Switch from absolute to let it occupy its own space */
+    top: 0;
+    left: 0;
+    right: 0;
+    margin: 12px;
+    padding: 10px;
+    gap: 10px;
+    z-index: 10;
+    max-width: calc(100% - 24px);
+  }
+
+  .top-header h1 {
+    font-size: 0.8rem;
+  }
+
+  .top-header span {
+    font-size: 0.65rem;
+  }
+
+  /* 2. REPOSITION SETTINGS BUTTON: Move the gear trigger to a safe, accessible spot */
+  .dashboard-trigger-top {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    left: auto;
+    transform: none;
+    z-index: 150;
+    /* Keep it high above the canvas and header backgrounds */
+  }
+
+  .trigger-gear-btn {
+    background: rgba(18, 12, 33, 0.9);
+    /* Dark background so it's visible over the avatar */
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--accent-purple);
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  /* 3. SEPARATE CHAT AND VOICE: Push the chat panel/bubble safely above the voice hub */
+  .chat-overlay-container {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    pointer-events: none;
+  }
+
+  /* Comic speech bubble / text container */
+  .speech-bubble-floating,
+  .thinking-floating {
+    position: fixed;
+    bottom: 160px;
+    /* Elevated high enough to sit perfectly clear above the audio context controls */
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: calc(100% - 32px) !important;
+    max-width: 450px !important;
+    box-sizing: border-box;
+    z-index: 110;
+  }
+
+  /* Slide-out Chat / Settings panels on mobile */
+  .slide-panel-right,
+  .slide-panel-left {
+    position: fixed;
+    top: 70px;
+    bottom: 160px;
+    /* Prevents panels from rendering behind the bottom bars */
+    width: calc(100% - 24px);
+    left: 12px;
+    right: 12px;
+    max-width: none;
+    padding: 16px;
+    border-radius: 16px;
+    z-index: 130;
+    box-sizing: border-box;
+  }
+
+  /* 4. FIX AUDIO HUB POSITIONING */
+  .audio-control-hub {
+    position: fixed;
+    bottom: 16px;
+    /* Base container for voice control rows */
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 24px);
+    justify-content: center;
+    display: flex;
+    gap: 8px;
+    z-index: 100;
+  }
+
+  .panel-trigger-bottom {
+    position: fixed;
+    bottom: 76px;
+    /* Absolute lowest utility tier button container */
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 24px);
+    justify-content: center;
+    display: flex;
+    gap: 8px;
+    z-index: 100;
+  }
+
+  /* Utility adjustments */
+  .dashboard-stats-row {
+    grid-template-columns: 1fr;
+  }
+
+  .input-form-row {
+    flex-direction: row;
+    /* Keep inputs tight horizontally on tiny devices */
+    gap: 6px;
+  }
+
+  .chat-bubble-wrapper {
+    max-width: 90%;
+  }
+
+  .bubble-content-block {
+    font-size: 0.88rem;
+  }
 }
