@@ -1,9 +1,10 @@
 {
-  "name": "frontend",
+  "name": "yuki-ai",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "main": "main.electron.cjs",
+  "productName": "Yuki AI",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

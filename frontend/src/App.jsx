@@ -302,7 +302,7 @@ const App = () => {
   });
   const [avatarSkinToneColor, setAvatarSkinToneColor] = useState(() => {
     const saved = localStorage.getItem('yuki-avatar-skintone-color');
-    return saved ? saved : '#BCC68B';
+    return saved ? saved : '#FFE5E5';
   });
   const [customAnimation, setCustomAnimation] = useState('');
 
@@ -2547,13 +2547,13 @@ const App = () => {
 
                       <div className="desktop-form-group">
                         <label className="desktop-label">Active Model Selection</label>
-<select
-  className="desktop-select"
-  // [SEARCH FOR MODEL CHANGE] Old default: 'ministra-3'
-  value={profile.settings?.llm_model || 'llama-3.2-3b-instruct'}
-  onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
-  style={{ padding: '6px 8px', fontSize: '0.75rem' }}
->
+                        <select
+                          className="desktop-select"
+                          // [SEARCH FOR MODEL CHANGE] Old default: 'ministra-3'
+                          value={profile.settings?.llm_model || 'llama-3.2-3b-instruct'}
+                          onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
+                          style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                        >
                           {LLM_MODELS.map((model) => (
                             <option key={model.value} value={model.value} style={{ background: '#120c21', color: 'white' }}>
                               {model.label}

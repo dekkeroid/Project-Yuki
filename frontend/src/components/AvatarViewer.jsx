@@ -23,7 +23,7 @@ const AvatarViewer = ({
   systemIdleTime = 0,
   onFileDropped = null,
   scale = 1.0,
-  skinToneColor = '#BCC68B',
+  skinToneColor = '#FFE5E5',
   customAnimation = '',
   disabledAnimations = []
 }) => {
@@ -628,8 +628,23 @@ const AvatarViewer = ({
     ring.rotation.x = Math.PI / 2;
     scene.add(ring);
 
+    let model_choice = ["default.vrm", "ayame.vrm", "kanata.vrm", "laplus.vrm", "laplus_no_coat.vrm", "nene.vrm", "miko.vrm", "pekora.vrm", "suisei.vrm",
+      "watame.vrm", "yuki.vrm", "timekeeper_cookie.vrm"]
+
     // 7. Load default VRM model
-    loadModel('/models/default.vrm');
+    // loadModel('/models/default.vrm');0
+    // loadModel('/models/ayame.vrm');1
+    // loadModel('/models/kanata.vrm');2
+    // loadModel('/models/laplus.vrm');3
+    // loadModel('/models/laplus_no_coat.vrm');4
+    // loadModel('/models/nene.vrm');5
+    // loadModel('/models/miko.vrm');6
+    // loadModel('/models/pekora.vrm');7
+    // loadModel('/models/suisei.vrm');8
+    // loadModel('/models/watame.vrm');9
+    // loadModel('/models/yuki.vrm');10
+    // loadModel('/models/timekeeper_cookie.vrm');11
+    loadModel(`/models/${model_choice[0]}`);
 
     // 8. Animation Loop variables
     let blinkTimer = 0;

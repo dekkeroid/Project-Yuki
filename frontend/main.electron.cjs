@@ -118,8 +118,11 @@ function startFullscreenPoll() {
 
 // ---------- Window creation ----------
 
+app.setName("Yuki AI")
+
 function createWindow() {
   mainWindow = new BrowserWindow({
+    title: "Yuki AI - Main",
     width: currentWidth + windowWidthExtra,
     height: currentHeight,
     minWidth: Math.round(DEFAULT_WINDOW_WIDTH * 0.4) + windowWidthExtra,
