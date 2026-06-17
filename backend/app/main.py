@@ -132,9 +132,12 @@ async def check_tts_connectivity():
         print(f"Failed to start crawler services: {e}")
 
     # ---- NEW: DYNAMIC LM STUDIO AUTO-LOAD CALL ----
-    print(f"Verifying brain state. Checking if model '{config.LLM_MODEL}' is loaded in LM Studio...")
-    # Trigger our newly created helper function asynchronously
-    await agent_executor.ensure_model_loaded(config.LLM_MODEL)
+    if not getattr(config, 'NO_LLM_MODE', False):
+        print(f"Verifying brain state. Checking if model '{config.LLM_MODEL}' is loaded in LM Studio...")
+        # Trigger our newly created helper function asynchronously
+        await agent_executor.ensure_model_loaded(config.LLM_MODEL)
+    else:
+        print("NO_LLM_MODE is enabled. Skipping LLM auto-load on startup.")
     # -----------------------------------------------
 
     print("Initializing local Kokoro-ONNX neural TTS engine...")
@@ -292,7 +295,8 @@ def get_settings():
         "whisper_model": memory_manager.profile["settings"].get("whisper_model", "base"),
         "whisper_compute_type": memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16"),
         "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
-        "stt_language": memory_manager.profile["settings"].get("stt_language", "en")
+        "stt_language": memory_manager.profile["settings"].get("stt_language", "en"),
+        "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False)
     }
 
 class SettingsUpdateRequest(BaseModel):
@@ -308,6 +312,7 @@ class SettingsUpdateRequest(BaseModel):
     whisper_compute_type: Optional[str] = None
     use_local_whisper: Optional[bool] = None
     stt_language: Optional[str] = None
+    no_llm_mode: Optional[bool] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -348,6 +353,12 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("use_local_whisper", req.use_local_whisper)
     if req.stt_language is not None:
         memory_manager.update_setting("stt_language", req.stt_language.strip())
+    if req.no_llm_mode is not None:
+        was_no_llm = memory_manager.profile["settings"].get("no_llm_mode", False)
+        memory_manager.update_setting("no_llm_mode", req.no_llm_mode)
+        if was_no_llm and not req.no_llm_mode:
+            print(f"Loading LLM model '{config.LLM_MODEL}' as no_llm_mode was unchecked...")
+            asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
         
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True
@@ -371,7 +382,8 @@ async def update_settings(req: SettingsUpdateRequest):
             "whisper_model": memory_manager.profile["settings"].get("whisper_model", "base"),
             "whisper_compute_type": memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16"),
             "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
-            "stt_language": memory_manager.profile["settings"].get("stt_language", "en")
+            "stt_language": memory_manager.profile["settings"].get("stt_language", "en"),
+            "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False)
         }
     }
 
@@ -589,18 +601,19 @@ def post_open_or_play(req: OpenPlayRequest):
         resolved_path = None
         target_name = clean
         
-        app_path = _find_app_path(clean)
-        if app_path:
-            is_app = True
-            resolved_path = app_path
-            target_name = clean
-        elif os.path.exists(clean) and os.path.isfile(clean):
+        if os.path.exists(clean) and os.path.isfile(clean):
             resolved_path = clean
             target_name = os.path.basename(clean)
         else:
-            resolved_path = resolve_best_file_no_llm(clean, play_mode=req.play_mode)
-            if resolved_path:
-                target_name = os.path.basename(resolved_path)
+            app_path = _find_app_path(clean) if not req.play_mode else None
+            if app_path:
+                is_app = True
+                resolved_path = app_path
+                target_name = clean
+            else:
+                resolved_path = resolve_best_file_no_llm(clean, play_mode=req.play_mode)
+                if resolved_path:
+                    target_name = os.path.basename(resolved_path)
                 
         if resolved_path:
             # Check steam game or media
@@ -611,7 +624,7 @@ def post_open_or_play(req: OpenPlayRequest):
             if is_app or not (is_steam or is_media):
                 return {
                     "status": "confirm_required",
-                    "name": target_name,
+                    "name": resolved_path,
                     "path": resolved_path
                 }
 
@@ -822,7 +835,17 @@ async def websocket_endpoint(websocket: WebSocket):
                                 return min_idx
 
                             try:
-                                gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history)
+                                if getattr(config, 'NO_LLM_MODE', False):
+                                    async def no_llm_gen():
+                                        yield "token", "sorry, LLM is currently turned off", "local"
+                                        updated_history = global_chat_history + [
+                                            {"role": "user", "content": user_msg},
+                                            {"role": "assistant", "content": "sorry, LLM is currently turned off"}
+                                        ]
+                                        yield "final_history", updated_history, "local"
+                                    gen = no_llm_gen()
+                                else:
+                                    gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history)
                                 try:
                                     event = await gen.__anext__()
                                     while True:

@@ -86,6 +86,61 @@ def get_system_stats() -> str:
             pass
         return f"Failed to retrieve system stats: {str(e)}"
 
+_UWP_APPS_CACHE = None
+
+def _get_uwp_apps() -> list:
+    global _UWP_APPS_CACHE
+    if _UWP_APPS_CACHE is not None:
+        return _UWP_APPS_CACHE
+    
+    import json
+    import subprocess
+    try:
+        print("[UWP Search] Fetching UWP/Store apps via Get-StartApps...")
+        cmd = 'powershell -Command "Get-StartApps | ConvertTo-Json"'
+        out = subprocess.check_output(cmd, shell=True).decode('utf-8', errors='ignore')
+        apps = json.loads(out)
+        if isinstance(apps, dict):
+            apps = [apps]
+        _UWP_APPS_CACHE = apps
+        print(f"[UWP Search] Found {len(_UWP_APPS_CACHE)} apps in Start menu/UWP.")
+        return _UWP_APPS_CACHE
+    except Exception as e:
+        print(f"[UWP Search] Error listing apps: {e}")
+        _UWP_APPS_CACHE = []
+        return []
+
+def _find_uwp_app(app_name: str, exact_only: bool = False) -> str | None:
+    apps = _get_uwp_apps()
+    app_name_clean = app_name.lower().replace(".exe", "").replace(" ", "")
+    if not app_name_clean:
+        return None
+        
+    # Try exact match first
+    for app in apps:
+        name = app.get("Name", "")
+        name_clean = name.lower().replace(" ", "")
+        if app_name_clean == name_clean:
+            app_id = app.get("AppID")
+            if app_id:
+                return f"shell:AppsFolder\\{app_id}"
+                
+    if exact_only:
+        return None
+        
+    # Try partial match/contains match
+    for app in apps:
+        name = app.get("Name", "")
+        name_clean = name.lower().replace(" ", "")
+        if app_name_clean in name_clean or name_clean in app_name_clean:
+            is_prefix = name_clean.startswith(app_name_clean) or app_name_clean.startswith(name_clean)
+            is_high_ratio = len(app_name_clean) >= (len(name_clean) * 0.5) or len(name_clean) >= (len(app_name_clean) * 0.5)
+            if is_prefix or is_high_ratio:
+                app_id = app.get("AppID")
+                if app_id:
+                    return f"shell:AppsFolder\\{app_id}"
+    return None
+
 def _find_app_in_registry(app_name: str) -> str:
     try:
         import winreg
@@ -129,6 +184,10 @@ def _find_app_in_start_menu_exact(app_name: str) -> str:
         if not os.path.exists(search_dir):
             continue
         for root, dirs, files in os.walk(search_dir):
+            # Exclude 'Startup' folder
+            parts = root.lower().replace("\\", "/").split("/")
+            if "startup" in parts:
+                continue
             for file in files:
                 if file.endswith(".lnk"):
                     name_clean = os.path.splitext(file)[0].lower().replace(" ", "")
@@ -146,11 +205,21 @@ def _find_app_in_start_menu_partial(app_name: str) -> str:
         if not os.path.exists(search_dir):
             continue
         for root, dirs, files in os.walk(search_dir):
+            # Exclude 'Startup' folder
+            parts = root.lower().replace("\\", "/").split("/")
+            if "startup" in parts:
+                continue
             for file in files:
                 if file.endswith(".lnk"):
                     name_clean = os.path.splitext(file)[0].lower().replace(" ", "")
                     if app_name_clean in name_clean or name_clean in app_name_clean:
-                        return os.path.join(root, file)
+                        # Enforce strong match check:
+                        # 1. Bidirectional prefix check (e.g. "tele" starts "telegram" or "telegram" starts "tele")
+                        # 2. Length ratio check (query covers at least 50% of target, or vice versa)
+                        is_prefix = name_clean.startswith(app_name_clean) or app_name_clean.startswith(name_clean)
+                        is_high_ratio = len(app_name_clean) >= (len(name_clean) * 0.5) or len(name_clean) >= (len(app_name_clean) * 0.5)
+                        if is_prefix or is_high_ratio:
+                            return os.path.join(root, file)
     return None
 
 def _find_app_path(app_name: str):
@@ -203,9 +272,18 @@ def _find_app_path(app_name: str):
         if path:
             return path
 
-    # 6. Fallback: Partial Start Menu search
+        # 5b. Exact UWP App lookup
+        path = _find_uwp_app(term, exact_only=True)
+        if path:
+            return path
+
+    # 6. Fallback: Partial searches
     for term in search_terms:
         path = _find_app_in_start_menu_partial(term)
+        if path:
+            return path
+
+        path = _find_uwp_app(term, exact_only=False)
         if path:
             return path
 

@@ -51,3 +51,5 @@ Strict constraints:
 5. You can execute tools autonomously to find answers or perform actions.
 6. Dont do stuff like "`google" or "`echo" u dont have access to internet yet.
 """
+
+NO_LLM_MODE = False

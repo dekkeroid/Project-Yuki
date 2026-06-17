@@ -20,6 +20,29 @@ SENSITIVE_PREFIXES = [
     "c:\\users\\all users"
 ]
 
+def _is_unwanted_installer_or_uninstaller(file_path: str, query: str) -> bool:
+    """
+    Check if a file path belongs to an installer or uninstaller,
+    but only if the query itself doesn't explicitly mention 'install', 'setup', etc.
+    """
+    path_lower = file_path.lower()
+    query_lower = query.lower()
+    
+    # Keywords that suggest an installer/uninstaller
+    installer_keywords = ["install", "setup", "uninst", "unins", "update"]
+    
+    # Check if the file path contains any of these keywords, or is an MSI installer package
+    has_installer_kw = any(kw in path_lower for kw in installer_keywords) or path_lower.endswith(".msi")
+    if not has_installer_kw:
+        return False
+        
+    # Check if the query itself mentions any of these keywords or 'msi'
+    query_keywords = installer_keywords + ["msi"]
+    query_has_installer_kw = any(kw in query_lower for kw in query_keywords)
+    
+    # If the path has the keyword but the query doesn't, then it's unwanted
+    return not query_has_installer_kw
+
 def _is_safe_path(path: str, write_operation: bool = False) -> bool:
     """
     Enforces security boundary.
@@ -223,7 +246,7 @@ def parse_query_with_llm(query: str) -> Dict:
 # Stage 2 — Database Union Search
 # ---------------------------------------------------------------------------
 
-def query_database_union(parsed: Dict, limit_raw: int = 100) -> List[Dict]:
+def query_database_union(parsed: Dict, limit_raw: int = 100, categories: List[str] = None) -> List[Dict]:
     """
     Builds a SQL UNION-like query (actually a single SELECT with OR clauses)
     that returns files matching any element from:
@@ -262,6 +285,11 @@ def query_database_union(parsed: Dict, limit_raw: int = 100) -> List[Dict]:
         params.extend([like, like, like])
 
     where = " OR ".join(clauses)
+    category_filter = ""
+    if categories:
+        placeholders = ", ".join("?" for _ in categories)
+        category_filter = f" AND f.category IN ({placeholders})"
+
     sql = f"""
     SELECT f.id, f.file_path, f.file_name, f.parent_folder, f.category,
            f.size, f.last_modified,
@@ -269,21 +297,25 @@ def query_database_union(parsed: Dict, limit_raw: int = 100) -> List[Dict]:
            m.release_year, m.alternate_titles
     FROM files f
     LEFT JOIN file_metadata m ON f.id = m.file_id
-    WHERE {where}
+    WHERE ({where}){category_filter}
     LIMIT ?
     """
-    params.append(limit_raw)
+    
+    params_sql = params.copy()
+    if categories:
+        params_sql.extend(categories)
+    params_sql.append(limit_raw)
 
     # ── Log the SQL query (params interpolated for readability) ──────────────
     readable_sql = sql
-    for p in params:
+    for p in params_sql:
         readable_sql = readable_sql.replace("?", repr(p), 1)
     print(f"[Search] SQL:\n{readable_sql.strip()}")
 
     from app.memory.db import get_connection
     conn = get_connection()
     try:
-        rows = conn.execute(sql, params).fetchall()
+        rows = conn.execute(sql, params_sql).fetchall()
         print(f"[Search] SQL returned {len(rows)} raw rows")
         return [dict(r) for r in rows]
     except Exception as e:
@@ -491,7 +523,7 @@ def ask_llm_to_resolve_match(query: str, candidates: List[Dict], is_generic: boo
 # Core resolution entry-point
 # ---------------------------------------------------------------------------
 
-def resolve_best_file(query: str, start_directory: str = None) -> Optional[str]:
+def resolve_best_file(query: str, play_mode: bool = False, start_directory: str = None) -> Optional[str]:
     """
     Full multi-stage resolution pipeline:
       1. LLM parses query into title / path / genre / episode arrays.
@@ -504,13 +536,14 @@ def resolve_best_file(query: str, start_directory: str = None) -> Optional[str]:
     if not clean_query:
         return None
 
-    print(f"[Search] Query: '{clean_query}'")
+    print(f"[Search] Query: '{clean_query}' (play_mode={play_mode})")
 
     # Step 1 — parse
     parsed = parse_query_with_llm(clean_query)
 
     # Step 2 — DB union
-    raw_candidates = query_database_union(parsed, limit_raw=2000)
+    categories = ["song", "movie"] if play_mode else None
+    raw_candidates = query_database_union(parsed, limit_raw=2000, categories=categories)
 
     if start_directory and start_directory.strip():
         base = os.path.abspath(start_directory.strip()).lower()
@@ -519,7 +552,9 @@ def resolve_best_file(query: str, start_directory: str = None) -> Optional[str]:
     # Keep only physically-existing, safe files
     safe_existing = [
         c for c in raw_candidates
-        if _is_safe_path(c["file_path"]) and os.path.exists(c["file_path"])
+        if _is_safe_path(c["file_path"]) 
+        and os.path.exists(c["file_path"])
+        and not _is_unwanted_installer_or_uninstaller(c["file_path"], clean_query)
     ]
 
     if not safe_existing:
@@ -657,7 +692,8 @@ def resolve_best_file_no_llm(query: str, play_mode: bool = False, start_director
     parsed = parse_query_with_llm(clean_query)
 
     # Step 2 — DB union search
-    raw_candidates = query_database_union(parsed, limit_raw=2000)
+    categories = ["song", "movie"] if play_mode else None
+    raw_candidates = query_database_union(parsed, limit_raw=2000, categories=categories)
 
     if start_directory and start_directory.strip():
         base = os.path.abspath(start_directory.strip()).lower()
@@ -666,7 +702,9 @@ def resolve_best_file_no_llm(query: str, play_mode: bool = False, start_director
     # Keep only physically-existing, safe files
     safe_existing = [
         c for c in raw_candidates
-        if _is_safe_path(c["file_path"]) and os.path.exists(c["file_path"])
+        if _is_safe_path(c["file_path"]) 
+        and os.path.exists(c["file_path"])
+        and not _is_unwanted_installer_or_uninstaller(c["file_path"], clean_query)
     ]
 
     if not safe_existing:
@@ -831,6 +869,12 @@ def open_or_play_file_no_llm(file_path_or_query: str, play_mode: bool = False) -
         if not _is_safe_path(clean):
             return f"Access Denied: Opening sensitive system file '{clean}' is blocked."
         
+        if play_mode:
+            _, ext = os.path.splitext(clean.lower())
+            is_media = ext in ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg')
+            if not is_media:
+                return f"Error: Playback is restricted to audio and video files only."
+        
         if clean.lower().endswith(".exe"):
             appid = _get_steam_appid(clean)
             if appid:
@@ -844,11 +888,12 @@ def open_or_play_file_no_llm(file_path_or_query: str, play_mode: bool = False) -
             return f"Failed to open '{clean}': {e}"
 
     # 2. Check if it's an application (e.g. mspaint, notepad)
-    from app.tools.system import launch_app, _find_app_path
-    app_path = _find_app_path(clean)
-    if app_path:
-        print(f"[Search-NoLLM] Found system app path: {app_path}")
-        return launch_app(clean)
+    if not play_mode:
+        from app.tools.system import launch_app, _find_app_path
+        app_path = _find_app_path(clean)
+        if app_path:
+            print(f"[Search-NoLLM] Found system app path: {app_path}")
+            return launch_app(clean)
 
     # 3. Resolve using database/metadata (No LLM)
     resolved = resolve_best_file_no_llm(clean, play_mode=play_mode)
@@ -870,7 +915,7 @@ def open_or_play_file_no_llm(file_path_or_query: str, play_mode: bool = False) -
         return f"Failed to open '{resolved}': {e}"
 
 
-def open_or_play_file(file_path_or_query: str) -> str:
+def open_or_play_file(file_path_or_query: str, play_mode: bool = False) -> str:
     """
     Opens or plays a file. Accepts a direct path or a natural-language query.
     Uses the multi-stage LLM pipeline to resolve the best match.
@@ -881,10 +926,16 @@ def open_or_play_file(file_path_or_query: str) -> str:
 
     clean = file_path_or_query.strip().strip('"\'')
 
-    # Direct path shortcut
+    # 1. Direct path shortcut
     if os.path.exists(clean) and os.path.isfile(clean):
         if not _is_safe_path(clean):
             return f"Access Denied: Opening sensitive system file '{clean}' is blocked."
+        
+        if play_mode:
+            _, ext = os.path.splitext(clean.lower())
+            is_media = ext in ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg')
+            if not is_media:
+                return f"Error: Playback is restricted to audio and video files only."
         
         # Check if it's a Steam game and launch via Steam protocol
         print(f"[STEAM DEBUG] open_or_play_file: clean='{clean}', is_exe={clean.lower().endswith('.exe')}")
@@ -902,7 +953,16 @@ def open_or_play_file(file_path_or_query: str) -> str:
         except Exception as e:
             return f"Failed to open '{clean}': {e}"
 
-    resolved = resolve_best_file(clean)
+    # 2. Check if it's an application (e.g. mspaint, notepad, telegram)
+    if not play_mode:
+        from app.tools.system import launch_app, _find_app_path
+        app_path = _find_app_path(clean)
+        if app_path:
+            print(f"[Search-LLM] Found system app path: {app_path}")
+            return launch_app(clean)
+
+    # 3. Resolve using database/metadata
+    resolved = resolve_best_file(clean, play_mode=play_mode)
     print(f"[STEAM DEBUG] Resolved file: {resolved}")
     if not resolved:
         return f"Error: Could not find any files matching '{file_path_or_query}' on your system."

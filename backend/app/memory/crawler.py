@@ -428,6 +428,11 @@ def resolve_crawl_targets():
             if os.path.exists(folder_path):
                 CRAWL_FOLDERS.append(folder_path)
 
+    # 3. Add Program Files directories on C drive (will only index .exe files due to constraints)
+    for prog_dir in ("C:\\Program Files", "C:\\Program Files (x86)"):
+        if os.path.exists(prog_dir):
+            CRAWL_FOLDERS.append(prog_dir)
+
 def _is_game_or_program_dir(dir_path: str) -> bool:
     """
     Returns True if the directory path belongs to a game library,

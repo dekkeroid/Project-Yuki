@@ -26,7 +26,8 @@ class MemoryManager:
                 "whisper_model": "small",
                 "whisper_compute_type": "int8_float16",
                 "use_local_whisper": True,
-                "stt_language": "en"
+                "stt_language": "en",
+                "no_llm_mode": False
             }
         }
         if not os.path.exists(self.profile_path):
@@ -55,6 +56,7 @@ class MemoryManager:
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
                 config.CHARACTER_PERSONA = data["settings"].get("character_persona", config.CHARACTER_PERSONA)
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
+                config.NO_LLM_MODE = data["settings"].get("no_llm_mode", False)
                 
                 return data
         except Exception as e:
@@ -137,6 +139,8 @@ class MemoryManager:
             config.CHARACTER_PERSONA = value
         elif key == "llm_model":
             config.LLM_MODEL = value
+        elif key == "no_llm_mode":
+            config.NO_LLM_MODE = bool(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

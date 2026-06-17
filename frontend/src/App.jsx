@@ -419,6 +419,19 @@ const App = () => {
   const [isHovered, setIsHovered] = useState(false);
   const [isTopmostDisabled, setIsTopmostDisabled] = useState(false);
 
+  // Custom styled confirmation modal state
+  const [confirmModal, setConfirmModal] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: null,
+    onCancel: null
+  });
+
+  useEffect(() => {
+    window.yukiConfirmModalVisible = confirmModal.visible;
+  }, [confirmModal.visible]);
+
   // Desktop positioning and alignment
   useEffect(() => {
     if (window.electronAPI) {
@@ -1689,14 +1702,57 @@ const App = () => {
         }]);
         playVoiceResponse(msg.audio_url, msg.text);
       } else if (msg.type === 'confirm_request') {
-        const confirmed = window.confirm(`Yuki wants to open/run "${msg.name}". Do you want to proceed?`);
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'confirm_response',
-            conf_id: msg.conf_id,
-            confirmed: confirmed
-          }));
-        }
+        setConfirmModal({
+          visible: true,
+          title: 'Security Confirmation',
+          message: `Yuki wants to open/run the following program:\n\n${msg.name}`,
+          onConfirm: () => {
+            setConfirmModal(prev => ({ ...prev, visible: false }));
+            
+            // Refocus, disable clickthrough suspension temporarily
+            window.yukiConfirmJustClosed = true;
+            if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+              window.electronAPI.setIgnoreMouseEvents(false);
+            }
+            setTimeout(() => {
+              window.yukiConfirmJustClosed = false;
+            }, 2000);
+            setTimeout(() => {
+              desktopInputRef.current?.focus();
+            }, 50);
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: 'confirm_response',
+                conf_id: msg.conf_id,
+                confirmed: true
+              }));
+            }
+          },
+          onCancel: () => {
+            setConfirmModal(prev => ({ ...prev, visible: false }));
+            
+            // Refocus, disable clickthrough suspension temporarily
+            window.yukiConfirmJustClosed = true;
+            if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+              window.electronAPI.setIgnoreMouseEvents(false);
+            }
+            setTimeout(() => {
+              window.yukiConfirmJustClosed = false;
+            }, 2000);
+            setTimeout(() => {
+              desktopInputRef.current?.focus();
+            }, 50);
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: 'confirm_response',
+                conf_id: msg.conf_id,
+                confirmed: false
+              }));
+            }
+          }
+        });
       } else if (msg.type === 'error') {
         setIsThinking(false);
         setTtsStreamActive(false);
@@ -2282,18 +2338,51 @@ const App = () => {
             .then((data) => {
               if (data.status === 'confirm_required') {
                 setIsThinking(false);
-                const confirmed = window.confirm(`Yuki wants to open/run "${data.name}". Do you want to proceed?`);
-                if (confirmed) {
-                  setIsThinking(true);
-                  runOpenPlay(true);
-                } else {
-                  const cancelMsg = "Error: Execution cancelled by user confirmation security check.";
-                  setMessages((prev) => [
-                    ...prev,
-                    { role: 'assistant', content: cancelMsg }
-                  ]);
-                  speakSystemMessage(cancelMsg, 'sad');
-                }
+                setConfirmModal({
+                  visible: true,
+                  title: 'Security Confirmation',
+                  message: `Yuki wants to open/run the following program:\n\n${data.name}`,
+                  onConfirm: () => {
+                    setConfirmModal(prev => ({ ...prev, visible: false }));
+                    
+                    // Refocus, disable clickthrough suspension temporarily
+                    window.yukiConfirmJustClosed = true;
+                    if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+                      window.electronAPI.setIgnoreMouseEvents(false);
+                    }
+                    setTimeout(() => {
+                      window.yukiConfirmJustClosed = false;
+                    }, 2000);
+                    setTimeout(() => {
+                      desktopInputRef.current?.focus();
+                    }, 50);
+
+                    setIsThinking(true);
+                    runOpenPlay(true);
+                  },
+                  onCancel: () => {
+                    setConfirmModal(prev => ({ ...prev, visible: false }));
+                    
+                    // Refocus, disable clickthrough suspension temporarily
+                    window.yukiConfirmJustClosed = true;
+                    if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+                      window.electronAPI.setIgnoreMouseEvents(false);
+                    }
+                    setTimeout(() => {
+                      window.yukiConfirmJustClosed = false;
+                    }, 2000);
+                    setTimeout(() => {
+                      desktopInputRef.current?.focus();
+                    }, 50);
+
+                    const cancelMsg = "Error: Execution cancelled by user confirmation security check.";
+                    setMessages((prev) => [
+                      ...prev,
+                      { role: 'assistant', content: cancelMsg }
+                    ]);
+                    speakSystemMessage(cancelMsg, 'sad');
+                  }
+                });
                 return;
               }
               setIsThinking(false);
@@ -3559,6 +3648,21 @@ const App = () => {
                         <span className="card-group-title">Brain & AI Settings</span>
                       </div>
 
+                      {/* No LLM Mode */}
+                      <div className="desktop-form-group" style={{ marginBottom: '8px' }}>
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                          <input
+                            type="checkbox"
+                            checked={profile.settings?.no_llm_mode || false}
+                            onChange={(e) => handleUpdateSetting('no_llm_mode', e.target.checked)}
+                            style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
+                            No LLM Mode — she will respond with "sorry, LLM is currently turned off" and avoid loading model
+                          </span>
+                        </label>
+                      </div>
+
                       <div className="desktop-form-group">
                         <label className="desktop-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span>Active Model Selection</span>
@@ -3895,6 +3999,35 @@ const App = () => {
             <span>Core disconnected.</span>
           </div>
         )}
+
+        {/* Custom Styled Confirmation Modal */}
+        {confirmModal.visible && (
+          <div className="yuki-confirm-overlay interactive-element">
+            <div className="yuki-confirm-card">
+              <h3 className="yuki-confirm-title">
+                <ShieldAlert className="w-5 h-5 text-violet-400" />
+                {confirmModal.title}
+              </h3>
+              <p className="yuki-confirm-message">{confirmModal.message}</p>
+              <div className="yuki-confirm-buttons">
+                <button 
+                  type="button" 
+                  className="yuki-confirm-btn yuki-confirm-btn-proceed"
+                  onClick={confirmModal.onConfirm}
+                >
+                  Proceed
+                </button>
+                <button 
+                  type="button" 
+                  className="yuki-confirm-btn yuki-confirm-btn-cancel"
+                  onClick={confirmModal.onCancel}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -4008,6 +4141,35 @@ const App = () => {
         <div className="offline-banner-floating">
           <ShieldAlert className="w-4 h-4 text-red-400" />
           <span>Core disconnected. Check if backend is active.</span>
+        </div>
+      )}
+
+      {/* Custom Styled Confirmation Modal */}
+      {confirmModal.visible && (
+        <div className="yuki-confirm-overlay interactive-element">
+          <div className="yuki-confirm-card">
+            <h3 className="yuki-confirm-title">
+              <ShieldAlert className="w-5 h-5 text-violet-400" />
+              {confirmModal.title}
+            </h3>
+            <p className="yuki-confirm-message">{confirmModal.message}</p>
+            <div className="yuki-confirm-buttons">
+              <button 
+                type="button" 
+                className="yuki-confirm-btn yuki-confirm-btn-proceed"
+                onClick={confirmModal.onConfirm}
+              >
+                Proceed
+              </button>
+              <button 
+                type="button" 
+                className="yuki-confirm-btn yuki-confirm-btn-cancel"
+                onClick={confirmModal.onCancel}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

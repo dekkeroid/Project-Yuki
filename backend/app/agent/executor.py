@@ -37,7 +37,8 @@ class AgentExecutor:
                 kwargs.get("start_directory") or kwargs.get("directory") or kwargs.get("start_dir") or kwargs.get("path") or kwargs.get("folder")
             ),
             "open_or_play_file": lambda **kwargs: open_or_play_file(
-                kwargs.get("file_path_or_query") or kwargs.get("query") or kwargs.get("file_path") or kwargs.get("path") or kwargs.get("filepath") or kwargs.get("file") or ""
+                kwargs.get("file_path_or_query") or kwargs.get("query") or kwargs.get("file_path") or kwargs.get("path") or kwargs.get("filepath") or kwargs.get("file") or "",
+                play_mode=bool(kwargs.get("play_mode", False))
             ),
             "create_file": lambda **kwargs: create_file(
                 kwargs.get("file_path") or kwargs.get("path") or kwargs.get("filepath") or kwargs.get("file"),
@@ -814,26 +815,42 @@ class AgentExecutor:
                     if tool_name == "launch_app":
                         app_name = tool_args.get("app_name") or tool_args.get("name") or tool_args.get("app") or (list(tool_args.values())[0] if tool_args else "")
                         needs_confirm = True
-                        confirm_target_name = app_name
+                        from app.tools.system import _find_app_path
+                        app_path = _find_app_path(app_name)
+                        confirm_target_name = app_path if app_path else app_name
                     elif tool_name == "open_or_play_file":
                         file_query = tool_args.get("file_path_or_query") or tool_args.get("query") or tool_args.get("file_path") or tool_args.get("path") or ""
+                        play_mode = bool(tool_args.get("play_mode", False))
                         from app.tools.files import resolve_best_file_no_llm, _get_steam_appid
+                        from app.tools.system import _find_app_path
                         import os
                         clean = file_query.strip().strip('"\'')
                         
                         resolved_path = None
+                        is_app = False
                         if os.path.exists(clean) and os.path.isfile(clean):
-                            resolved_path = clean
+                            if play_mode:
+                                _, ext = os.path.splitext(clean.lower())
+                                is_media = ext in ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg')
+                                if is_media:
+                                    resolved_path = clean
+                            else:
+                                resolved_path = clean
                         else:
-                            resolved_path = resolve_best_file_no_llm(clean, play_mode=False)
+                            app_path = _find_app_path(clean) if not play_mode else None
+                            if app_path:
+                                resolved_path = app_path
+                                is_app = True
+                            else:
+                                resolved_path = resolve_best_file_no_llm(clean, play_mode=play_mode)
                             
                         if resolved_path:
                             is_steam = resolved_path.lower().endswith(".exe") and _get_steam_appid(resolved_path) is not None
                             _, ext = os.path.splitext(resolved_path.lower())
                             is_media = ext in ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg')
-                            if not (is_steam or is_media):
+                            if is_app or not (is_steam or is_media):
                                 needs_confirm = True
-                                confirm_target_name = os.path.basename(resolved_path)
+                                confirm_target_name = resolved_path
 
                     confirmed = True
                     if needs_confirm:

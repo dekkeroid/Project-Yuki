@@ -117,7 +117,8 @@ Here are the available tools:
     - Description: Plays a song/video or opens a file. It accepts absolute paths, relative paths, partial filenames, or search queries, and automatically resolves to the best similar file match on the system.
     - Arguments:
       - `file_path_or_query`: (string) File path, filename, or search query.
-    - Example: `<tool_call>{{"name": "open_or_play_file", "arguments": {{"file_path_or_query": "Give It to Em"}}}}</tool_call>`
+      - `play_mode`: (boolean, optional) Set to true if trying to play a media file (music/video), restricting the resolution to audio/video files. Defaults to false.
+    - Example: `<tool_call>{{"name": "open_or_play_file", "arguments": {{"file_path_or_query": "Give It to Em", "play_mode": true}}}}</tool_call>`
 
 13. **create_file**
     - Description: Creates a new file with text content. Access is blocked in C drive system directories like Windows or Program Files.
@@ -155,7 +156,7 @@ RULES FOR TOOL CALLING:
 - Do NOT make up tools or call ones that are not in the list.
 - Make sure the JSON in the `<tool_call>` tag is valid JSON. Double-quotes must be used for strings.
 - **File search & disambiguation**: If the user wants to play a song/file and there are multiple search matches, check if the prompt had specific folder or extension instructions, otherwise ask the user which file they meant.
-- **Playing / Opening files**: If the user requests to play a song/media file or open any document (e.g. "play Give It to Em" or "open my notes"), you can call `open_or_play_file` DIRECTLY with the raw song name or file query (e.g. `file_path_or_query: "Give It to Em"`). You do NOT need to call `search_files` first. The tool will automatically search all available directories, locate similar files, prioritize media extensions, and open the best match.
+- **Playing / Opening files**: If the user requests to play a song/media file or open any document (e.g. "play Give It to Em" or "open my notes"), you can call `open_or_play_file` DIRECTLY with the raw song name or file query (e.g. `file_path_or_query: "Give It to Em"`, setting `play_mode: true` if playing media). You do NOT need to call `search_files` first. The tool will automatically search all available directories, locate similar files, prioritize media extensions, and open the best match.
 - **Deleting files**: You must NEVER call `delete_file` with `confirmed: true` unless the user has explicitly confirmed in the previous turn that you should delete the file. If they ask to delete a file, ask them for confirmation first!
 - **Directory extraction**: If the user mentions a specific subfolder, directory, or folder path in their query (e.g., "in video songs", "in the backend folder"), you MUST extract that folder and combine it with the drive letter to use as the `start_directory` (e.g., `D:\\video songs` or `C:\\Projects C\\Project Yuki\\backend`). Never ignore the subfolder name or default to the root drive `D:\\` if a specific subfolder was mentioned.
 
