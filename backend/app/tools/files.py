@@ -816,6 +816,60 @@ def _launch_steam_game(appid: str) -> bool:
         return False
 
 
+
+def open_or_play_file_no_llm(file_path_or_query: str, play_mode: bool = False) -> str:
+    """
+    Opens or plays a file or app without LLM pipeline, using pure-Python heuristics.
+    """
+    if not file_path_or_query or not file_path_or_query.strip():
+        return "Error: File path or query must not be empty."
+
+    clean = file_path_or_query.strip().strip('"\'')
+
+    # 1. Direct path shortcut
+    if os.path.exists(clean) and os.path.isfile(clean):
+        if not _is_safe_path(clean):
+            return f"Access Denied: Opening sensitive system file '{clean}' is blocked."
+        
+        if clean.lower().endswith(".exe"):
+            appid = _get_steam_appid(clean)
+            if appid:
+                if _launch_steam_game(appid):
+                    return f"Success: Launched Steam game (AppID: {appid}) via Steam."
+        
+        try:
+            os.startfile(clean)
+            return f"Success: Opened '{clean}'."
+        except Exception as e:
+            return f"Failed to open '{clean}': {e}"
+
+    # 2. Check if it's an application (e.g. mspaint, notepad)
+    from app.tools.system import launch_app, _find_app_path
+    app_path = _find_app_path(clean)
+    if app_path:
+        print(f"[Search-NoLLM] Found system app path: {app_path}")
+        return launch_app(clean)
+
+    # 3. Resolve using database/metadata (No LLM)
+    resolved = resolve_best_file_no_llm(clean, play_mode=play_mode)
+    print(f"[Search-NoLLM] Resolved file: {resolved}")
+    if not resolved:
+        return f"Error: Could not find any apps or files matching '{file_path_or_query}' on your system."
+
+    # Check if resolved file is a Steam game
+    if resolved.lower().endswith(".exe"):
+        appid = _get_steam_appid(resolved)
+        if appid:
+            if _launch_steam_game(appid):
+                return f"Success: Found best matching file and launched Steam game (AppID: {appid}) via Steam."
+
+    try:
+        os.startfile(resolved)
+        return f"Success: Found best matching file and opened '{resolved}'."
+    except Exception as e:
+        return f"Failed to open '{resolved}': {e}"
+
+
 def open_or_play_file(file_path_or_query: str) -> str:
     """
     Opens or plays a file. Accepts a direct path or a natural-language query.

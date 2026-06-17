@@ -1,11 +1,32 @@
 import io
 import os
+import sys
 import urllib.request
 from pathlib import Path
 import soundfile as sf
+import time
+
+def add_nvidia_dll_directories():
+    # Find site-packages/nvidia directory and inject paths
+    for path in sys.path:
+        if not path:
+            continue
+        nvidia_dir = Path(path) / "nvidia"
+        if nvidia_dir.exists() and nvidia_dir.is_dir():
+            for bin_dir in nvidia_dir.rglob("bin"):
+                if bin_dir.is_dir():
+                    try:
+                        resolved_path = str(bin_dir.resolve())
+                        if hasattr(os, "add_dll_directory"):
+                            os.add_dll_directory(resolved_path)
+                        os.environ["PATH"] = resolved_path + os.pathsep + os.environ["PATH"]
+                    except Exception as e:
+                        print(f"[TTS] Warning: Failed to add DLL directory {bin_dir}: {e}")
+
+add_nvidia_dll_directories()
+
 from kokoro_onnx import Kokoro
 from app import config
-import time
 
 VOICE_DIR = Path(__file__).parent.resolve()
 MODEL_PATH = VOICE_DIR / "kokoro-v1.0.onnx"
@@ -23,7 +44,6 @@ def _ensure_model_files():
             print(f"[TTS] Model file {path.name} is missing. Initiating download...")
             temp_path = path.with_suffix(".tmp")
             try:
-                # Retrieve with progress log
                 urllib.request.urlretrieve(url, temp_path)
                 if os.path.exists(temp_path):
                     os.rename(temp_path, path)
@@ -40,16 +60,83 @@ def _ensure_model_files():
 # Ensure files exist before initializing Kokoro
 _ensure_model_files()
 
-# Lazy loaded Kokoro instance
+# Lazy-loaded Kokoro instance
 _kokoro_instance = None
+
+
+def _build_session(providers: list):
+    """Create an ONNX InferenceSession with the given provider list."""
+    import onnxruntime as ort
+    if hasattr(ort, "preload_dlls"):
+        try:
+            ort.preload_dlls()
+        except Exception as e:
+            print(f"[TTS] Warning preloading DLLs: {e}")
+    import multiprocessing
+    sess_options = ort.SessionOptions()
+    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    sess_options.enable_cpu_mem_arena = True
+    cores = multiprocessing.cpu_count()
+    sess_options.intra_op_num_threads = min(6, cores)
+    sess_options.inter_op_num_threads = 2
+    return ort.InferenceSession(str(MODEL_PATH), sess_options=sess_options, providers=providers)
+
 
 def get_kokoro() -> Kokoro:
     global _kokoro_instance
-    if _kokoro_instance is None:
-        print("[TTS] Loading local Kokoro neural model into memory...")
-        _kokoro_instance = Kokoro(str(MODEL_PATH), str(VOICES_PATH))
-        print("[TTS] Model loaded successfully.")
+    if _kokoro_instance is not None:
+        return _kokoro_instance
+
+    print("[TTS] Loading local Kokoro-ONNX neural model into memory...")
+    import onnxruntime as ort
+
+    # Build provider list: prefer GPU, always keep CPU as fallback
+    available = ort.get_available_providers()
+    gpu_provider = None
+    if "DmlExecutionProvider" in available:
+        gpu_provider = "DmlExecutionProvider"
+    elif "CUDAExecutionProvider" in available:
+        gpu_provider = "CUDAExecutionProvider"
+
+    if gpu_provider:
+        print(f"[TTS] Trying GPU provider: {gpu_provider}...")
+        try:
+            session = _build_session([gpu_provider, "CPUExecutionProvider"])
+            active_providers = session.get_providers()
+            if gpu_provider not in active_providers:
+                # Provider loaded but silently fell back (e.g. missing CUDA toolkit DLLs)
+                print(f"[TTS] {gpu_provider} listed but not active (missing runtime libs). Active: {active_providers}")
+                print(f"[TTS] Falling back to CPU. Install the matching CUDA Toolkit to enable GPU.")
+            else:
+                kokoro = Kokoro.from_session(session, str(VOICES_PATH))
+                # Validate actual inference works on the GPU provider
+                print("[TTS] Validating GPU provider with warm-up inference...")
+                t_warm = time.time()
+                kokoro.create("hi", voice="af_sarah", speed=1.0, lang="en-us")
+                elapsed = int((time.time() - t_warm) * 1000)
+                print(f"[TTS] {gpu_provider} warm-up OK in {elapsed}ms - GPU is active.")
+                _kokoro_instance = kokoro
+                return _kokoro_instance
+        except Exception as e:
+            print(f"[TTS] {gpu_provider} is incompatible with this model ({type(e).__name__} : {e}). Falling back to CPU.")
+
+    # CPU-only path (fallback or no GPU)
+    print("[TTS] Loading with CPU provider...")
+    session = _build_session(["CPUExecutionProvider"])
+    _kokoro_instance = Kokoro.from_session(session, str(VOICES_PATH))
+    print(f"[TTS] Model loaded on CPU. Active providers: {session.get_providers()}")
+
+    # Warm-up on CPU
+    try:
+        print("[TTS] Running CPU warm-up inference to pre-compile ONNX graph...")
+        t_warm = time.time()
+        _kokoro_instance.create("hi", voice="af_sarah", speed=1.0, lang="en-us")
+        print(f"[TTS] CPU warm-up done in {int((time.time()-t_warm)*1000)}ms - model is hot and ready.")
+    except Exception as e:
+        print(f"[TTS] CPU warm-up failed (non-fatal): {e}")
+
     return _kokoro_instance
+
 
 def clean_text_for_tts(text: str) -> str:
     if not text:
@@ -77,7 +164,7 @@ def clean_text_for_tts(text: str) -> str:
         
     text = re.sub(r'\*(.*?)\*|_(.*?)_', replace_single, text)
     
-    # 3. Remove backticks but keep their inner text (backtick code style is a common format too!)
+    # 3. Remove backticks but keep their inner text
     text = text.replace('`', '')
     
     # 4. Remove emojis
@@ -98,6 +185,7 @@ def clean_text_for_tts(text: str) -> str:
     # 5. Replace multiple spaces with a single space
     text = re.sub(r'\s+', ' ', text).strip()
     return text
+
 
 async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) -> bytes:
     """
@@ -150,7 +238,6 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
         kokoro_voice = "jf_yasmin"
         lang_code = "ja"
     else:
-        # Default fallback to af_sarah (high quality cute voice)
         kokoro_voice = "af_sarah"
         lang_code = "en-us"
 
@@ -177,8 +264,10 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
         t0 = time.time()
         print(f"[TTS] generate_speech_bytes start voice={kokoro_voice} lang={lang_code} rate={speed_factor} text='{text[:80]}'")
         kokoro = get_kokoro()
-        # Generate samples (numpy array) and sample rate
-        samples, sample_rate = kokoro.create(text, voice=kokoro_voice, speed=speed_factor, lang=lang_code)
+        import asyncio
+        samples, sample_rate = await asyncio.to_thread(
+            kokoro.create, text, voice=kokoro_voice, speed=speed_factor, lang=lang_code
+        )
         
         # Write to WAV bytes in-memory
         audio_buffer = io.BytesIO()

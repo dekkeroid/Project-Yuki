@@ -6,7 +6,7 @@ import re
 import sys
 import logging
 import requests as http_requests
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
@@ -15,7 +15,12 @@ from typing import List, Dict, Optional
 class TelemetryLogFilter(logging.Filter):
     def filter(self, record):
         msg = record.getMessage()
-        return "/api/system/pcstat" not in msg and "/api/crawler/status" not in msg
+        return (
+            "/api/system/pcstat" not in msg and 
+            "/api/crawler/status" not in msg and 
+            "/api/speech/status" not in msg and 
+            "/api/speech/transcribe" not in msg
+        )
 
 logging.getLogger("uvicorn.access").addFilter(TelemetryLogFilter())
 
@@ -190,14 +195,70 @@ def health_check():
 @app.get("/api/models")
 def get_available_models():
     """
-    Returns the curated list of available models.
+    Returns the dynamically loaded list of models from LM Studio,
+    falling back to a curated list if LM Studio is offline.
     """
-    models = [
-        # [SEARCH FOR MODEL CHANGE] Old: {"name": "ministra-3", "type": "lmstudio"},
+    try:
+        response = http_requests.get(f"{config.LMSTUDIO_URL}/v1/models", timeout=3.0)
+        if response.status_code == 200:
+            data = response.json()
+            models_data = data.get("data", [])
+            models = [{"name": m["id"], "type": "lmstudio"} for m in models_data if "id" in m]
+            
+            # Ensure the currently active model is in the list
+            active_model = config.LLM_MODEL
+            if active_model and not any(m["name"] == active_model for m in models):
+                models.insert(0, {"name": active_model, "type": "lmstudio"})
+                
+            return {"models": models, "active": active_model}
+    except Exception as e:
+        print(f"[Backend] Failed to fetch models from LM Studio: {e}. Falling back to default list.")
+        
+    fallback_models = [
+        {"name": config.LLM_MODEL, "type": "lmstudio"},
         {"name": "llama-3.2-3b-instruct", "type": "lmstudio"},
         {"name": "nvidia/nemotron-3-nano-4b", "type": "lmstudio"}
     ]
+    # Deduplicate
+    seen = set()
+    models = []
+    for m in fallback_models:
+        if m["name"] not in seen:
+            seen.add(m["name"])
+            models.append(m)
+            
     return {"models": models, "active": config.LLM_MODEL}
+
+@app.get("/api/models/vrm")
+def get_vrm_models():
+    """
+    Dynamically scans the frontend models folder and returns all available .vrm files.
+    """
+    import os
+    from app.config import BASE_DIR
+    
+    # Try typical development path
+    models_dir = BASE_DIR.parent / "frontend" / "public" / "models"
+    
+    if not models_dir.exists():
+        # Fallback to current directory models folder if packaged differently
+        models_dir = BASE_DIR / "models"
+        
+    if not models_dir.exists():
+        return {"models": ["default.vrm"]}
+        
+    try:
+        files = [f for f in os.listdir(models_dir) if f.lower().endswith(".vrm")]
+        # Sort alphabetically, but make sure "default.vrm" is first
+        if "default.vrm" in files:
+            files.remove("default.vrm")
+            files = ["default.vrm"] + sorted(files)
+        else:
+            files = sorted(files)
+        return {"models": files}
+    except Exception as e:
+        print(f"Error listing VRM models: {e}")
+        return {"models": ["default.vrm"]}
 
 class ModelSwitchRequest(BaseModel):
     model: str
@@ -226,7 +287,12 @@ def get_settings():
         "character_name": config.CHARACTER_NAME,
         "character_persona": config.CHARACTER_PERSONA,
         "crawler_paused": is_crawler_paused(),
-        "tagger_paused": is_tagger_paused()
+        "tagger_paused": is_tagger_paused(),
+        "active_vrm_model": memory_manager.profile["settings"].get("active_vrm_model", "default.vrm"),
+        "whisper_model": memory_manager.profile["settings"].get("whisper_model", "base"),
+        "whisper_compute_type": memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16"),
+        "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
+        "stt_language": memory_manager.profile["settings"].get("stt_language", "en")
     }
 
 class SettingsUpdateRequest(BaseModel):
@@ -237,6 +303,11 @@ class SettingsUpdateRequest(BaseModel):
     character_persona: Optional[str] = None
     crawler_paused: Optional[bool] = None
     tagger_paused: Optional[bool] = None
+    active_vrm_model: Optional[str] = None
+    whisper_model: Optional[str] = None
+    whisper_compute_type: Optional[str] = None
+    use_local_whisper: Optional[bool] = None
+    stt_language: Optional[str] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -267,6 +338,16 @@ async def update_settings(req: SettingsUpdateRequest):
             crawler.pause_tagger()
         else:
             crawler.resume_tagger()
+    if req.active_vrm_model is not None:
+        memory_manager.update_setting("active_vrm_model", req.active_vrm_model.strip())
+    if req.whisper_model is not None:
+        memory_manager.update_setting("whisper_model", req.whisper_model.strip())
+    if req.whisper_compute_type is not None:
+        memory_manager.update_setting("whisper_compute_type", req.whisper_compute_type.strip())
+    if req.use_local_whisper is not None:
+        memory_manager.update_setting("use_local_whisper", req.use_local_whisper)
+    if req.stt_language is not None:
+        memory_manager.update_setting("stt_language", req.stt_language.strip())
         
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True
@@ -285,7 +366,12 @@ async def update_settings(req: SettingsUpdateRequest):
             "character_name": config.CHARACTER_NAME,
             "character_persona": config.CHARACTER_PERSONA,
             "crawler_paused": crawler.is_crawler_paused(),
-            "tagger_paused": crawler.is_tagger_paused()
+            "tagger_paused": crawler.is_tagger_paused(),
+            "active_vrm_model": memory_manager.profile["settings"].get("active_vrm_model", "default.vrm"),
+            "whisper_model": memory_manager.profile["settings"].get("whisper_model", "base"),
+            "whisper_compute_type": memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16"),
+            "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
+            "stt_language": memory_manager.profile["settings"].get("stt_language", "en")
         }
     }
 
@@ -329,6 +415,55 @@ async def tts_test_endpoint(req: SettingsUpdateRequest):
         return Response(content=audio_bytes, media_type="audio/wav")
     except Exception as e:
         return Response(status_code=500, content=f"TTS test failed: {e}")
+
+@app.post("/api/speech/transcribe")
+async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str] = None):
+    """
+    Receives an audio blob, writes it to a temp file, transcribes it using local Whisper, 
+    and returns the transcribed text.
+    """
+    import tempfile
+    import os
+    import uuid
+    from app.voice.stt import transcribe_audio_file
+    
+    active_model = model or memory_manager.profile["settings"].get("whisper_model", "base")
+    active_lang = memory_manager.profile["settings"].get("stt_language", "en")
+    active_compute = memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16")
+    
+    temp_dir = tempfile.gettempdir()
+    temp_path = os.path.join(temp_dir, f"yuki_voice_{uuid.uuid4().hex}.webm")
+    
+    try:
+        # Write uploaded bytes to temp file
+        with open(temp_path, "wb") as f:
+            f.write(await file.read())
+            
+        transcript = await transcribe_audio_file(
+            temp_path, 
+            model_size=active_model, 
+            compute_type=active_compute, 
+            language=active_lang
+        )
+        if transcript.strip():
+            print(f"[STT] Transcribed ({file.size or 0} bytes) using model '{active_model}' ({active_compute}) -> '{transcript}'")
+        return {"text": transcript}
+    except Exception as e:
+        print(f"[STT] Endpoint Error: {e}")
+        return Response(status_code=500, content=f"Transcription failed: {e}")
+    finally:
+        # Clean up temp file
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+@app.post("/api/speech/status")
+async def speech_status(req: dict):
+    msg = req.get("message", "")
+    print(f"[STT Frontend] {msg}")
+    return {"status": "ok"}
 
 @app.get("/api/profile")
 def get_profile():
@@ -377,7 +512,7 @@ async def reset_profile():
         "settings": {
             # [SEARCH FOR MODEL CHANGE] Old: "llm_model": "ministra-3",
             "llm_model": "llama-3.2-3b-instruct",
-            "tts_voice": "af_sarah",
+            "tts_voice": "bf_isabella",
             "tts_rate": "1.0",
             "character_name": "Yuki",
             "character_persona": """You are Yuki, a brilliant, highly intelligent agentic 3D companion. 
@@ -397,7 +532,12 @@ Strict constraints:
 5. You can execute tools autonomously to find answers or perform actions.
 """,
             "crawler_paused": False,
-            "tagger_paused": True
+            "tagger_paused": True,
+            "active_vrm_model": "default.vrm",
+            "whisper_model": "small",
+            "whisper_compute_type": "int8_float16",
+            "use_local_whisper": True,
+            "stt_language": "en"
         }
     }
     # Reset config variables to defaults as well
@@ -423,6 +563,65 @@ def get_pc_stats():
         return get_detailed_stats()
     except Exception as e:
         return {"error": str(e)}
+
+
+class OpenPlayRequest(BaseModel):
+    query: str
+    play_mode: bool = False
+    force: bool = False
+
+
+@app.post("/api/system/open_or_play")
+def post_open_or_play(req: OpenPlayRequest):
+    """
+    Directly resolves and opens/plays a file or application without LLM intervention.
+    With program confirmation check.
+    """
+    from app.tools.files import resolve_best_file_no_llm, _get_steam_appid
+    from app.tools.system import _find_app_path
+    import os
+
+    clean = req.query.strip().strip('"\'')
+    
+    # 1. Check if confirmation is required (only if force=False)
+    if not req.force:
+        is_app = False
+        resolved_path = None
+        target_name = clean
+        
+        app_path = _find_app_path(clean)
+        if app_path:
+            is_app = True
+            resolved_path = app_path
+            target_name = clean
+        elif os.path.exists(clean) and os.path.isfile(clean):
+            resolved_path = clean
+            target_name = os.path.basename(clean)
+        else:
+            resolved_path = resolve_best_file_no_llm(clean, play_mode=req.play_mode)
+            if resolved_path:
+                target_name = os.path.basename(resolved_path)
+                
+        if resolved_path:
+            # Check steam game or media
+            is_steam = resolved_path.lower().endswith(".exe") and _get_steam_appid(resolved_path) is not None
+            _, ext = os.path.splitext(resolved_path.lower())
+            is_media = ext in ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg')
+            
+            if is_app or not (is_steam or is_media):
+                return {
+                    "status": "confirm_required",
+                    "name": target_name,
+                    "path": resolved_path
+                }
+
+    from app.tools.files import open_or_play_file_no_llm
+    try:
+        result = open_or_play_file_no_llm(req.query, play_mode=req.play_mode)
+        return {"result": result}
+    except Exception as e:
+        return {"error": str(e)}
+
 
 @app.get("/api/crawler/status")
 def get_crawler_status():
@@ -467,6 +666,9 @@ def trigger_force_recrawl():
     crawler.force_recrawl()
     return {"message": "Full recrawl started successfully."}
 
+active_confirmations = {}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     global global_chat_history
@@ -480,181 +682,316 @@ async def websocket_endpoint(websocket: WebSocket):
         "profile": memory_manager.profile
     })
     
+    chat_task = None
     try:
         while True:
             # Wait for text data from frontend
             data = await websocket.receive_json()
             msg_type = data.get("type")
             
-            if msg_type == "chat":
-                user_msg = data.get("message", "").strip()
-                if not user_msg:
-                    continue
-                    
-                # 1. Send status indicating Yuki is thinking
-                await websocket.send_json({"type": "status", "status": "thinking"})
-                
-                start_time = time.time()
-                
-                # Parallel TTS Queue
-                tts_tasks = []
-                tts_tasks_event = asyncio.Event()
-                stream_done_flag = False
-                
-                def queue_sentence(sentence_text, idx):
-                    if not tts_online_status:
-                        return
-                        
-                    async def synth():
-                        global tts_online_status
-                        if not tts_online_status:
-                            return None
-                        try:
-                            speech_text = make_speech_friendly(sentence_text)
-                            # Use a timeout of 10.0 seconds for local Kokoro call (longer for first call)
-                            t_start = time.time()
-                            print(f"[TTS][QUEUE] Queued TTS idx={idx} text='{sentence_text[:80]}' speech_text='{speech_text[:80]}'")
-                            # Mark which backend we expect to use at the time of synthesis
-                            expected_backend = 'kokoro' if tts_online_status else 'backend-disabled'
-                            audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=10.0)
-                            t_elapsed = time.time() - t_start
-                            if audio_bytes:
-                                audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-                                audio_url = f"data:audio/wav;base64,{audio_base64}"
-                                print(f"[TTS][DONE] idx={idx} backend={expected_backend} time_ms={int(t_elapsed*1000)} text='{speech_text[:80]}'")
-                                return {
-                                    "type": "audio_chunk",
-                                    "audio_url": audio_url,
-                                    "index": idx,
-                                    "text": sentence_text,
-                                    "speech_text": speech_text,
-                                    "tts_backend": expected_backend,
-                                    "tts_time_ms": int(t_elapsed*1000),
-                                    "requested_text": sentence_text
-                                }
-                        except Exception as e:
-                            print(f"TTS Synthesis timeout/error for '{sentence_text}': {e}. Disabling backend TTS.")
-                            tts_online_status = False
-                        return None
-                    
-                    task = asyncio.create_task(synth())
-                    tts_tasks.append(task)
-                    tts_tasks_event.set()
-                
-                async def tts_sender():
-                    idx = 0
-                    while True:
-                        while idx >= len(tts_tasks):
-                            if stream_done_flag and idx >= len(tts_tasks):
-                                return
-                            tts_tasks_event.clear()
-                            await tts_tasks_event.wait()
-                        
-                        task = tts_tasks[idx]
-                        result = await task
-                        if result:
-                            await websocket.send_json(result)
-                        idx += 1
-                
-                sender_task = asyncio.create_task(tts_sender())
-                
-                try:
-                    # 2. Call the executor's streaming generator
-                    sentence_buffer = ""
-                    backend_used = "local"
-                    audio_idx = 0
-                    
-                    def find_sentence_boundary(text: str) -> int:
-                        min_idx = -1
-                        terminators = [('? ', 1), ('! ', 1), ('. ', 1), ('\n', 0), ('? \n', 2), ('! \n', 2), ('. \n', 2)]
-                        for term, offset in terminators:
-                            idx = text.find(term)
-                            if idx != -1:
-                                if min_idx == -1 or idx < min_idx:
-                                    min_idx = idx + len(term) - offset - 1
-                        return min_idx
-
+            if msg_type == "confirm_response":
+                conf_id = data.get("conf_id")
+                confirmed = data.get("confirmed", False)
+                if conf_id in active_confirmations:
                     try:
-                        async for event_type, value, label in agent_executor.execute_chat_turn_stream(user_msg, global_chat_history):
-                            backend_used = label
-                            if event_type == "token":
-                                # Send token to frontend
-                                await websocket.send_json({
-                                    "type": "text_stream",
-                                    "text": value,
-                                    "backend_used": backend_used
-                                })
-                                
-                                # Batch into sentences for TTS
-                                sentence_buffer += value
-                                while True:
-                                    boundary = find_sentence_boundary(sentence_buffer)
-                                    if boundary == -1:
-                                        break
-                                    sentence = sentence_buffer[:boundary + 1].strip()
-                                    sentence_buffer = sentence_buffer[boundary + 1:]
-                                    if sentence:
-                                        queue_sentence(sentence, audio_idx)
-                                        audio_idx += 1
-                                        
-                            elif event_type == "tool_start":
-                                # Notify frontend about tool call execution
-                                await websocket.send_json({
-                                    "type": "status",
-                                    "status": "thinking",
-                                    "message": f"Running tool '{value}'..."
-                                })
-                            elif event_type == "tool_result":
-                                # Notify frontend tool finished
-                                await websocket.send_json({
-                                    "type": "tool_result",
-                                    "result": value
-                                })
-                                await websocket.send_json({
-                                    "type": "status",
-                                    "status": "thinking"
-                                })
-                            elif event_type == "final_history":
-                                global_chat_history = value
+                        active_confirmations[conf_id].set_result(confirmed)
                     except Exception as e:
-                        print(f"Error during stream generation: {e}")
-                        friendly_error = await agent_executor.get_friendly_error_explanation(str(e))
-                        await websocket.send_json({"type": "error", "message": friendly_error})
-                    
-                    # Feed any remaining text in sentence buffer
-                    if sentence_buffer.strip():
-                        queue_sentence(sentence_buffer.strip(), audio_idx)
-                        audio_idx += 1
+                        print(f"[WebSocket] Error setting confirmation result: {e}")
+                continue
+
+            if msg_type == "interrupt":
+                if chat_task and not chat_task.done():
+                    print("[WebSocket] Interrupt request received. Cancelling active chat task.")
+                    chat_task.cancel()
+                    try:
+                        await chat_task
+                    except asyncio.CancelledError:
+                        pass
+                    chat_task = None
+                await websocket.send_json({
+                    "type": "status",
+                    "status": "idle",
+                    "message": "Turn terminated!"
+                })
+                continue
+            
+            if msg_type == "chat":
+                if chat_task and not chat_task.done():
+                    chat_task.cancel()
+                    try:
+                        await chat_task
+                    except asyncio.CancelledError:
+                        pass
+                
+                async def run_chat(payload_data):
+                    global global_chat_history
+                    try:
+                        user_msg = payload_data.get("message", "").strip()
+                        stt_time_ms = payload_data.get("stt_time_ms")
+                        if not user_msg:
+                            return
+                        print(f"[WebSocket] Received chat message: '{user_msg}'")
+                            
+                        # 1. Send status indicating Yuki is thinking
+                        await websocket.send_json({"type": "status", "status": "thinking"})
                         
-                    # Signal the worker to finish and wait for it
-                    stream_done_flag = True
-                    tts_tasks_event.set()
-                    await sender_task
-                finally:
-                    # Clean up the background task to prevent event loop task leaks
-                    stream_done_flag = True
-                    tts_tasks_event.set()
-                    if not sender_task.done():
-                        sender_task.cancel()
+                        start_time = time.time()
+                        ttft_duration = 0.0
+                        llm_start_time = None
+                        llm_generation_duration = 0.0
+                        tool_duration = 0.0
+                        tool_start_time = None
+                        
+                        # Parallel TTS Queue
+                        tts_tasks = []
+                        tts_tasks_event = asyncio.Event()
+                        stream_done_flag = False
+                        
+                        def queue_sentence(sentence_text, idx):
+                            nonlocal tts_tasks_event, stream_done_flag
+                            if not tts_online_status:
+                                return
+                                
+                            async def synth():
+                                global tts_online_status
+                                if not tts_online_status:
+                                    return None
+                                try:
+                                    speech_text = make_speech_friendly(sentence_text)
+                                    # Use a timeout of 10.0 seconds for local Kokoro call (longer for first call)
+                                    t_start = time.time()
+                                    print(f"[TTS][QUEUE] Queued TTS idx={idx} text='{sentence_text[:80]}' speech_text='{speech_text[:80]}'")
+                                    # Mark which backend we expect to use at the time of synthesis
+                                    expected_backend = 'kokoro' if tts_online_status else 'backend-disabled'
+                                    audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=10.0)
+                                    t_elapsed = time.time() - t_start
+                                    if audio_bytes:
+                                        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                                        audio_url = f"data:audio/wav;base64,{audio_base64}"
+                                        print(f"[TTS][DONE] idx={idx} backend={expected_backend} time_ms={int(t_elapsed*1000)} text='{speech_text[:80]}'")
+                                        return {
+                                            "type": "audio_chunk",
+                                            "audio_url": audio_url,
+                                            "index": idx,
+                                            "text": sentence_text,
+                                            "speech_text": speech_text,
+                                            "tts_backend": expected_backend,
+                                            "tts_time_ms": int(t_elapsed*1000),
+                                            "requested_text": sentence_text
+                                        }
+                                except Exception as e:
+                                    print(f"TTS Synthesis timeout/error for '{sentence_text}': {e}. Disabling backend TTS.")
+                                    tts_online_status = False
+                                return None
+                            
+                            task = asyncio.create_task(synth())
+                            tts_tasks.append(task)
+                            tts_tasks_event.set()
+                        
+                        async def tts_sender():
+                            idx = 0
+                            while True:
+                                while idx >= len(tts_tasks):
+                                    if stream_done_flag and idx >= len(tts_tasks):
+                                        return
+                                    tts_tasks_event.clear()
+                                    await tts_tasks_event.wait()
+                                
+                                task = tts_tasks[idx]
+                                result = await task
+                                if result:
+                                    await websocket.send_json(result)
+                                idx += 1
+                        
+                        sender_task = asyncio.create_task(tts_sender())
+                        
                         try:
+                            # 2. Call the executor's streaming generator
+                            sentence_buffer = ""
+                            backend_used = "local"
+                            audio_idx = 0
+                            
+                            def find_sentence_boundary(text: str) -> int:
+                                min_idx = -1
+                                terminators = [('? ', 1), ('! ', 1), ('. ', 1), ('\n', 0), ('? \n', 2), ('! \n', 2), ('. \n', 2)]
+                                for term, offset in terminators:
+                                    idx = text.find(term)
+                                    if idx != -1:
+                                        if min_idx == -1 or idx < min_idx:
+                                            min_idx = idx + len(term) - offset - 1
+                                return min_idx
+
+                            try:
+                                gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history)
+                                try:
+                                    event = await gen.__anext__()
+                                    while True:
+                                        event_type, value, label = event
+                                        backend_used = label
+                                        
+                                        if event_type == "tool_confirm_required":
+                                            import uuid
+                                            conf_id = str(uuid.uuid4())
+                                            future = asyncio.Future()
+                                            active_confirmations[conf_id] = future
+                                            try:
+                                                await websocket.send_json({
+                                                    "type": "confirm_request",
+                                                    "conf_id": conf_id,
+                                                    "name": value
+                                                })
+                                                confirmed = await future
+                                            finally:
+                                                active_confirmations.pop(conf_id, None)
+                                            
+                                            event = await gen.asend(confirmed)
+                                        else:
+                                            if event_type == "token":
+                                                if llm_start_time is None:
+                                                    llm_start_time = time.time()
+                                                    ttft_duration = llm_start_time - start_time
+                                                # Send token to frontend
+                                                await websocket.send_json({
+                                                    "type": "text_stream",
+                                                    "text": value,
+                                                    "backend_used": backend_used
+                                                })
+                                                
+                                                # Batch into sentences for TTS
+                                                sentence_buffer += value
+                                                while True:
+                                                    boundary = find_sentence_boundary(sentence_buffer)
+                                                    if boundary == -1:
+                                                        break
+                                                    sentence = sentence_buffer[:boundary + 1].strip()
+                                                    sentence_buffer = sentence_buffer[boundary + 1:]
+                                                    if sentence:
+                                                        queue_sentence(sentence, audio_idx)
+                                                        audio_idx += 1
+                                                        
+                                            elif event_type == "tool_start":
+                                                tool_start_time = time.time()
+                                                # Notify frontend about tool call execution
+                                                await websocket.send_json({
+                                                    "type": "status",
+                                                    "status": "thinking",
+                                                    "message": f"Running tool '{value}'..."
+                                                })
+                                            elif event_type == "tool_result":
+                                                if tool_start_time is not None:
+                                                    tool_duration += time.time() - tool_start_time
+                                                    tool_start_time = None
+                                                # Notify frontend tool finished
+                                                await websocket.send_json({
+                                                    "type": "tool_result",
+                                                    "result": value
+                                                })
+                                                await websocket.send_json({
+                                                    "type": "status",
+                                                    "status": "thinking"
+                                                })
+                                            elif event_type == "final_history":
+                                                global_chat_history = value
+                                                
+                                            event = await gen.__anext__()
+                                except StopAsyncIteration:
+                                    pass
+                            except Exception as e:
+                                print(f"Error during stream generation: {e}")
+                                friendly_error = await agent_executor.get_friendly_error_explanation(str(e))
+                                await websocket.send_json({"type": "error", "message": friendly_error})
+                            
+                            # Feed any remaining text in sentence buffer
+                            if sentence_buffer.strip():
+                                queue_sentence(sentence_buffer.strip(), audio_idx)
+                                audio_idx += 1
+                                
+                            # Signal the worker to finish and wait for it
+                            stream_done_flag = True
+                            tts_tasks_event.set()
                             await sender_task
-                        except asyncio.CancelledError:
+                        finally:
+                            # Clean up the background task to prevent event loop task leaks
+                            stream_done_flag = True
+                            tts_tasks_event.set()
+                            if not sender_task.done():
+                                sender_task.cancel()
+                                try:
+                                    await sender_task
+                                except asyncio.CancelledError:
+                                    pass
+                        
+                        elapsed_time = time.time() - start_time
+                        llm_generation_duration = time.time() - (llm_start_time or start_time)
+                        
+                        # Print Timing Breakdown in Backend Terminal
+                        ttft_str = f"{ttft_duration:.2f}s" if llm_start_time is not None else "N/A (No tokens generated)"
+                        llm_gen_str = f"{llm_generation_duration:.2f}s"
+                        tool_str = f"{tool_duration:.2f}s"
+                        
+                        print(f"\n================ CHAT TURN TIMING BREAKDOWN ================")
+                        if stt_time_ms is not None:
+                            print(f"Overall End-to-End Latency: {elapsed_time + (stt_time_ms / 1000.0):.2f}s")
+                            print(f"  - Speech-to-Text (STT):       {stt_time_ms / 1000.0:.2f}s")
+                            print(f"  - Processing (LLM + TTS):     {elapsed_time:.2f}s")
+                        else:
+                            print(f"Total Turn Time: {elapsed_time:.2f}s")
+                        print(f"  - Time to First Token (TTFT): {ttft_str}")
+                        print(f"  - LLM Token Generation:       {llm_gen_str}")
+                        print(f"  - Tool Executions:            {tool_str}")
+                        print(f"============================================================\n")
+                        
+                        # Send final stream done message containing total time
+                        await websocket.send_json({
+                            "type": "stream_done",
+                            "backend_used": backend_used,
+                            "response_time": round(elapsed_time, 2)
+                        })
+                        
+                        # Push profile update
+                        await websocket.send_json({
+                            "type": "profile_update",
+                            "profile": memory_manager.profile
+                        })
+                    except asyncio.CancelledError:
+                        print("[WebSocket] Chat turn was cancelled/interrupted.")
+                        # Send status to frontend that we are idle now
+                        try:
+                            await websocket.send_json({"type": "status", "status": "idle"})
+                        except:
                             pass
+                        raise
                 
-                elapsed_time = time.time() - start_time
+                chat_task = asyncio.create_task(run_chat(data))
                 
-                # Send final stream done message containing total time
-                await websocket.send_json({
-                    "type": "stream_done",
-                    "backend_used": backend_used,
-                    "response_time": round(elapsed_time, 2)
-                })
-                
-                # Push profile update
-                await websocket.send_json({
-                    "type": "profile_update",
-                    "profile": memory_manager.profile
-                })
+            elif msg_type == "tts_only":
+                # Synthesise a short system message via Kokoro TTS without calling the LLM
+                tts_text = data.get("text", "").strip()
+                expression = data.get("expression", None)
+                if tts_text and tts_online_status:
+                    try:
+                        speech_text = make_speech_friendly(tts_text)
+                        audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=8.0)
+                        if audio_bytes:
+                            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                            audio_url = f"data:audio/wav;base64,{audio_base64}"
+                            await websocket.send_json({
+                                "type": "audio_chunk",
+                                "audio_url": audio_url,
+                                "index": 0,
+                                "text": tts_text,
+                                "speech_text": speech_text,
+                                "tts_backend": "kokoro",
+                                "tts_time_ms": 0,
+                                "expression": expression
+                            })
+                    except Exception as e:
+                        print(f"[TTS-Only] Synthesis error: {e}")
+                    await websocket.send_json({"type": "stream_done", "backend_used": "tts_only", "response_time": 0})
+
+            elif msg_type == "log":
+                log_msg = data.get("message", "")
+                print(f"[Frontend Log] {log_msg}")
                 
             elif msg_type == "reset":
                 global_chat_history.clear()
@@ -674,5 +1011,7 @@ async def websocket_endpoint(websocket: WebSocket):
         except Exception:
             pass
     finally:
+        if chat_task and not chat_task.done():
+            chat_task.cancel()
         if websocket in active_websockets:
             active_websockets.remove(websocket)

@@ -16,12 +16,17 @@ class MemoryManager:
             "settings": {
                 # [SEARCH FOR MODEL CHANGE] Old: "llm_model": "ministra-3",
                 "llm_model": "llama-3.2-3b-instruct",
-                "tts_voice": "af_sarah",
+                "tts_voice": "bf_isabella",
                 "tts_rate": "1.0",
                 "character_name": "Yuki",
                 "character_persona": config.CHARACTER_PERSONA,
                 "crawler_paused": False,
-                "tagger_paused": True
+                "tagger_paused": True,
+                "active_vrm_model": "default.vrm",
+                "whisper_model": "small",
+                "whisper_compute_type": "int8_float16",
+                "use_local_whisper": True,
+                "stt_language": "en"
             }
         }
         if not os.path.exists(self.profile_path):
@@ -49,6 +54,7 @@ class MemoryManager:
                 config.TTS_RATE = data["settings"].get("tts_rate", config.TTS_RATE)
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
                 config.CHARACTER_PERSONA = data["settings"].get("character_persona", config.CHARACTER_PERSONA)
+                config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
                 
                 return data
         except Exception as e:
@@ -129,6 +135,8 @@ class MemoryManager:
             config.CHARACTER_NAME = value
         elif key == "character_persona":
             config.CHARACTER_PERSONA = value
+        elif key == "llm_model":
+            config.LLM_MODEL = value
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

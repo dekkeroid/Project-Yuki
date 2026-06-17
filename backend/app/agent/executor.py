@@ -88,38 +88,50 @@ class AgentExecutor:
                         # Fallback if the data list is nested differently
                         available_models = payload_data.get("models", [])
 
-                # 2. Use Regex matching to isolate the right structural key
                 # [SEARCH FOR MODEL CHANGE] Old keyword: "ministral"
                 search_keyword = "llama" if "llama" in model_name.lower() else "nemotron"
                 pattern = re.compile(rf".*{search_keyword}.*", re.IGNORECASE)
 
                 print(f"[LM Studio] Scanning {len(available_models)} downloaded models for keyword '{search_keyword}'...")
 
+                specific_match = None    # Matches the full configured model name
+                keyword_match = None     # Fallback: first model matching the keyword
+                specific_loaded = False
+
                 for model_entry in available_models:
                     # Check every possible identifier field LM Studio uses across versions
                     model_key = model_entry.get("id") or model_entry.get("key") or model_entry.get("path") or ""
                     print(f"[LM Studio]   -> Found Library Entry: '{model_key}'")
 
-                    if model_key and pattern.match(model_key):
-                        lm_studio_identifier = model_key
-                        
-                        # Fix: Check the active instance parameters securely
-                        # If the model state is explicitly loaded, or has active tracking instances, bypass loading
-                        is_loaded = (
-                            model_entry.get("loaded", False) == True or 
-                            model_entry.get("state") == "loaded" or 
-                            bool(model_entry.get("loaded_instances"))
-                        )
-                        
-                        if is_loaded:
-                            print(f"[LM Studio] Discovery Success: '{model_name}' maps to active instance '{lm_studio_identifier}'. Skipping load sequence.")
-                            return True
-                        break
+                    if not model_key:
+                        continue
 
-                # Fallback safety buffer if your library scan yields nothing
-                if not lm_studio_identifier:
-                    print(f"[LM Studio] Discoverer Warning: Regex could not find an internal match for keyword '{search_keyword}'.")
-                    lm_studio_identifier = model_name
+                    is_loaded = (
+                        model_entry.get("loaded", False) == True or
+                        model_entry.get("state") == "loaded" or
+                        bool(model_entry.get("loaded_instances"))
+                    )
+
+                    # Specific match: model key contains the full configured name
+                    if model_name.lower() in model_key.lower():
+                        specific_match = model_key
+                        specific_loaded = is_loaded
+                        break   # Exact match found — no need to keep scanning
+
+                    # Fallback: first keyword match (only kept if no specific match found)
+                    if keyword_match is None and pattern.match(model_key):
+                        keyword_match = model_key
+
+                # Prefer specific match; only use keyword fallback if nothing specific found
+                if specific_match:
+                    lm_studio_identifier = specific_match
+                    if specific_loaded:
+                        print(f"[LM Studio] Discovery Success: '{model_name}' maps to active instance '{lm_studio_identifier}'. Skipping load sequence.")
+                        return True
+                elif keyword_match:
+                    lm_studio_identifier = keyword_match
+                    print(f"[LM Studio] Warning: Exact match for '{model_name}' not found. Falling back to keyword match: '{lm_studio_identifier}'.")
+
 
                 # 3. Fire the auto-load request with the dynamic matching key
                 print(f"[LM Studio] Model '{model_name}' is offline. Automatically loading: '{lm_studio_identifier}'...")
@@ -127,8 +139,7 @@ class AgentExecutor:
                     "model": lm_studio_identifier
                 }
 
-                print(f"llm mode==== '{lm_studio_identifier}'")
-                
+
                 async with session.post(f"{config.LMSTUDIO_URL}/api/v1/models/load", json=payload, timeout=45) as load_resp:
                     if load_resp.status == 200:
                         print(f"[LM Studio] Successfully auto-loaded model: '{lm_studio_identifier}'")
@@ -468,23 +479,6 @@ class AgentExecutor:
         """
         self.memory.increment_interactions()
 
-        # Check for non-LLM commands /open and /play
-        msg_lower = user_message.lower().strip()
-        if msg_lower.startswith('/open ') or msg_lower.startswith('/play '):
-            play_mode = msg_lower.startswith('/play ')
-            cmd_prefix = '/play ' if play_mode else '/open '
-            query = user_message[len(cmd_prefix):].strip()
-            
-            print(f"[Executor] Running non-LLM resolver for query='{query}' play_mode={play_mode}")
-            # Use open_or_play_file which handles Steam games properly
-            response_text = open_or_play_file(query)
-            
-            final_history = list(chat_history) + [
-                {"role": "user", "content": user_message},
-                {"role": "assistant", "content": response_text}
-            ]
-            return response_text, final_history, "local"
-
         # Determine backend first so we can pick the right prompt
         if config.LLM_MODE == 1:
             resolved_backend = "simple"
@@ -758,27 +752,6 @@ class AgentExecutor:
         """
         self.memory.increment_interactions()
 
-        # Check for non-LLM commands /open and /play
-        msg_lower = user_message.lower().strip()
-        if msg_lower.startswith('/open ') or msg_lower.startswith('/play '):
-            play_mode = msg_lower.startswith('/play ')
-            cmd_prefix = '/play ' if play_mode else '/open '
-            query = user_message[len(cmd_prefix):].strip()
-            
-            print(f"[Executor Stream] Running non-LLM resolver for query='{query}' play_mode={play_mode}")
-            # Use open_or_play_file which handles Steam games properly
-            response_text = await asyncio.to_thread(open_or_play_file, query)
-            
-            yield "tool_result", response_text, "local"
-            yield "token", response_text, "local"
-            
-            final_history = list(chat_history) + [
-                {"role": "user", "content": user_message},
-                {"role": "assistant", "content": response_text}
-            ]
-            yield "final_history", final_history, "local"
-            return
-
         # Determine backend first so we can pick the right prompt
         if config.LLM_MODE == 1:
             resolved_backend = "simple"
@@ -834,31 +807,68 @@ class AgentExecutor:
                     print(f"Agent triggered tool '{tool_name}' with args {tool_args} (iteration {iteration})")
                     yield "tool_start", tool_name, backend_used
                     
-                    tool_failed = False
-                    if tool_name in self.tools:
-                        try:
-                            tool_func = self.tools[tool_name]
-                            if inspect.iscoroutinefunction(tool_func):
-                                if tool_args:
-                                    tool_result = await tool_func(**tool_args)
-                                else:
-                                    tool_result = await tool_func()
-                            else:
-                                if tool_args:
-                                    tool_result = await asyncio.to_thread(tool_func, **tool_args)
-                                else:
-                                    tool_result = await asyncio.to_thread(tool_func)
-                        except Exception as e:
-                            tool_result = f"Error executing tool: {str(e)}"
-                            tool_failed = True
-                    else:
-                        tool_result = f"Error: Tool '{tool_name}' is not registered."
-                        tool_failed = True
+                    # Security Confirmation check for programs
+                    needs_confirm = False
+                    confirm_target_name = ""
+
+                    if tool_name == "launch_app":
+                        app_name = tool_args.get("app_name") or tool_args.get("name") or tool_args.get("app") or (list(tool_args.values())[0] if tool_args else "")
+                        needs_confirm = True
+                        confirm_target_name = app_name
+                    elif tool_name == "open_or_play_file":
+                        file_query = tool_args.get("file_path_or_query") or tool_args.get("query") or tool_args.get("file_path") or tool_args.get("path") or ""
+                        from app.tools.files import resolve_best_file_no_llm, _get_steam_appid
+                        import os
+                        clean = file_query.strip().strip('"\'')
                         
-                    if not tool_failed and isinstance(tool_result, str):
-                        lower_res = tool_result.lower().strip()
-                        if lower_res.startswith("error") or lower_res.startswith("failed") or lower_res.startswith("access denied") or "exception" in lower_res:
+                        resolved_path = None
+                        if os.path.exists(clean) and os.path.isfile(clean):
+                            resolved_path = clean
+                        else:
+                            resolved_path = resolve_best_file_no_llm(clean, play_mode=False)
+                            
+                        if resolved_path:
+                            is_steam = resolved_path.lower().endswith(".exe") and _get_steam_appid(resolved_path) is not None
+                            _, ext = os.path.splitext(resolved_path.lower())
+                            is_media = ext in ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg')
+                            if not (is_steam or is_media):
+                                needs_confirm = True
+                                confirm_target_name = os.path.basename(resolved_path)
+
+                    confirmed = True
+                    if needs_confirm:
+                        confirmed = yield "tool_confirm_required", confirm_target_name, backend_used
+
+                    tool_failed = False
+                    tool_result = ""
+                    if not confirmed:
+                        tool_result = f"Error: Execution cancelled by user confirmation security check."
+                        tool_failed = True
+                    else:
+                        if tool_name in self.tools:
+                            try:
+                                tool_func = self.tools[tool_name]
+                                if inspect.iscoroutinefunction(tool_func):
+                                    if tool_args:
+                                        tool_result = await tool_func(**tool_args)
+                                    else:
+                                        tool_result = await tool_func()
+                                else:
+                                    if tool_args:
+                                        tool_result = await asyncio.to_thread(tool_func, **tool_args)
+                                    else:
+                                        tool_result = await asyncio.to_thread(tool_func)
+                            except Exception as e:
+                                tool_result = f"Error executing tool: {str(e)}"
+                                tool_failed = True
+                        else:
+                            tool_result = f"Error: Tool '{tool_name}' is not registered."
                             tool_failed = True
+                            
+                        if not tool_failed and isinstance(tool_result, str):
+                            lower_res = tool_result.lower().strip()
+                            if lower_res.startswith("error") or lower_res.startswith("failed") or lower_res.startswith("access denied") or "exception" in lower_res:
+                                tool_failed = True
 
                     print(f"Tool execution result: {tool_result}")
                     yield "tool_result", tool_result, backend_used

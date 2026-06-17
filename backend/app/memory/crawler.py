@@ -311,6 +311,40 @@ EXCLUDED_DIRS = [
     "D:\\$RECYCLE.BIN",             # Recycle Bin
 ]
 
+# Folder path keyword constraints: maps a substring pattern in the folder path to the allowed extension(s).
+# If the path contains the keyword (case-insensitive), ONLY files with one of the allowed extensions are accepted.
+FOLDER_EXTENSION_CONSTRAINTS = {
+    # Games and program directories: only index .exe files
+    "steam": {".exe"},
+    "games": {".exe"},
+    "epic games": {".exe"},
+    "origin": {".exe"},
+    "riot games": {".exe"},
+    "blizzard": {".exe"},
+    "ubisoft": {".exe"},
+    "gog": {".exe"},
+    "program files": {".exe"},
+    "programdata": {".exe"},
+    "node_modules": {".exe"},
+    "appdata": {".exe"},
+    ".git": {".exe"},
+    "bin": {".exe"},
+    "obj": {".exe"},
+    "windowsapps": {".exe"},
+}
+
+def should_skip_by_path_constraints(file_path: str, ext_lower: str) -> bool:
+    """
+    Checks if a file path matches any folder-specific extension constraints.
+    Returns True if the file should be skipped (i.e. is not allowed).
+    """
+    path_lower = file_path.lower()
+    for pattern, allowed_extensions in FOLDER_EXTENSION_CONSTRAINTS.items():
+        if pattern in path_lower:
+            if ext_lower not in allowed_extensions:
+                return True
+    return False
+
 # Every single word here will only trigger a skip if the folder name is an EXACT match
 DIR_BLACKLIST_KEYWORDS = {
     # System folder names
@@ -400,7 +434,8 @@ def _is_game_or_program_dir(dir_path: str) -> bool:
     standard Program Files, build output, or system application data.
     """
     path_lower = dir_path.lower()
-    patterns = ["steam", "games", "epic games", "origin", "riot games", "blizzard", "ubisoft", "gog", "program files", "programdata", "node_modules", "appdata", ".git", "bin", "obj"]
+    # Find all patterns in FOLDER_EXTENSION_CONSTRAINTS that restrict files to .exe
+    patterns = [pat for pat, allowed in FOLDER_EXTENSION_CONSTRAINTS.items() if allowed == {".exe"}]
     return any(pattern in path_lower for pattern in patterns)
 
 def guess_category(file_path: str, ext: str, size: int = 0) -> str:
@@ -576,7 +611,6 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
                 
             folders_scanned += 1
             folder_changes_detected = False
-            is_game_program_path = _is_game_or_program_dir(root)
             
             for file in files:
                 full_path = os.path.join(root, file)
@@ -589,7 +623,7 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
                 if ext_lower not in EXT_CATEGORIES:
                     continue
                     
-                if is_game_program_path and ext_lower != '.exe':
+                if should_skip_by_path_constraints(full_path, ext_lower):
                     continue
                     
                 all_seen_file_paths.add(full_path)
@@ -1023,14 +1057,26 @@ class YukiFileSystemHandler(FileSystemEventHandler):
     def handle_file_change(self, file_path: str, change_type: str):
         if not _is_safe_path(file_path, write_operation=False):
             return
-        if _is_game_or_program_dir(file_path):
-            return
             
         file_path = os.path.abspath(file_path)
+        
+        # Filter out excluded directories
+        file_path_lower = file_path.lower()
+        excluded_lower = [e.lower() for e in EXCLUDED_DIRS]
+        if any(file_path_lower == e or file_path_lower.startswith(e + os.sep) for e in excluded_lower):
+            return
+            
+        # Filter out blacklisted directories (e.g. venv, node_modules, .git)
+        if _contains_blacklisted_dir_component(file_path):
+            return
+            
         file_name = os.path.basename(file_path)
         _, ext = os.path.splitext(file_name)
         ext_lower = ext.lower()
         if ext_lower not in EXT_CATEGORIES:
+            return
+            
+        if should_skip_by_path_constraints(file_path, ext_lower):
             return
             
         if change_type == "deleted":

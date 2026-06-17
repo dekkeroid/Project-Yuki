@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Footprints, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff } from 'lucide-react';
+import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History } from 'lucide-react';
 import AvatarViewer from './components/AvatarViewer';
 import ChatOverlay, { SLASH_COMMANDS } from './components/ChatOverlay';
 import ControlDashboard from './components/ControlDashboard';
@@ -149,6 +149,7 @@ const App = () => {
   const [backendStatus, setBackendStatus] = useState('offline');
   const [modelName, setModelName] = useState('');
   const [lmstudioUrl, setLmstudioUrl] = useState('');
+  const [vrmModels, setVrmModels] = useState(['default.vrm']);
 
   // UI States
   const [inputText, setInputText] = useState('');
@@ -231,6 +232,8 @@ const App = () => {
     watchdog_active: false
   });
 
+  const [availableLlmModels, setAvailableLlmModels] = useState([]);
+
   // Sync companion local states when profile changes
   useEffect(() => {
     if (profile.settings) {
@@ -244,17 +247,81 @@ const App = () => {
   }, [profile.settings]);
 
   const [audioLevel, setAudioLevel] = useState(0);
-  const [isThinking, setIsThinking] = useState(false);
+  const [isThinking, setIsThinkingState] = useState(false);
+  const isThinkingRef = useRef(false);
+  const setIsThinking = (val) => {
+    isThinkingRef.current = val;
+    setIsThinkingState(val);
+  };
+  const [ttsStreamActive, setTtsStreamActiveState] = useState(false);
+  const ttsStreamActiveRef = useRef(false);
+  const setTtsStreamActive = (val) => {
+    ttsStreamActiveRef.current = val;
+    setTtsStreamActiveState(val);
+  };
+  const [isTranscribing, setIsTranscribingState] = useState(false);
+  const isTranscribingRef = useRef(false);
+  const setIsTranscribing = (val) => {
+    isTranscribingRef.current = val;
+    setIsTranscribingState(val);
+  };
   const [isListening, setIsListening] = useState(false);
   const [isTalkMode, setIsTalkMode] = useState(false);
   const [isVoiceCommandMode, setIsVoiceCommandMode] = useState(false);
   const isVoiceCommandModeRef = useRef(false);
+  const [isSessionActive, setIsSessionActiveState] = useState(false);
+  const isSessionActiveRef = useRef(false);
+  const setIsSessionActive = (val) => {
+    isSessionActiveRef.current = val;
+    setIsSessionActiveState(val);
+  };
 
   useEffect(() => {
     isVoiceCommandModeRef.current = isVoiceCommandMode;
   }, [isVoiceCommandMode]);
+
+  const [useLocalWhisper, setUseLocalWhisperState] = useState(true);
+  const useLocalWhisperRef = useRef(true);
+  const setUseLocalWhisper = (val) => {
+    useLocalWhisperRef.current = val;
+    setUseLocalWhisperState(val);
+  };
+  const [whisperModel, setWhisperModelState] = useState('base');
+  const whisperModelRef = useRef('base');
+  const setWhisperModel = (val) => {
+    whisperModelRef.current = val;
+    setWhisperModelState(val);
+  };
+  const [vadThreshold, setVadThreshold] = useState(() => {
+    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.01');
+  });
+  const vadThresholdRef = useRef(vadThreshold);
+  useEffect(() => {
+    vadThresholdRef.current = vadThreshold;
+  }, [vadThreshold]);
+
+  useEffect(() => {
+    if (profile && profile.settings) {
+      if (profile.settings.use_local_whisper !== undefined) {
+        setUseLocalWhisper(profile.settings.use_local_whisper);
+      }
+      if (profile.settings.whisper_model) {
+        setWhisperModel(profile.settings.whisper_model);
+      }
+    }
+  }, [profile]);
   const [currentSpeechText, setCurrentSpeechText] = useState('');
   const [muteVoice, setMuteVoice] = useState(false);
+  const [voiceVolume, setVoiceVolume] = useState(() => {
+    return parseFloat(localStorage.getItem('yuki-voice-volume') || '0.5');
+  });
+  const voiceVolumeRef = useRef(voiceVolume);
+  useEffect(() => {
+    voiceVolumeRef.current = voiceVolume;
+    if (audioRef.current) {
+      audioRef.current.volume = voiceVolume;
+    }
+  }, [voiceVolume]);
   const [avatarExpression, setAvatarExpression] = useState('neutral');
   const [crawlerPaused, setCrawlerPaused] = useState(false);
   const [taggerPaused, setTaggerPaused] = useState(false);
@@ -266,14 +333,44 @@ const App = () => {
   });
   const selectedMicDeviceIdRef = useRef(localStorage.getItem('yuki-mic-device-id') || '');
 
+  const [preferHeadsetMic, setPreferHeadsetMic] = useState(() => {
+    return localStorage.getItem('yuki-prefer-headset') === 'true';
+  });
+
+  // Keywords used to identify headset/headphone mics
+  const HEADSET_KEYWORDS = ['headset', 'headphone', 'earphone', 'earpiece', 'bluetooth', 'wireless', 'hands-free', 'handsfree', 'airpod', 'buds'];
+
+  const applyHeadsetPreference = (devices, prefer) => {
+    if (!prefer) return;
+    const isHeadset = (d) => HEADSET_KEYWORDS.some(kw => (d.label || '').toLowerCase().includes(kw));
+    const isCommunications = (d) => (d.label || '').toLowerCase().startsWith('communications');
+
+    // First pass: headset device that is NOT a "Communications" alias
+    let headset = devices.find(d => isHeadset(d) && !isCommunications(d));
+    // Second pass: accept a communications headset if no plain one found
+    if (!headset) headset = devices.find(d => isHeadset(d));
+
+    const targetId = headset ? headset.deviceId : '';
+    selectedMicDeviceIdRef.current = targetId;
+    setSelectedMicDeviceId(targetId);
+    if (targetId) {
+      localStorage.setItem('yuki-mic-device-id', targetId);
+    } else {
+      localStorage.removeItem('yuki-mic-device-id');
+    }
+  };
+
   const refreshMicDevices = async () => {
     try {
       // Need at least a temporary permission grant to get labelled devices
       const devices = await navigator.mediaDevices.enumerateDevices();
       const audioInputs = devices.filter(d => d.kind === 'audioinput');
       setMicDevices(audioInputs);
-      // If saved device no longer exists, fall back to default
-      if (selectedMicDeviceIdRef.current && !audioInputs.find(d => d.deviceId === selectedMicDeviceIdRef.current)) {
+      // Apply headset preference first if enabled
+      if (localStorage.getItem('yuki-prefer-headset') === 'true') {
+        applyHeadsetPreference(audioInputs, true);
+      } else if (selectedMicDeviceIdRef.current && !audioInputs.find(d => d.deviceId === selectedMicDeviceIdRef.current)) {
+        // If saved device no longer exists, fall back to default
         selectedMicDeviceIdRef.current = '';
         setSelectedMicDeviceId('');
         localStorage.removeItem('yuki-mic-device-id');
@@ -428,11 +525,7 @@ const App = () => {
                 : "A storage drive was disconnected. Bye-bye USB!";
 
               setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to drive* ${msg}` }]);
-              if (!muteVoice) {
-                speakTextNatively(msg, inserted ? 'happy' : 'relaxed');
-              } else {
-                setAvatarExpression(inserted ? 'happy' : 'relaxed');
-              }
+              speakSystemMessage(msg, inserted ? 'happy' : 'relaxed');
             }
             return count;
           });
@@ -450,18 +543,38 @@ const App = () => {
   // 2. Listen to Electron power plug AC/Battery changes
   useEffect(() => {
     if (window.electronAPI && window.electronAPI.onPowerStateChange) {
-      const unsubscribe = window.electronAPI.onPowerStateChange((data) => {
+      const unsubscribe = window.electronAPI.onPowerStateChange(async (data) => {
         setPowerConnected(data.ac);
-        const msg = data.ac
-          ? "Power plugged in! Ah, thanks Master! I feel fully charged now."
-          : "Power unplugged. Hey, where did my electricity go, Master?";
+
+        let msg;
+        let expr;
+        if (data.ac) {
+          // Read actual battery percentage to pick the right message
+          let pct = null;
+          try {
+            if ('getBattery' in navigator) {
+              const bat = await navigator.getBattery();
+              pct = Math.round(bat.level * 100);
+            }
+          } catch (_) { }
+
+          if (pct !== null && pct >= 100) {
+            msg = "Plugged in! I'm already at full charge, Master.";
+          } else if (pct !== null && pct >= 80) {
+            msg = `Plugged in! I'm at ${pct} percent, almost there!`;
+          } else if (pct !== null) {
+            msg = `Plugged in! Battery is at ${pct} percent. Charging up now!`;
+          } else {
+            msg = "Power plugged in! Charging now, Master.";
+          }
+          expr = 'happy';
+        } else {
+          msg = "Power unplugged. Hey, where did my electricity go, Master?";
+          expr = 'surprised';
+        }
 
         setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to power* ${msg}` }]);
-        if (!muteVoice) {
-          speakTextNatively(msg, data.ac ? 'happy' : 'surprised');
-        } else {
-          setAvatarExpression(data.ac ? 'happy' : 'surprised');
-        }
+        speakSystemMessage(msg, expr);
       });
       return unsubscribe;
     }
@@ -670,8 +783,12 @@ const App = () => {
   };
 
   // Poll crawler status when Electron settings modal is open and activeTab is crawler
+  // Also refresh VRM model list whenever settings panel opens (backend may not have been ready on first mount)
   useEffect(() => {
     let interval = null;
+    if (isSettingsOpen) {
+      fetchVrmModels();
+    }
     if (isSettingsOpen && activeTab === 'crawler') {
       fetchCrawlerStatus();
       interval = setInterval(fetchCrawlerStatus, 2500);
@@ -715,19 +832,405 @@ const App = () => {
   const currentResponseTextRef = useRef('');
   const hasReceivedAudioRef = useRef(false);
 
-  // Speech Recognition Web API (STT)
+  // Speech Recognition Web API (STT) & Playback Timeouts
   const recognitionRef = useRef(null);
   const socketRef = useRef(null);
+  const logToTerminal = (message) => {
+    console.log(message);
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({
+        type: "log",
+        message: message
+      }));
+    }
+  };
   const reconnectTimeoutRef = useRef(null);
-  const ttsStreamActiveRef = useRef(false);
-  const streamDoneReceivedRef = useRef(false);
+
+  const isNativeSpeakingRef = useRef(false);
+  const bubbleTimeoutRef = useRef(null);
+  const playbackTimeoutRef = useRef(null);
+  const micActivationTimeoutRef = useRef(null);
+  const sessionTimeoutRef = useRef(null);
+  const isSpeechRecActiveRef = useRef(false);
+  const desktopChatEndRef = useRef(null);
+
+  // Local Whisper STT Recording and VAD refs
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const isRecordingRef = useRef(false);
+  const micAudioContextRef = useRef(null);
+  const micAnalyserRef = useRef(null);
+  const micStreamRef = useRef(null);
+  const vadActiveRef = useRef(false);
+  const vadSpeakingRef = useRef(false);
+  const vadSilenceStartRef = useRef(null);
+  const maxRecordingTimeoutRef = useRef(null);
 
   // Talk Mode — persists between render cycles via ref so callbacks don't get stale closures
   const isTalkModeRef = useRef(false);
-  // Track whether Yuki is currently speaking (so we re-listen only after she finishes)
-  const isYukiSpeakingRef = useRef(false);
-  // Flag to avoid double-starting recognition while waiting for Yuki
-  const pendingListenRef = useRef(false);
+  useEffect(() => {
+    isTalkModeRef.current = isTalkMode;
+  }, [isTalkMode]);
+
+  useEffect(() => {
+    if (isPanelOpen && desktopChatEndRef.current) {
+      desktopChatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [isPanelOpen, messages]);
+
+  // Playback & STT Coordinator Helper Functions
+  const shouldListen = () => {
+    const modeActive = isTalkModeRef.current || isVoiceCommandModeRef.current;
+    const yukiBusy = isPlayingRef.current || isThinkingRef.current || ttsStreamActiveRef.current || isNativeSpeakingRef.current || isTranscribingRef.current || hasReceivedAudioRef.current;
+    return modeActive && !yukiBusy;
+  };
+
+  const logSTTStatus = (message) => {
+    console.log(`[STT Coordinator] ${message}`);
+  };
+
+  const clearContinuedConversationSession = () => {
+    if (sessionTimeoutRef.current) {
+      clearTimeout(sessionTimeoutRef.current);
+      sessionTimeoutRef.current = null;
+    }
+    setIsSessionActive(false);
+  };
+
+  const startSessionTimeout = () => {
+    if (sessionTimeoutRef.current) clearTimeout(sessionTimeoutRef.current);
+    setIsSessionActive(true);
+    sessionTimeoutRef.current = setTimeout(() => {
+      console.log("[STT] Continued Conversation session timed out after 8s of silence.");
+      setIsSessionActive(false);
+      updateListeningState();
+    }, 8000);
+  };
+
+  const startSpeechRecognition = async () => {
+    if (isSpeechRecActiveRef.current) return; // Already listening
+    logToTerminal("[STT] Microphone listening mode turned ON");
+
+    if (useLocalWhisperRef.current) {
+      try {
+        isSpeechRecActiveRef.current = true;
+        setIsListening(true);
+        isRecordingRef.current = true;
+        
+        const deviceId = selectedMicDeviceIdRef.current;
+        const constraints = {
+          audio: {
+            deviceId: deviceId ? { exact: deviceId } : undefined,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        };
+        
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        micStreamRef.current = stream;
+        
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+        
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+        
+        mediaRecorder.onstop = async () => {
+          console.log("[STT] MediaRecorder stopped.");
+          
+          // Stop all stream tracks to release mic resource
+          if (micStreamRef.current) {
+            micStreamRef.current.getTracks().forEach(track => track.stop());
+            micStreamRef.current = null;
+          }
+          
+          // Clean up analyser
+          if (micAudioContextRef.current) {
+            try { micAudioContextRef.current.close(); } catch(e) {}
+            micAudioContextRef.current = null;
+          }
+          micAnalyserRef.current = null;
+
+          // If the recording was aborted, ignore it
+          if (!isRecordingRef.current) {
+            console.log("[STT] Recording aborted. Ignoring data.");
+            setIsListening(false);
+            isSpeechRecActiveRef.current = false;
+            return;
+          }
+          
+          isRecordingRef.current = false;
+          setIsListening(false);
+          isSpeechRecActiveRef.current = false;
+          
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          if (audioChunksRef.current.length === 0 || audioBlob.size < 1000) {
+            console.log("[STT] Recording too short or empty. Ignoring.");
+            // Restart listening if we still should
+            updateListeningState();
+            return;
+          }
+          
+          // Set transcribing state FIRST to prevent coordinator race
+          setIsTranscribing(true);
+          
+          // Call transcription API
+          stopAllPlayback();
+          
+          const sttStartTime = Date.now();
+          try {
+            logSTTStatus(`Transcribing (${audioBlob.size} bytes)...`);
+            const formData = new FormData();
+            formData.append("file", audioBlob, "speech.webm");
+            formData.append("model", whisperModelRef.current);
+            
+            const res = await fetch(`${API_BASE}/api/speech/transcribe`, {
+              method: "POST",
+              body: formData
+            });
+            
+            if (!res.ok) throw new Error(`Server returned code ${res.status}`);
+            const data = await res.json();
+            const sttDurationMs = Date.now() - sttStartTime;
+            logSTTStatus(`Transcribed: "${data.text}" in ${sttDurationMs}ms`);
+            
+            setIsTranscribing(false);
+            if (data.text && data.text.trim()) {
+              processSTTTranscript(data.text, sttDurationMs);
+            } else {
+              updateListeningState();
+            }
+          } catch (e) {
+            logSTTStatus(`Whisper STT transcription failed: ${e.message}`);
+            setIsTranscribing(false);
+            
+            setMessages((prev) => [...prev, { 
+              role: 'system', 
+              content: "System Notice: Local Whisper Speech-to-Text transcription failed. Please verify your backend server is online." 
+            }]);
+            updateListeningState();
+          }
+        };
+
+        mediaRecorder.start(250);
+        logSTTStatus("Listening...");
+        
+        // Setup Web Audio VAD
+        const micAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const micAnalyser = micAudioCtx.createAnalyser();
+        micAnalyser.fftSize = 64;
+        const micSource = micAudioCtx.createMediaStreamSource(stream);
+        micSource.connect(micAnalyser);
+        
+        micAudioContextRef.current = micAudioCtx;
+        micAnalyserRef.current = micAnalyser;
+        
+        vadSpeakingRef.current = false;
+        vadSilenceStartRef.current = null;
+        vadActiveRef.current = true;
+        
+        const bufferLength = micAnalyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        
+        const checkMicVolume = () => {
+          if (!isRecordingRef.current || !micAnalyserRef.current) return;
+          
+          micAnalyserRef.current.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i];
+          }
+          const average = sum / bufferLength;
+          const normalized = average / 255.0;
+          
+          const micThreshold = vadThresholdRef.current;
+          const now = Date.now();
+          
+          if (normalized > micThreshold) {
+            if (!vadSpeakingRef.current) {
+              logSTTStatus("User speaking...");
+              vadSpeakingRef.current = true;
+              if (sessionTimeoutRef.current) {
+                console.log("[STT] User started speaking. Clearing 8s session timeout.");
+                clearTimeout(sessionTimeoutRef.current);
+                sessionTimeoutRef.current = null;
+              }
+            }
+            vadSilenceStartRef.current = null; // Reset silence timer
+          } else {
+            if (vadSpeakingRef.current) {
+              if (vadSilenceStartRef.current === null) {
+                vadSilenceStartRef.current = now;
+              } else if (now - vadSilenceStartRef.current > 1500) { // 1.5s of silence
+                stopSpeechRecognition();
+                return;
+              }
+            }
+          }
+          
+          setTimeout(checkMicVolume, 50);
+        };
+        
+        checkMicVolume();
+        
+        // Setup Max safety timeout to auto-stop recording after 15 seconds
+        if (maxRecordingTimeoutRef.current) {
+          clearTimeout(maxRecordingTimeoutRef.current);
+        }
+        maxRecordingTimeoutRef.current = setTimeout(() => {
+          if (isRecordingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+            stopSpeechRecognition();
+          }
+        }, 15000);
+
+      } catch (e) {
+        console.warn("[STT] Failed to start local Whisper recording:", e);
+        isSpeechRecActiveRef.current = false;
+        setIsListening(false);
+        isRecordingRef.current = false;
+      }
+    } else {
+      // Legacy Web Speech API fallback
+      if (!recognitionRef.current) return;
+      try {
+        isSpeechRecActiveRef.current = true;
+        setIsListening(true);
+        await primeSelectedMicDevice();
+        recognitionRef.current.start();
+        logSTTStatus("Listening (native)...");
+      } catch (e) {
+        console.warn("[STT] Failed to start native SpeechRecognition:", e);
+        isSpeechRecActiveRef.current = false;
+        setIsListening(false);
+      }
+    }
+  };
+
+  const stopSpeechRecognition = (forceAbort = false) => {
+    if (!isSpeechRecActiveRef.current) return; // Already stopped
+    logToTerminal(`[STT] Microphone listening mode turned OFF${forceAbort ? ' (forced abort)' : ''}`);
+
+    if (useLocalWhisperRef.current) {
+      if (maxRecordingTimeoutRef.current) {
+        clearTimeout(maxRecordingTimeoutRef.current);
+        maxRecordingTimeoutRef.current = null;
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (e) {
+          console.warn("[STT] Error stopping MediaRecorder:", e);
+        }
+      }
+      if (micStreamRef.current) {
+        try {
+          micStreamRef.current.getTracks().forEach(track => track.stop());
+          micStreamRef.current = null;
+        } catch (e) {}
+      }
+    } else {
+      // Native Speech Recognition
+      if (!recognitionRef.current) return;
+      try {
+        if (forceAbort) {
+          recognitionRef.current.abort(); // Instant shutdown
+        } else {
+          recognitionRef.current.stop();
+        }
+      } catch (e) {
+        console.warn("[STT] Failed to stop native SpeechRecognition:", e);
+      }
+    }
+  };
+
+  const updateListeningState = () => {
+    const targetListen = shouldListen();
+    console.log(`[STT Coordinator] shouldListen=${targetListen} (isPlaying=${isPlayingRef.current}, isThinking=${isThinkingRef.current}, ttsStreamActive=${ttsStreamActiveRef.current}, isNativeSpeaking=${isNativeSpeakingRef.current}, isTranscribing=${isTranscribingRef.current})`);
+    
+    if (targetListen) {
+      startSpeechRecognition();
+    } else {
+      stopSpeechRecognition(true);
+    }
+  };
+
+  // Reactive coordinator hook to keep listening state in sync with busy/thinking indicators
+  useEffect(() => {
+    updateListeningState();
+  }, [isThinking, ttsStreamActive, isTranscribing]);
+
+  const stopAllPlayback = () => {
+    console.log("[Playback] stopAllPlayback triggered.");
+    
+    // Abort active recording if any
+    isRecordingRef.current = false;
+    if (maxRecordingTimeoutRef.current) {
+      clearTimeout(maxRecordingTimeoutRef.current);
+      maxRecordingTimeoutRef.current = null;
+    }
+    
+    // Clear mic activation timeout if any
+    if (micActivationTimeoutRef.current) {
+      clearTimeout(micActivationTimeoutRef.current);
+      micActivationTimeoutRef.current = null;
+    }
+    
+
+    
+    // 1. Clear queues and state
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
+    isNativeSpeakingRef.current = false;
+    hasReceivedAudioRef.current = false;
+    
+    // 2. Stop HTML5 audio
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+        // Unset event listeners temporarily to prevent onended firing during reset
+        audioRef.current.onended = null;
+        audioRef.current.onerror = null;
+        audioRef.current.onplay = null;
+      } catch (e) {
+        console.warn("Error stopping HTML5 audio:", e);
+      }
+    }
+    
+    // 3. Clear any pending timeouts
+    if (playbackTimeoutRef.current) {
+      clearTimeout(playbackTimeoutRef.current);
+      playbackTimeoutRef.current = null;
+    }
+    if (bubbleTimeoutRef.current) {
+      clearTimeout(bubbleTimeoutRef.current);
+      bubbleTimeoutRef.current = null;
+    }
+    
+    // 4. Cancel native speech
+    try {
+      window.speechSynthesis.cancel();
+    } catch (e) {
+      console.warn("Error cancelling native speech synthesis:", e);
+    }
+    if (nativeSpeechIntervalRef.current) {
+      clearInterval(nativeSpeechIntervalRef.current);
+      nativeSpeechIntervalRef.current = null;
+    }
+    
+    // 5. Reset UI indicators
+    setCurrentSpeechText('');
+    setAudioLevel(0);
+    setAvatarExpression('neutral');
+    
+    // 6. Sync listening state
+    updateListeningState();
+  };
 
   // 1. Initialize Audio Analyser on user click (due to browser security)
   const initAudioAnalyser = () => {
@@ -742,6 +1245,7 @@ const App = () => {
       // Create HTML audio element in memory
       const audio = new Audio();
       audio.crossOrigin = "anonymous";
+      audio.volume = voiceVolumeRef.current;
 
       const source = audioCtx.createMediaElementSource(audio);
       source.connect(analyser);
@@ -782,26 +1286,36 @@ const App = () => {
   const playVoiceResponse = (audioUrl, speechText, forcedExpression = null) => {
     initAudioAnalyser();
 
-    // Set avatar expression based on speech content guide
+    // Clear any pending bubble clear timer
+    if (bubbleTimeoutRef.current) {
+      clearTimeout(bubbleTimeoutRef.current);
+      bubbleTimeoutRef.current = null;
+    }
+
     const expr = forcedExpression || detectExpression(speechText);
     setAvatarExpression(expr);
 
-    // Ensure Audio Context is active
     if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
       audioContextRef.current.resume();
     }
 
+    isPlayingRef.current = true;
+
     if (muteVoice || !audioRef.current) {
-      // If muted, just display subtitle bubble then play next chunk
+      // If muted, just display subtitle bubble then play next chunk after simulated reading delay
       setCurrentSpeechText(speechText);
       setIsThinking(false);
-      setTimeout(() => {
+      
+      const readingDelay = Math.max(2000, speechText.length * 60);
+      if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
+      playbackTimeoutRef.current = setTimeout(() => {
         playNextAudio();
-      }, Math.max(2000, speechText.length * 60));
+      }, readingDelay);
       return;
     }
 
     try {
+      audioRef.current.volume = voiceVolumeRef.current;
       audioRef.current.src = audioUrl;
       audioRef.current.load();
       audioRef.current.playbackRate = 1.0;
@@ -818,6 +1332,8 @@ const App = () => {
         }
         setCurrentSpeechText(speechText);
         setIsThinking(false);
+        // Ensure STT is stopped
+        updateListeningState();
       };
 
       audioRef.current.onended = () => {
@@ -825,20 +1341,23 @@ const App = () => {
       };
 
       audioRef.current.onerror = (e) => {
-        console.warn("Audio element failed to load voice clip:", e);
-        setCurrentSpeechText(speechText);
-        setTimeout(() => playNextAudio(), Math.max(1500, speechText.length * 60));
+        console.warn("[Playback] Audio element failed to load voice clip:", e);
+        const readingDelay = Math.max(1500, speechText.length * 60);
+        if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
+        playbackTimeoutRef.current = setTimeout(() => playNextAudio(), readingDelay);
       };
 
       audioRef.current.play().catch(err => {
-        console.warn("Playback blocked by browser autoplay policy. Displaying subtitles.", err);
-        setCurrentSpeechText(speechText);
-        setTimeout(() => playNextAudio(), Math.max(1500, speechText.length * 60));
+        console.warn("[Playback] Autoplay blocked. Displaying subtitles and using fallback timer.", err);
+        const readingDelay = Math.max(1500, speechText.length * 60);
+        if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
+        playbackTimeoutRef.current = setTimeout(() => playNextAudio(), readingDelay);
       });
     } catch (err) {
-      console.error("Audio trigger error:", err);
-      setCurrentSpeechText(speechText);
-      setTimeout(() => playNextAudio(), Math.max(1500, speechText.length * 60));
+      console.error("[Playback] Audio trigger error:", err);
+      const readingDelay = Math.max(1500, speechText.length * 60);
+      if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
+      playbackTimeoutRef.current = setTimeout(() => playNextAudio(), readingDelay);
     }
   };
 
@@ -853,35 +1372,48 @@ const App = () => {
   };
 
   const playNextAudio = () => {
-    if (audioQueueRef.current.length === 0) {
-      isPlayingRef.current = false;
-      isYukiSpeakingRef.current = false;
-      setAudioLevel(0);
+    if (bubbleTimeoutRef.current) {
+      clearTimeout(bubbleTimeoutRef.current);
+      bubbleTimeoutRef.current = null;
+    }
 
-      // Clear speech bubble if stream_done was received and no more audio queued
-      if (streamDoneReceivedRef.current) {
-        if (stream_end_exception) {
-          setTimeout(() => { setCurrentSpeechText(''); }, 4000);
-          stream_end_exception = false;
+    if (audioQueueRef.current.length === 0) {
+      // The queue is empty!
+      if (ttsStreamActiveRef.current) {
+        // Yuki is finished with the current chunks, but the backend is still streaming.
+        // Transition back to the thinking/buffering animation instead of stopping.
+        console.log("[Playback] Queue empty but stream still active. Buffering next chunks...");
+        setCurrentSpeechText('');
+        isPlayingRef.current = false; // Set to false so queueAudioChunk knows to start next chunk immediately when it arrives!
+        updateListeningState();
+      } else {
+        // Playback completely finished
+        console.log("[Playback] Playback completed. Returning to idle state.");
+        isPlayingRef.current = false;
+        hasReceivedAudioRef.current = false;
+        setAudioLevel(0);
+        
+        // Delay clearing bubble to let the user finish reading the last sentence
+        bubbleTimeoutRef.current = setTimeout(() => {
+          setCurrentSpeechText('');
+        }, 2000);
+        
+        // Start 8-second Continued Conversation window if in voice command mode
+        if (isVoiceCommandModeRef.current) {
+          startSessionTimeout();
         }
-        else setCurrentSpeechText('');
-        console.log("playNextAudio");
-        streamDoneReceivedRef.current = false;
-      }
-      // If Talk Mode or Voice Command Mode is active and we're not already mid-listen, restart listening
-      if ((isTalkModeRef.current || isVoiceCommandModeRef.current) && !pendingListenRef.current) {
-        pendingListenRef.current = true;
-        setTimeout(() => {
-          pendingListenRef.current = false;
-          if ((isTalkModeRef.current || isVoiceCommandModeRef.current) && recognitionRef.current) {
-            try { recognitionRef.current.start(); } catch (e) { console.warn("Re-listen start error:", e); }
-          }
-        }, 400);
+
+        // Delay turning on the mic by 700ms to let physical audio buffer drain fully
+        if (micActivationTimeoutRef.current) clearTimeout(micActivationTimeoutRef.current);
+        micActivationTimeoutRef.current = setTimeout(() => {
+          micActivationTimeoutRef.current = null;
+          updateListeningState();
+        }, 700);
       }
       return;
     }
 
-    isYukiSpeakingRef.current = true;
+    isPlayingRef.current = true;
     const nextChunk = audioQueueRef.current.shift();
     playVoiceResponse(nextChunk.url, nextChunk.text);
   };
@@ -894,12 +1426,24 @@ const App = () => {
       nativeSpeechIntervalRef.current = null;
     }
 
+    if (bubbleTimeoutRef.current) {
+      clearTimeout(bubbleTimeoutRef.current);
+      bubbleTimeoutRef.current = null;
+    }
+
     // 2. Filter actions, emojis and technical noise from text
     const cleanText = cleanTextForTTS(getSpeechFriendlyText(text));
     if (!cleanText) {
       setAudioLevel(0);
+      isNativeSpeakingRef.current = false;
+      setIsThinking(false);
+      setTtsStreamActive(false);
+      updateListeningState();
       return;
     }
+
+    isNativeSpeakingRef.current = true;
+    updateListeningState();
 
     // Set avatar expression
     const expr = forcedExpression || detectExpression(text);
@@ -907,6 +1451,7 @@ const App = () => {
 
     // 3. Create Utterance
     const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.volume = voiceVolumeRef.current;
 
     // Choose a voice if possible
     const voices = window.speechSynthesis.getVoices();
@@ -924,7 +1469,12 @@ const App = () => {
 
     // 4. Setup lip-sync animation
     utterance.onstart = () => {
+      isNativeSpeakingRef.current = true;
       setCurrentSpeechText(text);
+      setIsThinking(false);
+      setTtsStreamActive(false);
+      updateListeningState();
+      
       if (nativeSpeechIntervalRef.current) clearInterval(nativeSpeechIntervalRef.current);
 
       // Simulate speech mouth movement by cycling audioLevel
@@ -934,40 +1484,65 @@ const App = () => {
     };
 
     utterance.onend = () => {
+      isNativeSpeakingRef.current = false;
       setAudioLevel(0);
-      setCurrentSpeechText('');
-      console.log("utterance");
+      setIsThinking(false);
+      setTtsStreamActive(false);
       if (nativeSpeechIntervalRef.current) {
         clearInterval(nativeSpeechIntervalRef.current);
         nativeSpeechIntervalRef.current = null;
       }
-      isYukiSpeakingRef.current = false;
-      // Talk Mode or Voice Command Mode: re-listen after native speech ends
-      if ((isTalkModeRef.current || isVoiceCommandModeRef.current) && !pendingListenRef.current) {
-        pendingListenRef.current = true;
-        setTimeout(() => {
-          pendingListenRef.current = false;
-          if ((isTalkModeRef.current || isVoiceCommandModeRef.current) && recognitionRef.current) {
-            try { recognitionRef.current.start(); } catch (e) { console.warn(e); }
-          }
-        }, 400);
-      }
+      
+      // Delay clearing bubble to let the user finish reading
+      bubbleTimeoutRef.current = setTimeout(() => {
+        setCurrentSpeechText('');
+      }, 2000);
+
+      updateListeningState();
     };
 
     utterance.onerror = (e) => {
-      console.warn("Native TTS utterance error:", e);
+      console.warn("[Native TTS] utterance error:", e);
+      isNativeSpeakingRef.current = false;
       setAudioLevel(0);
+      setIsThinking(false);
+      setTtsStreamActive(false);
       setCurrentSpeechText('');
-      console.log("utterance error");
       if (nativeSpeechIntervalRef.current) {
         clearInterval(nativeSpeechIntervalRef.current);
         nativeSpeechIntervalRef.current = null;
       }
+      updateListeningState();
     };
 
     window.speechSynthesis.speak(utterance);
   };
 
+  /**
+   * Route a short system-event message through Kokoro TTS if the WebSocket is
+   * live and Kokoro is available; fall back to native browser speech otherwise.
+   * Use this for ALL system notifications so native TTS never leaks through.
+   */
+  const speakSystemMessage = (text, expression = null) => {
+    if (muteVoice) {
+      if (expression) setAvatarExpression(expression);
+      setIsThinking(false);
+      setTtsStreamActive(false);
+      return;
+    }
+    const ws = socketRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      // Cancel any active native speech so it doesn't overlap
+      window.speechSynthesis.cancel();
+      hasReceivedAudioRef.current = false;
+      setTtsStreamActive(true);
+      if (expression) setAvatarExpression(expression);
+      ws.send(JSON.stringify({ type: 'tts_only', text, expression }));
+    } else {
+      // Offline — fall back to native
+      speakTextNatively(text, expression);
+    }
+  };
 
 
   // 3. Establish WebSocket connection
@@ -1013,18 +1588,20 @@ const App = () => {
       } else if (msg.type === 'status') {
         if (msg.status === 'thinking') {
           setIsThinking(true);
-          // Don't clear speech text if audio is currently playing or if the TTS stream is still active
-          if (!isPlayingRef.current && !isYukiSpeakingRef.current && !ttsStreamActiveRef.current) {
-            setCurrentSpeechText('');
-            console.log("status");
-          }
+          setTtsStreamActive(true); // WebSocket stream starts
+          // Clear speech bubble immediately since a new response generation starts
+          setCurrentSpeechText('');
           currentResponseTextRef.current = '';
           hasReceivedAudioRef.current = false;
         } else if (msg.status === 'idle') {
-          setIsThinking(false);
+          // Do not override isThinking immediately if audio is still active
+          if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
+            setIsThinking(false);
+          }
         }
       } else if (msg.type === 'text_stream') {
-        setIsThinking(false);
+        // Keep isThinking true so the bubble thinking animation remains active
+        setTtsStreamActive(true);
         currentResponseTextRef.current += msg.text;
         setMessages((prev) => {
           const newMessages = [...prev];
@@ -1045,25 +1622,16 @@ const App = () => {
           return newMessages;
         });
       } else if (msg.type === 'audio_chunk') {
-        ttsStreamActiveRef.current = true;
+        setTtsStreamActive(true);
         hasReceivedAudioRef.current = true;
-        // Log TTS metadata for diagnostics
         try {
           console.log(`[TTS] audio_chunk received idx=${msg.index} backend=${msg.tts_backend || 'unknown'} time_ms=${msg.tts_time_ms || 0} text="${(msg.text || '').slice(0, 80)}"`);
         } catch (e) { /* ignore logging errors */ }
         queueAudioChunk(msg.audio_url, msg.text, msg.index);
       } else if (msg.type === 'stream_done') {
         setIsThinking(false);
-        ttsStreamActiveRef.current = false;
-        streamDoneReceivedRef.current = true;
-        // Clear speech if all audio has finished playing
-        console.log('stream done1');
-        if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
-          setCurrentSpeechText('');
-          console.log('stream done2');
-        }
-        else stream_end_exception = true;
-
+        setTtsStreamActive(false);
+        
         setMessages((prev) => {
           const newMessages = [...prev];
           if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
@@ -1074,9 +1642,12 @@ const App = () => {
           }
           return newMessages;
         });
+
         if (!hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice) {
           console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0, 80)}"`);
           speakTextNatively(currentResponseTextRef.current);
+        } else {
+          updateListeningState();
         }
       } else if (msg.type === 'tool_result') {
         try {
@@ -1107,7 +1678,7 @@ const App = () => {
           content: msg.result
         }]);
       } else if (msg.type === 'speech') {
-        ttsStreamActiveRef.current = true;
+        setTtsStreamActive(true);
         setIsThinking(false);
         hasReceivedAudioRef.current = true;
         setMessages((prev) => [...prev, {
@@ -1117,9 +1688,20 @@ const App = () => {
           responseTime: msg.response_time
         }]);
         playVoiceResponse(msg.audio_url, msg.text);
+      } else if (msg.type === 'confirm_request') {
+        const confirmed = window.confirm(`Yuki wants to open/run "${msg.name}". Do you want to proceed?`);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'confirm_response',
+            conf_id: msg.conf_id,
+            confirmed: confirmed
+          }));
+        }
       } else if (msg.type === 'error') {
         setIsThinking(false);
+        setTtsStreamActive(false);
         setMessages((prev) => [...prev, { role: 'assistant', content: `Oh no! I encountered an error: ${msg.message}` }]);
+        updateListeningState();
       }
     };
 
@@ -1144,13 +1726,155 @@ const App = () => {
     if (!deviceId) return; // Use system default
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: { exact: deviceId } }
+        audio: { 
+          deviceId: { exact: deviceId },
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
       });
       // Stop tracks immediately — we only needed to set the active device
       stream.getTracks().forEach(t => t.stop());
     } catch (e) {
       console.warn('Could not prime mic device:', e);
     }
+  };
+
+  const processSTTTranscript = (transcript, sttTimeMs = null) => {
+    if (!transcript || !transcript.trim()) {
+      setIsThinking(false);
+      setTtsStreamActive(false);
+      if (isVoiceCommandModeRef.current && isSessionActiveRef.current) {
+        startSessionTimeout();
+      }
+      updateListeningState();
+      return;
+    }
+
+    // Clean punctuation for command checks
+    const cleaned = transcript.trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "");
+    const lower = cleaned.toLowerCase().trim();
+    logSTTStatus(`Processing transcript: "${transcript}" (cleaned: "${cleaned}", isVoiceCommandMode=${isVoiceCommandModeRef.current}, isTalkMode=${isTalkModeRef.current})`);
+
+    // If voice command mode is active
+    if (isVoiceCommandModeRef.current) {
+      const isSession = isSessionActiveRef.current;
+
+      // ─── Extensible Voice Commands List ───
+      // Easily add new commands here! Each needs a name, match(), and action().
+      const voiceCommands = [
+        {
+          name: 'Stop Listening',
+          match: () => lower.includes("yuki stop listening") || 
+                       lower === "stop listening" || 
+                       (isSession && (lower === "stop" || lower === "exit" || lower === "quit")),
+          action: () => {
+            logSTTStatus("Voice Command Mode stop command detected.");
+            isVoiceCommandModeRef.current = false;
+            setIsVoiceCommandMode(false);
+            clearContinuedConversationSession();
+            stopSpeechRecognition();
+            setIsListening(false);
+
+            setMessages((prev) => [...prev, { role: 'assistant', content: "listening mode off" }]);
+            speakSystemMessage("Listening mode off.");
+            
+            setIsThinking(false);
+            setTtsStreamActive(false);
+          }
+        }
+      ];
+
+      // Check and execute command if matched
+      const matchedCommand = voiceCommands.find(cmd => cmd.match());
+      if (matchedCommand) {
+        logSTTStatus(`Executing custom voice command: ${matchedCommand.name}`);
+        matchedCommand.action();
+        return;
+      }
+      // ──────────────────────────────────────
+
+      // Check if this matches the wake word or if the session is currently active
+      const hasTriggerWord = /\byuki\b/i.test(cleaned);
+
+      if (!hasTriggerWord && !isSession) {
+        logSTTStatus(`Ignored transcript (no active session & missing trigger word 'Yuki'): "${cleaned}"`);
+        setIsThinking(false);
+        setTtsStreamActive(false);
+        updateListeningState();
+        return;
+      }
+
+      // Clear the active session timeout since we got a voice response
+      if (sessionTimeoutRef.current) {
+        clearTimeout(sessionTimeoutRef.current);
+        sessionTimeoutRef.current = null;
+      }
+
+      // Determine what text to send
+      let queryText = transcript;
+      
+      if (hasTriggerWord) {
+        // Find yuki in the text and extract query.
+        const parts = cleaned.split(/\byuki\b/i);
+        const before = parts[0].trim();
+        const after = parts[1] ? parts[1].trim() : "";
+        
+        if (after) {
+          queryText = after;
+        } else if (before) {
+          queryText = before;
+        } else {
+          queryText = "Yuki";
+        }
+      }
+
+      // If they just said "yuki" without a query, trigger a greeting
+      if (queryText.toLowerCase().trim() === "yuki") {
+        logSTTStatus("Trigger word 'Yuki' detected with no additional content. Sending greeting.");
+        sendMessageText("Yuki", sttTimeMs);
+        return;
+      }
+
+      // Check if instructions start with "command" or "slash" (with phonetic fallbacks)
+      const cmdMatch = queryText.match(/^(command|slash|come\s+on|c'mon|common|flash)\s+(.*)/i);
+      if (cmdMatch) {
+        const remaining = cmdMatch[2].trim();
+        const firstWord = remaining.split(/\s+/)[0].toLowerCase();
+        const possibleSlashCmd = "/" + firstWord;
+        
+        // Only convert to slash command if it is a registered local command
+        const commandExists = SLASH_COMMANDS.some(c => c.cmd.toLowerCase() === possibleSlashCmd);
+        
+        if (commandExists) {
+          const commandText = "/" + remaining;
+          sendMessageText(commandText, sttTimeMs);
+        } else {
+          // If the command does not exist, send the remaining query to the LLM (stripping the "command/slash" prefix)
+          sendMessageText(remaining, sttTimeMs);
+        }
+      } else {
+        sendMessageText(queryText, sttTimeMs);
+      }
+      return;
+    }
+
+    // Allow user to exit Talk Mode by saying "stop"
+    if (isTalkModeRef.current && (lower === 'stop' || lower === 'stop listening' || lower === 'exit' || lower === 'quit')) {
+      logSTTStatus("Exit talk mode command detected.");
+      isTalkModeRef.current = false;
+      setIsTalkMode(false);
+      stopSpeechRecognition();
+      setIsListening(false);
+      
+      setIsThinking(false);
+      setTtsStreamActive(false);
+      return;
+    }
+
+    // Clean interruption: stop playback immediately before sending prompt
+    stopAllPlayback();
+    sendMessageText(transcript, sttTimeMs);
   };
 
   const initSpeechRecognition = () => {
@@ -1166,149 +1890,62 @@ const App = () => {
     rec.lang = 'en-US';
 
     rec.onstart = () => {
+      isSpeechRecActiveRef.current = true;
       setIsListening(true);
-      console.log("Speech recognition started listening...");
+      console.log("[STT] Speech recognition active.");
+    };
+
+    rec.onspeechstart = () => {
+      if (sessionTimeoutRef.current) {
+        console.log("[STT] Native speechstart detected. Clearing 8s session timeout.");
+        clearTimeout(sessionTimeoutRef.current);
+        sessionTimeoutRef.current = null;
+      }
     };
 
     rec.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
-      console.log("Speech recognition result:", transcript);
-      if (!transcript.trim()) return;
-
-      const lower = transcript.toLowerCase().trim();
-
-      // If voice command mode is active
-      if (isVoiceCommandModeRef.current) {
-        if (lower.includes("yuki stop listening")) {
-          console.log("Voice Command Mode: 'yuki stop listening' detected — stopping.");
-          isVoiceCommandModeRef.current = false;
-          setIsVoiceCommandMode(false);
-          pendingListenRef.current = false;
-          isYukiSpeakingRef.current = false;
-          if (isYukiSpeakingRef._fallbackTimer) {
-            clearTimeout(isYukiSpeakingRef._fallbackTimer);
-            isYukiSpeakingRef._fallbackTimer = null;
-          }
-          try { recognitionRef.current.stop(); } catch (e) { /* already stopped */ }
-          setIsListening(false);
-
-          setMessages((prev) => [...prev, { role: 'assistant', content: "listening mode off" }]);
-          speakTextNatively("listening mode off");
-          return;
-        }
-
-        // Ignore speech unless her name "yuki" is taken as trigger word
-        const triggerMatch = transcript.match(/^yuki\b\s*(.*)/i);
-        if (!triggerMatch) {
-          console.log("Voice Command Mode: 'yuki' trigger word not taken. Ignoring transcript:", transcript);
-          return;
-        }
-
-        let innerText = triggerMatch[1].trim();
-        if (!innerText) {
-          console.log("Voice Command Mode: 'yuki' trigger word was spoken but no instruction followed.");
-          return;
-        }
-
-        // Check if instructions start with "command" or "slash"
-        const cmdMatch = innerText.match(/^(command|slash)\s+(.*)/i);
-        if (cmdMatch) {
-          // Translate to slash command
-          const commandText = "/" + cmdMatch[2].trim();
-          console.log("Voice Command Mode: executing translated command:", commandText);
-          sendMessageText(commandText);
-        } else {
-          // Send as regular chat prompt
-          console.log("Voice Command Mode: sending prompt:", innerText);
-          sendMessageText(innerText);
-        }
-        return;
-      }
-
-      // Allow user to exit Talk Mode by saying "stop"
-      if (isTalkModeRef.current && (lower === 'stop' || lower === 'stop listening' || lower === 'exit' || lower === 'quit')) {
-        console.log("Talk Mode: exit keyword detected — stopping.");
-        isTalkModeRef.current = false;
-        setIsTalkMode(false);
-        setIsListening(false);
-        return;
-      }
-
-      // Clear queue and stop playback immediately to handle interruption and clear old bubbles
-      audioQueueRef.current = [];
-      isPlayingRef.current = false;
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-      }
-      window.speechSynthesis.cancel();
-      if (nativeSpeechIntervalRef.current) {
-        clearInterval(nativeSpeechIntervalRef.current);
-        nativeSpeechIntervalRef.current = null;
-      }
-      setCurrentSpeechText('');
-      console.log("immediately to handle interruption and clear old bubbles");
-
-      sendMessageText(transcript);
+      processSTTTranscript(transcript);
     };
 
     rec.onerror = (event) => {
-      console.warn("Speech recognition error:", event.error);
+      if (event.error === 'aborted') {
+        console.log("[STT] Session aborted silently.");
+        return;
+      }
+      
+      console.warn("[STT] Speech recognition error:", event.error);
       setIsListening(false);
 
-      // In talk mode or voice command mode, ignore 'no-speech' silently and re-listen
-      if ((isTalkModeRef.current || isVoiceCommandModeRef.current) && event.error === 'no-speech') {
-        setTimeout(() => {
-          if ((isTalkModeRef.current || isVoiceCommandModeRef.current) && recognitionRef.current) {
-            try { recognitionRef.current.start(); } catch (e) { console.warn(e); }
-          }
-        }, 300);
+      if (event.error === 'no-speech') {
         return;
       }
 
       let errMsg = "System Notice: Speech recognition encountered an error ('" + event.error + "').";
       if (event.error === 'not-allowed') {
         errMsg = "System Notice: Microphone access is blocked. Please click the camera/mic icon in your browser address bar and choose 'Allow'.";
-      } else if (event.error === 'no-speech') {
-        errMsg = "System Notice: No speech was detected. Please check your microphone connection and try speaking closer to it.";
+        isTalkModeRef.current = false;
+        setIsTalkMode(false);
+        isVoiceCommandModeRef.current = false;
+        setIsVoiceCommandMode(false);
       } else if (event.error === 'network') {
         errMsg = "System Notice: Speech recognition network error. Please check your internet connectivity.";
       }
-
       setMessages((prev) => [...prev, { role: 'system', content: errMsg }]);
     };
 
     rec.onend = () => {
-      console.log("Speech recognition ended.");
+      console.log("[STT] Speech recognition session ended.");
+      isSpeechRecActiveRef.current = false;
       setIsListening(false);
 
-      // If voice command mode is active, restart it immediately,
-      // unless Yuki is currently speaking.
-      if (isVoiceCommandModeRef.current) {
-        if (!isYukiSpeakingRef.current && !pendingListenRef.current) {
-          pendingListenRef.current = true;
-          const fallbackTimer = setTimeout(() => {
-            pendingListenRef.current = false;
-            if (isVoiceCommandModeRef.current && !isYukiSpeakingRef.current) {
-              try { recognitionRef.current.start(); } catch (e) { console.warn(e); }
-            }
-          }, 300);
-          isYukiSpeakingRef._fallbackTimer = fallbackTimer;
-        }
-        return;
-      }
-
-      // Talk Mode: if Yuki isn't speaking yet and no result triggered a playback, re-listen
-      if (isTalkModeRef.current && !isYukiSpeakingRef.current && !pendingListenRef.current) {
-        pendingListenRef.current = true;
-        const fallbackTimer = setTimeout(() => {
-          pendingListenRef.current = false;
-          if (isTalkModeRef.current && !isYukiSpeakingRef.current) {
-            try { recognitionRef.current.start(); } catch (e) { console.warn(e); }
+      // If we still want to be listening, schedule a retry.
+      if (shouldListen()) {
+        setTimeout(() => {
+          if (shouldListen()) {
+            startSpeechRecognition();
           }
-        }, 8000);
-        // Clear the fallback once Yuki starts speaking (handled inside playNextAudio)
-        isYukiSpeakingRef._fallbackTimer = fallbackTimer;
+        }, 300); // Small cool-down
       }
     };
 
@@ -1318,160 +1955,172 @@ const App = () => {
   const toggleTalkMode = async () => {
     initAudioAnalyser();
 
-    if (!recognitionRef.current) {
-      initSpeechRecognition();
+    if (!useLocalWhisperRef.current) {
+      if (!recognitionRef.current) {
+        initSpeechRecognition();
+      }
+
+      if (!recognitionRef.current) {
+        alert("Voice speech recognition is only supported in Chrome or Chromium-based browsers like Edge.");
+        return;
+      }
     }
 
-    if (!recognitionRef.current) {
-      alert("Voice speech recognition is only supported in Chrome or Chromium-based browsers like Edge.");
-      return;
-    }
-
-    // Mutually exclusive: deactivate voice command mode
     if (isVoiceCommandModeRef.current) {
       isVoiceCommandModeRef.current = false;
       setIsVoiceCommandMode(false);
+      clearContinuedConversationSession();
     }
 
     if (isTalkModeRef.current) {
-      // --- EXIT Talk Mode ---
       isTalkModeRef.current = false;
       setIsTalkMode(false);
-      pendingListenRef.current = false;
-      isYukiSpeakingRef.current = false;
-      if (isYukiSpeakingRef._fallbackTimer) {
-        clearTimeout(isYukiSpeakingRef._fallbackTimer);
-        isYukiSpeakingRef._fallbackTimer = null;
-      }
-      try { recognitionRef.current.stop(); } catch (e) { /* already stopped */ }
+      clearContinuedConversationSession();
+      stopAllPlayback();
       console.log("Talk Mode: OFF");
     } else {
-      // --- ENTER Talk Mode ---
-      // Stop any current playback so she doesn't keep talking while we listen
-      audioQueueRef.current = [];
-      isPlayingRef.current = false;
-      isYukiSpeakingRef.current = false;
-      pendingListenRef.current = false;
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = '';
-      }
-      window.speechSynthesis.cancel();
-      if (nativeSpeechIntervalRef.current) {
-        clearInterval(nativeSpeechIntervalRef.current);
-        nativeSpeechIntervalRef.current = null;
-      }
-      setCurrentSpeechText('');
-      console.log("ENTER Talk Mode");
-
+      clearContinuedConversationSession();
+      stopAllPlayback();
       isTalkModeRef.current = true;
       setIsTalkMode(true);
       console.log("Talk Mode: ON");
-      await primeSelectedMicDevice();
-      try {
-        recognitionRef.current.start();
-      } catch (e) {
-        console.warn(e);
-      }
+      updateListeningState();
     }
   };
+
+  const toggleListening = toggleTalkMode;
 
   const toggleVoiceCommandMode = async () => {
     initAudioAnalyser();
 
-    if (!recognitionRef.current) {
-      initSpeechRecognition();
+    if (!useLocalWhisperRef.current) {
+      if (!recognitionRef.current) {
+        initSpeechRecognition();
+      }
+
+      if (!recognitionRef.current) {
+        alert("Voice speech recognition is only supported in Chrome or Chromium-based browsers like Edge.");
+        return;
+      }
     }
 
-    if (!recognitionRef.current) {
-      alert("Voice speech recognition is only supported in Chrome or Chromium-based browsers like Edge.");
-      return;
-    }
-
-    // Mutually exclusive: deactivate talk mode
     if (isTalkModeRef.current) {
       isTalkModeRef.current = false;
       setIsTalkMode(false);
     }
 
     if (isVoiceCommandModeRef.current) {
-      // --- EXIT Voice Command Mode ---
       isVoiceCommandModeRef.current = false;
       setIsVoiceCommandMode(false);
-      pendingListenRef.current = false;
-      isYukiSpeakingRef.current = false;
-      if (isYukiSpeakingRef._fallbackTimer) {
-        clearTimeout(isYukiSpeakingRef._fallbackTimer);
-        isYukiSpeakingRef._fallbackTimer = null;
-      }
-      try { recognitionRef.current.stop(); } catch (e) { /* already stopped */ }
+      clearContinuedConversationSession();
+      stopAllPlayback();
       console.log("Voice Command Mode: OFF");
 
       setMessages((prev) => [...prev, { role: 'assistant', content: "listening mode off" }]);
-      speakTextNatively("listening mode off");
+      speakSystemMessage("Listening mode off.");
     } else {
-      // --- ENTER Voice Command Mode ---
-      audioQueueRef.current = [];
-      isPlayingRef.current = false;
-      isYukiSpeakingRef.current = false;
-      pendingListenRef.current = false;
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = '';
-      }
-      window.speechSynthesis.cancel();
-      if (nativeSpeechIntervalRef.current) {
-        clearInterval(nativeSpeechIntervalRef.current);
-        nativeSpeechIntervalRef.current = null;
-      }
-      setCurrentSpeechText('');
-      console.log("ENTER Voice Command Mode");
-
+      clearContinuedConversationSession();
+      stopAllPlayback();
       isVoiceCommandModeRef.current = true;
       setIsVoiceCommandMode(true);
       console.log("Voice Command Mode: ON");
-      await primeSelectedMicDevice();
-      try {
-        recognitionRef.current.start();
-      } catch (e) {
-        console.warn(e);
-      }
+      updateListeningState();
     }
   };
 
-  // Legacy alias (used in ChatOverlay prop)
-  const toggleListening = toggleTalkMode;
+  const getWhisperModelSizeText = (modelType) => {
+    const computeType = profile.settings?.whisper_compute_type || 'int8_float16';
+    let multiplier = 1.0;
+    if (computeType === 'float16') {
+      multiplier = 2.0;
+    } else if (computeType === 'float32') {
+      multiplier = 4.0;
+    }
+    
+    let baseSize = 140;
+    let label = 'Base Model (Accurate)';
+    if (modelType === 'small') {
+      baseSize = 460;
+      label = 'Small Model (High Accuracy)';
+    } else if (modelType === 'tiny') {
+      baseSize = 70;
+      label = 'Tiny Model (Fastest)';
+    }
+    
+    const finalSize = Math.round(baseSize * multiplier);
+    const sizeStr = finalSize >= 1000 ? `${(finalSize / 1000).toFixed(1)} GB` : `${finalSize} MB`;
+    return `${label} / ~${sizeStr}`;
+  };
+
+  const handleTerminate = () => {
+    console.log("[Terminate] Interrupting current turn and reverting messages.");
+    stopAllPlayback();
+    setIsThinking(false);
+    setTtsStreamActive(false);
+    setCurrentSpeechText("");
+    hasReceivedAudioRef.current = false;
+
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'interrupt' }));
+    }
+
+    setMessages((prev) => {
+      const lastUserIdx = [...prev].reverse().findIndex(m => m.role === 'user');
+      if (lastUserIdx !== -1) {
+        const idx = prev.length - 1 - lastUserIdx;
+        console.log(`[Terminate] Slicing messages to index ${idx} to revert last user message.`);
+        return prev.slice(0, idx);
+      }
+      return prev;
+    });
+
+    setTimeout(() => {
+      updateListeningState();
+    }, 100);
+  };
 
   // Extracted message routing core (used by both input bar submit and voice commands)
-  const sendMessageText = (text) => {
+  const sendMessageText = (text, sttTimeMs = null) => {
     if (!text.trim()) return;
 
+    logSTTStatus(`sendMessageText: "${text}" (sttTimeMs: ${sttTimeMs})`);
     initAudioAnalyser();
 
-    // Clear queue and stop playback
-    audioQueueRef.current = [];
-    isPlayingRef.current = false;
-    ttsStreamActiveRef.current = false;
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-    }
-    window.speechSynthesis.cancel();
-    if (nativeSpeechIntervalRef.current) {
-      clearInterval(nativeSpeechIntervalRef.current);
-      nativeSpeechIntervalRef.current = null;
-    }
-    setCurrentSpeechText('');
+    // Clean interruption
+    clearContinuedConversationSession();
+    stopAllPlayback();
+
     console.log("Clear queue and stop playback");
 
     // Command feature: execute command if matching slash command, else treat as normal prompt
     if (text.startsWith('/')) {
-      const cmd = text.toLowerCase().split(' ')[0];
+      const parts = text.split(' ');
+      const cmd = parts[0].toLowerCase();
+      
+      // Check if it's a known command
+      const isKnownCommand = SLASH_COMMANDS.some(sc => sc.cmd.toLowerCase() === cmd);
+      
+      if (!isKnownCommand) {
+        // Unknown command error
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        setIsThinking(false);
+        setTtsStreamActive(false);
+
+        const errorMsg = `Unknown command: ${cmd}. Type / to see all available commands.`;
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: errorMsg }
+        ]);
+        speakSystemMessage(errorMsg, 'neutral');
+        return;
+      }
 
       if (cmd === '/pcstat') {
         // 1. Immediately log user message and clear input field
         setMessages((prev) => [...prev, { role: 'user', content: text }]);
         setAvatarExpression('happy');
+        setIsThinking(true);
+        setTtsStreamActive(false);
 
         // 2. Fetch PC statistics from backend
         fetch(`${API_BASE}/api/system/pcstat`)
@@ -1480,6 +2129,7 @@ const App = () => {
             return res.json();
           })
           .then((data) => {
+            setIsThinking(false);
             if (data.error) {
               throw new Error(data.error);
             }
@@ -1588,25 +2238,89 @@ const App = () => {
               { role: 'assistant', content: chatText }
             ]);
 
-            if (!muteVoice) {
-              speakTextNatively(ttsText, 'happy');
-            } else {
-              setAvatarExpression('happy');
-            }
+            speakSystemMessage(ttsText, 'happy');
           })
           .catch((err) => {
+            setIsThinking(false);
             console.error("Failed to query PC stats:", err);
             const errorMsg = "Sorry Master, I couldn't retrieve your PC statistics right now. Make sure the backend server is running.";
             setMessages((prev) => [
               ...prev,
               { role: 'assistant', content: errorMsg }
             ]);
-            if (!muteVoice) {
-              speakTextNatively(errorMsg, 'sad');
-            } else {
-              setAvatarExpression('sad');
-            }
+            speakSystemMessage(errorMsg, 'sad');
           });
+        return;
+      }
+
+      if (cmd === '/open' || cmd === '/play') {
+        const query = text.substring(cmd.length).trim();
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        setIsThinking(false);
+        setTtsStreamActive(false);
+
+        if (!query) {
+          const errorMsg = `Please specify what you want to ${cmd === '/open' ? 'open' : 'play'}. Example: ${cmd} paint`;
+          setMessages((prev) => [
+            ...prev,
+            { role: 'assistant', content: errorMsg }
+          ]);
+          speakSystemMessage(errorMsg, 'neutral');
+          return;
+        }
+
+        const runOpenPlay = (forceFlag = false) => {
+          fetch(`${API_BASE}/api/system/open_or_play`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: query, play_mode: cmd === '/play', force: forceFlag })
+          })
+            .then((res) => {
+              if (!res.ok) throw new Error("Could not contact system open/play endpoint.");
+              return res.json();
+            })
+            .then((data) => {
+              if (data.status === 'confirm_required') {
+                setIsThinking(false);
+                const confirmed = window.confirm(`Yuki wants to open/run "${data.name}". Do you want to proceed?`);
+                if (confirmed) {
+                  setIsThinking(true);
+                  runOpenPlay(true);
+                } else {
+                  const cancelMsg = "Error: Execution cancelled by user confirmation security check.";
+                  setMessages((prev) => [
+                    ...prev,
+                    { role: 'assistant', content: cancelMsg }
+                  ]);
+                  speakSystemMessage(cancelMsg, 'sad');
+                }
+                return;
+              }
+              setIsThinking(false);
+              if (data.error) {
+                throw new Error(data.error);
+              }
+              const chatText = data.result || "Command executed.";
+              setMessages((prev) => [
+                ...prev,
+                { role: 'assistant', content: chatText }
+              ]);
+              speakSystemMessage(chatText, 'happy');
+            })
+            .catch((err) => {
+              setIsThinking(false);
+              console.error("Failed to execute open/play command:", err);
+              const errorMsg = `Sorry Master, I couldn't execute that command: ${err.message}`;
+              setMessages((prev) => [
+                ...prev,
+                { role: 'assistant', content: errorMsg }
+              ]);
+              speakSystemMessage(errorMsg, 'sad');
+            });
+        };
+
+        setIsThinking(true);
+        runOpenPlay(false);
         return;
       }
 
@@ -1643,6 +2357,8 @@ const App = () => {
               { role: 'user', content: text },
               { role: 'assistant', content: errorMsg }
             ]);
+            setIsThinking(false);
+            setTtsStreamActive(false);
             return;
           }
           responseText = matchingAnim.responseText;
@@ -1659,26 +2375,33 @@ const App = () => {
           { role: 'assistant', content: responseText }
         ]);
 
-        // Execute/Animate facial expression change
         const expr = detectExpression(responseText);
         setAvatarExpression(expr);
-
-        if (!muteVoice) {
-          speakTextNatively(responseText, expr);
-        }
+        speakSystemMessage(responseText, expr);
         return;
       }
     }
 
+    // Default chat turn: Set stream active and thinking state FIRST to prevent coordinator race
+    setTtsStreamActive(true);
+    setIsThinking(true);
     setMessages((prev) => [...prev, { role: 'user', content: text }]);
 
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: 'chat', message: text }));
+      const payload = { type: 'chat', message: text };
+      if (sttTimeMs !== null) {
+        payload.stt_time_ms = sttTimeMs;
+      }
+      socketRef.current.send(JSON.stringify(payload));
     } else {
+      logSTTStatus(`WebSocket offline, cannot send message. ReadyState: ${socketRef.current ? socketRef.current.readyState : 'null'}`);
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: "Hmph! I'm currently offline, Master. Make sure the backend server is running!" }
       ]);
+      setIsThinking(false);
+      setTtsStreamActive(false);
+      updateListeningState();
     }
   };
 
@@ -1693,6 +2416,7 @@ const App = () => {
 
   // 6. Reset settings and history
   const handleReset = async () => {
+    clearContinuedConversationSession();
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'reset' }));
     }
@@ -1753,7 +2477,35 @@ const App = () => {
         setLmstudioUrl(data.lmstudio_url);
       }
     } catch (e) {
-      console.warn("Could not retrieve backend stats:", e);
+      console.warn("Could not load active LLM model from health API:", e);
+    }
+  };
+
+  const fetchLlmModels = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/models`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.models && data.models.length > 0) {
+          setAvailableLlmModels(data.models);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load LLM models from LM Studio:", e);
+    }
+  };
+
+  const fetchVrmModels = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/models/vrm`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.models) {
+          setVrmModels(data.models);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load VRM models list from REST API:", e);
     }
   };
 
@@ -1762,6 +2514,8 @@ const App = () => {
     connectWebSocket();
     fetchProfileDetails();
     fetchHealthDetails();
+    fetchVrmModels();
+    fetchLlmModels();
 
     return () => {
       if (socketRef.current) {
@@ -1788,7 +2542,7 @@ const App = () => {
         <main className="canvas-container">
           <AvatarViewer
             audioLevel={audioLevel}
-            isThinking={isThinking}
+            isThinking={isThinking || ttsStreamActive}
             isListening={isListening}
             isWalking={isWalking}
             walkDirection={walkDirection}
@@ -1800,6 +2554,7 @@ const App = () => {
             skinToneColor={avatarSkinToneColor}
             customAnimation={customAnimation}
             disabledAnimations={disabledAnimations}
+            activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
           />
         </main>
 
@@ -1846,11 +2601,11 @@ const App = () => {
             )}
           </button>
           <button
-            className={`desktop-menu-btn ${isWandering ? 'active' : ''}`}
-            onClick={() => setIsWandering(!isWandering)}
-            title="Walk/Wander"
+            className="desktop-menu-btn terminate-btn"
+            onClick={handleTerminate}
+            title="Terminate/Cancel Processing"
           >
-            <Footprints className="w-5 h-5" />
+            <Square className="w-4 h-4 text-red-500 fill-red-500" />
           </button>
           <button
             className={`desktop-menu-btn ${muteVoice ? 'active' : ''}`}
@@ -1875,7 +2630,7 @@ const App = () => {
             <p className="desktop-bubble-text">{currentSpeechText}</p>
           </div>
         )}
-        {isThinking && !currentSpeechText && (
+        {(isThinking || ttsStreamActive) && !currentSpeechText && (
           <div className="desktop-speech-bubble interactive-element">
             <span className="desktop-bubble-tag">Yuki</span>
             <div style={{ display: 'flex', gap: '5px', alignItems: 'center', height: '20px', padding: '4px 0' }}>
@@ -1889,6 +2644,111 @@ const App = () => {
         {/* Floating Chat Input bar */}
         {isChatOpen && (
           <div className="desktop-chat-input-container interactive-element" style={{ position: 'absolute' }}>
+            {/* Chat History Log Panel */}
+            {isPanelOpen && (
+              <div style={{
+                position: 'absolute',
+                bottom: '100%',
+                left: 0,
+                right: 0,
+                marginBottom: '8px',
+                background: 'rgba(12, 8, 26, 0.97)',
+                border: '1px solid rgba(139, 92, 246, 0.35)',
+                borderRadius: '12px',
+                boxShadow: '0 -10px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(139,92,246,0.08)',
+                backdropFilter: 'blur(24px)',
+                zIndex: 9998,
+                maxHeight: '320px',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }}>
+                {/* Header */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 14px 6px',
+                  borderBottom: '1px solid rgba(255,255,255,0.06)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Terminal className="w-3.5 h-3.5 text-violet-400" />
+                    <span style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.12em', color: 'rgba(139,92,246,0.85)', textTransform: 'uppercase' }}>
+                      Conversation Log
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPanelOpen(false)}
+                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 0 }}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Messages scroll area */}
+                <div style={{
+                  padding: '10px 14px',
+                  overflowY: 'auto',
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}>
+                  {messages.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '20px 0', opacity: 0.5, fontSize: '11px', color: 'white' }}>
+                      No messages in buffer.
+                    </div>
+                  ) : (
+                    messages.map((msg, index) => {
+                      const isUser = msg.role === 'user';
+                      const isSystem = msg.role === 'system';
+                      return (
+                        <div key={index} style={{
+                          alignSelf: isSystem ? 'center' : isUser ? 'flex-end' : 'flex-start',
+                          maxWidth: '85%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '2px'
+                        }}>
+                          <span style={{
+                            fontSize: '9px',
+                            color: isSystem ? '#2dd4bf' : isUser ? '#c4b5fd' : '#94a3b8',
+                            alignSelf: isUser ? 'flex-end' : 'flex-start',
+                            fontWeight: '600'
+                          }}>
+                            {isSystem ? '[TOOL]' : isUser ? 'Master' : 'Yuki'}
+                          </span>
+                          <div style={{
+                            background: isSystem
+                              ? 'rgba(45, 212, 191, 0.1)'
+                              : isUser
+                                ? 'rgba(139, 92, 246, 0.25)'
+                                : 'rgba(255, 255, 255, 0.08)',
+                            border: isSystem
+                              ? '1px solid rgba(45, 212, 191, 0.2)'
+                              : isUser
+                                ? '1px solid rgba(139, 92, 246, 0.3)'
+                                : '1px solid rgba(255, 255, 255, 0.08)',
+                            borderRadius: '8px',
+                            padding: '6px 10px',
+                            color: '#e2e8f0',
+                            fontSize: '11px',
+                            wordBreak: 'break-word',
+                            whiteSpace: 'pre-line'
+                          }}>
+                            {msg.content}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  {/* Dummy ref to scroll to bottom */}
+                  <div ref={desktopChatEndRef} />
+                </div>
+              </div>
+            )}
+
             {/* Slash-command suggestion dropdown */}
             {showCmdSugg && (
               <div style={{
@@ -1991,11 +2851,11 @@ const App = () => {
               />
               <button
                 type="button"
-                className={`desktop-chat-mic-btn ${isVoiceCommandMode ? 'active' : ''}`}
-                onClick={toggleVoiceCommandMode}
-                title={isVoiceCommandMode ? "Voice Commands Active (Listening)" : "Enable Voice Commands"}
+                className={`desktop-chat-history-btn ${isPanelOpen ? 'active' : ''}`}
+                onClick={() => setIsPanelOpen(!isPanelOpen)}
+                title={isPanelOpen ? "Hide Chat History" : "Show Chat History"}
               >
-                {isVoiceCommandMode ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                <History className="w-4 h-4" />
               </button>
               <button type="submit" className="desktop-chat-send-btn">
                 <Send className="w-4 h-4" />
@@ -2394,6 +3254,33 @@ const App = () => {
                         />
                       </div>
 
+                      {/* Voice Volume Control */}
+                      <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <label className="desktop-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                            {muteVoice || voiceVolume === 0 ? <VolumeX className="w-3.5 h-3.5 text-red-400" /> : <Volume2 className="w-3.5 h-3.5 text-purple-400" />}
+                            Voice Volume
+                          </label>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a855f7' }}>
+                            {Math.round(voiceVolume * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.0"
+                          max="1.0"
+                          step="0.05"
+                          disabled={muteVoice}
+                          value={muteVoice ? 0 : voiceVolume}
+                          onChange={(e) => {
+                            const newVolume = parseFloat(e.target.value);
+                            setVoiceVolume(newVolume);
+                            localStorage.setItem('yuki-voice-volume', newVolume.toString());
+                          }}
+                          style={{ width: '100%', cursor: muteVoice ? 'not-allowed' : 'pointer', accentColor: '#a855f7', opacity: muteVoice ? 0.5 : 1 }}
+                        />
+                      </div>
+
                       <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <label className="desktop-label">Companion Scale</label>
@@ -2466,6 +3353,23 @@ const App = () => {
                         </div>
                       </div>
 
+                      {/* VRM Avatar Model dropdown */}
+                      <div className="desktop-form-group" style={{ marginTop: '6px' }}>
+                        <label className="desktop-label">VRM Avatar Model</label>
+                        <select
+                          className="desktop-select"
+                          value={profile.settings?.active_vrm_model || 'default.vrm'}
+                          onChange={(e) => handleUpdateSetting('active_vrm_model', e.target.value)}
+                          style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                        >
+                          {vrmModels.map((model) => (
+                            <option key={model} value={model} style={{ background: '#120c21', color: 'white' }}>
+                              {model.replace('.vrm', '').replace(/_/g, ' ').toUpperCase() || model}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       {/* TTS Voice Profile dropdown */}
                       <div className="desktop-form-group" style={{ marginTop: '6px' }}>
                         <label className="desktop-label">Speech Synthesis Voice</label>
@@ -2535,7 +3439,117 @@ const App = () => {
                             </option>
                           ))}
                         </select>
+
+                        {/* Prefer Headset Mic checkbox */}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '7px', cursor: 'pointer', userSelect: 'none' }}>
+                          <input
+                            type="checkbox"
+                            checked={preferHeadsetMic}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              setPreferHeadsetMic(val);
+                              localStorage.setItem('yuki-prefer-headset', val.toString());
+                              if (val) {
+                                applyHeadsetPreference(micDevices, true);
+                              }
+                            }}
+                            style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
+                            Prefer headset mic — auto-select headset when connected, fall back to system default
+                          </span>
+                        </label>
                       </div>
+
+                      {/* Speech-to-Text Engine Select */}
+                      <div className="desktop-form-group" style={{ marginTop: '6px' }}>
+                        <label className="desktop-label">Speech-to-Text Engine</label>
+                        <select
+                          className="desktop-select"
+                          value={profile.settings?.use_local_whisper !== undefined ? (profile.settings.use_local_whisper ? 'local_whisper' : 'web_speech') : 'local_whisper'}
+                          onChange={(e) => handleUpdateSetting('use_local_whisper', e.target.value === 'local_whisper')}
+                          style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                        >
+                          <option value="local_whisper" style={{ background: '#120c21', color: 'white' }}>🎙️ Local Whisper (Offline / Recommended)</option>
+                          <option value="web_speech" style={{ background: '#120c21', color: 'white' }}>🌐 Web Speech API (Browser Native)</option>
+                        </select>
+                      </div>
+
+                      {/* Local Whisper Model Select */}
+                      {(profile.settings?.use_local_whisper !== false) && (
+                        <>
+                          <div className="desktop-form-group" style={{ marginTop: '6px' }}>
+                            <label className="desktop-label">Whisper Model Size</label>
+                            <select
+                              className="desktop-select"
+                              value={profile.settings?.whisper_model || 'base'}
+                              onChange={(e) => handleUpdateSetting('whisper_model', e.target.value)}
+                              style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                            >
+                              <option value="base" style={{ background: '#120c21', color: 'white' }}>{getWhisperModelSizeText('base')}</option>
+                              <option value="small" style={{ background: '#120c21', color: 'white' }}>{getWhisperModelSizeText('small')}</option>
+                              <option value="tiny" style={{ background: '#120c21', color: 'white' }}>{getWhisperModelSizeText('tiny')}</option>
+                            </select>
+                          </div>
+
+                          <div className="desktop-form-group" style={{ marginTop: '6px' }}>
+                            <label className="desktop-label">Whisper Compute Type</label>
+                            <select
+                              className="desktop-select"
+                              value={profile.settings?.whisper_compute_type || 'int8_float16'}
+                              onChange={(e) => handleUpdateSetting('whisper_compute_type', e.target.value)}
+                              style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                            >
+                              <option value="int8_float16" style={{ background: '#120c21', color: 'white' }}>int8_float16 (Low VRAM GPU)</option>
+                              <option value="int8_float32" style={{ background: '#120c21', color: 'white' }}>int8_float32 (Recommended for GTX)</option>
+                              <option value="float16" style={{ background: '#120c21', color: 'white' }}>float16 (Best for RTX GPU)</option>
+                              <option value="int8" style={{ background: '#120c21', color: 'white' }}>int8 (Lightweight CPU / GPU)</option>
+                              <option value="float32" style={{ background: '#120c21', color: 'white' }}>float32 (Unquantized - Slowest)</option>
+                            </select>
+                          </div>
+
+                          {/* VAD Sensitivity Threshold Slider */}
+                          <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <label className="desktop-label">VAD Sensitivity Threshold</label>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a855f7' }}>
+                                {vadThreshold.toFixed(3)}
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0.002"
+                              max="0.08"
+                              step="0.002"
+                              value={vadThreshold}
+                              onChange={(e) => {
+                                const newThreshold = parseFloat(e.target.value);
+                                setVadThreshold(newThreshold);
+                                localStorage.setItem('yuki-vad-threshold', newThreshold.toString());
+                              }}
+                              style={{ width: '100%', cursor: 'pointer', accentColor: '#a855f7' }}
+                            />
+                            <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: '2px', lineHeight: '1.2' }}>
+                              Increase this threshold if Yuki gets stuck in a listening loop due to room noise or fan hum.
+                            </span>
+                          </div>
+
+                          {/* Speech-to-Text Language Selection */}
+                          <div className="desktop-form-group" style={{ marginTop: '6px' }}>
+                            <label className="desktop-label">Speech-to-Text Language</label>
+                            <select
+                              className="desktop-select"
+                              value={profile.settings?.stt_language || 'en'}
+                              onChange={(e) => handleUpdateSetting('stt_language', e.target.value)}
+                              style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                            >
+                              <option value="en" style={{ background: '#120c21', color: 'white' }}>English</option>
+                              <option value="hi" style={{ background: '#120c21', color: 'white' }}>Hindi (हिन्दी)</option>
+                              <option value="ja" style={{ background: '#120c21', color: 'white' }}>Japanese (日本語)</option>
+                            </select>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* Brain & AI Settings */}
@@ -2546,19 +3560,31 @@ const App = () => {
                       </div>
 
                       <div className="desktop-form-group">
-                        <label className="desktop-label">Active Model Selection</label>
+                        <label className="desktop-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>Active Model Selection</span>
+                          <button
+                            onClick={fetchLlmModels}
+                            style={{ background: 'none', border: 'none', color: 'var(--accent-purple, #a855f7)', cursor: 'pointer', fontSize: '0.65rem', padding: '0', opacity: 0.75 }}
+                            title="Refresh models from LM Studio"
+                          >↻ Refresh</button>
+                        </label>
                         <select
                           className="desktop-select"
-                          // [SEARCH FOR MODEL CHANGE] Old default: 'ministra-3'
-                          value={profile.settings?.llm_model || 'llama-3.2-3b-instruct'}
+                          value={profile.settings?.llm_model || ''}
                           onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
                           style={{ padding: '6px 8px', fontSize: '0.75rem' }}
                         >
-                          {LLM_MODELS.map((model) => (
-                            <option key={model.value} value={model.value} style={{ background: '#120c21', color: 'white' }}>
-                              {model.label}
+                          {availableLlmModels.length === 0 ? (
+                            <option value={profile.settings?.llm_model || ''} style={{ background: '#120c21', color: 'white' }}>
+                              {profile.settings?.llm_model || 'Loading models...'}
                             </option>
-                          ))}
+                          ) : (
+                            availableLlmModels.map((model) => (
+                              <option key={model.name} value={model.name} style={{ background: '#120c21', color: 'white' }}>
+                                {model.name}
+                              </option>
+                            ))
+                          )}
                         </select>
                       </div>
 
@@ -2890,7 +3916,7 @@ const App = () => {
       <main className="canvas-container">
         <AvatarViewer
           audioLevel={audioLevel}
-          isThinking={isThinking}
+          isThinking={isThinking || ttsStreamActive}
           isListening={isListening}
           expression={avatarExpression}
           cpuLoad={cpuLoad}
@@ -2900,6 +3926,7 @@ const App = () => {
           skinToneColor={avatarSkinToneColor}
           customAnimation={customAnimation}
           disabledAnimations={disabledAnimations}
+          activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
         />
       </main>
 
@@ -2913,7 +3940,7 @@ const App = () => {
         isTalkMode={isTalkMode}
         toggleListening={toggleListening}
         onReset={handleReset}
-        isThinking={isThinking}
+        isThinking={isThinking || ttsStreamActive}
         currentSpeechText={currentSpeechText}
         isPanelOpen={isPanelOpen}
         setIsPanelOpen={setIsPanelOpen}
@@ -2954,6 +3981,26 @@ const App = () => {
           }
         }}
         onRefreshMicDevices={refreshMicDevices}
+        vadThreshold={vadThreshold}
+        onVadThresholdChange={(val) => {
+          setVadThreshold(val);
+          localStorage.setItem('yuki-vad-threshold', val.toString());
+        }}
+        muteVoice={muteVoice}
+        onMuteVoiceChange={handleToggleMute}
+        voiceVolume={voiceVolume}
+        onVoiceVolumeChange={(val) => {
+          setVoiceVolume(val);
+          localStorage.setItem('yuki-voice-volume', val.toString());
+        }}
+        availableLlmModels={availableLlmModels}
+        onRefreshLlmModels={fetchLlmModels}
+        preferHeadsetMic={preferHeadsetMic}
+        onPreferHeadsetMicChange={(val) => {
+          setPreferHeadsetMic(val);
+          localStorage.setItem('yuki-prefer-headset', val.toString());
+          if (val) applyHeadsetPreference(micDevices, true);
+        }}
       />
 
       {/* System Offline warning banner */}

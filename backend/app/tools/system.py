@@ -237,7 +237,7 @@ def launch_app(app_name: str) -> str:
         return f"Success: Triggered startup for '{app_name}'!"
     except Exception as e:
         try:
-            subprocess.Popen(f"powershell Start-Process {target}", shell=True)
+            subprocess.Popen(["powershell", "-Command", f'Start-Process "{target}"'])
             return f"Success: Launched '{app_name}' via PowerShell."
         except Exception as e2:
             return f"Failed to launch '{app_name}': {str(e)} (fallback: {str(e2)})"

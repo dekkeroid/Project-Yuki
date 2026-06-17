@@ -25,7 +25,8 @@ const AvatarViewer = ({
   scale = 1.0,
   skinToneColor = '#FFE5E5',
   customAnimation = '',
-  disabledAnimations = []
+  disabledAnimations = [],
+  activeModel = 'default.vrm'
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -60,6 +61,23 @@ const AvatarViewer = ({
   const scaleRef = useRef(isElectron ? (window.innerHeight / ELECTRON_WINDOW_HEIGHT) : scale);
   const skinToneRef = useRef(skinToneColor);
   const disabledAnimationsRef = useRef(disabledAnimations || []);
+  
+  const activeModelRef = useRef(activeModel);
+
+  useEffect(() => {
+    activeModelRef.current = activeModel;
+  }, [activeModel]);
+
+  const isFirstMount = useRef(true);
+  useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+    if (activeModel) {
+      loadModel(`/models/${activeModel}`);
+    }
+  }, [activeModel]);
 
   useEffect(() => {
     disabledAnimationsRef.current = disabledAnimations || [];
@@ -644,7 +662,7 @@ const AvatarViewer = ({
     // loadModel('/models/watame.vrm');9
     // loadModel('/models/yuki.vrm');10
     // loadModel('/models/timekeeper_cookie.vrm');11
-    loadModel(`/models/${model_choice[0]}`);
+    loadModel(`/models/${activeModelRef.current}`);
 
     // 8. Animation Loop variables
     let blinkTimer = 0;

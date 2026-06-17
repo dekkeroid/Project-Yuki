@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, UserCheck, Plus, Trash, Mic } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 
@@ -25,7 +25,17 @@ const ControlDashboard = ({
   micDevices = [],
   selectedMicDeviceId = '',
   onMicDeviceChange,
-  onRefreshMicDevices
+  onRefreshMicDevices,
+  vadThreshold = 0.01,
+  onVadThresholdChange,
+  muteVoice = false,
+  onMuteVoiceChange,
+  voiceVolume = 1.0,
+  onVoiceVolumeChange,
+  availableLlmModels = [],
+  onRefreshLlmModels,
+  preferHeadsetMic = false,
+  onPreferHeadsetMicChange
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('memory');
@@ -40,7 +50,8 @@ const ControlDashboard = ({
     character_name: 'Yuki',
     character_persona: '',
     crawler_paused: false,
-    tagger_paused: false
+    tagger_paused: false,
+    active_vrm_model: 'default.vrm'
   });
 
   // Local Character States
@@ -286,10 +297,27 @@ const ControlDashboard = ({
     setEditingFactValue('');
   };
 
+  const [vrmModels, setVrmModels] = useState(['default.vrm']);
+
+  const fetchVrmModels = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/models/vrm`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.models) {
+          setVrmModels(data.models);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch VRM models:', e);
+    }
+  };
+
   // Fetch settings / crawler status on open & handle crawler polling
   useEffect(() => {
     let interval = null;
     if (isOpen) {
+      fetchVrmModels();
       if (activeTab === 'crawler') {
         fetchCrawlerStatus();
         interval = setInterval(fetchCrawlerStatus, 2500);
@@ -718,6 +746,33 @@ const ControlDashboard = ({
 
 
 
+                {/* VRM Avatar Model dropdown */}
+                <div className="identity-field" style={{ marginTop: '4px' }}>
+                  <span className="field-label">VRM Avatar Model</span>
+                  <select
+                    value={settings.active_vrm_model || 'default.vrm'}
+                    onChange={(e) => handleUpdateSetting('active_vrm_model', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.78rem',
+                      outline: 'none',
+                      cursor: 'pointer',
+                      marginTop: '2px'
+                    }}
+                  >
+                    {vrmModels.map((model) => (
+                      <option key={model} value={model} style={{ background: '#0b0813', color: 'white' }}>
+                        {model.replace('.vrm', '').replace(/_/g, ' ').toUpperCase() || model}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* TTS Voice Selection */}
                 <div className="identity-field" style={{ marginTop: '4px' }}>
                   <span className="field-label">Speech Synthesis Voice</span>
@@ -811,6 +866,201 @@ const ControlDashboard = ({
                       </option>
                     ))}
                   </select>
+
+                  {/* Prefer Headset Mic checkbox */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '7px', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={preferHeadsetMic}
+                      onChange={(e) => onPreferHeadsetMicChange && onPreferHeadsetMicChange(e.target.checked)}
+                      style={{ accentColor: '#a78bfa', width: '13px', height: '13px', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '0.72rem', color: '#c4b5fd', lineHeight: 1.3 }}>
+                      Prefer headset mic — auto-select headset when connected
+                    </span>
+                  </label>
+                </div>
+
+                {/* Active LLM Model Selection */}
+                <div className="identity-field" style={{ marginTop: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="field-label">Active LLM Model</span>
+                    <button
+                      type="button"
+                      onClick={onRefreshLlmModels}
+                      title="Refresh model list from LM Studio"
+                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                    >
+                      <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
+                    </button>
+                  </div>
+                  <select
+                    value={settings.llm_model || ''}
+                    onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.78rem',
+                      outline: 'none',
+                      cursor: 'pointer',
+                      marginTop: '4px'
+                    }}
+                  >
+                    {availableLlmModels.length === 0 ? (
+                      <option value={settings.llm_model || ''} style={{ background: '#0b0813', color: 'white' }}>
+                        {settings.llm_model || 'Loading models...'}
+                      </option>
+                    ) : (
+                      availableLlmModels.map((model) => (
+                        <option key={model.name} value={model.name} style={{ background: '#0b0813', color: 'white' }}>
+                          {model.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+
+                {/* Speech-to-Text Engine Select */}
+                <div className="identity-field" style={{ marginTop: '10px' }}>
+                  <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Mic style={{ width: '13px', height: '13px', color: '#a78bfa' }} />
+                    Speech-to-Text Engine
+                  </span>
+                  <select
+                    value={settings.use_local_whisper !== undefined ? (settings.use_local_whisper ? 'local_whisper' : 'web_speech') : 'local_whisper'}
+                    onChange={(e) => handleUpdateSetting('use_local_whisper', e.target.value === 'local_whisper')}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.78rem',
+                      outline: 'none',
+                      cursor: 'pointer',
+                      marginTop: '4px'
+                    }}
+                  >
+                    <option value="local_whisper" style={{ background: '#0b0813', color: 'white' }}>🎙️ Local Whisper (Offline / Recommended)</option>
+                    <option value="web_speech" style={{ background: '#0b0813', color: 'white' }}>🌐 Web Speech API (Browser Native)</option>
+                  </select>
+                </div>
+
+                {/* Local Whisper Model Select */}
+                {(settings.use_local_whisper !== false) && (
+                  <>
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">Whisper Model Size</span>
+                      <select
+                        value={settings.whisper_model || 'base'}
+                        onChange={(e) => handleUpdateSetting('whisper_model', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '4px'
+                        }}
+                      >
+                        <option value="base" style={{ background: '#0b0813', color: 'white' }}>Base Model (Accurate / ~140MB)</option>
+                        <option value="small" style={{ background: '#0b0813', color: 'white' }}>Small Model (High Accuracy / ~460MB)</option>
+                        <option value="tiny" style={{ background: '#0b0813', color: 'white' }}>Tiny Model (Fastest / ~70MB)</option>
+                      </select>
+                    </div>
+
+                    {/* VAD Sensitivity Threshold Slider */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="field-label">VAD Sensitivity Threshold</span>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                          {vadThreshold.toFixed(3)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.002"
+                        max="0.08"
+                        step="0.002"
+                        value={vadThreshold}
+                        onChange={(e) => onVadThresholdChange && onVadThresholdChange(parseFloat(e.target.value))}
+                        style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
+                      />
+                      <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', display: 'block', lineHeight: '1.2' }}>
+                        Increase if room noise triggers continuous listening loops.
+                      </span>
+                    </div>
+
+                    {/* Speech-to-Text Language Select */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">Speech-to-Text Language</span>
+                      <select
+                        value={settings.stt_language || 'en'}
+                        onChange={(e) => handleUpdateSetting('stt_language', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '4px'
+                        }}
+                      >
+                        <option value="en" style={{ background: '#0b0813', color: 'white' }}>English</option>
+                        <option value="hi" style={{ background: '#0b0813', color: 'white' }}>Hindi (हिन्दी)</option>
+                        <option value="ja" style={{ background: '#0b0813', color: 'white' }}>Japanese (日本語)</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+
+                {/* Voice Volume & Mute Controls */}
+                <div className="identity-field" style={{ marginTop: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {muteVoice ? <VolumeX style={{ width: '13px', height: '13px', color: '#f87171' }} /> : <Volume2 style={{ width: '13px', height: '13px', color: '#a78bfa' }} />}
+                      Voice Audio Output
+                    </span>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: 'white', cursor: 'pointer', margin: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={muteVoice}
+                        onChange={(e) => onMuteVoiceChange && onMuteVoiceChange(e.target.checked)}
+                        style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
+                      />
+                      Mute
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>Volume Level</span>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                      {Math.round(voiceVolume * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.0"
+                    max="1.0"
+                    step="0.05"
+                    disabled={muteVoice}
+                    value={muteVoice ? 0 : voiceVolume}
+                    onChange={(e) => onVoiceVolumeChange && onVoiceVolumeChange(parseFloat(e.target.value))}
+                    style={{ width: '100%', cursor: muteVoice ? 'not-allowed' : 'pointer', accentColor: '#a78bfa', marginTop: '4px', opacity: muteVoice ? 0.5 : 1 }}
+                  />
                 </div>
 
                 {/* Skin Tone Customization */}
