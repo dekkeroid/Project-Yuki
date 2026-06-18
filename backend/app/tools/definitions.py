@@ -303,3 +303,75 @@ def get_tools_definition() -> list:
             }
         }
     ]
+
+
+def get_filtered_tools(user_message: str) -> list:
+    """
+    Analyzes the user message and returns a filtered subset of tools.
+    Applies bundling so related tools are grouped together.
+    """
+    all_tools = get_tools_definition()
+    
+    # If query is empty or not a string, return fallback tools
+    if not isinstance(user_message, str) or not user_message.strip():
+        fallback_names = {"get_system_stats", "web_search", "launch_app", "open_or_play_file", "update_user_fact"}
+        return [t for t in all_tools if t["function"]["name"] in fallback_names]
+
+    query = user_message.lower()
+    selected_tool_names = set()
+    
+    # 1. System stats
+    if any(w in query for w in ["stat", "cpu", "ram", "memory", "disk", "ip", "os", "time", "date"]):
+        selected_tool_names.add("get_system_stats")
+        
+    # 2. Web search
+    if any(w in query for w in ["search", "google", "yahoo", "find", "lookup", "who", "what", "weather", "news", "leak", "internet", "web", "online"]):
+        selected_tool_names.add("web_search")
+        
+    # 3. App launcher / play
+    if any(w in query for w in ["launch", "run", "open", "start", "play", "song", "music", "video", "movie", "game", "steam", "paint", "calc", "notepad", "chrome", "discord"]):
+        selected_tool_names.add("launch_app")
+        selected_tool_names.add("open_or_play_file")
+        selected_tool_names.add("media_playback_control")
+        
+    # 4. Filesystem
+    if any(w in query for w in ["file", "folder", "directory", "dir", "list", "delete", "remove", "create", "write", "edit", "modify", "replace", "save", "txt", "docx", "pdf"]):
+        selected_tool_names.add("list_directory")
+        selected_tool_names.add("search_files")
+        selected_tool_names.add("open_or_play_file")
+        selected_tool_names.add("create_file")
+        selected_tool_names.add("edit_file")
+        selected_tool_names.add("delete_file")
+        
+    # 5. Volume
+    if any(w in query for w in ["volume", "sound", "mute", "quiet", "loud", "audio"]):
+        selected_tool_names.add("set_system_volume")
+        selected_tool_names.add("media_playback_control")
+        
+    # 6. Window control / Input
+    if any(w in query for w in ["window", "minimize", "maximize", "restore", "close", "click", "type", "keyboard", "mouse", "scroll", "press", "key", "automate", "screenshot", "screen"]):
+        selected_tool_names.add("control_window")
+        selected_tool_names.add("keyboard_mouse_input")
+        selected_tool_names.add("take_screenshot")
+        
+    # 7. Terminal / scripts / process
+    if any(w in query for w in ["terminal", "cmd", "powershell", "execute", "command", "python", "code", "script", "process", "task", "kill", "terminate", "running", "background"]):
+        selected_tool_names.add("run_terminal_command")
+        selected_tool_names.add("run_python_script")
+        selected_tool_names.add("manage_process")
+        
+    # 8. Power control
+    if any(w in query for w in ["shutdown", "restart", "reboot", "sleep", "lock", "sign out", "power"]):
+        selected_tool_names.add("system_power_control")
+        
+    # 9. User facts
+    if any(w in query for w in ["remember", "fact", "name", "interest", "hobby", "like", "dislike"]):
+        selected_tool_names.add("update_user_fact")
+
+    # If no tool was matched, use fallback general tools
+    if not selected_tool_names:
+        fallback_names = {"get_system_stats", "web_search", "launch_app", "open_or_play_file", "update_user_fact"}
+        selected_tool_names.update(fallback_names)
+        
+    return [t for t in all_tools if t["function"]["name"] in selected_tool_names]
+

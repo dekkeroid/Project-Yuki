@@ -97,7 +97,7 @@ def list_directory(directory_path: str = None) -> str:
                 drives.append(drive)
         return f"System drives: {', '.join(drives)}. Provide one of these paths to list its contents."
 
-    path = directory_path.strip()
+    path = os.path.abspath(os.path.expanduser(os.path.expandvars(directory_path.strip())))
     if not os.path.exists(path):
         return f"Error: Path '{path}' does not exist."
         
@@ -246,7 +246,7 @@ def parse_query_with_llm(query: str) -> Dict:
 # Stage 2 — Database Union Search
 # ---------------------------------------------------------------------------
 
-def query_database_union(parsed: Dict, limit_raw: int = 100, categories: List[str] = None) -> List[Dict]:
+def query_database_union(parsed: Dict, limit_raw: int = 100, categories: List[str] = None, silent: bool = False) -> List[Dict]:
     """
     Builds a SQL UNION-like query (actually a single SELECT with OR clauses)
     that returns files matching any element from:
@@ -307,19 +307,22 @@ def query_database_union(parsed: Dict, limit_raw: int = 100, categories: List[st
     params_sql.append(limit_raw)
 
     # ── Log the SQL query (params interpolated for readability) ──────────────
-    readable_sql = sql
-    for p in params_sql:
-        readable_sql = readable_sql.replace("?", repr(p), 1)
-    print(f"[Search] SQL:\n{readable_sql.strip()}")
+    if not silent:
+        readable_sql = sql
+        for p in params_sql:
+            readable_sql = readable_sql.replace("?", repr(p), 1)
+        print(f"[Search] SQL:\n{readable_sql.strip()}")
 
     from app.memory.db import get_connection
     conn = get_connection()
     try:
         rows = conn.execute(sql, params_sql).fetchall()
-        print(f"[Search] SQL returned {len(rows)} raw rows")
+        if not silent:
+            print(f"[Search] SQL returned {len(rows)} raw rows")
         return [dict(r) for r in rows]
     except Exception as e:
-        print(f"[Search] Union DB query failed: {e}")
+        if not silent:
+            print(f"[Search] Union DB query failed: {e}")
         return []
     finally:
         conn.close()
@@ -454,28 +457,32 @@ def ask_llm_to_resolve_match(query: str, candidates: List[Dict], is_generic: boo
         candidates = list(candidates)
         random.shuffle(candidates)
 
-    candidate_list = [
-        {
-            "path":     c["file_path"],
-            "category": c.get("category", ""),
-            "title":    c.get("title") or "",
-            "artist":   c.get("artist_or_creator") or "",
-            "tags":     c.get("genre_or_tags") or "",
-        }
-        for c in candidates
-    ]
+    candidates_str_list = []
+    for idx, c in enumerate(candidates):
+        metadata_parts = []
+        if c.get("title"):
+            metadata_parts.append(f"Title: {c['title']}")
+        if c.get("artist_or_creator"):
+            metadata_parts.append(f"Artist: {c['artist_or_creator']}")
+        if c.get("genre_or_tags"):
+            metadata_parts.append(f"Tags: {c['genre_or_tags']}")
+            
+        metadata_str = f" ({', '.join(metadata_parts)})" if metadata_parts else ""
+        candidates_str_list.append(f"[{idx}] Path: {c['file_path']}{metadata_str}")
+
+    candidates_text = "\n".join(candidates_str_list)
 
     if is_generic:
         system_prompt = (
             "You are a media file resolver. The user query is a generic mood or genre request (e.g. 'play something romantic') rather than a request for a specific file.\n"
-            "Pick one candidate completely randomly from the provided candidates list. Do not try to find a title match, just select any random candidate from the list.\n"
+            "Pick one candidate completely randomly from the provided list. Do not try to find a title match, just select the path of any random candidate from the list.\n"
             "Respond ONLY with raw JSON — no markdown, no explanation:\n"
             "{\"best_match\": \"<exact path or null>\", \"reason\": \"<one sentence>\"}"
         )
     else:
         system_prompt = (
             "You are a media file resolver. The user wants to open a specific file.\n"
-            "Given the query and the candidate list, pick the single best matching file.\n"
+            "Given the query and the candidate list, pick the single best matching file path from the list.\n"
             "Understand: 'ep1'/'e1'/'episode 1'/'s01e01' all refer to the same episode.\n"
             "Look at the full file path — folder names contain the show/album name.\n"
             "If no candidate is a reasonable match, return null for best_match.\n"
@@ -484,7 +491,7 @@ def ask_llm_to_resolve_match(query: str, candidates: List[Dict], is_generic: boo
         )
     user_msg = (
         f"User query: \"{query}\"\n\n"
-        f"Candidates:\n{json.dumps(candidate_list, indent=2)}"
+        f"Candidates:\n{candidates_text}"
     )
 
     try:
@@ -646,7 +653,7 @@ def search_files(query: str, start_directory: str = None) -> str:
     raw_candidates = query_database_union(parsed, limit_raw=100)
 
     if start_directory and start_directory.strip():
-        base = os.path.abspath(start_directory.strip()).lower()
+        base = os.path.abspath(os.path.expanduser(os.path.expandvars(start_directory.strip()))).lower()
         raw_candidates = [c for c in raw_candidates if c["file_path"].lower().startswith(base)]
 
     safe_existing = [
@@ -999,6 +1006,9 @@ def open_or_play_file(file_path_or_query: str, play_mode: bool = False, confirme
         return "Error: File path or query must not be empty."
 
     clean = file_path_or_query.strip().strip('"\'')
+    expanded = os.path.abspath(os.path.expanduser(os.path.expandvars(clean)))
+    if os.path.exists(expanded):
+        clean = expanded
 
     # 1. Direct path shortcut (files and directories)
     if os.path.exists(clean):
@@ -1086,7 +1096,7 @@ def create_file(file_path: str, content: str = "") -> str:
     if not file_path or not file_path.strip():
         return "Error: File path must not be empty."
 
-    path = file_path.strip()
+    path = os.path.abspath(os.path.expanduser(os.path.expandvars(file_path.strip())))
     if not _is_safe_path(path, write_operation=True):
         return f"Access Denied: Creating files in sensitive system directory '{path}' is blocked."
 
@@ -1110,7 +1120,7 @@ def edit_file(file_path: str, search_text: str, replace_text: str) -> str:
     if not file_path or not file_path.strip():
         return "Error: File path must not be empty."
 
-    path = file_path.strip()
+    path = os.path.abspath(os.path.expanduser(os.path.expandvars(file_path.strip())))
     if not os.path.exists(path):
         return f"Error: File '{path}' does not exist."
 
@@ -1139,7 +1149,7 @@ def delete_file(file_path: str, confirmed: bool = False) -> str:
     if not file_path or not file_path.strip():
         return "Error: File path must not be empty."
 
-    path = file_path.strip()
+    path = os.path.abspath(os.path.expanduser(os.path.expandvars(file_path.strip())))
     if not os.path.exists(path):
         return f"Error: File '{path}' does not exist."
 

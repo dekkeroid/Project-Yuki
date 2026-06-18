@@ -214,7 +214,7 @@ def _find_app_path(app_name: str):
             return path
 
         try:
-            out = subprocess.check_output(f'where.exe "{term}"', shell=True).decode().strip().split("\n")[0]
+            out = subprocess.check_output(f'where.exe "{term}"', shell=True, stderr=subprocess.DEVNULL).decode().strip().split("\n")[0]
             if out and os.path.exists(out):
                 return out
         except Exception:
@@ -401,8 +401,9 @@ def control_window(action: str, window_title: str = None, x: int = None, y: int 
     if action == "list":
         return list_active_windows()
         
-    if not window_title:
-        return "Error: window_title is required for this action."
+    match_all = False
+    if not window_title or window_title.lower().strip() in ("*", "all", "all windows", "them all"):
+        match_all = True
         
     EnumWindows = ctypes.windll.user32.EnumWindows
     EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
@@ -418,47 +419,78 @@ def control_window(action: str, window_title: str = None, x: int = None, y: int 
             if length > 0:
                 buff = ctypes.create_unicode_buffer(length + 1)
                 GetWindowText(hwnd, buff, length + 1)
-                title = buff.value
-                if window_title.lower() in title.lower():
-                    found_hwnd.append((hwnd, title))
+                title = buff.value.strip()
+                if title:
+                    title_lower = title.lower()
+                    if match_all:
+                        # Exclude system manager windows
+                        if title_lower in ("program manager", "windows input experience", "taskbar"):
+                            return True
+                        # If action is close/minimize, avoid closing/minimizing Yuki itself unless targeted
+                        if "yuki ai" in title_lower and action in ("close", "minimize"):
+                            return True
+                        found_hwnd.append((hwnd, title))
+                    else:
+                        if window_title.lower() in title_lower:
+                            found_hwnd.append((hwnd, title))
         return True
         
     EnumWindows(EnumWindowsProc(foreach_window), 0)
     
     if not found_hwnd:
+        if match_all:
+            return "No active windows were found to process."
         return f"Window matching '{window_title}' was not found."
         
-    hwnd, title = found_hwnd[0]
+    results = []
     
-    if action == "minimize":
-        ctypes.windll.user32.ShowWindow(hwnd, 6)
-        return f"Minimized window: '{title}'"
-    elif action == "maximize":
-        ctypes.windll.user32.ShowWindow(hwnd, 3)
-        return f"Maximized window: '{title}'"
-    elif action == "restore":
-        ctypes.windll.user32.ShowWindow(hwnd, 9)
-        return f"Restored window: '{title}'"
-    elif action == "focus":
-        ctypes.windll.user32.ShowWindow(hwnd, 9)
-        ctypes.windll.user32.SetForegroundWindow(hwnd)
-        return f"Focused window: '{title}'"
-    elif action == "close":
-        ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)
-        return f"Closed window: '{title}'"
-    elif action == "move":
-        if x is None or y is None:
-            return "Error: x and y coordinates are required to move a window."
-        class RECT(ctypes.Structure):
-            _fields_ = [('left', ctypes.c_long), ('top', ctypes.c_long), ('right', ctypes.c_long), ('bottom', ctypes.c_long)]
-        rect = RECT()
-        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-        w = rect.right - rect.left
-        h = rect.bottom - rect.top
-        ctypes.windll.user32.MoveWindow(hwnd, x, y, w, h, True)
-        return f"Moved window '{title}' to ({x}, {y})"
+    for hwnd, title in found_hwnd:
+        if action == "minimize":
+            ctypes.windll.user32.ShowWindow(hwnd, 6)
+            results.append(title)
+        elif action == "maximize":
+            ctypes.windll.user32.ShowWindow(hwnd, 3)
+            results.append(title)
+        elif action == "restore":
+            ctypes.windll.user32.ShowWindow(hwnd, 9)
+            results.append(title)
+        elif action == "focus":
+            ctypes.windll.user32.ShowWindow(hwnd, 9)
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            results.append(title)
+            # Only focus one window
+            break
+        elif action == "close":
+            ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)
+            results.append(title)
+        elif action == "move":
+            if x is None or y is None:
+                return "Error: x and y coordinates are required to move a window."
+            class RECT(ctypes.Structure):
+                _fields_ = [('left', ctypes.c_long), ('top', ctypes.c_long), ('right', ctypes.c_long), ('bottom', ctypes.c_long)]
+            rect = RECT()
+            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            w = rect.right - rect.left
+            h = rect.bottom - rect.top
+            ctypes.windll.user32.MoveWindow(hwnd, x, y, w, h, True)
+            results.append(title)
+            
+    if not results:
+        return "No windows were affected."
         
-    return f"Error: Unknown action '{action}'"
+    action_past_tense = {
+        "minimize": "Minimized",
+        "maximize": "Maximized",
+        "restore": "Restored",
+        "focus": "Focused",
+        "close": "Closed",
+        "move": "Moved"
+    }.get(action, "Processed")
+    
+    if len(results) == 1:
+        return f"{action_past_tense} window: '{results[0]}'"
+    else:
+        return f"{action_past_tense} {len(results)} windows: {', '.join(f'\"{r}\"' for r in results)}"
 
 def run_terminal_command(command: str, use_powershell: bool = True) -> str:
     """

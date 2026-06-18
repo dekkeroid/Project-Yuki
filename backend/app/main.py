@@ -313,6 +313,7 @@ class SettingsUpdateRequest(BaseModel):
     use_local_whisper: Optional[bool] = None
     stt_language: Optional[str] = None
     no_llm_mode: Optional[bool] = None
+    dynamic_tool_calling: Optional[bool] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -359,6 +360,8 @@ async def update_settings(req: SettingsUpdateRequest):
         if was_no_llm and not req.no_llm_mode:
             print(f"Loading LLM model '{config.LLM_MODEL}' as no_llm_mode was unchecked...")
             asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
+    if req.dynamic_tool_calling is not None:
+        memory_manager.update_setting("dynamic_tool_calling", req.dynamic_tool_calling)
         
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True
@@ -383,7 +386,8 @@ async def update_settings(req: SettingsUpdateRequest):
             "whisper_compute_type": memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16"),
             "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
             "stt_language": memory_manager.profile["settings"].get("stt_language", "en"),
-            "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False)
+            "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False),
+            "dynamic_tool_calling": memory_manager.profile["settings"].get("dynamic_tool_calling", True)
         }
     }
 
@@ -603,7 +607,7 @@ def get_search_suggestions(query: str, type: str):
     if type == "play":
         # Search only database files of category song or movie
         try:
-            raw_candidates = query_database_union(parsed, limit_raw=500, categories=["song", "movie"])
+            raw_candidates = query_database_union(parsed, limit_raw=500, categories=["song", "movie"], silent=True)
         except Exception as e:
             print(f"[Suggestions API] DB search error: {e}")
             raw_candidates = []
@@ -672,7 +676,7 @@ def get_search_suggestions(query: str, type: str):
                 
         # 2. Search Database Files
         try:
-            raw_candidates = query_database_union(parsed, limit_raw=500)
+            raw_candidates = query_database_union(parsed, limit_raw=500, silent=True)
         except Exception as e:
             print(f"[Suggestions API] DB search error: {e}")
             raw_candidates = []
@@ -734,10 +738,10 @@ def post_open_or_play(req: OpenPlayRequest):
 
     clean = req.query.strip().strip('"\'')
     
+    resolved_path = None
     # 1. Check if confirmation is required (only if force=False)
     if not req.force:
         is_app = False
-        resolved_path = None
         target_name = clean
         
         if clean.lower().startswith("shell:"):
@@ -773,7 +777,8 @@ def post_open_or_play(req: OpenPlayRequest):
 
     from app.tools.files import open_or_play_file_no_llm
     try:
-        result = open_or_play_file_no_llm(req.query, play_mode=req.play_mode)
+        target = resolved_path if resolved_path else req.query
+        result = open_or_play_file_no_llm(target, play_mode=req.play_mode)
         return {"result": result}
     except Exception as e:
         return {"error": str(e)}

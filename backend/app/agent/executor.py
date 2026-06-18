@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Tuple
 from app import config
 from app.agent.prompts import get_system_prompt, get_simple_system_prompt
 from app.memory.local_mem import MemoryManager
-from app.tools.definitions import get_tools_definition
+from app.tools.definitions import get_tools_definition, get_filtered_tools
 from app.tools.system import (
     get_system_stats, launch_app, set_system_volume, get_current_datetime,
     control_window, run_terminal_command, run_python_script, take_screenshot,
@@ -432,7 +432,17 @@ class AgentExecutor:
             "context_length": 8192,
         }
         if use_tools:
-            payload["tools"] = get_tools_definition()
+            use_dynamic = self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
+            if use_dynamic:
+                user_message = ""
+                for msg in reversed(messages):
+                    if msg.get("role") == "user":
+                        user_message = msg.get("content", "")
+                        break
+                filtered_tools = get_filtered_tools(user_message)
+            else:
+                filtered_tools = get_tools_definition()
+            payload["tools"] = filtered_tools
             payload["tool_choice"] = "auto"
             
         response = requests.post(
@@ -622,7 +632,17 @@ class AgentExecutor:
             "context_length": 8192,
         }
         if use_tools:
-            payload["tools"] = get_tools_definition()
+            use_dynamic = self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
+            if use_dynamic:
+                user_message = ""
+                for msg in reversed(messages):
+                    if msg.get("role") == "user":
+                        user_message = msg.get("content", "")
+                        break
+                filtered_tools = get_filtered_tools(user_message)
+            else:
+                filtered_tools = get_tools_definition()
+            payload["tools"] = filtered_tools
             payload["tool_choice"] = "auto"
             
         async with session.post(url, json=payload, headers=headers, timeout=60) as resp:

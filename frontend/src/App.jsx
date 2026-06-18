@@ -4043,6 +4043,21 @@ const App = () => {
                         </label>
                       </div>
 
+                      {/* Dynamic Tool Calling */}
+                      <div className="desktop-form-group" style={{ marginBottom: '8px' }}>
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                          <input
+                            type="checkbox"
+                            checked={profile.settings?.dynamic_tool_calling !== undefined ? profile.settings.dynamic_tool_calling : true}
+                            onChange={(e) => handleUpdateSetting('dynamic_tool_calling', e.target.checked)}
+                            style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
+                            Dynamic Tool Calling — filter tool definitions based on user query to save context tokens (ON by default)
+                          </span>
+                        </label>
+                      </div>
+
                       <div className="desktop-form-group">
                         <label className="desktop-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span>Active Model Selection</span>
