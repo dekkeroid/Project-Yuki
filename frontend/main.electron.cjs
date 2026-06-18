@@ -410,12 +410,13 @@ app.whenReady().then(() => {
   createTray();
 
   // Global recall shortcut — works even when another app is fullscreen
-  globalShortcut.register('CommandOrControl+Shift+Y', () => {
-    console.log('[Electron] Ctrl+Shift+Y — toggling Yuki visibility.');
-    if (yukiVisible) {
-      hideYuki();
-    } else {
-      showYuki();
+  globalShortcut.register('Alt+S', () => {
+    console.log('[Electron] Alt+S — recalling Yuki.');
+    showYuki();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('trigger-listening');
     }
   });
 

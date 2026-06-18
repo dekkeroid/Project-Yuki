@@ -1,12 +1,15 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles } from 'lucide-react';
+import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
+import { API_BASE } from '../api';
 
 // ─── Slash Command Registry ───────────────────────────────────────────────────
 const STATIC_COMMANDS = [
   { cmd: '/pcstat',       description: 'Show live PC stats (CPU, RAM, GPU...)' },
   { cmd: '/open',         description: 'Search and open any file' },
+  { cmd: '/o',            description: 'Search and open any file (Alias for /open)' },
   { cmd: '/play',         description: 'Search and play a video or song' },
+  { cmd: '/p',            description: 'Search and play a video or song (Alias for /play)' },
   { cmd: '/wink',         description: 'Yuki winks at you' },
   { cmd: '/angry',        description: 'Yuki pouts angrily' },
   { cmd: '/sad',          description: 'Yuki sighs sadly' },
@@ -112,9 +115,14 @@ const ChatOverlay = ({
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
 
-  // ── Slash-command autocomplete state ──────────────────────────────────────
+  // ── Unified suggestions state ──────────────────────────────────────────────
   const [activeSuggIdx, setActiveSuggIdx] = useState(-1);
+  const [searchSuggestions, setSearchSuggestions] = useState([]);
+  const [searchMode, setSearchMode] = useState(null); // 'open' | 'play' | null
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
+  // 1. Local Slash Command Suggestions
   const suggestions = useMemo(() => {
     if (!inputText.startsWith('/')) return [];
     const q = inputText.toLowerCase();
@@ -124,12 +132,93 @@ const ChatOverlay = ({
     });
   }, [inputText, disabledAnimations]);
 
-  const showSugg = suggestions.length > 0;
+  // 2. Search Mode & Query Parsing
+  const parsedSearch = useMemo(() => {
+    const trimmed = inputText.trimStart();
+    const openMatch = trimmed.match(/^\/(open|o)\s+(.*)/i);
+    const playMatch = trimmed.match(/^\/(play|p)\s+(.*)/i);
+    if (openMatch) {
+      return { type: 'open', query: openMatch[2] };
+    }
+    if (playMatch) {
+      return { type: 'play', query: playMatch[2] };
+    }
+    return null;
+  }, [inputText]);
+
+  // 3. Dynamic Suggestions Fetch
+  useEffect(() => {
+    if (!parsedSearch) {
+      setSearchSuggestions([]);
+      setSearchMode(null);
+      setSearchQuery('');
+      setIsLoadingSuggestions(false);
+      return;
+    }
+
+    const { type, query } = parsedSearch;
+    setSearchMode(type);
+    setSearchQuery(query);
+
+    if (!query.trim()) {
+      setSearchSuggestions([]);
+      setIsLoadingSuggestions(false);
+      return;
+    }
+
+    setIsLoadingSuggestions(true);
+
+    const delayDebounceFn = setTimeout(() => {
+      const controller = new AbortController();
+      const signal = controller.signal;
+
+      fetch(`${API_BASE}/api/system/suggestions?query=${encodeURIComponent(query)}&type=${type}`, { signal })
+        .then((res) => {
+          if (!res.ok) throw new Error('Failed to fetch suggestions');
+          return res.json();
+        })
+        .then((data) => {
+          if (data && data.suggestions) {
+            setSearchSuggestions(data.suggestions);
+          } else {
+            setSearchSuggestions([]);
+          }
+          setIsLoadingSuggestions(false);
+        })
+        .catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.error('Error fetching suggestions:', err);
+            setIsLoadingSuggestions(false);
+          }
+        });
+
+      return () => controller.abort();
+    }, 200);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [parsedSearch]);
+
+  // 4. Unified Suggestions List
+  const activeSuggestions = useMemo(() => {
+    return searchMode ? searchSuggestions : suggestions;
+  }, [searchMode, searchSuggestions, suggestions]);
+
+  const showDropdown = (suggestions.length > 0) || (searchMode !== null);
 
   // Reset highlighted index whenever the list changes
   useEffect(() => {
     setActiveSuggIdx(-1);
-  }, [suggestions.length]);
+  }, [activeSuggestions.length]);
+
+  // Focus the input box automatically when the chat overlay panel is opened
+  useEffect(() => {
+    if (isPanelOpen) {
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [isPanelOpen]);
 
   const pickSuggestion = (cmd) => {
     setInputText(cmd + ' ');
@@ -137,17 +226,35 @@ const ChatOverlay = ({
     inputRef.current?.focus();
   };
 
+  const pickSearchSuggestion = (item) => {
+    const cmdPrefix = searchMode === 'open' ? '/open' : '/play';
+    const pathVal = item.path.includes(' ') ? `"${item.path}"` : item.path;
+    const newText = `${cmdPrefix} ${pathVal}`;
+    setInputText(newText);
+    setActiveSuggIdx(-1);
+    
+    // Submit the command immediately
+    setTimeout(() => {
+      const fakeEvent = { preventDefault: () => {} };
+      onSubmit(fakeEvent, newText);
+    }, 50);
+  };
+
   const handleKeyDown = (e) => {
-    if (!showSugg) return;
+    if (!showDropdown || activeSuggestions.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveSuggIdx((i) => Math.min(i + 1, suggestions.length - 1));
+      setActiveSuggIdx((i) => Math.min(i + 1, activeSuggestions.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveSuggIdx((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Tab' || (e.key === 'Enter' && activeSuggIdx >= 0)) {
       e.preventDefault();
-      pickSuggestion(suggestions[activeSuggIdx].cmd);
+      if (searchMode) {
+        pickSearchSuggestion(activeSuggestions[activeSuggIdx]);
+      } else {
+        pickSuggestion(activeSuggestions[activeSuggIdx].cmd);
+      }
     } else if (e.key === 'Escape') {
       setInputText('');
     }
@@ -340,7 +447,7 @@ const ChatOverlay = ({
         {/* Input Bar */}
         <div style={{ position: 'relative' }}>
           {/* Slash Command Suggestion Dropdown */}
-          {showSugg && (
+          {showDropdown && (
             <div
               ref={dropdownRef}
               style={{
@@ -356,7 +463,7 @@ const ChatOverlay = ({
                 backdropFilter: 'blur(20px)',
                 overflow: 'hidden',
                 zIndex: 999,
-                maxHeight: '260px',
+                maxHeight: '280px',
                 overflowY: 'auto',
               }}
             >
@@ -369,50 +476,170 @@ const ChatOverlay = ({
                 color: 'rgba(139,92,246,0.7)',
                 textTransform: 'uppercase',
                 borderBottom: '1px solid rgba(255,255,255,0.04)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
               }}>
-                Commands
+                <span>{searchMode ? `${searchMode.toUpperCase()} SUGGESTIONS` : 'Commands'}</span>
+                {isLoadingSuggestions && (
+                  <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.4)', textTransform: 'none' }}>
+                    Searching...
+                  </span>
+                )}
               </div>
-              {suggestions.map(({ cmd, description }, idx) => (
-                <div
-                  key={cmd}
-                  onMouseDown={(e) => { e.preventDefault(); pickSuggestion(cmd); }}
-                  onMouseEnter={() => setActiveSuggIdx(idx)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '7px 12px',
-                    cursor: 'pointer',
-                    background: activeSuggIdx === idx
-                      ? 'rgba(139, 92, 246, 0.18)'
-                      : 'transparent',
-                    borderLeft: activeSuggIdx === idx
-                      ? '2px solid rgba(139,92,246,0.8)'
-                      : '2px solid transparent',
-                    transition: 'background 0.1s, border-color 0.1s',
-                  }}
-                >
-                  <span style={{
-                    fontFamily: 'Consolas, monospace',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    color: activeSuggIdx === idx ? '#c4b5fd' : '#a78bfa',
-                    minWidth: '130px',
-                    flexShrink: 0,
-                  }}>
-                    {cmd}
-                  </span>
-                  <span style={{
-                    fontSize: '11px',
-                    color: 'rgba(200, 200, 220, 0.55)',
-                    overflow: 'hidden',
-                    whiteSpace: 'nowrap',
-                    textOverflow: 'ellipsis',
-                  }}>
-                    {description}
-                  </span>
-                </div>
-              ))}
+
+              {searchMode ? (
+                // Search Suggestions Render
+                searchQuery.trim() === '' ? (
+                  <div style={{ padding: '16px', textAlign: 'center', fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+                    Type to search {searchMode === 'play' ? 'songs and movies' : 'apps and files'}...
+                  </div>
+                ) : (isLoadingSuggestions && searchSuggestions.length === 0) ? (
+                  <div style={{ padding: '16px', textAlign: 'center', fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+                    Scanning filesystem & database...
+                  </div>
+                ) : searchSuggestions.length === 0 ? (
+                  <div style={{ padding: '16px', textAlign: 'center', fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+                    No matching results.
+                  </div>
+                ) : (
+                  searchSuggestions.map((item, idx) => (
+                    <div
+                      key={item.path}
+                      onMouseDown={(e) => { e.preventDefault(); pickSearchSuggestion(item); }}
+                      onMouseEnter={() => setActiveSuggIdx(idx)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        background: activeSuggIdx === idx
+                          ? 'rgba(139, 92, 246, 0.18)'
+                          : 'transparent',
+                        borderLeft: activeSuggIdx === idx
+                          ? '3px solid rgba(139,92,246,0.85)'
+                          : '3px solid transparent',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {/* Icon */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '26px',
+                        height: '26px',
+                        borderRadius: '6px',
+                        background: activeSuggIdx === idx ? 'rgba(139,92,246,0.25)' : 'rgba(255,255,255,0.04)',
+                        color: activeSuggIdx === idx ? '#c4b5fd' : 'rgba(255,255,255,0.5)',
+                        transition: 'all 0.15s ease',
+                        flexShrink: 0,
+                      }}>
+                        {item.type === 'app' ? (
+                          <Monitor size={13} />
+                        ) : (
+                          /\.(mp3|wav|flac|ogg)$/i.test(item.path) ? (
+                            <Music size={13} />
+                          ) : /\.(mp4|mkv|webm|avi|mov)$/i.test(item.path) ? (
+                            <Film size={13} />
+                          ) : (
+                            <File size={13} />
+                          )
+                        )}
+                      </div>
+
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minWidth: 0,
+                        flex: 1,
+                      }}>
+                        <span style={{
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          color: activeSuggIdx === idx ? '#ffffff' : '#e2e8f0',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          textOverflow: 'ellipsis',
+                        }}>
+                          {item.name}
+                        </span>
+                        <span style={{
+                          fontSize: '10px',
+                          color: activeSuggIdx === idx ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.25)',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          textOverflow: 'ellipsis',
+                          direction: 'rtl',
+                          textAlign: 'left',
+                        }}>
+                          {item.path}
+                        </span>
+                      </div>
+
+                      {/* Badge */}
+                      <span style={{
+                        fontSize: '9px',
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        padding: '1.5px 5px',
+                        borderRadius: '4px',
+                        letterSpacing: '0.05em',
+                        background: item.type === 'app' ? 'rgba(45,212,191,0.12)' : 'rgba(139,92,246,0.12)',
+                        color: item.type === 'app' ? '#2dd4bf' : '#a78bfa',
+                        border: item.type === 'app' ? '1px solid rgba(45,212,191,0.2)' : '1px solid rgba(139,92,246,0.2)',
+                        flexShrink: 0,
+                      }}>
+                        {item.type}
+                      </span>
+                    </div>
+                  ))
+                )
+              ) : (
+                // Commands List Render
+                suggestions.map(({ cmd, description }, idx) => (
+                  <div
+                    key={cmd}
+                    onMouseDown={(e) => { e.preventDefault(); pickSuggestion(cmd); }}
+                    onMouseEnter={() => setActiveSuggIdx(idx)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '7px 12px',
+                      cursor: 'pointer',
+                      background: activeSuggIdx === idx
+                        ? 'rgba(139, 92, 246, 0.18)'
+                        : 'transparent',
+                      borderLeft: activeSuggIdx === idx
+                        ? '2px solid rgba(139,92,246,0.8)'
+                        : '2px solid transparent',
+                      transition: 'background 0.1s, border-color 0.1s',
+                    }}
+                  >
+                    <span style={{
+                      fontFamily: 'Consolas, monospace',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: activeSuggIdx === idx ? '#c4b5fd' : '#a78bfa',
+                      minWidth: '130px',
+                      flexShrink: 0,
+                    }}>
+                      {cmd}
+                    </span>
+                    <span style={{
+                      fontSize: '11px',
+                      color: 'rgba(200, 200, 220, 0.55)',
+                      overflow: 'hidden',
+                      whiteSpace: 'nowrap',
+                      textOverflow: 'ellipsis',
+                    }}>
+                      {description}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           )}
 

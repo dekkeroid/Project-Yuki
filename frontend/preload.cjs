@@ -66,5 +66,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('always-on-top-changed', handler);
     };
   },
+  onTriggerListening: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('trigger-listening', handler);
+    return () => {
+      ipcRenderer.removeListener('trigger-listening', handler);
+    };
+  },
   isElectron: true
 });

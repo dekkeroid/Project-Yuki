@@ -1467,7 +1467,7 @@ const ControlDashboard = ({
                   <div className="spec-row">
                     <span className="spec-label">LM Studio URL</span>
                     <span className="spec-val" style={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all' }}>
-                      {lmstudioUrl || 'http://localhost:1234'}
+                      {lmstudioUrl || 'http://127.0.0.1:1234'}
                     </span>
                   </div>
                   <div className="spec-row">

@@ -871,6 +871,14 @@ def open_or_play_file_no_llm(file_path_or_query: str, play_mode: bool = False) -
 
     clean = file_path_or_query.strip().strip('"\'')
 
+    # Direct launch for shell folder paths (UWP apps)
+    if clean.lower().startswith("shell:"):
+        try:
+            os.startfile(clean)
+            return f"Success: Launched UWP application '{clean}'."
+        except Exception as e:
+            return f"Failed to launch UWP application '{clean}': {e}"
+
     # 1. Direct path shortcut
     if os.path.exists(clean) and os.path.isfile(clean):
         if not _is_safe_path(clean):

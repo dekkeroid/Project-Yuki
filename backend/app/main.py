@@ -577,6 +577,145 @@ def get_pc_stats():
         return {"error": str(e)}
 
 
+@app.get("/api/system/suggestions")
+def get_search_suggestions(query: str, type: str):
+    """
+    Returns search suggestions for `/open` or `/play` commands.
+    """
+    import os
+    from app.tools.system import _get_uwp_apps
+    from app.tools.files import query_database_union, _density_score, _is_safe_path
+
+    clean_query = query.strip()
+    if not clean_query:
+        return {"suggestions": []}
+
+    words = [w.lower() for w in clean_query.split() if w.strip()]
+    parsed = {
+        "title": words,
+        "path": [],
+        "genre": [],
+        "episode": None
+    }
+
+    results = []
+
+    if type == "play":
+        # Search only database files of category song or movie
+        try:
+            raw_candidates = query_database_union(parsed, limit_raw=500, categories=["song", "movie"])
+        except Exception as e:
+            print(f"[Suggestions API] DB search error: {e}")
+            raw_candidates = []
+
+        for c in raw_candidates:
+            file_path = c.get("file_path")
+            if not file_path or not os.path.exists(file_path) or not _is_safe_path(file_path):
+                continue
+            
+            # Score
+            score, title_hits, tie_breaker = _density_score(c, parsed)
+            
+            # Play mode boost
+            boost = 0.0
+            _, ext = os.path.splitext(file_path.lower())
+            if ext in ('.mp4', '.mkv', '.webm'):
+                boost = 100.0
+            elif ext == '.mp3':
+                boost = 50.0
+                
+            final_score = score + boost
+            if final_score <= 0:
+                continue
+                
+            results.append({
+                "name": c["file_name"],
+                "path": file_path,
+                "type": "file",
+                "score": final_score,
+                "tie_breaker": tie_breaker
+            })
+            
+    else:  # "open"
+        # 1. Search UWP/Start Menu Apps
+        try:
+            apps = _get_uwp_apps()
+        except Exception as e:
+            print(f"[Suggestions API] Start apps error: {e}")
+            apps = []
+            
+        for app in apps:
+            name = app.get("Name", "")
+            if not name:
+                continue
+            
+            # Create a fake candidate for the app to score it using the same density scoring
+            app_id = app.get("AppID")
+            app_path = f"shell:AppsFolder\\{app_id}" if app_id else name
+            app_candidate = {
+                "file_name": name,
+                "file_path": app_path,
+                "parent_folder": "",
+                "title": name,
+                "alternate_titles": "",
+                "genre_or_tags": ""
+            }
+            score, title_hits, tie_breaker = _density_score(app_candidate, parsed)
+            if score > 0:
+                results.append({
+                    "name": name,
+                    "path": app_path,
+                    "type": "app",
+                    "score": score,
+                    "tie_breaker": tie_breaker
+                })
+                
+        # 2. Search Database Files
+        try:
+            raw_candidates = query_database_union(parsed, limit_raw=500)
+        except Exception as e:
+            print(f"[Suggestions API] DB search error: {e}")
+            raw_candidates = []
+
+        for c in raw_candidates:
+            file_path = c.get("file_path")
+            if not file_path or not os.path.exists(file_path) or not _is_safe_path(file_path):
+                continue
+                
+            score, title_hits, tie_breaker = _density_score(c, parsed)
+            if score <= 0:
+                continue
+                
+            results.append({
+                "name": c["file_name"],
+                "path": file_path,
+                "type": "file",
+                "score": score,
+                "tie_breaker": tie_breaker
+            })
+            
+    # Sort by score descending, then by tie_breaker descending (larger is shorter path)
+    results.sort(key=lambda x: (x["score"], x["tie_breaker"]), reverse=True)
+    
+    # Return top 20 unique suggestions (de-duplicate by path to avoid duplicates)
+    seen_paths = set()
+    unique_results = []
+    for r in results:
+        p = r["path"].lower()
+        if p not in seen_paths:
+            seen_paths.add(p)
+            unique_results.append({
+                "name": r["name"],
+                "path": r["path"],
+                "type": r["type"],
+                "score": r["score"]
+            })
+            if len(unique_results) >= 20:
+                break
+                
+    return {"suggestions": unique_results}
+
+
 class OpenPlayRequest(BaseModel):
     query: str
     play_mode: bool = False
@@ -601,7 +740,11 @@ def post_open_or_play(req: OpenPlayRequest):
         resolved_path = None
         target_name = clean
         
-        if os.path.exists(clean) and os.path.isfile(clean):
+        if clean.lower().startswith("shell:"):
+            is_app = True
+            resolved_path = clean
+            target_name = clean
+        elif os.path.exists(clean) and os.path.isfile(clean):
             resolved_path = clean
             target_name = os.path.basename(clean)
         else:

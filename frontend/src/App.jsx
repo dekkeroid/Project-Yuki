@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History } from 'lucide-react';
+import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File } from 'lucide-react';
 import AvatarViewer from './components/AvatarViewer';
 import ChatOverlay, { SLASH_COMMANDS } from './components/ChatOverlay';
 import ControlDashboard from './components/ControlDashboard';
@@ -194,7 +194,101 @@ const App = () => {
       return cmd.startsWith(q);
     });
   }, [inputText, disabledAnimations]);
-  const showCmdSugg = cmdSuggestions.length > 0;
+
+  const [desktopSearchSuggestions, setDesktopSearchSuggestions] = useState([]);
+  const [desktopSearchMode, setDesktopSearchMode] = useState(null); // 'open' | 'play' | null
+  const [desktopSearchQuery, setDesktopSearchQuery] = useState('');
+  const [isDesktopLoadingSuggestions, setIsDesktopLoadingSuggestions] = useState(false);
+
+  // Parse command suggestions query
+  const parsedDesktopSearch = useMemo(() => {
+    const trimmed = inputText.trimStart();
+    const openMatch = trimmed.match(/^\/(open|o)\s+(.*)/i);
+    const playMatch = trimmed.match(/^\/(play|p)\s+(.*)/i);
+    if (openMatch) {
+      return { type: 'open', query: openMatch[2] };
+    }
+    if (playMatch) {
+      return { type: 'play', query: playMatch[2] };
+    }
+    return null;
+  }, [inputText]);
+
+  // FetchSuggestions effect for desktop chat overlay input
+  useEffect(() => {
+    if (!parsedDesktopSearch) {
+      setDesktopSearchSuggestions([]);
+      setDesktopSearchMode(null);
+      setDesktopSearchQuery('');
+      setIsDesktopLoadingSuggestions(false);
+      return;
+    }
+
+    const { type, query } = parsedDesktopSearch;
+    setDesktopSearchMode(type);
+    setDesktopSearchQuery(query);
+
+    if (!query.trim()) {
+      setDesktopSearchSuggestions([]);
+      setIsDesktopLoadingSuggestions(false);
+      return;
+    }
+
+    setIsDesktopLoadingSuggestions(true);
+
+    const delayDebounceFn = setTimeout(() => {
+      const controller = new AbortController();
+      const signal = controller.signal;
+
+      fetch(`${API_BASE}/api/system/suggestions?query=${encodeURIComponent(query)}&type=${type}`, { signal })
+        .then((res) => {
+          if (!res.ok) throw new Error('Failed to fetch suggestions');
+          return res.json();
+        })
+        .then((data) => {
+          if (data && data.suggestions) {
+            setDesktopSearchSuggestions(data.suggestions);
+          } else {
+            setDesktopSearchSuggestions([]);
+          }
+          setIsDesktopLoadingSuggestions(false);
+        })
+        .catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.error('Error fetching suggestions:', err);
+            setIsDesktopLoadingSuggestions(false);
+          }
+        });
+
+      return () => controller.abort();
+    }, 200);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [parsedDesktopSearch]);
+
+  const activeDesktopSuggestions = useMemo(() => {
+    return desktopSearchMode ? desktopSearchSuggestions : cmdSuggestions;
+  }, [desktopSearchMode, desktopSearchSuggestions, cmdSuggestions]);
+
+  const showDesktopDropdown = (cmdSuggestions.length > 0) || (desktopSearchMode !== null);
+
+  useEffect(() => {
+    setActiveCmdIdx(-1);
+  }, [activeDesktopSuggestions.length]);
+
+  const pickDesktopSearchSuggestion = (item) => {
+    const cmdPrefix = desktopSearchMode === 'open' ? '/open' : '/play';
+    const pathVal = item.path.includes(' ') ? `"${item.path}"` : item.path;
+    const newText = `${cmdPrefix} ${pathVal}`;
+    setInputText(newText);
+    setActiveCmdIdx(-1);
+    
+    // Submit command immediately
+    setTimeout(() => {
+      const fakeEvent = { preventDefault: () => {} };
+      handleSendMessage(fakeEvent, newText);
+    }, 50);
+  };
   const [profile, setProfile] = useState({
     user_name: 'Master',
     user_interests: [],
@@ -337,6 +431,15 @@ const App = () => {
     return localStorage.getItem('yuki-prefer-headset') === 'true';
   });
 
+  const [hotkeyListening, setHotkeyListening] = useState(() => {
+    const saved = localStorage.getItem('yuki-hotkey-listening');
+    return saved !== 'false';
+  });
+  const hotkeyListeningRef = useRef(hotkeyListening);
+  useEffect(() => {
+    hotkeyListeningRef.current = hotkeyListening;
+  }, [hotkeyListening]);
+
   // Keywords used to identify headset/headphone mics
   const HEADSET_KEYWORDS = ['headset', 'headphone', 'earphone', 'earpiece', 'bluetooth', 'wireless', 'hands-free', 'handsfree', 'airpod', 'buds'];
 
@@ -415,7 +518,17 @@ const App = () => {
   const [isWalking, setIsWalking] = useState(false);
   const [walkDirection, setWalkDirection] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const isSettingsOpenRef = useRef(false);
+  useEffect(() => {
+    isSettingsOpenRef.current = isSettingsOpen;
+  }, [isSettingsOpen]);
+
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const isChatOpenRef = useRef(false);
+  useEffect(() => {
+    isChatOpenRef.current = isChatOpen;
+  }, [isChatOpen]);
+
   const [isHovered, setIsHovered] = useState(false);
   const [isTopmostDisabled, setIsTopmostDisabled] = useState(false);
 
@@ -624,6 +737,16 @@ const App = () => {
       };
     }
   }, []);
+
+  // Focus the desktop chat input box automatically when the chat overlay is toggled/opened
+  useEffect(() => {
+    if (isChatOpen) {
+      const timer = setTimeout(() => {
+        desktopInputRef.current?.focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [isChatOpen]);
 
   // Track window hover state for showing/hiding Electron overlay buttons
   useEffect(() => {
@@ -875,6 +998,7 @@ const App = () => {
   const micAnalyserRef = useRef(null);
   const micStreamRef = useRef(null);
   const vadActiveRef = useRef(false);
+  const vadActivationTimeRef = useRef(0);
   const vadSpeakingRef = useRef(false);
   const vadSilenceStartRef = useRef(null);
   const maxRecordingTimeoutRef = useRef(null);
@@ -934,13 +1058,21 @@ const App = () => {
         const constraints = {
           audio: {
             deviceId: deviceId ? { exact: deviceId } : undefined,
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
           }
         };
         
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        // Race condition: check if listening was stopped while requesting microphone access
+        if (!isSpeechRecActiveRef.current) {
+          console.log("[STT] startSpeechRecognition aborted during getUserMedia. Cleaning up stream.");
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
         micStreamRef.current = stream;
         
         const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
@@ -982,8 +1114,8 @@ const App = () => {
           isSpeechRecActiveRef.current = false;
           
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          if (audioChunksRef.current.length === 0 || audioBlob.size < 1000) {
-            console.log("[STT] Recording too short or empty. Ignoring.");
+          if (audioChunksRef.current.length === 0 || audioBlob.size < 3000) {
+            console.log(`[STT] Recording too short or empty (${audioBlob.size} bytes). Ignoring.`);
             // Restart listening if we still should
             updateListeningState();
             return;
@@ -1045,13 +1177,14 @@ const App = () => {
         
         vadSpeakingRef.current = false;
         vadSilenceStartRef.current = null;
+        vadActivationTimeRef.current = Date.now();
         vadActiveRef.current = true;
         
         const bufferLength = micAnalyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         
         const checkMicVolume = () => {
-          if (!isRecordingRef.current || !micAnalyserRef.current) return;
+          if (!vadActiveRef.current || !isRecordingRef.current || !micAnalyserRef.current) return;
           
           micAnalyserRef.current.getByteFrequencyData(dataArray);
           let sum = 0;
@@ -1065,16 +1198,19 @@ const App = () => {
           const now = Date.now();
           
           if (normalized > micThreshold) {
-            if (!vadSpeakingRef.current) {
-              logSTTStatus("User speaking...");
-              vadSpeakingRef.current = true;
-              if (sessionTimeoutRef.current) {
-                console.log("[STT] User started speaking. Clearing 8s session timeout.");
-                clearTimeout(sessionTimeoutRef.current);
-                sessionTimeoutRef.current = null;
+            // Ignore volume spikes in the first 400ms to filter out hardware startup pops
+            if (now - vadActivationTimeRef.current > 400) {
+              if (!vadSpeakingRef.current) {
+                logSTTStatus("User speaking...");
+                vadSpeakingRef.current = true;
+                if (sessionTimeoutRef.current) {
+                  console.log("[STT] User started speaking. Clearing 8s session timeout.");
+                  clearTimeout(sessionTimeoutRef.current);
+                  sessionTimeoutRef.current = null;
+                }
               }
+              vadSilenceStartRef.current = null; // Reset silence timer
             }
-            vadSilenceStartRef.current = null; // Reset silence timer
           } else {
             if (vadSpeakingRef.current) {
               if (vadSilenceStartRef.current === null) {
@@ -1128,23 +1264,35 @@ const App = () => {
     if (!isSpeechRecActiveRef.current) return; // Already stopped
     logToTerminal(`[STT] Microphone listening mode turned OFF${forceAbort ? ' (forced abort)' : ''}`);
 
+    isSpeechRecActiveRef.current = false;
+    setIsListening(false);
+    if (forceAbort) {
+      isRecordingRef.current = false;
+    }
+
     if (useLocalWhisperRef.current) {
       if (maxRecordingTimeoutRef.current) {
         clearTimeout(maxRecordingTimeoutRef.current);
         maxRecordingTimeoutRef.current = null;
       }
+      
+      // Deactivate VAD immediately
+      vadActiveRef.current = false;
+      
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
         try {
           mediaRecorderRef.current.stop();
         } catch (e) {
           console.warn("[STT] Error stopping MediaRecorder:", e);
         }
-      }
-      if (micStreamRef.current) {
-        try {
-          micStreamRef.current.getTracks().forEach(track => track.stop());
-          micStreamRef.current = null;
-        } catch (e) {}
+      } else {
+        // If not actively recording, clean up the stream tracks immediately
+        if (micStreamRef.current) {
+          try {
+            micStreamRef.current.getTracks().forEach(track => track.stop());
+            micStreamRef.current = null;
+          } catch (e) {}
+        }
       }
     } else {
       // Native Speech Recognition
@@ -1606,6 +1754,12 @@ const App = () => {
           setCurrentSpeechText('');
           currentResponseTextRef.current = '';
           hasReceivedAudioRef.current = false;
+          if (msg.message) {
+            setMessages((prev) => [...prev, {
+              role: 'system',
+              content: `⚙️ [Tool Start] ${msg.message}`
+            }]);
+          }
         } else if (msg.status === 'idle') {
           // Do not override isThinking immediately if audio is still active
           if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
@@ -1688,7 +1842,7 @@ const App = () => {
 
         setMessages((prev) => [...prev, {
           role: 'system',
-          content: msg.result
+          content: `⚙️ [Tool Result] ${msg.result}`
         }]);
       } else if (msg.type === 'speech') {
         setTtsStreamActive(true);
@@ -1702,10 +1856,21 @@ const App = () => {
         }]);
         playVoiceResponse(msg.audio_url, msg.text);
       } else if (msg.type === 'confirm_request') {
+        let displayMessage = `Yuki wants to execute the following action:\n\n${msg.name}`;
+        if (msg.name.startsWith("Run terminal command:")) {
+          displayMessage = `Yuki wants to run the following terminal command:\n\n${msg.name.replace("Run terminal command:", "").trim()}`;
+        } else if (msg.name.startsWith("Run Python script:")) {
+          displayMessage = `Yuki wants to execute the following custom Python script:\n\n${msg.name.replace("Run Python script:", "").trim()}`;
+        } else if (msg.name.startsWith("System Power Action:")) {
+          displayMessage = `Yuki wants to execute the following system power command:\n\n${msg.name.replace("System Power Action:", "").trim()}`;
+        } else if (msg.name.startsWith("Delete file:")) {
+          displayMessage = `Yuki wants to delete the following file:\n\n${msg.name.replace("Delete file:", "").trim()}`;
+        }
+        
         setConfirmModal({
           visible: true,
           title: 'Security Confirmation',
-          message: `Yuki wants to open/run the following program:\n\n${msg.name}`,
+          message: displayMessage,
           onConfirm: () => {
             setConfirmModal(prev => ({ ...prev, visible: false }));
             
@@ -2084,6 +2249,81 @@ const App = () => {
     }
   };
 
+  const toggleVoiceCommandModeRef = useRef(toggleVoiceCommandMode);
+  useEffect(() => {
+    toggleVoiceCommandModeRef.current = toggleVoiceCommandMode;
+  });
+
+  // Listen for global recall/trigger shortcut Alt+S from Electron main process
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.onTriggerListening) {
+      const unsubscribe = window.electronAPI.onTriggerListening(() => {
+        console.log(`[Hotkey] Alt+S triggered! Synchronizing chat overlay and listening mode.`);
+        
+        setIsChatOpen(prevChatOpen => {
+          const nextChatState = !prevChatOpen;
+          
+          // Toggle Voice Command Mode based on nextChatState and hotkeyListening checkbox
+          if (hotkeyListeningRef.current) {
+            if (nextChatState) {
+              // Turning chat ON -> ensure Voice Command Mode is ON
+              if (!isVoiceCommandModeRef.current) {
+                toggleVoiceCommandModeRef.current();
+              }
+            } else {
+              // Turning chat OFF -> ensure Voice Command Mode is OFF
+              if (isVoiceCommandModeRef.current) {
+                toggleVoiceCommandModeRef.current();
+              }
+            }
+          } else {
+            // If hotkey listening is disabled, still ensure Voice Command Mode is OFF when closing chat
+            if (!nextChatState && isVoiceCommandModeRef.current) {
+              toggleVoiceCommandModeRef.current();
+            }
+          }
+          
+          return nextChatState;
+        });
+      });
+      return unsubscribe;
+    }
+  }, []);
+
+  // Listen for Escape key to close settings or chat overlay
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        let handled = false;
+        
+        // 1. If settings is open, close it
+        if (isSettingsOpenRef.current) {
+          setIsSettingsOpen(false);
+          document.activeElement?.blur();
+          handled = true;
+        } 
+        // 2. If chat overlay is open, close/toggle it off
+        else if (isChatOpenRef.current) {
+          setIsChatOpen(false);
+          document.activeElement?.blur();
+          // Ensure voice listening is turned off when closing chat
+          if (isVoiceCommandModeRef.current) {
+            toggleVoiceCommandModeRef.current();
+          }
+          handled = true;
+        }
+        
+        if (handled) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
   const getWhisperModelSizeText = (modelType) => {
     const computeType = profile.settings?.whisper_compute_type || 'int8_float16';
     let multiplier = 1.0;
@@ -2309,14 +2549,16 @@ const App = () => {
         return;
       }
 
-      if (cmd === '/open' || cmd === '/play') {
+      const isOpenCmd = cmd === '/open' || cmd === '/o';
+      const isPlayCmd = cmd === '/play' || cmd === '/p';
+      if (isOpenCmd || isPlayCmd) {
         const query = text.substring(cmd.length).trim();
         setMessages((prev) => [...prev, { role: 'user', content: text }]);
         setIsThinking(false);
         setTtsStreamActive(false);
 
         if (!query) {
-          const errorMsg = `Please specify what you want to ${cmd === '/open' ? 'open' : 'play'}. Example: ${cmd} paint`;
+          const errorMsg = `Please specify what you want to ${isOpenCmd ? 'open' : 'play'}. Example: ${cmd} paint`;
           setMessages((prev) => [
             ...prev,
             { role: 'assistant', content: errorMsg }
@@ -2329,7 +2571,7 @@ const App = () => {
           fetch(`${API_BASE}/api/system/open_or_play`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: query, play_mode: cmd === '/play', force: forceFlag })
+            body: JSON.stringify({ query: query, play_mode: isPlayCmd, force: forceFlag })
           })
             .then((res) => {
               if (!res.ok) throw new Error("Could not contact system open/play endpoint.");
@@ -2495,10 +2737,11 @@ const App = () => {
   };
 
   // 5. Send text message
-  const handleSendMessage = (e) => {
+  const handleSendMessage = (e, textOverride) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
-    const text = inputText.trim();
+    const textToSubmit = textOverride !== undefined ? textOverride : inputText;
+    if (!textToSubmit.trim()) return;
+    const text = textToSubmit.trim();
     setInputText('');
     sendMessageText(text);
   };
@@ -2839,7 +3082,7 @@ const App = () => {
             )}
 
             {/* Slash-command suggestion dropdown */}
-            {showCmdSugg && (
+            {showDesktopDropdown && (
               <div style={{
                 position: 'absolute',
                 bottom: '100%',
@@ -2864,51 +3107,167 @@ const App = () => {
                   color: 'rgba(139,92,246,0.65)',
                   textTransform: 'uppercase',
                   borderBottom: '1px solid rgba(255,255,255,0.04)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
                 }}>
-                  Commands
+                  <span>{desktopSearchMode ? `${desktopSearchMode.toUpperCase()} Suggestions` : 'Commands'}</span>
+                  {isDesktopLoadingSuggestions && (
+                    <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.4)', textTransform: 'none' }}>
+                      Searching...
+                    </span>
+                  )}
                 </div>
-                {cmdSuggestions.map(({ cmd, description }, idx) => (
-                  <div
-                    key={cmd}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setInputText(cmd + ' ');
-                      setActiveCmdIdx(-1);
-                      desktopInputRef.current?.focus();
-                    }}
-                    onMouseEnter={() => setActiveCmdIdx(idx)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '8px 14px',
-                      cursor: 'pointer',
-                      background: activeCmdIdx === idx ? 'rgba(139,92,246,0.18)' : 'transparent',
-                      borderLeft: activeCmdIdx === idx ? '2px solid rgba(139,92,246,0.8)' : '2px solid transparent',
-                      transition: 'background 0.1s, border-color 0.1s',
-                    }}
-                  >
-                    <span style={{
-                      fontFamily: 'Consolas, monospace',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      color: activeCmdIdx === idx ? '#c4b5fd' : '#a78bfa',
-                      minWidth: '140px',
-                      flexShrink: 0,
-                    }}>
-                      {cmd}
-                    </span>
-                    <span style={{
-                      fontSize: '11px',
-                      color: 'rgba(200,200,220,0.5)',
-                      overflow: 'hidden',
-                      whiteSpace: 'nowrap',
-                      textOverflow: 'ellipsis',
-                    }}>
-                      {description}
-                    </span>
-                  </div>
-                ))}
+
+                {desktopSearchMode ? (
+                  // Search suggestions render
+                  desktopSearchQuery.trim() === '' ? (
+                    <div style={{ padding: '16px', textAlign: 'center', fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+                      Type to search {desktopSearchMode === 'play' ? 'songs and movies' : 'apps and files'}...
+                    </div>
+                  ) : (isDesktopLoadingSuggestions && desktopSearchSuggestions.length === 0) ? (
+                    <div style={{ padding: '16px', textAlign: 'center', fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+                      Scanning filesystem & database...
+                    </div>
+                  ) : desktopSearchSuggestions.length === 0 ? (
+                    <div style={{ padding: '16px', textAlign: 'center', fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+                      No matching results.
+                    </div>
+                  ) : (
+                    desktopSearchSuggestions.map((item, idx) => (
+                      <div
+                        key={item.path}
+                        onMouseDown={(e) => { e.preventDefault(); pickDesktopSearchSuggestion(item); }}
+                        onMouseEnter={() => setActiveCmdIdx(idx)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '8px 14px',
+                          cursor: 'pointer',
+                          background: activeCmdIdx === idx ? 'rgba(139, 92, 246, 0.18)' : 'transparent',
+                          borderLeft: activeCmdIdx === idx ? '3px solid rgba(139, 92, 246, 0.85)' : '3px solid transparent',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {/* Icon */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '26px',
+                          height: '26px',
+                          borderRadius: '6px',
+                          background: activeCmdIdx === idx ? 'rgba(139,92,246,0.25)' : 'rgba(255,255,255,0.04)',
+                          color: activeCmdIdx === idx ? '#c4b5fd' : 'rgba(255,255,255,0.5)',
+                          transition: 'all 0.15s ease',
+                          flexShrink: 0,
+                        }}>
+                          {item.type === 'app' ? (
+                            <Monitor size={13} />
+                          ) : (
+                            /\.(mp3|wav|flac|ogg)$/i.test(item.path) ? (
+                              <Music size={13} />
+                            ) : /\.(mp4|mkv|webm|avi|mov)$/i.test(item.path) ? (
+                              <Film size={13} />
+                            ) : (
+                              <File size={13} />
+                            )
+                          )}
+                        </div>
+
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          minWidth: 0,
+                          flex: 1,
+                        }}>
+                          <span style={{
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            color: activeCmdIdx === idx ? '#ffffff' : '#e2e8f0',
+                            overflow: 'hidden',
+                            whiteSpace: 'nowrap',
+                            textOverflow: 'ellipsis',
+                          }}>
+                            {item.name}
+                          </span>
+                          <span style={{
+                            fontSize: '10px',
+                            color: activeCmdIdx === idx ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.25)',
+                            overflow: 'hidden',
+                            whiteSpace: 'nowrap',
+                            textOverflow: 'ellipsis',
+                            direction: 'rtl',
+                            textAlign: 'left',
+                          }}>
+                            {item.path}
+                          </span>
+                        </div>
+
+                        {/* Badge */}
+                        <span style={{
+                          fontSize: '9px',
+                          fontWeight: '700',
+                          textTransform: 'uppercase',
+                          padding: '1.5px 5px',
+                          borderRadius: '4px',
+                          letterSpacing: '0.05em',
+                          background: item.type === 'app' ? 'rgba(45,212,191,0.12)' : 'rgba(139,92,246,0.12)',
+                          color: item.type === 'app' ? '#2dd4bf' : '#a78bfa',
+                          border: item.type === 'app' ? '1px solid rgba(45,212,191,0.2)' : '1px solid rgba(139,92,246,0.2)',
+                          flexShrink: 0,
+                        }}>
+                          {item.type}
+                        </span>
+                      </div>
+                    ))
+                  )
+                ) : (
+                  // Static commands list render
+                  cmdSuggestions.map(({ cmd, description }, idx) => (
+                    <div
+                      key={cmd}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setInputText(cmd + ' ');
+                        setActiveCmdIdx(-1);
+                        desktopInputRef.current?.focus();
+                      }}
+                      onMouseEnter={() => setActiveCmdIdx(idx)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '8px 14px',
+                        cursor: 'pointer',
+                        background: activeCmdIdx === idx ? 'rgba(139, 92, 246, 0.18)' : 'transparent',
+                        borderLeft: activeCmdIdx === idx ? '2px solid rgba(139, 92, 246, 0.8)' : '2px solid transparent',
+                        transition: 'background 0.1s, border-color 0.1s',
+                      }}
+                    >
+                      <span style={{
+                        fontFamily: 'Consolas, monospace',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        color: activeCmdIdx === idx ? '#c4b5fd' : '#a78bfa',
+                        minWidth: '140px',
+                        flexShrink: 0,
+                      }}>
+                        {cmd}
+                      </span>
+                      <span style={{
+                        fontSize: '11px',
+                        color: 'rgba(200,200,220,0.5)',
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap',
+                        textOverflow: 'ellipsis',
+                      }}>
+                        {description}
+                      </span>
+                    </div>
+                  ))
+                )}
               </div>
             )}
 
@@ -2921,17 +3280,21 @@ const App = () => {
                 value={inputText}
                 onChange={(e) => { setInputText(e.target.value); setActiveCmdIdx(-1); }}
                 onKeyDown={(e) => {
-                  if (!showCmdSugg) return;
+                  if (!showDesktopDropdown || activeDesktopSuggestions.length === 0) return;
                   if (e.key === 'ArrowDown') {
                     e.preventDefault();
-                    setActiveCmdIdx((i) => Math.min(i + 1, cmdSuggestions.length - 1));
+                    setActiveCmdIdx((i) => Math.min(i + 1, activeDesktopSuggestions.length - 1));
                   } else if (e.key === 'ArrowUp') {
                     e.preventDefault();
                     setActiveCmdIdx((i) => Math.max(i - 1, 0));
                   } else if (e.key === 'Tab' || (e.key === 'Enter' && activeCmdIdx >= 0)) {
                     e.preventDefault();
-                    setInputText(cmdSuggestions[activeCmdIdx].cmd + ' ');
-                    setActiveCmdIdx(-1);
+                    if (desktopSearchMode) {
+                      pickDesktopSearchSuggestion(activeDesktopSuggestions[activeCmdIdx]);
+                    } else {
+                      setInputText(activeDesktopSuggestions[activeCmdIdx].cmd + ' ');
+                      setActiveCmdIdx(-1);
+                    }
                   } else if (e.key === 'Escape') {
                     setInputText('');
                   }
@@ -3548,6 +3911,23 @@ const App = () => {
                             Prefer headset mic — auto-select headset when connected, fall back to system default
                           </span>
                         </label>
+
+                        {/* Wake up hotkey Alt+S turns on listening checkbox */}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '7px', cursor: 'pointer', userSelect: 'none' }}>
+                          <input
+                            type="checkbox"
+                            checked={hotkeyListening}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              setHotkeyListening(val);
+                              localStorage.setItem('yuki-hotkey-listening', val.toString());
+                            }}
+                            style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
+                            Wake up hotkey (Alt+S) turns on her listening
+                          </span>
+                        </label>
                       </div>
 
                       {/* Speech-to-Text Engine Select */}
@@ -3968,7 +4348,7 @@ const App = () => {
                         <div className="spec-row">
                           <span className="spec-label">LM Studio URL</span>
                           <span className="spec-val" style={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all' }}>
-                            {lmstudioUrl || 'http://localhost:1234'}
+                            {lmstudioUrl || 'http://127.0.0.1:1234'}
                           </span>
                         </div>
                         <div className="spec-row">
