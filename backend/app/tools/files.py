@@ -594,6 +594,13 @@ def resolve_best_file(query: str, play_mode: bool = False, start_directory: str 
     if len(top10_for_llm) == 1:
         return top10_for_llm[0]["file_path"]
 
+    # Landslide victory check: if top candidate has a clear lead, bypass the LLM matcher
+    if len(top50) > 1:
+        score_gap = top50[0]["_density"] - top50[1]["_density"]
+        if top50[0]["_density"] >= 150.0 and score_gap >= 100.0:
+            print(f"[Search] Bypassing LLM matcher: Landslide winner '{top50[0]['file_path']}' (score: {top50[0]['_density']} vs {top50[1]['_density']})")
+            return top50[0]["file_path"]
+
     is_generic = (not parsed.get("title")) and bool(parsed.get("genre"))
     llm_path = ask_llm_to_resolve_match(clean_query, top10_for_llm, is_generic=is_generic)
 
@@ -883,7 +890,7 @@ def open_or_play_file_no_llm(file_path_or_query: str, play_mode: bool = False) -
         
         try:
             os.startfile(clean)
-            return f"Success: Opened '{clean}'."
+            return f"Success: Opened '{clean}'." if not play_mode else f"Success: Started playing '{clean}'."
         except Exception as e:
             return f"Failed to open '{clean}': {e}"
 
@@ -910,14 +917,73 @@ def open_or_play_file_no_llm(file_path_or_query: str, play_mode: bool = False) -
 
     try:
         os.startfile(resolved)
-        return f"Success: Found best matching file and opened '{resolved}'."
+        return f"Success: Found best matching file and opened '{resolved}'." if not play_mode else f"Success: Found best matching file and started playing '{resolved}'."
     except Exception as e:
         return f"Failed to open '{resolved}': {e}"
 
 
-def open_or_play_file(file_path_or_query: str, play_mode: bool = False) -> str:
+def resolve_best_folder(query: str) -> Optional[str]:
     """
-    Opens or plays a file. Accepts a direct path or a natural-language query.
+    Looks up crawled directory roots and distinct parent folders in the database
+    to find any directory whose name/path matches the query.
+    """
+    clean_query = query.strip().lower().replace(" ", "")
+    if not clean_query:
+        return None
+
+    from app.memory.db import get_connection
+    conn = get_connection()
+    try:
+        # Check 1: Check the directories table (roots)
+        rows = conn.execute("SELECT path FROM directories").fetchall()
+        for r in rows:
+            path = r["path"]
+            if os.path.exists(path) and os.path.isdir(path):
+                folder_name = os.path.basename(path).lower().replace(" ", "")
+                if clean_query == folder_name or clean_query in folder_name:
+                    return path
+
+        # Check 2: Check all unique parent_folder values from files table
+        rows = conn.execute("SELECT DISTINCT parent_folder FROM files").fetchall()
+        candidates = []
+        for r in rows:
+            path = r["parent_folder"]
+            if path and os.path.exists(path) and os.path.isdir(path):
+                folder_name = os.path.basename(path).lower().replace(" ", "")
+                if clean_query == folder_name:
+                    return path
+                if clean_query in folder_name:
+                    candidates.append((path, len(folder_name)))
+        
+        if candidates:
+            candidates.sort(key=lambda x: x[1])
+            return candidates[0][0]
+            
+    except Exception as e:
+        print(f"[Search] Directory lookup failed: {e}")
+    finally:
+        conn.close()
+    return None
+
+
+def _needs_confirmation(path: str) -> bool:
+    if not path:
+        return False
+    # Directories are safe to browse
+    if os.path.isdir(path):
+        return False
+    path_lower = path.lower()
+    # Steam games (.exe with valid appid) are safe
+    is_steam = path_lower.endswith(".exe") and _get_steam_appid(path) is not None
+    # Media files are safe
+    _, ext = os.path.splitext(path_lower)
+    is_media = ext in ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg')
+    return not (is_steam or is_media)
+
+
+def open_or_play_file(file_path_or_query: str, play_mode: bool = False, confirmed: bool = False) -> str:
+    """
+    Opens or plays a file or directory. Accepts a direct path or a natural-language query.
     Uses the multi-stage LLM pipeline to resolve the best match.
     Handles Steam games via steam:// protocol.
     """
@@ -926,20 +992,26 @@ def open_or_play_file(file_path_or_query: str, play_mode: bool = False) -> str:
 
     clean = file_path_or_query.strip().strip('"\'')
 
-    # 1. Direct path shortcut
-    if os.path.exists(clean) and os.path.isfile(clean):
+    # 1. Direct path shortcut (files and directories)
+    if os.path.exists(clean):
         if not _is_safe_path(clean):
-            return f"Access Denied: Opening sensitive system file '{clean}' is blocked."
+            return f"Access Denied: Opening sensitive system path '{clean}' is blocked."
         
         if play_mode:
+            if os.path.isdir(clean):
+                return "Error: Cannot play a directory. Please specify a media file."
             _, ext = os.path.splitext(clean.lower())
             is_media = ext in ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg')
             if not is_media:
                 return f"Error: Playback is restricted to audio and video files only."
         
+        # Check if confirmation is required
+        if not confirmed and _needs_confirmation(clean):
+            return f"CONFIRM_REQUIRED: {clean}"
+
         # Check if it's a Steam game and launch via Steam protocol
         print(f"[STEAM DEBUG] open_or_play_file: clean='{clean}', is_exe={clean.lower().endswith('.exe')}")
-        if clean.lower().endswith(".exe"):
+        if os.path.isfile(clean) and clean.lower().endswith(".exe"):
             appid = _get_steam_appid(clean)
             if appid:
                 if _launch_steam_game(appid):
@@ -949,7 +1021,7 @@ def open_or_play_file(file_path_or_query: str, play_mode: bool = False) -> str:
         
         try:
             os.startfile(clean)
-            return f"Success: Opened '{clean}'."
+            return f"Success: Opened '{clean}'." if not play_mode else f"Success: Started playing '{clean}'."
         except Exception as e:
             return f"Failed to open '{clean}': {e}"
 
@@ -959,13 +1031,30 @@ def open_or_play_file(file_path_or_query: str, play_mode: bool = False) -> str:
         app_path = _find_app_path(clean)
         if app_path:
             print(f"[Search-LLM] Found system app path: {app_path}")
+            if not confirmed and _needs_confirmation(app_path):
+                return f"CONFIRM_REQUIRED: {app_path}"
             return launch_app(clean)
+
+    # 2b. Check if it's a directory by searching crawled/parent folders
+    if not play_mode:
+        resolved_folder = resolve_best_folder(clean)
+        if resolved_folder:
+            if not confirmed and _needs_confirmation(resolved_folder):
+                return f"CONFIRM_REQUIRED: {resolved_folder}"
+            try:
+                os.startfile(resolved_folder)
+                return f"Success: Opened directory '{resolved_folder}'."
+            except Exception as e:
+                return f"Failed to open directory '{resolved_folder}': {e}"
 
     # 3. Resolve using database/metadata
     resolved = resolve_best_file(clean, play_mode=play_mode)
     print(f"[STEAM DEBUG] Resolved file: {resolved}")
     if not resolved:
         return f"Error: Could not find any files matching '{file_path_or_query}' on your system."
+
+    if not confirmed and _needs_confirmation(resolved):
+        return f"CONFIRM_REQUIRED: {resolved}"
 
     # Check if resolved file is a Steam game
     if resolved.lower().endswith(".exe"):
@@ -978,7 +1067,7 @@ def open_or_play_file(file_path_or_query: str, play_mode: bool = False) -> str:
 
     try:
         os.startfile(resolved)
-        return f"Success: Found best matching file and opened '{resolved}'."
+        return f"Success: Found best matching file and opened '{resolved}'." if not play_mode else f"Success: Found best matching file and started playing '{resolved}'."
     except Exception as e:
         return f"Failed to open '{resolved}': {e}"
 

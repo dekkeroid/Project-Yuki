@@ -52,8 +52,12 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
     def run_inference():
         try:
             model = get_whisper_model(model_size, compute_type)
-            # Transcribe returns a generator of segments, and transcription info
-            segments, info = model.transcribe(file_path, beam_size=5, vad_filter=True, language=language, initial_prompt="Yuki")
+            whisper_prompt = (
+                "Yuki, you can execute a command such as taking a screenshot, getting system stats, checking the current date or time, "
+                "setting system volume, media playback control, running a terminal command, launching an application, searching files, "
+                "listing directory, editing a file, deleting a file, system power control, or running a python script."
+            )
+            segments, info = model.transcribe(file_path, beam_size=5, vad_filter=True, language=language, initial_prompt=whisper_prompt)
             
             # Combine segment text into a single transcript
             text = " ".join([segment.text for segment in segments]).strip()

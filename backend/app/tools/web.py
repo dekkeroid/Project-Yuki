@@ -31,32 +31,37 @@ def web_search(query: str) -> str:
     if not query:
         return "Please specify a query to search for."
     
-    # We will use DuckDuckGo's Lite HTML or API endpoint for a fast search fallback
     encoded_query = urllib.parse.quote(query.strip())
-    url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
+    url = f"https://search.yahoo.com/search?p={encoded_query}"
     
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        )
         with urllib.request.urlopen(req, timeout=5) as response:
             html = response.read().decode('utf-8', errors='ignore')
             
-            # Simple regex parser to extract DuckDuckGo Lite search results
-            # Result links look like: <a class="result__snippet" ...>Text</a>
-            snippets = re.findall(r'<a class="result__snippet"[^>]*>(.*?)</a>', html, re.DOTALL)
+            # Yahoo snippets look like: <div class="compText aGrid"> or class="compText"
+            snippets = re.findall(r'<div[^>]*class="[^"]*compText[^"]*"[^>]*>(.*?)</div>', html, re.DOTALL)
             
-            if not snippets:
-                # Try finding general result descriptions
-                snippets = re.findall(r'<td class="result-snippet"[^>]*>(.*?)</td>', html, re.DOTALL)
-                
             if snippets:
-                # Clean up HTML tags
+                # Clean up HTML tags and filter UI clutter
                 results = []
-                for s in snippets[:3]:
+                for s in snippets:
                     clean = re.sub(r'<[^>]+>', '', s).strip()
                     clean = clean.replace("&quot;", '"').replace("&amp;", "&").replace("&apos;", "'")
+                    
+                    # Skip common UI clutter and metadata links under 20 chars
+                    if len(clean) < 20 or "show more" in clean.lower() or "more results" in clean.lower() or "hide details" in clean.lower():
+                        continue
                     results.append(clean)
-                return "\n".join([f"- {r}" for r in results])
-            else:
-                return f"No direct search results found for '{query}'."
+                    if len(results) >= 3:
+                        break
+                
+                if results:
+                    return "\n".join([f"- {r}" for r in results])
+                else:
+                    return f"No direct search results found for '{query}'."
     except Exception as e:
         return f"Web search failed: {str(e)}"

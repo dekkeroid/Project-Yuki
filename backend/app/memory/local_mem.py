@@ -161,6 +161,5 @@ class MemoryManager:
             facts = "None recorded yet\n"
         
         summary += f"Custom Facts:\n{facts}"
-        summary += f"Interaction count: {self.profile['interaction_count']}"
         return summary
 

@@ -6,7 +6,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 PROFILE_PATH = BASE_DIR / "profile.json"
 
 # LLM / Agent Configuration
-LMSTUDIO_URL = os.environ.get("LMSTUDIO_URL", "http://localhost:1234")
+LMSTUDIO_URL = os.environ.get("LMSTUDIO_URL", "http://127.0.0.1:1234")
 # [SEARCH FOR MODEL CHANGE] Old default: "ministra-3"
 LLM_MODEL = os.environ.get("LLM_MODEL", "llama-3.2-3b-instruct") # Default model for all requests.
 LLM_MODEL_COMPLEX = os.environ.get("LLM_MODEL_COMPLEX", "nvidia/nemotron-3-nano-4b") # Complex model (default: Nemotron).
