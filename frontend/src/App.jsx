@@ -3067,7 +3067,9 @@ const App = () => {
                             color: '#e2e8f0',
                             fontSize: '11px',
                             wordBreak: 'break-word',
-                            whiteSpace: 'pre-line'
+                            whiteSpace: 'pre-line',
+                            maxHeight: isSystem ? '80px' : 'none',
+                            overflowY: isSystem ? 'auto' : 'visible'
                           }}>
                             {msg.content}
                           </div>

@@ -16,12 +16,12 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "launch_app",
-                "description": "Launch desktop app.",
+                "description": "Launch desktop app or open URL in browser.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "app_name": {"type": "string", "description": "App name or path (e.g. notepad, calc, cmd)."},
-                        "args": {"type": "string", "description": "CLI arguments."},
+                        "app_name": {"type": "string", "description": "App to launch (e.g. 'chrome', 'notepad', 'kdeconnect') or browser to open URL."},
+                        "args": {"type": "string", "description": "CLI arguments or URL to open (e.g. 'https://kdeconnect.kde.org')."},
                         "run_as_admin": {"type": "boolean", "description": "Run as admin."}
                     },
                     "required": ["app_name"]
@@ -50,7 +50,7 @@ def get_tools_definition() -> list:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Search keywords."}
+                        "query": {"type": "string", "description": "Search keywords (e.g. 'KDE Connect official website download'). Be specific."}
                     },
                     "required": ["query"]
                 }
@@ -173,9 +173,9 @@ def get_tools_definition() -> list:
                             "description": "Action type.",
                             "enum": ["minimize", "maximize", "restore", "move", "focus", "close", "list"]
                         },
-                        "window_title": {"type": "string", "description": "Window title search."},
-                        "x": {"type": "integer", "description": "Move target X."},
-                        "y": {"type": "integer", "description": "Move target Y."}
+                        "window_title": {"type": "string", "description": "Target window. Use 'all', 'all windows', '*', or 'them all' for all visible windows. Partial match for specific (e.g. 'chrome', 'notepad'). Required except for 'list'."},
+                        "x": {"type": "integer", "description": "Move target X (only for 'move' action)."},
+                        "y": {"type": "integer", "description": "Move target Y (only for 'move' action)."}
                     },
                     "required": ["action"]
                 }
@@ -287,7 +287,7 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "system_power_control",
-                "description": "Lock, sleep, shutdown PC.",
+                "description": "Lock PC, Sleep PC, Shutdown PC, Shut down PC, Restart PC, Sign out PC.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -327,6 +327,7 @@ def get_filtered_tools(user_message: str) -> list:
     # 2. Web search
     if any(w in query for w in ["search", "google", "yahoo", "find", "lookup", "who", "what", "weather", "news", "leak", "internet", "web", "online"]):
         selected_tool_names.add("web_search")
+        # Note: launch_app is NOT added here - only added by category #3 when user says "open/launch/start"
         
     # 3. App launcher / play
     if any(w in query for w in ["launch", "run", "open", "start", "play", "song", "music", "video", "movie", "game", "steam", "paint", "calc", "notepad", "chrome", "discord"]):

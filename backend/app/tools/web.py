@@ -59,7 +59,8 @@ def web_search(query: str) -> str:
 
     encoded_query = urllib.parse.quote(query.strip())
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-IN,en;q=0.9'
     }
 
     yahoo_html = None
@@ -140,7 +141,7 @@ def web_search(query: str) -> str:
                 resp_data = resp.json()
                 synthesis = resp_data["choices"][0]["message"]["content"].strip()
                 if synthesis and "don't know" not in synthesis.lower() and "do not know" not in synthesis.lower():
-                    return f"[Overview] {synthesis}"
+                    return f"[Overview] {synthesis}\n[Sources] ({' | '.join(urls)})"
             except Exception:
                 pass
 
@@ -166,7 +167,10 @@ def web_search(query: str) -> str:
                     if len(results) >= 4:
                         break
             if results:
-                return "\n".join([f"- {r}" for r in results])
+                snippet_text = "\n".join([f"- {r}" for r in results])
+                if urls:
+                    return f"{snippet_text}\n[Sources] ({' | '.join(urls)})"
+                return snippet_text
         except Exception:
             pass
 
@@ -190,7 +194,10 @@ def web_search(query: str) -> str:
                         if len(results) >= 4:
                             break
                     if results:
-                        return "\n".join([f"- {r}" for r in results])
+                        snippet_text = "\n".join([f"- {r}" for r in results])
+                        if urls:
+                            return f"{snippet_text}\n[Sources] ({' | '.join(urls)})"
+                        return snippet_text
     except Exception:
         pass
 

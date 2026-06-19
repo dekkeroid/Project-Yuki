@@ -22,7 +22,7 @@ from app.tools.web import web_search
 from app.agent.resolver import resolve_command
 
 
-_SHORT_CIRCUIT_TOOLS = {
+_TERMINAL_TOOLS = {
     "open_or_play_file",
     "media_playback_control",
     "launch_app",
@@ -36,8 +36,16 @@ _SHORT_CIRCUIT_TOOLS = {
     "delete_file",
     "run_python_script",
     "run_terminal_command",
-    "take_screenshot",
-    "web_search"
+    "take_screenshot"
+}
+
+_INTERPRETATION_TOOLS = {
+    "web_search",
+    "search_files",
+    "get_system_stats",
+    "get_current_datetime",
+    "list_directory",
+    "update_user_fact"
 }
 
 def _format_short_circuit_result(tool_name: str, tool_result: str, tool_args: dict) -> str:
@@ -379,7 +387,7 @@ class AgentExecutor:
         "file", "files", "play", "list my", "list drives", "delete", "create",
         "screenshot", "terminal", "powershell", "cmd", "run", "execute",
         "mouse", "keyboard", "launch", "start", "open app", "open file",
-        "volume", "vol", "sound", "audio", "mute", "shutdown", "restart", "lock", "sleep",
+        "volume", "vol", "sound", "audio", "mute", "shutdown", "restart","shut down", "reboot", "lock", "sleep",
         "process", "task manager", "kill", "settings", "install",
         "take a", "take screenshot", "type", "click", "press",
         "clean", "clear", "screen", "desktop", "pc", "window", "windows", "media", "track",
@@ -442,6 +450,8 @@ class AgentExecutor:
                 filtered_tools = get_filtered_tools(user_message)
             else:
                 filtered_tools = get_tools_definition()
+            tool_names = [t["function"]["name"] for t in filtered_tools]
+            print(f"[Tools] Sending {len(filtered_tools)} tools to LLM: {', '.join(tool_names)}")
             payload["tools"] = filtered_tools
             payload["tool_choice"] = "auto"
             
@@ -580,7 +590,7 @@ class AgentExecutor:
 
                 print(f"Tool execution result: {tool_result}")
                 
-                if not tool_failed and tool_name in _SHORT_CIRCUIT_TOOLS:
+                if not tool_failed and tool_name in _TERMINAL_TOOLS:
                     short_circuit_msg = _format_short_circuit_result(tool_name, tool_result, tool_args)
                     if llm_response.strip():
                         accumulated_response_total.append(llm_response.strip())
@@ -642,6 +652,8 @@ class AgentExecutor:
                 filtered_tools = get_filtered_tools(user_message)
             else:
                 filtered_tools = get_tools_definition()
+            tool_names = [t["function"]["name"] for t in filtered_tools]
+            print(f"[Tools] Sending {len(filtered_tools)} tools to LLM: {', '.join(tool_names)}")
             payload["tools"] = filtered_tools
             payload["tool_choice"] = "auto"
             
@@ -725,7 +737,8 @@ class AgentExecutor:
 
     def _try_parse_json_tool_call(self, text: str) -> list:
         cleaned = text.strip()
-        # If it starts with markdown code block formatting, strip it
+        
+        # Handle markdown code blocks
         if cleaned.startswith("```"):
             lines = cleaned.splitlines()
             if len(lines) > 2 and lines[-1].startswith("```"):
@@ -733,7 +746,61 @@ class AgentExecutor:
             elif len(lines) > 1:
                 cleaned = "\n".join(lines[1:]).strip()
         
-        # Try to find a JSON object or array in the string
+        # Try unified format first: {"tool_calls": [{"name": "...", "arguments": {...}}]}
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, dict) and "tool_calls" in data:
+                calls = []
+                for item in data["tool_calls"]:
+                    parsed = self._parse_single_tool_json(item)
+                    if parsed:
+                        calls.append(parsed)
+                if calls:
+                    return calls
+        except Exception:
+            pass
+        
+        # Try to find multiple JSON objects separated by ; or newlines
+        # Split by semicolon or newline, then try each part
+        parts = []
+        if ";" in cleaned:
+            parts = [p.strip() for p in cleaned.split(";") if p.strip()]
+        elif "\n" in cleaned:
+            parts = [p.strip() for p in cleaned.split("\n") if p.strip()]
+        else:
+            parts = [cleaned]
+        
+        all_calls = []
+        for part in parts:
+            # Try to extract JSON from each part
+            start_idx = part.find("{")
+            end_idx = part.rfind("}")
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_str = part[start_idx:end_idx+1]
+                try:
+                    data = json.loads(json_str)
+                    # Handle unified format with tool_calls array
+                    if isinstance(data, dict) and "tool_calls" in data:
+                        for item in data["tool_calls"]:
+                            parsed = self._parse_single_tool_json(item)
+                            if parsed:
+                                all_calls.append(parsed)
+                    elif isinstance(data, list):
+                        for item in data:
+                            parsed = self._parse_single_tool_json(item)
+                            if parsed:
+                                all_calls.append(parsed)
+                    elif isinstance(data, dict):
+                        parsed = self._parse_single_tool_json(data)
+                        if parsed:
+                            all_calls.append(parsed)
+                except Exception:
+                    continue
+        
+        if all_calls:
+            return all_calls
+        
+        # Fallback: try single JSON object/array (original logic)
         start_idx = cleaned.find("{")
         end_idx = cleaned.rfind("}")
         if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
@@ -754,21 +821,70 @@ class AgentExecutor:
                         return [parsed]
             except Exception:
                 pass
+        
+        # Try pseudo-code format: Action: tool_name(args) or tool_name(args)
+        pseudo_match = re.match(r'(?:Action:\s*)?(\w+)\((.*)\)\s*$', cleaned, re.DOTALL)
+        if pseudo_match:
+            tool_name = pseudo_match.group(1)
+            args_str = pseudo_match.group(2)
+            try:
+                # Parse key=value pairs from args string
+                args_dict = {}
+                # Handle simple key="value" or key=value patterns
+                for arg_match in re.finditer(r'(\w+)\s*=\s*("[^"]*"|\'[^\']*\'|[^,\)]+)', args_str):
+                    key = arg_match.group(1)
+                    value = arg_match.group(2).strip('"\'')
+                    # Try to convert to appropriate type
+                    if value.lower() == 'true':
+                        args_dict[key] = True
+                    elif value.lower() == 'false':
+                        args_dict[key] = False
+                    else:
+                        try:
+                            args_dict[key] = int(value)
+                        except ValueError:
+                            try:
+                                args_dict[key] = float(value)
+                            except ValueError:
+                                args_dict[key] = value
+                return [{
+                    "id": f"call_fallback_{tool_name}",
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": json.dumps(args_dict)
+                    }
+                }]
+            except Exception:
+                pass
+        
         return None
 
     def _parse_single_tool_json(self, data: dict) -> dict:
         name = None
         arguments = None
         
-        if "name" in data:
+        # Unified format: {"name": "...", "arguments": {...}}
+        if "name" in data and "arguments" in data:
             name = data["name"]
-        elif "function" in data and isinstance(data["function"], str):
-            name = data["function"]
+            arguments = data["arguments"]
+        
+        # OpenAI wrapper with function object: {"type": "function", "function": {"name": "...", "arguments": "..."}}
         elif "function" in data and isinstance(data["function"], dict):
             fn_data = data["function"]
             name = fn_data.get("name")
             arguments = fn_data.get("arguments") or fn_data.get("parameters")
-            
+        
+        # OpenAI wrapper with function string: {"type": "function", "function": "tool_name", "parameters": {...}}
+        elif "function" in data and isinstance(data["function"], str):
+            name = data["function"]
+            arguments = data.get("parameters") or data.get("arguments")
+        
+        # Direct format: {"name": "...", "parameters": {...}}
+        elif "name" in data:
+            name = data["name"]
+            arguments = data.get("parameters") or data.get("arguments")
+        
         if arguments is None:
             arguments = data.get("arguments") or data.get("parameters") or data.get("properties") or {}
             
@@ -919,7 +1035,7 @@ class AgentExecutor:
             
             # Apply short-circuit formatting if applicable for a cleaner response
             display_result = tool_result
-            if tool_name in _SHORT_CIRCUIT_TOOLS:
+            if tool_name in _TERMINAL_TOOLS:
                 display_result = _format_short_circuit_result(tool_name, tool_result, tool_args)
                 
             yield "token", display_result, "resolver"
@@ -958,11 +1074,20 @@ class AgentExecutor:
             accumulated_response_total = []
             backend_used = "local"
             executed_calls = set()
+            last_tool_result = ""
             
             while iteration < max_iterations:
                 iteration += 1
                 
                 use_tools = (resolved_backend != "simple")
+                
+                # Debug: Show what's being sent to LLM
+                msg_roles = [m.get('role') for m in current_messages]
+                print(f"[Executor] Sending {len(current_messages)} messages to LLM. Roles: {msg_roles}")
+                if len(current_messages) > 0:
+                    last_msg = current_messages[-1]
+                    print(f"[Executor] Last message: role={last_msg.get('role')}, content preview={str(last_msg.get('content', ''))[:150]}...")
+                
                 stream = self._query_llm_stream(session, current_messages, user_message=user_message, use_tools=use_tools)
                 
                 tool_calls_to_execute = []
@@ -998,6 +1123,9 @@ class AgentExecutor:
                     call_signature = (tool_name, tool_args_str)
                     if call_signature in executed_calls:
                         print(f"[Executor] Loop detected! Tool '{tool_name}' with args {tool_args_str} was already executed in this turn. Breaking.")
+                        # Include last tool result if available
+                        if last_tool_result and isinstance(last_tool_result, str):
+                            accumulated_response_total.append(last_tool_result)
                         assistant_final_speech = "\n".join(accumulated_response_total)
                         if not assistant_final_speech.strip():
                             assistant_final_speech = "I have completed that action, Master."
@@ -1070,6 +1198,7 @@ class AgentExecutor:
                             return
 
                         tool_result = await self._run_tool_async(tool_name, tool_args)
+                        last_tool_result = tool_result
 
                         # Handle inside-tool confirmation request
                         if isinstance(tool_result, str) and tool_result.startswith("CONFIRM_REQUIRED: "):
@@ -1109,7 +1238,7 @@ class AgentExecutor:
                     print(f"Tool execution result: {tool_result}")
                     yield "tool_result", tool_result, backend_used
                     
-                    if not tool_failed and tool_name in _SHORT_CIRCUIT_TOOLS:
+                    if not tool_failed and tool_name in _TERMINAL_TOOLS:
                         short_circuit_msg = _format_short_circuit_result(tool_name, tool_result, tool_args)
                         yield "token", short_circuit_msg, backend_used
                         if accumulated_response.strip():
@@ -1137,6 +1266,10 @@ class AgentExecutor:
                         "name": tool_name,
                         "content": str(tool_result)
                     })
+                    
+                    # Debug: Show what's being added to context
+                    print(f"[Executor] Tool '{tool_name}' result added to context. Messages count: {len(current_messages)}")
+                    print(f"[Executor] Tool result preview: {str(tool_result)[:200]}...")
                     
                     if tool_failed and troubleshoot_attempts < 4:
                         troubleshoot_attempts += 1

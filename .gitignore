@@ -2,6 +2,12 @@
 node_modules/
 frontend/dist/
 
+#yuki home
+yuki home/
+
+#yuki home
+backend/tests/
+
 # Python caching and environments
 __pycache__/
 *.pyc
