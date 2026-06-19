@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { computeDesktopBubblePosition } from '../utils/desktopBubblePosition';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin } from '@pixiv/three-vrm';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -2330,14 +2331,27 @@ const AvatarViewer = ({
             const headTopYPercent = (headTopV.y * -0.5 + 0.5) * 100;
             const minBottomPercent = 100 - headTopYPercent;
 
-            let bottomPercent = 100 - yPercent;
-            // Ensure bubble is always at least 2% (about 12px) above her head to avoid overlapping her face
-            bottomPercent = Math.max(minBottomPercent + 2, bottomPercent);
+            const rect = bubbleEl.getBoundingClientRect();
+            const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1;
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+            const desiredBottomPercent = 100 - yPercent;
+            const bubblePosition = computeDesktopBubblePosition({
+              anchorXPercent: xPercent,
+              desiredBottomPercent,
+              minBottomPercent: minBottomPercent + 2,
+              bubbleWidth: rect.width,
+              bubbleHeight: rect.height,
+              viewportWidth,
+              viewportHeight,
+              margin: 16,
+              arrowMargin: 18,
+            });
 
-            bubbleEl.style.left = `${xPercent}%`;
+            bubbleEl.style.left = `${bubblePosition.leftPercent}%`;
             bubbleEl.style.top = 'auto';
-            bubbleEl.style.bottom = `${bottomPercent}%`;
+            bubbleEl.style.bottom = `${bubblePosition.bottomPercent}%`;
             bubbleEl.style.transform = 'translateX(-50%)';
+            bubbleEl.style.setProperty('--arrow-left', `${bubblePosition.arrowLeft}px`);
           }
         }
 

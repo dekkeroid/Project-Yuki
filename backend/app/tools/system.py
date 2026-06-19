@@ -490,7 +490,8 @@ def control_window(action: str, window_title: str = None, x: int = None, y: int 
     if len(results) == 1:
         return f"{action_past_tense} window: '{results[0]}'"
     else:
-        return f"{action_past_tense} {len(results)} windows: {', '.join(f'\"{r}\"' for r in results)}"
+        quoted_results = ", ".join(f'"{r}"' for r in results)
+        return f"{action_past_tense} {len(results)} windows: {quoted_results}"
 
 def run_terminal_command(command: str, use_powershell: bool = True) -> str:
     """

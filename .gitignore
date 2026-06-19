@@ -5,9 +5,6 @@ frontend/dist/
 #yuki home
 yuki home/
 
-#yuki home
-backend/tests/
-
 # Python caching and environments
 __pycache__/
 *.pyc
@@ -37,6 +34,8 @@ backend/.venv/
 
 # Local personal runtime states
 backend/profile.json
+backend/.yuki_confirmation_grants.json
+backend/.yuki_confirmation_grants.json.*
 
 # Ignore local local Kokoro AI model weights and audio binary matrices
 backend/app/voice/*.onnx

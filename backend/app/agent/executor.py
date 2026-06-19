@@ -11,6 +11,13 @@ from app import config
 from app.agent.prompts import get_system_prompt, get_simple_system_prompt
 from app.memory.local_mem import MemoryManager
 from app.tools.definitions import get_tools_definition, get_filtered_tools
+from app.mcp_client import StdioMCPToolBridge
+from app.tools.safety import (
+    authorize_tool_call,
+    describe_tool_target,
+    issue_confirmation_grant,
+    strip_internal_auth_fields,
+)
 from app.tools.system import (
     get_system_stats, launch_app, set_system_volume, get_current_datetime,
     control_window, run_terminal_command, run_python_script, take_screenshot,
@@ -39,6 +46,12 @@ _SHORT_CIRCUIT_TOOLS = {
     "take_screenshot",
     "web_search"
 }
+
+
+def _extract_confirmation_target(tool_result: str) -> str | None:
+    if isinstance(tool_result, str) and tool_result.startswith("CONFIRM_REQUIRED: "):
+        return tool_result[len("CONFIRM_REQUIRED: "):].strip()
+    return None
 
 def _format_short_circuit_result(tool_name: str, tool_result: str, tool_args: dict) -> str:
     if not isinstance(tool_result, str):
@@ -185,6 +198,7 @@ class AgentExecutor:
                 query=kwargs.get("query") or kwargs.get("search") or kwargs.get("text") or (list(kwargs.values())[0] if kwargs else "")
             )
         }
+        self.mcp_tools = StdioMCPToolBridge(get_tools_definition, get_filtered_tools)
 
     # ------------------------------------------------------------------ #
     #  Tool dispatcher helper                                              #
@@ -193,16 +207,42 @@ class AgentExecutor:
     async def _run_tool_async(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
         """
         Executes a registered tool by name with the given args.
-        Handles both sync (run in thread) and async tool functions transparently.
+        Prefers the stdio MCP tool boundary and falls back to the legacy
+        in-process dispatcher when configured or when MCP startup fails.
         """
+        raw_args = dict(tool_args or {})
+
+        # Gate before dispatching to either MCP or the legacy local dispatcher.
+        # Do not consume a valid grant here while MCP is enabled: the stdio MCP
+        # subprocess is the final execution boundary and consumes the grant.
+        preflight = authorize_tool_call(tool_name, raw_args, consume_grant=False)
+        if not preflight.allowed:
+            return preflight.message
+
+        mcp_args = dict(preflight.arguments or {})
+        grant_id = raw_args.get("confirmation_grant_id") or raw_args.get("_host_confirmation_grant_id")
+        if grant_id:
+            mcp_args["confirmation_grant_id"] = grant_id
+
+        mcp_result = await self.mcp_tools.call_tool(tool_name, mcp_args)
+        if mcp_result.handled:
+            return mcp_result.result
+
         if tool_name not in self.tools:
+            if self.mcp_tools.last_error:
+                return f"Error: Tool '{tool_name}' is not registered. MCP status: {self.mcp_tools.last_error}"
             return f"Error: Tool '{tool_name}' is not registered."
+        local_decision = authorize_tool_call(tool_name, raw_args, consume_grant=True)
+        if not local_decision.allowed:
+            return local_decision.message
+
+        execution_args = local_decision.arguments or {}
         tool_func = self.tools[tool_name]
         try:
             if inspect.iscoroutinefunction(tool_func):
-                return await (tool_func(**tool_args) if tool_args else tool_func())
+                return await (tool_func(**execution_args) if execution_args else tool_func())
             else:
-                return await (asyncio.to_thread(tool_func, **tool_args) if tool_args else asyncio.to_thread(tool_func))
+                return await (asyncio.to_thread(tool_func, **execution_args) if execution_args else asyncio.to_thread(tool_func))
         except Exception as e:
             return f"Error executing tool: {str(e)}"
 
@@ -432,6 +472,9 @@ class AgentExecutor:
             "context_length": 8192,
         }
         if use_tools:
+            # Non-streaming path is currently unused by the FastAPI websocket flow.
+            # Keep it synchronous and local-schema based; execution still routes
+            # through _run_tool_async, which prefers MCP stdio.
             use_dynamic = self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
             if use_dynamic:
                 user_message = ""
@@ -443,7 +486,7 @@ class AgentExecutor:
             else:
                 filtered_tools = get_tools_definition()
             tool_names = [t["function"]["name"] for t in filtered_tools]
-            print(f"[Tools] Sending {len(filtered_tools)} tools to LLM: {', '.join(tool_names)}")
+            print(f"[Tools] Sending {len(filtered_tools)} local tools to LLM: {', '.join(tool_names)}")
             payload["tools"] = filtered_tools
             payload["tool_choice"] = "auto"
             
@@ -564,16 +607,11 @@ class AgentExecutor:
                 tool_failed = False
                 tool_result = ""
                 
-                if tool_name == "delete_file" and not tool_args.get("confirmed"):
-                    tool_result = "Error: delete_file requires confirmed=True."
-                    tool_failed = True
-                elif tool_name == "system_power_control" and not tool_args.get("confirmed"):
-                    tool_result = "Error: system_power_control requires confirmed=True."
-                    tool_failed = True
-                else:
-                    # Use shared async dispatcher (runs in thread-pool for sync tools)
-                    loop = asyncio.get_event_loop()
-                    tool_result = loop.run_until_complete(self._run_tool_async(tool_name, tool_args))
+                # Use shared async dispatcher (runs in thread-pool for sync tools).
+                # It enforces server-side confirmation grants; model-supplied
+                # confirmed=True is never trusted.
+                loop = asyncio.get_event_loop()
+                tool_result = loop.run_until_complete(self._run_tool_async(tool_name, tool_args))
 
                 if not tool_failed and isinstance(tool_result, str):
                     lower_res = tool_result.lower().strip()
@@ -623,6 +661,22 @@ class AgentExecutor:
     #  Streaming methods                                                 #
     # ------------------------------------------------------------------ #
 
+    async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]]) -> list:
+        """Return tool schemas from MCP discovery, with local-schema fallback."""
+        use_dynamic = self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
+        user_message = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                user_message = msg.get("content", "")
+                break
+
+        filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic)
+        tool_names = [t["function"]["name"] for t in filtered_tools]
+        source = "MCP stdio" if self.mcp_tools.enabled and not self.mcp_tools.last_error else "local"
+        print(f"[Tools] Sending {len(filtered_tools)} {source} tools to LLM: {', '.join(tool_names)}")
+        return filtered_tools
+
+
     async def _stream_request(self, session: aiohttp.ClientSession, url: str, model: str, messages: List[Dict[str, str]], headers: dict = None, temperature: float = 0.7, use_tools: bool = False):
         payload = {
             "model": model,
@@ -634,18 +688,7 @@ class AgentExecutor:
             "context_length": 8192,
         }
         if use_tools:
-            use_dynamic = self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
-            if use_dynamic:
-                user_message = ""
-                for msg in reversed(messages):
-                    if msg.get("role") == "user":
-                        user_message = msg.get("content", "")
-                        break
-                filtered_tools = get_filtered_tools(user_message)
-            else:
-                filtered_tools = get_tools_definition()
-            tool_names = [t["function"]["name"] for t in filtered_tools]
-            print(f"[Tools] Sending {len(filtered_tools)} tools to LLM: {', '.join(tool_names)}")
+            filtered_tools = await self._get_tool_definitions_for_messages(messages)
             payload["tools"] = filtered_tools
             payload["tool_choice"] = "auto"
             
@@ -997,19 +1040,25 @@ class AgentExecutor:
             yield "tool_start", tool_name, "resolver"
             tool_result = str(await self._run_tool_async(tool_name, tool_args))
 
-            if tool_result.startswith("CONFIRM_REQUIRED: "):
-                target_path = tool_result[len("CONFIRM_REQUIRED: "):].strip()
+            target_path = _extract_confirmation_target(tool_result)
+            if target_path:
                 print(f"[Resolver] Tool '{tool_name}' returned CONFIRM_REQUIRED for path: {target_path}")
-                
-                confirmed_status = yield "tool_confirm_required", target_path, "resolver"
-                if confirmed_status:
+
+                confirmed_args = strip_internal_auth_fields(tool_args if isinstance(tool_args, dict) else {})
+                if tool_name == "open_or_play_file":
                     confirmed_args = {
                         "file_path_or_query": target_path,
-                        "confirmed": True
+                        "play_mode": bool((tool_args or {}).get("play_mode", False)),
                     }
-                    if isinstance(tool_args, dict) and "play_mode" in tool_args:
-                        confirmed_args["play_mode"] = tool_args["play_mode"]
-                    print(f"[Resolver] Re-running '{tool_name}' with confirmed=True for path: {target_path}")
+                confirmed_status = yield "tool_confirm_required", target_path, "resolver"
+                if confirmed_status:
+                    grant_id = issue_confirmation_grant(
+                        tool_name,
+                        confirmed_args,
+                        target=target_path or describe_tool_target(tool_name, confirmed_args),
+                    )
+                    confirmed_args["confirmation_grant_id"] = grant_id
+                    print(f"[Resolver] Re-running '{tool_name}' with backend confirmation grant for path: {target_path}")
                     tool_result = str(await self._run_tool_async(tool_name, confirmed_args))
                 else:
                     print(f"[Resolver] Tool execution cancelled by user.")
@@ -1142,72 +1191,32 @@ class AgentExecutor:
                     yield "tool_start", tool_name, backend_used
 
                     if not skip_execution:
-                        needs_confirm = False
-                        confirm_target_name = ""
-
-                        if tool_name == "launch_app":
-                            app_name = tool_args.get("app_name") or tool_args.get("name") or tool_args.get("app") or (list(tool_args.values())[0] if tool_args else "")
-                            needs_confirm = True
-                            from app.tools.system import _find_app_path
-                            app_path = _find_app_path(app_name)
-                            confirm_target_name = app_path if app_path else app_name
-                        elif tool_name == "delete_file":
-                            file_path = tool_args.get("file_path") or ""
-                            confirmed = bool(tool_args.get("confirmed", False))
-                            if not confirmed:
-                                needs_confirm = True
-                                confirm_target_name = f"Delete file: {file_path}"
-                        elif tool_name == "system_power_control":
-                            power_action = tool_args.get("action") or ""
-                            confirmed = bool(tool_args.get("confirmed", False))
-                            if not confirmed:
-                                needs_confirm = True
-                                confirm_target_name = f"System Power Action: {power_action}"
-                        elif tool_name == "run_terminal_command":
-                            command = tool_args.get("command") or ""
-                            needs_confirm = True
-                            confirm_target_name = f"Run terminal command: {command}"
-                        elif tool_name == "run_python_script":
-                            code = tool_args.get("code") or ""
-                            needs_confirm = True
-                            confirm_target_name = f"Run Python script:\n\n{code}"
-
-                        confirmed_status = True
-                        if needs_confirm:
-                            confirmed_status = yield "tool_confirm_required", confirm_target_name, backend_used
-
-                        if not confirmed_status:
-                            # User explicitly cancelled. Do not troubleshoot, do not retry. Abort loop immediately.
-                            print(f"[Executor] Tool '{tool_name}' execution was cancelled by the user. Aborting ReAct loop.")
-                            if accumulated_response.strip():
-                                accumulated_response_total.append(accumulated_response.strip())
-                            cancel_msg = "Action cancelled by security confirmation check."
-                            accumulated_response_total.append(cancel_msg)
-                            
-                            assistant_final_speech = "\n".join(accumulated_response_total)
-                            final_history.append({"role": "assistant", "content": assistant_final_speech})
-                            yield "final_history", final_history, backend_used
-                            return
-
                         tool_result = await self._run_tool_async(tool_name, tool_args)
                         last_tool_result = tool_result
 
-                        # Handle inside-tool confirmation request
-                        if isinstance(tool_result, str) and tool_result.startswith("CONFIRM_REQUIRED: "):
-                            target_path = tool_result[len("CONFIRM_REQUIRED: "):].strip()
-                            print(f"[Executor] Tool '{tool_name}' returned CONFIRM_REQUIRED for path: {target_path}")
-                            
-                            confirmed_status = yield "tool_confirm_required", target_path, backend_used
-                            
-                            if confirmed_status:
-                                # Re-run the tool with confirmed=True and path directly
-                                play_mode = bool(tool_args.get("play_mode", False))
+                        # Handle sandbox/inside-tool confirmation request. The
+                        # model cannot authorize by passing confirmed=True; the
+                        # backend issues a grant after the user approves.
+                        target_path = _extract_confirmation_target(tool_result)
+                        if target_path:
+                            print(f"[Executor] Tool '{tool_name}' returned CONFIRM_REQUIRED for target: {target_path}")
+
+                            confirmed_args = strip_internal_auth_fields(tool_args)
+                            if tool_name == "open_or_play_file":
                                 confirmed_args = {
                                     "file_path_or_query": target_path,
-                                    "play_mode": play_mode,
-                                    "confirmed": True
+                                    "play_mode": bool(tool_args.get("play_mode", False)),
                                 }
-                                print(f"[Executor] Re-running '{tool_name}' with confirmed=True for path: {target_path}")
+                            confirmed_status = yield "tool_confirm_required", target_path, backend_used
+
+                            if confirmed_status:
+                                grant_id = issue_confirmation_grant(
+                                    tool_name,
+                                    confirmed_args,
+                                    target=target_path or describe_tool_target(tool_name, confirmed_args),
+                                )
+                                confirmed_args["confirmation_grant_id"] = grant_id
+                                print(f"[Executor] Re-running '{tool_name}' with backend confirmation grant for target: {target_path}")
                                 tool_result = await self._run_tool_async(tool_name, confirmed_args)
                             else:
                                 # User explicitly cancelled. Do not troubleshoot, do not retry. Abort loop immediately.

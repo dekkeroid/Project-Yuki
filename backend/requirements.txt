@@ -16,4 +16,4 @@ pyautogui
 pillow
 pycaw
 comtypes
-
+mcp[cli]>=1.27,<2

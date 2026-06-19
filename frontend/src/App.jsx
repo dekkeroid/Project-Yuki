@@ -2567,11 +2567,16 @@ const App = () => {
           return;
         }
 
-        const runOpenPlay = (forceFlag = false) => {
+        const runOpenPlay = (forceFlag = false, pendingConfirmationId = null) => {
           fetch(`${API_BASE}/api/system/open_or_play`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: query, play_mode: isPlayCmd, force: forceFlag })
+            body: JSON.stringify({
+              query: query,
+              play_mode: isPlayCmd,
+              force: forceFlag,
+              pending_confirmation_id: pendingConfirmationId
+            })
           })
             .then((res) => {
               if (!res.ok) throw new Error("Could not contact system open/play endpoint.");
@@ -2600,7 +2605,7 @@ const App = () => {
                     }, 50);
 
                     setIsThinking(true);
-                    runOpenPlay(true);
+                    runOpenPlay(true, data.pending_confirmation_id || null);
                   },
                   onCancel: () => {
                     setConfirmModal(prev => ({ ...prev, visible: false }));

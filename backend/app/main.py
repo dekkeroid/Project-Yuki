@@ -43,6 +43,7 @@ from app.agent.executor import AgentExecutor
 from app.voice.tts import generate_speech_bytes
 from app.memory.crawler import start_crawler_services
 from app.tools.system import get_detailed_stats
+from app.tools.safety import approve_pending_confirmation, authorize_tool_call, issue_pending_confirmation
 
 app = FastAPI(title="Yuki Desktop Assistant Backend", version="1.0.0")
 
@@ -140,6 +141,16 @@ async def check_tts_connectivity():
         print("NO_LLM_MODE is enabled. Skipping LLM auto-load on startup.")
     # -----------------------------------------------
 
+    if config.TOOL_TRANSPORT == "mcp-stdio":
+        print("Verifying stdio MCP tool bridge...")
+        mcp_ready = await agent_executor.mcp_tools.ensure_connected()
+        if not mcp_ready:
+            message = f"Stdio MCP tool bridge failed to start: {agent_executor.mcp_tools.last_error}"
+            if config.MCP_FALLBACK_TO_LOCAL:
+                print(f"{message}. Falling back to local tool dispatcher.")
+            else:
+                raise RuntimeError(message)
+
     print("Initializing local Kokoro-ONNX neural TTS engine...")
     try:
         # Verify local model initialization and speech generation (large timeout for initial load/download)
@@ -153,6 +164,12 @@ async def check_tts_connectivity():
     
     print("Offline local neural TTS service is unavailable. Enabling offline browser fallback by default.")
     tts_online_status = False
+
+
+@app.on_event("shutdown")
+async def shutdown_mcp_tool_bridge():
+    await agent_executor.mcp_tools.aclose()
+
 
 async def test_and_announce_voice_change(new_voice: str, new_rate: str = None):
     global tts_online_status
@@ -724,60 +741,80 @@ class OpenPlayRequest(BaseModel):
     query: str
     play_mode: bool = False
     force: bool = False
+    confirmation_grant_id: Optional[str] = None
+    pending_confirmation_id: Optional[str] = None
 
 
 @app.post("/api/system/open_or_play")
 def post_open_or_play(req: OpenPlayRequest):
     """
     Directly resolves and opens/plays a file or application without LLM intervention.
-    With program confirmation check.
+    Program/file execution is protected by backend-issued confirmation grants.
     """
-    from app.tools.files import resolve_best_file_no_llm, _get_steam_appid
+    from app.tools.files import resolve_best_file_no_llm, open_or_play_file_no_llm
     from app.tools.system import _find_app_path
     import os
 
     clean = req.query.strip().strip('"\'')
-    
-    resolved_path = None
-    # 1. Check if confirmation is required (only if force=False)
-    if not req.force:
-        is_app = False
-        target_name = clean
-        
-        if clean.lower().startswith("shell:"):
-            is_app = True
-            resolved_path = clean
-            target_name = clean
-        elif os.path.exists(clean) and os.path.isfile(clean):
-            resolved_path = clean
-            target_name = os.path.basename(clean)
-        else:
-            app_path = _find_app_path(clean) if not req.play_mode else None
-            if app_path:
-                is_app = True
-                resolved_path = app_path
-                target_name = clean
-            else:
-                resolved_path = resolve_best_file_no_llm(clean, play_mode=req.play_mode)
-                if resolved_path:
-                    target_name = os.path.basename(resolved_path)
-                
-        if resolved_path:
-            # Check steam game or media
-            is_steam = resolved_path.lower().endswith(".exe") and _get_steam_appid(resolved_path) is not None
-            _, ext = os.path.splitext(resolved_path.lower())
-            is_media = ext in ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg')
-            
-            if is_app or not (is_steam or is_media):
-                return {
-                    "status": "confirm_required",
-                    "name": resolved_path,
-                    "path": resolved_path
-                }
 
-    from app.tools.files import open_or_play_file_no_llm
+    resolved_path = None
+    if clean.lower().startswith("shell:"):
+        resolved_path = clean
+    elif os.path.exists(clean):
+        resolved_path = clean
+    else:
+        app_path = _find_app_path(clean) if not req.play_mode else None
+        if app_path:
+            resolved_path = app_path
+        else:
+            resolved_path = resolve_best_file_no_llm(clean, play_mode=req.play_mode)
+
+    target = resolved_path if resolved_path else req.query
+    safety_args = {
+        "file_path_or_query": target,
+        "play_mode": req.play_mode,
+    }
+    if req.pending_confirmation_id:
+        ok, grant_or_reason = approve_pending_confirmation(
+            req.pending_confirmation_id,
+            "open_or_play_file",
+            safety_args,
+        )
+        if not ok:
+            return {"error": f"Confirmation approval failed: {grant_or_reason}"}
+        safety_args["confirmation_grant_id"] = grant_or_reason
+    elif req.confirmation_grant_id:
+        # Backwards-compatible field name, but still treated as a pending token.
+        ok, grant_or_reason = approve_pending_confirmation(
+            req.confirmation_grant_id,
+            "open_or_play_file",
+            safety_args,
+        )
+        if not ok:
+            return {"error": f"Confirmation approval failed: {grant_or_reason}"}
+        safety_args["confirmation_grant_id"] = grant_or_reason
+
+    decision = authorize_tool_call("open_or_play_file", safety_args, consume_grant=True)
+    if not decision.allowed:
+        if decision.requires_confirmation:
+            grant_args = decision.arguments or {
+                "file_path_or_query": target,
+                "play_mode": req.play_mode,
+            }
+            pending_id = issue_pending_confirmation(
+                "open_or_play_file",
+                grant_args,
+                target=decision.target or target,
+            )
+            return {
+                "status": "confirm_required",
+                "name": decision.target or target,
+                "path": target,
+                "pending_confirmation_id": pending_id,
+            }
+        return {"error": decision.message}
+
     try:
-        target = resolved_path if resolved_path else req.query
         result = open_or_play_file_no_llm(target, play_mode=req.play_mode)
         return {"result": result}
     except Exception as e:

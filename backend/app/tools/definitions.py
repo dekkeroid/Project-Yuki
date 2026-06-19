@@ -1,3 +1,5 @@
+from app.tools.selector import select_relevant_tools
+
 def get_tools_definition() -> list:
     """
     Returns the list of tool schemas for LM Studio native tool calling.
@@ -149,14 +151,13 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "delete_file",
-                "description": "Delete file.",
+                "description": "Delete file. Requires a user approval dialog; do not add confirmation flags yourself.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "file_path": {"type": "string", "description": "Absolute path."},
-                        "confirmed": {"type": "boolean", "description": "Must be true."}
+                        "file_path": {"type": "string", "description": "Absolute path."}
                     },
-                    "required": ["file_path", "confirmed"]
+                    "required": ["file_path"]
                 }
             }
         },
@@ -287,7 +288,7 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "system_power_control",
-                "description": "Lock PC, Sleep PC, Shutdown PC, Shut down PC, Restart PC, Sign out PC.",
+                "description": "Lock PC, sleep PC, or sign out PC after user approval. Shutdown/restart are sandbox-blocked by default.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -295,10 +296,9 @@ def get_tools_definition() -> list:
                             "type": "string",
                             "description": "Power action.",
                             "enum": ["lock", "sleep", "sign_out", "shutdown", "restart"]
-                        },
-                        "confirmed": {"type": "boolean", "description": "Must be true."}
+                        }
                     },
-                    "required": ["action", "confirmed"]
+                    "required": ["action"]
                 }
             }
         }
@@ -306,73 +306,10 @@ def get_tools_definition() -> list:
 
 
 def get_filtered_tools(user_message: str) -> list:
+    """Return a compact, schema-ranked tool list for the current user message.
+
+    This replaces the old keyword buckets with a local retrieval step over tool
+    names, descriptions, and JSON-schema fields. If the message has weak tool
+    signal, the selector returns all tools rather than hiding a needed tool.
     """
-    Analyzes the user message and returns a filtered subset of tools.
-    Applies bundling so related tools are grouped together.
-    """
-    all_tools = get_tools_definition()
-    
-    # If query is empty or not a string, return fallback tools
-    if not isinstance(user_message, str) or not user_message.strip():
-        fallback_names = {"get_system_stats", "web_search", "launch_app", "open_or_play_file", "update_user_fact"}
-        return [t for t in all_tools if t["function"]["name"] in fallback_names]
-
-    query = user_message.lower()
-    selected_tool_names = set()
-    
-    # 1. System stats
-    if any(w in query for w in ["stat", "cpu", "ram", "memory", "disk", "ip", "os", "time", "date"]):
-        selected_tool_names.add("get_system_stats")
-        
-    # 2. Web search
-    if any(w in query for w in ["search", "google", "yahoo", "find", "lookup", "who", "what", "weather", "news", "leak", "internet", "web", "online"]):
-        selected_tool_names.add("web_search")
-        # Note: launch_app is NOT added here - only added by category #3 when user says "open/launch/start"
-        
-    # 3. App launcher / play
-    if any(w in query for w in ["launch", "run", "open", "start", "play", "song", "music", "video", "movie", "game", "steam", "paint", "calc", "notepad", "chrome", "discord"]):
-        selected_tool_names.add("launch_app")
-        selected_tool_names.add("open_or_play_file")
-        selected_tool_names.add("media_playback_control")
-        
-    # 4. Filesystem
-    if any(w in query for w in ["file", "folder", "directory", "dir", "list", "delete", "remove", "create", "write", "edit", "modify", "replace", "save", "txt", "docx", "pdf"]):
-        selected_tool_names.add("list_directory")
-        selected_tool_names.add("search_files")
-        selected_tool_names.add("open_or_play_file")
-        selected_tool_names.add("create_file")
-        selected_tool_names.add("edit_file")
-        selected_tool_names.add("delete_file")
-        
-    # 5. Volume
-    if any(w in query for w in ["volume", "sound", "mute", "quiet", "loud", "audio"]):
-        selected_tool_names.add("set_system_volume")
-        selected_tool_names.add("media_playback_control")
-        
-    # 6. Window control / Input
-    if any(w in query for w in ["window", "minimize", "maximize", "restore", "close", "click", "type", "keyboard", "mouse", "scroll", "press", "key", "automate", "screenshot", "screen"]):
-        selected_tool_names.add("control_window")
-        selected_tool_names.add("keyboard_mouse_input")
-        selected_tool_names.add("take_screenshot")
-        
-    # 7. Terminal / scripts / process
-    if any(w in query for w in ["terminal", "cmd", "powershell", "execute", "command", "python", "code", "script", "process", "task", "kill", "terminate", "running", "background"]):
-        selected_tool_names.add("run_terminal_command")
-        selected_tool_names.add("run_python_script")
-        selected_tool_names.add("manage_process")
-        
-    # 8. Power control
-    if any(w in query for w in ["shutdown", "restart", "reboot", "sleep", "lock", "sign out", "power"]):
-        selected_tool_names.add("system_power_control")
-        
-    # 9. User facts
-    if any(w in query for w in ["remember", "fact", "name", "interest", "hobby", "like", "dislike"]):
-        selected_tool_names.add("update_user_fact")
-
-    # If no tool was matched, use fallback general tools
-    if not selected_tool_names:
-        fallback_names = {"get_system_stats", "web_search", "launch_app", "open_or_play_file", "update_user_fact"}
-        selected_tool_names.update(fallback_names)
-        
-    return [t for t in all_tools if t["function"]["name"] in selected_tool_names]
-
+    return select_relevant_tools(get_tools_definition(), user_message)

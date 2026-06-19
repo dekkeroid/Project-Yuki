@@ -19,6 +19,46 @@ LLM_MODEL_COMPLEX = os.environ.get("LLM_MODEL_COMPLEX", "nvidia/nemotron-3-nano-
 #         but uses the full tool-aware prompt for complex tasks (default)
 LLM_MODE = int(os.environ.get("LLM_MODE", "3"))
 
+# Tool transport configuration
+# mcp-stdio routes Yuki tool execution through backend/app/mcp_server.py over MCP stdio.
+# local keeps the legacy in-process Python dispatcher.
+TOOL_TRANSPORT = os.environ.get("YUKI_TOOL_TRANSPORT", "mcp-stdio").strip().lower()
+MCP_FALLBACK_TO_LOCAL = os.environ.get("YUKI_MCP_FALLBACK_TO_LOCAL", "true").strip().lower() not in ("0", "false", "no", "off")
+# Tool selection: auto scores tool schemas like a local tool-search step; all disables filtering.
+TOOL_SELECTION_MODE = os.environ.get("YUKI_TOOL_SELECTION_MODE", "auto").strip().lower()
+TOOL_SELECTION_MAX_TOOLS = int(os.environ.get("YUKI_TOOL_SELECTION_MAX_TOOLS", "8"))
+TOOL_SELECTION_FALLBACK_THRESHOLD = float(os.environ.get("YUKI_TOOL_SELECTION_FALLBACK_THRESHOLD", "0.08"))
+# Backwards-compatible override from the first MCP implementation.
+MCP_SEND_ALL_TOOLS = os.environ.get("YUKI_MCP_SEND_ALL_TOOLS", "").strip().lower() in ("1", "true", "yes", "on")
+MCP_SERVER_COMMAND = os.environ.get("YUKI_MCP_SERVER_COMMAND", "")
+MCP_SERVER_ARGS = os.environ.get("YUKI_MCP_SERVER_ARGS", "")
+MCP_SERVER_CWD = Path(os.environ.get("YUKI_MCP_SERVER_CWD", str(BASE_DIR)))
+MCP_SERVER_ENV = {}
+
+# Tool safety / sandbox configuration. Sensitive tools are authorized by a
+# short-lived backend-issued grant, not by model-supplied booleans.
+TOOL_SANDBOX_ENABLED = os.environ.get("YUKI_TOOL_SANDBOX_ENABLED", "true").strip().lower() not in ("0", "false", "no", "off")
+TOOL_SANDBOX_BLOCKED_TOOLS = os.environ.get("YUKI_TOOL_SANDBOX_BLOCKED_TOOLS", "")
+TOOL_SANDBOX_REQUIRE_CONFIRMATION_TOOLS = os.environ.get(
+    "YUKI_TOOL_SANDBOX_REQUIRE_CONFIRMATION_TOOLS",
+    ",".join([
+        "launch_app",
+        "create_file",
+        "edit_file",
+        "delete_file",
+        "system_power_control",
+        "run_terminal_command",
+        "run_python_script",
+        "keyboard_mouse_input",
+        "manage_process",
+        "control_window",
+    ]),
+)
+TOOL_SANDBOX_BLOCKED_POWER_ACTIONS = os.environ.get("YUKI_TOOL_SANDBOX_BLOCKED_POWER_ACTIONS", "shutdown,restart")
+TOOL_SANDBOX_BLOCKED_TERMINAL_PATTERNS = os.environ.get("YUKI_TOOL_SANDBOX_BLOCKED_TERMINAL_PATTERNS", "")
+TOOL_CONFIRMATION_GRANT_TTL_SECONDS = int(os.environ.get("YUKI_TOOL_CONFIRMATION_GRANT_TTL_SECONDS", "120"))
+TOOL_CONFIRMATION_GRANT_FILE = Path(os.environ.get("YUKI_TOOL_CONFIRMATION_GRANT_FILE", str(BASE_DIR / ".yuki_confirmation_grants.json")))
+
 # Chat History Cap — max number of past *turns* (user+assistant pairs) to include in context.
 # Keeps the prompt lean and prevents unbounded growth. Set to 0 to disable capping.
 CHAT_HISTORY_LIMIT = int(os.environ.get("CHAT_HISTORY_LIMIT", "6"))
