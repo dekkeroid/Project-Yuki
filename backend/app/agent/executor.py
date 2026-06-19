@@ -22,7 +22,7 @@ from app.tools.web import web_search
 from app.agent.resolver import resolve_command
 
 
-_TERMINAL_TOOLS = {
+_SHORT_CIRCUIT_TOOLS = {
     "open_or_play_file",
     "media_playback_control",
     "launch_app",
@@ -36,16 +36,8 @@ _TERMINAL_TOOLS = {
     "delete_file",
     "run_python_script",
     "run_terminal_command",
-    "take_screenshot"
-}
-
-_INTERPRETATION_TOOLS = {
-    "web_search",
-    "search_files",
-    "get_system_stats",
-    "get_current_datetime",
-    "list_directory",
-    "update_user_fact"
+    "take_screenshot",
+    "web_search"
 }
 
 def _format_short_circuit_result(tool_name: str, tool_result: str, tool_args: dict) -> str:
@@ -590,7 +582,7 @@ class AgentExecutor:
 
                 print(f"Tool execution result: {tool_result}")
                 
-                if not tool_failed and tool_name in _TERMINAL_TOOLS:
+                if not tool_failed and tool_name in _SHORT_CIRCUIT_TOOLS:
                     short_circuit_msg = _format_short_circuit_result(tool_name, tool_result, tool_args)
                     if llm_response.strip():
                         accumulated_response_total.append(llm_response.strip())
@@ -1035,7 +1027,7 @@ class AgentExecutor:
             
             # Apply short-circuit formatting if applicable for a cleaner response
             display_result = tool_result
-            if tool_name in _TERMINAL_TOOLS:
+            if tool_name in _SHORT_CIRCUIT_TOOLS:
                 display_result = _format_short_circuit_result(tool_name, tool_result, tool_args)
                 
             yield "token", display_result, "resolver"
@@ -1238,7 +1230,7 @@ class AgentExecutor:
                     print(f"Tool execution result: {tool_result}")
                     yield "tool_result", tool_result, backend_used
                     
-                    if not tool_failed and tool_name in _TERMINAL_TOOLS:
+                    if not tool_failed and tool_name in _SHORT_CIRCUIT_TOOLS:
                         short_circuit_msg = _format_short_circuit_result(tool_name, tool_result, tool_args)
                         yield "token", short_circuit_msg, backend_used
                         if accumulated_response.strip():
