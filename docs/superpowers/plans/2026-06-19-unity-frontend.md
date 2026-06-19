@@ -25,8 +25,11 @@
 - Create: `frontendUnity/Assets/Scripts/Avatar/YukiAvatarPresenter.cs` — placeholder avatar presenter and speech bubble anchor contract.
 - Create: `frontendUnity/Assets/Scripts/Desktop/DesktopOverlayController.cs` — desktop window/overlay shell placeholder.
 - Create: `frontendUnity/Assets/Scenes/YukiDesktop.unity` — placeholder scene description file for Unity to open and evolve.
-- Create: `frontendUnity/Tests/EditMode/BackendMessageParsingTests.cs` — EditMode tests for message parsing and confirmation DTOs.
-- Create: `frontendUnity/Tests/EditMode/GrantSafetyContractTests.cs` — EditMode tests documenting that Unity sends pending IDs, never executable grant IDs.
+- Create: `frontendUnity/Assets/Scripts/Yuki.UnityFrontend.asmdef` — runtime assembly definition for Unity scripts.
+- Create: `frontendUnity/Assets/Tests/EditMode/Yuki.UnityFrontend.EditModeTests.asmdef` — EditMode test assembly with Unity Test Framework references.
+- Commit Unity `Assets/**/*.meta` files so GUID references and test assemblies are reproducible without relying on local editor-generated state.
+- Create: `frontendUnity/Assets/Tests/EditMode/BackendMessageParsingTests.cs` — EditMode tests for message parsing and confirmation DTOs.
+- Create: `frontendUnity/Assets/Tests/EditMode/GrantSafetyContractTests.cs` — EditMode tests documenting that Unity sends pending IDs, never executable grant IDs.
 - Create: `docs/unity-frontend.md` — architecture notes and migration roadmap.
 
 ## Task 1: Create the Unity project shell
@@ -42,7 +45,7 @@
 
 Run:
 ```bash
-mkdir -p frontendUnity/{Assets/{Scenes,Scripts/{Backend,Chat,UI,Avatar,Desktop}},Packages,ProjectSettings,Tests/EditMode}
+mkdir -p frontendUnity/{Assets/{Scenes,Scripts/{Backend,Chat,UI,Avatar,Desktop},Tests/EditMode},Packages,ProjectSettings}
 ```
 Expected: directories exist.
 
@@ -165,11 +168,11 @@ Expected: commit created.
 
 **Files:**
 - Create: `frontendUnity/Assets/Scripts/Chat/YukiMessageModels.cs`
-- Create: `frontendUnity/Tests/EditMode/BackendMessageParsingTests.cs`
+- Create: `frontendUnity/Assets/Tests/EditMode/BackendMessageParsingTests.cs`
 
 - [ ] **Step 1: Write parsing tests**
 
-Write `frontendUnity/Tests/EditMode/BackendMessageParsingTests.cs`:
+Write `frontendUnity/Assets/Tests/EditMode/BackendMessageParsingTests.cs`:
 ```csharp
 using NUnit.Framework;
 using Newtonsoft.Json;
@@ -274,7 +277,7 @@ Expected: tests pass. If Unity is not installed, record the exact missing binary
 
 Run:
 ```bash
-git add frontendUnity/Assets/Scripts/Chat/YukiMessageModels.cs frontendUnity/Tests/EditMode/BackendMessageParsingTests.cs
+git add frontendUnity/Assets/Scripts/Chat/YukiMessageModels.cs frontendUnity/Assets/Tests/EditMode/BackendMessageParsingTests.cs
 git commit -m "Add Unity backend message contracts"
 ```
 Expected: commit created.
@@ -285,11 +288,11 @@ Expected: commit created.
 - Create: `frontendUnity/Assets/Scripts/Backend/YukiBackendConfig.cs`
 - Create: `frontendUnity/Assets/Scripts/Backend/YukiWebSocketClient.cs`
 - Create: `frontendUnity/Assets/Scripts/Backend/YukiRestClient.cs`
-- Create: `frontendUnity/Tests/EditMode/GrantSafetyContractTests.cs`
+- Create: `frontendUnity/Assets/Tests/EditMode/GrantSafetyContractTests.cs`
 
 - [ ] **Step 1: Write grant contract tests**
 
-Write `frontendUnity/Tests/EditMode/GrantSafetyContractTests.cs`:
+Write `frontendUnity/Assets/Tests/EditMode/GrantSafetyContractTests.cs`:
 ```csharp
 using NUnit.Framework;
 using Newtonsoft.Json;
@@ -458,7 +461,7 @@ Expected: tests pass or missing Unity binary recorded.
 
 Run:
 ```bash
-git add frontendUnity/Assets/Scripts/Backend frontendUnity/Tests/EditMode/GrantSafetyContractTests.cs
+git add frontendUnity/Assets/Scripts/Backend frontendUnity/Assets/Tests/EditMode/GrantSafetyContractTests.cs
 git commit -m "Add Unity backend clients"
 ```
 Expected: commit created.

@@ -1,0 +1,24 @@
+{
+  "name": "Yuki.UnityFrontend.EditModeTests",
+  "rootNamespace": "Yuki.UnityFrontend.Tests",
+  "references": [
+    "Yuki.UnityFrontend",
+    "Unity.Newtonsoft.Json",
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "noEngineReferences": false
+}

@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "com.unity.test-framework": "1.1.33",
+    "com.unity.textmeshpro": "3.0.6",
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  }
+}
