@@ -1359,6 +1359,7 @@ const AvatarViewer = ({
         if (vrmRef.current) {
           const vrm = vrmRef.current;
           const isVRM1 = !!vrm.isVRM1;
+          const xMult = isVRM1 ? -1 : 1;
           const zMult = isVRM1 ? -1 : 1;
           const yMult = isVRM1 ? -1 : 1;
           const isSleeping = systemIdleTimeRef.current > 180;
@@ -1594,13 +1595,13 @@ const AvatarViewer = ({
             if (neck) {
               if (isSleeping) {
                 // Slump forward and slightly sideways when sleeping
-                neck.rotation.x = -0.25;
-                neck.rotation.z = 0.03;
-                neck.rotation.y = Math.sin(time * 0.15) * 0.04;
+                neck.rotation.x = -0.25 * xMult;
+                neck.rotation.z = 0.03 * zMult;
+                neck.rotation.y = (Math.sin(time * 0.15) * 0.04) * yMult;
               } else if (dragStateProgress > 0) {
                 // Head sway leans with movement but stabilizes looking forward
-                neck.rotation.x = dragPitchAngle * 0.5 - 0.04;
-                neck.rotation.z = dragSwayAngle * 0.5;
+                neck.rotation.x = (dragPitchAngle * 0.5 - 0.04) * xMult;
+                neck.rotation.z = (dragSwayAngle * 0.5) * zMult;
                 neck.rotation.y = 0;
               } else {
                 let neckAnimX = 0;
@@ -1623,11 +1624,11 @@ const AvatarViewer = ({
                   neckAnimX = -0.06 * easeVal + Math.sin(time * 22.0) * 0.03 * easeVal;
                 }
 
-                neck.rotation.y = currentLookY + Math.sin(time * 0.5) * 0.012 + microFidgetNeckY + neckAnimY;
+                neck.rotation.y = (currentLookY + Math.sin(time * 0.5) * 0.012 + microFidgetNeckY + neckAnimY) * yMult;
 
                 // Baseline chest-nudge neck compensation (head nods down slightly when chest expands)
                 const breathingNod = Math.sin(time * breathingSpeed) * (breathingDepth * 0.3);
-                neck.rotation.x = -0.12 + neckOffsetX + currentLookX + Math.sin(time * 0.35) * 0.012 - breathingNod + microFidgetNeckX + neckAnimX;
+                neck.rotation.x = (-0.12 + neckOffsetX + currentLookX + Math.sin(time * 0.35) * 0.012 - breathingNod + microFidgetNeckX + neckAnimX) * xMult;
 
                 // Head Tilts for Empathy (Z-roll) & Curious Thinking
                 let tiltZ = microFidgetNeckZ + neckAnimZ;
@@ -1640,8 +1641,8 @@ const AvatarViewer = ({
                   tiltX = -0.07; // look up slightly to think
                 }
 
-                neck.rotation.z = tiltZ;
-                neck.rotation.x += tiltX;
+                neck.rotation.z = tiltZ * zMult;
+                neck.rotation.x += tiltX * xMult;
               }
             }
 
@@ -1684,10 +1685,10 @@ const AvatarViewer = ({
               const eyeYaw = currentGazeY * 0.15 + saccadeY;
               const eyePitch = currentGazeX * 0.15 - 0.03 + saccadeX;
 
-              leftEye.rotation.y = eyeYaw;
-              leftEye.rotation.x = eyePitch;
-              rightEye.rotation.y = eyeYaw;
-              rightEye.rotation.x = eyePitch;
+              leftEye.rotation.y = eyeYaw * yMult;
+              leftEye.rotation.x = eyePitch * xMult;
+              rightEye.rotation.y = eyeYaw * yMult;
+              rightEye.rotation.x = eyePitch * xMult;
             }
 
             // Arm and Leg bones for walking/standing animation
