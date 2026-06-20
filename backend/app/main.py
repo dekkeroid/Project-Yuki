@@ -8,7 +8,7 @@ import logging
 import requests as http_requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Dict, Optional
 
 # Silence periodic telemetry polling logs from clogging the terminal console
@@ -738,10 +738,11 @@ def get_search_suggestions(query: str, type: str):
 
 
 class OpenPlayRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str
     play_mode: bool = False
     force: bool = False
-    confirmation_grant_id: Optional[str] = None
     pending_confirmation_id: Optional[str] = None
 
 
@@ -777,16 +778,6 @@ def post_open_or_play(req: OpenPlayRequest):
     if req.pending_confirmation_id:
         ok, grant_or_reason = approve_pending_confirmation(
             req.pending_confirmation_id,
-            "open_or_play_file",
-            safety_args,
-        )
-        if not ok:
-            return {"error": f"Confirmation approval failed: {grant_or_reason}"}
-        safety_args["confirmation_grant_id"] = grant_or_reason
-    elif req.confirmation_grant_id:
-        # Backwards-compatible field name, but still treated as a pending token.
-        ok, grant_or_reason = approve_pending_confirmation(
-            req.confirmation_grant_id,
             "open_or_play_file",
             safety_args,
         )

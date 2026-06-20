@@ -23,6 +23,7 @@ yuki_crawler.log
 
 # EXCEPT for the explicit default character asset
 !frontend/public/models/default.vrm
+!frontendUnity/Assets/**/*.vrm
 
 # Python testing sandbox files (Scratch directory)
 backend/scratch/
@@ -42,3 +43,13 @@ backend/app/voice/*.onnx
 backend/app/voice/*.bin
 
 *.bat
+# Unity frontend generated files
+frontendUnity/Library/
+frontendUnity/Temp/
+frontendUnity/Obj/
+frontendUnity/Build/
+frontendUnity/Builds/
+frontendUnity/Logs/
+frontendUnity/UserSettings/
+frontendUnity/.vs/
+frontendUnity/.codegraph/
