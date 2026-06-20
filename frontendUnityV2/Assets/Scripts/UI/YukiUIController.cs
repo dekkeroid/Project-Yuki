@@ -49,6 +49,14 @@ namespace Yuki.UnityFrontend.UI
         [SerializeField] private Transform suggestionsParent;
         [SerializeField] private GameObject suggestionPrefab;
 
+        [Header("Speech Bubble Positioning")]
+        [SerializeField] private RectTransform speechBubbleContainerRect;
+        [SerializeField] private Canvas mainCanvas;
+        [SerializeField] private Camera mainCamera;
+        [SerializeField] private float speechBubbleOffsetY = 0.3f;
+        [SerializeField] private float speechBubbleMinScreenY = 50f;
+        [SerializeField] private float speechBubbleMaxScreenYOffset = 100f;
+
         private StringBuilder currentAssistantBubbleContent = new StringBuilder();
         private string activeConfirmationId = string.Empty;
         private bool isMicActive = false;
@@ -97,6 +105,9 @@ namespace Yuki.UnityFrontend.UI
 
         private void Start()
         {
+            if (mainCamera == null) mainCamera = Camera.main;
+            if (mainCanvas == null) mainCanvas = GetComponentInParent<Canvas>();
+
             if (speechBubbleContainer != null) speechBubbleContainer.SetActive(false);
             if (dashboardPanel != null) dashboardPanel.SetActive(false);
             if (safetyDialogPanel != null) safetyDialogPanel.SetActive(false);
@@ -119,6 +130,51 @@ namespace Yuki.UnityFrontend.UI
             if (audioManager != null && avatarPresenter != null)
             {
                 avatarPresenter.SetAudioLevel(audioManager.CurrentAmplitude);
+            }
+        }
+
+        private void LateUpdate()
+        {
+            UpdateSpeechBubblePosition();
+        }
+
+        private void UpdateSpeechBubblePosition()
+        {
+            if (avatarPresenter == null || speechBubbleContainerRect == null || mainCanvas == null || mainCamera == null)
+                return;
+
+            if (!speechBubbleContainerRect.gameObject.activeSelf)
+                return;
+
+            Vector3 worldPos = avatarPresenter.SpeechBubbleWorldPosition;
+            worldPos.y += speechBubbleOffsetY;
+
+            Vector3 screenPos = mainCamera.WorldToScreenPoint(worldPos);
+
+            if (screenPos.z < 0)
+            {
+                speechBubbleContainerRect.gameObject.SetActive(false);
+                return;
+            }
+
+            float maxY = Screen.height - speechBubbleMaxScreenYOffset;
+            float minY = speechBubbleMinScreenY;
+            screenPos.y = Mathf.Clamp(screenPos.y, minY, maxY);
+
+            if (mainCanvas.renderMode == RenderMode.ScreenSpaceOverlay)
+            {
+                speechBubbleContainerRect.position = screenPos;
+            }
+            else
+            {
+                Vector2 localPoint;
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    mainCanvas.transform as RectTransform,
+                    screenPos,
+                    mainCanvas.worldCamera,
+                    out localPoint
+                );
+                speechBubbleContainerRect.localPosition = localPoint;
             }
         }
 

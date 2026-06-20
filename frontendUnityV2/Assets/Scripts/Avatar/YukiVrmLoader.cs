@@ -13,6 +13,12 @@ namespace Yuki.UnityFrontend.Avatar
 
         private string ModelsPath => Path.Combine(Application.streamingAssetsPath, modelsSubFolder);
 
+        private VRM10.Vrm10Instance lastLoadedVrm10Instance;
+
+        public VRM10.Vrm10Instance LastVrm10Instance => lastLoadedVrm10Instance;
+
+        public event Action<GameObject> OnVrmLoaded;
+
         private void OnEnable()
         {
             YukiAvatarPresenter.OnLoadVrmRequest += HandleLoadVrmRequest;
@@ -57,6 +63,11 @@ namespace Yuki.UnityFrontend.Avatar
                     loaded = await LoadVrm0Async(bytes, fileName);
                 }
 
+                if (loaded != null)
+                {
+                    OnVrmLoaded?.Invoke(loaded);
+                }
+
                 callback?.Invoke(loaded);
             }
             catch (Exception ex)
@@ -86,12 +97,16 @@ namespace Yuki.UnityFrontend.Avatar
                 return null;
             }
 
+            lastLoadedVrm10Instance = instance;
+
             instance.ShowMeshes();
             return instance.gameObject;
         }
 
         private async Task<GameObject> LoadVrm0Async(byte[] bytes, string fileName)
         {
+            lastLoadedVrm10Instance = null;
+
             var gltfData = new GlbBinaryParser(bytes, fileName).Parse();
             var context = new VRM.VRMImporterContext(gltfData);
 
