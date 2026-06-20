@@ -19,6 +19,7 @@ namespace Yuki.UnityFrontend.UI
         [SerializeField] private YukiAvatarPresenter avatarPresenter;
         [SerializeField] private YukiChatController chatController;
         [SerializeField] private YukiSlashCommandHandler slashCommandHandler;
+        [SerializeField] private YukiTalkModeController talkModeController;
 
         [Header("Overlay - Chat & Input")]
         [SerializeField] private TMP_InputField chatInputField;
@@ -92,6 +93,13 @@ namespace Yuki.UnityFrontend.UI
                 slashCommandHandler.OnAddMessage += AddChatMessage;
                 slashCommandHandler.OnSetThinking += HandleSetThinking;
             }
+
+            if (talkModeController != null)
+            {
+                talkModeController.OnTranscriptReady += HandleTranscriptReady;
+                talkModeController.OnStatusMessage += HandleTalkModeStatus;
+                talkModeController.OnTalkModeChanged += HandleTalkModeChanged;
+            }
         }
 
         private void OnDisable()
@@ -115,6 +123,13 @@ namespace Yuki.UnityFrontend.UI
                 slashCommandHandler.OnResponseText -= SpeakSystemMessage;
                 slashCommandHandler.OnAddMessage -= AddChatMessage;
                 slashCommandHandler.OnSetThinking -= HandleSetThinking;
+            }
+
+            if (talkModeController != null)
+            {
+                talkModeController.OnTranscriptReady -= HandleTranscriptReady;
+                talkModeController.OnStatusMessage -= HandleTalkModeStatus;
+                talkModeController.OnTalkModeChanged -= HandleTalkModeChanged;
             }
         }
 
@@ -469,8 +484,15 @@ namespace Yuki.UnityFrontend.UI
 
         private void ToggleMicrophoneInput()
         {
-            isMicActive = !isMicActive;
-            Debug.Log($"[UIController] Microphone voice recording active: {isMicActive}");
+            if (talkModeController != null)
+            {
+                talkModeController.ToggleTalkMode();
+            }
+            else
+            {
+                isMicActive = !isMicActive;
+                Debug.Log($"[UIController] Microphone voice recording active: {isMicActive}");
+            }
         }
 
         private void ToggleDashboardPanel()
@@ -560,6 +582,34 @@ namespace Yuki.UnityFrontend.UI
             if (statusIndicatorText != null)
             {
                 statusIndicatorText.text = isThinking ? "Yuki: Thinking..." : "Yuki: Idle";
+            }
+        }
+
+        private void HandleTranscriptReady(string transcript)
+        {
+            if (talkModeController != null)
+            {
+                talkModeController.ProcessTranscript(transcript);
+            }
+        }
+
+        private void HandleTalkModeStatus(string message)
+        {
+            if (statusIndicatorText != null)
+            {
+                statusIndicatorText.text = message;
+            }
+        }
+
+        private void HandleTalkModeChanged(bool active)
+        {
+            if (micToggleButton != null)
+            {
+                var label = micToggleButton.GetComponentInChildren<TextMeshProUGUI>();
+                if (label != null)
+                {
+                    label.text = active ? "Talk Mode ON" : "Talk Mode";
+                }
             }
         }
     }
