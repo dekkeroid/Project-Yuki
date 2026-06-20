@@ -14,13 +14,25 @@ namespace Yuki.UnityFrontend.Backend
     public sealed class YukiWebSocketClient : MonoBehaviour
     {
         [SerializeField] private YukiBackendConfig config;
+        [SerializeField] private float reconnectMinDelay = 1f;
+        [SerializeField] private float reconnectMaxDelay = 30f;
+        [SerializeField] private int maxReconnectAttempts = 0;
 
         private readonly ConcurrentQueue<YukiBackendEvent> inboundEvents = new();
         private ClientWebSocket socket;
         private CancellationTokenSource lifetime;
+        private int reconnectAttempts;
+        private bool intentionalClose;
+        private bool shouldReconnect = true;
+        private float reconnectDelay;
 
         public event Action<YukiBackendEvent> EventReceived;
+        public event Action OnConnected;
+        public event Action OnDisconnected;
+        public event Action<string> OnConnectionError;
+
         public bool IsConnected => socket != null && socket.State == WebSocketState.Open;
+        public int ReconnectAttempts => reconnectAttempts;
 
         private string WebsocketUrl => config != null ? config.WebsocketUrl : YukiBackendConfig.DefaultWebsocketUrl;
 
@@ -36,14 +48,30 @@ namespace Yuki.UnityFrontend.Backend
         {
             if (IsConnected) return;
 
+            intentionalClose = false;
+
             lifetime?.Cancel();
             lifetime?.Dispose();
             socket?.Dispose();
 
             lifetime = new CancellationTokenSource();
             socket = new ClientWebSocket();
-            await socket.ConnectAsync(new Uri(WebsocketUrl), lifetime.Token);
-            _ = ReceiveLoopAsync(lifetime.Token);
+
+            try
+            {
+                await socket.ConnectAsync(new Uri(WebsocketUrl), lifetime.Token);
+                reconnectAttempts = 0;
+                reconnectDelay = reconnectMinDelay;
+                OnConnected?.Invoke();
+                Debug.Log("[WebSocket] Connected to backend.");
+                _ = ReceiveLoopAsync(lifetime.Token);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[WebSocket] Connection failed: {ex.Message}");
+                OnConnectionError?.Invoke(ex.Message);
+                _ = AttemptReconnect();
+            }
         }
 
         public async Task SendChatAsync(string message)
@@ -70,17 +98,46 @@ namespace Yuki.UnityFrontend.Backend
 
         public async Task SendTtsOnlyAsync(string text, string expression = null)
         {
-            var body = new Dictionary<string, string> { { "type", "tts_only" }, { "text", text } };
+            var body = new System.Collections.Generic.Dictionary<string, string>
+            {
+                { "type", "tts_only" },
+                { "text", text }
+            };
             if (!string.IsNullOrEmpty(expression)) body["expression"] = expression;
             var payload = JsonConvert.SerializeObject(body);
             await SendJsonAsync(payload);
         }
 
+        public void Disconnect()
+        {
+            intentionalClose = true;
+            shouldReconnect = false;
+            lifetime?.Cancel();
+            socket?.Dispose();
+            socket = null;
+            Debug.Log("[WebSocket] Disconnected intentionally.");
+        }
+
         private async Task SendJsonAsync(string payload)
         {
-            if (!IsConnected) throw new InvalidOperationException("Yuki WebSocket is not connected.");
-            var bytes = Encoding.UTF8.GetBytes(payload);
-            await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, lifetime.Token);
+            if (!IsConnected)
+            {
+                Debug.LogWarning("[WebSocket] Cannot send, not connected. Attempting reconnect...");
+                _ = AttemptReconnect();
+                return;
+            }
+
+            try
+            {
+                var bytes = Encoding.UTF8.GetBytes(payload);
+                await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, lifetime.Token);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[WebSocket] Send failed: {ex.Message}");
+                OnConnectionError?.Invoke(ex.Message);
+                _ = AttemptReconnect();
+            }
         }
 
         private async Task ReceiveLoopAsync(CancellationToken token)
@@ -97,7 +154,13 @@ namespace Yuki.UnityFrontend.Backend
                     do
                     {
                         result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token);
-                        if (result.MessageType == WebSocketMessageType.Close) return;
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            Debug.Log("[WebSocket] Server closed connection.");
+                            OnDisconnected?.Invoke();
+                            if (shouldReconnect && !intentionalClose) _ = AttemptReconnect();
+                            return;
+                        }
                         message.Write(buffer, 0, result.Count);
                     }
                     while (!result.EndOfMessage && !token.IsCancellationRequested);
@@ -111,17 +174,55 @@ namespace Yuki.UnityFrontend.Backend
             {
                 // Normal shutdown path.
             }
+            catch (WebSocketException wsEx)
+            {
+                Debug.LogError($"[WebSocket] Connection lost: {wsEx.Message}");
+                OnConnectionError?.Invoke(wsEx.Message);
+                OnDisconnected?.Invoke();
+                if (shouldReconnect && !intentionalClose) _ = AttemptReconnect();
+            }
             catch (Exception ex)
             {
-                Debug.LogError($"Yuki WebSocket receive loop failed: {ex.Message}");
+                Debug.LogError($"[WebSocket] Receive loop failed: {ex.Message}");
+                OnConnectionError?.Invoke(ex.Message);
+                OnDisconnected?.Invoke();
+                if (shouldReconnect && !intentionalClose) _ = AttemptReconnect();
             }
+        }
+
+        private async Task AttemptReconnect()
+        {
+            if (intentionalClose || !shouldReconnect) return;
+            if (IsConnected) return;
+
+            reconnectAttempts++;
+
+            if (maxReconnectAttempts > 0 && reconnectAttempts >= maxReconnectAttempts)
+            {
+                Debug.LogError($"[WebSocket] Max reconnect attempts ({maxReconnectAttempts}) reached. Giving up.");
+                OnConnectionError?.Invoke("Max reconnect attempts reached.");
+                return;
+            }
+
+            float jitter = UnityEngine.Random.Range(0f, reconnectDelay * 0.3f);
+            float delay = Mathf.Min(reconnectDelay + jitter, reconnectMaxDelay);
+
+            Debug.Log($"[WebSocket] Reconnecting in {delay:F1}s (attempt {reconnectAttempts})...");
+            await Task.Delay((int)(delay * 1000));
+
+            reconnectDelay = Mathf.Min(reconnectDelay * 2f, reconnectMaxDelay);
+
+            await ConnectAsync();
         }
 
         private void OnDestroy()
         {
-            lifetime?.Cancel();
-            socket?.Dispose();
-            lifetime?.Dispose();
+            Disconnect();
+        }
+
+        private void OnApplicationQuit()
+        {
+            Disconnect();
         }
     }
 }
