@@ -3,6 +3,8 @@ import urllib.request
 import json
 import re
 import requests
+import httpx
+from bs4 import BeautifulSoup
 from app import config
 
 def get_weather(city: str) -> str:
@@ -48,11 +50,12 @@ def clean_html(html_content: str) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-def web_search(query: str) -> str:
+async def web_search(query: str) -> str:
     """
-    Performs a web search, fetches page content for the top 2 organic URLs,
-    and calls the local LLM to synthesize a direct factual overview.
-    Falls back to organic snippets list on failure.
+    Performs an async web search using DuckDuckGo HTML search, falling back to Yahoo HTML search.
+    It extracts the top 2 organic URLs, fetches their page contents asynchronously in parallel,
+    cleans the markup using BeautifulSoup, and returns a detailed context block (snippets + page content)
+    to the primary LLM for synthesis.
     """
     if not query:
         return "Please specify a query to search for."
@@ -63,143 +66,116 @@ def web_search(query: str) -> str:
         'Accept-Language': 'en-IN,en;q=0.9'
     }
 
-    yahoo_html = None
     urls = []
-
-    # 1. Fetch Yahoo Search HTML and extract top 2 organic URLs
-    yahoo_url = f"https://search.yahoo.com/search?p={encoded_query}"
-    try:
-        req = urllib.request.Request(yahoo_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=4) as response:
-            yahoo_html = response.read().decode('utf-8', errors='ignore')
-            
-            # Find organic links inside class="algo" elements
-            algo_indices = [m.start() for m in re.finditer(r'class="[^"]*algo[^"]*"', yahoo_html)]
-            for i in range(len(algo_indices)):
-                start = algo_indices[i]
-                end = algo_indices[i+1] if i + 1 < len(algo_indices) else len(yahoo_html)
-                end = min(end, start + 3000)
-                sub_html = yahoo_html[start:end]
-                
-                href_match = re.search(r'href="([^"]+)"', sub_html)
-                if href_match:
-                    href = href_match.group(1)
-                    if "r.search.yahoo.com" in href:
-                        ru_match = re.search(r'/RU=([^/]+)/', href)
-                        if ru_match:
-                            href = urllib.parse.unquote(ru_match.group(1))
-                    
-                    if not href.startswith('/') and "yahoo.com" not in href and href not in urls:
-                        urls.append(href)
-                        if len(urls) >= 2:
-                            break
-    except Exception:
-        pass
-
-    # 2. Fetch page content and call local LLM for synthesis
-    if urls:
-        combined_context = ""
-        for idx, u in enumerate(urls):
-            try:
-                # Extract clean website domain name from URL
-                try:
-                    parsed_url = urllib.parse.urlparse(u)
-                    domain = parsed_url.netloc.replace("www.", "")
-                except Exception:
-                    domain = u
-
-                req = urllib.request.Request(u, headers=headers)
-                with urllib.request.urlopen(req, timeout=4) as response:
-                    html = response.read().decode('utf-8', errors='ignore')
-                    cleaned = clean_html(html)
-                    # Limit each page text to 2000 chars to speed up local LLM pre-fill
-                    truncated = cleaned[:2000]
-                    combined_context += f"[Source: {domain}]\n{truncated}\n\n"
-            except Exception:
-                pass  # Skip failed pages but try others
-
-        if combined_context.strip():
-            # Send to LM Studio
-            try:
-                payload = {
-                    "model": config.LLM_MODEL,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are a helpful web search helper. Your task is to look at the provided search page texts and answer the user's query directly and concisely based ONLY on the facts present in the texts. Attribute facts to the source website domain name (e.g. 'wise.com' or 'xe.com') instead of using generic indices. Do not invent any numbers or details. If the texts do not contain the answer, say you don't know."
-                        },
-                        {
-                            "role": "user",
-                            "content": f"User query: {query}\n\nWebpage content:\n{combined_context}"
-                        }
-                    ],
-                    "temperature": 0.1,
-                    "max_tokens": 150
-                }
-                resp = requests.post(f"{config.LMSTUDIO_URL}/v1/chat/completions", json=payload, timeout=25)
-                resp.raise_for_status()
-                resp_data = resp.json()
-                synthesis = resp_data["choices"][0]["message"]["content"].strip()
-                if synthesis and "don't know" not in synthesis.lower() and "do not know" not in synthesis.lower():
-                    return f"[Overview] {synthesis}\n[Sources] ({' | '.join(urls)})"
-            except Exception:
-                pass
-
-    # 3. Fallback: Parse organic snippets from Yahoo HTML if fetched
-    if yahoo_html:
-        try:
-            algo_indices = [m.start() for m in re.finditer(r'class="[^"]*algo[^"]*"', yahoo_html)]
-            results = []
-            for i in range(len(algo_indices)):
-                start = algo_indices[i]
-                end = algo_indices[i+1] if i + 1 < len(algo_indices) else len(yahoo_html)
-                end = min(end, start + 3000)
-                sub_html = yahoo_html[start:end]
-                
-                comp_match = re.search(r'<div[^>]*class="[^"]*compText[^"]*"[^>]*>(.*?)</div>', sub_html, re.DOTALL)
-                if comp_match:
-                    clean = re.sub(r'<[^>]+>', '', comp_match.group(1)).strip()
-                    clean = clean.replace("&quot;", '"').replace("&amp;", "&").replace("&apos;", "'").replace("&#x27;", "'").replace("&#x2F;", "/")
-                    clean = re.sub(r'\s+', ' ', clean)
-                    if "Innovative ETP Provider" in clean or "Get In Touch" in clean or "More about" in clean or len(clean) < 30:
-                        continue
-                    results.append(clean)
-                    if len(results) >= 4:
-                        break
-            if results:
-                snippet_text = "\n".join([f"- {r}" for r in results])
-                if urls:
-                    return f"{snippet_text}\n[Sources] ({' | '.join(urls)})"
-                return snippet_text
-        except Exception:
-            pass
-
-    # 4. Secondary Fallback: Query DuckDuckGo HTML for snippets
+    snippets_list = []
+    
+    # 1. Try DuckDuckGo HTML Search
     ddg_url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
     try:
-        req = urllib.request.Request(ddg_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=4) as response:
-            html = response.read().decode('utf-8', errors='ignore')
-            if "anomaly" not in html and "captcha" not in html.lower():
-                snippets = re.findall(r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>', html, re.DOTALL)
-                if snippets:
-                    results = []
-                    for s in snippets:
-                        clean = re.sub(r'<[^>]+>', '', s).strip()
-                        clean = clean.replace("&quot;", '"').replace("&amp;", "&").replace("&apos;", "'").replace("&#x27;", "'").replace("&#x2F;", "/")
-                        clean = re.sub(r'\s+', ' ', clean)
-                        if len(clean) < 20:
-                            continue
-                        results.append(clean)
-                        if len(results) >= 4:
-                            break
-                    if results:
-                        snippet_text = "\n".join([f"- {r}" for r in results])
-                        if urls:
-                            return f"{snippet_text}\n[Sources] ({' | '.join(urls)})"
-                        return snippet_text
-    except Exception:
-        pass
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(ddg_url, headers=headers, timeout=5.0)
+            if resp.status_code == 200 and "captcha" not in resp.text.lower() and "anomaly" not in resp.text.lower():
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for result in soup.find_all(class_="result")[:4]:
+                    link_el = result.find("a", class_="result__a")
+                    desc_el = result.find(class_="result__snippet")
+                    if link_el and desc_el:
+                        title = link_el.get_text(strip=True)
+                        href = link_el.get("href", "")
+                        desc = desc_el.get_text(strip=True)
+                        
+                        # Decode DDG redirect URL
+                        parsed = urllib.parse.urlparse(href)
+                        qs = urllib.parse.parse_qs(parsed.query)
+                        real_url = qs.get("uddg", [href])[0]
+                        if real_url.startswith("//"):
+                            real_url = "https:" + real_url
+                            
+                        if real_url and real_url not in urls and not real_url.startswith("/"):
+                            urls.append(real_url)
+                        
+                        snippets_list.append(f"- {title}: {desc} ({real_url})")
+    except Exception as e:
+        import sys
+        print(f"[web_search] DDG attempt failed: {e}", file=sys.stderr)
 
-    return f"No direct search results found for '{query}'."
+    # 2. Fallback: Try Yahoo Search if DDG failed or returned nothing
+    if not urls:
+        yahoo_url = f"https://search.yahoo.com/search?p={encoded_query}"
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(yahoo_url, headers=headers, timeout=5.0)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    for algo in soup.find_all("div", class_=lambda c: c and "algo" in c)[:4]:
+                        link_el = algo.find("a")
+                        desc_el = algo.find("div", class_=lambda c: c and "compText" in c)
+                        if link_el and desc_el:
+                            title = link_el.get_text(strip=True)
+                            href = link_el.get("href", "")
+                            desc = desc_el.get_text(strip=True)
+                            
+                            # Clean up Yahoo redirect URLs if needed
+                            if "r.search.yahoo.com" in href:
+                                ru_match = re.search(r'/RU=([^/]+)/', href)
+                                if ru_match:
+                                    href = urllib.parse.unquote(ru_match.group(1))
+                            
+                            if href and href not in urls and "yahoo.com" not in href:
+                                urls.append(href)
+                            snippets_list.append(f"- {title}: {desc} ({href})")
+        except Exception as e:
+            import sys
+            print(f"[web_search] Yahoo attempt failed: {e}", file=sys.stderr)
+
+    if not snippets_list:
+        return f"No search results found for '{query}'."
+
+    # 3. Asynchronously fetch top 2 organic page contents in parallel
+    top_urls = urls[:2]
+    page_contents = []
+
+    async def fetch_page(url: str):
+        try:
+            parsed_url = urllib.parse.urlparse(url)
+            domain = parsed_url.netloc.replace("www.", "")
+        except Exception:
+            domain = url
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers=headers, follow_redirects=True, timeout=6.0)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    # Remove scripts, styles, header, footer, nav to get clean content
+                    for element in soup(["script", "style", "header", "footer", "nav", "aside"]):
+                        element.decompose()
+                    
+                    text = soup.get_text(separator=" ")
+                    # Clean whitespaces
+                    cleaned_text = re.sub(r'\s+', ' ', text).strip()
+                    # Truncate to speed up context loading
+                    truncated = cleaned_text[:2000]
+                    return f"[Source: {domain} ({url})]\n{truncated}"
+        except Exception as e:
+            import sys
+            print(f"[web_search] Failed to fetch {url}: {e}", file=sys.stderr)
+        return None
+
+    if top_urls:
+        import asyncio
+        tasks = [fetch_page(u) for u in top_urls]
+        fetched = await asyncio.gather(*tasks)
+        page_contents = [f for f in fetched if f]
+
+    # 4. Compile final context for the LLM
+    context_parts = []
+    context_parts.append(f"Web search results for: \"{query}\"")
+    context_parts.append("Snippets:\n" + "\n".join(snippets_list))
+    
+    if page_contents:
+        context_parts.append("\nDetailed Page Contents:\n" + "\n\n".join(page_contents))
+    
+    return "\n\n".join(context_parts)
+
 

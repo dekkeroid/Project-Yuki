@@ -113,6 +113,11 @@ class AgentExecutor:
     def __init__(self, memory_manager: MemoryManager):
         self.memory = memory_manager
         
+        async def _async_web_search(**kwargs):
+            return await web_search(
+                query=kwargs.get("query") or kwargs.get("search") or kwargs.get("text") or (list(kwargs.values())[0] if kwargs else "")
+            )
+        
         # Map tool names to python functions
         self.tools = {
             "get_system_stats": get_system_stats,
@@ -194,9 +199,7 @@ class AgentExecutor:
                 kwargs.get("action") or "",
                 confirmed=bool(kwargs.get("confirmed", False))
             ),
-            "web_search": lambda **kwargs: web_search(
-                query=kwargs.get("query") or kwargs.get("search") or kwargs.get("text") or (list(kwargs.values())[0] if kwargs else "")
-            )
+            "web_search": _async_web_search
         }
         self.mcp_tools = StdioMCPToolBridge(get_tools_definition, get_filtered_tools)
 

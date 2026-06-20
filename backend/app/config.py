@@ -1,6 +1,9 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 # Base Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROFILE_PATH = BASE_DIR / "profile.json"
