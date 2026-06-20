@@ -1570,25 +1570,25 @@ const AvatarViewer = ({
             const chest = getBoneNode(vrm, 'chest');
             if (chest) {
               if (dragStateProgress > 0) {
-                chest.rotation.x = dragPitchAngle * 0.3;
+                chest.rotation.x = dragPitchAngle * 0.3 * xMult;
                 chest.rotation.y = 0;
-                chest.rotation.z = dragSwayAngle * 0.3;
+                chest.rotation.z = dragSwayAngle * 0.3 * zMult;
               } else {
-                chest.rotation.x = chestOffsetX + 0.015 + Math.sin(time * breathingSpeed) * breathingDepth + Math.sin(time * breathingSpeed * 2) * (breathingDepth * 0.25);
-                chest.rotation.y = Math.sin(time * 0.3) * 0.01;       // slow sway
+                chest.rotation.x = (chestOffsetX + 0.015 + Math.sin(time * breathingSpeed) * breathingDepth + Math.sin(time * breathingSpeed * 2) * (breathingDepth * 0.25)) * xMult;
+                chest.rotation.y = Math.sin(time * 0.3) * 0.01 * yMult;       // slow sway
               }
             }
 
             const spine = getBoneNode(vrm, 'spine');
             if (spine) {
               if (dragStateProgress > 0) {
-                spine.rotation.x = dragPitchAngle * 0.45;
+                spine.rotation.x = dragPitchAngle * 0.45 * xMult;
                 spine.rotation.y = 0;
-                spine.rotation.z = dragSwayAngle * 0.45;
+                spine.rotation.z = dragSwayAngle * 0.45 * zMult;
               } else {
-                spine.rotation.x = spineOffsetX;                      // stretch bend back
-                spine.rotation.y = Math.sin(time * 0.25) * 0.012;     // spine sway
-                spine.rotation.z = Math.cos(time * 0.2) * 0.006;
+                spine.rotation.x = spineOffsetX * xMult;                      // stretch bend back
+                spine.rotation.y = Math.sin(time * 0.25) * 0.012 * yMult;     // spine sway
+                spine.rotation.z = Math.cos(time * 0.2) * 0.006 * zMult;
               }
             }
 
@@ -1728,9 +1728,9 @@ const AvatarViewer = ({
               // Hips rotation and sway
               const hips = getBoneNode(vrm, 'hips');
               if (hips) {
-                hips.rotation.y = Math.sin(walkTime) * 0.06; // horizontal twist
-                hips.rotation.z = Math.cos(walkTime) * 0.03; // side sway matching weight shift
-                hips.position.x = Math.cos(walkTime) * 0.015;
+                hips.rotation.y = Math.sin(walkTime) * 0.06 * yMult; // horizontal twist
+                hips.rotation.z = Math.cos(walkTime) * 0.03 * zMult; // side sway matching weight shift
+                hips.position.x = Math.cos(walkTime) * 0.015 * zMult; // local X slide flip
               }
 
               // Smooth body bobbing (twice per step cycle)
@@ -1756,16 +1756,16 @@ const AvatarViewer = ({
               const hips = getBoneNode(vrm, 'hips');
               if (hips) {
                 if (isSleeping) {
-                  hips.rotation.z = 0.005;
+                  hips.rotation.z = 0.005 * zMult;
                   hips.position.x = 0;
                 } else if (dragStateProgress > 0) {
                   // Apply inertial side sway and forward/backward tilt
-                  hips.rotation.z = dragSwayAngle * 0.6;
-                  hips.rotation.x = dragPitchAngle * 0.5;
-                  hips.position.x = dragSwayAngle * 0.1;
+                  hips.rotation.z = dragSwayAngle * 0.6 * zMult;
+                  hips.rotation.x = dragPitchAngle * 0.5 * xMult;
+                  hips.position.x = dragSwayAngle * 0.1 * zMult; // local X slide flip
                 } else {
-                  hips.rotation.z = shiftCycle * 0.025; // hips tilt
-                  hips.position.x = shiftCycle * 0.015; // hips slide
+                  hips.rotation.z = shiftCycle * 0.025 * zMult; // hips tilt
+                  hips.position.x = shiftCycle * 0.015 * zMult; // hips slide flip
                 }
               }
 
@@ -1992,11 +1992,11 @@ const AvatarViewer = ({
                     // Bend joint on Z-axis (standard VRM humanoid finger bend axis)
                     // Distal joint (2) bends slightly less
                     const jointFactor = jIndex === 2 ? 0.75 : 1.0;
-                    joint.rotation.z = sideSign * finalCurl * jointFactor;
+                    joint.rotation.z = sideSign * finalCurl * jointFactor * zMult;
 
                     // Slightly rotate the thumb on Y/X to curl inwards naturally
                     if (finger === 'thumb' && jIndex === 0) {
-                      joint.rotation.y = sideSign * 0.06 * (1.0 - dragMultiplier);
+                      joint.rotation.y = sideSign * 0.06 * (1.0 - dragMultiplier) * yMult;
                     }
                   });
                 });
