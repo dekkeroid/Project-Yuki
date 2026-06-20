@@ -68,6 +68,14 @@ namespace Yuki.UnityFrontend.Backend
             await SendJsonAsync(payload);
         }
 
+        public async Task SendTtsOnlyAsync(string text, string expression = null)
+        {
+            var body = new Dictionary<string, string> { { "type", "tts_only" }, { "text", text } };
+            if (!string.IsNullOrEmpty(expression)) body["expression"] = expression;
+            var payload = JsonConvert.SerializeObject(body);
+            await SendJsonAsync(payload);
+        }
+
         private async Task SendJsonAsync(string payload)
         {
             if (!IsConnected) throw new InvalidOperationException("Yuki WebSocket is not connected.");

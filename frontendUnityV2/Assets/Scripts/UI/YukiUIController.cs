@@ -18,6 +18,7 @@ namespace Yuki.UnityFrontend.UI
         [SerializeField] private YukiAudioPlaybackManager audioManager;
         [SerializeField] private YukiAvatarPresenter avatarPresenter;
         [SerializeField] private YukiChatController chatController;
+        [SerializeField] private YukiSlashCommandHandler slashCommandHandler;
 
         [Header("Overlay - Chat & Input")]
         [SerializeField] private TMP_InputField chatInputField;
@@ -84,6 +85,13 @@ namespace Yuki.UnityFrontend.UI
 
             if (volumeSlider != null) volumeSlider.onValueChanged.AddListener(OnVolumeSliderChanged);
             if (muteToggle != null) muteToggle.onValueChanged.AddListener(OnMuteToggleChanged);
+
+            if (slashCommandHandler != null)
+            {
+                slashCommandHandler.OnResponseText += SpeakSystemMessage;
+                slashCommandHandler.OnAddMessage += AddChatMessage;
+                slashCommandHandler.OnSetThinking += HandleSetThinking;
+            }
         }
 
         private void OnDisable()
@@ -101,6 +109,13 @@ namespace Yuki.UnityFrontend.UI
             if (toggleDashboardButton != null) toggleDashboardButton.onClick.RemoveListener(ToggleDashboardPanel);
             if (approveSafetyButton != null) approveSafetyButton.onClick.RemoveListener(ApproveActiveConfirmation);
             if (rejectSafetyButton != null) rejectSafetyButton.onClick.RemoveListener(RejectActiveConfirmation);
+
+            if (slashCommandHandler != null)
+            {
+                slashCommandHandler.OnResponseText -= SpeakSystemMessage;
+                slashCommandHandler.OnAddMessage -= AddChatMessage;
+                slashCommandHandler.OnSetThinking -= HandleSetThinking;
+            }
         }
 
         private void Start()
@@ -389,6 +404,12 @@ namespace Yuki.UnityFrontend.UI
                 }
             }
 
+            if (slashCommandHandler != null && slashCommandHandler.IsKnownCommand(text))
+            {
+                slashCommandHandler.TryHandleCommand(text);
+                return;
+            }
+
             if (chatController != null)
             {
                 chatController.SendUserMessage(text);
@@ -407,14 +428,27 @@ namespace Yuki.UnityFrontend.UI
                 return;
             }
 
-            if (inputVal.StartsWith("/open ") || inputVal.StartsWith("/play "))
+            if (inputVal.StartsWith("/open ") || inputVal.StartsWith("/play ") || inputVal.StartsWith("/o ") || inputVal.StartsWith("/p "))
             {
-                string query = inputVal.Substring(6).Trim();
-                bool playMode = inputVal.StartsWith("/play ");
+                string[] parts = inputVal.Split(' ', 2);
+                if (parts.Length < 2 || string.IsNullOrEmpty(parts[1].Trim())) return;
+
+                string cmd = parts[0].ToLower();
+                string query = parts[1].Trim();
+                bool playMode = cmd is "/play" or "/p";
+
                 if (!string.IsNullOrEmpty(query))
                 {
                     StopAllCoroutines();
                     StartCoroutine(FetchSuggestionsCoroutine(query, playMode));
+                }
+            }
+            else if (slashCommandHandler != null && inputVal.Length >= 2)
+            {
+                var matches = slashCommandHandler.GetMatchingCommands(inputVal);
+                if (matches.Count > 0)
+                {
+                    Debug.Log($"[UIController] Command suggestions: {string.Join(", ", matches)}");
                 }
             }
         }
@@ -422,7 +456,8 @@ namespace Yuki.UnityFrontend.UI
         private System.Collections.IEnumerator FetchSuggestionsCoroutine(string query, bool playMode)
         {
             string type = playMode ? "play" : "open";
-            string url = $"{YukiRestClient.HttpBaseUrl}/api/system/suggestions?query={Uri.EscapeDataString(query)}&type={type}";
+            string baseUrl = restClient != null ? restClient.HttpBaseUrl : "http://127.0.0.1:8000";
+            string url = $"{baseUrl}/api/system/suggestions?query={Uri.EscapeDataString(query)}&type={type}";
             using var req = UnityEngine.Networking.UnityWebRequest.Get(url);
             yield return req.SendWebRequest();
 
@@ -462,12 +497,11 @@ namespace Yuki.UnityFrontend.UI
             }
         }
 
-        private async void ApproveActiveConfirmation()
+        private void ApproveActiveConfirmation()
         {
-            if (string.IsNullOrEmpty(activeConfirmationId)) return;
-            if (webSocketClient != null && webSocketClient.IsConnected)
+            if (slashCommandHandler != null)
             {
-                await webSocketClient.SendConfirmationAsync(activeConfirmationId, true);
+                slashCommandHandler.ApproveConfirmation();
             }
             activeConfirmationId = string.Empty;
             if (safetyDialogPanel != null) safetyDialogPanel.SetActive(false);
@@ -475,13 +509,58 @@ namespace Yuki.UnityFrontend.UI
 
         private async void RejectActiveConfirmation()
         {
-            if (string.IsNullOrEmpty(activeConfirmationId)) return;
-            if (webSocketClient != null && webSocketClient.IsConnected)
+            if (slashCommandHandler != null)
             {
-                await webSocketClient.SendConfirmationAsync(activeConfirmationId, false);
+                slashCommandHandler.RejectConfirmation();
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(activeConfirmationId) && webSocketClient != null && webSocketClient.IsConnected)
+                {
+                    await webSocketClient.SendConfirmationAsync(activeConfirmationId, false);
+                }
             }
             activeConfirmationId = string.Empty;
             if (safetyDialogPanel != null) safetyDialogPanel.SetActive(false);
+        }
+
+        private void AddChatMessage(string role, string content)
+        {
+            if (role == "user")
+            {
+                if (speechBubbleContainer != null) speechBubbleContainer.SetActive(false);
+                return;
+            }
+
+            if (speechBubbleContainer != null) speechBubbleContainer.SetActive(true);
+            if (speechBubbleText != null)
+            {
+                speechBubbleText.text = content;
+            }
+        }
+
+        private async void SpeakSystemMessage(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+
+            if (speechBubbleContainer != null) speechBubbleContainer.SetActive(true);
+            if (speechBubbleText != null)
+            {
+                speechBubbleText.text = text;
+            }
+
+            if (webSocketClient != null && webSocketClient.IsConnected)
+            {
+                await webSocketClient.SendTtsOnlyAsync(text);
+            }
+        }
+
+        private void HandleSetThinking(bool isThinking)
+        {
+            if (statusIndicatorText != null)
+            {
+                statusIndicatorText.text = isThinking ? "Yuki: Thinking..." : "Yuki: Idle";
+            }
         }
     }
 }

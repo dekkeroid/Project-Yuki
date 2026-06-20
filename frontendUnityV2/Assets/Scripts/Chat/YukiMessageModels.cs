@@ -66,6 +66,147 @@ namespace Yuki.UnityFrontend.Chat
         public double ResponseTime { get; set; }
     }
 
+    public sealed class YukiPcStatResponse
+    {
+        [JsonProperty("cpu")]
+        public YukiCpuStat Cpu { get; set; }
+
+        [JsonProperty("ram")]
+        public YukiRamStat Ram { get; set; }
+
+        [JsonProperty("gpus")]
+        public List<YukiGpuStat> Gpus { get; set; } = new();
+
+        [JsonProperty("battery")]
+        public YukiBatteryStat Battery { get; set; }
+
+        [JsonProperty("disk")]
+        public YukiDiskStat Disk { get; set; }
+
+        [JsonProperty("uptime")]
+        public YukiUptimeStat Uptime { get; set; }
+
+        [JsonProperty("os")]
+        public string Os { get; set; } = string.Empty;
+    }
+
+    public sealed class YukiCpuStat
+    {
+        [JsonProperty("usage_percent")]
+        public float UsagePercent { get; set; }
+
+        [JsonProperty("cores_logical")]
+        public int CoresLogical { get; set; }
+
+        [JsonProperty("freq_mhz")]
+        public float FreqMhz { get; set; }
+
+        [JsonProperty("error")]
+        public string Error { get; set; }
+    }
+
+    public sealed class YukiRamStat
+    {
+        [JsonProperty("used_gb")]
+        public float UsedGb { get; set; }
+
+        [JsonProperty("total_gb")]
+        public float TotalGb { get; set; }
+
+        [JsonProperty("usage_percent")]
+        public float UsagePercent { get; set; }
+
+        [JsonProperty("error")]
+        public string Error { get; set; }
+    }
+
+    public sealed class YukiGpuStat
+    {
+        [JsonProperty("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonProperty("has_metrics")]
+        public bool HasMetrics { get; set; }
+
+        [JsonProperty("utilization_percent")]
+        public float UtilizationPercent { get; set; }
+
+        [JsonProperty("temp_c")]
+        public float TempC { get; set; }
+
+        [JsonProperty("mem_used_mb")]
+        public float MemUsedMb { get; set; }
+
+        [JsonProperty("mem_total_mb")]
+        public float MemTotalMb { get; set; }
+    }
+
+    public sealed class YukiBatteryStat
+    {
+        [JsonProperty("percent")]
+        public float Percent { get; set; }
+
+        [JsonProperty("charging")]
+        public bool Charging { get; set; }
+
+        [JsonProperty("discharging")]
+        public bool Discharging { get; set; }
+
+        [JsonProperty("charge_rate_mw")]
+        public float ChargeRateMw { get; set; }
+
+        [JsonProperty("discharge_rate_mw")]
+        public float DischargeRateMw { get; set; }
+
+        [JsonProperty("error")]
+        public string Error { get; set; }
+    }
+
+    public sealed class YukiDiskStat
+    {
+        [JsonProperty("used_gb")]
+        public float UsedGb { get; set; }
+
+        [JsonProperty("total_gb")]
+        public float TotalGb { get; set; }
+
+        [JsonProperty("usage_percent")]
+        public float UsagePercent { get; set; }
+
+        [JsonProperty("error")]
+        public string Error { get; set; }
+    }
+
+    public sealed class YukiUptimeStat
+    {
+        [JsonProperty("hours")]
+        public int Hours { get; set; }
+
+        [JsonProperty("minutes")]
+        public int Minutes { get; set; }
+
+        [JsonProperty("error")]
+        public string Error { get; set; }
+    }
+
+    public sealed class YukiOpenPlayResponse
+    {
+        [JsonProperty("status")]
+        public string Status { get; set; } = string.Empty;
+
+        [JsonProperty("result")]
+        public string Result { get; set; } = string.Empty;
+
+        [JsonProperty("error")]
+        public string Error { get; set; } = string.Empty;
+
+        [JsonProperty("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonProperty("pending_confirmation_id")]
+        public string PendingConfirmationId { get; set; } = string.Empty;
+    }
+
     public sealed class YukiChatRequest
     {
         [JsonProperty("type")]
