@@ -338,10 +338,6 @@ const AvatarViewer = ({
           return;
         }
 
-        const extensionsUsed = gltf.parser?.json?.extensionsUsed || [];
-        const isVRM1 = extensionsUsed.some(ext => ext.includes('VRMC_vrm'));
-        vrm.isVRM1 = isVRM1;
-
         vrmRef.current = vrm;
         setHasVrm(true);
         setLoading(false);
@@ -378,7 +374,7 @@ const AvatarViewer = ({
 
         // Turn around the avatar to face the camera
         if (vrm.scene) {
-          vrm.scene.rotation.y = isVRM1 ? 0 : Math.PI;
+          vrm.scene.rotation.y = Math.PI;
 
           // Disable frustum culling so hair/clothing doesn't clip
           vrm.scene.traverse((obj) => {
@@ -1358,23 +1354,18 @@ const AvatarViewer = ({
         // Animate VRM Avatar
         if (vrmRef.current) {
           const vrm = vrmRef.current;
-          const isVRM1 = !!vrm.isVRM1;
-          const xMult = isVRM1 ? -1 : 1;
-          const zMult = isVRM1 ? -1 : 1;
-          const yMult = 1;
           const isSleeping = systemIdleTimeRef.current > 180;
 
           // Apply dynamic scale
           vrm.scene.scale.set(scaleRef.current, scaleRef.current, scaleRef.current);
 
           // Smooth rotation to face walk direction
-          const baseRotation = isVRM1 ? 0 : Math.PI;
-          let targetRotation = baseRotation; // default facing forward
+          let targetRotation = Math.PI; // default facing forward
           if (isWalkingRef.current) {
             if (walkDirectionRef.current === -1) {
-              targetRotation = baseRotation - 0.7; // angle left
+              targetRotation = Math.PI - 0.7; // angle left
             } else if (walkDirectionRef.current === 1) {
-              targetRotation = baseRotation + 0.7; // angle right
+              targetRotation = Math.PI + 0.7; // angle right
             }
           }
           vrm.scene.rotation.y += (targetRotation - vrm.scene.rotation.y) * 0.15;
@@ -1595,13 +1586,13 @@ const AvatarViewer = ({
             if (neck) {
               if (isSleeping) {
                 // Slump forward and slightly sideways when sleeping
-                neck.rotation.x = -0.25 * xMult;
-                neck.rotation.z = 0.03 * zMult;
-                neck.rotation.y = (Math.sin(time * 0.15) * 0.04) * yMult;
+                neck.rotation.x = -0.25;
+                neck.rotation.z = 0.03;
+                neck.rotation.y = Math.sin(time * 0.15) * 0.04;
               } else if (dragStateProgress > 0) {
                 // Head sway leans with movement but stabilizes looking forward
-                neck.rotation.x = (dragPitchAngle * 0.5 - 0.04) * xMult;
-                neck.rotation.z = (dragSwayAngle * 0.5) * zMult;
+                neck.rotation.x = dragPitchAngle * 0.5 - 0.04;
+                neck.rotation.z = dragSwayAngle * 0.5;
                 neck.rotation.y = 0;
               } else {
                 let neckAnimX = 0;
@@ -1624,11 +1615,11 @@ const AvatarViewer = ({
                   neckAnimX = -0.06 * easeVal + Math.sin(time * 22.0) * 0.03 * easeVal;
                 }
 
-                neck.rotation.y = (currentLookY + Math.sin(time * 0.5) * 0.012 + microFidgetNeckY + neckAnimY) * yMult;
+                neck.rotation.y = currentLookY + Math.sin(time * 0.5) * 0.012 + microFidgetNeckY + neckAnimY;
 
                 // Baseline chest-nudge neck compensation (head nods down slightly when chest expands)
                 const breathingNod = Math.sin(time * breathingSpeed) * (breathingDepth * 0.3);
-                neck.rotation.x = (-0.12 + neckOffsetX + currentLookX + Math.sin(time * 0.35) * 0.012 - breathingNod + microFidgetNeckX + neckAnimX) * xMult;
+                neck.rotation.x = -0.12 + neckOffsetX + currentLookX + Math.sin(time * 0.35) * 0.012 - breathingNod + microFidgetNeckX + neckAnimX;
 
                 // Head Tilts for Empathy (Z-roll) & Curious Thinking
                 let tiltZ = microFidgetNeckZ + neckAnimZ;
@@ -1641,8 +1632,8 @@ const AvatarViewer = ({
                   tiltX = -0.07; // look up slightly to think
                 }
 
-                neck.rotation.z = tiltZ * zMult;
-                neck.rotation.x += tiltX * xMult;
+                neck.rotation.z = tiltZ;
+                neck.rotation.x += tiltX;
               }
             }
 
@@ -1670,8 +1661,8 @@ const AvatarViewer = ({
               }
 
               const finalLift = shoulderLift + stretchShrug;
-              leftClavicle.rotation.z = finalLift * zMult;
-              rightClavicle.rotation.z = -finalLift * zMult;
+              leftClavicle.rotation.z = finalLift;
+              rightClavicle.rotation.z = -finalLift;
 
               // Subtle rotation on X-axis (tilting back on breath)
               leftClavicle.rotation.x = -finalLift * 0.35;
@@ -1685,10 +1676,10 @@ const AvatarViewer = ({
               const eyeYaw = currentGazeY * 0.15 + saccadeY;
               const eyePitch = currentGazeX * 0.15 - 0.03 + saccadeX;
 
-              leftEye.rotation.y = eyeYaw * yMult;
-              leftEye.rotation.x = eyePitch * xMult;
-              rightEye.rotation.y = eyeYaw * yMult;
-              rightEye.rotation.x = eyePitch * xMult;
+              leftEye.rotation.y = eyeYaw;
+              leftEye.rotation.x = eyePitch;
+              rightEye.rotation.y = eyeYaw;
+              rightEye.rotation.x = eyePitch;
             }
 
             // Arm and Leg bones for walking/standing animation
@@ -1715,13 +1706,13 @@ const AvatarViewer = ({
               // Contralateral arm swings (opposite to legs)
               if (leftShoulder) {
                 leftShoulder.rotation.x = 0.15 - Math.sin(walkTime) * 0.25; // opposite to left leg swing
-                leftShoulder.rotation.y = 0.08 * yMult;
-                leftShoulder.rotation.z = (1.22 + Math.cos(walkTime) * 0.05) * zMult; // slight arm drift
+                leftShoulder.rotation.y = 0.08;
+                leftShoulder.rotation.z = 1.22 + Math.cos(walkTime) * 0.05; // slight arm drift
               }
               if (rightShoulder) {
                 rightShoulder.rotation.x = 0.15 + Math.sin(walkTime) * 0.25; // opposite to right leg swing
-                rightShoulder.rotation.y = -0.08 * yMult;
-                rightShoulder.rotation.z = (-1.22 + Math.cos(walkTime) * 0.05) * zMult;
+                rightShoulder.rotation.y = -0.08;
+                rightShoulder.rotation.z = -1.22 + Math.cos(walkTime) * 0.05;
               }
 
               // Hips rotation and sway
@@ -1798,23 +1789,23 @@ const AvatarViewer = ({
                 if (isSleeping) {
                   // Left arm hangs loose and limp
                   leftShoulder.rotation.x = 0.06;
-                  leftShoulder.rotation.y = 0.04 * yMult;
-                  leftShoulder.rotation.z = 1.15 * zMult;
+                  leftShoulder.rotation.y = 0.04;
+                  leftShoulder.rotation.z = 1.15;
                 } else if (dragStateProgress > 0) {
                   // Left arm raises up sideways and sways
                   leftShoulder.rotation.x = 0.15 + dragPitchAngle * 0.5;
-                  leftShoulder.rotation.y = 0.08 * yMult;
-                  leftShoulder.rotation.z = ((1.25 - 0.45 * dragStateProgress) + Math.sin(dragDangleTimer * 0.8) * 0.08 * dragStateProgress) * zMult;
+                  leftShoulder.rotation.y = 0.08;
+                  leftShoulder.rotation.z = (1.25 - 0.45 * dragStateProgress) + Math.sin(dragDangleTimer * 0.8) * 0.08 * dragStateProgress;
                 } else if (idleAnimState === 'pouting') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
                   leftShoulder.rotation.x = 0.35 * easeVal + 0.15 * (1 - easeVal);
-                  leftShoulder.rotation.y = (0.45 * easeVal + 0.08 * (1 - easeVal)) * yMult;
-                  leftShoulder.rotation.z = (1.05 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                  leftShoulder.rotation.y = 0.45 * easeVal + 0.08 * (1 - easeVal);
+                  leftShoulder.rotation.z = 1.05 * easeVal + 1.25 * (1 - easeVal);
                 } else {
                   leftShoulder.rotation.x = 0.15 + Math.sin(time * 1.4) * 0.008;
-                  leftShoulder.rotation.y = 0.08 * yMult;
-                  leftShoulder.rotation.z = (leftArmOffsetZ + 1.25 + Math.sin(time * 1.4) * 0.012 - shiftCycle * 0.01) * zMult;
+                  leftShoulder.rotation.y = 0.08;
+                  leftShoulder.rotation.z = leftArmOffsetZ + 1.25 + Math.sin(time * 1.4) * 0.012 - shiftCycle * 0.01;
                 }
               }
 
@@ -1823,35 +1814,35 @@ const AvatarViewer = ({
                   // Perform screen knocking pose and animation (raise arm forward and tap)
                   const easeVal = Math.sin((knockTimer / knockDuration) * Math.PI);
                   rightShoulder.rotation.x = 0.8 * easeVal + 0.15 * (1 - easeVal);
-                  rightShoulder.rotation.y = (0.4 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  rightShoulder.rotation.z = (-1.0 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  rightShoulder.rotation.y = 0.4 * easeVal - 0.08 * (1 - easeVal);
+                  rightShoulder.rotation.z = -1.0 * easeVal - 1.25 * (1 - easeVal);
                 } else if (isSleeping) {
                   // Right arm hangs loose and limp
                   rightShoulder.rotation.x = 0.06;
-                  rightShoulder.rotation.y = -0.04 * yMult;
-                  rightShoulder.rotation.z = -1.15 * zMult;
+                  rightShoulder.rotation.y = -0.04;
+                  rightShoulder.rotation.z = -1.15;
                 } else if (dragStateProgress > 0) {
                   // Right arm raises up sideways and sways (out of phase)
                   rightShoulder.rotation.x = 0.15 + dragPitchAngle * 0.5;
-                  rightShoulder.rotation.y = -0.08 * yMult;
-                  rightShoulder.rotation.z = ((-1.25 + 0.45 * dragStateProgress) + Math.cos(dragDangleTimer * 0.8) * 0.08 * dragStateProgress) * zMult;
+                  rightShoulder.rotation.y = -0.08;
+                  rightShoulder.rotation.z = (-1.25 + 0.45 * dragStateProgress) + Math.cos(dragDangleTimer * 0.8) * 0.08 * dragStateProgress;
                 } else if (idleAnimState === 'greeting_wave') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
                   // Lift arm up and outwards naturally (Z = -0.4) and twist palm forward (Y = 0.7)
                   rightShoulder.rotation.x = 0.3 * easeVal + 0.15 * (1 - easeVal);
-                  rightShoulder.rotation.y = (0.7 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  rightShoulder.rotation.z = (-0.4 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  rightShoulder.rotation.y = 0.7 * easeVal - 0.08 * (1 - easeVal);
+                  rightShoulder.rotation.z = -0.4 * easeVal - 1.25 * (1 - easeVal);
                 } else if (idleAnimState === 'pouting') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
                   rightShoulder.rotation.x = 0.35 * easeVal + 0.15 * (1 - easeVal);
-                  rightShoulder.rotation.y = (-0.45 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  rightShoulder.rotation.z = (-1.05 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  rightShoulder.rotation.y = -0.45 * easeVal - 0.08 * (1 - easeVal);
+                  rightShoulder.rotation.z = -1.05 * easeVal - 1.25 * (1 - easeVal);
                 } else {
                   rightShoulder.rotation.x = 0.15 + Math.sin(time * 1.4) * 0.008;
-                  rightShoulder.rotation.y = -0.08 * yMult;
-                  rightShoulder.rotation.z = (rightArmOffsetZ - 1.25 - Math.sin(time * 1.4) * 0.012 + shiftCycle * 0.01) * zMult;
+                  rightShoulder.rotation.y = -0.08;
+                  rightShoulder.rotation.z = rightArmOffsetZ - 1.25 - Math.sin(time * 1.4) * 0.012 + shiftCycle * 0.01;
                 }
               }
 
@@ -1862,22 +1853,22 @@ const AvatarViewer = ({
 
                 if (leftLeg) {
                   leftLeg.rotation.x = 0.1 + dangleSwingLeft + dragPitchAngle * 0.4;
-                  leftLeg.rotation.z = -0.05 * dragStateProgress * zMult;
+                  leftLeg.rotation.z = -0.05 * dragStateProgress;
                 }
                 if (rightLeg) {
                   rightLeg.rotation.x = 0.1 + dangleSwingRight + dragPitchAngle * 0.4;
-                  rightLeg.rotation.z = 0.05 * dragStateProgress * zMult;
+                  rightLeg.rotation.z = 0.05 * dragStateProgress;
                 }
                 if (leftLowerLeg) leftLowerLeg.rotation.x = (0.25 + Math.sin(dragDangleTimer * 1.3) * 0.08) * dragStateProgress;
                 if (rightLowerLeg) rightLowerLeg.rotation.x = (0.25 + Math.cos(dragDangleTimer * 1.3 + 0.3) * 0.08) * dragStateProgress;
               } else {
                 if (leftLeg) {
                   leftLeg.rotation.x = isSleeping ? 0.02 : Math.max(0, shiftCycle) * 0.06;
-                  leftLeg.rotation.z = floatLegAngle * zMult;
+                  leftLeg.rotation.z = floatLegAngle;
                 }
                 if (rightLeg) {
                   rightLeg.rotation.x = isSleeping ? 0.02 : Math.max(0, -shiftCycle) * 0.06;
-                  rightLeg.rotation.z = -floatLegAngle * zMult;
+                  rightLeg.rotation.z = -floatLegAngle;
                 }
                 if (leftLowerLeg) leftLowerLeg.rotation.x = isSleeping ? 0.04 : Math.max(0, shiftCycle) * 0.1;
                 if (rightLowerLeg) rightLowerLeg.rotation.x = isSleeping ? 0.04 : Math.max(0, -shiftCycle) * 0.1;
@@ -1888,47 +1879,47 @@ const AvatarViewer = ({
             const rightElbow = getBoneNode(vrm, 'rightLowerArm');
             if (leftElbow) {
               if (isSleeping) {
-                leftElbow.rotation.y = -0.15 * yMult; // limp elbow
-                leftElbow.rotation.z = 0 * zMult;
+                leftElbow.rotation.y = -0.15; // limp elbow
+                leftElbow.rotation.z = 0;
               } else if (idleAnimState === 'pouting') {
                 const t = idleAnimProgress / idleAnimDuration;
                 const easeVal = Math.sin(t * Math.PI);
-                leftElbow.rotation.z = (1.25 * easeVal) * zMult;
-                leftElbow.rotation.y = -0.4 * yMult;
+                leftElbow.rotation.z = 1.25 * easeVal;
+                leftElbow.rotation.y = -0.4;
               } else {
-                leftElbow.rotation.y = (leftElbowOffsetY - 0.4 + (isWalkingRef.current ? 0 : Math.sin(time * 1.4) * 0.008)) * yMult;
-                leftElbow.rotation.z = 0 * zMult;
+                leftElbow.rotation.y = leftElbowOffsetY - 0.4 + (isWalkingRef.current ? 0 : Math.sin(time * 1.4) * 0.008);
+                leftElbow.rotation.z = 0;
               }
             }
             if (rightElbow) {
               if (knockActive) {
                 const easeVal = Math.sin((knockTimer / knockDuration) * Math.PI);
                 const tapOffset = knockTimer < 0.45 ? Math.sin(knockTimer * Math.PI * 14) * 0.14 : 0;
-                rightElbow.rotation.z = ((-1.3 + tapOffset) * easeVal) * zMult;
-                rightElbow.rotation.y = (rightElbowOffsetY + 0.2 * easeVal) * yMult;
+                rightElbow.rotation.z = (-1.3 + tapOffset) * easeVal;
+                rightElbow.rotation.y = rightElbowOffsetY + 0.2 * easeVal;
               } else if (isSleeping) {
-                rightElbow.rotation.y = 0.15 * yMult; // limp elbow
-                rightElbow.rotation.z = 0 * zMult;
+                rightElbow.rotation.y = 0.15; // limp elbow
+                rightElbow.rotation.z = 0;
               } else if (idleAnimState === 'greeting_wave') {
                 const t = idleAnimProgress / idleAnimDuration;
                 const easeVal = Math.sin(t * Math.PI);
-                rightElbow.rotation.z = (-1.4 * easeVal) * zMult;
-                rightElbow.rotation.y = (rightElbowOffsetY + 0.2 * easeVal) * yMult;
+                rightElbow.rotation.z = -1.4 * easeVal;
+                rightElbow.rotation.y = rightElbowOffsetY + 0.2 * easeVal;
               } else if (idleAnimState === 'pouting') {
                 const t = idleAnimProgress / idleAnimDuration;
                 const easeVal = Math.sin(t * Math.PI);
-                rightElbow.rotation.z = (-1.25 * easeVal) * zMult;
-                rightElbow.rotation.y = (rightElbowOffsetY + 0.4) * yMult;
+                rightElbow.rotation.z = -1.25 * easeVal;
+                rightElbow.rotation.y = rightElbowOffsetY + 0.4;
               } else {
-                rightElbow.rotation.y = (rightElbowOffsetY + 0.4 + (isWalkingRef.current ? 0 : Math.sin(time * 1.4) * 0.008)) * yMult;
-                rightElbow.rotation.z = 0 * zMult;
+                rightElbow.rotation.y = rightElbowOffsetY + 0.4 + (isWalkingRef.current ? 0 : Math.sin(time * 1.4) * 0.008);
+                rightElbow.rotation.z = 0;
               }
             }
 
             const leftHand = getBoneNode(vrm, 'leftHand');
             const rightHand = getBoneNode(vrm, 'rightHand');
             if (leftHand && !isWalkingRef.current) {
-              leftHand.rotation.y = (isSleeping ? 0 : Math.sin(time * 1.4) * 0.004) * yMult;
+              leftHand.rotation.y = isSleeping ? 0 : Math.sin(time * 1.4) * 0.004;
             }
             if (rightHand && !isWalkingRef.current) {
               if (idleAnimState === 'greeting_wave') {
@@ -1936,7 +1927,7 @@ const AvatarViewer = ({
                 if (t > 0.15 && t < 0.85) {
                   // Wave hand with smooth ease-in/out multiplier
                   const waveEase = Math.sin((t - 0.15) / 0.7 * Math.PI);
-                  rightHand.rotation.z = Math.sin(time * 15.0) * 0.25 * waveEase * zMult;
+                  rightHand.rotation.z = Math.sin(time * 15.0) * 0.25 * waveEase;
                 } else {
                   rightHand.rotation.z = 0; // ensure wrist resets to neutral
                 }
