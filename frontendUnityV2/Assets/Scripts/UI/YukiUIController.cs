@@ -7,6 +7,7 @@ using UnityEngine.UI;
 using Yuki.UnityFrontend.Backend;
 using Yuki.UnityFrontend.Chat;
 using Yuki.UnityFrontend.Avatar;
+using Yuki.UnityFrontend.Desktop;
 
 namespace Yuki.UnityFrontend.UI
 {
@@ -20,6 +21,7 @@ namespace Yuki.UnityFrontend.UI
         [SerializeField] private YukiChatController chatController;
         [SerializeField] private YukiSlashCommandHandler slashCommandHandler;
         [SerializeField] private YukiTalkModeController talkModeController;
+        [SerializeField] private DesktopOverlayController desktopOverlay;
 
         [Header("Overlay - Chat & Input")]
         [SerializeField] private TMP_InputField chatInputField;
@@ -100,6 +102,11 @@ namespace Yuki.UnityFrontend.UI
                 talkModeController.OnStatusMessage += HandleTalkModeStatus;
                 talkModeController.OnTalkModeChanged += HandleTalkModeChanged;
             }
+
+            if (desktopOverlay != null)
+            {
+                desktopOverlay.OnHotkeyTriggered += HandleGlobalHotkey;
+            }
         }
 
         private void OnDisable()
@@ -130,6 +137,11 @@ namespace Yuki.UnityFrontend.UI
                 talkModeController.OnTranscriptReady -= HandleTranscriptReady;
                 talkModeController.OnStatusMessage -= HandleTalkModeStatus;
                 talkModeController.OnTalkModeChanged -= HandleTalkModeChanged;
+            }
+
+            if (desktopOverlay != null)
+            {
+                desktopOverlay.OnHotkeyTriggered -= HandleGlobalHotkey;
             }
         }
 
@@ -610,6 +622,21 @@ namespace Yuki.UnityFrontend.UI
                 {
                     label.text = active ? "Talk Mode ON" : "Talk Mode";
                 }
+            }
+        }
+
+        private void HandleGlobalHotkey()
+        {
+            Debug.Log("[UIController] Global hotkey triggered (Alt+S)");
+
+            if (talkModeController != null)
+            {
+                talkModeController.ToggleTalkMode();
+            }
+
+            if (desktopOverlay != null && !desktopOverlay.IsWindowVisible)
+            {
+                desktopOverlay.ShowWindow();
             }
         }
     }
