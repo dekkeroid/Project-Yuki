@@ -378,7 +378,7 @@ const AvatarViewer = ({
 
         // Turn around the avatar to face the camera
         if (vrm.scene) {
-          vrm.scene.rotation.y = Math.PI;
+          vrm.scene.rotation.y = isVRM1 ? 0 : Math.PI;
 
           // Disable frustum culling so hair/clothing doesn't clip
           vrm.scene.traverse((obj) => {
@@ -1367,12 +1367,13 @@ const AvatarViewer = ({
           vrm.scene.scale.set(scaleRef.current, scaleRef.current, scaleRef.current);
 
           // Smooth rotation to face walk direction
-          let targetRotation = Math.PI; // default facing forward
+          const baseRotation = isVRM1 ? 0 : Math.PI;
+          let targetRotation = baseRotation; // default facing forward
           if (isWalkingRef.current) {
             if (walkDirectionRef.current === -1) {
-              targetRotation = Math.PI - 0.7; // angle left
+              targetRotation = baseRotation - 0.7; // angle left
             } else if (walkDirectionRef.current === 1) {
-              targetRotation = Math.PI + 0.7; // angle right
+              targetRotation = baseRotation + 0.7; // angle right
             }
           }
           vrm.scene.rotation.y += (targetRotation - vrm.scene.rotation.y) * 0.15;
