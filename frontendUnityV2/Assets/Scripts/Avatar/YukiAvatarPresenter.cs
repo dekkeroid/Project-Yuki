@@ -54,7 +54,6 @@ namespace Yuki.UnityFrontend.Avatar
         {
             Debug.Log($"[AvatarPresenter] Requesting load of VRM: {fileName}");
             
-            // Invoke dynamic loader callback (Option B)
             OnLoadVrmRequest?.Invoke(fileName, (vrmInstance) =>
             {
                 if (vrmInstance == null)
@@ -73,7 +72,6 @@ namespace Yuki.UnityFrontend.Avatar
                 loadedVrmInstance.transform.localPosition = Vector3.zero;
                 loadedVrmInstance.transform.localRotation = Quaternion.identity;
                 
-                // Attempt to auto-bind bones if they aren't assigned
                 AutoBindVrmComponents(loadedVrmInstance);
             });
         }
@@ -90,7 +88,6 @@ namespace Yuki.UnityFrontend.Avatar
                 }
             }
 
-            // Search for face meshes to bind blendshapes automatically
             SkinnedMeshRenderer faceRenderer = null;
             foreach (var smr in vrmRoot.GetComponentsInChildren<SkinnedMeshRenderer>())
             {
@@ -116,13 +113,11 @@ namespace Yuki.UnityFrontend.Avatar
             {
                 string name = smr.sharedMesh.GetBlendShapeName(i).ToLower();
                 
-                // Lip sync
                 if (name.EndsWith("_o") || name.Equals("a") || name.Equals("mouth_o") || name.Contains("mouth_open"))
                 {
                     mouthMappings.Add(new BlendShapeMapping { key = "mouth_o", targetMesh = smr, blendShapeIndex = i, maxWeight = 100f });
                 }
                 
-                // Expressions
                 if (name.Contains("happy") || name.Contains("joy") || name.Equals("fun"))
                 {
                     expressionMappings.Add(new BlendShapeMapping { key = "happy", targetMesh = smr, blendShapeIndex = i, maxWeight = 100f });
@@ -156,7 +151,6 @@ namespace Yuki.UnityFrontend.Avatar
         {
             activeExpression = expression.ToLower();
             
-            // Set all expression weights to 0 first, then set targeted key to max
             foreach (var mapping in expressionMappings)
             {
                 if (mapping.targetMesh != null)
@@ -174,7 +168,6 @@ namespace Yuki.UnityFrontend.Avatar
 
         private void Update()
         {
-            // Smoothly interpolate mouth-open size for lip-sync
             currentMouthWeight = Mathf.MoveTowards(currentMouthWeight, targetMouthWeight, Time.deltaTime * 12f);
             
             foreach (var mapping in mouthMappings)

@@ -66,17 +66,13 @@ namespace Yuki.UnityFrontend.Desktop
             {
                 IntPtr hwnd = GetActiveWindow();
 
-                // 1. Remove window borders and title bar
                 SetWindowLong(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
 
-                // 2. Add layered style for transparency support
                 int exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
                 SetWindowLong(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
 
-                // 3. Make window always-on-top
                 SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 
-                // 4. Extend DWM frame into client area to enable alpha transparency
                 var margins = new MARGINS { cxLeftWidth = -1, cxRightWidth = -1, cyTopHeight = -1, cyBottomHeight = -1 };
                 DwmExtendFrameIntoClientArea(hwnd, ref margins);
             }
@@ -120,12 +116,10 @@ namespace Yuki.UnityFrontend.Desktop
             int exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
             if (interactive)
             {
-                // Make the window solid to mouse input
                 SetWindowLong(hwnd, GWL_EXSTYLE, exStyle & ~WS_EX_TRANSPARENT);
             }
             else
             {
-                // Make window click-through
                 if (clickThroughWhenIdle)
                 {
                     SetWindowLong(hwnd, GWL_EXSTYLE, exStyle | WS_EX_TRANSPARENT);

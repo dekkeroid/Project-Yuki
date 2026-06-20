@@ -53,3 +53,15 @@ frontendUnity/Logs/
 frontendUnity/UserSettings/
 frontendUnity/.vs/
 frontendUnity/.codegraph/
+
+# Unity frontend generated files
+frontendUnityV2/Library/
+frontendUnityV2/Temp/
+frontendUnityV2/Obj/
+frontendUnityV2/Build/
+frontendUnityV2/Builds/
+frontendUnityV2/Logs/
+frontendUnityV2/UserSettings/
+frontendUnityV2/.vs/
+frontendUnityV2/.codegraph/
+

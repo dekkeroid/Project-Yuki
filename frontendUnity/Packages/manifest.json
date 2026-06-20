@@ -1,7 +1,16 @@
 {
   "dependencies": {
-    "com.unity.test-framework": "1.1.33",
-    "com.unity.textmeshpro": "3.0.6",
-    "com.unity.nuget.newtonsoft-json": "3.2.1"
+    "com.unity.ugui": "2.0.0",
+    "com.unity.modules.audio": "1.0.0",
+    "com.unity.modules.physics": "1.0.0",
+    "com.unity.modules.ui": "1.0.0",
+    "com.unity.modules.imgui": "1.0.0",
+    "com.unity.multiplayer.center": "1.0.1",
+    "com.unity.nuget.newtonsoft-json": "3.2.2",
+    "com.unity.test-framework": "1.7.0",
+    "com.unity.modules.accessibility": "1.0.0",
+    "com.unity.modules.adaptiveperformance": "1.0.0",
+    "com.unity.modules.physicscore2d": "1.0.0",
+    "com.unity.modules.vectorgraphics": "1.0.0"
   }
 }
