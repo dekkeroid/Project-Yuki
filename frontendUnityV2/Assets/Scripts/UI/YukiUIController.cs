@@ -365,7 +365,7 @@ namespace Yuki.UnityFrontend.UI
         private System.Collections.IEnumerator FetchSuggestionsCoroutine(string query, bool playMode)
         {
             string type = playMode ? "play" : "open";
-            using var req = UnityEngine.Networking.UnityWebRequest.Get($"{webSocketClient.GetComponent<YukiRestClient>().BuildOpenPlayPayload(query, playMode)}");
+            using var req = UnityEngine.Networking.UnityWebRequest.Get($"{YukiRestClient.BuildOpenPlayPayload(query, playMode)}");
             yield return null;
         }
 
