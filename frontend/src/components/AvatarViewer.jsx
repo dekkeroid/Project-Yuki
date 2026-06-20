@@ -338,7 +338,8 @@ const AvatarViewer = ({
           return;
         }
 
-        const isVRM1 = vrm.meta?.specVersion === '1.0' || !!vrm.expressionManager;
+        const extensionsUsed = gltf.parser?.json?.extensionsUsed || [];
+        const isVRM1 = extensionsUsed.some(ext => ext.includes('VRMC_vrm'));
         vrm.isVRM1 = isVRM1;
 
         vrmRef.current = vrm;
