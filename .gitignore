@@ -24,6 +24,7 @@ yuki_crawler.log
 # EXCEPT for the explicit default character asset
 !frontend/public/models/default.vrm
 !frontendUnity/Assets/**/*.vrm
+!frontendUnityV2/Assets/**/*.vrm
 
 # Python testing sandbox files (Scratch directory)
 backend/scratch/

@@ -1,5 +1,8 @@
 {
   "dependencies": {
+    "com.vrmc.gltf": "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF",
+    "com.vrmc.univrm": "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM",
+    "com.vrmc.vrm": "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM10",
     "com.unity.ide.rider": "3.0.31",
     "com.unity.test-framework": "1.4.5",
     "com.unity.ugui": "2.0.0",

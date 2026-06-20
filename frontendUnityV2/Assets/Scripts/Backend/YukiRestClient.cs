@@ -10,7 +10,7 @@ namespace Yuki.UnityFrontend.Backend
     {
         [SerializeField] private YukiBackendConfig config;
 
-        private string HttpBaseUrl => config != null ? config.HttpBaseUrl : YukiBackendConfig.DefaultHttpBaseUrl;
+        public string HttpBaseUrl => config != null ? config.HttpBaseUrl : YukiBackendConfig.DefaultHttpBaseUrl;
 
         public static object BuildOpenPlayPayload(string query, bool playMode, string pendingConfirmationId = null)
         {

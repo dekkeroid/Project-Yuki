@@ -28,7 +28,7 @@ namespace Yuki.UnityFrontend.Backend
             }
         }
 
-        public static AudioClip ToAudioClip(byte[] wavBytes, string clipName = "YukiSpeechSpeech")
+        public static AudioClip ToAudioClip(byte[] wavBytes, string clipName = "YukiSpeech")
         {
             if (wavBytes == null || wavBytes.Length < 44)
             {

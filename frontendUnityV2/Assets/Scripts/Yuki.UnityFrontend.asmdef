@@ -4,7 +4,10 @@
   "references": [
     "Unity.Newtonsoft.Json",
     "Unity.TextMeshPro",
-    "UnityEngine.UI"
+    "UnityEngine.UI",
+    "UniGLTF",
+    "VRM",
+    "VRM10"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

@@ -88,6 +88,7 @@ namespace Yuki.UnityFrontend.UI
             }
 
             if (submitButton != null) submitButton.onClick.RemoveListener(SubmitUserChat);
+            if (chatInputField != null) chatInputField.onValueChanged.RemoveListener(OnChatInputValueChanged);
             if (micToggleButton != null) micToggleButton.onClick.RemoveListener(ToggleMicrophoneInput);
             if (toggleDashboardButton != null) toggleDashboardButton.onClick.RemoveListener(ToggleDashboardPanel);
             if (approveSafetyButton != null) approveSafetyButton.onClick.RemoveListener(ApproveActiveConfirmation);
@@ -365,8 +366,14 @@ namespace Yuki.UnityFrontend.UI
         private System.Collections.IEnumerator FetchSuggestionsCoroutine(string query, bool playMode)
         {
             string type = playMode ? "play" : "open";
-            using var req = UnityEngine.Networking.UnityWebRequest.Get($"{YukiRestClient.BuildOpenPlayPayload(query, playMode)}");
-            yield return null;
+            string url = $"{YukiRestClient.HttpBaseUrl}/api/system/suggestions?query={Uri.EscapeDataString(query)}&type={type}";
+            using var req = UnityEngine.Networking.UnityWebRequest.Get(url);
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
+            {
+                Debug.Log($"[UIController] Suggestions: {req.downloadHandler.text}");
+            }
         }
 
         private void ToggleMicrophoneInput()
