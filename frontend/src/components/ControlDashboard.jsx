@@ -749,6 +749,71 @@ const ControlDashboard = ({
                   </button>
                 )}
               </div>
+
+              {/* Companion Character settings card group */}
+              <div className="card-group" style={{ marginTop: '12px' }}>
+                <div className="card-group-header">
+                  <UserCheck className="w-4 h-4" />
+                  <span className="card-group-title">Companion Persona Settings</span>
+                </div>
+
+                <div className="identity-field">
+                  <span className="field-label">Companion Name</span>
+                  <input
+                    type="text"
+                    value={charName}
+                    onChange={(e) => setCharName(e.target.value)}
+                    className="glass-input"
+                    style={{ padding: '6px 10px', fontSize: '0.78rem', marginTop: '2px' }}
+                  />
+                </div>
+
+                <div className="identity-field" style={{ marginTop: '4px' }}>
+                  <span className="field-label">Persona Prompt Instructions</span>
+                  <textarea
+                    value={charPersona}
+                    onChange={(e) => setCharPersona(e.target.value)}
+                    className="glass-input"
+                    style={{
+                      padding: '8px 10px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'monospace',
+                      minHeight: '120px',
+                      resize: 'vertical',
+                      marginTop: '2px',
+                      lineHeight: '1.4'
+                    }}
+                  />
+                </div>
+
+                <button
+                  onClick={async (e) => {
+                    const btn = e.currentTarget;
+                    const originalText = btn.innerText;
+                    const originalBg = btn.style.background;
+                    btn.innerText = "Saving...";
+                    await handleUpdateSetting('character_name', charName);
+                    await handleUpdateSetting('character_persona', charPersona);
+                    btn.innerText = "✓ Saved";
+                    btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+                    setTimeout(() => {
+                      btn.innerText = originalText;
+                      btn.style.background = originalBg;
+                    }, 2000);
+                  }}
+                  className="glass-button"
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: '0.75rem',
+                    borderRadius: '10px',
+                    marginTop: '4px',
+                    background: 'linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)',
+                    boxShadow: '0 4px 12px rgba(13,148,136,0.3)',
+                  }}
+                >
+                  Save Character Specs
+                </button>
+              </div>
             </>
           ) : activeTab === 'settings' ? (
             <>
@@ -1133,62 +1198,6 @@ const ControlDashboard = ({
                     </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Companion Character settings card group */}
-              <div className="card-group" style={{ marginTop: '12px' }}>
-                <div className="card-group-header">
-                  <UserCheck className="w-4 h-4" />
-                  <span className="card-group-title">Companion Persona Settings</span>
-                </div>
-
-                <div className="identity-field">
-                  <span className="field-label">Companion Name</span>
-                  <input
-                    type="text"
-                    value={charName}
-                    onChange={(e) => setCharName(e.target.value)}
-                    className="glass-input"
-                    style={{ padding: '6px 10px', fontSize: '0.78rem', marginTop: '2px' }}
-                  />
-                </div>
-
-                <div className="identity-field" style={{ marginTop: '4px' }}>
-                  <span className="field-label">Persona Prompt Instructions</span>
-                  <textarea
-                    value={charPersona}
-                    onChange={(e) => setCharPersona(e.target.value)}
-                    className="glass-input"
-                    style={{
-                      padding: '8px 10px',
-                      fontSize: '0.75rem',
-                      fontFamily: 'monospace',
-                      minHeight: '120px',
-                      resize: 'vertical',
-                      marginTop: '2px',
-                      lineHeight: '1.4'
-                    }}
-                  />
-                </div>
-
-                <button
-                  onClick={async () => {
-                    await handleUpdateSetting('character_name', charName);
-                    await handleUpdateSetting('character_persona', charPersona);
-                    alert("Character settings updated successfully!");
-                  }}
-                  className="glass-button"
-                  style={{
-                    padding: '8px 14px',
-                    fontSize: '0.75rem',
-                    borderRadius: '10px',
-                    marginTop: '4px',
-                    background: 'linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)',
-                    boxShadow: '0 4px 12px rgba(13,148,136,0.3)',
-                  }}
-                >
-                  Save Character Specs
-                </button>
               </div>
 
               {/* Dynamic Animations Toggles */}

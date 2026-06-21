@@ -1,4 +1,4 @@
-from app.config import CHARACTER_NAME, CHARACTER_PERSONA
+import app.config
 
 # ------------------------------------------------------------------ #
 #  SIMPLE PROMPT  (Qwen / mode-1)                                      #
@@ -11,7 +11,7 @@ def get_simple_system_prompt(memory_summary: str) -> str:
     Minimal system prompt for the simple/chat model (Qwen).
     Contains only the persona + memory card — no tool definitions.
     """
-    return f"""{CHARACTER_PERSONA}
+    return f"""{app.config.CHARACTER_PERSONA}
 
 --- USER MEMORY CARD ---
 {memory_summary}
@@ -31,7 +31,7 @@ def get_system_prompt(memory_summary: str) -> str:
     System prompt containing persona, memory card, and behavioral rules.
     LM Studio will serve the actual tool schemas out-of-band.
     """
-    return f"""{CHARACTER_PERSONA}
+    return f"""{app.config.CHARACTER_PERSONA}
 
 --- USER MEMORY CARD ---
 Below is what you currently remember about the user. Use this information to tailor your response and maintain relationship continuity:

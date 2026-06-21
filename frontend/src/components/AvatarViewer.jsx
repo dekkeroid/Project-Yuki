@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { computeDesktopBubblePosition } from '../utils/desktopBubblePosition';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin } from '@pixiv/three-vrm';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Upload, Sparkles } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
@@ -354,6 +354,16 @@ const AvatarViewer = ({
         const extensionsUsed = gltf.parser?.json?.extensionsUsed || [];
         const isVRM1 = extensionsUsed.some(ext => ext.includes('VRMC_vrm'));
         vrm.isVRM1 = isVRM1;
+
+        // --- VRAM Optimization Triggers ---
+        if (isElectron) {
+          try {
+            VRMUtils.combineSkeletons(vrm.scene);
+            VRMUtils.combineMorphs(vrm);
+          } catch (err) {
+            console.warn("VRMUtils optimization failed:", err);
+          }
+        }
 
         vrmRef.current = vrm;
         setHasVrm(true);

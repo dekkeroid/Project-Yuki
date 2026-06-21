@@ -1301,7 +1301,15 @@ def read_file_content(file_path: str) -> str:
             for idx, page in enumerate(reader.pages):
                 t = page.extract_text()
                 if t:
-                    text += t + "\n"
+                    lines = t.split('\n')
+                    deduped_lines = []
+                    for line in lines:
+                        line_stripped = line.strip()
+                        if not line_stripped:
+                            continue
+                        if not deduped_lines or deduped_lines[-1] != line_stripped:
+                            deduped_lines.append(line_stripped)
+                    text += '\n'.join(deduped_lines) + "\n"
                 if len(text) > max_chars:
                     text = text[:max_chars] + f"\n... [Truncated: PDF is too large, showing first {max_chars} characters]"
                     break

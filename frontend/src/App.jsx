@@ -3958,6 +3958,68 @@ const App = () => {
                         </button>
                       )}
                     </div>
+
+                    {/* Companion Specifications */}
+                    <div className="card-group" style={{ marginTop: '10px' }}>
+                      <div className="card-group-header teal">
+                        <User className="w-3.5 h-3.5" />
+                        <span className="card-group-title">Companion Specifications</span>
+                      </div>
+                      <div className="desktop-form-group" style={{ marginTop: '4px' }}>
+                        <label className="desktop-label">Companion Name</label>
+                        <input
+                          type="text"
+                          className="desktop-input-text"
+                          value={localCharName}
+                          onChange={(e) => setLocalCharName(e.target.value)}
+                          style={{ padding: '6px 10px', fontSize: '0.75rem' }}
+                        />
+                      </div>
+
+                      <div className="desktop-form-group" style={{ marginTop: '4px' }}>
+                        <label className="desktop-label">Persona Prompt Instructions</label>
+                        <textarea
+                          className="desktop-textarea"
+                          value={localCharPersona}
+                          onChange={(e) => setLocalCharPersona(e.target.value)}
+                          style={{ padding: '6px 10px', fontSize: '0.72rem', minHeight: '90px' }}
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          const btn = e.currentTarget;
+                          const originalText = btn.innerText;
+                          const originalBg = btn.style.background;
+                          btn.innerText = "Saving...";
+                          await handleUpdateSetting('character_name', localCharName);
+                          await handleUpdateSetting('character_persona', localCharPersona);
+                          btn.innerText = "✓ Saved";
+                          btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+                          setTimeout(() => {
+                            btn.innerText = originalText;
+                            btn.style.background = originalBg;
+                          }, 2000);
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '6px 12px',
+                          fontSize: '0.72rem',
+                          borderRadius: '8px',
+                          fontWeight: 600,
+                          background: 'linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)',
+                          border: 'none',
+                          color: '#0b0813',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 6px rgba(45, 212, 191, 0.25)',
+                          transition: 'all 0.2s',
+                          marginTop: '2px'
+                        }}
+                      >
+                        Save Character Specs
+                      </button>
+                    </div>
                   </>
                 )}
 
@@ -4392,52 +4454,6 @@ const App = () => {
                           )}
                         </select>
                       </div>
-
-                      <div className="desktop-form-group" style={{ marginTop: '4px' }}>
-                        <label className="desktop-label">Companion Name</label>
-                        <input
-                          type="text"
-                          className="desktop-input-text"
-                          value={localCharName}
-                          onChange={(e) => setLocalCharName(e.target.value)}
-                          style={{ padding: '6px 10px', fontSize: '0.75rem' }}
-                        />
-                      </div>
-
-                      <div className="desktop-form-group" style={{ marginTop: '4px' }}>
-                        <label className="desktop-label">Persona Prompt Instructions</label>
-                        <textarea
-                          className="desktop-textarea"
-                          value={localCharPersona}
-                          onChange={(e) => setLocalCharPersona(e.target.value)}
-                          style={{ padding: '6px 10px', fontSize: '0.72rem', minHeight: '90px' }}
-                        />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await handleUpdateSetting('character_name', localCharName);
-                          await handleUpdateSetting('character_persona', localCharPersona);
-                          alert("Companion specifications saved!");
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '6px 12px',
-                          fontSize: '0.72rem',
-                          borderRadius: '8px',
-                          fontWeight: 600,
-                          background: 'linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)',
-                          border: 'none',
-                          color: '#0b0813',
-                          cursor: 'pointer',
-                          boxShadow: '0 2px 6px rgba(45, 212, 191, 0.25)',
-                          transition: 'all 0.2s',
-                          marginTop: '2px'
-                        }}
-                      >
-                        Save Character Specs
-                      </button>
                     </div>
 
                     {/* Animations Toggle */}

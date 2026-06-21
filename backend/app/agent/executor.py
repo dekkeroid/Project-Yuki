@@ -314,9 +314,7 @@ class AgentExecutor:
 
                 print(f"[LM Studio] Model '{model_name}' is offline. Automatically loading: '{lm_studio_identifier}'...")
                 payload = {
-                    "model": lm_studio_identifier,
-                    "llamaKCacheQuantizationType": "q8_0",
-                    "llamaVCacheQuantizationType": "q8_0"
+                    "model": lm_studio_identifier
                 }
 
                 async with session.post(f"{config.LMSTUDIO_URL}/api/v1/models/load", json=payload, timeout=45) as load_resp:

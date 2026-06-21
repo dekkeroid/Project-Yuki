@@ -412,7 +412,9 @@ DIR_BLACKLIST_KEYWORDS = {
 # Format: { "folder_name_to_skip": {"parent_folder_1", "parent_folder_2", ...} }
 # Note: All folder names must be lowercase.
 CONDITIONAL_DIR_BLACKLIST = {
-    "data": {"program files", "program files (x86)"}
+    "data": {"program files", "program files (x86)"},
+    "images": {"games"},
+    "renpy": {"games"},
 }
 
 def _contains_blacklisted_dir_component(path: str) -> bool:

@@ -135,8 +135,8 @@ async def check_tts_connectivity():
     # ---- NEW: DYNAMIC LM STUDIO AUTO-LOAD CALL ----
     if not getattr(config, 'NO_LLM_MODE', False):
         print(f"Verifying brain state. Checking if model '{config.LLM_MODEL}' is loaded in LM Studio...")
-        # Trigger our newly created helper function asynchronously
-        await agent_executor.ensure_model_loaded(config.LLM_MODEL)
+        # Trigger our newly created helper function in the background so it doesn't block startup
+        asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
     else:
         print("NO_LLM_MODE is enabled. Skipping LLM auto-load on startup.")
     # -----------------------------------------------
@@ -344,14 +344,19 @@ async def update_settings(req: SettingsUpdateRequest):
     global tts_online_status
     from app.memory import crawler
     if req.llm_model is not None:
+        config.LLM_MODEL = req.llm_model.strip()
         memory_manager.update_setting("llm_model", req.llm_model.strip())
     if req.tts_voice is not None:
+        config.TTS_VOICE = req.tts_voice.strip()
         memory_manager.update_setting("tts_voice", req.tts_voice.strip())
     if req.tts_rate is not None:
+        config.TTS_RATE = req.tts_rate.strip()
         memory_manager.update_setting("tts_rate", req.tts_rate.strip())
     if req.character_name is not None:
+        config.CHARACTER_NAME = req.character_name.strip()
         memory_manager.update_setting("character_name", req.character_name.strip())
     if req.character_persona is not None:
+        config.CHARACTER_PERSONA = req.character_persona.strip()
         memory_manager.update_setting("character_persona", req.character_persona.strip())
     if req.crawler_paused is not None:
         memory_manager.update_setting("crawler_paused", req.crawler_paused)
@@ -984,6 +989,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         tts_tasks = []
                         tts_tasks_event = asyncio.Event()
                         stream_done_flag = False
+                        tts_semaphore = asyncio.Semaphore(1)
                         
                         def queue_sentence(sentence_text, idx):
                             nonlocal tts_tasks_event, stream_done_flag
@@ -994,32 +1000,33 @@ async def websocket_endpoint(websocket: WebSocket):
                                 global tts_online_status
                                 if not tts_online_status:
                                     return None
-                                try:
-                                    speech_text = make_speech_friendly(sentence_text)
-                                    # Use a timeout of 10.0 seconds for local Kokoro call (longer for first call)
-                                    t_start = time.time()
-                                    print(f"[TTS][QUEUE] Queued TTS idx={idx} text='{sentence_text[:80]}' speech_text='{speech_text[:80]}'")
-                                    # Mark which backend we expect to use at the time of synthesis
-                                    expected_backend = 'kokoro' if tts_online_status else 'backend-disabled'
-                                    audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=10.0)
-                                    t_elapsed = time.time() - t_start
-                                    if audio_bytes:
-                                        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-                                        audio_url = f"data:audio/wav;base64,{audio_base64}"
-                                        print(f"[TTS][DONE] idx={idx} backend={expected_backend} time_ms={int(t_elapsed*1000)} text='{speech_text[:80]}'")
-                                        return {
-                                            "type": "audio_chunk",
-                                            "audio_url": audio_url,
-                                            "index": idx,
-                                            "text": sentence_text,
-                                            "speech_text": speech_text,
-                                            "tts_backend": expected_backend,
-                                            "tts_time_ms": int(t_elapsed*1000),
-                                            "requested_text": sentence_text
-                                        }
-                                except Exception as e:
-                                    print(f"TTS Synthesis timeout/error for '{sentence_text}': {e}.")
-                                return None
+                                async with tts_semaphore:
+                                    try:
+                                        speech_text = make_speech_friendly(sentence_text)
+                                        # Use a timeout of 30.0 seconds for local Kokoro call
+                                        t_start = time.time()
+                                        print(f"[TTS][QUEUE] Queued TTS idx={idx} text='{sentence_text[:80]}' speech_text='{speech_text[:80]}'")
+                                        # Mark which backend we expect to use at the time of synthesis
+                                        expected_backend = 'kokoro' if tts_online_status else 'backend-disabled'
+                                        audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=30.0)
+                                        t_elapsed = time.time() - t_start
+                                        if audio_bytes:
+                                            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                                            audio_url = f"data:audio/wav;base64,{audio_base64}"
+                                            print(f"[TTS][DONE] idx={idx} backend={expected_backend} time_ms={int(t_elapsed*1000)} text='{speech_text[:80]}'")
+                                            return {
+                                                "type": "audio_chunk",
+                                                "audio_url": audio_url,
+                                                "index": idx,
+                                                "text": sentence_text,
+                                                "speech_text": speech_text,
+                                                "tts_backend": expected_backend,
+                                                "tts_time_ms": int(t_elapsed*1000),
+                                                "requested_text": sentence_text
+                                            }
+                                    except Exception as e:
+                                        print(f"TTS Synthesis timeout/error for '{sentence_text}': {e}.")
+                                    return None
                             
                             task = asyncio.create_task(synth())
                             tts_tasks.append(task)
