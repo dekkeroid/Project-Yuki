@@ -1271,3 +1271,54 @@ def delete_file(file_path: str, confirmed: bool = False) -> str:
         return f"Success: File '{path}' was successfully deleted."
     except Exception as e:
         return f"Failed to delete file: {str(e)}"
+
+def read_file_content(file_path: str) -> str:
+    """
+    Reads the content of a text/code file, or extracts text from a PDF file.
+    Only allows reading safe paths.
+    """
+    if not file_path or not file_path.strip():
+        return "Error: File path must not be empty."
+
+    path = os.path.abspath(os.path.expanduser(os.path.expandvars(file_path.strip())))
+    if not _is_safe_path(path, write_operation=False):
+        return f"Access Denied: Reading files in sensitive system directory '{path}' is blocked."
+
+    if not os.path.exists(path):
+        return f"Error: File '{path}' does not exist."
+
+    if os.path.isdir(path):
+        return f"Error: '{path}' is a directory. Reading directories as files is not supported."
+
+    ext = os.path.splitext(path)[1].lower()
+    max_chars = 25000 # Keep LLM context from blowing up
+
+    if ext == '.pdf':
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(path)
+            text = ""
+            for idx, page in enumerate(reader.pages):
+                t = page.extract_text()
+                if t:
+                    text += t + "\n"
+                if len(text) > max_chars:
+                    text = text[:max_chars] + f"\n... [Truncated: PDF is too large, showing first {max_chars} characters]"
+                    break
+            
+            cleaned = text.strip()
+            if not cleaned:
+                return "Warning: This PDF seems to contain no extractable text."
+            return cleaned
+        except Exception as e:
+            return f"Error reading PDF file: {str(e)}"
+    else:
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            if len(content) > max_chars:
+                return content[:max_chars] + f"\n... [Truncated: File is too large, showing first {max_chars} characters]"
+            return content
+        except Exception as e:
+            return f"Error reading file: {str(e)}"
+

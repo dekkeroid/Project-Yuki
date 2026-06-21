@@ -10,6 +10,8 @@ const STATIC_COMMANDS = [
   { cmd: '/o',            description: 'Search and open any file (Alias for /open)' },
   { cmd: '/play',         description: 'Search and play a video or song' },
   { cmd: '/p',            description: 'Search and play a video or song (Alias for /play)' },
+  { cmd: '/read',         description: 'Search and read document content' },
+  { cmd: '/sum',          description: 'Search and summarize document content' },
   { cmd: '/wink',         description: 'Yuki winks at you' },
   { cmd: '/angry',        description: 'Yuki pouts angrily' },
   { cmd: '/sad',          description: 'Yuki sighs sadly' },
@@ -137,11 +139,19 @@ const ChatOverlay = ({
     const trimmed = inputText.trimStart();
     const openMatch = trimmed.match(/^\/(open|o)\s+(.*)/i);
     const playMatch = trimmed.match(/^\/(play|p)\s+(.*)/i);
+    const readMatch = trimmed.match(/^\/(read)\s+(.*)/i);
+    const sumMatch = trimmed.match(/^\/(sum)\s+(.*)/i);
     if (openMatch) {
       return { type: 'open', query: openMatch[2] };
     }
     if (playMatch) {
       return { type: 'play', query: playMatch[2] };
+    }
+    if (readMatch) {
+      return { type: 'read', query: readMatch[2] };
+    }
+    if (sumMatch) {
+      return { type: 'sum', query: sumMatch[2] };
     }
     return null;
   }, [inputText]);
@@ -228,7 +238,10 @@ const ChatOverlay = ({
   };
 
   const pickSearchSuggestion = (item) => {
-    const cmdPrefix = searchMode === 'open' ? '/open' : '/play';
+    let cmdPrefix = '/open';
+    if (searchMode === 'play') cmdPrefix = '/play';
+    else if (searchMode === 'read') cmdPrefix = '/read';
+    else if (searchMode === 'sum') cmdPrefix = '/sum';
     const pathVal = item.path.includes(' ') ? `"${item.path}"` : item.path;
     const newText = `${cmdPrefix} ${pathVal}`;
     setInputText(newText);
@@ -503,7 +516,7 @@ const ChatOverlay = ({
                 // Search Suggestions Render
                 searchQuery.trim() === '' ? (
                   <div style={{ padding: '16px', textAlign: 'center', fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
-                    Type to search {searchMode === 'play' ? 'songs and movies' : 'apps and files'}...
+                    Type to search {searchMode === 'play' ? 'songs and movies' : (searchMode === 'read' || searchMode === 'sum' ? 'document files' : 'apps and files')}...
                   </div>
                 ) : (isLoadingSuggestions && searchSuggestions.length === 0) ? (
                   <div style={{ padding: '16px', textAlign: 'center', fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>

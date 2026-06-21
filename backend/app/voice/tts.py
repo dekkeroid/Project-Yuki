@@ -63,6 +63,22 @@ _ensure_model_files()
 
 # Lazy-loaded Kokoro instance
 _kokoro_instance = None
+_kokoro_lock = None
+
+async def get_kokoro_async() -> Kokoro:
+    global _kokoro_instance, _kokoro_lock
+    if _kokoro_instance is not None:
+        return _kokoro_instance
+        
+    import asyncio
+    if _kokoro_lock is None:
+        _kokoro_lock = asyncio.Lock()
+        
+    async with _kokoro_lock:
+        if _kokoro_instance is not None:
+            return _kokoro_instance
+        # Run the synchronous load on a background thread so it doesn't block the event loop
+        return await asyncio.to_thread(get_kokoro)
 
 
 def _build_session(providers: list):
@@ -389,7 +405,7 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
     try:
         t0 = time.time()
         print(f"[TTS] generate_speech_bytes start voice={kokoro_voice} lang={lang_code} rate={speed_factor} text='{text[:80]}'")
-        kokoro = get_kokoro()
+        kokoro = await get_kokoro_async()
         import asyncio
         samples, sample_rate = await asyncio.to_thread(
             kokoro.create, text, voice=kokoro_voice, speed=speed_factor, lang=lang_code

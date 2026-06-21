@@ -185,6 +185,12 @@ async def delete_file(file_path: str, confirmed: bool = False, confirmation_gran
 
 
 @mcp.tool()
+async def read_file_content(file_path: str) -> str:
+    """Read the contents of a local text, code, or PDF file."""
+    return await _guarded_tool_call("read_file_content", file_tools.read_file_content, {"file_path": file_path})
+
+
+@mcp.tool()
 async def control_window(
     action: str,
     window_title: str | None = None,

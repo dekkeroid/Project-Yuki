@@ -226,11 +226,19 @@ const App = () => {
     const trimmed = inputText.trimStart();
     const openMatch = trimmed.match(/^\/(open|o)\s+(.*)/i);
     const playMatch = trimmed.match(/^\/(play|p)\s+(.*)/i);
+    const readMatch = trimmed.match(/^\/(read)\s+(.*)/i);
+    const sumMatch = trimmed.match(/^\/(sum)\s+(.*)/i);
     if (openMatch) {
       return { type: 'open', query: openMatch[2] };
     }
     if (playMatch) {
       return { type: 'play', query: playMatch[2] };
+    }
+    if (readMatch) {
+      return { type: 'read', query: readMatch[2] };
+    }
+    if (sumMatch) {
+      return { type: 'sum', query: sumMatch[2] };
     }
     return null;
   }, [inputText]);
@@ -311,7 +319,10 @@ const App = () => {
 
 
   const pickDesktopSearchSuggestion = (item) => {
-    const cmdPrefix = desktopSearchMode === 'open' ? '/open' : '/play';
+    let cmdPrefix = '/open';
+    if (desktopSearchMode === 'play') cmdPrefix = '/play';
+    else if (desktopSearchMode === 'read') cmdPrefix = '/read';
+    else if (desktopSearchMode === 'sum') cmdPrefix = '/sum';
     const pathVal = item.path.includes(' ') ? `"${item.path}"` : item.path;
     const newText = `${cmdPrefix} ${pathVal}`;
     setInputText(newText);
@@ -530,6 +541,8 @@ const App = () => {
   const [systemIdleTime, setSystemIdleTime] = useState(0);
   const [powerConnected, setPowerConnected] = useState(true);
   const [lastDrivesCount, setLastDrivesCount] = useState(null);
+  const hasTriggeredLowSsdWarningRef = useRef(false);
+  const hasTriggeredHighRamWarningRef = useRef(false);
   const [avatarScale, setAvatarScale] = useState(() => {
     const saved = localStorage.getItem('yuki-avatar-scale');
     return saved ? parseFloat(saved) : 1.0;
@@ -696,16 +709,20 @@ const App = () => {
     setIsTopmostDisabled(!enabled);
   };
 
-  const handleFileDropped = (name, contents) => {
-    if (!contents || !contents.trim()) return;
-
-    const maxChars = 2000;
-    const truncated = contents.length > maxChars ? contents.slice(0, maxChars) + "\n...[truncated]" : contents;
+  const handleFileDropped = (name, contentOrPath, isPath) => {
+    if (!contentOrPath || !contentOrPath.trim()) return;
 
     const userMsg = `[Dropped File: ${name}]`;
     setMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
 
-    const prompt = `I dropped a file named "${name}". Here is its content:\n\n${truncated}\n\nRead this file and give me a brief reaction or summary of what's inside.`;
+    let prompt;
+    if (isPath) {
+      prompt = `I dropped a file at absolute path "${contentOrPath}". Please use your read_file_content tool to read it, and then summarize it for me in 2-3 paragraphs (under 150 words total).`;
+    } else {
+      const maxChars = 2000;
+      const truncated = contentOrPath.length > maxChars ? contentOrPath.slice(0, maxChars) + "\n...[truncated]" : contentOrPath;
+      prompt = `I dropped a file named "${name}". Here is its content:\n\n${truncated}\n\nRead this file and give me a brief reaction or summary of what's inside (under 150 words total).`;
+    }
 
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       setIsThinking(true);
@@ -728,6 +745,35 @@ const App = () => {
         if (data.cpu && !data.cpu.error) {
           setCpuLoad(data.cpu.usage_percent);
         }
+
+        if (data.disk && !data.disk.error) {
+          const freeGb = data.disk.free_gb;
+          if (freeGb < 2.0) {
+            if (!hasTriggeredLowSsdWarningRef.current) {
+              hasTriggeredLowSsdWarningRef.current = true;
+              const msg = `Master, your SSD storage space is extremely low! You have only ${freeGb} GB free remaining on your C drive. Please clean up some space!`;
+              setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to SSD* ${msg}` }]);
+              speakSystemMessage(msg, 'sad');
+            }
+          } else {
+            hasTriggeredLowSsdWarningRef.current = false;
+          }
+        }
+
+        if (data.ram && !data.ram.error) {
+          const ramPercent = data.ram.usage_percent;
+          if (ramPercent > 95) {
+            if (!hasTriggeredHighRamWarningRef.current) {
+              hasTriggeredHighRamWarningRef.current = true;
+              const msg = `Master, your system RAM is almost full! Usage has reached ${ramPercent} percent. Please close some heavy applications!`;
+              setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to RAM* ${msg}` }]);
+              speakSystemMessage(msg, 'surprised');
+            }
+          } else {
+            hasTriggeredHighRamWarningRef.current = false;
+          }
+        }
+
         if (data.disk && data.disk.drives_count !== undefined) {
           const count = data.disk.drives_count;
           setLastDrivesCount((prevCount) => {
@@ -848,6 +894,63 @@ const App = () => {
       return unsubscribe;
     }
   }, []);
+
+  // AFK Welcoming Detector hook
+  const isAfkRef = useRef(false);
+  useEffect(() => {
+    if (systemIdleTime >= 1800) { // 30 minutes
+      isAfkRef.current = true;
+    } else if (systemIdleTime === 0 && isAfkRef.current) {
+      isAfkRef.current = false;
+      const msg = "Welcome back, Master! I missed you.";
+      setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to welcome* ${msg}` }]);
+      speakSystemMessage(msg, 'happy');
+    }
+  }, [systemIdleTime, muteVoice]);
+
+  // Internet presence status & uselessfacts fun fact getter hook
+  useEffect(() => {
+    const handleOnline = async () => {
+      let announced = false;
+      if (!profile?.settings?.no_llm_mode) {
+        try {
+          const res = await fetch("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en");
+          if (res.ok) {
+            const data = await res.json();
+            const fact = data.text;
+            if (fact) {
+              const msg = `Internet connected again! Did you know? ${fact}`;
+              setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
+              speakSystemMessage(msg, 'happy');
+              announced = true;
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to fetch fun fact:", err);
+        }
+      }
+      
+      if (!announced) {
+        const msg = "Internet connected again! I'm so happy we are back online, Master!";
+        setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
+        speakSystemMessage(msg, 'happy');
+      }
+    };
+
+    const handleOffline = () => {
+      const msg = "Oh no! Master, I think my connection to the internet is gone...";
+      setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
+      speakSystemMessage(msg, 'sad');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [profile, muteVoice]);
 
   // Desktop Wander Mechanics state machine
   const wanderTimerRef = useRef(null);
@@ -2515,6 +2618,45 @@ const App = () => {
           { role: 'assistant', content: errorMsg }
         ]);
         speakSystemMessage(errorMsg, 'neutral');
+        return;
+      }
+
+      if (cmd === '/read' || cmd === '/sum') {
+        const filePath = parts.slice(1).join(' ').trim().replace(/^"(.*)"$/, '$1'); // strip quotes if any
+        if (!filePath) {
+          const errorMsg = `Please provide a file path. E.g. ${cmd} "D:\\Documents\\notes.txt"`;
+          setMessages((prev) => [...prev, { role: 'user', content: text }]);
+          setMessages((prev) => [...prev, { role: 'assistant', content: errorMsg }]);
+          speakSystemMessage(errorMsg, 'neutral');
+          return;
+        }
+
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        setTtsStreamActive(true);
+        setIsThinking(true);
+
+        let prompt;
+        if (cmd === '/read') {
+          prompt = `Master requested to read the file content at absolute path "${filePath}". Use the read_file_content tool to load it and print/relay its contents. If it is extremely long, summarize it concisely in 2-3 paragraphs (under 150 words total).`;
+        } else {
+          prompt = `Master requested to summarize the file content at absolute path "${filePath}". Use the read_file_content tool to load it, and then summarize it concisely in 2-3 paragraphs (under 150 words total).`;
+        }
+
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          const payload = { type: 'chat', message: prompt };
+          if (sttTimeMs !== null) {
+            payload.stt_time_ms = sttTimeMs;
+          }
+          socketRef.current.send(JSON.stringify(payload));
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            { role: 'assistant', content: "Hmph! I'm currently offline, Master. Make sure the backend server is running!" }
+          ]);
+          setIsThinking(false);
+          setTtsStreamActive(false);
+          updateListeningState();
+        }
         return;
       }
 

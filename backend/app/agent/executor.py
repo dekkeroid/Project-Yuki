@@ -24,7 +24,7 @@ from app.tools.system import (
     keyboard_mouse_input, media_playback_control, manage_process,
     system_power_control
 )
-from app.tools.files import list_directory, search_files, open_or_play_file, create_file, edit_file, delete_file
+from app.tools.files import list_directory, search_files, open_or_play_file, create_file, edit_file, delete_file, read_file_content
 from app.tools.web import web_search
 from app.agent.resolver import resolve_command
 
@@ -164,6 +164,9 @@ class AgentExecutor:
             "delete_file": lambda **kwargs: delete_file(
                 kwargs.get("file_path") or kwargs.get("path") or kwargs.get("filepath") or kwargs.get("file"),
                 bool(kwargs.get("confirmed", False) or kwargs.get("confirm", False))
+            ),
+            "read_file_content": lambda **kwargs: read_file_content(
+                kwargs.get("file_path") or kwargs.get("path") or kwargs.get("filepath") or kwargs.get("file") or ""
             ),
             "control_window": lambda **kwargs: control_window(
                 kwargs.get("action") or "",
@@ -311,7 +314,9 @@ class AgentExecutor:
 
                 print(f"[LM Studio] Model '{model_name}' is offline. Automatically loading: '{lm_studio_identifier}'...")
                 payload = {
-                    "model": lm_studio_identifier
+                    "model": lm_studio_identifier,
+                    "llamaKCacheQuantizationType": "q8_0",
+                    "llamaVCacheQuantizationType": "q8_0"
                 }
 
                 async with session.post(f"{config.LMSTUDIO_URL}/api/v1/models/load", json=payload, timeout=45) as load_resp:
@@ -1265,6 +1270,18 @@ class AgentExecutor:
                     
                     tool_call_id = tool_call.get("id") or "call_default"
                     current_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "name": tool_name,
+                        "content": str(tool_result)
+                    })
+
+                    final_history.append({
+                        "role": "assistant",
+                        "content": accumulated_response if accumulated_response.strip() else "Running tool...",
+                        "tool_calls": tool_calls_to_execute
+                    })
+                    final_history.append({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
                         "name": tool_name,

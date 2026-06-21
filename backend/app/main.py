@@ -154,11 +154,13 @@ async def check_tts_connectivity():
     print("Initializing local Kokoro-ONNX neural TTS engine...")
     try:
         # Verify local model initialization and speech generation (large timeout for initial load/download)
-        audio_bytes = await asyncio.wait_for(generate_speech_bytes("hi"), timeout=25.0)
+        audio_bytes = await asyncio.wait_for(generate_speech_bytes("hi"), timeout=60.0)
         if audio_bytes:
             print("Local Kokoro neural voice engine loaded successfully and active.")
             tts_online_status = True
             return
+    except asyncio.TimeoutError:
+        print("Local Kokoro neural voice engine failed to load: initialization timed out after 60 seconds.")
     except Exception as e:
         print(f"Local Kokoro neural voice engine failed to load: {e}")
     
@@ -662,6 +664,31 @@ def get_search_suggestions(query: str, type: str):
                 "path": file_path,
                 "type": "file",
                 "score": final_score,
+                "tie_breaker": tie_breaker
+            })
+            
+    elif type in ("read", "sum"):
+        # Search only database files of category document
+        try:
+            raw_candidates = query_database_union(parsed, limit_raw=500, categories=["document"], silent=True)
+        except Exception as e:
+            print(f"[Suggestions API] DB search error: {e}")
+            raw_candidates = []
+
+        for c in raw_candidates:
+            file_path = c.get("file_path")
+            if not file_path or not os.path.exists(file_path) or not _is_safe_path(file_path):
+                continue
+            
+            score, title_hits, tie_breaker = _density_score(c, parsed)
+            if score <= 0:
+                continue
+                
+            results.append({
+                "name": c["file_name"],
+                "path": file_path,
+                "type": "file",
+                "score": score,
                 "tie_breaker": tie_breaker
             })
             
@@ -1185,28 +1212,63 @@ async def websocket_endpoint(websocket: WebSocket):
                 chat_task = asyncio.create_task(run_chat(data))
                 
             elif msg_type == "tts_only":
-                # Synthesise a short system message via Kokoro TTS without calling the LLM
+                # Synthesise system message via Kokoro TTS without calling the LLM, chunking to avoid timeouts
                 tts_text = data.get("text", "").strip()
                 expression = data.get("expression", None)
                 if tts_text and tts_online_status:
                     try:
-                        speech_text = make_speech_friendly(tts_text)
-                        audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=8.0)
-                        if audio_bytes:
-                            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-                            audio_url = f"data:audio/wav;base64,{audio_base64}"
-                            await websocket.send_json({
-                                "type": "audio_chunk",
-                                "audio_url": audio_url,
-                                "index": 0,
-                                "text": tts_text,
-                                "speech_text": speech_text,
-                                "tts_backend": "kokoro",
-                                "tts_time_ms": 0,
-                                "expression": expression
-                            })
+                        import re
+                        # Split text into sentences
+                        sentences = []
+                        remaining_text = tts_text
+                        
+                        def find_boundary(txt: str) -> int:
+                            min_idx = -1
+                            terminators = [('? ', 1), ('! ', 1), ('. ', 1), ('\n', 0), ('? \n', 2), ('! \n', 2), ('. \n', 2)]
+                            for term, offset in terminators:
+                                idx = txt.find(term)
+                                if idx != -1:
+                                    if min_idx == -1 or idx < min_idx:
+                                        min_idx = idx + len(term) - offset - 1
+                            return min_idx
+
+                        while True:
+                            boundary = find_boundary(remaining_text)
+                            if boundary == -1:
+                                if remaining_text.strip():
+                                    sentences.append(remaining_text.strip())
+                                break
+                            sentence = remaining_text[:boundary + 1].strip()
+                            remaining_text = remaining_text[boundary + 1:]
+                            if sentence:
+                                sentences.append(sentence)
+
+                        # Now synthesize and send each sentence sequentially
+                        audio_idx = 0
+                        for sentence in sentences:
+                            speech_text = make_speech_friendly(sentence)
+                            if not re.sub(r'[^\w\s]', '', speech_text).strip():
+                                continue
+                            try:
+                                audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=8.0)
+                                if audio_bytes:
+                                    audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                                    audio_url = f"data:audio/wav;base64,{audio_base64}"
+                                    await websocket.send_json({
+                                        "type": "audio_chunk",
+                                        "audio_url": audio_url,
+                                        "index": audio_idx,
+                                        "text": sentence,
+                                        "speech_text": speech_text,
+                                        "tts_backend": "kokoro",
+                                        "tts_time_ms": 0,
+                                        "expression": expression
+                                    })
+                                    audio_idx += 1
+                            except Exception as e:
+                                print(f"[TTS-Only] Sentence synthesis error for '{sentence}': {e}")
                     except Exception as e:
-                        print(f"[TTS-Only] Synthesis error: {e}")
+                        print(f"[TTS-Only] Segment synthesis error: {e}")
                 await websocket.send_json({"type": "stream_done", "backend_used": "tts_only", "response_time": 0})
 
 

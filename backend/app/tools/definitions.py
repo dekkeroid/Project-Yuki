@@ -164,6 +164,20 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
+                "name": "read_file_content",
+                "description": "Read the contents of a local text, code, or PDF file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "description": "Absolute path to the file to read."}
+                    },
+                    "required": ["file_path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "control_window",
                 "description": "Manage active windows.",
                 "parameters": {
