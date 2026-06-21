@@ -68,11 +68,11 @@ async def web_search(query: str) -> str:
 
     urls = []
     snippets_list = []
-    
-    # 1. Try DuckDuckGo HTML Search
-    ddg_url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
-    try:
-        async with httpx.AsyncClient() as client:
+
+    async with httpx.AsyncClient() as client:
+        # 1. Try DuckDuckGo HTML Search
+        ddg_url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
+        try:
             resp = await client.get(ddg_url, headers=headers, timeout=5.0)
             if resp.status_code == 200 and "captcha" not in resp.text.lower() and "anomaly" not in resp.text.lower():
                 soup = BeautifulSoup(resp.text, "html.parser")
@@ -83,27 +83,26 @@ async def web_search(query: str) -> str:
                         title = link_el.get_text(strip=True)
                         href = link_el.get("href", "")
                         desc = desc_el.get_text(strip=True)
-                        
+
                         # Decode DDG redirect URL
                         parsed = urllib.parse.urlparse(href)
                         qs = urllib.parse.parse_qs(parsed.query)
                         real_url = qs.get("uddg", [href])[0]
                         if real_url.startswith("//"):
                             real_url = "https:" + real_url
-                            
+
                         if real_url and real_url not in urls and not real_url.startswith("/"):
                             urls.append(real_url)
-                        
-                        snippets_list.append(f"- {title}: {desc} ({real_url})")
-    except Exception as e:
-        import sys
-        print(f"[web_search] DDG attempt failed: {e}", file=sys.stderr)
 
-    # 2. Fallback: Try Yahoo Search if DDG failed or returned nothing
-    if not urls:
-        yahoo_url = f"https://search.yahoo.com/search?p={encoded_query}"
-        try:
-            async with httpx.AsyncClient() as client:
+                        snippets_list.append(f"- {title}: {desc} ({real_url})")
+        except Exception as e:
+            import sys
+            print(f"[web_search] DDG attempt failed: {e}", file=sys.stderr)
+
+        # 2. Fallback: Try Yahoo Search if DDG failed or returned nothing
+        if not urls:
+            yahoo_url = f"https://search.yahoo.com/search?p={encoded_query}"
+            try:
                 resp = await client.get(yahoo_url, headers=headers, timeout=5.0)
                 if resp.status_code == 200:
                     soup = BeautifulSoup(resp.text, "html.parser")
@@ -114,68 +113,67 @@ async def web_search(query: str) -> str:
                             title = link_el.get_text(strip=True)
                             href = link_el.get("href", "")
                             desc = desc_el.get_text(strip=True)
-                            
+
                             # Clean up Yahoo redirect URLs if needed
                             if "r.search.yahoo.com" in href:
                                 ru_match = re.search(r'/RU=([^/]+)/', href)
                                 if ru_match:
                                     href = urllib.parse.unquote(ru_match.group(1))
-                            
+
                             if href and href not in urls and "yahoo.com" not in href:
                                 urls.append(href)
                             snippets_list.append(f"- {title}: {desc} ({href})")
-        except Exception as e:
-            import sys
-            print(f"[web_search] Yahoo attempt failed: {e}", file=sys.stderr)
+            except Exception as e:
+                import sys
+                print(f"[web_search] Yahoo attempt failed: {e}", file=sys.stderr)
 
-    if not snippets_list:
-        return f"No search results found for '{query}'."
+        if not snippets_list:
+            return f"No search results found for '{query}'."
 
-    # 3. Asynchronously fetch top 2 organic page contents in parallel
-    top_urls = urls[:2]
-    page_contents = []
+        # 3. Asynchronously fetch top 2 organic page contents in parallel
+        top_urls = urls[:2]
 
-    async def fetch_page(url: str):
-        try:
-            parsed_url = urllib.parse.urlparse(url)
-            domain = parsed_url.netloc.replace("www.", "")
-        except Exception:
-            domain = url
+        async def fetch_page(url: str):
+            try:
+                parsed_url = urllib.parse.urlparse(url)
+                domain = parsed_url.netloc.replace("www.", "")
+            except Exception:
+                domain = url
 
-        try:
-            async with httpx.AsyncClient() as client:
+            try:
                 resp = await client.get(url, headers=headers, follow_redirects=True, timeout=6.0)
                 if resp.status_code == 200:
                     soup = BeautifulSoup(resp.text, "html.parser")
                     # Remove scripts, styles, header, footer, nav to get clean content
                     for element in soup(["script", "style", "header", "footer", "nav", "aside"]):
                         element.decompose()
-                    
+
                     text = soup.get_text(separator=" ")
                     # Clean whitespaces
                     cleaned_text = re.sub(r'\s+', ' ', text).strip()
                     # Truncate to speed up context loading
                     truncated = cleaned_text[:2000]
                     return f"[Source: {domain} ({url})]\n{truncated}"
-        except Exception as e:
-            import sys
-            print(f"[web_search] Failed to fetch {url}: {e}", file=sys.stderr)
-        return None
+            except Exception as e:
+                import sys
+                print(f"[web_search] Failed to fetch {url}: {e}", file=sys.stderr)
+            return None
 
-    if top_urls:
-        import asyncio
-        tasks = [fetch_page(u) for u in top_urls]
-        fetched = await asyncio.gather(*tasks)
-        page_contents = [f for f in fetched if f]
+        page_contents = []
+        if top_urls:
+            import asyncio
+            tasks = [fetch_page(u) for u in top_urls]
+            fetched = await asyncio.gather(*tasks)
+            page_contents = [f for f in fetched if f]
 
     # 4. Compile final context for the LLM
     context_parts = []
     context_parts.append(f"Web search results for: \"{query}\"")
     context_parts.append("Snippets:\n" + "\n".join(snippets_list))
-    
+
     if page_contents:
         context_parts.append("\nDetailed Page Contents:\n" + "\n\n".join(page_contents))
-    
+
     return "\n\n".join(context_parts)
 
 

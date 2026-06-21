@@ -345,19 +345,17 @@ class AgentExecutor:
                 "messages": messages,
                 "temperature": 0.5,
             }
-            response = requests.post(
-                url,
-                headers={"Content-Type": "application/json"},
-                json=payload,
-                timeout=5,
-            )
-            response.raise_for_status()
-            choices = response.json().get("choices", [])
-            if choices:
-                explanation = choices[0].get("message", {}).get("content", "").strip()
-                if explanation:
-                    return explanation
-            raise Exception("Empty response from LLM")
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, json=payload) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    choices = data.get("choices", [])
+                    if choices:
+                        explanation = choices[0].get("message", {}).get("content", "").strip()
+                        if explanation:
+                            return explanation
+                    raise Exception("Empty response from LLM")
         except Exception as e:
             return (
                 f"Hmph! Something went wrong in my system. It looks like my brain server (LM Studio) "

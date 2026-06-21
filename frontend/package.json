@@ -1,7 +1,7 @@
 {
   "name": "yuki-ai",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0-alpha",
   "type": "module",
   "main": "main.electron.cjs",
   "productName": "Yuki AI",

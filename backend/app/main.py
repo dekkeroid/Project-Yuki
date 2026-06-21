@@ -6,6 +6,7 @@ import re
 import sys
 import logging
 import requests as http_requests
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
@@ -45,7 +46,70 @@ from app.memory.crawler import start_crawler_services
 from app.tools.system import get_detailed_stats
 from app.tools.safety import approve_pending_confirmation, authorize_tool_call, issue_pending_confirmation
 
-app = FastAPI(title="Yuki Desktop Assistant Backend", version="1.0.0")
+# ---------------------------------------------------------------------------
+# Lifespan context manager (replaces deprecated @app.on_event)
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown logic for the FastAPI application."""
+    global tts_online_status
+
+    # ── Startup ──────────────────────────────────────────────────────────
+    print("Initializing background crawler and file indexing database...")
+    try:
+        from app.memory import crawler
+        initial_paused = memory_manager.profile["settings"].get("crawler_paused", False)
+        if initial_paused:
+            crawler.pause_crawler()
+        else:
+            crawler.resume_crawler()
+
+        initial_tagger_paused = memory_manager.profile["settings"].get("tagger_paused", False)
+        if initial_tagger_paused:
+            crawler.pause_tagger()
+        else:
+            crawler.resume_tagger()
+
+        start_crawler_services()
+    except Exception as e:
+        print(f"Failed to start crawler services: {e}")
+
+    if not getattr(config, 'NO_LLM_MODE', False):
+        print(f"Verifying brain state. Checking if model '{config.LLM_MODEL}' is loaded in LM Studio...")
+        asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
+    else:
+        print("NO_LLM_MODE is enabled. Skipping LLM auto-load on startup.")
+
+    if config.TOOL_TRANSPORT == "mcp-stdio":
+        print("Verifying stdio MCP tool bridge...")
+        mcp_ready = await agent_executor.mcp_tools.ensure_connected()
+        if not mcp_ready:
+            message = f"Stdio MCP tool bridge failed to start: {agent_executor.mcp_tools.last_error}"
+            if config.MCP_FALLBACK_TO_LOCAL:
+                print(f"{message}. Falling back to local tool dispatcher.")
+            else:
+                raise RuntimeError(message)
+
+    print("Initializing local Kokoro-ONNX neural TTS engine...")
+    try:
+        audio_bytes = await asyncio.wait_for(generate_speech_bytes("hi"), timeout=60.0)
+        if audio_bytes:
+            print("Local Kokoro neural voice engine loaded successfully and active.")
+            tts_online_status = True
+    except asyncio.TimeoutError:
+        print("Local Kokoro neural voice engine failed to load: initialization timed out after 60 seconds.")
+    except Exception as e:
+        print(f"Local Kokoro neural voice engine failed to load: {e}")
+        print("Offline local neural TTS service is unavailable. Enabling offline browser fallback by default.")
+        tts_online_status = False
+
+    yield
+
+    # ── Shutdown ─────────────────────────────────────────────────────────
+    await agent_executor.mcp_tools.aclose()
+
+
+app = FastAPI(title="Yuki Desktop Assistant Backend", version="1.0.0", lifespan=lifespan)
 
 # Setup CORS — restrict to localhost and LAN origins
 app.add_middleware(
@@ -108,70 +172,6 @@ async def broadcast_ws(payload: dict):
         except Exception:
             if ws in active_websockets:
                 active_websockets.remove(ws)
-
-@app.on_event("startup")
-async def check_tts_connectivity():
-    global tts_online_status
-    print("Initializing background crawler and file indexing database...")
-    try:
-        # Sync crawler state on startup from settings profile
-        from app.memory import crawler
-        initial_paused = memory_manager.profile["settings"].get("crawler_paused", False)
-        if initial_paused:
-            crawler.pause_crawler()
-        else:
-            crawler.resume_crawler()
-
-        initial_tagger_paused = memory_manager.profile["settings"].get("tagger_paused", False)
-        if initial_tagger_paused:
-            crawler.pause_tagger()
-        else:
-            crawler.resume_tagger()
-
-        start_crawler_services()
-    except Exception as e:
-        print(f"Failed to start crawler services: {e}")
-
-    # ---- NEW: DYNAMIC LM STUDIO AUTO-LOAD CALL ----
-    if not getattr(config, 'NO_LLM_MODE', False):
-        print(f"Verifying brain state. Checking if model '{config.LLM_MODEL}' is loaded in LM Studio...")
-        # Trigger our newly created helper function in the background so it doesn't block startup
-        asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
-    else:
-        print("NO_LLM_MODE is enabled. Skipping LLM auto-load on startup.")
-    # -----------------------------------------------
-
-    if config.TOOL_TRANSPORT == "mcp-stdio":
-        print("Verifying stdio MCP tool bridge...")
-        mcp_ready = await agent_executor.mcp_tools.ensure_connected()
-        if not mcp_ready:
-            message = f"Stdio MCP tool bridge failed to start: {agent_executor.mcp_tools.last_error}"
-            if config.MCP_FALLBACK_TO_LOCAL:
-                print(f"{message}. Falling back to local tool dispatcher.")
-            else:
-                raise RuntimeError(message)
-
-    print("Initializing local Kokoro-ONNX neural TTS engine...")
-    try:
-        # Verify local model initialization and speech generation (large timeout for initial load/download)
-        audio_bytes = await asyncio.wait_for(generate_speech_bytes("hi"), timeout=60.0)
-        if audio_bytes:
-            print("Local Kokoro neural voice engine loaded successfully and active.")
-            tts_online_status = True
-            return
-    except asyncio.TimeoutError:
-        print("Local Kokoro neural voice engine failed to load: initialization timed out after 60 seconds.")
-    except Exception as e:
-        print(f"Local Kokoro neural voice engine failed to load: {e}")
-    
-    print("Offline local neural TTS service is unavailable. Enabling offline browser fallback by default.")
-    tts_online_status = False
-
-
-@app.on_event("shutdown")
-async def shutdown_mcp_tool_bridge():
-    await agent_executor.mcp_tools.aclose()
-
 
 async def test_and_announce_voice_change(new_voice: str, new_rate: str = None):
     global tts_online_status
