@@ -40,6 +40,11 @@ const ControlDashboard = ({
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('memory');
 
+  // Camera tracking toggle state (persisted via localStorage in AvatarViewer)
+  const [cameraTracking, setCameraTracking] = useState(() => {
+    try { return localStorage.getItem('yuki-camera-tracking') === 'true'; } catch { return false; }
+  });
+
   // Model selector state removed
 
   // Settings State
@@ -1198,6 +1203,28 @@ const ControlDashboard = ({
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Camera-Aware Gaze Tracking Toggle */}
+              <div className="card-group" style={{ marginTop: '12px' }}>
+                <div className="card-group-header">
+                  <Cpu className="w-4 h-4 text-teal-400" />
+                  <span className="card-group-title">Rotation Behavior</span>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '6px', cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={cameraTracking}
+                    onChange={(e) => {
+                      setCameraTracking(e.target.checked);
+                      if (window.yukiDebugToggles) window.yukiDebugToggles.cameraTracking = e.target.checked;
+                    }}
+                    style={{ accentColor: '#2dd4bf', width: '13px', height: '13px', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: '#99f6e4', lineHeight: 1.3 }}>
+                    Enable looking at you — head tracks camera position
+                  </span>
+                </label>
               </div>
 
               {/* Dynamic Animations Toggles */}

@@ -451,6 +451,9 @@ const App = () => {
   }, [profile]);
   const [currentSpeechText, setCurrentSpeechText] = useState('');
   const [muteVoice, setMuteVoice] = useState(false);
+  const [cameraTrackingState, setCameraTrackingState] = useState(() => {
+    try { return localStorage.getItem('yuki-camera-tracking') === 'true'; } catch { return false; }
+  });
   const [voiceVolume, setVoiceVolume] = useState(() => {
     return parseFloat(localStorage.getItem('yuki-voice-volume') || '0.5');
   });
@@ -4094,35 +4097,6 @@ const App = () => {
                         />
                       </div>
 
-                      {/* Companion Rotation Settings */}
-                      <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', userSelect: 'none' }}>
-                          <input
-                            type="checkbox"
-                            checked={profile.settings?.enable_rotation || false}
-                            onChange={(e) => handleUpdateSetting('enable_rotation', e.target.checked)}
-                            style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
-                          />
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
-                            Enable Model Rotation (Right-Click Drag)
-                          </span>
-                        </label>
-                        
-                        {profile.settings?.enable_rotation && (
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', marginLeft: '16px', cursor: 'pointer', userSelect: 'none' }}>
-                            <input
-                              type="checkbox"
-                              checked={profile.settings?.auto_reset_rotation !== undefined ? profile.settings.auto_reset_rotation : true}
-                              onChange={(e) => handleUpdateSetting('auto_reset_rotation', e.target.checked)}
-                              style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
-                            />
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
-                              Return to original position after 10s of inactivity
-                            </span>
-                          </label>
-                        )}
-                      </div>
-
                       <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
                         <label className="desktop-label">Skin Color Preset</label>
                         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -4453,6 +4427,59 @@ const App = () => {
                             ))
                           )}
                         </select>
+                      </div>
+                    </div>
+
+                    {/* Rotation Behavior */}
+                    <div className="card-group" style={{ marginTop: '10px' }}>
+                      <div className="card-group-header">
+                        <Cpu className="w-3.5 h-3.5 text-teal-400" />
+                        <span className="card-group-title">Rotation Behavior</span>
+                      </div>
+
+                      <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', userSelect: 'none' }}>
+                          <input
+                            type="checkbox"
+                            checked={profile.settings?.enable_rotation || false}
+                            onChange={(e) => handleUpdateSetting('enable_rotation', e.target.checked)}
+                            style={{ accentColor: '#2dd4bf', width: '13px', height: '13px', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '0.72rem', color: '#99f6e4', lineHeight: 1.3 }}>
+                            Enable Model Rotation (Right-Click Drag)
+                          </span>
+                        </label>
+
+                        {profile.settings?.enable_rotation && (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', marginLeft: '16px', cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={profile.settings?.auto_reset_rotation !== undefined ? profile.settings.auto_reset_rotation : true}
+                              onChange={(e) => handleUpdateSetting('auto_reset_rotation', e.target.checked)}
+                              style={{ accentColor: '#2dd4bf', width: '13px', height: '13px', cursor: 'pointer' }}
+                            />
+                            <span style={{ fontSize: '0.72rem', color: '#99f6e4', lineHeight: 1.3 }}>
+                              Return to original position after 10s
+                            </span>
+                          </label>
+                        )}
+
+                        {profile.settings?.enable_rotation && (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', marginLeft: '16px', cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={cameraTrackingState}
+                              onChange={(e) => {
+                                setCameraTrackingState(e.target.checked);
+                                if (window.yukiDebugToggles) window.yukiDebugToggles.cameraTracking = e.target.checked;
+                              }}
+                              style={{ accentColor: '#2dd4bf', width: '13px', height: '13px', cursor: 'pointer' }}
+                            />
+                            <span style={{ fontSize: '0.72rem', color: '#99f6e4', lineHeight: 1.3 }}>
+                              Enable looking at you — head tracks camera position
+                            </span>
+                          </label>
+                        )}
                       </div>
                     </div>
 

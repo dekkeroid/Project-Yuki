@@ -527,6 +527,13 @@ const AvatarViewer = ({
           }
         }
       },
+      get cameraTracking() {
+        try { return localStorage.getItem('yuki-camera-tracking') === 'true'; } catch { return false; }
+      },
+      set cameraTracking(val) {
+        try { localStorage.setItem('yuki-camera-tracking', String(val)); } catch {}
+        console.log(`[Yuki Debug] cameraTracking set to ${val}`);
+      },
       dragPhysics: true,
       floatingIdle: true,
       wind: true,
@@ -609,7 +616,7 @@ const AvatarViewer = ({
       20.0
     );
     // In Electron: position camera low and far back to see full body including legs
-    camera.position.set(0, isElectron ? 0.85 : 1.35, isElectron ? 2.2 : 1.2);
+    camera.position.set(0, isElectron ? 1.55 : 1.35, isElectron ? 2.2 : 1.2);
     window.vrmCamera = camera;
 
     // 3. Setup Renderer
@@ -1203,7 +1210,7 @@ const AvatarViewer = ({
         // Update camera target, Y, and Z positions dynamically based on scale (Electron mode only)
         if (isElectron && controls && camera) {
           const baseTargetOffset = 0.55;
-          const baseCameraOffset = 0.45;
+          const baseCameraOffset = -0.10;
           // const baseCameraZ = 2.2;
 
           // Divide distance by reducer. If reducer is 0.8, camera moves back, making her smaller.
@@ -1234,7 +1241,7 @@ const AvatarViewer = ({
             const now = Date.now();
             if (!isRotating && autoResetRotationRef.current && (now - lastRotationTime > 10000)) {
               // Smooth return to front-facing position
-              const defaultOffset = new THREE.Vector3(0, 0.10 * scaleRef.current, baseCameraZ * scaleRef.current);
+              const defaultOffset = new THREE.Vector3(0, 0.65 * scaleRef.current, baseCameraZ * scaleRef.current);
               const targetCamPos = new THREE.Vector3().copy(controls.target).add(defaultOffset);
               const dist = camera.position.distanceTo(targetCamPos);
               if (dist > 0.001) {
@@ -1484,11 +1491,55 @@ const AvatarViewer = ({
           if (vrm.humanoid) {
             // Neck look-around state machine update
             const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
-            let targetLookY = 0;
-            let targetLookX = isElectron ? -0.08 : 0;
+
+            const enableCameraTracking = !!(window.yukiDebugToggles && window.yukiDebugToggles.cameraTracking);
+
+            let baseLookY, baseLookX, baseLookZ;
+            if (enableCameraTracking) {
+              // ---------------------------------------------------------
+              // --- CAMERA-AWARE GAZE TRACKING BASE CALCULATION ---
+              // ---------------------------------------------------------
+              const cameraYaw = Math.atan2(camera.position.x, camera.position.z);
+              const bodyRotationOffset = vrm.scene.rotation.y - baseRotation;
+              let trackingYawOffset = cameraYaw - bodyRotationOffset;
+
+              const yawScale = 0.55;
+              const maxNeckYaw = 1.2;
+              trackingYawOffset = Math.max(-maxNeckYaw, Math.min(maxNeckYaw, trackingYawOffset * yawScale));
+
+              const headHeight = 1.4 * scaleRef.current;
+              const horizontalDist = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
+              const trackingPitchOffset = horizontalDist > 0.01
+                ? Math.atan2(camera.position.y - headHeight, horizontalDist) * 0.8
+                : 0;
+              const minPitch = -0.45;
+              const maxPitch = 0.35;
+              const clampedPitch = Math.max(minPitch, Math.min(maxPitch, trackingPitchOffset));
+
+              baseLookY = trackingYawOffset;
+              baseLookX = clampedPitch;
+
+              const rollScale = 0.5;
+              baseLookZ = horizontalDist > 0.01
+                ? Math.atan2(-camera.position.x, horizontalDist) * rollScale
+                : 0;
+            } else {
+              baseLookY = 0;
+              baseLookX = 0;
+              baseLookZ = 0;
+            }
+
+            let targetLookY = baseLookY;
+            let targetLookX = baseLookX;
+            // ---------------------------------------------------------
 
             const enableMouseTracking = !disabledAnimationsRef.current.includes('mouse_tracking') && (window.yukiDebugToggles ? window.yukiDebugToggles.mouseTracking !== false : true);
-            if (isMouseInWindow) {
+
+            // During right-click orbit, skip mouse tracking entirely —
+            // the camera position already encodes where the user is looking from.
+            const isOrbiting = isRotating;
+
+            if (!isOrbiting && isMouseInWindow) {
               if (!enableMouseTracking) {
                 isMouseInWindow = false;
                 lookState = 'returning';
@@ -1512,7 +1563,13 @@ const AvatarViewer = ({
               }
             }
 
-            if (isMouseInWindow) {
+            if (isOrbiting && enableCameraTracking) {
+              // While orbiting, head purely tracks the camera position
+              targetLookY = baseLookY;
+              targetLookX = baseLookX;
+              lookState = 'idle';
+              lookTimer = 0;
+            } else if (isMouseInWindow) {
               if (isElectron) {
                 if (enableMouseTracking) {
                   const dx = cursorOffsetRef.current.x;
@@ -1526,32 +1583,29 @@ const AvatarViewer = ({
                     influence = t * t * (3 - 2 * t);
                   }
 
-                  // Smooth screen-wide proximity tracking using arctan mapping
-                  targetLookY = Math.atan(dx / 300) * 0.45 * influence;
-                  targetLookX = -Math.atan(dy / 300) * 0.25 * influence;
+                  targetLookY = Math.atan(dx / 300) * 0.45 * influence + baseLookY;
+                  targetLookX = -Math.atan(dy / 300) * 0.25 * influence + baseLookX;
                 } else {
-                  targetLookY = 0;
-                  targetLookX = isElectron ? -0.08 : 0;
+                  targetLookY = baseLookY;
+                  targetLookX = baseLookX;
                 }
               } else {
-                // Web browser mode: normal NDC tracking
-                targetLookY = mouseNDC.x * 0.45; // look left/right (yaw)
+                targetLookY = mouseNDC.x * 0.45 + baseLookY;
                 const verticalCenter = 0.0;
-                targetLookX = (mouseNDC.y - verticalCenter) * 0.22; // look up/down (pitch)
+                targetLookX = (mouseNDC.y - verticalCenter) * 0.22 + baseLookX;
               }
 
-              lookState = 'idle'; // reset standard look state machine to idle
+              lookState = 'idle';
               lookTimer = 0;
             } else if (!isWalkingRef.current) {
-              // Standard random look-around behavior (only when standing)
               const enableLookAround = window.yukiDebugToggles ? window.yukiDebugToggles.lookAround : true;
               if (enableLookAround && isElectron) {
                 lookTimer += delta;
                 if (lookState === 'idle') {
                   if (lookTimer >= nextLookTime) {
                     lookState = 'turning';
-                    lookTargetY = (Math.random() - 0.5) * 0.45; // look left/right (up to ~25 deg)
-                    lookTargetX = (Math.random() - 0.5) * 0.2;  // look up/down (up to ~11 deg)
+                    lookTargetY = (Math.random() - 0.5) * 0.45 + baseLookY;
+                    lookTargetX = (Math.random() - 0.5) * 0.2 + baseLookX;
                     lookTimer = 0;
                   }
                 } else if (lookState === 'turning') {
@@ -1569,25 +1623,24 @@ const AvatarViewer = ({
                     lookState = 'returning';
                   }
                 } else if (lookState === 'returning') {
-                  targetLookY = 0;
-                  targetLookX = isElectron ? -0.08 : 0;
-                  if (Math.abs(currentLookY) < 0.03 && Math.abs(currentLookX - targetLookX) < 0.03) {
+                  targetLookY = baseLookY;
+                  targetLookX = baseLookX;
+                  if (Math.abs(currentLookY - targetLookY) < 0.03 && Math.abs(currentLookX - targetLookX) < 0.03) {
                     lookState = 'idle';
                     lookTimer = 0;
                     nextLookTime = 6 + Math.random() * 10;
                   }
                 }
               } else {
-                targetLookY = 0;
-                targetLookX = isElectron ? -0.08 : 0;
+                targetLookY = baseLookY;
+                targetLookX = baseLookX;
               }
             } else {
-              // Standard reset when walking and mouse is not in window
               lookState = 'idle';
-              currentLookX = 0;
-              currentLookY = 0;
-              currentGazeX = 0;
-              currentGazeY = 0;
+              currentLookX = baseLookX;
+              currentLookY = baseLookY;
+              currentGazeX = baseLookX;
+              currentGazeY = baseLookY;
               lookVelocityX = 0;
               lookVelocityY = 0;
               lookTimer = 0;
@@ -1732,7 +1785,7 @@ const AvatarViewer = ({
                 awakeNeckX = (-0.12 + neckOffsetX + currentLookX + Math.sin(time * 0.35) * 0.012 - breathingNod + microFidgetNeckX + neckAnimX) * xMult;
 
                 // Head Tilts for Empathy (Z-roll) & Curious Thinking
-                let tiltZ = microFidgetNeckZ + neckAnimZ;
+                let tiltZ = microFidgetNeckZ + neckAnimZ + baseLookZ;
                 let tiltX = 0;
 
                 if (isListeningRef.current) {
