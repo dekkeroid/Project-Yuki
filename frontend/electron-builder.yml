@@ -1,0 +1,67 @@
+appId: com.yuki.ai
+productName: Yuki AI
+copyright: Copyright © 2026
+
+# ── Build output ─────────────────────────────────────────────────────────────
+directories:
+  output: release
+  buildResources: build
+
+# ── Files to include in the Electron app ─────────────────────────────────────
+files:
+  - dist/**/*
+  - main.electron.cjs
+  - preload.cjs
+  - icon.png
+
+# ── Extra resources (copied next to the exe, not inside asar) ────────────────
+# The backend directory is built by PyInstaller and placed here before electron-builder runs.
+extraResources:
+  # Backend executable + supporting files
+  - from: ../backend/dist/backend
+    to: backend
+    filter:
+      - "**/*"
+  # Default .env for new users (next to backend.exe)
+  - from: ../backend/.env.default
+    to: backend/.env
+    filter:
+      - "**/*"
+
+# ── Windows ──────────────────────────────────────────────────────────────────
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: icon.ico
+  artifactName: "${productName}-${version}-Setup.${ext}"
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico
+  installerHeaderIcon: icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Yuki AI
+
+# ── macOS (for future) ──────────────────────────────────────────────────────
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: icon.icns
+  artifactName: "${productName}-${version}.${ext}"
+
+# ── Linux (for future) ──────────────────────────────────────────────────────
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  icon: icon.png
+  artifactName: "${productName}-${version}.${ext}"

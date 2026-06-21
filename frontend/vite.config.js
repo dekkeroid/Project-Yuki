@@ -13,12 +13,12 @@ export default defineConfig({
     allowedHosts: ['.ngrok-free.app', 'harsh-pc.local'],
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:7860',
         changeOrigin: true,
         secure: false
       },
       '/ws': {
-        target: 'ws://127.0.0.1:8000',
+        target: 'ws://127.0.0.1:7860',
         ws: true,
         changeOrigin: true
       }

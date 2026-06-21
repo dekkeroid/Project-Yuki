@@ -323,8 +323,8 @@ namespace Yuki.UnityFrontend.Backend
     [CreateAssetMenu(menuName = "Yuki/Backend Config")]
     public sealed class YukiBackendConfig : ScriptableObject
     {
-        [SerializeField] private string httpBaseUrl = "http://127.0.0.1:8000";
-        [SerializeField] private string websocketUrl = "ws://127.0.0.1:8000/ws";
+        [SerializeField] private string httpBaseUrl = "http://127.0.0.1:7860";
+        [SerializeField] private string websocketUrl = "ws://127.0.0.1:7860/ws";
 
         public string HttpBaseUrl => httpBaseUrl;
         public string WebsocketUrl => websocketUrl;
@@ -631,7 +631,7 @@ Write `docs/unity-frontend.md`:
 
 ## Shared backend contract
 
-- WebSocket: `ws://127.0.0.1:8000/ws`
+- WebSocket: `ws://127.0.0.1:7860/ws`
 - Chat send payload: `{ "type": "chat", "message": "..." }`
 - Confirmation response payload: `{ "type": "confirm_response", "conf_id": "...", "confirmed": true }`
 - Quick open/play REST: `POST /api/system/open_or_play`

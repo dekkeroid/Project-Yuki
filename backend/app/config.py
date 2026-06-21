@@ -1,11 +1,22 @@
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+# ---------------------------------------------------------------------------
+# Resolve paths for both development and PyInstaller frozen builds.
+# When frozen, sys.executable points to the bundled .exe location.
+# ---------------------------------------------------------------------------
+if getattr(sys, 'frozen', False):
+    _APP_DIR = Path(sys.executable).parent
+else:
+    _APP_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(_APP_DIR / ".env")
 
 # Base Paths
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = _APP_DIR
 PROFILE_PATH = BASE_DIR / "profile.json"
 
 # LLM / Agent Configuration

@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, screen, globalShortcut, powerMonitor, Menu, Tray } = require('electron');
 const path = require('path');
 const http = require('http');
+const { spawn } = require('child_process');
 
 // ---------- Chromium Performance & VRAM Optimization Switches ----------
 // 1. Hard limit the Javascript V8 engine heap size to 1.2GB to stop virtual memory bloating
@@ -430,9 +431,117 @@ function createTray() {
   });
 }
 
+// ---------- Backend Process Management ----------
+
+let backendProcess = null;
+const BACKEND_PORT = 7860;
+
+function getBackendExecutable() {
+  // In packaged app: backend.exe sits next to the Electron exe
+  if (app.isPackaged) {
+    const exeDir = path.dirname(process.executable);
+    const backendExe = path.join(exeDir, 'backend.exe');
+    return { cmd: backendExe, args: [], cwd: exeDir };
+  }
+  // In development: run python directly
+  const backendDir = path.join(__dirname, '..', 'backend');
+  const venvPython = path.join(backendDir, 'venv', 'Scripts', 'python.exe');
+  return { cmd: venvPython, args: ['run.py'], cwd: backendDir };
+}
+
+function waitForBackend(port, maxAttempts = 30, intervalMs = 1000) {
+  return new Promise((resolve) => {
+    let attempts = 0;
+    const check = () => {
+      attempts++;
+      const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
+        res.destroy();
+        resolve(true);
+      });
+      req.setTimeout(2000, () => {
+        req.destroy();
+        if (attempts < maxAttempts) {
+          setTimeout(check, intervalMs);
+        } else {
+          resolve(false);
+        }
+      });
+      req.on('error', () => {
+        if (attempts < maxAttempts) {
+          setTimeout(check, intervalMs);
+        } else {
+          resolve(false);
+        }
+      });
+    };
+    check();
+  });
+}
+
+function startBackend() {
+  if (backendProcess) return Promise.resolve(true);
+
+  const { cmd, args, cwd } = getBackendExecutable();
+  console.log(`[Electron] Starting backend: ${cmd} ${args.join(' ')}`);
+
+  backendProcess = spawn(cmd, args, {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env },
+    windowsHide: true,
+  });
+
+  backendProcess.stdout?.on('data', (data) => {
+    const msg = data.toString().trim();
+    if (msg) console.log(`[Backend] ${msg}`);
+  });
+
+  backendProcess.stderr?.on('data', (data) => {
+    const msg = data.toString().trim();
+    if (msg) console.error(`[Backend] ${msg}`);
+  });
+
+  backendProcess.on('error', (err) => {
+    console.error('[Electron] Backend failed to start:', err.message);
+    backendProcess = null;
+  });
+
+  backendProcess.on('exit', (code) => {
+    console.log(`[Electron] Backend exited with code ${code}`);
+    backendProcess = null;
+  });
+
+  return waitForBackend(BACKEND_PORT);
+}
+
+function stopBackend() {
+  if (!backendProcess) return;
+  console.log('[Electron] Stopping backend...');
+  try {
+    // Graceful shutdown: send SIGTERM, force kill after 3s
+    backendProcess.kill('SIGTERM');
+    setTimeout(() => {
+      if (backendProcess) {
+        console.log('[Electron] Force killing backend...');
+        backendProcess.kill('SIGKILL');
+        backendProcess = null;
+      }
+    }, 3000);
+  } catch (e) {
+    console.warn('[Electron] Error stopping backend:', e.message);
+    backendProcess = null;
+  }
+}
+
 // ---------- App lifecycle ----------
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Start the backend first and wait for it to be ready
+  const backendReady = await startBackend();
+  if (!backendReady) {
+    console.error('[Electron] Backend failed to start within timeout. Continuing anyway...');
+  }
+
   createWindow();
   createTray();
 
@@ -451,6 +560,10 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     createTray();
   });
+});
+
+app.on('before-quit', () => {
+  stopBackend();
 });
 
 app.on('window-all-closed', () => {

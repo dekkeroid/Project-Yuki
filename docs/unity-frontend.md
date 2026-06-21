@@ -4,7 +4,7 @@
 
 ## Shared backend contract
 
-- WebSocket: `ws://127.0.0.1:8000/ws`
+- WebSocket: `ws://127.0.0.1:7860/ws`
 - Chat send payload: `{ "type": "chat", "message": "..." }`
 - Confirmation response payload: `{ "type": "confirm_response", "conf_id": "...", "confirmed": true }`
 - Quick open/play REST: `POST /api/system/open_or_play`
