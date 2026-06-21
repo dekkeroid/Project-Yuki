@@ -1059,7 +1059,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 return min_idx
 
                             try:
-                                if user_msg.startswith("/read ") or user_msg.startswith("/r "):
+                                if user_msg.startswith("/read "):
                                     parts = user_msg.split(maxsplit=1)
                                     file_path = parts[1].strip().strip('"').strip("'") if len(parts) > 1 else ""
                                     
