@@ -66,6 +66,11 @@ TOOL_CONFIRMATION_GRANT_FILE = Path(os.environ.get("YUKI_TOOL_CONFIRMATION_GRANT
 # Keeps the prompt lean and prevents unbounded growth. Set to 0 to disable capping.
 CHAT_HISTORY_LIMIT = int(os.environ.get("CHAT_HISTORY_LIMIT", "6"))
 
+# Crawler Path Configuration — all paths are cross-platform and auto-detected.
+# Override via .env if you want custom priority folders or a specific drive priority.
+CRAWLER_PRIORITY_PATHS = [p.strip() for p in os.environ.get("YUKI_CRAWLER_PRIORITY_PATHS", "").split(",") if p.strip()]
+CRAWLER_PRIMARY_DRIVE = os.environ.get("YUKI_CRAWLER_PRIMARY_DRIVE", "").strip()
+
 # TTS Settings (Local Kokoro-82M neural voice selection)
 # Cute female anime-style voices or high quality natural voices:
 # - af_sarah (Sarah - Cute US Female)

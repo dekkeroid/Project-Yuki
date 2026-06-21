@@ -1,9 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
+// https://vite.dev/config
 export default defineConfig({
   plugins: [react()],
+  esbuild: {
+    // Strip console.log/info/debug in production builds (keeps console.warn/error)
+    pure: ['console.log', 'console.info', 'console.debug'],
+  },
   server: {
     host: '0.0.0.0',
     allowedHosts: ['.ngrok-free.app', 'harsh-pc.local'],

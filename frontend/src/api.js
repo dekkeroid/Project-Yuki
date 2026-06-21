@@ -1,6 +1,5 @@
-const defaultApiBase = import.meta.env.VITE_API_BASE || '';
+const apiBase = import.meta.env.VITE_API_BASE
+  || `${window.location.protocol}//${window.location.hostname}:8000`;
 
-export const API_BASE = defaultApiBase;
-export const WS_BASE = import.meta.env.VITE_API_BASE
-  ? import.meta.env.VITE_API_BASE.replace(/^http/, 'ws')
-  : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
+export const API_BASE = apiBase;
+export const WS_BASE = apiBase.replace(/^http/, 'ws');

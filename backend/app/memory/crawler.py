@@ -284,10 +284,10 @@ PRIORITY_FOLDERS = []
 def build_all_targets() -> List[str]:
     """
     Builds the ordered list of scan root targets.
-    Expands every non-C drive into its direct subdirectories AND their immediate
+    Expands every data drive into its direct subdirectories AND their immediate
     subfolders (Level 2 subdirectories) so that each subfolder is tracked individually
     in completed_roots — giving highly granular resume checkpointing.
-    Order: priority folders → each drive's nested subdirs → C:\\ user folders.
+    Order: priority folders → each drive's nested subdirs → user home folders.
     """
     targets: List[str] = []
     excluded_lower = [e.lower() for e in EXCLUDED_DIRS]
@@ -343,21 +343,25 @@ def build_all_targets() -> List[str]:
             # Critical fallback: treat the entire drive root as a fallback single target
             _add(drive)
 
-    # 3. C:\\ user folders
+    # 3. User home folders
     for f in CRAWL_FOLDERS:
         _add(f)
 
     return targets
 
-# Directories that should NEVER be scanned (checked case-insensitively against full path)
-EXCLUDED_DIRS = [
-    "D:\\WUDownloadCache",          # Windows Update download cache
-    "D:\\WpSystem",                  # Windows Phone system partition
-    "D:\\WindowsApps",              # UWP app binaries (system-managed)
-    "D:\\msdownld.tmp",             # IE/Edge temporary download folder
-    "D:\\DeliveryOptimization",     # Windows Delivery Optimization cache
-    "D:\\$RECYCLE.BIN",             # Recycle Bin
+# Basenames of system directories to exclude on every detected drive (Windows).
+_EXCLUDED_WIN_BASENAMES = [
+    "WUDownloadCache",       # Windows Update download cache
+    "WpSystem",              # Windows Phone system partition
+    "WindowsApps",           # UWP app binaries (system-managed)
+    "msdownld.tmp",          # IE/Edge temporary download folder
+    "DeliveryOptimization",  # Windows Delivery Optimization cache
+    "$RECYCLE.BIN",          # Recycle Bin
+    "System Volume Information",
 ]
+
+# Directories that should NEVER be scanned — built dynamically per detected drive.
+EXCLUDED_DIRS: List[str] = []
 
 # Folder path keyword constraints: maps a substring pattern in the folder path to the allowed extension(s).
 # If the path contains the keyword (case-insensitive), ONLY files with one of the allowed extensions are accepted.
@@ -452,50 +456,136 @@ def _contains_blacklisted_dir_component(path: str) -> bool:
 
     return False
 
+def _detect_data_drives() -> List[str]:
+    """
+    Return a list of non-system data mount points for the current OS.
+    Windows: drive letters D:-Z:  |  macOS: /Volumes/*  |  Linux: /mnt/*, /media/*
+    """
+    drives: List[str] = []
+    if sys.platform == "win32":
+        for letter in string.ascii_uppercase:
+            if letter in ("A", "B", "C"):
+                continue
+            drive = f"{letter}:\\"
+            if os.path.exists(drive):
+                drives.append(drive)
+    elif sys.platform == "darwin":
+        volumes = Path("/Volumes")
+        if volumes.exists():
+            for v in sorted(volumes.iterdir()):
+                if v.is_dir() and not v.name.startswith("."):
+                    drives.append(str(v))
+    else:
+        for parent in ("/mnt", "/media"):
+            base = Path(parent)
+            if base.exists():
+                try:
+                    for d in sorted(base.iterdir()):
+                        if d.is_dir():
+                            drives.append(str(d))
+                except PermissionError:
+                    pass
+    return drives
+
+
+def _build_excluded_dirs(drives: List[str]) -> List[str]:
+    """Build EXCLUDED_DIRS dynamically for all detected drives."""
+    excluded: List[str] = []
+    if sys.platform == "win32":
+        for drive in drives:
+            for name in _EXCLUDED_WIN_BASENAMES:
+                excluded.append(os.path.join(drive, name))
+    else:
+        # Linux/macOS: exclude common system dirs at root level
+        for name in ("$RECYCLE.BIN", "System Volume Information"):
+            excluded.append(os.path.join("/", name))
+    return excluded
+
+
+def _detect_user_folders() -> List[str]:
+    """Return standard user library folders for the current OS."""
+    folders: List[str] = []
+    home = Path.home()
+    if sys.platform == "win32":
+        names = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos", "OneDrive"]
+    elif sys.platform == "darwin":
+        names = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Movies"]
+    else:
+        names = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos"]
+    for name in names:
+        candidate = home / name
+        if candidate.exists():
+            folders.append(str(candidate))
+    return folders
+
+
+def _detect_program_dirs() -> List[str]:
+    """Return Program Files / application directories for the current OS."""
+    dirs: List[str] = []
+    if sys.platform == "win32":
+        for var in ("ProgramFiles", "ProgramFiles(x86)"):
+            val = os.environ.get(var)
+            if val and os.path.isdir(val):
+                dirs.append(val)
+    elif sys.platform == "darwin":
+        apps = Path("/Applications")
+        if apps.is_dir():
+            dirs.append(str(apps))
+    else:
+        for d in ("/usr/bin", "/usr/local/bin"):
+            if os.path.isdir(d):
+                dirs.append(d)
+    return dirs
+
+
 def resolve_crawl_targets():
     """
-    Finds default crawl targets: C: user directories, and D: through Z: drives.
+    Finds default crawl targets: user folders, data drives, and program directories.
+    Cross-platform: works on Windows, macOS, and Linux.
     """
-    global CRAWL_DRIVES, CRAWL_FOLDERS, PRIORITY_FOLDERS
+    global CRAWL_DRIVES, CRAWL_FOLDERS, PRIORITY_FOLDERS, EXCLUDED_DIRS
     CRAWL_DRIVES.clear()
     CRAWL_FOLDERS.clear()
     PRIORITY_FOLDERS.clear()
-    
-    # Add priority folders
-    priority_paths = [
-        "D:\\video songs",
-        "C:\\Users\\ihars\\Downloads",
-        "D:\\downloaded videos",
-        "D:\\downloaded videos new"
-    ]
-    for path in priority_paths:
-        if os.path.exists(path):
-            PRIORITY_FOLDERS.append(path)
-    
-    # 1. Prioritize D:\ drive and other non-C drives
-    for letter in string.ascii_uppercase:
-        if letter in ('A', 'B', 'C'):
-            continue
-        drive = f"{letter}:\\"
-        if os.path.exists(drive):
-            CRAWL_DRIVES.append(drive)
-            
-    # Always ensure D:\ is first in our crawl list if it exists
-    if "D:\\" not in CRAWL_DRIVES and os.path.exists("D:\\"):
-        CRAWL_DRIVES.insert(0, "D:\\")
 
-    # 2. Add C: drive user directories
-    user_profile = os.environ.get("USERPROFILE")
-    if user_profile:
-        folders = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos", "OneDrive"]
-        for folder in folders:
-            folder_path = os.path.join(user_profile, folder)
-            if os.path.exists(folder_path):
-                CRAWL_FOLDERS.append(folder_path)
+    # --- Priority folders: env override or common home directories ---
+    env_priority = os.environ.get("YUKI_CRAWLER_PRIORITY_PATHS", "").strip()
+    if env_priority:
+        for p in env_priority.split(","):
+            p = p.strip()
+            if p and os.path.exists(p):
+                PRIORITY_FOLDERS.append(p)
+    else:
+        home = Path.home()
+        for name in ("Downloads", "Videos", "Music", "Documents"):
+            candidate = home / name
+            if candidate.exists():
+                PRIORITY_FOLDERS.append(str(candidate))
 
-    # 3. Add Program Files directories on C drive (will only index .exe files due to constraints)
-    for prog_dir in ("C:\\Program Files", "C:\\Program Files (x86)"):
-        if os.path.exists(prog_dir):
+    # --- Data drives ---
+    CRAWL_DRIVES = _detect_data_drives()
+
+    # Apply user-configured primary drive priority
+    primary_drive = config.CRAWLER_PRIMARY_DRIVE
+    if primary_drive:
+        # Normalise: ensure trailing separator for Windows, trailing slash for Unix
+        if sys.platform == "win32" and not primary_drive.endswith("\\"):
+            primary_drive += "\\"
+        elif not primary_drive.endswith("/"):
+            primary_drive += "/"
+        if primary_drive in CRAWL_DRIVES:
+            CRAWL_DRIVES.remove(primary_drive)
+        CRAWL_DRIVES.insert(0, primary_drive)
+
+    # --- Build per-drive excluded dirs ---
+    EXCLUDED_DIRS = _build_excluded_dirs(CRAWL_DRIVES)
+
+    # --- User home folders ---
+    CRAWL_FOLDERS = _detect_user_folders()
+
+    # --- Program / application directories ---
+    for prog_dir in _detect_program_dirs():
+        if prog_dir not in CRAWL_FOLDERS:
             CRAWL_FOLDERS.append(prog_dir)
 
 def _is_game_or_program_dir(dir_path: str) -> bool:
@@ -888,7 +978,7 @@ def run_crawl():
         completed_roots = json.loads(completed_roots_str) if completed_roots_str else []
         log_message(f"[DEBUG] completed_roots_in_cycle count: {len(completed_roots)}")
         
-        # Build targets — D:\\ is expanded into direct subdirs for subfolder-level resume
+        # Build targets — data drives are expanded into direct subdirs for subfolder-level resume
         all_targets = build_all_targets()
         CRAWL_ROOTS_TOTAL = len(all_targets)
         log_memory_stats(f"build_all_targets DONE roots={CRAWL_ROOTS_TOTAL}")
@@ -1518,7 +1608,7 @@ def get_crawler_status_metrics() -> Dict[str, Any]:
     completed_roots_str = db.get_crawler_state("completed_roots_in_cycle")
     completed_roots = json.loads(completed_roots_str) if completed_roots_str else []
     
-    # Resolve targets — D:\\ is expanded into direct subdirs
+    # Resolve targets — data drives are expanded into direct subdirs
     resolve_crawl_targets()
     all_targets = build_all_targets()
             

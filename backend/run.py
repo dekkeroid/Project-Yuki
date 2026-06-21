@@ -9,4 +9,5 @@ if sys.stderr:
 
 if __name__ == "__main__":
     print("Launching Yuki Desktop Assistant Backend...")
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    reload = os.environ.get("YUKI_DEV_RELOAD", "0") == "1"
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=reload)
