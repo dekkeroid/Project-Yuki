@@ -2637,7 +2637,7 @@ const App = () => {
 
         let prompt;
         if (cmd === '/read') {
-          prompt = `Master requested to read the file content at absolute path "${filePath}". Use the read_file_content tool to load it and print/relay its contents. If it is extremely long, summarize it concisely in 2-3 paragraphs (under 150 words total).`;
+          prompt = `Master requested to read the file content at absolute path "${filePath}". Use the read_file_content tool to load it and print/relay its contents exactly as they are without summarizing them.`;
         } else {
           prompt = `Master requested to summarize the file content at absolute path "${filePath}". Use the read_file_content tool to load it, and then summarize it concisely in 2-3 paragraphs (under 150 words total).`;
         }
