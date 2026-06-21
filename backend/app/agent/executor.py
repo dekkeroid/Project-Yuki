@@ -1174,10 +1174,13 @@ class AgentExecutor:
                         print(f"[Executor] Loop detected! Tool '{tool_name}' with args {tool_args_str} was already executed in this turn. Breaking.")
                         # Include last tool result if available
                         if last_tool_result and isinstance(last_tool_result, str):
+                            # Stream the tool's result to the frontend so it is displayed and spoken
+                            yield "token", last_tool_result, backend_used
                             accumulated_response_total.append(last_tool_result)
                         assistant_final_speech = "\n".join(accumulated_response_total)
                         if not assistant_final_speech.strip():
                             assistant_final_speech = "I have completed that action, Master."
+                            yield "token", assistant_final_speech, backend_used
                         final_history.append({"role": "assistant", "content": assistant_final_speech})
                         yield "final_history", final_history, backend_used
                         return
@@ -1275,6 +1278,13 @@ class AgentExecutor:
                         "name": tool_name,
                         "content": str(tool_result)
                     })
+
+                    # Inject guidance reminder to prevent small LLMs from repeating the same tool call
+                    if not tool_failed:
+                        current_messages.append({
+                            "role": "user",
+                            "content": f"[SYSTEM INFO] The tool '{tool_name}' was successfully executed and returned the output above. Do NOT call the tool '{tool_name}' again with the same arguments. Use the returned information to write your final response or summary for the user."
+                        })
 
                     final_history.append({
                         "role": "assistant",
