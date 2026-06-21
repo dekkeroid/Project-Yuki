@@ -18,6 +18,54 @@ from app.memory import db
 from app.tools.files import _is_safe_path
 
 LOG_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "yuki_crawler.log")
+TAGGER_LOG_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "metadata_tagger.log")
+
+def log_tagger(message: str):
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    formatted = f"[{timestamp}] {message}"
+    try:
+        with open(TAGGER_LOG_FILE_PATH, "a", encoding="utf-8") as f:
+            f.write(formatted + "\n")
+    except Exception:
+        pass
+
+LAST_LOG_CLEANUP_TIME = 0.0
+
+def cleanup_old_logs():
+    """Wipes log entries older than 7 days from crawler and tagger logs, rate-limited to once a day."""
+    global LAST_LOG_CLEANUP_TIME
+    now = time.time()
+    if now - LAST_LOG_CLEANUP_TIME < 86400:
+        return
+    LAST_LOG_CLEANUP_TIME = now
+    
+    import datetime
+    cutoff = datetime.datetime.now() - datetime.timedelta(days=7)
+    for log_path in (LOG_FILE_PATH, TAGGER_LOG_FILE_PATH):
+        if not os.path.exists(log_path):
+            continue
+        try:
+            new_lines = []
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+            
+            current_keep = True
+            for line in lines:
+                match = re.match(r'^\[(\d{4}-\d{2}-\d{2})\b', line)
+                if match:
+                    try:
+                        line_date = datetime.datetime.strptime(match.group(1), "%Y-%m-%d")
+                        current_keep = line_date >= cutoff
+                    except Exception:
+                        pass
+                if current_keep:
+                    new_lines.append(line)
+            
+            if len(new_lines) < len(lines):
+                with open(log_path, "w", encoding="utf-8") as f:
+                    f.writelines(new_lines)
+        except Exception:
+            pass
 
 FILE_CRAWLER_PAUSED = False
 METADATA_TAGGER_PAUSED = True
@@ -360,10 +408,18 @@ DIR_BLACKLIST_KEYWORDS = {
     "libcache","librarycache","appcache","httpcache","corelibs","lib", "mdf", "resource"
 }
 
+# Skip a specific folder name ONLY if it is nested under one of the specified parent/ancestor folders.
+# Format: { "folder_name_to_skip": {"parent_folder_1", "parent_folder_2", ...} }
+# Note: All folder names must be lowercase.
+CONDITIONAL_DIR_BLACKLIST = {
+    "data": {"program files", "program files (x86)"}
+}
+
 def _contains_blacklisted_dir_component(path: str) -> bool:
     """
     Returns True ONLY if a directory component exactly matches a blacklisted keyword,
-    or begins with standard hidden/system prefixes (. or _)
+    or begins with standard hidden/system prefixes (. or _), or matches a conditional
+    blacklist rule in CONDITIONAL_DIR_BLACKLIST.
     """
     path_lower = path.lower()
     try:
@@ -371,17 +427,24 @@ def _contains_blacklisted_dir_component(path: str) -> bool:
     except Exception:
         parts = re.split(r"[\\/]+", path_lower)
 
-    for part in parts:
-        # Clean off trailing slashes, spaces, or drive designators (e.g., 'd:')
-        part = part.strip("\\/ :")
-        if not part:
-            continue
-            
-        # 1. THE EXACT MATCH CHECK
+    # Clean parts and filter out empty ones
+    cleaned_parts = [p.strip("\\/ :") for p in parts]
+    cleaned_parts = [p for p in cleaned_parts if p]
+
+    # 1. CONDITIONAL MATCH CHECK
+    for i, part in enumerate(cleaned_parts):
+        if part in CONDITIONAL_DIR_BLACKLIST:
+            required_ancestors = CONDITIONAL_DIR_BLACKLIST[part]
+            ancestors = set(cleaned_parts[:i])
+            if not required_ancestors.isdisjoint(ancestors):
+                return True
+
+    # 2. GLOBAL EXACT MATCH CHECK
+    for part in cleaned_parts:
         if part in DIR_BLACKLIST_KEYWORDS:
             return True
             
-        # 2. WILDCARD SYSTEM CHECKS (Keep these to catch hidden paths like .git or __pycache__)
+        # 3. WILDCARD SYSTEM CHECKS (Keep these to catch hidden paths like .git or __pycache__)
         if part.startswith(".") or part.startswith("_"):
             return True
 
@@ -462,6 +525,13 @@ def guess_category(file_path: str, ext: str, size: int = 0) -> str:
         if not is_game_dir:
             category = "other"
             
+    # Video songs / Music videos heuristics: classify as song if path contains music/video songs keywords
+    if category == "movie":
+        path_lower = file_path.lower()
+        song_keywords = ["video songs", "video song", "music video", "music-video", "soundtrack", "ost", "singles", "mv"]
+        if any(kw in path_lower for kw in song_keywords):
+            category = "song"
+            
     return category
 
 
@@ -471,6 +541,7 @@ def parse_filename_metadata(filename: str) -> Dict[str, Any]:
     E.g. "Linkin Park - In The End (Official).mp3" or "Inception (2010) [1080p].mkv"
     """
     name_without_ext, _ = os.path.splitext(filename)
+    name_without_ext = name_without_ext.replace('_', ' ')
     metadata = {
         "title": name_without_ext,
         "artist_or_creator": "",
@@ -486,18 +557,28 @@ def parse_filename_metadata(filename: str) -> Dict[str, Any]:
         # Remove year from title
         name_without_ext = re.sub(r'[\(\[\s]*\b(19\d\d|20\d\d)\b[\)\]\s]*', ' ', name_without_ext).strip()
         
-    # Clean up common video metadata residue (e.g. 1080p, BluRay, x264, web-dl)
-    name_without_ext = re.sub(r'(?i)\b(1080p|720p|4k|2160p|bluray|x264|x265|hevc|web-dl|webrip|hdtv|aac|dd5\.1|dts)\b', '', name_without_ext)
-    name_without_ext = re.sub(r'[\(\[\{].*?[\)\]\}]', '', name_without_ext) # Remove bracket contents
-    name_without_ext = ' '.join(name_without_ext.split()).strip('_ -')
+    # Clean up common video metadata residue (e.g. 1080p, BluRay, x264, web-dl, eng sub, etc.)
+    clean_name = re.sub(r'(?i)\b(1080p|720p|4k|2160p|bluray|x264|x265|hevc|web-dl|webrip|hdtv|aac|dd5\.1|dts|eng\s*sub|subbed|subtitle|sub|official\s*video|official\s*audio|music\s*video|mv|pv|full|hd)\b', ' ', name_without_ext)
+    clean_name = re.sub(r'[\(\[\{].*?[\)\]\}]', ' ', clean_name) # Remove bracket contents
+    
+    # Split on " by " if it exists to extract artist
+    by_match = re.search(r'(?i)\s+by\s+', clean_name)
+    if by_match:
+        idx = by_match.start()
+        artist_candidate = clean_name[idx + by_match.end() - by_match.start():].strip()
+        artist_candidate = re.sub(r'(?i)\b(official|video|audio|lyrics|hd|mv|pv)\b', ' ', artist_candidate)
+        artist_candidate = ' '.join(artist_candidate.split()).strip('_ -')
+        if artist_candidate:
+            metadata["artist_or_creator"] = artist_candidate
+            
+    clean_name = ' '.join(clean_name.split()).strip('_ -')
 
-    # 2. Parse Song Creator/Artist: e.g. "Artist - Title"
-    if " - " in name_without_ext:
-        parts = name_without_ext.split(" - ", 1)
+    # Parse Artist if " - " exists, but keep the full clean name as the title
+    if " - " in clean_name and not metadata["artist_or_creator"]:
+        parts = clean_name.split(" - ", 1)
         metadata["artist_or_creator"] = parts[0].strip()
-        metadata["title"] = parts[1].strip()
-    else:
-        metadata["title"] = name_without_ext
+        
+    metadata["title"] = clean_name
         
     return metadata
 
@@ -600,7 +681,7 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
                 continue
                 
             # Check cached folder details
-            cached_dir = db.get_directory(root)
+            cached_dir = db.get_directory(root, conn=conn)
             
             # Smart Folder Skip Optimization: use shared connection
             if cached_dir and cached_dir["last_modified"] == current_mtime:
@@ -644,12 +725,12 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
                 category = guess_category(full_path, ext, f_size)
                 parent_folder = db.get_clean_parent_folder(full_path)
                 
-                existing_file = db.get_file_by_path(full_path)
+                existing_file = db.get_file_by_path(full_path, conn=conn)
                 if not existing_file:
                     folder_changes_detected = True
                     new_files_indexed += 1
                     log_message(f"[Crawler] [NEW] Indexed file: '{full_path}' (guessed category: {category}) - successfully added to db")
-                    file_id = db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category)
+                    file_id = db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category, conn=conn)
                     
                     if file_id != -1 and category in ('movie', 'song'):
                         meta = parse_filename_metadata(file)
@@ -660,16 +741,17 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
                             meta["genre_or_tags"], 
                             meta["release_year"], 
                             meta["alternate_titles"],
-                            enriched=0
+                            enriched=0,
+                            conn=conn
                         )
                 elif existing_file["size"] != f_size or existing_file["last_modified"] != f_mtime:
                     folder_changes_detected = True
                     modified_files_updated += 1
                     log_message(f"[Crawler] [MODIFIED] Updated stats for file: '{full_path}' - successfully added to db")
-                    db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category)
+                    db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category, conn=conn)
             
             change_increment = 1 if folder_changes_detected else 0
-            db.upsert_directory(root, current_mtime, change_increment)
+            db.upsert_directory(root, current_mtime, change_increment, conn=conn)
             
         # --- Localized Orphan File Cleanup (streaming) ---
         search_prefix = root_dir if root_dir.endswith(os.sep) else root_dir + os.sep
@@ -706,6 +788,14 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
             except Exception as e:
                 log_message(f"[Crawler] Error purging dead directories cache: {e}")
                 
+        # Commit all directory, file, and metadata changes at the end of the root scan
+        conn.commit()
+    except Exception as e:
+        log_message(f"[Crawler] Error scanning root {root_dir}: {e}")
+        try:
+            conn.rollback()
+        except:
+            pass
     finally:
         conn.close()
             
@@ -737,6 +827,7 @@ def run_crawl():
     
     try:
         log_memory_stats("run_crawl START")
+        cleanup_old_logs()
         resolve_crawl_targets()
         
         # Start watchdog immediately if we've already done a full first cycle
@@ -919,22 +1010,253 @@ def run_crawl():
 
 # --- Asynchronous AI Metadata Enrichment Worker ---
 
+def recover_corrupt_utf8(s: str) -> str:
+    """Helper to convert double-decoded CP1252/latin-1 strings back to UTF-8 on Windows."""
+    if not s:
+        return s
+    # Direct replacement for common Windows-1252 double-decoded Japanese brackets
+    # where the trailing byte might have been discarded as invalid CP1252
+    replacements = {
+        'ã€Ž': '『',
+        'ã€ ': '』',
+        'ã€Œ': '「',
+        'ã€\x8d': '」',
+        'ã€\x8f': '』',
+        'ã€\x90': '【',
+        'ã€\x91': '】',
+    }
+    for corrupt, correct in replacements.items():
+        s = s.replace(corrupt, correct)
+        
+    if any(c in s for c in ('ã€', 'å', 'é', 'ç')):
+        for enc in ('cp1252', 'latin-1'):
+            try:
+                candidate = s.encode(enc).decode('utf-8')
+                if len(candidate) < len(s):
+                    return candidate
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                pass
+    return s
+
+def clean_musicbrainz_query(title: str, artist: str = "") -> tuple:
+    """
+    Cleans up track titles and artist names to improve MusicBrainz search accuracy.
+    Removes common noise like bracketed text, featuring artist markers, and video suffixes.
+    """
+    if not title:
+        return "", ""
+    t = recover_corrupt_utf8(title)
+    a = recover_corrupt_utf8(artist)
+    t = t.replace('_', ' ')
+    a = a.replace('_', ' ')
+    
+    # Extract song title from Japanese brackets if present (closed)
+    bracket_match = re.search(r'^(.*?)[「『【]([^」』】]+)[」』】](.*)$', t)
+    if bracket_match:
+        prefix = bracket_match.group(1).strip()
+        bracket_content = bracket_match.group(2).strip()
+        suffix = bracket_match.group(3).strip()
+        is_noise_only = re.match(r'(?i)^[a-z0-9\s_\-\.\(\)\[\]\{\}]*$', bracket_content) and re.match(r'(?i)^(full|mv|pv|op|ed|ost|hd|1080p|720p|eng\s*sub|sub|lyrics|official\s*video|official\s*audio|clean|creditless|opening|ending|clip|off\s*vocal|instrumental|inst|tv\s*size|tv\s*ver|tv)$', bracket_content.strip())
+        if not is_noise_only:
+            t = bracket_content
+            by_match = re.search(r'(?i)\b(?:by|cv)\s+([^「『【\(\[\{]+)', prefix + " " + suffix)
+            if by_match:
+                a_candidate = by_match.group(1).strip()
+                a_candidate = re.sub(r'(?i)\b(full|hd|mv|pv|opening|ending|creditless|official|video|audio|lyrics)\b', ' ', a_candidate)
+                a_candidate = ' '.join(a_candidate.split()).strip('_ -')
+                if a_candidate:
+                    a = a_candidate
+            elif not a and prefix:
+                clean_pref = re.sub(r'(?i)\b(1080p|720p|4k|2160p|bluray|x264|x265|hevc|web-dl|webrip|hdtv|aac|dd5\.1|dts|eng\s*sub|subbed|subtitle|sub|official\s*video|official\s*audio|music\s*video|mv|pv|full|hd)\b', ' ', prefix)
+                clean_pref = re.sub(r'[\(\[\{].*?[\)\]\}]', ' ', clean_pref)
+                clean_pref = ' '.join(clean_pref.split()).strip('_ -')
+                if not re.search(r'(?i)\b(op|ed|ost|theme|opening|ending|insert|soundtrack|episode|ep)\b', clean_pref):
+                    a = clean_pref
+    else:
+        # Check for unclosed brackets
+        for open_b, close_b in [('「', '」'), ('『', '』'), ('【', '】')]:
+            if open_b in t and close_b not in t:
+                parts = t.split(open_b, 1)
+                prefix = parts[0].strip()
+                bracket_content = parts[1].strip()
+                is_noise_only = re.match(r'(?i)^[a-z0-9\s_\-\.\(\)\[\]\{\}]*$', bracket_content) and re.match(r'(?i)^(full|mv|pv|op|ed|ost|hd|1080p|720p|eng\s*sub|sub|lyrics|official\s*video|official\s*audio|clean|creditless|opening|ending|clip|off\s*vocal|instrumental|inst|tv\s*size|tv\s*ver|tv)$', bracket_content.strip())
+                if not is_noise_only:
+                    t = bracket_content
+                    if not a and prefix:
+                        clean_pref = re.sub(r'(?i)\b(1080p|720p|4k|2160p|bluray|x264|x265|hevc|web-dl|webrip|hdtv|aac|dd5\.1|dts|eng\s*sub|subbed|subtitle|sub|official\s*video|official\s*audio|music\s*video|mv|pv|full|hd)\b', ' ', prefix)
+                        clean_pref = re.sub(r'[\(\[\{].*?[\)\]\}]', ' ', clean_pref)
+                        clean_pref = ' '.join(clean_pref.split()).strip('_ -')
+                        if not re.search(r'(?i)\b(op|ed|ost|theme|opening|ending|insert|soundtrack|episode|ep)\b', clean_pref):
+                            a = clean_pref
+                break
+                
+    # Always split on common delimiters to separate artist and track title (NEVER split on single "-" without spaces!)
+    for delim in (" - ", " | ", " / ", " ~ "):
+        if delim in t:
+            parts = t.split(delim, 1)
+            split_artist = parts[0].strip()
+            split_title = parts[1].strip()
+            # If no artist is given, or if the split artist aligns with our artist
+            if not a or a.lower() in split_artist.lower() or split_artist.lower() in a.lower():
+                a = split_artist
+                t = split_title
+                break
+                
+    if " by " in t.lower() and not a:
+        by_match = re.search(r'(?i)\s+by\s+', t)
+        if by_match:
+            idx = by_match.start()
+            a_candidate = t[idx + by_match.end() - by_match.start():].strip()
+            t = t[:idx].strip()
+            a = a_candidate
+            
+    # Remove featuring artist markings
+    t = re.split(r'(?i)\b(?:ft|feat|featuring|with|ft\.|feat\.)\b', t)[0].strip()
+    
+    # Remove bracketed contents
+    t = re.sub(r'[\(\[\{].*?[\)\]\}]', ' ', t)
+    a = re.sub(r'[\(\[\{].*?[\)\]\}]', ' ', a)
+    
+    # Remove general noise
+    noise_patterns = [
+        r'(?i)\b(?:official|video|audio|lyrics|lyric|full|hd|4k|1080p|720p|hdtv|bluray|webrip|web-dl|eng\s*sub|subbed|subtitle|sub)\b',
+        r'(?i)\b(?:mv|pv)\b',
+        r'(?i)\b(?:www\.)?[a-z0-9\-]+\.(?:com|net|org|in|co|info|biz|me|cc|info|xyz|to|ninja|site|club|ws)\b',
+        r'\bw/\b',
+        r'[\uFFFD\uFF08\uFF09\uFF3B\uFF5D\u3010\u3011\u300C\u300D\u300E\u300F\u00AB\u00BB\u201C\u201D\u2018\u2019]'
+    ]
+    for pattern in noise_patterns:
+        t = re.sub(pattern, ' ', t)
+        a = re.sub(pattern, ' ', a)
+        
+    # Normalize spaces
+    t = " ".join(t.split()).strip('_ -/\\|~')
+    a = " ".join(a.split()).strip('_ -/\\|~')
+    
+    # Heuristic for Aimer files
+    if not a and t.lower().startswith("aimer"):
+        a = "Aimer"
+        t = t[5:].strip('_ -')
+        
+    return t, a
+
+def query_musicbrainz_api(title: str, artist: str = "") -> dict:
+    """
+    Queries the MusicBrainz Search API for track details using title and artist.
+    Searches the top 5 matches to merge and pull missing release years and tags/genres.
+    Enforces a 1-second rate-limiting delay to follow guidelines.
+    """
+    headers = {
+        "User-Agent": "YukiMusicTagger/1.0.0 ( contact: https://github.com/dekkeroid/Project-Yuki )"
+    }
+    
+    clean_title, clean_artist = clean_musicbrainz_query(title, artist)
+    
+    def do_query(query_str):
+        if not query_str:
+            return {}
+        url = "https://musicbrainz.org/ws/2/recording/"
+        params = {
+            "query": query_str,
+            "fmt": "json",
+            "limit": 5
+        }
+        try:
+            # Enforce rate limit (max 1 req/sec)
+            time.sleep(1.0)
+            res = requests.get(url, params=params, headers=headers, timeout=8)
+            if res.status_code == 200:
+                data = res.json()
+                recordings = data.get("recordings", [])
+                if recordings:
+                    primary = recordings[0]
+                    res_title = primary.get("title")
+                    artist_credit = primary.get("artist-credit", [])
+                    res_artist = artist_credit[0].get("name", "") if artist_credit else ""
+                    
+                    # Consolidate release year and genres/tags across top 5 matches
+                    res_year = None
+                    all_tags = []
+                    
+                    for rec in recordings:
+                        # Pull first available release year
+                        if not res_year:
+                            releases = rec.get("releases", [])
+                            if releases:
+                                date_str = releases[0].get("date", "")
+                                if date_str and len(date_str) >= 4:
+                                    try:
+                                        res_year = int(date_str[:4])
+                                    except ValueError:
+                                        pass
+                                        
+                        # Gather unique tags across matches
+                        tags = rec.get("tags", [])
+                        if not tags:
+                            ac = rec.get("artist-credit", [])
+                            if ac:
+                                for credit in ac:
+                                    art_obj = credit.get("artist", {})
+                                    if art_obj and art_obj.get("tags"):
+                                        tags = art_obj["tags"]
+                                        break
+                        if not tags:
+                            releases = rec.get("releases", [])
+                            if releases:
+                                tags = releases[0].get("tags", [])
+                                
+                        for t_obj in tags:
+                            name = t_obj.get("name", "").lower()
+                            if name and name not in all_tags:
+                                all_tags.append(name)
+                                
+                    res_genres = ", ".join(all_tags[:5])
+                    return {
+                        "title": res_title or title,
+                        "artist": res_artist or artist,
+                        "year": res_year,
+                        "genres": res_genres
+                    }
+        except Exception as e:
+            log_message(f"[Tagger] MusicBrainz API query error: {e}")
+        return {}
+
+    # Attempt 1: Artist + Title query
+    query_parts = []
+    if clean_title:
+        query_parts.append(f'recording:"{clean_title}"')
+    if clean_artist:
+        query_parts.append(f'artist:"{clean_artist}"')
+        
+    query_str = " AND ".join(query_parts) if query_parts else clean_title
+    
+    result = do_query(query_str)
+    # Attempt 2: Fallback query using title only
+    if not result and clean_artist and clean_title:
+        log_message(f"[Tagger] MusicBrainz Query failed with artist '{clean_artist}'. Retrying with title only: '{clean_title}'")
+        result = do_query(f'recording:"{clean_title}"')
+        
+    return result
+
+# --- Asynchronous Local & MusicBrainz Metadata Enrichment Worker ---
+
 def run_metadata_enrichment_loop():
     """
     Polls the database for files marked for enrichment (enriched=0).
-    Queries the local LM Studio model to extract metadata.
+    Extracts metadata using tinytag (local) and MusicBrainz API (remote fallback).
     """
     global CURRENT_TAGGER_PATH
     log_message("[Tagger] Starting metadata enrichment background worker...")
     while True:
+        cleanup_old_logs()
         if METADATA_TAGGER_PAUSED:
             time.sleep(5)
             continue
-        # Fetch 5 unenriched media records
-        pending = db.get_unenriched_files(limit=5)
+        
+        # Fetch 20 unenriched media records at a time
+        pending = db.get_unenriched_files(limit=20)
         if not pending:
             CURRENT_TAGGER_PATH = "Idle"
-            # Idle sleep if no files need enrichment
             time.sleep(10)
             continue
             
@@ -946,99 +1268,107 @@ def run_metadata_enrichment_loop():
             
             CURRENT_TAGGER_PATH = file_path
             
-            log_message(f"[Tagger] Querying LM Studio (model: {config.LLM_MODEL}) for file '{file_name}' at '{file_path}' - send to llm")
-            
-            # Fallback local metadata if LLM is unavailable
+            # Start with locally parsed filename regex as baseline
             local_meta = parse_filename_metadata(file_name)
             title = local_meta["title"]
             artist = local_meta["artist_or_creator"]
             year = local_meta["release_year"]
-            genres = ""
-            alt_titles = ""
+            genres = local_meta["genre_or_tags"]
+            alt_titles = local_meta["alternate_titles"]
             
-            # Try to query LM Studio
-            try:
-                url = f"{config.LMSTUDIO_URL}/v1/chat/completions"
-                
-                system_prompt = (
-                    "You are a local media manager AI. Analyze the file path and filename provided by the user. "
-                    "Extract details in JSON format. "
-                    "Fields:\n"
-                    "- title (clean song/movie title)\n"
-                    "- artist_or_creator (creator, artist, band, or director)\n"
-                    "- genre_or_tags (comma-separated list of musical genres, movie genres, or tags. "
-                    "For songs, always include mood/vibe/atmosphere tags if applicable, such as 'romantic', 'relaxing', 'funny', 'sad', 'happy', 'chill', 'hype', 'dark', 'bright', etc.)\n"
-                    "- release_year (integer year, or null if unknown)\n"
-                    "- alternate_titles (comma-separated list of other names, translated names, or common typos)\n"
-                    "- category (must be either 'song' for music/songs/video-songs/music-videos, 'movie' for films/movies/videos/tv-shows, or 'other')\n\n"
-                    "CRITICAL: Return ONLY a raw JSON block. Do not write explanations, markdown fences (like ```json), or preambles."
-                )
-                
-                user_msg = f"File category guessed: {category}\nFile path: {file_path}\nFile name: {file_name}"
-                
-                payload = {
-                    "model": config.LLM_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_msg}
-                    ],
-                    "temperature": 0.2
-                }
-                
-                response = requests.post(url, json=payload, timeout=12)
-                if response.status_code == 200:
-                    result = response.json()
-                    ai_content = result["choices"][0]["message"]["content"].strip()
+            # Track sources of resolved metadata fields
+            meta_sources = {
+                "title": "regex",
+                "artist": "regex" if local_meta["artist_or_creator"] else "none",
+                "genres": "regex" if local_meta["genre_or_tags"] else "none",
+                "year": "regex" if local_meta["release_year"] else "none"
+            }
+            
+            did_query_musicbrainz = False
+            mb_query_str = ""
+            mb_response_summary = "No response"
+            
+            # 1. Try local audio metadata extraction first if it's a song
+            if category == 'song':
+                try:
+                    from tinytag import TinyTag
+                    if os.path.exists(file_path):
+                        tag = TinyTag.get(file_path)
+                        if tag.title:
+                            title = tag.title
+                            meta_sources["title"] = "tinytag"
+                        if tag.artist:
+                            artist = tag.artist
+                            meta_sources["artist"] = "tinytag"
+                        if tag.genre:
+                            genres = tag.genre
+                            meta_sources["genres"] = "tinytag"
+                        if tag.year:
+                            try:
+                                year_match = re.search(r'\b(19\d\d|20\d\d)\b', str(tag.year))
+                                if year_match:
+                                    year = int(year_match.group(1))
+                                    meta_sources["year"] = "tinytag"
+                            except Exception:
+                                pass
+                except Exception as e:
+                    log_message(f"[Tagger] tinytag failed for '{file_name}': {e}")
                     
-                    # Clean markdown wrappers if present
-                    if ai_content.startswith("```"):
-                        # Extract content within fences
-                        match = re.search(r'```(?:json)?\s*(.*?)\s*```', ai_content, re.DOTALL)
-                        if match:
-                            ai_content = match.group(1).strip()
-                            
-                    data = json.loads(ai_content)
+                # 2. If tags (title, artist, or genre) are empty or generic, query MusicBrainz API
+                if not artist or not title or not genres or artist.lower() == "unknown" or title.lower() == "unknown":
+                    search_title = title if (title and title.lower() != "unknown") else local_meta["title"]
+                    search_artist = artist if (artist and artist.lower() != "unknown") else local_meta["artist_or_creator"]
                     
-                    # Parse successfully
-                    title = data.get("title", title)
-                    artist = data.get("artist_or_creator", artist)
-                    genres = data.get("genre_or_tags", genres)
-                    if isinstance(genres, list):
-                        genres = ", ".join(genres)
-                    year_val = data.get("release_year")
-                    if year_val:
-                        try:
-                            year = int(year_val)
-                        except Exception:
-                            pass
-                    alt = data.get("alternate_titles", alt_titles)
-                    if isinstance(alt, list):
-                        alt_titles = ", ".join(alt)
-                    else:
-                        alt_titles = str(alt)
+                    if search_title:
+                        # Re-calculate clean queries to log the request exactly
+                        c_title, c_artist = clean_musicbrainz_query(search_title, search_artist)
+                        q_parts = []
+                        if c_title: q_parts.append(f'recording:"{c_title}"')
+                        if c_artist: q_parts.append(f'artist:"{c_artist}"')
+                        mb_query_str = " AND ".join(q_parts) if q_parts else c_title
                         
-                    # Let LLM dynamically refine category (e.g. video song from movie to song)
-                    ai_cat = data.get("category")
-                    if ai_cat in ('song', 'movie', 'program', 'game' , 'games', 'other'):
-                        category = ai_cat
-                        
-                    log_message(f"[Tagger] Received reply from LM Studio for '{file_name}' at '{file_path}' - received from llm")
-                    log_message(f"[Tagger] [SUCCESS] AI enriched metadata saved for '{file_name}' at '{file_path}': title='{title}', artist='{artist}', tags='{genres}' - successfully added to db")
-                else:
-                    log_message(f"[Tagger] [FAILED] LM Studio returned status {response.status_code} for '{file_name}' at '{file_path}'. Using local parsed fallbacks - successfully added to db")
-            except Exception as e:
-                log_message(f"[Tagger] [FAILED] LM Studio connection failed or JSON parse error for '{file_name}' at '{file_path}': {e}. Using local parsed fallbacks - successfully added to db")
-                # We save locally parsed data so we don't block the loop on failure
-                
-            # Upsert tags and dynamically update the category column
+                        mb_data = query_musicbrainz_api(search_title, search_artist)
+                        did_query_musicbrainz = True
+                        if mb_data:
+                            mb_response_summary = f"Match found (Title: '{mb_data.get('title')}', Artist: '{mb_data.get('artist')}', Genres: '{mb_data.get('genres')}', Year: '{mb_data.get('year')}')"
+                            if mb_data.get("title") and (not title or title.lower() == "unknown" or meta_sources["title"] == "regex"):
+                                title = mb_data["title"]
+                                meta_sources["title"] = "musicbrainz"
+                            if mb_data.get("artist") and (not artist or artist.lower() == "unknown" or meta_sources["artist"] == "regex"):
+                                artist = mb_data["artist"]
+                                meta_sources["artist"] = "musicbrainz"
+                            if mb_data.get("year") and (not year or meta_sources["year"] == "regex"):
+                                year = mb_data["year"]
+                                meta_sources["year"] = "musicbrainz"
+                            if mb_data.get("genres") and (not genres or meta_sources["genres"] in ("regex", "none")):
+                                genres = mb_data["genres"]
+                                meta_sources["genres"] = "musicbrainz"
+                        else:
+                            mb_response_summary = "No match found"
+                                
+            # 3. Save to database
             db.upsert_metadata(file_id, title, artist, genres, year, alt_titles, enriched=1, category=category)
+            log_message(f"[Tagger] [SUCCESS] Metadata enriched for '{file_name}': title='{title}', artist='{artist}', tags='{genres}'")
             
-            # Pacing sleep between individual file tagging requests to ease local LLM load
-            time.sleep(1.0)
+            # Write detailed logging to metadata_tagger.log
+            log_tagger(
+                f"File: {file_name}\n"
+                f"  Path: {file_path}\n"
+                f"  Category: {category}\n"
+                f"  Resolution Sources:\n"
+                f"    - Title:  '{title}' Sourced via [{meta_sources['title']}]\n"
+                f"    - Artist: '{artist}' Sourced via [{meta_sources['artist']}]\n"
+                f"    - Genres: '{genres}' Sourced via [{meta_sources['genres']}]\n"
+                f"    - Year:   '{year}' Sourced via [{meta_sources['year']}]\n"
+                + (f"  MusicBrainz Query: '{mb_query_str}' -> Response: {mb_response_summary}\n" if did_query_musicbrainz else "")
+                + "="*80
+            )
+            
+            # Appropriate sleep pacing (1.0s if we hit MusicBrainz API; 50ms otherwise)
+            sleep_time = 1.0 if did_query_musicbrainz else 0.05
+            time.sleep(sleep_time)
             
         CURRENT_TAGGER_PATH = "Idle"
-            
-        # Pacing sleep between API requests
         time.sleep(2)
 
 # --- Watchdog Filesystem Observer Handler ---
@@ -1063,7 +1393,10 @@ class YukiFileSystemHandler(FileSystemEventHandler):
         if not _is_safe_path(file_path, write_operation=False):
             return
             
-        file_path = os.path.abspath(file_path)
+        try:
+            file_path = str(Path(os.path.abspath(file_path)).resolve())
+        except Exception:
+            file_path = os.path.abspath(file_path)
         
         # Filter out excluded directories
         file_path_lower = file_path.lower()

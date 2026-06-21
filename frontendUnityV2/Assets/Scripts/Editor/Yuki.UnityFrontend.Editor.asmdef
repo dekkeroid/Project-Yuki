@@ -1,0 +1,19 @@
+{
+  "name": "Yuki.UnityFrontend.Editor",
+  "rootNamespace": "Yuki.UnityFrontend.Editor",
+  "references": [
+    "Yuki.UnityFrontend",
+    "Unity.TextMeshPro"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

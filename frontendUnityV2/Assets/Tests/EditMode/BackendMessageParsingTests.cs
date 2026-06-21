@@ -1,5 +1,7 @@
 using NUnit.Framework;
 using Newtonsoft.Json;
+using UnityEngine;
+using UnityEngine.TestTools;
 using Yuki.UnityFrontend.Chat;
 
 public sealed class BackendMessageParsingTests
@@ -35,6 +37,7 @@ public sealed class BackendMessageParsingTests
         var clipEmpty = Yuki.UnityFrontend.Backend.WavUtil.ToAudioClip("");
         Assert.IsNull(clipEmpty);
 
+        LogAssert.Expect(LogType.Error, "[WavUtil] Invalid WAV bytes or too short.");
         var clipShort = Yuki.UnityFrontend.Backend.WavUtil.ToAudioClip(new byte[10]);
         Assert.IsNull(clipShort);
     }

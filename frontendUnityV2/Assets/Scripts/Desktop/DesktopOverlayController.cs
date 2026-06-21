@@ -1,3 +1,4 @@
+#pragma warning disable CS0067, CS0414
 using UnityEngine;
 using System;
 using System.Collections;
@@ -63,6 +64,12 @@ namespace Yuki.UnityFrontend.Desktop
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
+
+        [DllImport("user32.dll")]
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
         [DllImport("user32.dll")]
@@ -115,6 +122,13 @@ namespace Yuki.UnityFrontend.Desktop
         private static WndProcDelegate wndProcDelegate;
         private static IntPtr originalWndProc;
         private const int WM_HOTKEY = 0x0312;
+
+        private const int WM_NCLBUTTONDOWN = 0xA1;
+        private const int HTCAPTION = 0x2;
+
+        private const int DEFAULT_WINDOW_WIDTH = 320;
+        private const int DEFAULT_WINDOW_HEIGHT = 605;
+        private const int WINDOW_WIDTH_EXTRA = 120;
 #endif
 
         public bool TransparentWindowRequested => transparentWindowRequested;
@@ -243,6 +257,43 @@ namespace Yuki.UnityFrontend.Desktop
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
             IntPtr insertAfter = enabled ? HWND_TOPMOST : IntPtr.Zero;
             SetWindowPos(savedHwnd, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+#endif
+        }
+
+        public void DragWindow()
+        {
+#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+            if (savedHwnd != IntPtr.Zero)
+            {
+                ReleaseCapture();
+                SendMessage(savedHwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+            }
+#endif
+        }
+
+        public void ResizeWindow(float scale)
+        {
+#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+            if (savedHwnd == IntPtr.Zero) return;
+
+            int newWidth = Mathf.RoundToInt(DEFAULT_WINDOW_WIDTH * scale) + WINDOW_WIDTH_EXTRA;
+            int newHeight = Mathf.RoundToInt(DEFAULT_WINDOW_HEIGHT * scale);
+
+            if (GetWindowRect(savedHwnd, out RECT rect))
+            {
+                int currentWidth = rect.Right - rect.Left;
+                int currentHeight = rect.Bottom - rect.Top;
+
+                int anchorX = rect.Left + currentWidth / 2;
+                int anchorY = rect.Top + currentHeight;
+
+                int newX = anchorX - newWidth / 2;
+                int newY = anchorY - newHeight;
+
+                SetWindowPos(savedHwnd, HWND_TOPMOST, newX, newY, newWidth, newHeight, SWP_NOACTIVATE);
+            }
+#else
+            Debug.Log($"[DesktopOverlay] Window resized to scale: {scale}");
 #endif
         }
 

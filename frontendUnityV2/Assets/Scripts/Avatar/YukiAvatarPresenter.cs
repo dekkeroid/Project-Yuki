@@ -2,9 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UniVRM10;
+using UniGLTF.Extensions.VRMC_vrm;
 
 namespace Yuki.UnityFrontend.Avatar
 {
+    [DefaultExecutionOrder(12000)]
     public sealed class YukiAvatarPresenter : MonoBehaviour
     {
         [Serializable]
@@ -44,11 +47,18 @@ namespace Yuki.UnityFrontend.Avatar
         [SerializeField] private Transform speechBubbleAnchor;
 
         private GameObject loadedVrmInstance;
-        private VRM10.Vrm10Instance vrm10Instance;
+        private UniVRM10.Vrm10Instance vrm10Instance;
         private string activeExpression = "neutral";
         private float targetMouthWeight = 0f;
         private float currentMouthWeight = 0f;
         private Quaternion initialHeadRotation;
+        private Transform leftUpperArm;
+        private Transform rightUpperArm;
+        private Transform leftLowerArm;
+        private Transform rightLowerArm;
+        private Transform leftHand;
+        private Transform rightHand;
+        private Transform lookAtTargetTransform;
 
         private Dictionary<string, float> expressionWeights = new();
         private Dictionary<string, float> targetExpressionWeights = new();
@@ -60,6 +70,19 @@ namespace Yuki.UnityFrontend.Avatar
         private float breathTimer;
         private Vector3 initialBodyLocalPos;
         private float fidgetTimer;
+        private Quaternion currentFidgetRotation = Quaternion.identity;
+
+        [Header("Desktop Wandering")]
+        [SerializeField] private bool enableWandering = false;
+        [SerializeField] private float wanderRangeX = 1f;
+        [SerializeField] private float wanderSpeed = 0.3f;
+        [SerializeField] private float wanderIntervalMin = 5f;
+        [SerializeField] private float wanderIntervalMax = 15f;
+
+        private float targetWanderX = 0f;
+        private float currentWanderX = 0f;
+        private float nextWanderTime = 0f;
+        private float wanderTimer = 0f;
 
         private Coroutine activeAnimationCoroutine;
 
@@ -70,8 +93,40 @@ namespace Yuki.UnityFrontend.Avatar
             ? speechBubbleAnchor.position
             : transform.position + Vector3.up * 1.6f;
 
+#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool ScreenToClient(System.IntPtr hWnd, ref POINT lpPoint);
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+
+        private System.IntPtr hwnd;
+#endif
+
         private void Start()
         {
+            var targetGo = new GameObject("YukiLookAtTarget");
+            lookAtTargetTransform = targetGo.transform;
+            lookAtTargetTransform.SetParent(transform);
+
+#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+            try
+            {
+                hwnd = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AvatarPresenter] Failed to get MainWindowHandle: {ex.Message}");
+            }
+#endif
+
             if (headBone != null)
             {
                 initialHeadRotation = headBone.localRotation;
@@ -79,6 +134,7 @@ namespace Yuki.UnityFrontend.Avatar
 
             blinkTimer = 0f;
             nextBlinkTime = UnityEngine.Random.Range(blinkIntervalMin, blinkIntervalMax);
+            nextWanderTime = UnityEngine.Random.Range(wanderIntervalMin, wanderIntervalMax);
         }
 
         public void LoadVrm(string fileName)
@@ -109,23 +165,116 @@ namespace Yuki.UnityFrontend.Avatar
                 loadedVrmInstance.transform.localPosition = Vector3.zero;
                 loadedVrmInstance.transform.localRotation = Quaternion.identity;
 
-                vrm10Instance = loadedVrmInstance.GetComponent<VRM10.Vrm10Instance>();
+                vrm10Instance = loadedVrmInstance.GetComponent<UniVRM10.Vrm10Instance>();
 
                 AutoBindVrmComponents(loadedVrmInstance);
                 InitExpressionWeights();
             });
         }
 
+        private Transform FindBoneFallback(Transform parent, string[] keywords, string[] excludeKeywords = null)
+        {
+            if (parent == null) return null;
+            
+            string nameLower = parent.name.ToLower();
+            bool matches = false;
+            foreach (var keyword in keywords)
+            {
+                if (nameLower.Contains(keyword.ToLower()))
+                {
+                    matches = true;
+                    break;
+                }
+            }
+            
+            if (matches && excludeKeywords != null)
+            {
+                foreach (var exclude in excludeKeywords)
+                {
+                    if (nameLower.Contains(exclude.ToLower()))
+                    {
+                        matches = false;
+                        break;
+                    }
+                }
+            }
+            
+            if (matches)
+            {
+                return parent;
+            }
+            
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                Transform found = FindBoneFallback(parent.GetChild(i), keywords, excludeKeywords);
+                if (found != null) return found;
+            }
+            
+            return null;
+        }
+
         private void AutoBindVrmComponents(GameObject vrmRoot)
         {
+            headBone = null;
+            leftUpperArm = null; rightUpperArm = null;
+            leftLowerArm = null; rightLowerArm = null;
+            leftHand = null; rightHand = null;
+
+            // Direct VRM 1.0 humanoid lookup (extremely reliable, avoids UniHumanoid dependency)
+            if (vrm10Instance != null)
+            {
+                vrm10Instance.TryGetBoneTransform(HumanBodyBones.Head, out headBone);
+                vrm10Instance.TryGetBoneTransform(HumanBodyBones.LeftUpperArm, out leftUpperArm);
+                vrm10Instance.TryGetBoneTransform(HumanBodyBones.RightUpperArm, out rightUpperArm);
+                vrm10Instance.TryGetBoneTransform(HumanBodyBones.LeftLowerArm, out leftLowerArm);
+                vrm10Instance.TryGetBoneTransform(HumanBodyBones.RightLowerArm, out rightLowerArm);
+                vrm10Instance.TryGetBoneTransform(HumanBodyBones.LeftHand, out leftHand);
+                vrm10Instance.TryGetBoneTransform(HumanBodyBones.RightHand, out rightHand);
+            }
+
+            // Fallback 1: Animator bone transforms
             Animator animator = vrmRoot.GetComponentInChildren<Animator>();
             if (animator != null)
             {
-                headBone = animator.GetBoneTransform(HumanBodyBones.Head);
-                if (headBone != null)
+                if (headBone == null) headBone = animator.GetBoneTransform(HumanBodyBones.Head);
+                if (leftUpperArm == null) leftUpperArm = animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+                if (rightUpperArm == null) rightUpperArm = animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+                if (leftLowerArm == null) leftLowerArm = animator.GetBoneTransform(HumanBodyBones.LeftLowerArm);
+                if (rightLowerArm == null) rightLowerArm = animator.GetBoneTransform(HumanBodyBones.RightLowerArm);
+                if (leftHand == null) leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+                if (rightHand == null) rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+            }
+
+            // Fallback 2: Name-based recursive lookup
+            var rootTransform = vrmRoot.transform;
+            if (headBone == null) headBone = FindBoneFallback(rootTransform, new[] { "J_Bip_C_Head", "Head" }, new[] { "headwear", "hair", "eye", "mouth", "ear", "jaw", "acc" });
+            if (leftUpperArm == null) leftUpperArm = FindBoneFallback(rootTransform, new[] { "J_Bip_L_UpperArm", "LeftUpperArm", "UpperArm_L", "Arm_L" }, new[] { "twist", "shoulder", "scapula", "collar" });
+            if (rightUpperArm == null) rightUpperArm = FindBoneFallback(rootTransform, new[] { "J_Bip_R_UpperArm", "RightUpperArm", "UpperArm_R", "Arm_R" }, new[] { "twist", "shoulder", "scapula", "collar" });
+            if (leftLowerArm == null) leftLowerArm = FindBoneFallback(rootTransform, new[] { "J_Bip_L_LowerArm", "LeftLowerArm", "LowerArm_L", "Forearm_L", "Elbow_L" }, new[] { "twist", "hand", "wrist" });
+            if (rightLowerArm == null) rightLowerArm = FindBoneFallback(rootTransform, new[] { "J_Bip_R_LowerArm", "RightLowerArm", "LowerArm_R", "Forearm_R", "Elbow_R" }, new[] { "twist", "hand", "wrist" });
+            if (leftHand == null) leftHand = FindBoneFallback(rootTransform, new[] { "J_Bip_L_Hand", "LeftHand", "Hand_L", "Wrist_L" }, new[] { "finger", "thumb", "index", "middle", "ring", "little" });
+            if (rightHand == null) rightHand = FindBoneFallback(rootTransform, new[] { "J_Bip_R_Hand", "RightHand", "Hand_R", "Wrist_R" }, new[] { "finger", "thumb", "index", "middle", "ring", "little" });
+
+            // Set up LookAt target binding
+            if (vrm10Instance != null)
+            {
+                vrm10Instance.LookAtTarget = lookAtTargetTransform;
+                vrm10Instance.LookAtTargetType = VRM10ObjectLookAt.LookAtTargetTypes.SpecifiedTransform;
+                vrm10Instance.UpdateType = UniVRM10.Vrm10Instance.UpdateTypes.LateUpdate;
+            }
+            else
+            {
+                var vrm0LookAt = vrmRoot.GetComponent<VRM.VRMLookAtHead>();
+                if (vrm0LookAt != null)
                 {
-                    initialHeadRotation = headBone.localRotation;
+                    vrm0LookAt.Target = lookAtTargetTransform;
+                    vrm0LookAt.UpdateType = VRM.UpdateType.LateUpdate;
                 }
+            }
+
+            if (headBone != null)
+            {
+                initialHeadRotation = headBone.localRotation;
             }
 
             if (transform.childCount > 0)
@@ -233,7 +382,8 @@ namespace Yuki.UnityFrontend.Avatar
                 SetVrm10Expression(activeExpression);
             }
 
-            foreach (string key in targetExpressionWeights.Keys)
+            var keys = new List<string>(targetExpressionWeights.Keys);
+            foreach (string key in keys)
             {
                 targetExpressionWeights[key] = 0f;
             }
@@ -254,28 +404,28 @@ namespace Yuki.UnityFrontend.Avatar
 
             var expr = vrm10Instance.Runtime.Expression;
 
-            expr.SetWeight(VRM10.ExpressionKey.Happy, 0f);
-            expr.SetWeight(VRM10.ExpressionKey.Angry, 0f);
-            expr.SetWeight(VRM10.ExpressionKey.Sad, 0f);
-            expr.SetWeight(VRM10.ExpressionKey.Relaxed, 0f);
-            expr.SetWeight(VRM10.ExpressionKey.Surprised, 0f);
+            expr.SetWeight(UniVRM10.ExpressionKey.Happy, 0f);
+            expr.SetWeight(UniVRM10.ExpressionKey.Angry, 0f);
+            expr.SetWeight(UniVRM10.ExpressionKey.Sad, 0f);
+            expr.SetWeight(UniVRM10.ExpressionKey.Relaxed, 0f);
+            expr.SetWeight(UniVRM10.ExpressionKey.Surprised, 0f);
 
             switch (expression)
             {
                 case "happy":
-                    expr.SetWeight(VRM10.ExpressionKey.Happy, 1f);
+                    expr.SetWeight(UniVRM10.ExpressionKey.Happy, 1f);
                     break;
                 case "angry":
-                    expr.SetWeight(VRM10.ExpressionKey.Angry, 1f);
+                    expr.SetWeight(UniVRM10.ExpressionKey.Angry, 1f);
                     break;
                 case "sad":
-                    expr.SetWeight(VRM10.ExpressionKey.Sad, 1f);
+                    expr.SetWeight(UniVRM10.ExpressionKey.Sad, 1f);
                     break;
                 case "relaxed":
-                    expr.SetWeight(VRM10.ExpressionKey.Relaxed, 1f);
+                    expr.SetWeight(UniVRM10.ExpressionKey.Relaxed, 1f);
                     break;
                 case "surprised":
-                    expr.SetWeight(VRM10.ExpressionKey.Surprised, 1f);
+                    expr.SetWeight(UniVRM10.ExpressionKey.Surprised, 1f);
                     break;
             }
         }
@@ -286,7 +436,7 @@ namespace Yuki.UnityFrontend.Avatar
 
             if (vrm10Instance?.Runtime?.Expression != null)
             {
-                vrm10Instance.Runtime.Expression.SetWeight(VRM10.ExpressionKey.Aa, targetMouthWeight);
+                vrm10Instance.Runtime.Expression.SetWeight(UniVRM10.ExpressionKey.Aa, targetMouthWeight);
             }
         }
 
@@ -506,6 +656,11 @@ namespace Yuki.UnityFrontend.Avatar
             {
                 UpdateIdleAnimations();
             }
+
+            if (enableWandering && activeAnimationCoroutine == null)
+            {
+                UpdateWandering();
+            }
         }
 
         private void UpdateMouthSync()
@@ -578,7 +733,7 @@ namespace Yuki.UnityFrontend.Avatar
 
                 if (vrm10Instance?.Runtime?.Expression != null)
                 {
-                    vrm10Instance.Runtime.Expression.SetWeight(VRM10.ExpressionKey.Blink, blinkWeight);
+                    vrm10Instance.Runtime.Expression.SetWeight(UniVRM10.ExpressionKey.Blink, blinkWeight);
                 }
 
                 foreach (var mapping in expressionMappings)
@@ -624,7 +779,63 @@ namespace Yuki.UnityFrontend.Avatar
             float fidgetX = Mathf.Sin(fidgetTimer * 1.3f) * fidgetAmount;
             float fidgetY = Mathf.Cos(fidgetTimer * 0.7f) * fidgetAmount * 0.5f;
 
-            headBone.localRotation = initialHeadRotation * Quaternion.Euler(fidgetX, fidgetY, 0f);
+            currentFidgetRotation = Quaternion.Euler(fidgetX, fidgetY, 0f);
+        }
+
+        private void UpdateWandering()
+        {
+            wanderTimer += Time.deltaTime;
+            if (wanderTimer >= nextWanderTime)
+            {
+                targetWanderX = UnityEngine.Random.Range(-wanderRangeX, wanderRangeX);
+                nextWanderTime = UnityEngine.Random.Range(wanderIntervalMin, wanderIntervalMax);
+                wanderTimer = 0f;
+            }
+
+            currentWanderX = Mathf.MoveTowards(currentWanderX, targetWanderX, Time.deltaTime * wanderSpeed);
+
+            if (loadedVrmInstance != null)
+            {
+                Vector3 pos = loadedVrmInstance.transform.localPosition;
+                pos.x = currentWanderX;
+                loadedVrmInstance.transform.localPosition = pos;
+            }
+        }
+
+        public void SetSkinToneColor(Color skinColor)
+        {
+            if (loadedVrmInstance == null) return;
+
+            foreach (var smr in loadedVrmInstance.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                string meshName = smr.name.ToLower();
+                if (meshName.Contains("face") || meshName.Contains("body") || meshName.Contains("skin"))
+                {
+                    foreach (var mat in smr.materials)
+                    {
+                        string matName = mat.name.ToLower();
+                        if (matName.Contains("skin") || matName.Contains("face") || matName.Contains("body"))
+                        {
+                            if (mat.HasProperty("_Color"))
+                            {
+                                mat.SetColor("_Color", skinColor);
+                            }
+                            else if (mat.HasProperty("_MainColor"))
+                            {
+                                mat.SetColor("_MainColor", skinColor);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        public void SetSkinToneHex(string hex)
+        {
+            if (ColorUtility.TryParseHtmlString(hex, out Color skinColor))
+            {
+                SetSkinToneColor(skinColor);
+            }
         }
 
         private void ResetIdleTimers()
@@ -635,35 +846,77 @@ namespace Yuki.UnityFrontend.Avatar
             blinkWeight = 0f;
             breathTimer = 0f;
             fidgetTimer = 0f;
+            targetWanderX = 0f;
+            currentWanderX = 0f;
+            wanderTimer = 0f;
         }
 
         private void LateUpdate()
         {
-            if (enableLookAtCursor && headBone != null && Camera.main != null && activeAnimationCoroutine == null)
+            // Apply arm rotations every frame to override animator default pose
+            if (leftUpperArm != null) leftUpperArm.localRotation = Quaternion.Euler(10f, 5f, 70f);
+            if (rightUpperArm != null) rightUpperArm.localRotation = Quaternion.Euler(10f, -5f, -70f);
+            if (leftLowerArm != null) leftLowerArm.localRotation = Quaternion.Euler(0f, -25f, 0f);
+            if (rightLowerArm != null) rightLowerArm.localRotation = Quaternion.Euler(0f, 25f, 0f);
+
+            if (enableLookAtCursor && Camera.main != null && lookAtTargetTransform != null)
             {
-                LookAtCursor();
+                Vector3 mousePos;
+#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+                if (hwnd == System.IntPtr.Zero)
+                {
+                    try
+                    {
+                        hwnd = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
+                    }
+                    catch {}
+                }
+
+                POINT pt;
+                if (hwnd != System.IntPtr.Zero && GetCursorPos(out pt))
+                {
+                    ScreenToClient(hwnd, ref pt);
+                    mousePos = new Vector3(pt.X, Screen.height - pt.Y, 0f);
+                }
+                else
+                {
+                    mousePos = Input.mousePosition;
+                }
+#else
+                mousePos = Input.mousePosition;
+#endif
+                float dist = Vector3.Distance(Camera.main.transform.position, transform.position + Vector3.up * 1.2f);
+                mousePos.z = dist * 0.5f;
+                Vector3 targetWorldPos = Camera.main.ScreenToWorldPoint(mousePos);
+                lookAtTargetTransform.position = targetWorldPos;
+
+                if (Time.frameCount % 60 == 0)
+                {
+                    Transform leftEye = null, rightEye = null;
+                    if (vrm10Instance != null)
+                    {
+                        vrm10Instance.TryGetBoneTransform(HumanBodyBones.LeftEye, out leftEye);
+                        vrm10Instance.TryGetBoneTransform(HumanBodyBones.RightEye, out rightEye);
+                    }
+                    var lookAtType = vrm10Instance != null && vrm10Instance.Vrm != null ? vrm10Instance.Vrm.LookAt.LookAtType.ToString() : "N/A";
+                    var runtimeYaw = vrm10Instance != null && vrm10Instance.Runtime != null ? vrm10Instance.Runtime.LookAt.Yaw : 0f;
+                    var runtimePitch = vrm10Instance != null && vrm10Instance.Runtime != null ? vrm10Instance.Runtime.LookAt.Pitch : 0f;
+
+                    Debug.Log($"[LookAtDebug] mousePos: {mousePos}, targetWorldPos: {targetWorldPos}, type: {lookAtType}, leftEye: {leftEye != null}, rightEye: {rightEye != null}, yaw: {runtimeYaw:F2}, pitch: {runtimePitch:F2}");
+                }
             }
-        }
-
-        private void LookAtCursor()
-        {
-            Vector3 headPos = headBone.position;
-            Vector3 mousePos = Input.mousePosition;
-            mousePos.z = Vector3.Distance(Camera.main.transform.position, headPos);
-            Vector3 targetWorldPos = Camera.main.ScreenToWorldPoint(mousePos);
-
-            Vector3 localTargetDir = headBone.parent.InverseTransformPoint(targetWorldPos);
-
-            if (localTargetDir.z <= 0.1f)
+            else
             {
-                headBone.localRotation = Quaternion.Slerp(headBone.localRotation, initialHeadRotation, Time.deltaTime * lookSpeed);
-                return;
+                if (Time.frameCount % 60 == 0)
+                {
+                    Debug.Log($"[LookAtDebug] Failed: enableLookAtCursor={enableLookAtCursor}, Camera.main={Camera.main != null}, targetTransform={lookAtTargetTransform != null}");
+                }
+
+                if (headBone != null && activeAnimationCoroutine == null)
+                {
+                    headBone.localRotation = initialHeadRotation * currentFidgetRotation;
+                }
             }
-
-            Vector3 lookDirection = Vector3.RotateTowards(Vector3.forward, localTargetDir.normalized, maxLookAngle * Mathf.Deg2Rad, 0f);
-            Quaternion targetRotation = Quaternion.LookRotation(lookDirection, Vector3.up);
-
-            headBone.localRotation = Quaternion.Slerp(headBone.localRotation, targetRotation, Time.deltaTime * lookSpeed);
         }
     }
 }

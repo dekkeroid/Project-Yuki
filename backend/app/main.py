@@ -331,6 +331,8 @@ class SettingsUpdateRequest(BaseModel):
     stt_language: Optional[str] = None
     no_llm_mode: Optional[bool] = None
     dynamic_tool_calling: Optional[bool] = None
+    enable_rotation: Optional[bool] = None
+    auto_reset_rotation: Optional[bool] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -379,6 +381,10 @@ async def update_settings(req: SettingsUpdateRequest):
             asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
     if req.dynamic_tool_calling is not None:
         memory_manager.update_setting("dynamic_tool_calling", req.dynamic_tool_calling)
+    if req.enable_rotation is not None:
+        memory_manager.update_setting("enable_rotation", req.enable_rotation)
+    if req.auto_reset_rotation is not None:
+        memory_manager.update_setting("auto_reset_rotation", req.auto_reset_rotation)
         
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True
@@ -404,12 +410,14 @@ async def update_settings(req: SettingsUpdateRequest):
             "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
             "stt_language": memory_manager.profile["settings"].get("stt_language", "en"),
             "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False),
-            "dynamic_tool_calling": memory_manager.profile["settings"].get("dynamic_tool_calling", True)
+            "dynamic_tool_calling": memory_manager.profile["settings"].get("dynamic_tool_calling", True),
+            "enable_rotation": memory_manager.profile["settings"].get("enable_rotation", False),
+            "auto_reset_rotation": memory_manager.profile["settings"].get("auto_reset_rotation", True)
         }
     }
 
 @app.get("/api/tts")
-async def tts_endpoint(text: str, voice: Optional[str] = None):
+async def tts_endpoint(text: str, voice: Optional[str] = None, rate: Optional[str] = None):
     """
     Generates WAV audio for the given text and streams it back.
     The frontend can play this directly by setting an Audio src.
@@ -421,7 +429,7 @@ async def tts_endpoint(text: str, voice: Optional[str] = None):
         return Response(status_code=500, content="TTS service is currently offline.")
         
     decoded_text = urllib.parse.unquote(text)
-    audio_bytes = await generate_speech_bytes(decoded_text, voice=voice)
+    audio_bytes = await generate_speech_bytes(decoded_text, voice=voice, rate=rate)
     
     if not audio_bytes:
         return Response(status_code=500, content="Failed to generate speech audio.")
@@ -731,7 +739,7 @@ def get_search_suggestions(query: str, type: str):
                 "type": r["type"],
                 "score": r["score"]
             })
-            if len(unique_results) >= 20:
+            if len(unique_results) >= 50:
                 break
                 
     return {"suggestions": unique_results}
@@ -744,6 +752,7 @@ class OpenPlayRequest(BaseModel):
     play_mode: bool = False
     force: bool = False
     pending_confirmation_id: Optional[str] = None
+    from_suggestion: Optional[bool] = False
 
 
 @app.post("/api/system/open_or_play")
@@ -764,11 +773,19 @@ def post_open_or_play(req: OpenPlayRequest):
     elif os.path.exists(clean):
         resolved_path = clean
     else:
-        app_path = _find_app_path(clean) if not req.play_mode else None
-        if app_path:
-            resolved_path = app_path
+        # 1. Use the density-scored search suggestions to find the best match (matches dropdown suggestion list)
+        sugg_type = "play" if req.play_mode else "open"
+        res = get_search_suggestions(clean, type=sugg_type)
+        suggs = res.get("suggestions", [])
+        if suggs:
+            resolved_path = suggs[0]["path"]
         else:
-            resolved_path = resolve_best_file_no_llm(clean, play_mode=req.play_mode)
+            # 2. Fallback to legacy resolution (DB/LLM search or direct start menu path)
+            app_path = _find_app_path(clean) if not req.play_mode else None
+            if app_path:
+                resolved_path = app_path
+            else:
+                resolved_path = resolve_best_file_no_llm(clean, play_mode=req.play_mode)
 
     target = resolved_path if resolved_path else req.query
     safety_args = {
@@ -788,22 +805,27 @@ def post_open_or_play(req: OpenPlayRequest):
     decision = authorize_tool_call("open_or_play_file", safety_args, consume_grant=True)
     if not decision.allowed:
         if decision.requires_confirmation:
-            grant_args = decision.arguments or {
-                "file_path_or_query": target,
-                "play_mode": req.play_mode,
-            }
-            pending_id = issue_pending_confirmation(
-                "open_or_play_file",
-                grant_args,
-                target=decision.target or target,
-            )
-            return {
-                "status": "confirm_required",
-                "name": decision.target or target,
-                "path": target,
-                "pending_confirmation_id": pending_id,
-            }
-        return {"error": decision.message}
+            # Bypass confirmation for "/open" and "/o" commands (not req.play_mode) OR if selected from search suggestions
+            if not req.play_mode or req.from_suggestion:
+                pass
+            else:
+                grant_args = decision.arguments or {
+                    "file_path_or_query": target,
+                    "play_mode": req.play_mode,
+                }
+                pending_id = issue_pending_confirmation(
+                    "open_or_play_file",
+                    grant_args,
+                    target=decision.target or target,
+                )
+                return {
+                    "status": "confirm_required",
+                    "name": decision.target or target,
+                    "path": target,
+                    "pending_confirmation_id": pending_id,
+                }
+        else:
+            return {"error": decision.message}
 
     try:
         result = open_or_play_file_no_llm(target, play_mode=req.play_mode)
@@ -969,8 +991,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                             "requested_text": sentence_text
                                         }
                                 except Exception as e:
-                                    print(f"TTS Synthesis timeout/error for '{sentence_text}': {e}. Disabling backend TTS.")
-                                    tts_online_status = False
+                                    print(f"TTS Synthesis timeout/error for '{sentence_text}': {e}.")
                                 return None
                             
                             task = asyncio.create_task(synth())
@@ -1186,7 +1207,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             })
                     except Exception as e:
                         print(f"[TTS-Only] Synthesis error: {e}")
-                    await websocket.send_json({"type": "stream_done", "backend_used": "tts_only", "response_time": 0})
+                await websocket.send_json({"type": "stream_done", "backend_used": "tts_only", "response_time": 0})
+
 
             elif msg_type == "log":
                 log_msg = data.get("message", "")

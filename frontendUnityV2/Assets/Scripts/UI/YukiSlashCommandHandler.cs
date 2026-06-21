@@ -1,3 +1,4 @@
+#pragma warning disable CS0067, CS0414
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -331,7 +332,7 @@ namespace Yuki.UnityFrontend.UI
 
             pendingOpenQuery = query;
             pendingPlayMode = isPlayCmd;
-            restClient.OpenOrPlay(query, isPlayMode: isPlayCmd);
+            restClient.OpenOrPlay(query, playMode: isPlayCmd);
         }
 
         private void HandleOpenPlayResult(YukiOpenPlayResponse data)

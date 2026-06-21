@@ -265,24 +265,24 @@ def query_database_union(parsed: Dict, limit_raw: int = 100, categories: List[st
     clauses: List[str] = []
     params:  List[str] = []
 
-    # Title words → search file_name and parent_folder
+    # Title words → search file_name, parent_folder, and their transliterated versions
     for w in title_words:
         like = f"%{w}%"
-        clauses.append("(f.file_name LIKE ? OR f.parent_folder LIKE ?)")
-        params.extend([like, like])
+        clauses.append("(f.file_name LIKE ? OR f.parent_folder LIKE ? OR f.transliterated_name LIKE ? OR f.transliterated_parent_folder LIKE ?)")
+        params.extend([like, like, like, like])
 
-    # Path words → search full file_path and parent_folder
+    # Path words → search full file_path, parent_folder, and their transliterated versions
     for w in path_words:
         like = f"%{w}%"
-        clauses.append("(f.file_path LIKE ? OR f.parent_folder LIKE ?)")
-        params.extend([like, like])
+        clauses.append("(f.file_path LIKE ? OR f.parent_folder LIKE ? OR f.transliterated_name LIKE ? OR f.transliterated_parent_folder LIKE ?)")
+        params.extend([like, like, like, like])
 
-    # Genre words → search genre_or_tags AND file_name/parent_folder.
+    # Genre words → search genre_or_tags AND file_name/parent_folder/transliterated versions.
     # A file named "Romantic Night.mp4" and a file tagged "romantic" are both valid hits.
     for w in genre_words:
         like = f"%{w}%"
-        clauses.append("(m.genre_or_tags LIKE ? OR f.file_name LIKE ? OR f.parent_folder LIKE ?)")
-        params.extend([like, like, like])
+        clauses.append("(m.genre_or_tags LIKE ? OR f.file_name LIKE ? OR f.parent_folder LIKE ? OR f.transliterated_name LIKE ? OR f.transliterated_parent_folder LIKE ?)")
+        params.extend([like, like, like, like, like])
 
     where = " OR ".join(clauses)
     category_filter = ""
@@ -290,20 +290,30 @@ def query_database_union(parsed: Dict, limit_raw: int = 100, categories: List[st
         placeholders = ", ".join("?" for _ in categories)
         category_filter = f" AND f.category IN ({placeholders})"
 
+    order_by_clause = "ORDER BY LENGTH(f.file_name) ASC"
+    order_params = []
+    exact_phrase = " ".join(title_words).strip()
+    if exact_phrase:
+        order_by_clause = "ORDER BY CASE WHEN f.file_name LIKE ? OR f.transliterated_name LIKE ? THEN 1 ELSE 0 END DESC, LENGTH(f.file_name) ASC"
+        exact_like = f"%{exact_phrase}%"
+        order_params = [exact_like, exact_like]
+
     sql = f"""
     SELECT f.id, f.file_path, f.file_name, f.parent_folder, f.category,
-           f.size, f.last_modified,
+           f.size, f.last_modified, f.transliterated_name, f.transliterated_parent_folder,
            m.title, m.artist_or_creator, m.genre_or_tags,
            m.release_year, m.alternate_titles
     FROM files f
     LEFT JOIN file_metadata m ON f.id = m.file_id
     WHERE ({where}){category_filter}
+    {order_by_clause}
     LIMIT ?
     """
     
     params_sql = params.copy()
     if categories:
         params_sql.extend(categories)
+    params_sql.extend(order_params)
     params_sql.append(limit_raw)
 
     # ── Log the SQL query (params interpolated for readability) ──────────────
@@ -346,6 +356,9 @@ def _density_score(candidate: Dict, parsed: Dict) -> tuple:
     # Extract the full directory path to catch grand-parent folders like "game folder"
     dir_path_lower    = os.path.dirname(file_path_lower)
     
+    trans_name_lower   = (candidate.get("transliterated_name", "") or "").lower()
+    trans_parent_lower = (candidate.get("transliterated_parent_folder", "") or "").lower()
+    
     meta_combined     = " ".join([
         candidate.get("title", "") or "",
         candidate.get("alternate_titles", "") or "",
@@ -361,16 +374,16 @@ def _density_score(candidate: Dict, parsed: Dict) -> tuple:
     
     # 1. THE EXACT MATCH NUKE
     if exact_phrase:
-        if exact_phrase == file_name_no_ext:
-            score += 500.0  # Undisputed king (e.g., "tsukihime cake.exe" for search "tsukihime cake")
+        if exact_phrase == file_name_no_ext or exact_phrase == trans_name_lower:
+            score += 500.0  # Undisputed king
             title_file_hits += len(title_words)
-        elif exact_phrase in file_name_lower:
-            score += 150.0  # Contains the phrase (e.g., "tsukihime cake bro.txt")
+        elif exact_phrase in file_name_lower or exact_phrase in trans_name_lower:
+            score += 150.0  # Contains the phrase
             title_file_hits += len(title_words)
-        elif exact_phrase in parent_lower:
+        elif exact_phrase in parent_lower or exact_phrase in trans_parent_lower:
             score += 100.0  # The immediate folder is exactly the phrase
-        elif exact_phrase in dir_path_lower:
-            score += 50.0   # The phrase is somewhere in the full path
+        elif exact_phrase in dir_path_lower or exact_phrase in trans_parent_lower:
+            score += 50.0   # The phrase is somewhere in the path
             
     # 2. INDIVIDUAL WORD SCORING (Additive)
     for w in title_words:
@@ -378,18 +391,18 @@ def _density_score(candidate: Dict, parsed: Dict) -> tuple:
         w_pattern = rf'\b{re.escape(w)}\b'
         
         # File name match
-        if re.search(w_pattern, file_name_lower):
+        if re.search(w_pattern, file_name_lower) or re.search(w_pattern, trans_name_lower):
             score += 40.0
             word_matched = True
-        elif w in file_name_lower:
+        elif w in file_name_lower or w in trans_name_lower:
             score += 15.0
             word_matched = True
             
-        # Full Directory Path match (Catches "game" in "d:\game folder\tsukihime\")
-        if re.search(w_pattern, dir_path_lower):
+        # Full Directory Path match
+        if re.search(w_pattern, dir_path_lower) or re.search(w_pattern, trans_parent_lower):
             score += 25.0
             word_matched = True
-        elif w in dir_path_lower:
+        elif w in dir_path_lower or w in trans_parent_lower:
             score += 10.0
             
         # Metadata match
@@ -996,11 +1009,112 @@ def _needs_confirmation(path: str) -> bool:
     return not (is_steam or is_media)
 
 
+def resolve_best_file_via_suggestions(query: str, play_mode: bool = False) -> Optional[str]:
+    """
+    Finds the single best match (Start Menu App or Database File) using the exact same
+    density scoring logic as the UI search autocomplete suggestions.
+    """
+    import os
+    from app.tools.system import _get_uwp_apps
+    
+    clean_query = query.strip()
+    if not clean_query:
+        return None
+
+    words = [w.lower() for w in clean_query.split() if w.strip()]
+    parsed = {
+        "title": words,
+        "path": [],
+        "genre": [],
+        "episode": None
+    }
+
+    results = []
+
+    if play_mode:
+        try:
+            raw_candidates = query_database_union(parsed, limit_raw=500, categories=["song", "movie"], silent=True)
+        except Exception:
+            raw_candidates = []
+
+        for c in raw_candidates:
+            file_path = c.get("file_path")
+            if not file_path or not os.path.exists(file_path) or not _is_safe_path(file_path):
+                continue
+            
+            score, title_hits, tie_breaker = _density_score(c, parsed)
+            boost = 0.0
+            _, ext = os.path.splitext(file_path.lower())
+            if ext in ('.mp4', '.mkv', '.webm'):
+                boost = 100.0
+            elif ext == '.mp3':
+                boost = 50.0
+                
+            final_score = score + boost
+            if final_score > 0:
+                results.append({
+                    "path": file_path,
+                    "score": final_score,
+                    "tie_breaker": tie_breaker
+                })
+    else:
+        try:
+            apps = _get_uwp_apps()
+        except Exception:
+            apps = []
+            
+        for app in apps:
+            name = app.get("Name", "")
+            if not name:
+                continue
+            
+            app_id = app.get("AppID")
+            app_path = f"shell:AppsFolder\\{app_id}" if app_id else name
+            app_candidate = {
+                "file_name": name,
+                "file_path": app_path,
+                "parent_folder": "",
+                "title": name,
+                "alternate_titles": "",
+                "genre_or_tags": ""
+            }
+            score, title_hits, tie_breaker = _density_score(app_candidate, parsed)
+            if score > 0:
+                results.append({
+                    "path": app_path,
+                    "score": score,
+                    "tie_breaker": tie_breaker
+                })
+                
+        try:
+            raw_candidates = query_database_union(parsed, limit_raw=500, silent=True)
+        except Exception:
+            raw_candidates = []
+
+        for c in raw_candidates:
+            file_path = c.get("file_path")
+            if not file_path or not os.path.exists(file_path) or not _is_safe_path(file_path):
+                continue
+                
+            score, title_hits, tie_breaker = _density_score(c, parsed)
+            if score > 0:
+                results.append({
+                    "path": file_path,
+                    "score": score,
+                    "tie_breaker": tie_breaker
+                })
+
+    if not results:
+        return None
+
+    results.sort(key=lambda x: (x["score"], x["tie_breaker"]), reverse=True)
+    return results[0]["path"]
+
+
 def open_or_play_file(file_path_or_query: str, play_mode: bool = False, confirmed: bool = False) -> str:
     """
     Opens or plays a file or directory. Accepts a direct path or a natural-language query.
-    Uses the multi-stage LLM pipeline to resolve the best match.
-    Handles Steam games via steam:// protocol.
+    Uses the suggestions-based density scoring pipeline to resolve the best match.
     """
     if not file_path_or_query or not file_path_or_query.strip():
         return "Error: File path or query must not be empty."
@@ -1023,71 +1137,61 @@ def open_or_play_file(file_path_or_query: str, play_mode: bool = False, confirme
             if not is_media:
                 return f"Error: Playback is restricted to audio and video files only."
         
-        # Check if confirmation is required
         if not confirmed and _needs_confirmation(clean):
             return f"CONFIRM_REQUIRED: {clean}"
 
-        # Check if it's a Steam game and launch via Steam protocol
         print(f"[STEAM DEBUG] open_or_play_file: clean='{clean}', is_exe={clean.lower().endswith('.exe')}")
         if os.path.isfile(clean) and clean.lower().endswith(".exe"):
             appid = _get_steam_appid(clean)
             if appid:
                 if _launch_steam_game(appid):
                     return f"Success: Launched Steam game (AppID: {appid}) via Steam."
-            else:
-                print(f"[STEAM DEBUG] No Steam AppID found, falling back to os.startfile")
-        
         try:
             os.startfile(clean)
             return f"Success: Opened '{clean}'." if not play_mode else f"Success: Started playing '{clean}'."
         except Exception as e:
             return f"Failed to open '{clean}': {e}"
 
-    # 2. Check if it's an application (e.g. mspaint, notepad, telegram)
+    # 2. Use suggestions scoring logic (UWP apps + DB union search with density scoring)
+    resolved = resolve_best_file_via_suggestions(clean, play_mode=play_mode)
+    if resolved:
+        clean = resolved
+
+    # 3. Handle UWP apps (shell:AppsFolder)
+    if clean.lower().startswith("shell:"):
+        from app.tools.system import launch_app
+        if not confirmed and _needs_confirmation(clean):
+            return f"CONFIRM_REQUIRED: {clean}"
+        return launch_app(clean)
+
+    # 4. Handle resolved file path
+    if os.path.exists(clean):
+        if not _is_safe_path(clean):
+            return f"Access Denied: Opening sensitive system path '{clean}' is blocked."
+        if not confirmed and _needs_confirmation(clean):
+            return f"CONFIRM_REQUIRED: {clean}"
+        
+        if clean.lower().endswith(".exe"):
+            appid = _get_steam_appid(clean)
+            if appid:
+                if _launch_steam_game(appid):
+                    return f"Success: Found best matching file and launched Steam game (AppID: {appid}) via Steam."
+        try:
+            os.startfile(clean)
+            return f"Success: Found best matching file and opened '{clean}'." if not play_mode else f"Success: Found best matching file and started playing '{clean}'."
+        except Exception as e:
+            return f"Failed to open '{clean}': {e}"
+
+    # 5. Legacy app path finding fallback
     if not play_mode:
         from app.tools.system import launch_app, _find_app_path
         app_path = _find_app_path(clean)
         if app_path:
-            print(f"[Search-LLM] Found system app path: {app_path}")
             if not confirmed and _needs_confirmation(app_path):
                 return f"CONFIRM_REQUIRED: {app_path}"
             return launch_app(clean)
 
-    # 2b. Check if it's a directory by searching crawled/parent folders
-    if not play_mode:
-        resolved_folder = resolve_best_folder(clean)
-        if resolved_folder:
-            if not confirmed and _needs_confirmation(resolved_folder):
-                return f"CONFIRM_REQUIRED: {resolved_folder}"
-            try:
-                os.startfile(resolved_folder)
-                return f"Success: Opened directory '{resolved_folder}'."
-            except Exception as e:
-                return f"Failed to open directory '{resolved_folder}': {e}"
-
-    # 3. Resolve using database/metadata
-    resolved = resolve_best_file(clean, play_mode=play_mode)
-    print(f"[STEAM DEBUG] Resolved file: {resolved}")
-    if not resolved:
-        return f"Error: Could not find any files matching '{file_path_or_query}' on your system."
-
-    if not confirmed and _needs_confirmation(resolved):
-        return f"CONFIRM_REQUIRED: {resolved}"
-
-    # Check if resolved file is a Steam game
-    if resolved.lower().endswith(".exe"):
-        appid = _get_steam_appid(resolved)
-        if appid:
-            if _launch_steam_game(appid):
-                return f"Success: Found best matching file and launched Steam game (AppID: {appid}) via Steam."
-            else:
-                print(f"[STEAM DEBUG] No Steam AppID found for resolved file, falling back to os.startfile")
-
-    try:
-        os.startfile(resolved)
-        return f"Success: Found best matching file and opened '{resolved}'." if not play_mode else f"Success: Found best matching file and started playing '{resolved}'."
-    except Exception as e:
-        return f"Failed to open '{resolved}': {e}"
+    return f"Error: Could not find any files matching '{file_path_or_query}' on your system."
 
 def create_file(file_path: str, content: str = "") -> str:
     """

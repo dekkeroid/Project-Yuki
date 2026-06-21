@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -49,7 +50,7 @@ namespace Yuki.UnityFrontend.Backend
 
             var form = new List<IMultipartFormSection>
             {
-                new MultipartFormDataSection("file", wavAudio, "speech.wav", "audio/wav"),
+                new MultipartFormFileSection("file", wavAudio, "speech.wav", "audio/wav"),
                 new MultipartFormDataSection("model", whisperModel)
             };
 

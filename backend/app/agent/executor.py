@@ -43,9 +43,9 @@ _SHORT_CIRCUIT_TOOLS = {
     "delete_file",
     "run_python_script",
     "run_terminal_command",
-    "take_screenshot",
-    "web_search"
+    "take_screenshot"
 }
+
 
 
 def _extract_confirmation_target(tool_result: str) -> str | None:

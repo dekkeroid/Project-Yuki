@@ -104,15 +104,30 @@ const ControlDashboard = ({
 
 
   const TTS_VOICES = [
+    // US Female
     { label: 'Sarah (US Female - Soft/Cute)', value: 'af_sarah' },
     { label: 'Sky (US Female - Natural)', value: 'af_sky' },
     { label: 'Bella (US Female - Warm)', value: 'af_bella' },
+    { label: 'Alloy (US Female - Neutral)', value: 'af_alloy' },
+    { label: 'Aoede (US Female - Expressive)', value: 'af_aoede' },
+    { label: 'Heart (US Female - Friendly)', value: 'af_heart' },
+    { label: 'Jessica (US Female - Crisp)', value: 'af_jessica' },
+    { label: 'Kore (US Female - Balanced)', value: 'af_kore' },
+    { label: 'Nicole (US Female - Energetic)', value: 'af_nicole' },
+    { label: 'Nova (US Female - Clear)', value: 'af_nova' },
+    { label: 'River (US Female - Smooth)', value: 'af_river' },
+
+    // UK Female
     { label: 'Isabella (UK Female - Crisp)', value: 'bf_isabella' },
     { label: 'Alice (UK Female - Clear)', value: 'bf_alice' },
     { label: 'Lily (UK Female - Gentle)', value: 'bf_lily' },
+    { label: 'Emma (UK Female - Natural)', value: 'bf_emma' },
+
+    // JP Female
     { label: 'Alpha (JP Female - Bright)', value: 'jf_alpha' },
-    { label: 'Glowing (JP Female - Cute)', value: 'jf_glowing' },
-    { label: 'Yasmin (JP Female - Soft)', value: 'jf_yasmin' }
+    { label: 'Gongitsune (JP Female - Traditional)', value: 'jf_gongitsune' },
+    { label: 'Nezumi (JP Female - Sweet)', value: 'jf_nezumi' },
+    { label: 'Tebukuro (JP Female - Soft)', value: 'jf_tebukuro' }
   ];
 
   const TTS_RATES = [

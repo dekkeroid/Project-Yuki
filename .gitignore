@@ -16,14 +16,17 @@ venv/
 yuki_files.db
 yuki_files.db-wal
 yuki_files.db-shm
+yuki.db
+yuki.db-wal
+yuki.db-shm
 yuki_crawler.log
+metadata_tagger.log
 
 # Ignore all 3D VRM characters globally
 *.vrm
 
 # EXCEPT for the explicit default character asset
 !frontend/public/models/default.vrm
-!frontendUnity/Assets/**/*.vrm
 !frontendUnityV2/Assets/**/*.vrm
 
 # Python testing sandbox files (Scratch directory)
@@ -45,17 +48,6 @@ backend/app/voice/*.bin
 
 *.bat
 # Unity frontend generated files
-frontendUnity/Library/
-frontendUnity/Temp/
-frontendUnity/Obj/
-frontendUnity/Build/
-frontendUnity/Builds/
-frontendUnity/Logs/
-frontendUnity/UserSettings/
-frontendUnity/.vs/
-frontendUnity/.codegraph/
-
-# Unity frontend generated files
 frontendUnityV2/Library/
 frontendUnityV2/Temp/
 frontendUnityV2/Obj/
@@ -65,4 +57,22 @@ frontendUnityV2/Logs/
 frontendUnityV2/UserSettings/
 frontendUnityV2/.vs/
 frontendUnityV2/.codegraph/
+frontendUnityV2/ProjectSettings/SceneTemplateSettings.json
+frontendUnityV2/Assets/TextMesh Pro/
+frontendUnityV2/Assets/TextMesh Pro.meta
 
+# Unity generated project files globally
+*.csproj
+*.sln
+*.unityproj
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.opendb
+*.VC.db
+sysinfo
+CrashReports/

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Newtonsoft.Json;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -31,15 +32,47 @@ namespace Yuki.UnityFrontend.UI
         [SerializeField] private GameObject speechBubbleContainer;
         [SerializeField] private TextMeshProUGUI statusIndicatorText;
 
+        [Header("Electron UI Parity Fields")]
+        [SerializeField] private Button toggleChatButton;
+        [SerializeField] private GameObject chatInputContainer;
+        [SerializeField] private Button alwaysOnTopButton;
+        [SerializeField] private Button terminateButton;
+        [SerializeField] private Button muteButton;
+        [SerializeField] private Button closeButton;
+
+        [Header("Icons for Dynamic Toggles")]
+        [SerializeField] private Sprite eyeOnSprite;
+        [SerializeField] private Sprite eyeOffSprite;
+        [SerializeField] private Sprite volumeOnSprite;
+        [SerializeField] private Sprite volumeOffSprite;
+        [SerializeField] private Sprite micOnSprite;
+        [SerializeField] private Sprite micOffSprite;
+        [SerializeField] private Sprite chatSprite;
+        [SerializeField] private Sprite settingsSprite;
+        [SerializeField] private Sprite terminateSprite;
+        [SerializeField] private Sprite closeSprite;
+
+        private static readonly Color BgColor = new Color(0.07f, 0.05f, 0.13f, 0.75f);
+        private static readonly Color AccentPurple = new Color(0.75f, 0.52f, 0.99f, 1f);
+        private static readonly Color AccentTeal = new Color(0.18f, 0.83f, 0.75f, 1f);
+        private bool isAlwaysOnTop = true;
+
         [Header("Diagnostics & Settings Dashboard")]
         [SerializeField] private GameObject dashboardPanel;
         [SerializeField] private Button toggleDashboardButton;
+        [SerializeField] private Button closeSettingsButton;
         [SerializeField] private TextMeshProUGUI backendStatusText;
         [SerializeField] private TMP_Dropdown modelDropdown;
         [SerializeField] private TMP_Dropdown voiceDropdown;
         [SerializeField] private TMP_Dropdown ttsRateDropdown;
         [SerializeField] private Slider volumeSlider;
         [SerializeField] private Toggle muteToggle;
+        [SerializeField] private TMP_InputField characterNameInputField;
+        [SerializeField] private TMP_InputField characterPersonaInputField;
+        [SerializeField] private Toggle crawlerPausedToggle;
+        [SerializeField] private Toggle taggerPausedToggle;
+        [SerializeField] private Toggle noLlmModeToggle;
+        [SerializeField] private Toggle useLocalWhisperToggle;
         [SerializeField] private TextMeshProUGUI userStatsText;
 
         [Header("Safety Confirmation Overlay")]
@@ -62,9 +95,34 @@ namespace Yuki.UnityFrontend.UI
         [SerializeField] private float speechBubbleMaxScreenYOffset = 100f;
 
         private StringBuilder currentAssistantBubbleContent = new StringBuilder();
+        private bool isUpdatingDropdownsSilently = false;
         private string activeConfirmationId = string.Empty;
         private bool isMicActive = false;
         private string lastCleanSpeechText = string.Empty;
+
+        private YukiSettingsData currentSettings;
+
+        private static readonly string[] TtsVoiceLabels = {
+            "Sarah (US Female - Soft/Cute)",
+            "Sky (US Female - Natural)",
+            "Bella (US Female - Warm)",
+            "Isabella (UK Female - Crisp)",
+            "Alice (UK Female - Clear)",
+            "Lily (UK Female - Gentle)",
+            "Alpha (JP Female - Bright)",
+            "Glowing (JP Female - Cute)",
+            "Yasmin (JP Female - Soft)"
+        };
+        private static readonly string[] TtsVoiceValues = {
+            "af_sarah", "af_sky", "af_bella", "bf_isabella", "bf_alice", "bf_lily", "jf_alpha", "jf_glowing", "jf_yasmin"
+        };
+
+        private static readonly string[] TtsRateLabels = {
+            "Slow (0.8x)", "Normal (1.0x)", "Snappy (1.1x)", "Fast (1.2x)", "Faster (1.4x)"
+        };
+        private static readonly string[] TtsRateValues = {
+            "0.8", "1.0", "1.1", "1.2", "1.4"
+        };
 
         private void OnEnable()
         {
@@ -83,11 +141,29 @@ namespace Yuki.UnityFrontend.UI
             }
             if (micToggleButton != null) micToggleButton.onClick.AddListener(ToggleMicrophoneInput);
             if (toggleDashboardButton != null) toggleDashboardButton.onClick.AddListener(ToggleDashboardPanel);
+            if (closeSettingsButton != null) closeSettingsButton.onClick.AddListener(ToggleDashboardPanel);
             if (approveSafetyButton != null) approveSafetyButton.onClick.AddListener(ApproveActiveConfirmation);
             if (rejectSafetyButton != null) rejectSafetyButton.onClick.AddListener(RejectActiveConfirmation);
 
             if (volumeSlider != null) volumeSlider.onValueChanged.AddListener(OnVolumeSliderChanged);
             if (muteToggle != null) muteToggle.onValueChanged.AddListener(OnMuteToggleChanged);
+
+            if (toggleChatButton != null) toggleChatButton.onClick.AddListener(ToggleChatInputContainer);
+            if (alwaysOnTopButton != null) alwaysOnTopButton.onClick.AddListener(ToggleAlwaysOnTop);
+            if (terminateButton != null) terminateButton.onClick.AddListener(TerminateProcessing);
+            if (muteButton != null) muteButton.onClick.AddListener(ToggleMuteState);
+            if (closeButton != null) closeButton.onClick.AddListener(QuitApplication);
+
+            if (modelDropdown != null) modelDropdown.onValueChanged.AddListener(OnModelDropdownChanged);
+            if (voiceDropdown != null) voiceDropdown.onValueChanged.AddListener(OnVoiceDropdownChanged);
+            if (ttsRateDropdown != null) ttsRateDropdown.onValueChanged.AddListener(OnTtsRateDropdownChanged);
+
+            if (characterNameInputField != null) characterNameInputField.onEndEdit.AddListener(OnCharacterNameEndEdit);
+            if (characterPersonaInputField != null) characterPersonaInputField.onEndEdit.AddListener(OnCharacterPersonaEndEdit);
+            if (crawlerPausedToggle != null) crawlerPausedToggle.onValueChanged.AddListener(OnCrawlerPausedToggleChanged);
+            if (taggerPausedToggle != null) taggerPausedToggle.onValueChanged.AddListener(OnTaggerPausedToggleChanged);
+            if (noLlmModeToggle != null) noLlmModeToggle.onValueChanged.AddListener(OnNoLlmModeToggleChanged);
+            if (useLocalWhisperToggle != null) useLocalWhisperToggle.onValueChanged.AddListener(OnUseLocalWhisperToggleChanged);
 
             if (slashCommandHandler != null)
             {
@@ -122,8 +198,26 @@ namespace Yuki.UnityFrontend.UI
             if (chatInputField != null) chatInputField.onValueChanged.RemoveListener(OnChatInputValueChanged);
             if (micToggleButton != null) micToggleButton.onClick.RemoveListener(ToggleMicrophoneInput);
             if (toggleDashboardButton != null) toggleDashboardButton.onClick.RemoveListener(ToggleDashboardPanel);
+            if (closeSettingsButton != null) closeSettingsButton.onClick.RemoveListener(ToggleDashboardPanel);
             if (approveSafetyButton != null) approveSafetyButton.onClick.RemoveListener(ApproveActiveConfirmation);
             if (rejectSafetyButton != null) rejectSafetyButton.onClick.RemoveListener(RejectActiveConfirmation);
+
+            if (toggleChatButton != null) toggleChatButton.onClick.RemoveListener(ToggleChatInputContainer);
+            if (alwaysOnTopButton != null) alwaysOnTopButton.onClick.RemoveListener(ToggleAlwaysOnTop);
+            if (terminateButton != null) terminateButton.onClick.RemoveListener(TerminateProcessing);
+            if (muteButton != null) muteButton.onClick.RemoveListener(ToggleMuteState);
+            if (closeButton != null) closeButton.onClick.RemoveListener(QuitApplication);
+
+            if (modelDropdown != null) modelDropdown.onValueChanged.RemoveListener(OnModelDropdownChanged);
+            if (voiceDropdown != null) voiceDropdown.onValueChanged.RemoveListener(OnVoiceDropdownChanged);
+            if (ttsRateDropdown != null) ttsRateDropdown.onValueChanged.RemoveListener(OnTtsRateDropdownChanged);
+
+            if (characterNameInputField != null) characterNameInputField.onEndEdit.RemoveListener(OnCharacterNameEndEdit);
+            if (characterPersonaInputField != null) characterPersonaInputField.onEndEdit.RemoveListener(OnCharacterPersonaEndEdit);
+            if (crawlerPausedToggle != null) crawlerPausedToggle.onValueChanged.RemoveListener(OnCrawlerPausedToggleChanged);
+            if (taggerPausedToggle != null) taggerPausedToggle.onValueChanged.RemoveListener(OnTaggerPausedToggleChanged);
+            if (noLlmModeToggle != null) noLlmModeToggle.onValueChanged.RemoveListener(OnNoLlmModeToggleChanged);
+            if (useLocalWhisperToggle != null) useLocalWhisperToggle.onValueChanged.RemoveListener(OnUseLocalWhisperToggleChanged);
 
             if (slashCommandHandler != null)
             {
@@ -147,6 +241,8 @@ namespace Yuki.UnityFrontend.UI
 
         private void Start()
         {
+            LoadDynamicSprites();
+
             if (mainCamera == null) mainCamera = Camera.main;
             if (mainCanvas == null) mainCanvas = GetComponentInParent<Canvas>();
 
@@ -164,7 +260,13 @@ namespace Yuki.UnityFrontend.UI
                 muteToggle.isOn = audioManager.IsMuted;
             }
 
+            if (chatInputContainer != null) chatInputContainer.SetActive(false);
+
+            InitializeStaticDropdowns();
+            LoadDashboardData();
+
             UpdateBackendConnectionStatus();
+            UpdateButtonVisuals();
         }
 
         private void Update()
@@ -286,9 +388,23 @@ namespace Yuki.UnityFrontend.UI
         {
             if (settings == null) return;
 
-            SelectDropdownOption(modelDropdown, settings.LlmModel);
-            SelectDropdownOption(voiceDropdown, settings.TtsVoice);
-            SelectDropdownOption(ttsRateDropdown, settings.TtsRate);
+            isUpdatingDropdownsSilently = true;
+            try
+            {
+                SelectDropdownOption(modelDropdown, settings.LlmModel);
+
+                // Map Voice
+                int voiceIdx = Array.IndexOf(TtsVoiceValues, settings.TtsVoice);
+                if (voiceIdx >= 0 && voiceDropdown != null) voiceDropdown.value = voiceIdx;
+
+                // Map Rate
+                int rateIdx = Array.IndexOf(TtsRateValues, settings.TtsRate);
+                if (rateIdx >= 0 && ttsRateDropdown != null) ttsRateDropdown.value = rateIdx;
+            }
+            finally
+            {
+                isUpdatingDropdownsSilently = false;
+            }
         }
 
         private void SelectDropdownOption(TMP_Dropdown dropdown, string optionText)
@@ -490,7 +606,96 @@ namespace Yuki.UnityFrontend.UI
 
             if (req.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
             {
-                Debug.Log($"[UIController] Suggestions: {req.downloadHandler.text}");
+                string json = req.downloadHandler.text;
+                try
+                {
+                    var response = JsonConvert.DeserializeObject<YukiSuggestionsResponse>(json);
+                    PopulateSuggestions(response?.Suggestions, playMode);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[UIController] Error parsing suggestions: {ex.Message}");
+                }
+            }
+            else
+            {
+                if (suggestionsContainer != null) suggestionsContainer.SetActive(false);
+            }
+        }
+
+        private void PopulateSuggestions(List<YukiSuggestionItem> suggestions, bool playMode)
+        {
+            if (suggestionsParent != null)
+            {
+                foreach (Transform child in suggestionsParent)
+                {
+                    Destroy(child.gameObject);
+                }
+            }
+
+            if (suggestions == null || suggestions.Count == 0)
+            {
+                if (suggestionsContainer != null) suggestionsContainer.SetActive(false);
+                return;
+            }
+
+            if (suggestionsContainer != null) suggestionsContainer.SetActive(true);
+
+            foreach (var item in suggestions)
+            {
+                if (suggestionPrefab == null || suggestionsParent == null) continue;
+
+                GameObject suggObj = Instantiate(suggestionPrefab, suggestionsParent);
+                
+                var texts = suggObj.GetComponentsInChildren<TextMeshProUGUI>(true);
+                if (texts.Length == 1)
+                {
+                    texts[0].text = item.Name;
+                }
+                else if (texts.Length > 1)
+                {
+                    texts[0].text = item.Name;
+                    texts[1].text = item.Path;
+                }
+
+                if (texts.Length == 0)
+                {
+                    var legacyTexts = suggObj.GetComponentsInChildren<Text>(true);
+                    if (legacyTexts.Length == 1)
+                    {
+                        legacyTexts[0].text = item.Name;
+                    }
+                    else if (legacyTexts.Length > 1)
+                    {
+                        legacyTexts[0].text = item.Name;
+                        legacyTexts[1].text = item.Path;
+                    }
+                }
+
+                var btn = suggObj.GetComponent<Button>();
+                if (btn == null) btn = suggObj.GetComponentInChildren<Button>(true);
+                if (btn != null)
+                {
+                    btn.onClick.AddListener(() => OnSuggestionSelected(item, playMode));
+                }
+            }
+        }
+
+        private void OnSuggestionSelected(YukiSuggestionItem item, bool playMode)
+        {
+            string cmdPrefix = playMode ? "/play" : "/open";
+            string pathVal = item.Path.Contains(" ") ? $"\"{item.Path}\"" : item.Path;
+            string finalCommand = $"{cmdPrefix} {pathVal}";
+
+            if (chatInputField != null)
+            {
+                chatInputField.text = finalCommand;
+                SubmitUserChat();
+            }
+
+            if (suggestionsContainer != null)
+            {
+                suggestionsContainer.SetActive(false);
             }
         }
 
@@ -529,6 +734,7 @@ namespace Yuki.UnityFrontend.UI
             {
                 audioManager.SetMuted(isOn);
             }
+            UpdateButtonVisuals();
         }
 
         private void ApproveActiveConfirmation()
@@ -615,13 +821,185 @@ namespace Yuki.UnityFrontend.UI
 
         private void HandleTalkModeChanged(bool active)
         {
-            if (micToggleButton != null)
+            UpdateButtonVisuals();
+        }
+
+        private void InitializeStaticDropdowns()
+        {
+            if (voiceDropdown != null)
             {
-                var label = micToggleButton.GetComponentInChildren<TextMeshProUGUI>();
-                if (label != null)
+                voiceDropdown.ClearOptions();
+                var options = new List<TMP_Dropdown.OptionData>();
+                foreach (var label in TtsVoiceLabels)
                 {
-                    label.text = active ? "Talk Mode ON" : "Talk Mode";
+                    options.Add(new TMP_Dropdown.OptionData(label));
                 }
+                voiceDropdown.AddOptions(options);
+            }
+
+            if (ttsRateDropdown != null)
+            {
+                ttsRateDropdown.ClearOptions();
+                var options = new List<TMP_Dropdown.OptionData>();
+                foreach (var label in TtsRateLabels)
+                {
+                    options.Add(new TMP_Dropdown.OptionData(label));
+                }
+                ttsRateDropdown.AddOptions(options);
+            }
+        }
+
+        private void LoadDashboardData()
+        {
+            if (restClient == null) return;
+
+            restClient.FetchLlmModels(
+                onSuccess: res => {
+                    if (modelDropdown != null && res != null && res.Models != null)
+                    {
+                        modelDropdown.ClearOptions();
+                        var options = new List<TMP_Dropdown.OptionData>();
+                        foreach (var model in res.Models)
+                        {
+                            options.Add(new TMP_Dropdown.OptionData(model.Name));
+                        }
+                        modelDropdown.AddOptions(options);
+
+                        string activeModel = res.Active;
+                        if (currentSettings != null && !string.IsNullOrEmpty(currentSettings.LlmModel))
+                        {
+                            activeModel = currentSettings.LlmModel;
+                        }
+                        SelectDropdownOption(modelDropdown, activeModel);
+                    }
+                },
+                onError: err => Debug.LogError($"[UIController] Failed to fetch LLM models: {err}")
+            );
+
+            restClient.FetchSettings(
+                onSuccess: settings => {
+                    currentSettings = settings;
+                    if (settings != null)
+                    {
+                        UpdateDropdownSelectionsFromSettings(settings);
+                    }
+                },
+                onError: err => Debug.LogError($"[UIController] Failed to fetch settings: {err}")
+            );
+        }
+
+        private void UpdateDropdownSelectionsFromSettings(YukiSettingsData settings)
+        {
+            if (settings == null) return;
+
+            isUpdatingDropdownsSilently = true;
+            try
+            {
+                if (modelDropdown != null)
+                {
+                    SelectDropdownOption(modelDropdown, settings.LlmModel);
+                }
+
+                if (voiceDropdown != null)
+                {
+                    int voiceIdx = Array.IndexOf(TtsVoiceValues, settings.TtsVoice);
+                    if (voiceIdx >= 0) voiceDropdown.value = voiceIdx;
+                }
+
+                if (ttsRateDropdown != null)
+                {
+                    int rateIdx = Array.IndexOf(TtsRateValues, settings.TtsRate);
+                    if (rateIdx >= 0) ttsRateDropdown.value = rateIdx;
+                }
+
+                if (characterNameInputField != null)
+                {
+                    characterNameInputField.text = settings.CharacterName ?? "";
+                }
+
+                if (characterPersonaInputField != null)
+                {
+                    characterPersonaInputField.text = settings.CharacterPersona ?? "";
+                }
+
+                if (crawlerPausedToggle != null)
+                {
+                    crawlerPausedToggle.isOn = settings.CrawlerPaused;
+                }
+
+                if (taggerPausedToggle != null)
+                {
+                    taggerPausedToggle.isOn = settings.TaggerPaused;
+                }
+
+                if (noLlmModeToggle != null)
+                {
+                    noLlmModeToggle.isOn = settings.NoLlmMode;
+                }
+
+                if (useLocalWhisperToggle != null)
+                {
+                    useLocalWhisperToggle.isOn = settings.UseLocalWhisper;
+                }
+            }
+            finally
+            {
+                isUpdatingDropdownsSilently = false;
+            }
+        }
+
+        private void OnModelDropdownChanged(int index)
+        {
+            if (isUpdatingDropdownsSilently) return;
+            if (modelDropdown == null || restClient == null) return;
+            string selectedModel = modelDropdown.options[index].text;
+            
+            restClient.SetActiveModel(selectedModel,
+                onSuccess: res => Debug.Log($"[UIController] Active model set successfully to {selectedModel}"),
+                onError: err => Debug.LogError($"[UIController] Failed to set active model: {err}")
+            );
+
+            if (currentSettings != null)
+            {
+                currentSettings.LlmModel = selectedModel;
+            }
+        }
+
+        private void OnVoiceDropdownChanged(int index)
+        {
+            if (isUpdatingDropdownsSilently) return;
+            if (restClient == null || currentSettings == null) return;
+            if (index < 0 || index >= TtsVoiceValues.Length) return;
+
+            string selectedVoice = TtsVoiceValues[index];
+            currentSettings.TtsVoice = selectedVoice;
+
+            restClient.UpdateSettings(currentSettings,
+                onSuccess: res => Debug.Log($"[UIController] Settings updated with voice: {selectedVoice}"),
+                onError: err => Debug.LogError($"[UIController] Failed to update settings voice: {err}")
+            );
+        }
+
+        private void OnTtsRateDropdownChanged(int index)
+        {
+            if (isUpdatingDropdownsSilently) return;
+            if (restClient == null || currentSettings == null) return;
+            if (index < 0 || index >= TtsRateValues.Length) return;
+
+            string selectedRate = TtsRateValues[index];
+            currentSettings.TtsRate = selectedRate;
+
+            restClient.UpdateSettings(currentSettings,
+                onSuccess: res => Debug.Log($"[UIController] Settings updated with rate: {selectedRate}"),
+                onError: err => Debug.LogError($"[UIController] Failed to update settings rate: {err}")
+            );
+        }
+
+        public void StartDraggingWindow()
+        {
+            if (desktopOverlay != null)
+            {
+                desktopOverlay.DragWindow();
             }
         }
 
@@ -639,5 +1017,253 @@ namespace Yuki.UnityFrontend.UI
                 desktopOverlay.ShowWindow();
             }
         }
+
+        private void ToggleChatInputContainer()
+        {
+            if (chatInputContainer != null)
+            {
+                bool nextActive = !chatInputContainer.activeSelf;
+                chatInputContainer.SetActive(nextActive);
+                UpdateButtonVisuals();
+            }
+        }
+
+        private void ToggleAlwaysOnTop()
+        {
+            isAlwaysOnTop = !isAlwaysOnTop;
+            if (desktopOverlay != null)
+            {
+                desktopOverlay.SetAlwaysOnTop(isAlwaysOnTop);
+            }
+            UpdateButtonVisuals();
+        }
+
+        private async void TerminateProcessing()
+        {
+            Debug.Log("[Terminate] Interrupting current turn and clearing playback.");
+            if (audioManager != null)
+            {
+                audioManager.StopAndClear();
+            }
+            if (webSocketClient != null && webSocketClient.IsConnected)
+            {
+                await webSocketClient.SendInterruptAsync();
+            }
+            if (speechBubbleContainer != null)
+            {
+                speechBubbleContainer.SetActive(false);
+            }
+            currentAssistantBubbleContent.Clear();
+            if (statusIndicatorText != null)
+            {
+                statusIndicatorText.text = "Yuki: Idle";
+            }
+            if (avatarPresenter != null)
+            {
+                avatarPresenter.SetThinking(false);
+                avatarPresenter.SetListening(false);
+                avatarPresenter.SetExpression("neutral");
+            }
+        }
+
+        private void ToggleMuteState()
+        {
+            if (audioManager != null)
+            {
+                bool nextMute = !audioManager.IsMuted;
+                audioManager.SetMuted(nextMute);
+                if (muteToggle != null)
+                {
+                    muteToggle.isOn = nextMute;
+                }
+                UpdateButtonVisuals();
+            }
+        }
+
+        private void QuitApplication()
+        {
+            Debug.Log("[UIController] Quitting application.");
+            Application.Quit();
+        }
+
+        private void UpdateButtonVisuals()
+        {
+            // Chat toggle button color
+            if (toggleChatButton != null)
+            {
+                var img = toggleChatButton.GetComponent<Image>();
+                if (img != null)
+                {
+                    img.color = (chatInputContainer != null && chatInputContainer.activeSelf) ? AccentTeal : BgColor;
+                }
+            }
+
+            // Always on top button color/icon
+            if (alwaysOnTopButton != null)
+            {
+                var img = alwaysOnTopButton.GetComponent<Image>();
+                if (img != null)
+                {
+                    img.color = isAlwaysOnTop ? AccentTeal : BgColor;
+                }
+                Transform iconTrans = alwaysOnTopButton.transform.Find("Icon");
+                if (iconTrans != null)
+                {
+                    var iconImg = iconTrans.GetComponent<Image>();
+                    if (iconImg != null)
+                    {
+                        iconImg.sprite = isAlwaysOnTop ? eyeOnSprite : eyeOffSprite;
+                    }
+                }
+            }
+
+            // Mute button color/icon
+            if (muteButton != null)
+            {
+                bool isMuted = audioManager != null && audioManager.IsMuted;
+                var img = muteButton.GetComponent<Image>();
+                if (img != null)
+                {
+                    img.color = isMuted ? new Color(0.9f, 0.3f, 0.3f, 1f) : BgColor;
+                }
+                Transform iconTrans = muteButton.transform.Find("Icon");
+                if (iconTrans != null)
+                {
+                    var iconImg = iconTrans.GetComponent<Image>();
+                    if (iconImg != null)
+                    {
+                        iconImg.sprite = isMuted ? volumeOffSprite : volumeOnSprite;
+                    }
+                }
+            }
+
+            // Mic button color/label
+            if (micToggleButton != null)
+            {
+                bool active = talkModeController != null && talkModeController.IsTalkMode;
+                var img = micToggleButton.GetComponent<Image>();
+                if (img != null)
+                {
+                    img.color = active ? AccentTeal : AccentPurple;
+                }
+                Transform iconTrans = micToggleButton.transform.Find("Icon");
+                if (iconTrans != null)
+                {
+                    var iconImg = iconTrans.GetComponent<Image>();
+                    if (iconImg != null)
+                    {
+                        iconImg.sprite = active ? micOnSprite : micOffSprite;
+                    }
+                }
+            }
+        }
+
+        private void LoadDynamicSprites()
+        {
+            if (eyeOnSprite == null) eyeOnSprite = Resources.Load<Sprite>("Textures/UI_Icon_alwaysontop");
+            if (eyeOffSprite == null) eyeOffSprite = Resources.Load<Sprite>("Textures/UI_Icon_alwaysontop_off");
+            if (volumeOnSprite == null) volumeOnSprite = Resources.Load<Sprite>("Textures/UI_Icon_volume_on");
+            if (volumeOffSprite == null) volumeOffSprite = Resources.Load<Sprite>("Textures/UI_Icon_volume_off");
+            if (micOnSprite == null) micOnSprite = Resources.Load<Sprite>("Textures/UI_Icon_mic_on");
+            if (micOffSprite == null) micOffSprite = Resources.Load<Sprite>("Textures/UI_Icon_mic_off");
+            if (chatSprite == null) chatSprite = Resources.Load<Sprite>("Textures/UI_Icon_chat");
+            if (settingsSprite == null) settingsSprite = Resources.Load<Sprite>("Textures/UI_Icon_settings");
+            if (terminateSprite == null) terminateSprite = Resources.Load<Sprite>("Textures/UI_Icon_terminate");
+            if (closeSprite == null) closeSprite = Resources.Load<Sprite>("Textures/UI_Icon_close");
+
+            // Apply these sprites to the UI buttons initially if they were loaded or assigned
+            if (toggleChatButton != null)
+            {
+                var icon = toggleChatButton.transform.Find("Icon")?.GetComponent<Image>();
+                if (icon != null && chatSprite != null) icon.sprite = chatSprite;
+            }
+            if (toggleDashboardButton != null)
+            {
+                var icon = toggleDashboardButton.transform.Find("Icon")?.GetComponent<Image>();
+                if (icon != null && settingsSprite != null) icon.sprite = settingsSprite;
+            }
+            if (terminateButton != null)
+            {
+                var icon = terminateButton.transform.Find("Icon")?.GetComponent<Image>();
+                if (icon != null && terminateSprite != null) icon.sprite = terminateSprite;
+            }
+            if (closeButton != null)
+            {
+                var icon = closeButton.transform.Find("Icon")?.GetComponent<Image>();
+                if (icon != null && closeSprite != null) icon.sprite = closeSprite;
+            }
+        }
+
+        private void OnCharacterNameEndEdit(string text)
+        {
+            if (isUpdatingDropdownsSilently) return;
+            if (restClient == null || currentSettings == null) return;
+            currentSettings.CharacterName = text;
+            SaveSettingsToServer();
+        }
+
+        private void OnCharacterPersonaEndEdit(string text)
+        {
+            if (isUpdatingDropdownsSilently) return;
+            if (restClient == null || currentSettings == null) return;
+            currentSettings.CharacterPersona = text;
+            SaveSettingsToServer();
+        }
+
+        private void OnCrawlerPausedToggleChanged(bool val)
+        {
+            if (isUpdatingDropdownsSilently) return;
+            if (restClient == null || currentSettings == null) return;
+            currentSettings.CrawlerPaused = val;
+            SaveSettingsToServer();
+        }
+
+        private void OnTaggerPausedToggleChanged(bool val)
+        {
+            if (isUpdatingDropdownsSilently) return;
+            if (restClient == null || currentSettings == null) return;
+            currentSettings.TaggerPaused = val;
+            SaveSettingsToServer();
+        }
+
+        private void OnNoLlmModeToggleChanged(bool val)
+        {
+            if (isUpdatingDropdownsSilently) return;
+            if (restClient == null || currentSettings == null) return;
+            currentSettings.NoLlmMode = val;
+            SaveSettingsToServer();
+        }
+
+        private void OnUseLocalWhisperToggleChanged(bool val)
+        {
+            if (isUpdatingDropdownsSilently) return;
+            if (restClient == null || currentSettings == null) return;
+            currentSettings.UseLocalWhisper = val;
+            SaveSettingsToServer();
+        }
+
+        private void SaveSettingsToServer()
+        {
+            if (restClient == null || currentSettings == null) return;
+            restClient.UpdateSettings(currentSettings,
+                onSuccess: res => Debug.Log("[UIController] Settings successfully saved to backend"),
+                onError: err => Debug.LogError($"[UIController] Failed to save settings: {err}")
+            );
+        }
+    }
+
+    [Serializable]
+    public class YukiSuggestionItem
+    {
+        [JsonProperty("name")] public string Name;
+        [JsonProperty("path")] public string Path;
+        [JsonProperty("type")] public string Type;
+        [JsonProperty("score")] public float Score;
+    }
+
+    [Serializable]
+    public class YukiSuggestionsResponse
+    {
+        [JsonProperty("suggestions")] public List<YukiSuggestionItem> Suggestions;
     }
 }

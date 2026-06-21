@@ -354,17 +354,7 @@ body {
   z-index: 10;
 }
 
-.bubble-arrow {
-  position: absolute;
-  bottom: -8px;
-  right: 40px;
-  width: 16px;
-  height: 16px;
-  transform: rotate(45deg);
-  background: #110b20;
-  border-right: 1px solid var(--glass-border);
-  border-bottom: 1px solid var(--glass-border);
-}
+
 
 .bubble-tag {
   font-size: 9px;
@@ -1250,12 +1240,12 @@ body.desktop-overlay .interactive-element {
 /* Floating Vertical Menu near Yuki's body */
 .desktop-overlay-menu {
   position: absolute;
-  right: 40px;
+  left: calc(50% + 112px * var(--avatar-scale, 1));
   top: 50%;
-  transform: translateY(-50%) translateX(20px);
+  transform: translateY(-50%) translateX(calc(15px * var(--avatar-button-scale, 1)));
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: calc(10px * var(--avatar-button-scale, 1));
   z-index: 1000;
   opacity: 0;
   pointer-events: none;
@@ -1269,8 +1259,8 @@ body.desktop-overlay .interactive-element {
 }
 
 .desktop-menu-btn {
-  width: 40px;
-  height: 40px;
+  width: calc(40px * var(--avatar-button-scale, 1));
+  height: calc(40px * var(--avatar-button-scale, 1));
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1279,16 +1269,21 @@ body.desktop-overlay .interactive-element {
   cursor: pointer;
   background: rgba(18, 12, 33, 0.75);
   border: 1px solid var(--glass-border);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 calc(4px * var(--avatar-button-scale, 1)) calc(12px * var(--avatar-button-scale, 1)) rgba(0, 0, 0, 0.4);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   outline: none;
+}
+
+.desktop-menu-btn svg {
+  width: calc(20px * var(--avatar-button-scale, 1)) !important;
+  height: calc(20px * var(--avatar-button-scale, 1)) !important;
 }
 
 .desktop-menu-btn:hover {
   background: rgba(192, 132, 252, 0.25);
   border-color: var(--accent-purple);
   transform: scale(1.1);
-  box-shadow: 0 0 12px var(--accent-purple-glow);
+  box-shadow: 0 0 calc(12px * var(--avatar-button-scale, 1)) var(--accent-purple-glow);
   color: white;
 }
 
@@ -1338,25 +1333,17 @@ body.desktop-overlay .interactive-element {
   box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(192, 132, 252, 0.65) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   z-index: 999;
   animation: bubble-fade-in 0.25s ease-out forwards;
 }
 
-.desktop-speech-bubble::after {
-  content: '';
-  position: absolute;
-  bottom: -9px;
-  left: var(--arrow-left, 50%);
-  margin-left: -7px;
-  width: 14px;
-  height: 14px;
-  background: rgba(25, 17, 45, 0.96);
-  border-right: 1.5px solid var(--accent-purple);
-  border-bottom: 1.5px solid var(--accent-purple);
-  transform: rotate(45deg);
+.desktop-speech-bubble::-webkit-scrollbar {
+  display: none;
 }
+
+
 
 .desktop-bubble-tag {
   font-size: 8px;

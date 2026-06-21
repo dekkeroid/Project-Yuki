@@ -168,10 +168,10 @@ const ChatOverlay = ({
 
     setIsLoadingSuggestions(true);
 
-    const delayDebounceFn = setTimeout(() => {
-      const controller = new AbortController();
-      const signal = controller.signal;
+    const controller = new AbortController();
+    const signal = controller.signal;
 
+    const delayDebounceFn = setTimeout(() => {
       fetch(`${API_BASE}/api/system/suggestions?query=${encodeURIComponent(query)}&type=${type}`, { signal })
         .then((res) => {
           if (!res.ok) throw new Error('Failed to fetch suggestions');
@@ -191,11 +191,12 @@ const ChatOverlay = ({
             setIsLoadingSuggestions(false);
           }
         });
-
-      return () => controller.abort();
     }, 200);
 
-    return () => clearTimeout(delayDebounceFn);
+    return () => {
+      clearTimeout(delayDebounceFn);
+      controller.abort();
+    };
   }, [parsedSearch]);
 
   // 4. Unified Suggestions List
@@ -236,7 +237,7 @@ const ChatOverlay = ({
     // Submit the command immediately
     setTimeout(() => {
       const fakeEvent = { preventDefault: () => {} };
-      onSubmit(fakeEvent, newText);
+      onSubmit(fakeEvent, newText, true);
     }, 50);
   };
 
@@ -265,6 +266,16 @@ const ChatOverlay = ({
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, isThinking]);
+
+  // Auto-scroll selected command suggestion into view
+  useEffect(() => {
+    if (dropdownRef.current && activeSuggIdx >= 0) {
+      const activeEl = dropdownRef.current.querySelector(`[data-index="${activeSuggIdx}"]`);
+      if (activeEl) {
+        activeEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [activeSuggIdx]);
 
   return (
     <div className="chat-overlay-container">
@@ -506,6 +517,7 @@ const ChatOverlay = ({
                   searchSuggestions.map((item, idx) => (
                     <div
                       key={item.path}
+                      data-index={idx}
                       onMouseDown={(e) => { e.preventDefault(); pickSearchSuggestion(item); }}
                       onMouseEnter={() => setActiveSuggIdx(idx)}
                       style={{
@@ -601,6 +613,7 @@ const ChatOverlay = ({
                 suggestions.map(({ cmd, description }, idx) => (
                   <div
                     key={cmd}
+                    data-index={idx}
                     onMouseDown={(e) => { e.preventDefault(); pickSuggestion(cmd); }}
                     onMouseEnter={() => setActiveSuggIdx(idx)}
                     style={{

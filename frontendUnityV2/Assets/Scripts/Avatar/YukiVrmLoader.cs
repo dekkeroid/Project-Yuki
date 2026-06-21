@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using UniGLTF;
@@ -13,9 +14,9 @@ namespace Yuki.UnityFrontend.Avatar
 
         private string ModelsPath => Path.Combine(Application.streamingAssetsPath, modelsSubFolder);
 
-        private VRM10.Vrm10Instance lastLoadedVrm10Instance;
+        private UniVRM10.Vrm10Instance lastLoadedVrm10Instance;
 
-        public VRM10.Vrm10Instance LastVrm10Instance => lastLoadedVrm10Instance;
+        public UniVRM10.Vrm10Instance LastVrm10Instance => lastLoadedVrm10Instance;
 
         public event Action<GameObject> OnVrmLoaded;
 
@@ -85,10 +86,12 @@ namespace Yuki.UnityFrontend.Avatar
 
         private async Task<GameObject> LoadVrm10Async(byte[] bytes, string fileName)
         {
-            var instance = await VRM10.Vrm10.LoadBytesAsync(
+            var instance = await UniVRM10.Vrm10.LoadBytesAsync(
                 bytes,
+                canLoadVrm0X: true,
+                controlRigGenerationOption: UniVRM10.ControlRigGenerationOption.None,
                 awaitCaller: new RuntimeOnlyAwaitCaller(),
-                cancellationToken: default
+                ct: default
             );
 
             if (instance == null)
@@ -99,7 +102,10 @@ namespace Yuki.UnityFrontend.Avatar
 
             lastLoadedVrm10Instance = instance;
 
-            instance.ShowMeshes();
+            if (instance.TryGetComponent<RuntimeGltfInstance>(out var gltfInstance))
+            {
+                gltfInstance.ShowMeshes();
+            }
             return instance.gameObject;
         }
 
@@ -107,13 +113,8 @@ namespace Yuki.UnityFrontend.Avatar
         {
             lastLoadedVrm10Instance = null;
 
-            var gltfData = new GlbBinaryParser(bytes, fileName).Parse();
-            var context = new VRM.VRMImporterContext(gltfData);
-
-            context.Load();
-            context.DisposeOnLoad();
-
-            return context.Root;
+            var instance = await VRM.VrmUtility.LoadBytesAsync(fileName, bytes, new RuntimeOnlyAwaitCaller());
+            return instance != null ? instance.Root : null;
         }
     }
 }

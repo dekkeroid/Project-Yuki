@@ -63,37 +63,34 @@
       }
     },
     "com.vrmc.gltf": {
-      "version": "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF",
+      "version": "file:com.vrmc.gltf",
       "depth": 0,
-      "source": "git",
+      "source": "embedded",
       "dependencies": {
         "com.unity.modules.animation": "1.0.0",
         "com.unity.modules.imgui": "1.0.0",
         "com.unity.modules.imageconversion": "1.0.0",
         "com.unity.test-framework": "1.4.6",
         "com.unity.mathematics": "1.2.6"
-      },
-      "hash": "66558744b7fa50790d7cec217c6dd94b58c7441e"
+      }
     },
     "com.vrmc.univrm": {
-      "version": "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM",
+      "version": "file:com.vrmc.univrm",
       "depth": 0,
-      "source": "git",
+      "source": "embedded",
       "dependencies": {
         "com.vrmc.gltf": "0.131.1",
         "com.unity.ugui": "1.0.0"
-      },
-      "hash": "66558744b7fa50790d7cec217c6dd94b58c7441e"
+      }
     },
     "com.vrmc.vrm": {
-      "version": "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM10",
+      "version": "file:com.vrmc.vrm",
       "depth": 0,
-      "source": "git",
+      "source": "embedded",
       "dependencies": {
         "com.unity.timeline": "1.7.6",
         "com.vrmc.gltf": "0.131.1"
-      },
-      "hash": "66558744b7fa50790d7cec217c6dd94b58c7441e"
+      }
     },
     "com.unity.modules.animation": {
       "version": "1.0.0",

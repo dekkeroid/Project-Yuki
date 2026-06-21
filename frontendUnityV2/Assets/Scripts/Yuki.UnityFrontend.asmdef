@@ -6,6 +6,7 @@
     "Unity.TextMeshPro",
     "UnityEngine.UI",
     "UniGLTF",
+    "UniGLTF.Utils",
     "VRM",
     "VRM10"
   ],

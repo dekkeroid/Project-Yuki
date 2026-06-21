@@ -5,8 +5,78 @@ import re
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from app import config
+from anyascii import anyascii
+import pykakasi
+import pypinyin
 
 DB_PATH = Path(config.BASE_DIR) / "yuki_files.db"
+
+# Initialize pykakasi once
+kks = pykakasi.kakasi()
+
+def transliterate_text(text: str) -> str:
+    """
+    Transliterates foreign scripts (Japanese, Chinese, Hindi Devanagari) to English equivalents.
+    Concatenates Romaji and Pinyin for CJK characters to handle ambiguity.
+    """
+    if not text:
+        return ""
+    # Check if text is pure ASCII
+    if all(ord(c) < 128 for c in text):
+        return text
+
+    # Identify scripts present in the text
+    has_japanese_kana = any(
+        (0x3040 <= ord(c) <= 0x309F) or (0x30A0 <= ord(c) <= 0x30FF)
+        for c in text
+    )
+    has_cjk = any(
+        (0x4E00 <= ord(c) <= 0x9FFF)
+        for c in text
+    )
+    
+    translit_parts = []
+    
+    # 1. Handle CJK characters (Chinese characters & Japanese Kanji)
+    if has_cjk or has_japanese_kana:
+        # Get Japanese Romaji
+        try:
+            res_kakasi = kks.convert(text)
+            romaji = " ".join(item['hepburn'] for item in res_kakasi)
+            romaji_clean = " ".join(romaji.split())
+            if romaji_clean and romaji_clean.lower() != text.lower():
+                translit_parts.append(romaji_clean)
+        except Exception:
+            pass
+            
+        # Get Chinese Pinyin
+        try:
+            pinyin_list = pypinyin.lazy_pinyin(text)
+            pinyin_clean = "".join(pinyin_list)
+            if pinyin_clean and pinyin_clean.lower() != text.lower():
+                translit_parts.append(pinyin_clean)
+        except Exception:
+            pass
+
+    # 2. Handle other non-ASCII characters (e.g. Devanagari, Cyrillic, Greek, etc.)
+    try:
+        ascii_fallback = anyascii(text)
+        if ascii_fallback and ascii_fallback.lower() != text.lower() and ascii_fallback not in translit_parts:
+            translit_parts.append(ascii_fallback)
+    except Exception:
+        pass
+        
+    # Return all unique transliterated parts joined together
+    seen = set()
+    unique_parts = []
+    for part in translit_parts:
+        part_lower = part.lower()
+        if part_lower not in seen:
+            seen.add(part_lower)
+            unique_parts.append(part)
+            
+    return " ".join(unique_parts)
+
 
 def get_clean_parent_folder(file_path: str) -> str:
     """
@@ -83,9 +153,25 @@ def init_db():
         size INTEGER,
         last_modified REAL,
         category TEXT,
-        indexed_at REAL
+        indexed_at REAL,
+        transliterated_name TEXT,
+        transliterated_parent_folder TEXT
     );
     """)
+
+    # Migrate existing tables if they lack transliterated columns
+    try:
+        cursor.execute("PRAGMA table_info(files);")
+        cols = [row[1] for row in cursor.fetchall()]
+        if cols:
+            if "transliterated_name" not in cols:
+                print("[DB] Migrating: Adding transliterated_name column to files...")
+                cursor.execute("ALTER TABLE files ADD COLUMN transliterated_name TEXT;")
+            if "transliterated_parent_folder" not in cols:
+                print("[DB] Migrating: Adding transliterated_parent_folder column to files...")
+                cursor.execute("ALTER TABLE files ADD COLUMN transliterated_parent_folder TEXT;")
+    except Exception as e:
+        print(f"[DB] Error adding columns: {e}")
 
     # 3. File Metadata Table (artist, genres, release year)
     cursor.execute("""
@@ -171,6 +257,50 @@ def init_db():
     );
     """)
 
+    # One-time migration to populate transliterated names for existing files
+    try:
+        cursor.execute("SELECT COUNT(*) FROM files WHERE transliterated_name IS NULL")
+        null_count = cursor.fetchone()[0]
+        if null_count > 0:
+            print(f"[DB] One-time migration: Transliterating {null_count} existing files...")
+            cursor.execute("SELECT id, file_name, parent_folder FROM files WHERE transliterated_name IS NULL")
+            rows = cursor.fetchall()
+            
+            updates = []
+            for row in rows:
+                row_id, file_name, parent_folder = row
+                trans_name = transliterate_text(file_name or "")
+                trans_parent = transliterate_text(parent_folder or "")
+                updates.append((trans_name, trans_parent, row_id))
+                
+            if updates:
+                # Update in batches
+                cursor.executemany("""
+                UPDATE files 
+                SET transliterated_name = ?, transliterated_parent_folder = ? 
+                WHERE id = ?
+                """, updates)
+                conn.commit()
+                print(f"[DB] One-time migration complete. Transliterated {len(updates)} files.")
+    except Exception as e:
+        print(f"[DB] Error running transliteration migration: {e}")
+
+    # Reset enriched status for songs with empty genres to trigger MusicBrainz lookup
+    try:
+        cursor.execute("""
+        UPDATE file_metadata
+        SET enriched = 0
+        WHERE enriched = 1
+          AND (genre_or_tags IS NULL OR genre_or_tags = '')
+          AND file_id IN (SELECT id FROM files WHERE category = 'song')
+        """)
+        changes = cursor.rowcount
+        conn.commit()
+        if changes > 0:
+            print(f"[DB] Reset enriched status for {changes} song(s) with empty genres to trigger MusicBrainz lookup.")
+    except Exception as e:
+        print(f"[DB] Error resetting empty genre song flags: {e}")
+
     conn.commit()
     conn.close()
     print(f"[DB] Initialized database at '{DB_PATH}'")
@@ -197,11 +327,17 @@ def set_crawler_state(key: str, val: str):
 
 # --- Directories CRUD ---
 
-def get_directory(path: str) -> Optional[Dict[str, Any]]:
-    conn = get_connection()
-    row = conn.execute("SELECT * FROM directories WHERE path = ?", (path,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
+def get_directory(path: str, conn=None) -> Optional[Dict[str, Any]]:
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+    try:
+        row = conn.execute("SELECT * FROM directories WHERE path = ?", (path,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        if should_close:
+            conn.close()
 
 def get_hot_directories() -> List[str]:
     """
@@ -212,8 +348,11 @@ def get_hot_directories() -> List[str]:
     conn.close()
     return [row["path"] for row in rows]
 
-def upsert_directory(path: str, last_modified: float, change_count_increment: int = 0):
-    conn = get_connection()
+def upsert_directory(path: str, last_modified: float, change_count_increment: int = 0, conn=None):
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
     try:
         conn.execute("""
         INSERT INTO directories (path, last_modified, change_count)
@@ -222,19 +361,27 @@ def upsert_directory(path: str, last_modified: float, change_count_increment: in
             last_modified = excluded.last_modified,
             change_count = change_count + ?
         """, (path, last_modified, change_count_increment, change_count_increment))
-        conn.commit()
+        if should_close:
+            conn.commit()
     except Exception as e:
         print(f"[DB] Error upserting directory '{path}': {e}")
     finally:
-        conn.close()
+        if should_close:
+            conn.close()
 
 # --- Files CRUD ---
 
-def get_file_by_path(file_path: str) -> Optional[Dict[str, Any]]:
-    conn = get_connection()
-    row = conn.execute("SELECT * FROM files WHERE file_path = ?", (file_path,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
+def get_file_by_path(file_path: str, conn=None) -> Optional[Dict[str, Any]]:
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+    try:
+        row = conn.execute("SELECT * FROM files WHERE file_path = ?", (file_path,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        if should_close:
+            conn.close()
 
 def get_all_indexed_file_paths() -> List[str]:
     conn = get_connection()
@@ -242,21 +389,29 @@ def get_all_indexed_file_paths() -> List[str]:
     conn.close()
     return [row["file_path"] for row in rows]
 
-def upsert_file(file_path: str, file_name: str, parent_folder: str, extension: str, size: int, last_modified: float, category: str) -> int:
+def upsert_file(file_path: str, file_name: str, parent_folder: str, extension: str, size: int, last_modified: float, category: str, conn=None) -> int:
     """
     Inserts a new file or updates file size/mtime if modified.
     Returns the file's ID.
     Supports older SQLite versions by falling back if RETURNING id is unsupported.
     """
-    conn = get_connection()
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
     cursor = conn.cursor()
     now = time.time()
     file_id = -1
+    
+    # Generate transliterated search strings
+    trans_name = transliterate_text(file_name)
+    trans_parent = transliterate_text(parent_folder)
+    
     try:
         try:
             cursor.execute("""
-            INSERT INTO files (file_path, file_name, parent_folder, extension, size, last_modified, category, indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO files (file_path, file_name, parent_folder, extension, size, last_modified, category, indexed_at, transliterated_name, transliterated_parent_folder)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_path) DO UPDATE SET
                 file_name = excluded.file_name,
                 parent_folder = excluded.parent_folder,
@@ -264,16 +419,18 @@ def upsert_file(file_path: str, file_name: str, parent_folder: str, extension: s
                 size = excluded.size,
                 last_modified = excluded.last_modified,
                 category = excluded.category,
-                indexed_at = excluded.indexed_at
+                indexed_at = excluded.indexed_at,
+                transliterated_name = excluded.transliterated_name,
+                transliterated_parent_folder = excluded.transliterated_parent_folder
             RETURNING id
-            """, (file_path, file_name, parent_folder, extension, size, last_modified, category, now))
+            """, (file_path, file_name, parent_folder, extension, size, last_modified, category, now, trans_name, trans_parent))
             row = cursor.fetchone()
             file_id = row[0] if row else cursor.lastrowid
         except sqlite3.OperationalError:
             # Fallback if RETURNING id is unsupported by user's SQLite version
             cursor.execute("""
-            INSERT INTO files (file_path, file_name, parent_folder, extension, size, last_modified, category, indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO files (file_path, file_name, parent_folder, extension, size, last_modified, category, indexed_at, transliterated_name, transliterated_parent_folder)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_path) DO UPDATE SET
                 file_name = excluded.file_name,
                 parent_folder = excluded.parent_folder,
@@ -281,19 +438,23 @@ def upsert_file(file_path: str, file_name: str, parent_folder: str, extension: s
                 size = excluded.size,
                 last_modified = excluded.last_modified,
                 category = excluded.category,
-                indexed_at = excluded.indexed_at
-            """, (file_path, file_name, parent_folder, extension, size, last_modified, category, now))
+                indexed_at = excluded.indexed_at,
+                transliterated_name = excluded.transliterated_name,
+                transliterated_parent_folder = excluded.transliterated_parent_folder
+            """, (file_path, file_name, parent_folder, extension, size, last_modified, category, now, trans_name, trans_parent))
             cursor.execute("SELECT id FROM files WHERE file_path = ?", (file_path,))
             row = cursor.fetchone()
             file_id = row[0] if row else cursor.lastrowid
             
-        conn.commit()
+        if should_close:
+            conn.commit()
         return file_id
     except Exception as e:
         print(f"[DB] Error upserting file '{file_path}': {e}")
         return -1
     finally:
-        conn.close()
+        if should_close:
+            conn.close()
 
 def delete_files_by_paths(file_paths: List[str]):
     if not file_paths:
@@ -314,8 +475,11 @@ def delete_files_by_paths(file_paths: List[str]):
 
 # --- Metadata CRUD ---
 
-def upsert_metadata(file_id: int, title: str, artist_or_creator: str, genre_or_tags: str, release_year: Optional[int], alternate_titles: str, enriched: int = 1, category: Optional[str] = None):
-    conn = get_connection()
+def upsert_metadata(file_id: int, title: str, artist_or_creator: str, genre_or_tags: str, release_year: Optional[int], alternate_titles: str, enriched: int = 1, category: Optional[str] = None, conn=None):
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
     try:
         conn.execute("""
         INSERT INTO file_metadata (file_id, title, artist_or_creator, genre_or_tags, release_year, alternate_titles, enriched)
@@ -332,11 +496,13 @@ def upsert_metadata(file_id: int, title: str, artist_or_creator: str, genre_or_t
         if category:
             conn.execute("UPDATE files SET category = ? WHERE id = ?", (category, file_id))
             
-        conn.commit()
+        if should_close:
+            conn.commit()
     except Exception as e:
         print(f"[DB] Error upserting metadata for file_id {file_id}: {e}")
     finally:
-        conn.close()
+        if should_close:
+            conn.close()
 
 def get_unenriched_files(limit: int = 50) -> List[Dict[str, Any]]:
     """

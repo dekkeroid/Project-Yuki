@@ -36,6 +36,11 @@ namespace Yuki.UnityFrontend.Backend
 
         private string WebsocketUrl => config != null ? config.WebsocketUrl : YukiBackendConfig.DefaultWebsocketUrl;
 
+        private void Start()
+        {
+            _ = ConnectAsync();
+        }
+
         private void Update()
         {
             while (inboundEvents.TryDequeue(out var evt))

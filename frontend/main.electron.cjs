@@ -20,6 +20,23 @@ app.commandLine.appendSwitch('disable-background-networking');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 // ------------------------------------------------------------------------
 
+// ---------- Single Instance Lock ----------
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  console.log('[Electron] Another instance is already running. Quitting.');
+  app.quit();
+  process.exit(0);
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      showYuki();
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+// ------------------------------------------
+
 // Window Dimensions Configuration
 const DEFAULT_WINDOW_WIDTH = 320;
 const DEFAULT_WINDOW_HEIGHT = 605;
@@ -94,6 +111,14 @@ function hideYuki() {
   sendVisibility(false);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.hide();
+    // Flush caches and clear history dynamically to free memory when idle/hidden
+    try {
+      mainWindow.webContents.clearHistory();
+      const { session } = require('electron');
+      session.defaultSession.clearCache();
+    } catch (e) {
+      console.warn("Failed cache wipe during hide:", e);
+    }
   }
 }
 
@@ -143,7 +168,9 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs'),
-      autoplayPolicy: 'no-user-gesture-required'
+      autoplayPolicy: 'no-user-gesture-required',
+      backgroundThrottling: true,
+      devTools: !app.isPackaged
     }
   });
 

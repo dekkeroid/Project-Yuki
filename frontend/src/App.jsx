@@ -23,22 +23,39 @@ const LLM_MODELS = [
 ];
 
 const TTS_VOICES = [
+  // US Female
   { label: 'Sarah (US Female - Soft/Cute)', value: 'af_sarah' },
   { label: 'Sky (US Female - Natural)', value: 'af_sky' },
   { label: 'Bella (US Female - Warm)', value: 'af_bella' },
+  { label: 'Alloy (US Female - Neutral)', value: 'af_alloy' },
+  { label: 'Aoede (US Female - Expressive)', value: 'af_aoede' },
+  { label: 'Heart (US Female - Friendly)', value: 'af_heart' },
+  { label: 'Jessica (US Female - Crisp)', value: 'af_jessica' },
+  { label: 'Kore (US Female - Balanced)', value: 'af_kore' },
+  { label: 'Nicole (US Female - Energetic)', value: 'af_nicole' },
+  { label: 'Nova (US Female - Clear)', value: 'af_nova' },
+  { label: 'River (US Female - Smooth)', value: 'af_river' },
+
+  // UK Female
   { label: 'Isabella (UK Female - Crisp)', value: 'bf_isabella' },
   { label: 'Alice (UK Female - Clear)', value: 'bf_alice' },
   { label: 'Lily (UK Female - Gentle)', value: 'bf_lily' },
+  { label: 'Emma (UK Female - Natural)', value: 'bf_emma' },
+
+  // JP Female
   { label: 'Alpha (JP Female - Bright)', value: 'jf_alpha' },
-  { label: 'Glowing (JP Female - Cute)', value: 'jf_glowing' },
-  { label: 'Yasmin (JP Female - Soft)', value: 'jf_yasmin' }
+  { label: 'Gongitsune (JP Female - Traditional)', value: 'jf_gongitsune' },
+  { label: 'Nezumi (JP Female - Sweet)', value: 'jf_nezumi' },
+  { label: 'Tebukuro (JP Female - Soft)', value: 'jf_tebukuro' }
 ];
 
 const TTS_RATES = [
   { label: 'Slow (0.8x)', value: '0.8' },
+  { label: 'Relaxed (0.9x)', value: '0.9' },
   { label: 'Normal (1.0x)', value: '1.0' },
   { label: 'Snappy (1.1x)', value: '1.1' },
   { label: 'Fast (1.2x)', value: '1.2' },
+  { label: 'Brisk (1.3x)', value: '1.3' },
   { label: 'Faster (1.4x)', value: '1.4' },
 ];
 
@@ -158,6 +175,10 @@ const App = () => {
 
   // Slash-command autocomplete for desktop input
   const desktopInputRef = useRef(null);
+  const desktopDropdownRef = useRef(null);
+  const settingsOverlayRef = useRef(null);
+  const settingsCardRef = useRef(null);
+  const [settingsPaddingTop, setSettingsPaddingTop] = useState(75);
   const [activeCmdIdx, setActiveCmdIdx] = useState(-1);
   const [disabledAnimations, setDisabledAnimations] = useState(() => {
     try {
@@ -236,10 +257,10 @@ const App = () => {
 
     setIsDesktopLoadingSuggestions(true);
 
-    const delayDebounceFn = setTimeout(() => {
-      const controller = new AbortController();
-      const signal = controller.signal;
+    const controller = new AbortController();
+    const signal = controller.signal;
 
+    const delayDebounceFn = setTimeout(() => {
       fetch(`${API_BASE}/api/system/suggestions?query=${encodeURIComponent(query)}&type=${type}`, { signal })
         .then((res) => {
           if (!res.ok) throw new Error('Failed to fetch suggestions');
@@ -259,11 +280,12 @@ const App = () => {
             setIsDesktopLoadingSuggestions(false);
           }
         });
-
-      return () => controller.abort();
     }, 200);
 
-    return () => clearTimeout(delayDebounceFn);
+    return () => {
+      clearTimeout(delayDebounceFn);
+      controller.abort();
+    };
   }, [parsedDesktopSearch]);
 
   const activeDesktopSuggestions = useMemo(() => {
@@ -276,6 +298,18 @@ const App = () => {
     setActiveCmdIdx(-1);
   }, [activeDesktopSuggestions.length]);
 
+  // Auto-scroll selected command suggestion into view
+  useEffect(() => {
+    if (desktopDropdownRef.current && activeCmdIdx >= 0) {
+      const activeEl = desktopDropdownRef.current.querySelector(`[data-index="${activeCmdIdx}"]`);
+      if (activeEl) {
+        activeEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [activeCmdIdx]);
+
+
+
   const pickDesktopSearchSuggestion = (item) => {
     const cmdPrefix = desktopSearchMode === 'open' ? '/open' : '/play';
     const pathVal = item.path.includes(' ') ? `"${item.path}"` : item.path;
@@ -286,7 +320,7 @@ const App = () => {
     // Submit command immediately
     setTimeout(() => {
       const fakeEvent = { preventDefault: () => {} };
-      handleSendMessage(fakeEvent, newText);
+      handleSendMessage(fakeEvent, newText, true);
     }, 50);
   };
   const [profile, setProfile] = useState({
@@ -506,11 +540,15 @@ const App = () => {
   });
   const [customAnimation, setCustomAnimation] = useState('');
 
-  // Sync avatar scale changes to Electron window bounds size
+  // Sync avatar scale changes to Electron window bounds size (debounced to avoid slider dragging jitter)
   useEffect(() => {
-    if (window.electronAPI && window.electronAPI.setWindowScale) {
+    if (!window.electronAPI || !window.electronAPI.setWindowScale) return;
+
+    const timer = setTimeout(() => {
       window.electronAPI.setWindowScale(avatarScale);
-    }
+    }, 250);
+
+    return () => clearTimeout(timer);
   }, [avatarScale]);
 
   // Desktop Overlay UI states
@@ -521,6 +559,50 @@ const App = () => {
   const isSettingsOpenRef = useRef(false);
   useEffect(() => {
     isSettingsOpenRef.current = isSettingsOpen;
+  }, [isSettingsOpen]);
+
+  // Keep settings modal inside screen boundaries by adjusting container padding-top when top clips
+  useEffect(() => {
+    if (!isSettingsOpen || !window.electronAPI) {
+      setSettingsPaddingTop(75);
+      return;
+    }
+
+    let active = true;
+    const adjustPadding = async () => {
+      if (!active) return;
+      try {
+        const bounds = await window.electronAPI.getWindowBounds();
+        const overlay = settingsOverlayRef.current;
+        const card = settingsCardRef.current;
+        if (overlay && card) {
+          const windowHeight = window.innerHeight;
+          const cardHeight = card.offsetHeight;
+          const naturalPadding = Math.max(20, (windowHeight - cardHeight) / 2);
+
+          const margin = 20;
+          let padding = naturalPadding;
+
+          // If window top is off-screen, add padding to push card down
+          if (bounds.y < margin) {
+            const offScreenAmt = margin - bounds.y;
+            padding = Math.max(naturalPadding, offScreenAmt);
+          }
+
+          setSettingsPaddingTop(padding);
+        }
+      } catch (err) {
+        console.warn("Failed to adjust settings padding:", err);
+      }
+    };
+
+    adjustPadding();
+    const interval = setInterval(adjustPadding, 100);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [isSettingsOpen]);
 
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -540,6 +622,11 @@ const App = () => {
     onConfirm: null,
     onCancel: null
   });
+
+  const confirmModalRef = useRef(confirmModal);
+  useEffect(() => {
+    confirmModalRef.current = confirmModal;
+  }, [confirmModal]);
 
   useEffect(() => {
     window.yukiConfirmModalVisible = confirmModal.visible;
@@ -672,18 +759,18 @@ const App = () => {
       const unsubscribe = window.electronAPI.onPowerStateChange(async (data) => {
         setPowerConnected(data.ac);
 
+        // Read actual battery percentage
+        let pct = null;
+        try {
+          if ('getBattery' in navigator) {
+            const bat = await navigator.getBattery();
+            pct = Math.round(bat.level * 100);
+          }
+        } catch (_) { }
+
         let msg;
         let expr;
         if (data.ac) {
-          // Read actual battery percentage to pick the right message
-          let pct = null;
-          try {
-            if ('getBattery' in navigator) {
-              const bat = await navigator.getBattery();
-              pct = Math.round(bat.level * 100);
-            }
-          } catch (_) { }
-
           if (pct !== null && pct >= 100) {
             msg = "Plugged in! I'm already at full charge, Master.";
           } else if (pct !== null && pct >= 80) {
@@ -695,7 +782,11 @@ const App = () => {
           }
           expr = 'happy';
         } else {
-          msg = "Power unplugged. Hey, where did my electricity go, Master?";
+          if (pct !== null) {
+            msg = `Power unplugged, Master! We're now running on battery at ${pct} percent.`;
+          } else {
+            msg = "Power unplugged, Master!";
+          }
           expr = 'surprised';
         }
 
@@ -1625,7 +1716,8 @@ const App = () => {
       utterance.voice = femaleVoice;
     }
 
-    utterance.rate = 1.05; // Slightly faster/snappier
+    const storedRate = parseFloat(profile.settings?.tts_rate || '1.0');
+    utterance.rate = isNaN(storedRate) ? 1.05 : storedRate;
     utterance.pitch = 1.1; // Slightly higher pitch for Yuki
 
     // 4. Setup lip-sync animation
@@ -2293,6 +2385,21 @@ const App = () => {
   // Listen for Escape key to close settings or chat overlay
   useEffect(() => {
     const handleKeyDown = (e) => {
+      const modal = confirmModalRef.current;
+      if (modal && modal.visible) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          modal.onConfirm?.();
+          return;
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          modal.onCancel?.();
+          return;
+        }
+      }
+
       if (e.key === 'Escape') {
         let handled = false;
         
@@ -2376,7 +2483,7 @@ const App = () => {
   };
 
   // Extracted message routing core (used by both input bar submit and voice commands)
-  const sendMessageText = (text, sttTimeMs = null) => {
+  const sendMessageText = (text, sttTimeMs = null, fromSuggestion = false) => {
     if (!text.trim()) return;
 
     logSTTStatus(`sendMessageText: "${text}" (sttTimeMs: ${sttTimeMs})`);
@@ -2575,7 +2682,8 @@ const App = () => {
               query: query,
               play_mode: isPlayCmd,
               force: forceFlag,
-              pending_confirmation_id: pendingConfirmationId
+              pending_confirmation_id: pendingConfirmationId,
+              from_suggestion: fromSuggestion
             })
           })
             .then((res) => {
@@ -2742,13 +2850,13 @@ const App = () => {
   };
 
   // 5. Send text message
-  const handleSendMessage = (e, textOverride) => {
+  const handleSendMessage = (e, textOverride, fromSuggestion = false) => {
     e.preventDefault();
     const textToSubmit = textOverride !== undefined ? textOverride : inputText;
     if (!textToSubmit.trim()) return;
     const text = textToSubmit.trim();
     setInputText('');
-    sendMessageText(text);
+    sendMessageText(text, null, fromSuggestion);
   };
 
   // 6. Reset settings and history
@@ -2874,7 +2982,10 @@ const App = () => {
 
   if (isElectron) {
     return (
-      <div className="app-viewport">
+      <div className="app-viewport" style={{
+        '--avatar-scale': avatarScale,
+        '--avatar-button-scale': avatarScale < 1.0 ? avatarScale : 1.0 + (avatarScale - 1.0) * 0.25
+      }}>
         {/* Main 3D Canvas Body */}
         <main className="canvas-container">
           <AvatarViewer
@@ -2892,6 +3003,8 @@ const App = () => {
             customAnimation={customAnimation}
             disabledAnimations={disabledAnimations}
             activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
+            enableRotation={profile.settings?.enable_rotation || false}
+            autoResetRotation={profile.settings?.auto_reset_rotation !== undefined ? profile.settings.auto_reset_rotation : true}
           />
         </main>
 
@@ -3090,7 +3203,9 @@ const App = () => {
 
             {/* Slash-command suggestion dropdown */}
             {showDesktopDropdown && (
-              <div style={{
+              <div
+                ref={desktopDropdownRef}
+                style={{
                 position: 'absolute',
                 bottom: '100%',
                 left: 0,
@@ -3144,6 +3259,7 @@ const App = () => {
                     desktopSearchSuggestions.map((item, idx) => (
                       <div
                         key={item.path}
+                        data-index={idx}
                         onMouseDown={(e) => { e.preventDefault(); pickDesktopSearchSuggestion(item); }}
                         onMouseEnter={() => setActiveCmdIdx(idx)}
                         style={{
@@ -3235,6 +3351,7 @@ const App = () => {
                   cmdSuggestions.map(({ cmd, description }, idx) => (
                     <div
                       key={cmd}
+                      data-index={idx}
                       onMouseDown={(e) => {
                         e.preventDefault();
                         setInputText(cmd + ' ');
@@ -3325,8 +3442,19 @@ const App = () => {
 
         {/* Glassmorphism Settings Modal for Desktop */}
         {isSettingsOpen && (
-          <div className="desktop-modal-overlay interactive-element">
-            <div className="desktop-modal-card">
+          <div
+            ref={settingsOverlayRef}
+            className="desktop-modal-overlay interactive-element"
+            style={{
+              paddingTop: `${settingsPaddingTop}px`,
+              alignItems: 'flex-start',
+              justifyContent: 'center',
+              display: 'flex',
+              boxSizing: 'border-box',
+              overflowY: 'auto'
+            }}
+          >
+            <div ref={settingsCardRef} className="desktop-modal-card">
               <div className="desktop-modal-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Settings className="w-4 h-4 text-purple-400" />
@@ -3750,7 +3878,7 @@ const App = () => {
                         <input
                           type="range"
                           min="0.5"
-                          max="1.5"
+                          max="2.0"
                           step="0.05"
                           value={avatarScale}
                           onChange={(e) => {
@@ -3760,6 +3888,35 @@ const App = () => {
                           }}
                           style={{ width: '100%', cursor: 'pointer', accentColor: '#a855f7' }}
                         />
+                      </div>
+
+                      {/* Companion Rotation Settings */}
+                      <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', userSelect: 'none' }}>
+                          <input
+                            type="checkbox"
+                            checked={profile.settings?.enable_rotation || false}
+                            onChange={(e) => handleUpdateSetting('enable_rotation', e.target.checked)}
+                            style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
+                            Enable Model Rotation (Right-Click Drag)
+                          </span>
+                        </label>
+                        
+                        {profile.settings?.enable_rotation && (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', marginLeft: '16px', cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={profile.settings?.auto_reset_rotation !== undefined ? profile.settings.auto_reset_rotation : true}
+                              onChange={(e) => handleUpdateSetting('auto_reset_rotation', e.target.checked)}
+                              style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
+                            />
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
+                              Return to original position after 10s of inactivity
+                            </span>
+                          </label>
+                        )}
                       </div>
 
                       <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
@@ -4417,14 +4574,14 @@ const App = () => {
                   className="yuki-confirm-btn yuki-confirm-btn-proceed"
                   onClick={confirmModal.onConfirm}
                 >
-                  Proceed
+                  Proceed (Enter)
                 </button>
                 <button 
                   type="button" 
                   className="yuki-confirm-btn yuki-confirm-btn-cancel"
                   onClick={confirmModal.onCancel}
                 >
-                  Cancel
+                  Cancel (Esc)
                 </button>
               </div>
             </div>
@@ -4435,7 +4592,10 @@ const App = () => {
   }
 
   return (
-    <div className="app-viewport">
+    <div className="app-viewport" style={{
+      '--avatar-scale': avatarScale,
+      '--avatar-button-scale': avatarScale < 1.0 ? avatarScale : 1.0 + (avatarScale - 1.0) * 0.25
+    }}>
 
       {/* Top Banner Status Bar */}
       <header className="top-header glass-panel">
@@ -4462,6 +4622,8 @@ const App = () => {
           customAnimation={customAnimation}
           disabledAnimations={disabledAnimations}
           activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
+          enableRotation={profile.settings?.enable_rotation || false}
+          autoResetRotation={profile.settings?.auto_reset_rotation !== undefined ? profile.settings.auto_reset_rotation : true}
         />
       </main>
 
@@ -4561,14 +4723,14 @@ const App = () => {
                 className="yuki-confirm-btn yuki-confirm-btn-proceed"
                 onClick={confirmModal.onConfirm}
               >
-                Proceed
+                Proceed (Enter)
               </button>
               <button 
                 type="button" 
                 className="yuki-confirm-btn yuki-confirm-btn-cancel"
                 onClick={confirmModal.onCancel}
               >
-                Cancel
+                Cancel (Esc)
               </button>
             </div>
           </div>

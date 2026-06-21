@@ -27,7 +27,9 @@ const AvatarViewer = ({
   skinToneColor = '#FFE5E5',
   customAnimation = '',
   disabledAnimations = [],
-  activeModel = 'default.vrm'
+  activeModel = 'default.vrm',
+  enableRotation = false,
+  autoResetRotation = true
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -64,10 +66,20 @@ const AvatarViewer = ({
   const disabledAnimationsRef = useRef(disabledAnimations || []);
   
   const activeModelRef = useRef(activeModel);
+  const enableRotationRef = useRef(enableRotation);
+  const autoResetRotationRef = useRef(autoResetRotation);
 
   useEffect(() => {
     activeModelRef.current = activeModel;
   }, [activeModel]);
+
+  useEffect(() => {
+    enableRotationRef.current = enableRotation;
+  }, [enableRotation]);
+
+  useEffect(() => {
+    autoResetRotationRef.current = autoResetRotation;
+  }, [autoResetRotation]);
 
   const isFirstMount = useRef(true);
   useEffect(() => {
@@ -454,6 +466,27 @@ const AvatarViewer = ({
     let _mouseTracking = true;
     let _clickthrough = true;
 
+    let isRotating = false;
+    let lastRotationTime = Date.now();
+
+    const onControlsStart = () => {
+      if (isElectron && enableRotationRef.current) {
+        isRotating = true;
+        if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+          window.electronAPI.setIgnoreMouseEvents(false);
+          isIgnoringMouseRef.current = false;
+        }
+      }
+    };
+    const onControlsEnd = () => {
+      isRotating = false;
+    };
+    const handleContextMenu = (e) => {
+      if (isElectron && enableRotationRef.current) {
+        e.preventDefault();
+      }
+    };
+
     window.yukiDebugToggles = {
       get mouseTracking() {
         return _mouseTracking;
@@ -609,9 +642,29 @@ const AvatarViewer = ({
 
     // Disable OrbitControls in desktop mode to allow window dragging to work
     if (isElectron) {
-      controls.enabled = false;
+      if (enableRotationRef.current) {
+        controls.enabled = true;
+        controls.mouseButtons = {
+          LEFT: THREE.MOUSE.NONE,
+          MIDDLE: THREE.MOUSE.NONE,
+          RIGHT: THREE.MOUSE.ROTATE
+        };
+      } else {
+        controls.enabled = false;
+      }
+    } else {
+      controls.enabled = true;
+      controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN
+      };
     }
     window.vrmControls = controls;
+
+    controls.addEventListener('start', onControlsStart);
+    controls.addEventListener('end', onControlsEnd);
+    canvasRef.current?.addEventListener('contextmenu', handleContextMenu);
 
     // 5. Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
@@ -902,8 +955,8 @@ const AvatarViewer = ({
         }
       }
 
-      if (isHoveringCharacter) {
-        // Hovering over character: enable clicks/drags on this window immediately
+      if (isHoveringCharacter || isRotating) {
+        // Hovering over character or rotating: enable clicks/drags on this window immediately
         if (ignoreTimeoutRef.current) {
           clearTimeout(ignoreTimeoutRef.current);
           ignoreTimeoutRef.current = null;
@@ -960,7 +1013,7 @@ const AvatarViewer = ({
         // Toggle click-through ignores state based on window bounds hovering
         const enableClickthrough = window.yukiDebugToggles ? window.yukiDebugToggles.clickthrough : true;
         const suspendClickthrough = window.yukiConfirmJustClosed === true;
-        if (enableClickthrough && !suspendClickthrough) {
+        if (enableClickthrough && !suspendClickthrough && !isRotating) {
           if (!data.hovering) {
             if (ignoreTimeoutRef.current) {
               clearTimeout(ignoreTimeoutRef.current);
@@ -1155,9 +1208,42 @@ const AvatarViewer = ({
           //   }
           // }
 
-          controls.target.set(0, (headY - baseTargetOffset) * scaleRef.current, 0);
-          camera.position.set(0, (headY - baseCameraOffset) * scaleRef.current, baseCameraZ * scaleRef.current);
-          camera.lookAt(controls.target);
+          if (!enableRotationRef.current) {
+            controls.target.set(0, (headY - baseTargetOffset) * scaleRef.current, 0);
+            camera.position.set(0, (headY - baseCameraOffset) * scaleRef.current, baseCameraZ * scaleRef.current);
+            camera.lookAt(controls.target);
+          } else {
+            const targetY = (headY - baseTargetOffset) * scaleRef.current;
+            controls.target.set(0, targetY, 0);
+
+            if (isRotating) {
+              lastRotationTime = Date.now();
+            }
+
+            const now = Date.now();
+            if (!isRotating && autoResetRotationRef.current && (now - lastRotationTime > 10000)) {
+              // Smooth return to front-facing position
+              const defaultOffset = new THREE.Vector3(0, 0.10 * scaleRef.current, baseCameraZ * scaleRef.current);
+              const targetCamPos = new THREE.Vector3().copy(controls.target).add(defaultOffset);
+              const dist = camera.position.distanceTo(targetCamPos);
+              if (dist > 0.001) {
+                const lerpFactor = 1 - Math.exp(-4 * delta);
+                camera.position.lerp(targetCamPos, lerpFactor);
+              } else {
+                camera.position.copy(targetCamPos);
+              }
+            } else {
+              // Normalize camera distance to match current scale while preserving angles
+              const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+              if (offset.lengthSq() === 0) {
+                offset.set(0, 0, baseCameraZ * scaleRef.current);
+              } else {
+                offset.normalize().multiplyScalar(baseCameraZ * scaleRef.current);
+              }
+              camera.position.copy(controls.target).add(offset);
+            }
+            controls.update();
+          }
         }
 
         if (!isElectron) {
@@ -1862,15 +1948,15 @@ const AvatarViewer = ({
                 const dangleSwingRight = Math.cos(dragDangleTimer + 0.5) * 0.08 * dragStateProgress;
 
                 if (leftLeg) {
-                  leftLeg.rotation.x = 0.1 + dangleSwingLeft + dragPitchAngle * 0.4;
-                  leftLeg.rotation.z = -0.05 * dragStateProgress;
+                  leftLeg.rotation.x = (0.1 + dangleSwingLeft + dragPitchAngle * 0.4) * xMult;
+                  leftLeg.rotation.z = -0.05 * dragStateProgress * zMult;
                 }
                 if (rightLeg) {
-                  rightLeg.rotation.x = 0.1 + dangleSwingRight + dragPitchAngle * 0.4;
-                  rightLeg.rotation.z = 0.05 * dragStateProgress;
+                  rightLeg.rotation.x = (0.1 + dangleSwingRight + dragPitchAngle * 0.4) * xMult;
+                  rightLeg.rotation.z = 0.05 * dragStateProgress * zMult;
                 }
-                if (leftLowerLeg) leftLowerLeg.rotation.x = (0.25 + Math.sin(dragDangleTimer * 1.3) * 0.08) * dragStateProgress;
-                if (rightLowerLeg) rightLowerLeg.rotation.x = (0.25 + Math.cos(dragDangleTimer * 1.3 + 0.3) * 0.08) * dragStateProgress;
+                if (leftLowerLeg) leftLowerLeg.rotation.x = (0.25 + Math.sin(dragDangleTimer * 1.3) * 0.08) * dragStateProgress * xMult;
+                if (rightLowerLeg) rightLowerLeg.rotation.x = (0.25 + Math.cos(dragDangleTimer * 1.3 + 0.3) * 0.08) * dragStateProgress * xMult;
               } else {
                 if (leftLeg) {
                   leftLeg.rotation.x = (isSleeping ? 0.02 : Math.max(0, shiftCycle) * 0.06) * xMult;
@@ -2390,6 +2476,9 @@ const AvatarViewer = ({
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('dblclick', handleDblClick);
       cancelAnimationFrame(requestRef.current);
+      controls.removeEventListener('start', onControlsStart);
+      controls.removeEventListener('end', onControlsEnd);
+      canvasRef.current?.removeEventListener('contextmenu', handleContextMenu);
       controls.dispose();
 
       // Dispose of all scene resources to prevent WebGL memory leaks
@@ -2422,6 +2511,31 @@ const AvatarViewer = ({
       setHasVrm(true);
     }
   }, [vrmRef.current]);
+
+  useEffect(() => {
+    const controls = window.vrmControls;
+    if (controls) {
+      if (isElectron) {
+        if (enableRotation) {
+          controls.enabled = true;
+          controls.mouseButtons = {
+            LEFT: THREE.MOUSE.NONE,
+            MIDDLE: THREE.MOUSE.NONE,
+            RIGHT: THREE.MOUSE.ROTATE
+          };
+        } else {
+          controls.enabled = false;
+        }
+      } else {
+        controls.enabled = true;
+        controls.mouseButtons = {
+          LEFT: THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN
+        };
+      }
+    }
+  }, [enableRotation, isElectron]);
 
   const handleDragOver = (e) => {
     e.preventDefault();

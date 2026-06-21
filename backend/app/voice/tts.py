@@ -5,6 +5,7 @@ import urllib.request
 from pathlib import Path
 import soundfile as sf
 import time
+import re
 
 def add_nvidia_dll_directories():
     # Find site-packages/nvidia directory and inject paths
@@ -138,15 +139,110 @@ def get_kokoro() -> Kokoro:
     return _kokoro_instance
 
 
+_kks_instance = None
+
+def transliterate_for_tts(text: str) -> str:
+    global _kks_instance
+    if not text:
+        return ""
+    if all(ord(c) < 128 for c in text):
+        return text
+
+    # Initialize pykakasi on demand
+    if _kks_instance is None:
+        import pykakasi
+        _kks_instance = pykakasi.kakasi()
+
+    import pypinyin
+    from anyascii import anyascii
+
+    # 1. Run pykakasi to convert Japanese parts to Romaji.
+    #    We align the results to prevent pykakasi from dropping characters.
+    try:
+        res_kakasi = _kks_instance.convert(text)
+        parts = []
+        i = 0
+        for item in res_kakasi:
+            orig = item['orig']
+            hepburn = item['hepburn']
+            if not orig:
+                continue
+            idx = text.find(orig, i)
+            if idx == -1:
+                val = hepburn if hepburn else orig
+                parts.append(val)
+                continue
+            if idx > i:
+                parts.append(text[i:idx])
+            # Add spaces around transliterated Japanese words for better TTS pronunciation
+            if hepburn and hepburn != orig:
+                val = f" {hepburn} "
+            else:
+                val = orig
+            parts.append(val)
+            i = idx + len(orig)
+        if i < len(text):
+            parts.append(text[i:])
+        text_kakasi = "".join(parts)
+    except Exception:
+        text_kakasi = text
+
+    # 2. Run pypinyin to convert remaining Chinese/Hanzi characters to Pinyin.
+    try:
+        pinyin_parts = []
+        for char in text_kakasi:
+            if 0x4E00 <= ord(char) <= 0x9FFF:
+                py = pypinyin.lazy_pinyin(char)
+                if py:
+                    pinyin_parts.append(f" {py[0]} ")
+                else:
+                    pinyin_parts.append(char)
+            else:
+                pinyin_parts.append(char)
+        text_pinyin = "".join(pinyin_parts)
+    except Exception:
+        text_pinyin = text_kakasi
+
+    # 3. Finally run anyascii for remaining non-ASCII characters
+    try:
+        text_ascii = anyascii(text_pinyin)
+    except Exception:
+        text_ascii = text_pinyin
+
+    return text_ascii
+
+
 def clean_text_for_tts(text: str) -> str:
     if not text:
         return ""
     import re
     
-    # 1. Double asterisks and double underscores -> replace with inner text
+    # 1. Clean URLs/web links: e.g. "https://dsad.com/dsad/last" -> "dsad.com"
+    text = re.sub(r'\bhttps?://(?:www\.)?([^/\s]+)(?:/[^\s]*)?', r'\1', text)
+    text = re.sub(r'(?<!http://)(?<!https://)\bwww\.([^/\s]+)(?:/[^\s]*)?', r'\1', text)
+
+    # 2. Clean file paths:
+    # Match file:// URLs (handling path part after file://)
+    text = re.sub(r'\bfile://(?:[^/\n]*/)+([^/\n\'"]+)', r'\1', text)
+    # Match simple file:// with one level like file://c:/dssds
+    text = re.sub(r'\bfile://([^/\n\'"]+)', r'\1', text)
+    # Match Windows absolute paths (with \ or /), e.g. D:\video songs\file.mp4
+    text = re.sub(r'\b[A-Za-z]:[\\/](?:[^\\/\n]+[\\/])+([^\\/\n\'"]+)', r'\1', text)
+    # Match Windows paths with just one level, e.g. D:\dssds
+    text = re.sub(r'\b[A-Za-z]:[\\/]([^\\/\n\'"]+)', r'\1', text)
+    # Match Unix absolute paths (starting with /), e.g. /usr/local/bin/file.txt
+    text = re.sub(r'(^|\s)/(?:[^/\s]+/)+([^/\s]+)', r'\1\2', text)
+
+    # 3. Transliterate foreign characters (Japanese, Chinese, Hindi Devanagari) to English Romaji/Pinyin
+    text = transliterate_for_tts(text)
+
+    # 4. Remove annoying punctuation characters: *, \, / (replace with spaces)
+    text = text.replace('*', ' ').replace('\\', ' ').replace('/', ' ')
+
+    # 5. Double asterisks and double underscores -> replace with inner text
     text = re.sub(r'\*\*(.*?)\*\*|__(.*?)__', lambda m: m.group(1) or m.group(2) or "", text)
     
-    # 2. Single asterisks and single underscores -> filter out actions, keep emphasis
+    # 6. Single asterisks and single underscores -> filter out actions, keep emphasis
     action_stems = [
         'wink', 'smile', 'giggle', 'laugh', 'sigh', 'pout', 'wave', 'nod', 
         'shrug', 'chuckle', 'blush', 'cry', 'gasp', 'yawn', 'look', 'reset', 
@@ -164,10 +260,10 @@ def clean_text_for_tts(text: str) -> str:
         
     text = re.sub(r'\*(.*?)\*|_(.*?)_', replace_single, text)
     
-    # 3. Remove backticks but keep their inner text
+    # 7. Remove backticks but keep their inner text
     text = text.replace('`', '')
     
-    # 4. Remove emojis
+    # 8. Remove emojis
     emoji_pattern = re.compile(
         '['
         '\U0001f600-\U0001f64f'  # emoticons
@@ -182,7 +278,7 @@ def clean_text_for_tts(text: str) -> str:
     )
     text = emoji_pattern.sub('', text)
     
-    # 5. Replace multiple spaces with a single space
+    # 9. Replace multiple spaces with a single space
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
@@ -195,67 +291,97 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
     if not text.strip():
         return b""
         
+    # Safeguard: limit text length to prevent local ONNX timeouts and CPU thrashing
+    MAX_TTS_LEN = 400
+    if len(text) > MAX_TTS_LEN:
+        truncated = text[:MAX_TTS_LEN]
+        last_period = truncated.rfind('.')
+        if last_period > 100:  # make sure we don't truncate too much
+            text = truncated[:last_period + 1] + "..."
+        else:
+            text = truncated + "..."
+
+        
     if voice is None:
         voice = config.TTS_VOICE
     if rate is None:
         rate = config.TTS_RATE
 
-    # Map voice selections to local Kokoro voices
-    voice_lower = voice.lower() if voice else ""
+    # Map voice selections to local Kokoro voices dynamically
+    voice_lower = voice.lower().strip() if voice else ""
     kokoro_voice = "af_sarah"
     lang_code = "en-us"
 
-    # 3 American Female
-    if "sarah" in voice_lower or "af_sarah" in voice_lower:
-        kokoro_voice = "af_sarah"
-        lang_code = "en-us"
-    elif "sky" in voice_lower or "af_sky" in voice_lower:
-        kokoro_voice = "af_sky"
-        lang_code = "en-us"
-    elif "bella" in voice_lower or "af_bella" in voice_lower:
-        kokoro_voice = "af_bella"
-        lang_code = "en-us"
-        
-    # 3 British Female
-    elif "isabella" in voice_lower or "bf_isabella" in voice_lower:
-        kokoro_voice = "bf_isabella"
-        lang_code = "en-gb"
-    elif "alice" in voice_lower or "bf_alice" in voice_lower:
-        kokoro_voice = "bf_alice"
-        lang_code = "en-gb"
-    elif "lily" in voice_lower or "bf_lily" in voice_lower:
-        kokoro_voice = "bf_lily"
-        lang_code = "en-gb"
-        
-    # 3 Japanese Female
-    elif "alpha" in voice_lower or "jf_alpha" in voice_lower:
-        kokoro_voice = "jf_alpha"
-        lang_code = "ja"
-    elif "glowing" in voice_lower or "jf_glowing" in voice_lower:
-        kokoro_voice = "jf_glowing"
-        lang_code = "ja"
-    elif "yasmin" in voice_lower or "jf_yasmin" in voice_lower:
-        kokoro_voice = "jf_yasmin"
-        lang_code = "ja"
-    else:
-        kokoro_voice = "af_sarah"
-        lang_code = "en-us"
+    if voice_lower:
+        if voice_lower.startswith("af_"):
+            kokoro_voice = voice_lower
+            lang_code = "en-us"
+        elif voice_lower.startswith("bf_"):
+            kokoro_voice = voice_lower
+            lang_code = "en-gb"
+        elif voice_lower.startswith("jf_") or voice_lower.startswith("jm_"):
+            kokoro_voice = voice_lower
+            lang_code = "ja"
+        elif "sarah" in voice_lower:
+            kokoro_voice = "af_sarah"
+            lang_code = "en-us"
+        elif "sky" in voice_lower:
+            kokoro_voice = "af_sky"
+            lang_code = "en-us"
+        elif "bella" in voice_lower:
+            kokoro_voice = "af_bella"
+            lang_code = "en-us"
+        elif "isabella" in voice_lower:
+            kokoro_voice = "bf_isabella"
+            lang_code = "en-gb"
+        elif "alice" in voice_lower:
+            kokoro_voice = "bf_alice"
+            lang_code = "en-gb"
+        elif "lily" in voice_lower:
+            kokoro_voice = "bf_lily"
+            lang_code = "en-gb"
+        elif "alpha" in voice_lower:
+            kokoro_voice = "jf_alpha"
+            lang_code = "ja"
+        elif "gongitsune" in voice_lower:
+            kokoro_voice = "jf_gongitsune"
+            lang_code = "ja"
+        elif "nezumi" in voice_lower:
+            kokoro_voice = "jf_nezumi"
+            lang_code = "ja"
+        elif "tebukuro" in voice_lower:
+            kokoro_voice = "jf_tebukuro"
+            lang_code = "ja"
+        else:
+            # default fallback if prefix is not matched
+            kokoro_voice = voice_lower
+            # guess language from prefix
+            if voice_lower.startswith("am_") or voice_lower.startswith("ef_") or voice_lower.startswith("em_"):
+                lang_code = "en-us"
+            elif voice_lower.startswith("bm_"):
+                lang_code = "en-gb"
+            else:
+                lang_code = "en-us"
 
     # Map percentage rate (e.g. "+15%") or standard string speed to float factor
     speed_factor = 1.0
     if rate is not None:
         if isinstance(rate, str):
-            if "%" in rate:
+            rate_str = rate.strip()
+            if "%" in rate_str:
                 try:
-                    percent = int(rate.replace("%", "").replace("+", "").replace("-", ""))
-                    factor = 1.0 + (percent / 100.0) if "+" in rate else 1.0 - (percent / 100.0)
+                    percent_str = re.sub(r'[^\d]', '', rate_str)
+                    percent = int(percent_str) if percent_str else 0
+                    factor = 1.0 + (percent / 100.0) if "+" in rate_str else 1.0 - (percent / 100.0)
                     speed_factor = max(0.5, min(2.0, factor))
-                except ValueError:
+                except Exception:
                     speed_factor = 1.0
             else:
                 try:
-                    speed_factor = float(rate)
-                except ValueError:
+                    # Clean any non-numeric suffixes like 'x' or 'x speed'
+                    cleaned_val = re.sub(r'[^\d.+\-]', '', rate_str)
+                    speed_factor = float(cleaned_val)
+                except Exception:
                     speed_factor = 1.0
         elif isinstance(rate, (int, float)):
             speed_factor = float(rate)
