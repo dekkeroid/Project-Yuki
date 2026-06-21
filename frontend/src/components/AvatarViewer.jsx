@@ -65,7 +65,9 @@ const AvatarViewer = ({
   const scaleRef = useRef(isElectron ? (window.innerHeight / ELECTRON_WINDOW_HEIGHT) : scale);
   const skinToneRef = useRef(skinToneColor);
   const disabledAnimationsRef = useRef(disabledAnimations || []);
-  
+  const prevIsSpeakingRef = useRef(false);
+  const prevIsRotatingRef = useRef(false);
+
   const activeModelRef = useRef(activeModel);
   const enableRotationRef = useRef(enableRotation);
   const autoResetRotationRef = useRef(autoResetRotation);
@@ -757,6 +759,15 @@ const AvatarViewer = ({
     let currentLookY = 0;
     let lookHoldTimer = 0;
 
+    // Gaze-at-user cycling variables
+    let gazeAtUserTimer = 0;
+    let gazeAtUserDuration = 5 + Math.random() * 10;
+    let alwaysLookingAtYou = true;
+
+    // Post-orbit rest: keep looking at camera for a few seconds after orbit ends
+    let postOrbitRestTimer = 0;
+    let postOrbitRestDuration = 5 + Math.random() * 5;
+
     // Eye saccade variables
     let saccadeTimer = 0;
     let nextSaccadeTime = 0.2 + Math.random() * 0.3;
@@ -777,6 +788,9 @@ const AvatarViewer = ({
     // Eye look tracking variables (separate from head for lag-lead)
     let currentGazeX = 0;
     let currentGazeY = 0;
+
+    // Smooth roll tracking (Z-axis, not covered by spring-damper)
+    let currentLookZ = 0;
 
     // Double-blink state
     let pendingDoubleBlink = false;
@@ -973,7 +987,7 @@ const AvatarViewer = ({
         }
       }
 
-      if (isHoveringCharacter || isRotating) {
+      if (isHoveringCharacter || isRotating || postOrbitRestTimer > 0) {
         // Hovering over character or rotating: enable clicks/drags on this window immediately
         if (ignoreTimeoutRef.current) {
           clearTimeout(ignoreTimeoutRef.current);
@@ -1031,7 +1045,7 @@ const AvatarViewer = ({
         // Toggle click-through ignores state based on window bounds hovering
         const enableClickthrough = window.yukiDebugToggles ? window.yukiDebugToggles.clickthrough : true;
         const suspendClickthrough = window.yukiConfirmJustClosed === true;
-        if (enableClickthrough && !suspendClickthrough && !isRotating) {
+        if (enableClickthrough && !suspendClickthrough && !isRotating && postOrbitRestTimer <= 0) {
           if (!data.hovering) {
             if (ignoreTimeoutRef.current) {
               clearTimeout(ignoreTimeoutRef.current);
@@ -1494,8 +1508,37 @@ const AvatarViewer = ({
 
             const enableCameraTracking = !!(window.yukiDebugToggles && window.yukiDebugToggles.cameraTracking);
 
-            let baseLookY, baseLookX, baseLookZ;
+            // Gaze cycling: toggle between looking at user and looking away
             if (enableCameraTracking) {
+              const isSpeaking = audioLevelRef.current > 0.015;
+
+              if (!alwaysLookingAtYou && isSpeaking) {
+                // Speech interrupt: snap to looking at you
+                alwaysLookingAtYou = true;
+                gazeAtUserTimer = 0;
+                gazeAtUserDuration = 5 + Math.random() * 10;
+              } else if (alwaysLookingAtYou && !isSpeaking && prevIsSpeakingRef.current) {
+                // Speech just ended: reset timer for full post-speech look duration
+                gazeAtUserTimer = 0;
+                gazeAtUserDuration = 5 + Math.random() * 10;
+              } else {
+                gazeAtUserTimer += delta;
+                if (gazeAtUserTimer >= gazeAtUserDuration) {
+                  alwaysLookingAtYou = !alwaysLookingAtYou;
+                  gazeAtUserTimer = 0;
+                  gazeAtUserDuration = alwaysLookingAtYou
+                    ? 5 + Math.random() * 10
+                    : 120 + Math.random() * 60;
+                }
+              }
+              prevIsSpeakingRef.current = isSpeaking;
+            } else {
+              alwaysLookingAtYou = false;
+              gazeAtUserTimer = 0;
+            }
+
+            let baseLookY, baseLookX, baseLookZ;
+            if (enableCameraTracking && alwaysLookingAtYou) {
               // ---------------------------------------------------------
               // --- CAMERA-AWARE GAZE TRACKING BASE CALCULATION ---
               // ---------------------------------------------------------
@@ -1539,7 +1582,7 @@ const AvatarViewer = ({
             // the camera position already encodes where the user is looking from.
             const isOrbiting = isRotating;
 
-            if (!isOrbiting && isMouseInWindow) {
+            if (!isOrbiting && isMouseInWindow && postOrbitRestTimer <= 0) {
               if (!enableMouseTracking) {
                 isMouseInWindow = false;
                 lookState = 'returning';
@@ -1563,10 +1606,32 @@ const AvatarViewer = ({
               }
             }
 
-            if (isOrbiting && enableCameraTracking) {
-              // While orbiting, head purely tracks the camera position
-              targetLookY = baseLookY;
-              targetLookX = baseLookX;
+            // Post-orbit rest: detect orbit end, start rest timer
+            if (prevIsRotatingRef.current && !isRotating) {
+              postOrbitRestDuration = 5 + Math.random() * 5;
+              postOrbitRestTimer = postOrbitRestDuration;
+            }
+            if (postOrbitRestTimer > 0) {
+              postOrbitRestTimer -= delta;
+              if (postOrbitRestTimer <= 0) {
+                lastMouseMoveTimeRef.current = performance.now();
+              }
+            }
+            prevIsRotatingRef.current = isRotating;
+
+            if ((isOrbiting || postOrbitRestTimer > 0) && enableCameraTracking) {
+              // While orbiting, always track camera regardless of gaze cycling
+              const orbYaw = Math.atan2(camera.position.x, camera.position.z);
+              const orbBodyOffset = vrm.scene.rotation.y - baseRotation;
+              let orbTrackingYaw = Math.max(-1.2, Math.min(1.2, (orbYaw - orbBodyOffset) * 0.55));
+              const orbHeadHeight = 1.4 * scaleRef.current;
+              const orbHDist = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
+              let orbTrackingPitch = orbHDist > 0.01
+                ? Math.atan2(camera.position.y - orbHeadHeight, orbHDist) * 0.8
+                : 0;
+              orbTrackingPitch = Math.max(-0.45, Math.min(0.35, orbTrackingPitch));
+              targetLookY = orbTrackingYaw;
+              targetLookX = orbTrackingPitch;
               lookState = 'idle';
               lookTimer = 0;
             } else if (isMouseInWindow) {
@@ -1639,6 +1704,7 @@ const AvatarViewer = ({
               lookState = 'idle';
               currentLookX = baseLookX;
               currentLookY = baseLookY;
+              currentLookZ = baseLookZ;
               currentGazeX = baseLookX;
               currentGazeY = baseLookY;
               lookVelocityX = 0;
@@ -1662,6 +1728,9 @@ const AvatarViewer = ({
 
             currentLookY += lookVelocityY * delta;
             currentLookX += lookVelocityX * delta;
+
+            // Smooth roll (Z-axis) lerp — no spring needed, just gentle interpolation
+            currentLookZ += (baseLookZ - currentLookZ) * Math.min(1, delta * 5.0);
 
             // 2. Faster Eye Gaze Tracking (Lag-lead effect: eyes lock first)
             currentGazeY += (targetLookY - currentGazeY) * (delta * 7.5);
@@ -1785,7 +1854,7 @@ const AvatarViewer = ({
                 awakeNeckX = (-0.12 + neckOffsetX + currentLookX + Math.sin(time * 0.35) * 0.012 - breathingNod + microFidgetNeckX + neckAnimX) * xMult;
 
                 // Head Tilts for Empathy (Z-roll) & Curious Thinking
-                let tiltZ = microFidgetNeckZ + neckAnimZ + baseLookZ;
+                let tiltZ = microFidgetNeckZ + neckAnimZ + currentLookZ;
                 let tiltX = 0;
 
                 if (isListeningRef.current) {
