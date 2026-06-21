@@ -2635,15 +2635,15 @@ const App = () => {
         setTtsStreamActive(true);
         setIsThinking(true);
 
-        let prompt;
+        let payloadMessage;
         if (cmd === '/read') {
-          prompt = `Master requested to read the file content at absolute path "${filePath}". Use the read_file_content tool to load it and print/relay its contents exactly as they are without summarizing them.`;
+          payloadMessage = text;
         } else {
-          prompt = `Master requested to summarize the file content at absolute path "${filePath}". Use the read_file_content tool to load it, and then summarize it concisely in 2-3 paragraphs (under 150 words total).`;
+          payloadMessage = `Master requested to summarize the file content at absolute path "${filePath}". Use the read_file_content tool to load it, and then summarize it concisely in 2-3 paragraphs (under 150 words total).`;
         }
 
         if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-          const payload = { type: 'chat', message: prompt };
+          const payload = { type: 'chat', message: payloadMessage };
           if (sttTimeMs !== null) {
             payload.stt_time_ms = sttTimeMs;
           }

@@ -1059,7 +1059,39 @@ async def websocket_endpoint(websocket: WebSocket):
                                 return min_idx
 
                             try:
-                                if getattr(config, 'NO_LLM_MODE', False):
+                                if user_msg.startswith("/read ") or user_msg.startswith("/r "):
+                                    parts = user_msg.split(maxsplit=1)
+                                    file_path = parts[1].strip().strip('"').strip("'") if len(parts) > 1 else ""
+                                    
+                                    async def read_gen():
+                                        if not file_path:
+                                            yield "token", "Hmph! Please provide a file path to read.", "local"
+                                            yield "final_history", global_chat_history + [
+                                                {"role": "user", "content": user_msg},
+                                                {"role": "assistant", "content": "Hmph! Please provide a file path to read."}
+                                            ], "local"
+                                            return
+                                        
+                                        from app.tools.files import read_file_content
+                                        print(f"[Direct Read] Reading file content directly: '{file_path}'")
+                                        try:
+                                            content = await asyncio.to_thread(read_file_content, file_path)
+                                            if content.startswith("Success: "):
+                                                content = content[len("Success: "):].strip()
+                                            yield "token", content, "local"
+                                            yield "final_history", global_chat_history + [
+                                                {"role": "user", "content": user_msg},
+                                                {"role": "assistant", "content": content}
+                                            ], "local"
+                                        except Exception as e:
+                                            err_msg = f"Failed to read file: {str(e)}"
+                                            yield "token", err_msg, "local"
+                                            yield "final_history", global_chat_history + [
+                                                {"role": "user", "content": user_msg},
+                                                {"role": "assistant", "content": err_msg}
+                                            ], "local"
+                                    gen = read_gen()
+                                elif getattr(config, 'NO_LLM_MODE', False):
                                     async def no_llm_gen():
                                         yield "token", "sorry, LLM is currently turned off", "local"
                                         updated_history = global_chat_history + [
