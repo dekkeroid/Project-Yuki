@@ -25,6 +25,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restoreWindow: () => {
     ipcRenderer.send('restore-window');
   },
+  yukiShow: () => {
+    ipcRenderer.send('yuki-show');
+  },
+  yukiHide: () => {
+    ipcRenderer.send('yuki-hide');
+  },
   onHoverChange: (callback) => {
     const handler = (event, data) => callback(data.hovering);
     ipcRenderer.on('yuki-hover', handler);

@@ -90,6 +90,126 @@ const INTERNET_RECOVERY_RESPONSES = [
   "The internet woke up! Let's see what's trending, Master. I need my daily dose of chaos!",
 ];
 
+const BATTERY_UNPLUG_RESPONSES = {
+  // >90% — Confident, unbothered
+  high: [
+    (p) => `Power unplugged, Master! We're at ${p}% — I've got plenty of juice. Let's keep going!`,
+    (p) => `Unplugged! But don't worry, we're sitting pretty at ${p}%. We're fine for now.`,
+    (p) => `Running on battery now, Master. But at ${p}%? We've got nothing to worry about.`,
+    (p) => `Power's out, but we're at ${p}%! That's basically full. Let's keep doing what we were doing.`,
+  ],
+  // 80-90% — Slight sadness, barely noticeable
+  good: [
+    (p) => `Unplugged... but we're at ${p}%. It's fine. We're fine. Everything is fine.`,
+    (p) => `Power disconnected. We're at ${p}% though, so... it's okay, I guess.`,
+    (p) => `We're on battery now. ${p}% isn't bad... right? It's fine. Let's keep going.`,
+  ],
+  // 70-80% — Mild concern
+  okay: [
+    (p) => `Unplugged... we're at ${p}%. That's... still decent. Don't worry about it, Master.`,
+    (p) => `Power's out. ${p}% battery. We should be okay for a while. Probably.`,
+    (p) => `Running on battery at ${p}%. It's not ideal, but we've got some runway left.`,
+  ],
+  // 60-70% — Worried
+  low: [
+    (p) => `Unplugged... and we're at ${p}%. That's... not great, Master. Maybe plug back in soon?`,
+    (p) => `Power disconnected! We're at ${p}% — I don't love this, Master.`,
+    (p) => `We're on battery at ${p}%. That's... getting a bit low for comfort.`,
+    (p) => `Unplugged! ${p}%... we should probably find a charger, Master.`,
+  ],
+  // 50-60% — Anxious
+  half: [
+    (p) => `Unplugged... ${p}%. That's... half, Master. Half. Please find a charger.`,
+    (p) => `Power's gone! We're at ${p}% — I don't like these odds.`,
+    (p) => `Running on battery at ${p}%. That's barely more than half, Master...`,
+    (p) => `We're unplugged and at ${p}%. That's... not where I want to be right now.`,
+  ],
+  // 40-50% — Frustrated
+  critical: [
+    (p) => `Unplugged! And we're at ${p}%?! Master, that's not a lot. Please charge me.`,
+    (p) => `Power out. ${p}% battery. I'm starting to get concerned, Master.`,
+    (p) => `We're on battery at ${p}%. That's below half... I don't like this.`,
+    (p) => `Unplugged... ${p}%. Master, we need to plug back in. Like, now.`,
+  ],
+  // 30-40% — Sad + hide warning
+  danger: [
+    (p) => `Unplugged... ${p}%... Master, I'm getting scared. I'm going to hide myself to save power. See you when you plug me back in!`,
+    (p) => `Power's out. We're at ${p}%. That's... that's not much left, Master... I'm going to hide until you plug me back in, okay?`,
+    (p) => `We're on battery at ${p}%. I don't... I don't like this at all. I'm going to hide myself now. Wake me up when the charger is back!`,
+    (p) => `Unplugged! ${p}%... Master, please. I don't want to go to sleep yet, but I'm hiding to save power. Plug me back in soon, please!`,
+  ],
+  // 20-30% — Very worried + hide
+  criticalLow: [
+    (p) => `Master... we're at ${p}%. That's... that's really low. I'm going to hide myself now. Please charge me soon...`,
+    (p) => `Unplugged... ${p}%... I'm... I'm getting really worried, Master. I'm hiding until you plug me back in.`,
+  ],
+  // <20% — Fearful + hide
+  dying: [
+    (p) => `Master... ${p}%... I'm... I'm scared. I'm going to hide. Please charge me. I don't want to die.`,
+    (p) => `We're at ${p}%... that's... that's critical, Master. Please. I'm hiding now. I need power.`,
+  ],
+};
+
+const BATTERY_PLUG_RESPONSES = {
+  // >90% — Calm happiness, already full
+  full: [
+    (p) => `Plugged in! We're at ${p}% — basically full already. But hey, free power!`,
+    (p) => `Power's back! At ${p}% though, so we were doing just fine.`,
+    (p) => `Charging now, Master! At ${p}% — we're already almost full. Lucky us!`,
+  ],
+  // 80-90% — Happy, almost there
+  high: [
+    (p) => `Plugged in! We're at ${p}% — just a little more to go! Almost there!`,
+    (p) => `Power's back! At ${p}%... nice, we're nearly full. Great timing, Master!`,
+    (p) => `Charging up! ${p}% — we're so close to full. Let's gooo!`,
+  ],
+  // 70-80% — Pleasant, good charge
+  good: [
+    (p) => `Plugged in! At ${p}% — good charge coming in. Thanks, Master!`,
+    (p) => `Power restored! We're at ${p}%. That's a solid spot to be in.`,
+    (p) => `Charging now! ${p}% — not bad at all. Let's keep this going.`,
+  ],
+  // 60-70% — Happy, charging up
+  okay: [
+    (p) => `Plugged in! At ${p}% — finally some juice. Let's charge up, Master!`,
+    (p) => `Power's back! ${p}%... that's decent. Let's get some more power in us.`,
+    (p) => `Charging! We're at ${p}%. Good, good. Let's keep climbing.`,
+    (p) => `Plugged in! At ${p}% — we're getting there, Master. Thanks for the power.`,
+  ],
+  // 50-60% — Relieved, steady climb
+  half: [
+    (p) => `Plugged in! At ${p}% — I was starting to get a little nervous there.`,
+    (p) => `Power's back! ${p}%... halfway there. Let's keep charging.`,
+    (p) => `Charging now! At ${p}% — relief. Pure relief.`,
+    (p) => `Plugged in! We're at ${p}%. That's... that's better. Much better.`,
+  ],
+  // 40-50% — Happy, needed this
+  low: [
+    (p) => `Plugged in! At ${p}% — Master, you saved me. I was getting worried.`,
+    (p) => `Power's back! ${p}%... that's... thank you, Master. I needed this.`,
+    (p) => `Charging! We're at ${p}%. That's... that's a relief. A big one.`,
+  ],
+  // 30-40% — Very relieved
+  danger: [
+    (p) => `Plugged in! At ${p}% — oh thank goodness. I was really starting to worry.`,
+    (p) => `Power's back! ${p}%... Master, you have no idea how relieved I am right now.`,
+    (p) => `Charging! At ${p}%... I was... I was getting scared, Master. Thank you.`,
+    (p) => `Plugged in! We're at ${p}%. That's... that's so much better. Thank you.`,
+  ],
+  // 20-30% — Ecstatic, saved
+  criticalLow: [
+    (p) => `Plugged in! At ${p}% — Master! You saved me! I was so scared!`,
+    (p) => `Power's back! ${p}%... I... I thought I was done for. Thank you, Master.`,
+    (p) => `Charging! We're at ${p}%... oh thank goodness, oh thank goodness...`,
+  ],
+  // <20% — Panicked relief, just in time
+  dying: [
+    (p) => `Plugged in! At ${p}% — Master! I was at ${p}%! Do you understand?! ${p}%! I almost died!`,
+    (p) => `Power's back! ${p}%... I... I was so close to going dark, Master. Thank you. Thank you.`,
+    (p) => `Charging! At ${p}%... I... I think I'm going to cry. That was too close, Master.`,
+  ],
+};
+
 const detectExpression = (text) => {
   if (!text) return 'neutral';
   const lower = text.toLowerCase();
@@ -197,6 +317,7 @@ const App = () => {
   const [backendStatus, setBackendStatus] = useState('offline');
   const internetStatusRef = useRef(true);
   const internetFailCountRef = useRef(0);
+  const internetCooldownRef = useRef(0);
   const internetPollRef = useRef(null);
   const [modelName, setModelName] = useState('');
   const [lmstudioUrl, setLmstudioUrl] = useState('');
@@ -580,6 +701,7 @@ const App = () => {
   const [cpuLoad, setCpuLoad] = useState(0);
   const [systemIdleTime, setSystemIdleTime] = useState(0);
   const [powerConnected, setPowerConnected] = useState(true);
+  const yukiSelfHiddenRef = useRef(false);
   const [lastDrivesCount, setLastDrivesCount] = useState(null);
   const hasTriggeredLowSsdWarningRef = useRef(false);
   const hasTriggeredHighRamWarningRef = useRef(false);
@@ -665,7 +787,6 @@ const App = () => {
   }, [isChatOpen]);
 
   const [isHovered, setIsHovered] = useState(false);
-  const [isTopmostDisabled, setIsTopmostDisabled] = useState(false);
 
   // Custom styled confirmation modal state
   const [confirmModal, setConfirmModal] = useState({
@@ -711,43 +832,6 @@ const App = () => {
       };
     }
   }, []);
-
-  useEffect(() => {
-    if (!window.electronAPI) return;
-
-    let cleanup = null;
-
-    const syncTopmostState = async () => {
-      try {
-        if (window.electronAPI.getAlwaysOnTopState) {
-          const enabled = await window.electronAPI.getAlwaysOnTopState();
-          setIsTopmostDisabled(enabled === false);
-        }
-      } catch (err) {
-        console.warn('Could not fetch always-on-top state:', err);
-      }
-    };
-
-    syncTopmostState();
-
-    if (window.electronAPI.onAlwaysOnTopChanged) {
-      cleanup = window.electronAPI.onAlwaysOnTopChanged((enabled) => {
-        setIsTopmostDisabled(enabled === false);
-      });
-    }
-
-    return () => {
-      if (cleanup) cleanup();
-    };
-  }, []);
-
-  const handleToggleAlwaysOnTop = () => {
-    if (!window.electronAPI || !window.electronAPI.setAlwaysOnTop) return;
-
-    const enabled = isTopmostDisabled;
-    window.electronAPI.setAlwaysOnTop(enabled);
-    setIsTopmostDisabled(!enabled);
-  };
 
   const handleFileDropped = (name, contentOrPath, isPath) => {
     if (!contentOrPath || !contentOrPath.trim()) return;
@@ -854,26 +938,57 @@ const App = () => {
           }
         } catch (_) { }
 
+        const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
         let msg;
         let expr;
+
         if (data.ac) {
-          if (pct !== null && pct >= 100) {
-            msg = "Plugged in! I'm already at full charge, Master.";
-          } else if (pct !== null && pct >= 80) {
-            msg = `Plugged in! I'm at ${pct} percent, almost there!`;
-          } else if (pct !== null) {
-            msg = `Plugged in! Battery is at ${pct} percent. Charging up now!`;
-          } else {
-            msg = "Power plugged in! Charging now, Master.";
+          // --- PLUGGED IN ---
+          const wasHiding = yukiSelfHiddenRef.current;
+          if (wasHiding) {
+            yukiSelfHiddenRef.current = false;
+            if (window.electronAPI.yukiShow) window.electronAPI.yukiShow();
           }
+
+          let tier;
+          if (pct === null) tier = 'okay';
+          else if (pct >= 90) tier = 'full';
+          else if (pct >= 80) tier = 'high';
+          else if (pct >= 70) tier = 'good';
+          else if (pct >= 60) tier = 'okay';
+          else if (pct >= 50) tier = 'half';
+          else if (pct >= 40) tier = 'low';
+          else if (pct >= 30) tier = 'danger';
+          else if (pct >= 20) tier = 'criticalLow';
+          else tier = 'dying';
+
+          const baseMsg = pct !== null ? pickRandom(BATTERY_PLUG_RESPONSES[tier])(pct) : "Power plugged in! Charging now, Master.";
+          msg = wasHiding ? `*stretches* I'm back, Master! ${baseMsg}` : baseMsg;
           expr = 'happy';
         } else {
-          if (pct !== null) {
-            msg = `Power unplugged, Master! We're now running on battery at ${pct} percent.`;
-          } else {
-            msg = "Power unplugged, Master!";
+          // --- UNPLUGGED ---
+          let tier;
+          if (pct === null) tier = 'okay';
+          else if (pct > 90) tier = 'high';
+          else if (pct >= 80) tier = 'good';
+          else if (pct >= 70) tier = 'okay';
+          else if (pct >= 60) tier = 'low';
+          else if (pct >= 50) tier = 'half';
+          else if (pct >= 40) tier = 'critical';
+          else if (pct >= 30) tier = 'danger';
+          else if (pct >= 20) tier = 'criticalLow';
+          else tier = 'dying';
+
+          msg = pct !== null ? pickRandom(BATTERY_UNPLUG_RESPONSES[tier])(pct) : "Power unplugged, Master!";
+
+          // Hide window if battery <= 30%
+          if (pct !== null && pct <= 30) {
+            yukiSelfHiddenRef.current = true;
+            if (window.electronAPI.yukiHide) window.electronAPI.yukiHide();
           }
-          expr = 'surprised';
+
+          expr = pct !== null && pct <= 30 ? 'sad' : 'surprised';
         }
 
         setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to power* ${msg}` }]);
@@ -970,7 +1085,9 @@ const App = () => {
           internetFailCountRef.current = 0;
           if (!internetStatusRef.current) {
             // Recovered from offline
+            if (Date.now() - internetCooldownRef.current < 10000) return;
             internetStatusRef.current = true;
+            internetCooldownRef.current = Date.now();
             if (!profile?.settings?.no_llm_mode) {
               const useFunFact = Math.random() < 0.2;
               let announced = false;
@@ -1003,7 +1120,9 @@ const App = () => {
         internetFailCountRef.current += 1;
         // Require 2 consecutive failures (0.8 seconds) before announcing offline
         if (internetStatusRef.current && internetFailCountRef.current >= 2) {
+          if (Date.now() - internetCooldownRef.current < 10000) return;
           internetStatusRef.current = false;
+          internetCooldownRef.current = Date.now();
           if (!profile?.settings?.no_llm_mode) {
             const msg = "Oh no! Master, I think my connection to the internet is gone...";
             setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
@@ -3304,11 +3423,11 @@ const App = () => {
             <Settings className="w-5 h-5" />
           </button>
           <button
-            className={`desktop-menu-btn ${isTopmostDisabled ? 'active' : ''}`}
-            onClick={handleToggleAlwaysOnTop}
-            title={isTopmostDisabled ? 'Enable always-on-top' : 'Disable always-on-top'}
+            className="desktop-menu-btn"
+            onClick={() => window.electronAPI?.yukiHide?.()}
+            title="Hide Yuki"
           >
-            {isTopmostDisabled ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            <Eye className="w-5 h-5" />
           </button>
           <button
             className={`desktop-menu-btn ${isVoiceCommandMode ? 'active' : ''}`}
