@@ -258,7 +258,7 @@ def _create_marker():
     """Create .yuki-ready marker file."""
     _set_progress("Finalizing", 0.95)
     YUKI_READY.write_text(json.dumps({
-        "version": "0.1.0",
+        "version": "0.1.1-alpha",
         "setup_at": time.time(),
     }, indent=2), encoding="utf-8")
     _set_progress("Setup complete", 1.0)

@@ -127,7 +127,7 @@ async def lifespan(app: FastAPI):
     await agent_executor.mcp_tools.aclose()
 
 
-app = FastAPI(title="Yuki Desktop Assistant Backend", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.1.1-alpha", lifespan=lifespan)
 
 # Setup CORS — restrict to localhost and LAN origins
 app.add_middleware(
