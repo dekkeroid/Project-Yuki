@@ -2,6 +2,12 @@
   "name": "yuki-ai",
   "private": true,
   "version": "0.1.0-alpha",
+  "description": "Your personal desktop AI companion with voice, memory, and personality.",
+  "author": {
+    "name": "void dekkeroid"
+  },
+  "homepage": "https://github.com/dekkeroid/Project-Yuki",
+  "license": "MIT",
   "type": "module",
   "main": "main.electron.cjs",
   "productName": "Yuki AI",
@@ -31,12 +37,13 @@
     "@vitejs/plugin-react": "^4.3.3",
     "concurrently": "^10.0.3",
     "electron": "^30.0.0",
-    "electron-builder": "^25.0.0",
+    "electron-builder": "^25.1.8",
     "eslint": "^9.13.0",
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.14",
     "globals": "^15.11.0",
+    "rcedit": "^5.0.2",
     "vite": "^5.4.10"
   }
 }

@@ -27,7 +27,10 @@ class MemoryManager:
                 "whisper_compute_type": "int8_float16",
                 "use_local_whisper": True,
                 "stt_language": "en",
-                "no_llm_mode": False
+                "no_llm_mode": False,
+                "dynamic_tool_calling": True,
+                "enable_rotation": True,
+                "auto_reset_rotation": False
             }
         }
         if not os.path.exists(self.profile_path):

@@ -1,7 +1,32 @@
 const { app, BrowserWindow, ipcMain, screen, globalShortcut, powerMonitor, Menu, Tray } = require('electron');
 const path = require('path');
 const http = require('http');
+const fs = require('fs');
 const { spawn } = require('child_process');
+const os = require('os');
+
+const BACKEND_PORT = 58392;
+
+// ---------- File Logging ----------
+const LOG_DIR = path.join(app.getPath('userData'), 'logs');
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+const LOG_FILE = path.join(LOG_DIR, `yuki-${new Date().toISOString().slice(0, 10)}.log`);
+
+function logToFile(level, msg) {
+  const line = `[${new Date().toISOString()}] [${level}] ${msg}\n`;
+  try { fs.appendFileSync(LOG_FILE, line); } catch (_) {}
+}
+
+// Override console to also write to log file
+const _origLog = console.log;
+const _origWarn = console.warn;
+const _origError = console.error;
+console.log = (...args) => { _origLog(...args); logToFile('INFO', args.join(' ')); };
+console.warn = (...args) => { _origWarn(...args); logToFile('WARN', args.join(' ')); };
+console.error = (...args) => { _origError(...args); logToFile('ERROR', args.join(' ')); };
+
+console.log(`[Electron] Log file: ${LOG_FILE}`);
+console.log(`[Electron] Platform: ${process.platform}, arch: ${process.arch}, packaged: ${app.isPackaged}`);
 
 // ---------- Chromium Performance & VRAM Optimization Switches ----------
 // 1. Hard limit the Javascript V8 engine heap size to 1.2GB to stop virtual memory bloating
@@ -29,10 +54,14 @@ if (!gotTheLock) {
   process.exit(0);
 } else {
   app.on('second-instance', (event, commandLine, workingDirectory) => {
+    console.log('[Electron] Second instance detected — focusing existing window.');
     if (mainWindow && !mainWindow.isDestroyed()) {
       showYuki();
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
+    } else if (setupWindow && !setupWindow.isDestroyed()) {
+      setupWindow.show();
+      setupWindow.focus();
     }
   });
 }
@@ -76,6 +105,12 @@ function findVitePort(ports, timeout = 500) {
 }
 
 async function loadWithRetry(win, ports, maxAttempts = 10, intervalMs = 800) {
+  // In packaged mode, skip Vite detection — load the bundled dist directly
+  if (app.isPackaged) {
+    console.log('[Electron] Packaged mode — loading bundled dist/index.html');
+    win.loadFile(path.join(__dirname, 'dist', 'index.html'));
+    return;
+  }
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const url = await findVitePort(ports);
     if (url) {
@@ -434,19 +469,26 @@ function createTray() {
 // ---------- Backend Process Management ----------
 
 let backendProcess = null;
-const BACKEND_PORT = 7860;
+
+function isSetupComplete() {
+  if (app.isPackaged) {
+    const backendDir = path.join(path.dirname(app.getPath('exe')), 'resources', 'backend');
+    return fs.existsSync(path.join(backendDir, '.yuki-ready'));
+  }
+  return fs.existsSync(path.join(__dirname, '..', 'backend', '.yuki-ready'));
+}
 
 function getBackendExecutable() {
-  // In packaged app: backend.exe sits next to the Electron exe
   if (app.isPackaged) {
-    const exeDir = path.dirname(process.executable);
-    const backendExe = path.join(exeDir, 'backend.exe');
-    return { cmd: backendExe, args: [], cwd: exeDir };
+    const backendDir = path.join(path.dirname(app.getPath('exe')), 'resources', 'backend');
+    return { cmd: path.join(backendDir, 'backend.exe'), args: [], cwd: backendDir };
   }
-  // In development: run python directly
   const backendDir = path.join(__dirname, '..', 'backend');
-  const venvPython = path.join(backendDir, 'venv', 'Scripts', 'python.exe');
-  return { cmd: venvPython, args: ['run.py'], cwd: backendDir };
+  return {
+    cmd: path.join(backendDir, 'venv', 'Scripts', 'python.exe'),
+    args: ['run.py'],
+    cwd: backendDir,
+  };
 }
 
 function waitForBackend(port, maxAttempts = 30, intervalMs = 1000) {
@@ -502,7 +544,7 @@ function startBackend() {
   });
 
   backendProcess.on('error', (err) => {
-    console.error('[Electron] Backend failed to start:', err.message);
+    console.error('[Electron] Backend spawn error:', err.message);
     backendProcess = null;
   });
 
@@ -518,7 +560,6 @@ function stopBackend() {
   if (!backendProcess) return;
   console.log('[Electron] Stopping backend...');
   try {
-    // Graceful shutdown: send SIGTERM, force kill after 3s
     backendProcess.kill('SIGTERM');
     setTimeout(() => {
       if (backendProcess) {
@@ -533,19 +574,73 @@ function stopBackend() {
   }
 }
 
+// ---------- Setup window ----------
+
+let setupWindow = null;
+
+function createSetupWindow() {
+  setupWindow = new BrowserWindow({
+    title: 'Yuki AI — Setup',
+    width: 520,
+    height: 720,
+    center: true,
+    resizable: false,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    icon: path.join(__dirname, 'icon.png'),
+    backgroundColor: '#0a0a0f',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
+    }
+  });
+
+  setupWindow.loadURL(`http://127.0.0.1:${BACKEND_PORT}/setup`);
+  setupWindow.on('closed', () => { setupWindow = null; });
+}
+
 // ---------- App lifecycle ----------
 
+// Global IPC handlers (registered once, work for both setup and main windows)
+let isRestarting = false;
+
+ipcMain.on('restart-app', () => {
+  console.log('[Electron] Restart requested — relaunching...');
+  isRestarting = true;
+  // Don't stop backend — new instance will start fresh. Just relaunch and exit.
+  app.relaunch();
+  app.exit(0);
+});
+
 app.whenReady().then(async () => {
-  // Start the backend first and wait for it to be ready
+  // Deny unnecessary permissions (location, notifications, etc.) to prevent Windows prompts
+  const { session } = require('electron');
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowed = ['media', 'autoplay', 'clipboard-sanitized-write'];
+    callback(allowed.includes(permission));
+  });
+
+  const setupDone = isSetupComplete();
+  console.log(`[Electron] Setup complete: ${setupDone}`);
+
+  // Start the backend — it will serve either setup routes or full API
   const backendReady = await startBackend();
   if (!backendReady) {
-    console.error('[Electron] Backend failed to start within timeout. Continuing anyway...');
+    console.error('[Electron] Backend failed to start within timeout.');
   }
 
-  createWindow();
+  if (!setupDone) {
+    // First launch — show setup window
+    createSetupWindow();
+  } else {
+    // Normal launch — show main window
+    createWindow();
+  }
   createTray();
 
-  // Global recall shortcut — works even when another app is fullscreen
   globalShortcut.register('Alt+S', () => {
     console.log('[Electron] Alt+S — recalling Yuki.');
     showYuki();
@@ -557,6 +652,7 @@ app.whenReady().then(async () => {
   });
 
   app.on('activate', () => {
+    if (!setupDone && setupWindow && !setupWindow.isDestroyed()) return;
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     createTray();
   });
@@ -567,6 +663,11 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
+  if (isRestarting) {
+    console.log('[Electron] All windows closed during restart — skipping quit.');
+    return;
+  }
+  console.log('[Electron] All windows closed — quitting.');
   // Clean session cleanup routine added here to clear active cache blocks on close
   const { session } = require('electron');
   try {
@@ -576,6 +677,12 @@ app.on('window-all-closed', () => {
     });
   } catch (e) {
     console.warn("Failed cache wipe during window close sequence:", e);
+  }
+
+  // Destroy tray so the app doesn't linger
+  if (tray) {
+    tray.destroy();
+    tray = null;
   }
 
   if (process.platform !== 'darwin') app.quit();

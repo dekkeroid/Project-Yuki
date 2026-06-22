@@ -6,6 +6,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Upload, Sparkles } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
+import { API_BASE } from '../api';
 
 // Default Window Dimensions Configuration (Electron Mode)
 const ELECTRON_WINDOW_WIDTH = 320;
@@ -28,8 +29,8 @@ const AvatarViewer = ({
   customAnimation = '',
   disabledAnimations = [],
   activeModel = 'default.vrm',
-  enableRotation = false,
-  autoResetRotation = true
+  enableRotation = true,
+  autoResetRotation = false
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -91,7 +92,7 @@ const AvatarViewer = ({
       return;
     }
     if (activeModel) {
-      loadModel(`/models/${activeModel}`);
+      loadModel(`${API_BASE}/api/models/vrm/files/${activeModel}`);
     }
   }, [activeModel]);
 
@@ -725,8 +726,7 @@ const AvatarViewer = ({
     ring.rotation.x = Math.PI / 2;
     scene.add(ring);
 
-    let model_choice = ["default.vrm", "ayame.vrm", "kanata.vrm", "laplus.vrm", "laplus_no_coat.vrm", "nene.vrm", "miko.vrm", "pekora.vrm", "suisei.vrm",
-      "watame.vrm", "yuki.vrm", "timekeeper_cookie.vrm"]
+    let model_choice = ["default.vrm", "mizuki.vrm", "mixup.vrm", "mixup with hat.vrm", "trial.vrm", "whai.vrm"]
 
     // 7. Load default VRM model
     // loadModel('/models/default.vrm');0
@@ -741,7 +741,7 @@ const AvatarViewer = ({
     // loadModel('/models/watame.vrm');9
     // loadModel('/models/yuki.vrm');10
     // loadModel('/models/timekeeper_cookie.vrm');11
-    loadModel(`/models/${activeModelRef.current}`);
+    loadModel(`${API_BASE}/api/models/vrm/files/${activeModelRef.current}`);
 
     // 8. Animation Loop variables
     let blinkTimer = 0;

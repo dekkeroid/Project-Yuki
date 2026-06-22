@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 
@@ -42,7 +42,7 @@ const ControlDashboard = ({
 
   // Camera tracking toggle state (persisted via localStorage in AvatarViewer)
   const [cameraTracking, setCameraTracking] = useState(() => {
-    try { return localStorage.getItem('yuki-camera-tracking') === 'true'; } catch { return false; }
+    try { return localStorage.getItem('yuki-camera-tracking') !== 'false'; } catch { return true; }
   });
 
   // Model selector state removed
@@ -318,6 +318,8 @@ const ControlDashboard = ({
   };
 
   const [vrmModels, setVrmModels] = useState(['default.vrm']);
+  const [vrmCustomModels, setVrmCustomModels] = useState([]);
+  const [vrmUploading, setVrmUploading] = useState(false);
 
   const fetchVrmModels = async () => {
     try {
@@ -327,9 +329,53 @@ const ControlDashboard = ({
         if (data.models) {
           setVrmModels(data.models);
         }
+        if (data.custom) {
+          setVrmCustomModels(data.custom);
+        }
       }
     } catch (e) {
       console.warn('Could not fetch VRM models:', e);
+    }
+  };
+
+  const handleVrmUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.vrm')) {
+      alert('Only .vrm files are supported');
+      return;
+    }
+    setVrmUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`${API_BASE}/api/models/vrm/upload`, { method: 'POST', body: form });
+      if (res.ok) {
+        await fetchVrmModels();
+        handleUpdateSetting('active_vrm_model', file.name);
+      } else {
+        const err = await res.text();
+        alert('Upload failed: ' + err);
+      }
+    } catch (err) {
+      alert('Upload failed: ' + err.message);
+    }
+    setVrmUploading(false);
+    e.target.value = '';
+  };
+
+  const handleVrmDelete = async (name) => {
+    if (!confirm(`Delete custom model "${name.replace('.vrm', '')}"?`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/models/vrm/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      if (res.ok) {
+        if (settings.active_vrm_model === name) {
+          handleUpdateSetting('active_vrm_model', 'default.vrm');
+        }
+        await fetchVrmModels();
+      }
+    } catch (e) {
+      console.warn('Could not delete VRM model:', e);
     }
   };
 
@@ -833,30 +879,93 @@ const ControlDashboard = ({
 
                 {/* VRM Avatar Model dropdown */}
                 <div className="identity-field" style={{ marginTop: '4px' }}>
-                  <span className="field-label">VRM Avatar Model</span>
-                  <select
-                    value={settings.active_vrm_model || 'default.vrm'}
-                    onChange={(e) => handleUpdateSetting('active_vrm_model', e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '7px 10px',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      color: 'white',
-                      fontSize: '0.78rem',
-                      outline: 'none',
-                      cursor: 'pointer',
-                      marginTop: '2px'
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                    <span className="field-label" style={{ margin: 0 }}>VRM Avatar Model</span>
+                    <label style={{
+                      display: 'flex', alignItems: 'center', gap: '4px',
+                      fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', cursor: 'pointer',
+                      padding: '2px 8px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)', transition: 'all 0.2s',
                     }}
-                  >
-                    {vrmModels.map((model) => (
-                      <option key={model} value={model} style={{ background: '#0b0813', color: 'white' }}>
-                        {model.replace('.vrm', '').replace(/_/g, ' ').toUpperCase() || model}
-                      </option>
-                    ))}
-                  </select>
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(108,92,231,0.15)'; e.currentTarget.style.borderColor = 'rgba(108,92,231,0.3)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+                    >
+                      <Upload size={11} />
+                      <span>{vrmUploading ? 'Uploading...' : 'Upload VRM'}</span>
+                      <input type="file" accept=".vrm" onChange={handleVrmUpload} disabled={vrmUploading} style={{ display: 'none' }} />
+                    </label>
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <select
+                      value={settings.active_vrm_model || 'default.vrm'}
+                      onChange={(e) => handleUpdateSetting('active_vrm_model', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        marginTop: '2px'
+                      }}
+                    >
+                      {vrmModels.map((model) => (
+                        <option key={model} value={model} style={{ background: '#0b0813', color: 'white' }}>
+                          {model.replace('.vrm', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} {vrmCustomModels.includes(model) ? '(Custom)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {vrmCustomModels.length > 0 && (
+                      <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {vrmCustomModels.map((model) => (
+                          <span key={model} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px',
+                            background: 'rgba(108,92,231,0.15)', color: 'rgba(255,255,255,0.7)',
+                            border: '1px solid rgba(108,92,231,0.2)',
+                          }}>
+                            {model.replace('.vrm', '')}
+                            <Trash2
+                              size={10}
+                              style={{ cursor: 'pointer', opacity: 0.6, transition: 'opacity 0.2s' }}
+                              onMouseEnter={(e) => e.target.style.opacity = 1}
+                              onMouseLeave={(e) => e.target.style.opacity = 0.6}
+                              onClick={() => handleVrmDelete(model)}
+                            />
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                {/* Model Credits */}
+                <details style={{ marginTop: '6px' }}>
+                  <summary style={{
+                    fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', cursor: 'pointer',
+                    userSelect: 'none', outline: 'none',
+                  }}>
+                    Model Credits
+                  </summary>
+                  <div style={{
+                    marginTop: '6px', padding: '10px 12px', borderRadius: '8px',
+                    background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)',
+                    fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', lineHeight: '1.6',
+                  }}>
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>Mizuki 2.0</div>
+                      <div>Creator: <a href="https://hub.vroid.com/en/users/121822769" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>googoogaga496</a></div>
+                      <div>Model: <a href="https://hub.vroid.com/en/characters/147433999399938929/models/4488526919145096128" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>VRoid Hub</a></div>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>Mixup, Mixup with Hat, Trial, Whai</div>
+                      <div>Creator: <a href="https://hub.vroid.com/en/users/60415018" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>opinion</a></div>
+                    </div>
+                  </div>
+                </details>
 
                 {/* TTS Voice Selection */}
                 <div className="identity-field" style={{ marginTop: '4px' }}>

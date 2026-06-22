@@ -4,13 +4,17 @@ import asyncio
 from faster_whisper import WhisperModel
 
 VOICE_DIR = Path(__file__).parent.resolve()
+WHISPER_MODEL_DIR = VOICE_DIR / "whisper-base"
 
 _whisper_instance = None
 _current_model_size = None
 _current_compute_type = None
 
-def get_whisper_model(model_size: str = "base", compute_type: str = "int8_float16") -> WhisperModel:
+def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16") -> WhisperModel:
     global _whisper_instance, _current_model_size, _current_compute_type
+
+    if model_size is None:
+        model_size = str(WHISPER_MODEL_DIR) if WHISPER_MODEL_DIR.exists() and (WHISPER_MODEL_DIR / "model.bin").exists() else "base"
     
     # If model is already loaded and matches size and compute type, return it
     if (_whisper_instance is not None 
@@ -18,23 +22,22 @@ def get_whisper_model(model_size: str = "base", compute_type: str = "int8_float1
             and _current_compute_type == compute_type):
         return _whisper_instance
         
-    print(f"[STT] Loading local Whisper '{model_size}' model on GPU (CUDA, {compute_type})...")
+    print(f"[STT] Loading Whisper model from '{model_size}' on GPU (CUDA, {compute_type})...")
     try:
         _whisper_instance = WhisperModel(model_size, device="cuda", compute_type=compute_type)
         _current_model_size = model_size
         _current_compute_type = compute_type
-        print(f"[STT] Whisper '{model_size}' ({compute_type}) model loaded successfully on GPU.")
+        print(f"[STT] Whisper model loaded successfully on GPU.")
     except Exception as e:
         print(f"[STT] GPU load failed ({e}). Falling back to CPU (int8)...")
         try:
             _whisper_instance = WhisperModel(model_size, device="cpu", compute_type="int8")
             _current_model_size = model_size
             _current_compute_type = "int8"
-            print(f"[STT] Whisper '{model_size}' model loaded successfully on CPU.")
+            print(f"[STT] Whisper model loaded successfully on CPU.")
         except Exception as cpu_err:
-            print(f"[STT] Failed to load Whisper model '{model_size}' on CPU: {cpu_err}")
-            # Fallback to tiny if base fails for some reason
-            if model_size != "tiny":
+            print(f"[STT] Failed to load Whisper model on CPU: {cpu_err}")
+            if model_size != "tiny" and model_size != str(WHISPER_MODEL_DIR / "whisper-tiny") if (WHISPER_MODEL_DIR / "whisper-tiny").exists() else True:
                 print("[STT] Falling back to 'tiny' Whisper model...")
                 return get_whisper_model("tiny", compute_type)
             raise cpu_err

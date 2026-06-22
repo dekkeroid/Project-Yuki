@@ -1,6 +1,6 @@
 appId: com.yuki.ai
 productName: Yuki AI
-copyright: Copyright © 2026
+copyright: Copyright © 2026 void dekkeroid
 
 # ── Build output ─────────────────────────────────────────────────────────────
 directories:
@@ -15,37 +15,34 @@ files:
   - icon.png
 
 # ── Extra resources (copied next to the exe, not inside asar) ────────────────
-# The backend directory is built by PyInstaller and placed here before electron-builder runs.
 extraResources:
-  # Backend executable + supporting files
   - from: ../backend/dist/backend
     to: backend
     filter:
       - "**/*"
-  # Default .env for new users (next to backend.exe)
   - from: ../backend/.env.default
     to: backend/.env
     filter:
       - "**/*"
+  - from: ./dist/models
+    to: models
+    filter:
+      - "default.vrm"
+      - "mizuki.vrm"
+      - "mixup.vrm"
+      - "mixup with hat.vrm"
+      - "trial.vrm"
+      - "whai.vrm"
+  - from: ./CREDITS.txt
+    to: CREDITS.txt
 
 # ── Windows ──────────────────────────────────────────────────────────────────
 win:
   target:
-    - target: nsis
+    - target: dir
       arch:
         - x64
   icon: icon.ico
-  artifactName: "${productName}-${version}-Setup.${ext}"
-
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  installerIcon: icon.ico
-  uninstallerIcon: icon.ico
-  installerHeaderIcon: icon.ico
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-  shortcutName: Yuki AI
 
 # ── macOS (for future) ──────────────────────────────────────────────────────
 mac:

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File } from 'lucide-react';
+import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload } from 'lucide-react';
 import AvatarViewer from './components/AvatarViewer';
 import ChatOverlay, { SLASH_COMMANDS } from './components/ChatOverlay';
 import ControlDashboard from './components/ControlDashboard';
@@ -167,6 +167,8 @@ const App = () => {
   const [modelName, setModelName] = useState('');
   const [lmstudioUrl, setLmstudioUrl] = useState('');
   const [vrmModels, setVrmModels] = useState(['default.vrm']);
+  const [vrmCustomModels, setVrmCustomModels] = useState([]);
+  const [vrmUploading, setVrmUploading] = useState(false);
 
   // UI States
   const [inputText, setInputText] = useState('');
@@ -452,7 +454,7 @@ const App = () => {
   const [currentSpeechText, setCurrentSpeechText] = useState('');
   const [muteVoice, setMuteVoice] = useState(false);
   const [cameraTrackingState, setCameraTrackingState] = useState(() => {
-    try { return localStorage.getItem('yuki-camera-tracking') === 'true'; } catch { return false; }
+    try { return localStorage.getItem('yuki-camera-tracking') !== 'false'; } catch { return true; }
   });
   const [voiceVolume, setVoiceVolume] = useState(() => {
     return parseFloat(localStorage.getItem('yuki-voice-volume') || '0.5');
@@ -3090,12 +3092,52 @@ const App = () => {
       const response = await fetch(`${API_BASE}/api/models/vrm`);
       if (response.ok) {
         const data = await response.json();
-        if (data.models) {
-          setVrmModels(data.models);
-        }
+        if (data.models) setVrmModels(data.models);
+        if (data.custom) setVrmCustomModels(data.custom);
       }
     } catch (e) {
       console.warn("Could not load VRM models list from REST API:", e);
+    }
+  };
+
+  const handleVrmUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.vrm')) {
+      alert('Only .vrm files are supported');
+      return;
+    }
+    setVrmUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`${API_BASE}/api/models/vrm/upload`, { method: 'POST', body: form });
+      if (res.ok) {
+        await fetchVrmModels();
+        handleUpdateSetting('active_vrm_model', file.name);
+      } else {
+        const err = await res.text();
+        alert('Upload failed: ' + err);
+      }
+    } catch (err) {
+      alert('Upload failed: ' + err.message);
+    }
+    setVrmUploading(false);
+    e.target.value = '';
+  };
+
+  const handleVrmDelete = async (name) => {
+    if (!confirm(`Delete custom model "${name.replace('.vrm', '')}"?`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/models/vrm/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      if (res.ok) {
+        if (profile.settings?.active_vrm_model === name) {
+          handleUpdateSetting('active_vrm_model', 'default.vrm');
+        }
+        await fetchVrmModels();
+      }
+    } catch (e) {
+      console.warn('Could not delete VRM model:', e);
     }
   };
 
@@ -3148,8 +3190,8 @@ const App = () => {
             customAnimation={customAnimation}
             disabledAnimations={disabledAnimations}
             activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
-            enableRotation={profile.settings?.enable_rotation || false}
-            autoResetRotation={profile.settings?.auto_reset_rotation !== undefined ? profile.settings.auto_reset_rotation : true}
+            enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
+            autoResetRotation={profile.settings?.auto_reset_rotation || false}
           />
         </main>
 
@@ -4150,6 +4192,18 @@ const App = () => {
                       {/* VRM Avatar Model dropdown */}
                       <div className="desktop-form-group" style={{ marginTop: '6px' }}>
                         <label className="desktop-label">VRM Avatar Model</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                          <label style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
+                            borderRadius: '6px', border: '1px solid rgba(255,255,255,0.12)',
+                            background: 'rgba(255,255,255,0.04)', color: '#94a3b8', fontSize: '0.7rem',
+                            cursor: 'pointer', userSelect: 'none', fontFamily: 'monospace', fontWeight: 600,
+                          }}>
+                            <Upload className="w-3 h-3" />
+                            {vrmUploading ? 'Uploading...' : 'Upload VRM'}
+                            <input type="file" accept=".vrm" onChange={handleVrmUpload} style={{ display: 'none' }} />
+                          </label>
+                        </div>
                         <select
                           className="desktop-select"
                           value={profile.settings?.active_vrm_model || 'default.vrm'}
@@ -4162,7 +4216,50 @@ const App = () => {
                             </option>
                           ))}
                         </select>
+                        {vrmCustomModels.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                            {vrmCustomModels.map((name) => (
+                              <span key={name} style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem',
+                                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                                color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace',
+                              }}>
+                                {name.replace('.vrm', '')}
+                                <button onClick={() => handleVrmDelete(name)} style={{
+                                  background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)',
+                                  cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: '0.7rem',
+                                }}>&times;</button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
+
+                      {/* Model Credits */}
+                      <details style={{ marginTop: '4px' }}>
+                        <summary style={{
+                          fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', cursor: 'pointer',
+                          userSelect: 'none', outline: 'none',
+                        }}>
+                          Model Credits
+                        </summary>
+                        <div style={{
+                          marginTop: '4px', padding: '8px', borderRadius: '6px',
+                          background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)',
+                          fontSize: '0.65rem', color: 'rgba(255,255,255,0.5)', lineHeight: '1.6',
+                        }}>
+                          <div style={{ marginBottom: '6px' }}>
+                            <div style={{ fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>Mizuki 2.0</div>
+                            <div>Creator: <a href="https://hub.vroid.com/en/users/121822769" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>googoogaga496</a></div>
+                            <div>Model: <a href="https://hub.vroid.com/en/characters/147433999399938929/models/4488526919145096128" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>VRoid Hub</a></div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>Mixup, Mixup with Hat, Trial, Whai</div>
+                            <div>Creator: <a href="https://hub.vroid.com/en/users/60415018" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>opinion</a></div>
+                          </div>
+                        </div>
+                      </details>
 
                       {/* TTS Voice Profile dropdown */}
                       <div className="desktop-form-group" style={{ marginTop: '6px' }}>
@@ -4441,7 +4538,7 @@ const App = () => {
                         <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', userSelect: 'none' }}>
                           <input
                             type="checkbox"
-                            checked={profile.settings?.enable_rotation || false}
+                            checked={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
                             onChange={(e) => handleUpdateSetting('enable_rotation', e.target.checked)}
                             style={{ accentColor: '#2dd4bf', width: '13px', height: '13px', cursor: 'pointer' }}
                           />
@@ -4450,11 +4547,11 @@ const App = () => {
                           </span>
                         </label>
 
-                        {profile.settings?.enable_rotation && (
+                        {(profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true) && (
                           <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', marginLeft: '16px', cursor: 'pointer', userSelect: 'none' }}>
                             <input
                               type="checkbox"
-                              checked={profile.settings?.auto_reset_rotation !== undefined ? profile.settings.auto_reset_rotation : true}
+                              checked={profile.settings?.auto_reset_rotation || false}
                               onChange={(e) => handleUpdateSetting('auto_reset_rotation', e.target.checked)}
                               style={{ accentColor: '#2dd4bf', width: '13px', height: '13px', cursor: 'pointer' }}
                             />
@@ -4464,7 +4561,7 @@ const App = () => {
                           </label>
                         )}
 
-                        {profile.settings?.enable_rotation && (
+                        {(profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true) && (
                           <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', marginLeft: '16px', cursor: 'pointer', userSelect: 'none' }}>
                             <input
                               type="checkbox"
@@ -4807,8 +4904,8 @@ const App = () => {
           customAnimation={customAnimation}
           disabledAnimations={disabledAnimations}
           activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
-          enableRotation={profile.settings?.enable_rotation || false}
-          autoResetRotation={profile.settings?.auto_reset_rotation !== undefined ? profile.settings.auto_reset_rotation : true}
+          enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
+          autoResetRotation={profile.settings?.auto_reset_rotation || false}
         />
       </main>
 

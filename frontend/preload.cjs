@@ -73,5 +73,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('trigger-listening', handler);
     };
   },
+  restartApp: () => {
+    ipcRenderer.send('restart-app');
+  },
   isElectron: true
 });

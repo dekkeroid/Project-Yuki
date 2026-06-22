@@ -257,6 +257,16 @@ def init_db():
     );
     """)
 
+    # One-time migration: rename 'value' column to 'val' if needed
+    try:
+        cursor.execute("PRAGMA table_info(crawler_state);")
+        cols = [row[1] for row in cursor.fetchall()]
+        if "value" in cols and "val" not in cols:
+            print("[DB] Migrating: Renaming crawler_state.value to val...")
+            cursor.execute("ALTER TABLE crawler_state RENAME COLUMN value TO val;")
+    except Exception as e:
+        print(f"[DB] Error migrating crawler_state column: {e}")
+
     # One-time migration to populate transliterated names for existing files
     try:
         cursor.execute("SELECT COUNT(*) FROM files WHERE transliterated_name IS NULL")

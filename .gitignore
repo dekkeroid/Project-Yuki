@@ -1,6 +1,7 @@
 # Node dependencies
 node_modules/
 frontend/dist/
+frontend/build/
 
 #yuki home
 yuki home/
@@ -42,9 +43,23 @@ backend/profile.json
 backend/.yuki_confirmation_grants.json
 backend/.yuki_confirmation_grants.json.*
 
-# Ignore local local Kokoro AI model weights and audio binary matrices
+# Ignore local Kokoro AI model weights and audio binary matrices
 backend/app/voice/*.onnx
 backend/app/voice/*.bin
+
+# Bundled whisper model (downloaded, ~141MB)
+backend/app/voice/whisper-base/
+
+# PyInstaller build artifacts
+backend/build/
+backend/dist/
+
+# Runtime marker file
+backend/.yuki-ready
+
+# Electron-builder and installer output
+frontend/release/
+frontend/installer-output/
 
 *.bat
 # Unity frontend generated files

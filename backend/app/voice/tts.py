@@ -110,10 +110,10 @@ def get_kokoro() -> Kokoro:
     # Build provider list: prefer GPU, always keep CPU as fallback
     available = ort.get_available_providers()
     gpu_provider = None
-    if "DmlExecutionProvider" in available:
-        gpu_provider = "DmlExecutionProvider"
-    elif "CUDAExecutionProvider" in available:
+    if "CUDAExecutionProvider" in available:
         gpu_provider = "CUDAExecutionProvider"
+    elif "DmlExecutionProvider" in available:
+        gpu_provider = "DmlExecutionProvider"
 
     if gpu_provider:
         print(f"[TTS] Trying GPU provider: {gpu_provider}...")

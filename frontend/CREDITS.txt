@@ -1,0 +1,36 @@
+===============================================
+  Yuki AI - Bundled VRM Model Credits
+===============================================
+
+The following 3D avatar models (VRM format) are included with this
+application. Each model is the intellectual property of its creator
+and is used under the terms set by that creator on VRoid Hub.
+
+
+--- Mizuki 2.0 (default.vrm, mizuki.vrm) ---
+
+  Creator:   googoogaga496
+  Profile:   https://hub.vroid.com/en/users/121822769
+  Model:     https://hub.vroid.com/en/characters/147433999399938929/models/4488526919145096128
+  License:   Redistribution allowed. Individual commercial use: non-profit only.
+             Attribution required.
+
+
+--- Mixup, Mixup with Hat, Trial, Whai ---
+
+  Creator:   opinion
+  Profile:   https://hub.vroid.com/en/users/60415018
+  License:   Redistribution allowed. Check VRoid Hub for specific conditions.
+
+
+===============================================
+  Custom User-Uploaded Models
+===============================================
+
+Users may upload their own VRM models through the Settings panel.
+Such models are stored locally in:
+  %APPDATA%\Yuki AI\custom_models\
+
+Uploaded models are the responsibility of the user who uploads them.
+The Yuki AI project does not assume any liability for third-party
+model content.

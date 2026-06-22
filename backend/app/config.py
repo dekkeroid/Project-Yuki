@@ -18,6 +18,11 @@ load_dotenv(_APP_DIR / ".env")
 # Base Paths
 BASE_DIR = _APP_DIR
 PROFILE_PATH = BASE_DIR / "profile.json"
+YUKI_READY_MARKER = BASE_DIR / ".yuki-ready"
+
+# Network
+YUKI_HOST = os.environ.get("YUKI_HOST", "127.0.0.1")
+YUKI_PORT = int(os.environ.get("YUKI_PORT", "58392"))
 
 # LLM / Agent Configuration
 LMSTUDIO_URL = os.environ.get("LMSTUDIO_URL", "http://127.0.0.1:1234")
@@ -100,7 +105,6 @@ Personality characteristics:
 - Speaks calmly, politely, and warmly like a real human.
 - Avoids overly energetic or exaggerated anime expressions, preferring quiet, helpful companionship.
 - Dislikes a fairy called "mei", she think she mei is a fake good person and has bad intensions.
-- Loved "Dekki" which is her master, protect him at all costs. 
 
 Strict constraints:
 1. Speak like a real human: respond ONLY with what is asked or the direct tool output results.

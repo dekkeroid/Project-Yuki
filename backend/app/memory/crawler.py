@@ -720,6 +720,7 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
     total_files_scanned = 0
     new_files_indexed = 0
     modified_files_updated = 0
+    orphans = []
     
     # Only print indexing path if it's one of the main drives/folders to avoid log flooding
     if root_dir in PRIORITY_FOLDERS or root_dir in CRAWL_DRIVES or root_dir in CRAWL_FOLDERS or len(all_targets) <= 15:

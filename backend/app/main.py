@@ -254,33 +254,122 @@ def get_available_models():
 @app.get("/api/models/vrm")
 def get_vrm_models():
     """
-    Dynamically scans the frontend models folder and returns all available .vrm files.
+    Scans bundled (resources/models/) and custom (%APPDATA%/Yuki AI/custom_models/) VRM directories.
     """
     import os
     from app.config import BASE_DIR
-    
-    # Try typical development path
-    models_dir = BASE_DIR.parent / "frontend" / "public" / "models"
-    
-    if not models_dir.exists():
-        # Fallback to current directory models folder if packaged differently
-        models_dir = BASE_DIR / "models"
-        
-    if not models_dir.exists():
-        return {"models": ["default.vrm"]}
-        
-    try:
-        files = [f for f in os.listdir(models_dir) if f.lower().endswith(".vrm")]
-        # Sort alphabetically, but make sure "default.vrm" is first
-        if "default.vrm" in files:
-            files.remove("default.vrm")
-            files = ["default.vrm"] + sorted(files)
-        else:
-            files = sorted(files)
-        return {"models": files}
-    except Exception as e:
-        print(f"Error listing VRM models: {e}")
-        return {"models": ["default.vrm"]}
+    from pathlib import Path
+
+    bundled_models = []
+    custom_models = []
+
+    # Bundled: resources/models/ (PyInstaller extraResources) or frontend/public/models/ (dev)
+    for candidate in [
+        BASE_DIR.parent / "models",
+        BASE_DIR.parent / "frontend" / "public" / "models",
+        BASE_DIR / "models",
+    ]:
+        if candidate.exists():
+            try:
+                bundled_models = sorted(
+                    f for f in os.listdir(candidate) if f.lower().endswith(".vrm")
+                )
+            except Exception:
+                pass
+            if bundled_models:
+                break
+
+    # Custom: %APPDATA%/Yuki AI/custom_models/ (user uploads)
+    custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
+    if custom_dir.exists():
+        try:
+            custom_models = sorted(
+                f for f in os.listdir(custom_dir) if f.lower().endswith(".vrm")
+            )
+        except Exception:
+            pass
+
+    # Merge: default.vrm first, then bundled, then custom
+    all_models = []
+    for name in bundled_models + custom_models:
+        if name not in all_models:
+            all_models.append(name)
+    if "default.vrm" in all_models:
+        all_models.remove("default.vrm")
+        all_models = ["default.vrm"] + all_models
+
+    return {"models": all_models, "custom": custom_models}
+
+
+@app.get("/api/models/vrm/files/{name}")
+def serve_vrm_file(name: str):
+    """Serve a VRM file from bundled or custom directory."""
+    import os
+    from app.config import BASE_DIR
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+
+    # Check bundled first
+    for candidate in [
+        BASE_DIR.parent / "models",
+        BASE_DIR.parent / "frontend" / "public" / "models",
+        BASE_DIR / "models",
+    ]:
+        fpath = candidate / name
+        if fpath.exists() and fpath.suffix.lower() == ".vrm":
+            return FileResponse(fpath, media_type="model/vnd+gltf.binary", filename=name)
+
+    # Check custom uploads
+    custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
+    fpath = custom_dir / name
+    if fpath.exists() and fpath.suffix.lower() == ".vrm":
+        return FileResponse(fpath, media_type="model/vnd+gltf.binary", filename=name)
+
+    return Response(status_code=404, content="Model not found")
+
+
+@app.post("/api/models/vrm/upload")
+async def upload_vrm_model(file: UploadFile = File(...)):
+    """Upload a custom VRM model to %APPDATA%/Yuki AI/custom_models/."""
+    from pathlib import Path
+    import os
+
+    if not file.filename or not file.filename.lower().endswith(".vrm"):
+        return Response(status_code=400, content="Only .vrm files are supported")
+
+    custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
+    custom_dir.mkdir(parents=True, exist_ok=True)
+
+    dest = custom_dir / file.filename
+    content = await file.read()
+    dest.write_bytes(content)
+
+    return {"status": "ok", "filename": file.filename}
+
+
+@app.delete("/api/models/vrm/{name}")
+def delete_vrm_model(name: str):
+    """Delete a custom VRM model. Cannot delete bundled models."""
+    from pathlib import Path
+    import os
+
+    # Prevent deleting bundled models
+    from app.config import BASE_DIR
+    for candidate in [
+        BASE_DIR.parent / "models",
+        BASE_DIR.parent / "frontend" / "public" / "models",
+        BASE_DIR / "models",
+    ]:
+        if (candidate / name).exists():
+            return Response(status_code=403, content="Cannot delete bundled model")
+
+    custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
+    fpath = custom_dir / name
+    if fpath.exists():
+        fpath.unlink()
+        return {"status": "ok", "deleted": name}
+
+    return Response(status_code=404, content="Model not found")
 
 class ModelSwitchRequest(BaseModel):
     model: str
@@ -418,8 +507,8 @@ async def update_settings(req: SettingsUpdateRequest):
             "stt_language": memory_manager.profile["settings"].get("stt_language", "en"),
             "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False),
             "dynamic_tool_calling": memory_manager.profile["settings"].get("dynamic_tool_calling", True),
-            "enable_rotation": memory_manager.profile["settings"].get("enable_rotation", False),
-            "auto_reset_rotation": memory_manager.profile["settings"].get("auto_reset_rotation", True)
+            "enable_rotation": memory_manager.profile["settings"].get("enable_rotation", True),
+            "auto_reset_rotation": memory_manager.profile["settings"].get("auto_reset_rotation", False)
         }
     }
 
@@ -585,7 +674,11 @@ Strict constraints:
             "whisper_model": "small",
             "whisper_compute_type": "int8_float16",
             "use_local_whisper": True,
-            "stt_language": "en"
+            "stt_language": "en",
+            "no_llm_mode": False,
+            "dynamic_tool_calling": True,
+            "enable_rotation": True,
+            "auto_reset_rotation": False
         }
     }
     # Reset config variables to defaults as well
