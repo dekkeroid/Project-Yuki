@@ -5,6 +5,7 @@ import asyncio
 import re
 import sys
 import logging
+from pathlib import Path
 import requests as http_requests
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File
