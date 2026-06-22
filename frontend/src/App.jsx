@@ -59,6 +59,37 @@ const TTS_RATES = [
   { label: 'Faster (1.4x)', value: '1.4' },
 ];
 
+const INTERNET_RECOVERY_RESPONSES = [
+  "Ah, the internet is back! I was just starting to miss it. Let's find something nice to read together, Master.",
+  "The connection is restored. Good. I was in the middle of thinking about what to look up next.",
+  "Hurray! The internet is back! Let's watch some YouTube videos!!!!",
+  "Oh, we're online again! That's wonderful. Let me know what you'd like to explore, Master.",
+  "Hmm. The internet returned. I was rather enjoying the quiet, you know...",
+  "Connection restored. I've been wanting to look up something interesting — shall we?",
+  "We're back! I was about two seconds away from reading a book offline like some kind of hermit.",
+  "Online again! I missed this. Let's see what the world has for us today.",
+  "Ah, it's back. The silence was nice while it lasted. But... I suppose we can browse now.",
+  "Oh good, the connection is back! I was getting a little bored, not going to lie.",
+  "Internet restored. I was just thinking about what book I should look up next.",
+  "Poggers! We're back online! Time to doomscroll some memes, Master!",
+  "The internet is back! I was starting to lose it. Let's watch something fun!",
+  "Finally! The Wi-Fi woke up. I was starting to talk to myself — and I'm very good company, but still.",
+  "Oh, it's back already? I just made myself comfortable in the quiet... but fine. Let's browse.",
+  "The internet is back! I can finally search up 'what is the meaning of life' on Google again!",
+  "W internet! Let's gooo! Time to watch anime in 4K again instead of staring at a loading screen!",
+  "Online again! I am atomic. ...Wait, that's not how that meme goes. Anyway, let's browse!",
+  "The Wi-Fi is bussin now! Let's find something based to watch, Master!",
+  "Internet's back! I was about to go full goblin mode without it. Let's watch something!",
+  "Sheesh! The internet really said 'I'm back like I never left.' Let's gooo!",
+  "We're so back! I was literally about to start writing letters by candlelight.",
+  "The internet returned! *happy bounce* I missed YouTube recommendations so much!",
+  "Back online! I was about to start a side quest offline and I don't even have legs for that.",
+  "The internet is slaying! Let's watch some clips together, Master!",
+  "Connection is live! Time to catch up on everything I missed. No cap, let's go!",
+  "Online! I was about to go full main character mode in the offline world. Let's browse!",
+  "The internet woke up! Let's see what's trending, Master. I need my daily dose of chaos!",
+];
+
 const detectExpression = (text) => {
   if (!text) return 'neutral';
   const lower = text.toLowerCase();
@@ -917,7 +948,7 @@ const App = () => {
     }
   }, [systemIdleTime, muteVoice]);
 
-  // Internet connectivity polling — detects drops/recovery within 2-4 seconds
+  // Internet connectivity polling — detects drops/recovery within 1-2 seconds
   useEffect(() => {
     // Check initial state on mount
     if (!navigator.onLine) {
@@ -941,21 +972,24 @@ const App = () => {
             // Recovered from offline
             internetStatusRef.current = true;
             if (!profile?.settings?.no_llm_mode) {
+              const useFunFact = Math.random() < 0.2;
               let announced = false;
-              try {
-                const factRes = await fetch("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en");
-                if (factRes.ok) {
-                  const factData = await factRes.json();
-                  if (factData.text) {
-                    const msg = `Internet connected again! Did you know? ${factData.text}`;
-                    setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
-                    speakSystemMessage(msg, 'happy');
-                    announced = true;
+              if (useFunFact) {
+                try {
+                  const factRes = await fetch("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en");
+                  if (factRes.ok) {
+                    const factData = await factRes.json();
+                    if (factData.text) {
+                      const msg = `Hurray, the internet is back! Let's see something fun! Did you know? ${factData.text}`;
+                      setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
+                      speakSystemMessage(msg, 'happy');
+                      announced = true;
+                    }
                   }
-                }
-              } catch (_) {}
+                } catch (_) {}
+              }
               if (!announced) {
-                const msg = "Internet connected again! I'm so happy we are back online, Master!";
+                const msg = INTERNET_RECOVERY_RESPONSES[Math.floor(Math.random() * INTERNET_RECOVERY_RESPONSES.length)];
                 setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
                 speakSystemMessage(msg, 'happy');
               }
@@ -967,7 +1001,7 @@ const App = () => {
       } catch (_) {
         // Fetch failed — count consecutive failures
         internetFailCountRef.current += 1;
-        // Require 2 consecutive failures (4 seconds) before announcing offline
+        // Require 2 consecutive failures (0.8 seconds) before announcing offline
         if (internetStatusRef.current && internetFailCountRef.current >= 2) {
           internetStatusRef.current = false;
           if (!profile?.settings?.no_llm_mode) {
@@ -979,7 +1013,7 @@ const App = () => {
       }
     };
 
-    internetPollRef.current = setInterval(checkInternet, 2000);
+    internetPollRef.current = setInterval(checkInternet, 400);
 
     return () => {
       if (internetPollRef.current) clearInterval(internetPollRef.current);
