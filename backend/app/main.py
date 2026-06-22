@@ -75,7 +75,24 @@ async def lifespan(app: FastAPI):
         print(f"Failed to start crawler services: {e}")
 
     if not getattr(config, 'NO_LLM_MODE', False):
-        print(f"Verifying brain state. Checking if model '{config.LLM_MODEL}' is loaded in LM Studio...")
+        backend_type = config.get_backend_type()
+        print(f"Verifying brain state. Backend: {backend_type}, model: '{config.LLM_MODEL}'")
+
+        # Validate API key for cloud backends
+        if backend_type in ("openai", "custom") and not config.LLM_API_KEY:
+            print(f"WARNING: {backend_type.title()} backend selected but no API key configured. LLM calls will likely fail with 401 errors.")
+        elif backend_type in ("openai", "custom") and config.LLM_API_KEY:
+            # Quick validation: try to list models to check if key is valid
+            try:
+                from app.agent.llm_backend import get_backend
+                backend = get_backend()
+                models = await asyncio.wait_for(backend.list_models(), timeout=10.0)
+                print(f"API key validated. Found {len(models)} model(s) on {backend.name}.")
+            except asyncio.TimeoutError:
+                print(f"WARNING: Timed out validating API key against {backend.name}. Key may be invalid or server unreachable.")
+            except Exception as e:
+                print(f"WARNING: API key validation failed for {backend.name}: {e}. LLM calls may fail.")
+
         asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
     else:
         print("NO_LLM_MODE is enabled. Skipping LLM auto-load on startup.")
@@ -139,15 +156,19 @@ def make_speech_friendly(text: str) -> str:
 
     if lower.startswith("error:") or lower.startswith("failed:"):
         if "cannot connect to host" in lower or "connect call failed" in lower:
-            return "Error: Unable to connect to the local backend server."
+            return "Error: Unable to connect to the backend server."
         if "timeout" in lower:
             return "Error: A timeout occurred while contacting the server."
+        if "401" in lower or "unauthorized" in lower or "invalid api key" in lower:
+            return "Error: Invalid API key. Please check your backend settings."
         if ":" in normalized:
             return normalized.split(":", 1)[0].strip() + "."
         return normalized
 
     # Replace raw IP addresses with localhost for speech clarity.
     normalized = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "localhost", normalized)
+    # Strip full URLs (cloud backends like api.groq.com, api.openai.com, etc.)
+    normalized = re.sub(r"https?://[^\s,;\"']+", "", normalized)
     # Remove parenthesized and bracketed details that are usually technical noise.
     normalized = re.sub(r"\s*[\(\[][^)\]]*[\)\]]", "", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
@@ -207,48 +228,45 @@ async def test_and_announce_voice_change(new_voice: str, new_rate: str = None):
 
 @app.get("/health")
 def health_check():
+    from app.agent.llm_backend import get_backend
+    backend = get_backend()
     return {
         "status": "healthy",
         "character": config.CHARACTER_NAME,
         "model": config.LLM_MODEL,
-        "lmstudio_url": config.LMSTUDIO_URL
+        "llm_backend": config.get_backend_type(),
+        "llm_base_url": backend.base_url,
+        "lmstudio_url": config.LMSTUDIO_URL,
     }
 
 @app.get("/api/models")
-def get_available_models():
+async def get_available_models():
     """
-    Returns the dynamically loaded list of models from LM Studio,
-    falling back to a curated list if LM Studio is offline.
+    Returns the dynamically loaded list of models from the active LLM backend.
     """
+    from app.agent.llm_backend import get_backend
+    backend = get_backend()
     try:
-        response = http_requests.get(f"{config.LMSTUDIO_URL}/v1/models", timeout=3.0)
-        if response.status_code == 200:
-            data = response.json()
-            models_data = data.get("data", [])
-            models = [{"name": m["id"], "type": "lmstudio"} for m in models_data if "id" in m]
-            
-            # Ensure the currently active model is in the list
-            active_model = config.LLM_MODEL
-            if active_model and not any(m["name"] == active_model for m in models):
-                models.insert(0, {"name": active_model, "type": "lmstudio"})
-                
-            return {"models": models, "active": active_model}
+        models = await backend.list_models()
+        result = [{"name": m["id"], "type": config.get_backend_type()} for m in models]
+        active_model = config.LLM_MODEL
+        if active_model and not any(m["name"] == active_model for m in result):
+            result.insert(0, {"name": active_model, "type": config.get_backend_type()})
+        return {"models": result, "active": active_model}
     except Exception as e:
-        print(f"[Backend] Failed to fetch models from LM Studio: {e}. Falling back to default list.")
-        
+        print(f"[Backend] Failed to fetch models from {backend.name}: {e}. Falling back to default list.")
+
     fallback_models = [
-        {"name": config.LLM_MODEL, "type": "lmstudio"},
+        {"name": config.LLM_MODEL, "type": config.get_backend_type()},
         {"name": "llama-3.2-3b-instruct", "type": "lmstudio"},
-        {"name": "nvidia/nemotron-3-nano-4b", "type": "lmstudio"}
     ]
-    # Deduplicate
     seen = set()
     models = []
     for m in fallback_models:
         if m["name"] not in seen:
             seen.add(m["name"])
             models.append(m)
-            
+
     return {"models": models, "active": config.LLM_MODEL}
 
 @app.get("/api/models/vrm")
@@ -409,6 +427,9 @@ def get_settings():
 
 class SettingsUpdateRequest(BaseModel):
     llm_model: Optional[str] = None
+    llm_backend: Optional[str] = None
+    llm_base_url: Optional[str] = None
+    llm_api_key: Optional[str] = None
     tts_voice: Optional[str] = None
     tts_rate: Optional[str] = None
     character_name: Optional[str] = None
@@ -435,6 +456,12 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.llm_model is not None:
         config.LLM_MODEL = req.llm_model.strip()
         memory_manager.update_setting("llm_model", req.llm_model.strip())
+    if req.llm_backend is not None:
+        memory_manager.update_setting("llm_backend", req.llm_backend.strip())
+    if req.llm_base_url is not None:
+        memory_manager.update_setting("llm_base_url", req.llm_base_url.strip())
+    if req.llm_api_key is not None:
+        memory_manager.update_setting("llm_api_key", req.llm_api_key.strip())
     if req.tts_voice is not None:
         config.TTS_VOICE = req.tts_voice.strip()
         memory_manager.update_setting("tts_voice", req.tts_voice.strip())
@@ -605,9 +632,17 @@ async def speech_status(req: dict):
 @app.get("/api/profile")
 def get_profile():
     """
-    Returns the current user profile state.
+    Returns the current user profile state (API key redacted).
     """
-    return memory_manager.profile
+    import copy
+    profile = copy.deepcopy(memory_manager.profile)
+    if "settings" in profile and "llm_api_key" in profile["settings"]:
+        key = profile["settings"]["llm_api_key"]
+        if key:
+            profile["settings"]["llm_api_key"] = key[:4] + "..." + key[-4:] if len(key) > 8 else "****"
+        else:
+            profile["settings"]["llm_api_key"] = ""
+    return profile
 
 class ProfileUpdateRequest(BaseModel):
     user_name: Optional[str] = None
@@ -649,6 +684,9 @@ async def reset_profile():
         "settings": {
             # [SEARCH FOR MODEL CHANGE] Old: "llm_model": "ministra-3",
             "llm_model": "llama-3.2-3b-instruct",
+            "llm_backend": "lmstudio",
+            "llm_base_url": "",
+            "llm_api_key": "",
             "tts_voice": "bf_isabella",
             "tts_rate": "1.0",
             "character_name": "Yuki",
@@ -683,6 +721,9 @@ Strict constraints:
     }
     # Reset config variables to defaults as well
     config.LLM_MODEL = default_profile["settings"]["llm_model"]
+    config.LLM_BACKEND = default_profile["settings"]["llm_backend"]
+    config.LLM_BASE_URL = default_profile["settings"]["llm_base_url"]
+    config.LLM_API_KEY = default_profile["settings"]["llm_api_key"]
     config.TTS_VOICE = default_profile["settings"]["tts_voice"]
     config.TTS_RATE = default_profile["settings"]["tts_rate"]
     config.CHARACTER_NAME = default_profile["settings"]["character_name"]

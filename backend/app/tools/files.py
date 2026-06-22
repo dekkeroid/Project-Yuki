@@ -508,17 +508,20 @@ def ask_llm_to_resolve_match(query: str, candidates: List[Dict], is_generic: boo
     )
 
     try:
-        url = f"{config.LMSTUDIO_URL}/v1/chat/completions"
+        from app.agent.llm_backend import get_backend
+        llm_backend = get_backend()
+        url = llm_backend.get_chat_url()
         resp = requests.post(
             url,
-            json={
-                "model": config.LLM_MODEL,
-                "messages": [
+            headers=llm_backend.build_headers(),
+            json=llm_backend.build_payload(
+                model=config.LLM_MODEL,
+                messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user",   "content": user_msg}
                 ],
-                "temperature": 0.0
-            },
+                temperature=0.0,
+            ),
             timeout=10
         )
         if resp.status_code == 200:

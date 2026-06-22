@@ -16,6 +16,9 @@ class MemoryManager:
             "settings": {
                 # [SEARCH FOR MODEL CHANGE] Old: "llm_model": "ministra-3",
                 "llm_model": "llama-3.2-3b-instruct",
+                "llm_backend": "lmstudio",
+                "llm_base_url": "",
+                "llm_api_key": "",
                 "tts_voice": "bf_isabella",
                 "tts_rate": "1.0",
                 "character_name": "Yuki",
@@ -60,6 +63,9 @@ class MemoryManager:
                 config.CHARACTER_PERSONA = data["settings"].get("character_persona", config.CHARACTER_PERSONA)
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
                 config.NO_LLM_MODE = data["settings"].get("no_llm_mode", False)
+                config.LLM_BACKEND = data["settings"].get("llm_backend", config.LLM_BACKEND)
+                config.LLM_BASE_URL = data["settings"].get("llm_base_url", config.LLM_BASE_URL)
+                config.LLM_API_KEY = data["settings"].get("llm_api_key", config.LLM_API_KEY)
                 
                 return data
         except Exception as e:
@@ -142,6 +148,18 @@ class MemoryManager:
             config.CHARACTER_PERSONA = value
         elif key == "llm_model":
             config.LLM_MODEL = value
+        elif key == "llm_backend":
+            config.LLM_BACKEND = value
+            from app.agent.llm_backend import reset_backend
+            reset_backend()
+        elif key == "llm_base_url":
+            config.LLM_BASE_URL = value
+            from app.agent.llm_backend import reset_backend
+            reset_backend()
+        elif key == "llm_api_key":
+            config.LLM_API_KEY = value
+            from app.agent.llm_backend import reset_backend
+            reset_backend()
         elif key == "no_llm_mode":
             config.NO_LLM_MODE = bool(value)
             

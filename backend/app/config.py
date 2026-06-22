@@ -25,7 +25,13 @@ YUKI_HOST = os.environ.get("YUKI_HOST", "127.0.0.1")
 YUKI_PORT = int(os.environ.get("YUKI_PORT", "58392"))
 
 # LLM / Agent Configuration
-LMSTUDIO_URL = os.environ.get("LMSTUDIO_URL", "http://127.0.0.1:1234")
+# Backend type: "lmstudio", "ollama", "openai", "groq", "together", "deepseek", "custom"
+LLM_BACKEND = os.environ.get("LLM_BACKEND", "lmstudio")
+LLM_BACKEND_TITLE = os.environ.get("LLM_BACKEND_TITLE", "")  # Display name for custom backends
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "")  # API key for cloud backends
+# Base URL for the LLM backend (default varies by backend type)
+LMSTUDIO_URL = os.environ.get("LMSTUDIO_URL", "http://127.0.0.1:1234")  # Legacy, kept for backward compat
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "")  # Overrides LMSTUDIO_URL when set
 # [SEARCH FOR MODEL CHANGE] Old default: "ministra-3"
 LLM_MODEL = os.environ.get("LLM_MODEL", "llama-3.2-3b-instruct") # Default model for all requests.
 LLM_MODEL_COMPLEX = os.environ.get("LLM_MODEL_COMPLEX", "nvidia/nemotron-3-nano-4b") # Complex model (default: Nemotron).
@@ -115,3 +121,15 @@ Strict constraints:
 """
 
 NO_LLM_MODE = False
+
+
+def get_effective_base_url() -> str:
+    """Get the effective LLM base URL. LLM_BASE_URL takes precedence over LMSTUDIO_URL."""
+    if LLM_BASE_URL:
+        return LLM_BASE_URL.rstrip("/")
+    return LMSTUDIO_URL.rstrip("/")
+
+
+def get_backend_type() -> str:
+    """Get the normalized backend type string."""
+    return (LLM_BACKEND or "lmstudio").lower()

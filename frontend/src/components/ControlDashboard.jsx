@@ -50,6 +50,9 @@ const ControlDashboard = ({
   // Settings State
   const [settings, setSettings] = useState({
     llm_model: '',
+    llm_backend: 'lmstudio',
+    llm_base_url: '',
+    llm_api_key: '',
     tts_voice: 'en-US-AnaNeural',
     tts_rate: '+15%',
     character_name: 'Yuki',
@@ -1075,6 +1078,86 @@ const ControlDashboard = ({
                   </label>
                 </div>
 
+                {/* LLM Backend Type */}
+                <div className="identity-field" style={{ marginTop: '10px' }}>
+                  <span className="field-label">LLM Backend</span>
+                  <select
+                    value={settings.llm_backend || 'lmstudio'}
+                    onChange={(e) => handleUpdateSetting('llm_backend', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.78rem',
+                      outline: 'none',
+                      cursor: 'pointer',
+                      marginTop: '4px'
+                    }}
+                  >
+                    <option value="lmstudio">LM Studio (Local)</option>
+                    <option value="ollama">Ollama (Local)</option>
+                    <option value="openai">OpenAI-Compatible (Cloud)</option>
+                    <option value="custom">Custom Endpoint</option>
+                  </select>
+                </div>
+
+                {/* Base URL (for Ollama / OpenAI / Custom) */}
+                {(settings.llm_backend === 'ollama' || settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                  <div className="identity-field" style={{ marginTop: '8px' }}>
+                    <span className="field-label">
+                      {settings.llm_backend === 'ollama' ? 'Ollama URL' : settings.llm_backend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
+                    </span>
+                    <input
+                      type="text"
+                      placeholder={
+                        settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
+                        settings.llm_backend === 'openai' ? 'https://api.groq.com/openai' :
+                        'http://127.0.0.1:8000/v1'
+                      }
+                      value={settings.llm_base_url || ''}
+                      onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                        marginTop: '4px'
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* API Key (for OpenAI-compatible / Custom with auth) */}
+                {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                  <div className="identity-field" style={{ marginTop: '8px' }}>
+                    <span className="field-label">API Key</span>
+                    <input
+                      type="password"
+                      placeholder="sk-..."
+                      value={settings.llm_api_key || ''}
+                      onChange={(e) => handleUpdateSetting('llm_api_key', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                        marginTop: '4px'
+                      }}
+                    />
+                  </div>
+                )}
+
                 {/* Active LLM Model Selection */}
                 <div className="identity-field" style={{ marginTop: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1082,7 +1165,7 @@ const ControlDashboard = ({
                     <button
                       type="button"
                       onClick={onRefreshLlmModels}
-                      title="Refresh model list from LM Studio"
+                      title="Refresh model list from backend"
                       style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
                     >
                       <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
@@ -1625,7 +1708,13 @@ const ControlDashboard = ({
 
                 <div className="spec-list-table">
                   <div className="spec-row">
-                    <span className="spec-label">LM Studio URL</span>
+                    <span className="spec-label">LLM Backend</span>
+                    <span className="spec-val" style={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all' }}>
+                      {settings.llm_backend || 'lmstudio'}
+                    </span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">LLM Endpoint</span>
                     <span className="spec-val" style={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all' }}>
                       {lmstudioUrl || 'http://127.0.0.1:1234'}
                     </span>

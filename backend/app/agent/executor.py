@@ -9,6 +9,7 @@ import os
 from typing import Dict, Any, List, Tuple
 from app import config
 from app.agent.prompts import get_system_prompt, get_simple_system_prompt
+from app.agent.llm_backend import get_backend, reset_backend
 from app.memory.local_mem import MemoryManager
 from app.tools.definitions import get_tools_definition, get_filtered_tools
 from app.mcp_client import StdioMCPToolBridge
@@ -255,96 +256,28 @@ class AgentExecutor:
 
     async def ensure_model_loaded(self, model_name: str) -> bool:
         """
-        Dynamically discovers the correct model key inside LM Studio using regex 
-        and auto-loads the model if it's currently offline.
+        Ensures the selected model is available in the active LLM backend.
         """
-        import aiohttp
-        import re
-
-        lm_studio_identifier = None
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{config.LMSTUDIO_URL}/api/v1/models", timeout=5) as resp:
-                    if resp.status != 200:
-                        print(f"[LM Studio] Failed to fetch models list. Status: {resp.status}")
-                        return False
-                    
-                    payload_data = await resp.json()
-                    available_models = payload_data.get("data", [])
-                    if isinstance(payload_data, dict) and not available_models:
-                        available_models = payload_data.get("models", [])
-
-                search_keyword = "llama" if "llama" in model_name.lower() else "nemotron"
-                pattern = re.compile(rf".*{search_keyword}.*", re.IGNORECASE)
-
-                print(f"[LM Studio] Scanning {len(available_models)} downloaded models for keyword '{search_keyword}'...")
-                specific_match = None
-                keyword_match = None
-                specific_loaded = False
-
-                for model_entry in available_models:
-                    model_key = model_entry.get("id") or model_entry.get("key") or model_entry.get("path") or ""
-                    print(f"[LM Studio]   -> Found Library Entry: '{model_key}'")
-
-                    if not model_key:
-                        continue
-
-                    is_loaded = (
-                        model_entry.get("loaded", False) == True or
-                        model_entry.get("state") == "loaded" or
-                        bool(model_entry.get("loaded_instances"))
-                    )
-
-                    if model_name.lower() in model_key.lower():
-                        specific_match = model_key
-                        specific_loaded = is_loaded
-                        break
-
-                    if keyword_match is None and pattern.match(model_key):
-                        keyword_match = model_key
-
-                if specific_match:
-                    lm_studio_identifier = specific_match
-                    if specific_loaded:
-                        print(f"[LM Studio] Discovery Success: '{model_name}' maps to active instance '{lm_studio_identifier}'. Skipping load sequence.")
-                        return True
-                elif keyword_match:
-                    lm_studio_identifier = keyword_match
-                    print(f"[LM Studio] Warning: Exact match for '{model_name}' not found. Falling back to keyword match: '{lm_studio_identifier}'.")
-
-                print(f"[LM Studio] Model '{model_name}' is offline. Automatically loading: '{lm_studio_identifier}'...")
-                payload = {
-                    "model": lm_studio_identifier
-                }
-
-                async with session.post(f"{config.LMSTUDIO_URL}/api/v1/models/load", json=payload, timeout=45) as load_resp:
-                    if load_resp.status == 200:
-                        print(f"[LM Studio] Successfully auto-loaded model: '{lm_studio_identifier}'")
-                        return True
-                    else:
-                        error_body = await load_resp.text()
-                        print(f"[LM Studio] Failed to auto-load. HTTP {load_resp.status}: {error_body}")
-                        return False
-        except Exception as e:
-            print(f"[LM Studio] Error checking/loading model framework: {e}")
-            return False
+        backend = get_backend()
+        return await backend.ensure_model_loaded(model_name)
 
     async def get_friendly_error_explanation(self, exception_msg: str) -> str:
         """
         Asks the LLM to explain a Python exception in a friendly way for the user.
         """
+        backend = get_backend()
         prompt = f"Explain this Python exception to a desktop user in 1-2 friendly sentences and tell them how to fix it: {exception_msg}"
         messages = [
             {"role": "system", "content": f"You are {config.CHARACTER_NAME}, a helpful assistant. Keep your response minimal, friendly, and direct. Explain the error simply in 1-2 sentences. Do not use generic AI fluff."},
             {"role": "user", "content": prompt}
         ]
         try:
-            url = f"{config.LMSTUDIO_URL}/v1/chat/completions"
-            payload = {
-                "model": config.LLM_MODEL,
-                "messages": messages,
-                "temperature": 0.5,
-            }
+            url = backend.get_chat_url()
+            payload = backend.build_payload(
+                model=config.LLM_MODEL,
+                messages=messages,
+                temperature=0.5,
+            )
             timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, json=payload) as resp:
@@ -358,9 +291,9 @@ class AgentExecutor:
                     raise Exception("Empty response from LLM")
         except Exception as e:
             return (
-                f"Hmph! Something went wrong in my system. It looks like my brain server (LM Studio) "
-                f"might be offline or unreachable on {config.LMSTUDIO_URL}. "
-                f"Please ensure LM Studio is running, and that the model '{config.LLM_MODEL}' is active."
+                f"Hmph! Something went wrong in my system. It looks like my brain server ({backend.name}) "
+                f"might be offline or unreachable on {backend.base_url}. "
+                f"Please ensure your LLM backend is running, and that the model '{config.LLM_MODEL}' is active."
             )
 
     # ------------------------------------------------------------------ #
@@ -463,22 +396,13 @@ class AgentExecutor:
 
     def _query_lmstudio_model(self, messages: List[Dict[str, str]], model_name: str, temperature: float = 0.7, use_tools: bool = False) -> Tuple[str, List[Dict[str, Any]], str]:
         """
-        Sends a request to the local LM Studio OpenAI-compatible endpoint for the specified model.
+        Sends a request to the active LLM backend for the specified model.
         Returns (response_text, tool_calls, model_label).
         """
-        url = f"{config.LMSTUDIO_URL}/v1/chat/completions"
-        payload = {
-            "model": model_name,
-            "messages": messages,
-            "temperature": temperature,
-            # Request a larger context window to prevent n_keep >= n_ctx overflows
-            # when the system prompt + tool schemas are large.
-            "context_length": 8192,
-        }
+        backend = get_backend()
+        url = backend.get_chat_url()
+        tools = None
         if use_tools:
-            # Non-streaming path is currently unused by the FastAPI websocket flow.
-            # Keep it synchronous and local-schema based; execution still routes
-            # through _run_tool_async, which prefers MCP stdio.
             use_dynamic = self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
             if use_dynamic:
                 user_message = ""
@@ -486,17 +410,22 @@ class AgentExecutor:
                     if msg.get("role") == "user":
                         user_message = msg.get("content", "")
                         break
-                filtered_tools = get_filtered_tools(user_message)
+                tools = get_filtered_tools(user_message)
             else:
-                filtered_tools = get_tools_definition()
-            tool_names = [t["function"]["name"] for t in filtered_tools]
-            print(f"[Tools] Sending {len(filtered_tools)} local tools to LLM: {', '.join(tool_names)}")
-            payload["tools"] = filtered_tools
-            payload["tool_choice"] = "auto"
-            
+                tools = get_tools_definition()
+            tool_names = [t["function"]["name"] for t in tools]
+            print(f"[Tools] Sending {len(tools)} tools to LLM: {', '.join(tool_names)}")
+
+        payload = backend.build_payload(
+            model=model_name,
+            messages=messages,
+            temperature=temperature,
+            use_tools=use_tools,
+            tools=tools,
+        )
         response = requests.post(
             url,
-            headers={"Content-Type": "application/json"},
+            headers=backend.build_headers(),
             json=payload,
             timeout=60,
         )
@@ -505,15 +434,14 @@ class AgentExecutor:
         if "error" in res_json:
             return f"Error from brain server: {res_json['error'].get('message')}", None, self._get_model_label(model_name)
 
-        
         choices = res_json.get("choices", [])
         if not choices:
             return "Hmph! Empty response received.", None, self._get_model_label(model_name)
-            
+
         message = choices[0].get("message", {})
         content = message.get("content") or ""
         tool_calls = message.get("tool_calls")
-        
+
         return content, tool_calls, self._get_model_label(model_name)
 
     def _query_llm(self, messages: List[Dict[str, str]], user_message: str = "", use_tools: bool = False) -> Tuple[str, List[Dict[str, Any]], str]:
@@ -534,15 +462,15 @@ class AgentExecutor:
                 print(f"[Router][Mode 3] Task={label} -> using {config.LLM_MODEL} with {'full' if label == 'complex' else 'lean'} prompt (temp={temp})")
                 return self._query_lmstudio_model(messages, config.LLM_MODEL, temperature=temp, use_tools=use_tools)
             except Exception as e:
+                llm_backend = get_backend()
                 return (
-                    f"Hmph! I couldn't reach my brain server (LM Studio). "
-                    f"Make sure it's running on {config.LMSTUDIO_URL}! Error: {str(e)}",
+                    llm_backend.get_error_message(e),
                     None,
                     self._get_model_label(config.LLM_MODEL)
                 )
         elif backend == "complex":
             try:
-                print(f"[Router] Task classified as complex -> using local {config.LLM_MODEL_COMPLEX} (temp=0.2)")
+                print(f"[Router] Task classified as complex -> using {config.LLM_MODEL_COMPLEX} (temp=0.2)")
                 return self._query_lmstudio_model(messages, config.LLM_MODEL_COMPLEX, temperature=0.2, use_tools=use_tools)
             except Exception as complex_err:
                 print(f"[Router] Complex model '{config.LLM_MODEL_COMPLEX}' failed ({complex_err}), falling back to simple model '{config.LLM_MODEL}' (temp=0.2)")
@@ -550,19 +478,19 @@ class AgentExecutor:
                     return self._query_lmstudio_model(messages, config.LLM_MODEL, temperature=0.2, use_tools=use_tools)
                 except Exception as fallback_err:
                     return (
-                        f"Hmph! Both complex and simple local models failed. "
+                        f"Hmph! Both complex and simple models failed. "
                         f"Complex error: {complex_err} | Simple error: {fallback_err}",
                         None,
                         self._get_model_label(config.LLM_MODEL)
                     )
         else:
             try:
-                print(f"[Router] Task classified as simple -> using local {config.LLM_MODEL} (temp=0.7)")
+                print(f"[Router] Task classified as simple -> using {config.LLM_MODEL} (temp=0.7)")
                 return self._query_lmstudio_model(messages, config.LLM_MODEL, temperature=0.7, use_tools=use_tools)
             except Exception as e:
+                llm_backend = get_backend()
                 return (
-                    f"Hmph! I couldn't reach my brain server (LM Studio). "
-                    f"Make sure it's running on {config.LMSTUDIO_URL}! Error: {str(e)}",
+                    llm_backend.get_error_message(e),
                     None,
                     self._get_model_label(config.LLM_MODEL)
                 )
@@ -682,19 +610,19 @@ class AgentExecutor:
 
 
     async def _stream_request(self, session: aiohttp.ClientSession, url: str, model: str, messages: List[Dict[str, str]], headers: dict = None, temperature: float = 0.7, use_tools: bool = False):
-        payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "stream": True,
-            # Request a larger context window to prevent n_keep >= n_ctx overflows
-            # when the system prompt + tool schemas are large.
-            "context_length": 8192,
-        }
+        llm_backend = get_backend()
+        tools = None
         if use_tools:
-            filtered_tools = await self._get_tool_definitions_for_messages(messages)
-            payload["tools"] = filtered_tools
-            payload["tool_choice"] = "auto"
+            tools = await self._get_tool_definitions_for_messages(messages)
+
+        payload = llm_backend.build_payload(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            use_tools=use_tools,
+            tools=tools,
+            stream=True,
+        )
             
         async with session.post(url, json=payload, headers=headers, timeout=60) as resp:
             if resp.status != 200:
@@ -731,8 +659,9 @@ class AgentExecutor:
 
 
     async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False):
-        url = f"{config.LMSTUDIO_URL}/v1/chat/completions"
-        headers = {"Content-Type": "application/json"}
+        llm_backend = get_backend()
+        url = llm_backend.get_chat_url()
+        headers = llm_backend.build_headers()
         async for chunk in self._stream_request(session, url, model_name, messages, headers=headers, temperature=temperature, use_tools=use_tools):
             yield chunk, self._get_model_label(model_name)
 
@@ -754,11 +683,12 @@ class AgentExecutor:
                 async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=temp, use_tools=use_tools):
                     yield chunk, label
             except Exception as e:
-                err_msg = {"content": f"Hmph! I couldn't reach my brain server (LM Studio). Make sure it's running on {config.LMSTUDIO_URL}! Error: {str(e)}"}
+                llm_backend = get_backend()
+                err_msg = {"content": llm_backend.get_error_message(e)}
                 yield err_msg, self._get_model_label(config.LLM_MODEL)
         elif backend == "complex":
             try:
-                print(f"[Router] Task classified as complex -> using local {config.LLM_MODEL_COMPLEX} Stream (temp=0.2)")
+                print(f"[Router] Task classified as complex -> using {config.LLM_MODEL_COMPLEX} Stream (temp=0.2)")
                 async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL_COMPLEX, messages, temperature=0.2, use_tools=use_tools):
                     yield chunk, label
             except Exception as complex_err:
@@ -767,11 +697,12 @@ class AgentExecutor:
                     yield chunk, label
         else:
             try:
-                print(f"[Router] Task classified as simple -> using local {config.LLM_MODEL} Stream (temp=0.7)")
+                print(f"[Router] Task classified as simple -> using {config.LLM_MODEL} Stream (temp=0.7)")
                 async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=0.7, use_tools=use_tools):
                     yield chunk, label
             except Exception as e:
-                err_msg = {"content": f"Hmph! I couldn't reach my brain server (LM Studio). Make sure it's running on {config.LMSTUDIO_URL}! Error: {str(e)}"}
+                llm_backend = get_backend()
+                err_msg = {"content": llm_backend.get_error_message(e)}
                 yield err_msg, self._get_model_label(config.LLM_MODEL)
 
     def _try_parse_json_tool_call(self, text: str) -> list:

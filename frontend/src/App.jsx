@@ -166,6 +166,7 @@ const App = () => {
   const [backendStatus, setBackendStatus] = useState('offline');
   const [modelName, setModelName] = useState('');
   const [lmstudioUrl, setLmstudioUrl] = useState('');
+  const [llmBackend, setLlmBackend] = useState('lmstudio');
   const [vrmModels, setVrmModels] = useState(['default.vrm']);
   const [vrmCustomModels, setVrmCustomModels] = useState([]);
   const [vrmUploading, setVrmUploading] = useState(false);
@@ -3073,7 +3074,8 @@ const App = () => {
       if (response.ok) {
         const data = await response.json();
         setModelName(data.model);
-        setLmstudioUrl(data.lmstudio_url);
+        setLmstudioUrl(data.lm_base_url || data.lmstudio_url);
+        if (data.llm_backend) setLlmBackend(data.llm_backend);
       }
     } catch (e) {
       console.warn("Could not load active LLM model from health API:", e);
@@ -3090,7 +3092,7 @@ const App = () => {
         }
       }
     } catch (e) {
-      console.warn("Could not load LLM models from LM Studio:", e);
+      console.warn("Could not load LLM models from backend:", e);
     }
   };
 
@@ -4523,13 +4525,69 @@ const App = () => {
                         </label>
                       </div>
 
+                      {/* LLM Backend Type */}
+                      <div className="desktop-form-group">
+                        <label className="desktop-label">LLM Backend</label>
+                        <select
+                          className="desktop-select"
+                          value={profile.settings?.llm_backend || 'lmstudio'}
+                          onChange={(e) => {
+                            handleUpdateSetting('llm_backend', e.target.value);
+                            setLlmBackend(e.target.value);
+                          }}
+                          style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                        >
+                          <option value="lmstudio">LM Studio (Local)</option>
+                          <option value="ollama">Ollama (Local)</option>
+                          <option value="openai">OpenAI-Compatible (Cloud)</option>
+                          <option value="custom">Custom Endpoint</option>
+                        </select>
+                      </div>
+
+                      {/* Base URL (for Ollama / OpenAI / Custom) */}
+                      {llmBackend !== 'lmstudio' && (
+                        <div className="desktop-form-group">
+                          <label className="desktop-label">
+                            {llmBackend === 'ollama' ? 'Ollama URL' : llmBackend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
+                          </label>
+                          <input
+                            type="text"
+                            className="desktop-input"
+                            placeholder={
+                              llmBackend === 'ollama' ? 'http://127.0.0.1:11434' :
+                              llmBackend === 'openai' ? 'https://api.groq.com/openai' :
+                              'http://127.0.0.1:8000/v1'
+                            }
+                            value={profile.settings?.llm_base_url || ''}
+                            onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
+                            style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                          />
+                        </div>
+                      )}
+
+                      {/* API Key (for OpenAI-compatible / Custom with auth) */}
+                      {(llmBackend === 'openai' || llmBackend === 'custom') && (
+                        <div className="desktop-form-group">
+                          <label className="desktop-label">API Key</label>
+                          <input
+                            type="password"
+                            className="desktop-input"
+                            placeholder="sk-..."
+                            value={profile.settings?.llm_api_key || ''}
+                            onChange={(e) => handleUpdateSetting('llm_api_key', e.target.value)}
+                            style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Active Model Selection */}
                       <div className="desktop-form-group">
                         <label className="desktop-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span>Active Model Selection</span>
                           <button
                             onClick={fetchLlmModels}
                             style={{ background: 'none', border: 'none', color: 'var(--accent-purple, #a855f7)', cursor: 'pointer', fontSize: '0.65rem', padding: '0', opacity: 0.75 }}
-                            title="Refresh models from LM Studio"
+                            title="Refresh models from backend"
                           >↻ Refresh</button>
                         </label>
                         <select
@@ -4833,7 +4891,13 @@ const App = () => {
 
                       <div className="spec-list-table" style={{ fontSize: '0.72rem' }}>
                         <div className="spec-row">
-                          <span className="spec-label">LM Studio URL</span>
+                          <span className="spec-label">LLM Backend</span>
+                          <span className="spec-val" style={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all' }}>
+                            {llmBackend || 'lmstudio'}
+                          </span>
+                        </div>
+                        <div className="spec-row">
+                          <span className="spec-label">LLM Endpoint</span>
                           <span className="spec-val" style={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all' }}>
                             {lmstudioUrl || 'http://127.0.0.1:1234'}
                           </span>

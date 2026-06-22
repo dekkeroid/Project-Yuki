@@ -106,7 +106,7 @@ def _setup_tts():
     _download_file(VOICES_URL, VOICES_PATH, "Downloading voice model", 0.55, 0.05)
 
 
-def _setup_profile(selected_model: str = ""):
+def _setup_profile(selected_model: str = "", llm_backend: str = "", llm_base_url: str = "", llm_api_key: str = ""):
     """Create profile.json with defaults if missing, or update model if existing."""
     _set_progress("Creating profile", 0.62)
 
@@ -117,6 +117,12 @@ def _setup_profile(selected_model: str = ""):
                 data = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
                 data.setdefault("settings", {})["llm_model"] = selected_model
                 data["settings"]["no_llm_mode"] = False
+                if llm_backend:
+                    data["settings"]["llm_backend"] = llm_backend
+                if llm_base_url:
+                    data["settings"]["llm_base_url"] = llm_base_url
+                if llm_api_key:
+                    data["settings"]["llm_api_key"] = llm_api_key
                 PROFILE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
                 _set_progress("Creating profile", 0.65, f"Model set to {selected_model}")
             except Exception:
@@ -126,6 +132,10 @@ def _setup_profile(selected_model: str = ""):
             try:
                 data = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
                 data.setdefault("settings", {})["no_llm_mode"] = True
+                if llm_backend:
+                    data["settings"]["llm_backend"] = llm_backend
+                if llm_base_url:
+                    data["settings"]["llm_base_url"] = llm_base_url
                 PROFILE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
                 _set_progress("Creating profile", 0.65, "LLM mode disabled")
             except Exception:
@@ -140,6 +150,9 @@ def _setup_profile(selected_model: str = ""):
         "interaction_count": 0,
         "settings": {
             "llm_model": llm,
+            "llm_backend": llm_backend or "lmstudio",
+            "llm_base_url": llm_base_url or "",
+            "llm_api_key": llm_api_key or "",
             "tts_voice": "af_sarah",
             "tts_rate": "1.0",
             "character_name": "Yuki",
@@ -219,19 +232,24 @@ def _setup_database():
 
 
 def _verify_lmstudio():
-    """Check LM Studio is reachable."""
-    _set_progress("Verifying LM Studio", 0.73)
+    """Check LLM backend is reachable."""
+    from app.agent.llm_backend import get_backend
+    backend = get_backend()
+    _set_progress(f"Verifying {backend.name}", 0.73)
     try:
         req = urllib.request.Request(
-            f"{LMSTUDIO_URL}/v1/models",
+            backend.get_models_url(),
             headers={"User-Agent": "YukiSetup/1.0"}
         )
+        if config.LLM_API_KEY:
+            req.add_header("Authorization", f"Bearer {config.LLM_API_KEY}")
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
-            models = [m.get("id", "") for m in data.get("data", [])]
-            _set_progress("Verifying LM Studio", 0.80, f"Found {len(models)} model(s): {', '.join(models[:3])}")
+            models_key = "data" if "data" in data else "models"
+            models = [m.get("id", "") for m in data.get(models_key, [])]
+            _set_progress(f"Verifying {backend.name}", 0.80, f"Found {len(models)} model(s): {', '.join(models[:3])}")
     except Exception as e:
-        _set_progress("Verifying LM Studio", 0.80, f"Warning: LM Studio not reachable ({e}). You can start it later.")
+        _set_progress(f"Verifying {backend.name}", 0.80, f"Warning: {backend.name} not reachable ({e}). You can start it later.")
 
 
 def _create_marker():
@@ -251,6 +269,9 @@ def _create_marker():
 
 class SetupStartRequest(BaseModel):
     model: Optional[str] = None
+    llm_backend: Optional[str] = None
+    llm_base_url: Optional[str] = None
+    llm_api_key: Optional[str] = None
 
 
 @router.get("/setup", response_class=HTMLResponse)
@@ -271,30 +292,23 @@ async def setup_status():
 
 @router.get("/setup/models")
 async def list_lmstudio_models():
-    """Fetch available models from LM Studio. Returns list + availability."""
+    """Fetch available models from the active LLM backend."""
+    from app.agent.llm_backend import get_backend
+    backend = get_backend()
     try:
-        req = urllib.request.Request(
-            f"{LMSTUDIO_URL}/v1/models",
-            headers={"User-Agent": "YukiSetup/1.0"}
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-            raw = data.get("data", [])
-            models = []
-            for m in raw:
-                mid = m.get("id", "")
-                if mid:
-                    models.append({"id": mid, "loaded": m.get("state") == "loaded"})
-            return JSONResponse({
-                "available": True,
-                "models": models,
-                "recommended": "llama-3.2-3b-instruct",
-            })
+        models = await backend.list_models()
+        return JSONResponse({
+            "available": True,
+            "models": [{"id": m["id"], "loaded": m.get("loaded", True)} for m in models],
+            "recommended": "llama-3.2-3b-instruct",
+            "backend": config.get_backend_type(),
+        })
     except Exception as e:
         return JSONResponse({
             "available": False,
             "models": [],
             "recommended": "llama-3.2-3b-instruct",
+            "backend": config.get_backend_type(),
             "error": str(e),
         })
 
@@ -311,6 +325,17 @@ async def start_setup(req: SetupStartRequest = None):
         return JSONResponse({"status": "already_running", **_progress})
 
     selected_model = req.model if req else ""
+    llm_backend = req.llm_backend if req else ""
+    llm_base_url = req.llm_base_url if req else ""
+    llm_api_key = req.llm_api_key if req else ""
+
+    # Apply backend config for the verification step
+    if llm_backend:
+        config.LLM_BACKEND = llm_backend
+    if llm_base_url:
+        config.LLM_BASE_URL = llm_base_url
+    if llm_api_key:
+        config.LLM_API_KEY = llm_api_key
 
     # Reset progress
     _progress.update({"step": "Starting...", "percent": 0, "done": False, "error": None, "details": []})
@@ -318,7 +343,7 @@ async def start_setup(req: SetupStartRequest = None):
     def run():
         try:
             _setup_tts()
-            _setup_profile(selected_model)
+            _setup_profile(selected_model, llm_backend, llm_base_url, llm_api_key)
             _setup_database()
             _verify_lmstudio()
             _create_marker()

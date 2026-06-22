@@ -262,10 +262,33 @@
     <div class="lmstudio-section" id="lmstudio-section">
       <div class="lmstudio-label">Language Model</div>
 
+      <!-- Backend Type Selector -->
+      <div style="margin-bottom: 12px;">
+        <label style="font-size: 0.78rem; color: #c4b5fd; display: block; margin-bottom: 4px;">LLM Backend</label>
+        <select id="backend-type" onchange="onBackendTypeChange()" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 0.82rem; outline: none; cursor: pointer;">
+          <option value="lmstudio">LM Studio (Local)</option>
+          <option value="ollama">Ollama (Local)</option>
+          <option value="openai">OpenAI-Compatible (Cloud)</option>
+          <option value="custom">Custom Endpoint</option>
+        </select>
+      </div>
+
+      <!-- Base URL (hidden for LM Studio) -->
+      <div id="base-url-section" style="display: none; margin-bottom: 12px;">
+        <label id="base-url-label" style="font-size: 0.78rem; color: #c4b5fd; display: block; margin-bottom: 4px;">Endpoint URL</label>
+        <input type="text" id="base-url-input" placeholder="" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 0.82rem; outline: none; box-sizing: border-box;">
+      </div>
+
+      <!-- API Key (hidden for local backends) -->
+      <div id="api-key-section" style="display: none; margin-bottom: 12px;">
+        <label style="font-size: 0.78rem; color: #c4b5fd; display: block; margin-bottom: 4px;">API Key</label>
+        <input type="password" id="api-key-input" placeholder="sk-..." style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 0.82rem; outline: none; box-sizing: border-box;">
+      </div>
+
       <!-- Checking state -->
       <div class="lmstudio-checking" id="lmstudio-checking">
         <div class="spinner"></div>
-        <span>Detecting LM Studio...</span>
+        <span>Detecting backend...</span>
       </div>
 
       <!-- Warning: not found -->
@@ -337,6 +360,156 @@
   const API = window.location.origin;
   let selectedModel = null;
 
+  // ── Backend type change handler ───────────────────────────────────
+  function onBackendTypeChange() {
+    const type = document.getElementById('backend-type').value;
+    const baseUrlSection = document.getElementById('base-url-section');
+    const baseUrlLabel = document.getElementById('base-url-label');
+    const baseUrlInput = document.getElementById('base-url-input');
+    const apiKeySection = document.getElementById('api-key-section');
+
+    if (type === 'lmstudio') {
+      baseUrlSection.style.display = 'none';
+      apiKeySection.style.display = 'none';
+      // Re-run LM Studio detection
+      detectLMStudio();
+    } else {
+      document.getElementById('lmstudio-checking').classList.add('hidden');
+      document.getElementById('lmstudio-warning').classList.add('hidden');
+      document.getElementById('model-picker').classList.add('hidden');
+
+      if (type === 'ollama') {
+        baseUrlLabel.textContent = 'Ollama URL';
+        baseUrlInput.placeholder = 'http://127.0.0.1:11434';
+        baseUrlInput.value = 'http://127.0.0.1:11434';
+        apiKeySection.style.display = 'none';
+        detectOllama();
+      } else if (type === 'openai') {
+        baseUrlLabel.textContent = 'API Base URL';
+        baseUrlInput.placeholder = 'https://api.groq.com/openai';
+        baseUrlInput.value = '';
+        apiKeySection.style.display = 'block';
+        detectCloudModels();
+      } else {
+        baseUrlLabel.textContent = 'Endpoint URL';
+        baseUrlInput.placeholder = 'http://127.0.0.1:8000/v1';
+        baseUrlInput.value = '';
+        apiKeySection.style.display = 'block';
+        // Custom endpoint — show manual model input
+        document.getElementById('lmstudio-checking').classList.add('hidden');
+        document.getElementById('model-picker').classList.remove('hidden');
+        document.getElementById('picker-count').textContent = 'Enter model name below';
+        const list = document.getElementById('model-list');
+        list.innerHTML = '';
+        const item = document.createElement('div');
+        item.style.padding = '8px';
+        item.innerHTML = '<input type="text" id="custom-model-input" placeholder="model-name" style="width:100%;padding:6px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:white;font-size:0.78rem;outline:none;box-sizing:border-box;">';
+        list.appendChild(item);
+        selectedModel = '';
+        item.querySelector('input').addEventListener('input', (e) => {
+          selectedModel = e.target.value;
+        });
+      }
+    }
+  }
+
+  async function detectOllama() {
+    const checking = document.getElementById('lmstudio-checking');
+    checking.classList.remove('hidden');
+    try {
+      const resp = await fetch(`${API}/setup/models`);
+      const data = await resp.json();
+      checking.classList.add('hidden');
+      if (data.available && data.models.length > 0) {
+        showModelPicker(data.models, data.recommended);
+      } else {
+        document.getElementById('lmstudio-warning').classList.remove('hidden');
+        selectedModel = 'llama-3.2-3b-instruct';
+      }
+    } catch {
+      checking.classList.add('hidden');
+      document.getElementById('lmstudio-warning').classList.remove('hidden');
+      selectedModel = 'llama-3.2-3b-instruct';
+    }
+  }
+
+  async function detectCloudModels() {
+    const checking = document.getElementById('lmstudio-checking');
+    checking.classList.remove('hidden');
+    try {
+      const resp = await fetch(`${API}/setup/models`);
+      const data = await resp.json();
+      checking.classList.add('hidden');
+      if (data.available && data.models.length > 0) {
+        showModelPicker(data.models, data.recommended);
+      } else {
+        // Cloud backends: user can type model name manually
+        document.getElementById('model-picker').classList.remove('hidden');
+        document.getElementById('picker-count').textContent = 'Enter model name below';
+        const list = document.getElementById('model-list');
+        list.innerHTML = '';
+        const item = document.createElement('div');
+        item.style.padding = '8px';
+        item.innerHTML = '<input type="text" id="custom-model-input" placeholder="e.g. llama-3.3-70b-versatile" style="width:100%;padding:6px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:white;font-size:0.78rem;outline:none;box-sizing:border-box;">';
+        list.appendChild(item);
+        selectedModel = '';
+        item.querySelector('input').addEventListener('input', (e) => {
+          selectedModel = e.target.value;
+        });
+      }
+    } catch {
+      checking.classList.add('hidden');
+      document.getElementById('model-picker').classList.remove('hidden');
+      document.getElementById('picker-count').textContent = 'Enter model name below';
+      const list = document.getElementById('model-list');
+      list.innerHTML = '';
+      const item = document.createElement('div');
+      item.style.padding = '8px';
+      item.innerHTML = '<input type="text" id="custom-model-input" placeholder="e.g. llama-3.3-70b-versatile" style="width:100%;padding:6px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:white;font-size:0.78rem;outline:none;box-sizing:border-box;">';
+      list.appendChild(item);
+      selectedModel = '';
+      item.querySelector('input').addEventListener('input', (e) => {
+        selectedModel = e.target.value;
+      });
+    }
+  }
+
+  function showModelPicker(models, recommended) {
+    const picker = document.getElementById('model-picker');
+    picker.classList.remove('hidden');
+    document.getElementById('picker-count').textContent = `${models.length} model(s) found`;
+    const list = document.getElementById('model-list');
+    list.innerHTML = '';
+    const sorted = [...models].sort((a, b) => {
+      const aRec = a.id.toLowerCase().includes((recommended || '').toLowerCase());
+      const bRec = b.id.toLowerCase().includes((recommended || '').toLowerCase());
+      if (aRec && !bRec) return -1;
+      if (!aRec && bRec) return 1;
+      if (a.loaded && !b.loaded) return -1;
+      if (!a.loaded && b.loaded) return 1;
+      return a.id.localeCompare(b.id);
+    });
+    sorted.forEach((m, i) => {
+      const item = document.createElement('label');
+      item.className = 'model-item';
+      const isRec = m.id.toLowerCase().includes((recommended || '').toLowerCase());
+      let badge = '';
+      if (isRec) badge = '<span class="model-badge recommended">Recommended</span>';
+      else if (m.loaded) badge = '<span class="model-badge loaded">Loaded</span>';
+      else badge = '<span class="model-badge offline">Available</span>';
+      item.innerHTML = `
+        <input type="radio" name="llm-model" value="${m.id}" ${i === 0 ? 'checked' : ''}>
+        <span class="model-name" title="${m.id}">${m.id}</span>
+        ${badge}
+      `;
+      list.appendChild(item);
+    });
+    selectedModel = sorted[0].id;
+    list.addEventListener('change', (e) => {
+      if (e.target.name === 'llm-model') selectedModel = e.target.value;
+    });
+  }
+
   // ── On load: detect LM Studio ────────────────────────────────────────
   (async function detectLMStudio() {
     try {
@@ -346,49 +519,7 @@
       document.getElementById('lmstudio-checking').classList.add('hidden');
 
       if (data.available && data.models.length > 0) {
-        const picker = document.getElementById('model-picker');
-        picker.classList.remove('hidden');
-        document.getElementById('picker-count').textContent = `${data.models.length} model(s) found`;
-
-        const list = document.getElementById('model-list');
-        list.innerHTML = '';
-
-        // Sort: recommended first, then loaded, then alphabetical
-        const recommended = data.recommended || 'llama-3.2-3b-instruct';
-        const sorted = [...data.models].sort((a, b) => {
-          const aRec = a.id.toLowerCase().includes(recommended.toLowerCase());
-          const bRec = b.id.toLowerCase().includes(recommended.toLowerCase());
-          if (aRec && !bRec) return -1;
-          if (!aRec && bRec) return 1;
-          if (a.loaded && !b.loaded) return -1;
-          if (!a.loaded && b.loaded) return 1;
-          return a.id.localeCompare(b.id);
-        });
-
-        sorted.forEach((m, i) => {
-          const item = document.createElement('label');
-          item.className = 'model-item';
-
-          const isRec = m.id.toLowerCase().includes(recommended.toLowerCase());
-          let badge = '';
-          if (isRec) badge = '<span class="model-badge recommended">Recommended</span>';
-          else if (m.loaded) badge = '<span class="model-badge loaded">Loaded</span>';
-          else badge = '<span class="model-badge offline">Available</span>';
-
-          item.innerHTML = `
-            <input type="radio" name="llm-model" value="${m.id}" ${i === 0 ? 'checked' : ''}>
-            <span class="model-name" title="${m.id}">${m.id}</span>
-            ${badge}
-          `;
-          list.appendChild(item);
-        });
-
-        // Pre-select first (recommended)
-        selectedModel = sorted[0].id;
-
-        list.addEventListener('change', (e) => {
-          if (e.target.name === 'llm-model') selectedModel = e.target.value;
-        });
+        showModelPicker(data.models, data.recommended);
       } else {
         document.getElementById('lmstudio-warning').classList.remove('hidden');
         selectedModel = 'llama-3.2-3b-instruct';
@@ -426,7 +557,7 @@
       { key: 'tts', label: 'Voice engine', icon: '&#127908;' },
       { key: 'profile', label: 'Profile', icon: '&#128100;' },
       { key: 'database', label: 'Database', icon: '&#128451;' },
-      { key: 'lmstudio', label: 'LM Studio', icon: '&#129504;' },
+      { key: 'lmstudio', label: 'LLM Backend', icon: '&#129504;' },
       { key: 'finalize', label: 'Finalize', icon: '&#10003;' },
     ];
     steps.forEach(s => {
@@ -442,11 +573,20 @@
       stepsList.appendChild(li);
     });
 
-    // POST with selected model
+    // POST with selected model and backend config
+    const backendType = document.getElementById('backend-type').value;
+    const baseUrl = document.getElementById('base-url-input')?.value || '';
+    const apiKey = document.getElementById('api-key-input')?.value || '';
+
     fetch(`${API}/setup/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: selectedModel || '' })
+      body: JSON.stringify({
+        model: selectedModel || '',
+        llm_backend: backendType,
+        llm_base_url: baseUrl,
+        llm_api_key: apiKey,
+      })
     })
       .then(r => r.json())
       .then(data => {
