@@ -413,6 +413,8 @@ def get_settings():
         "llm_model": config.LLM_MODEL,
         "tts_voice": config.TTS_VOICE,
         "tts_rate": config.TTS_RATE,
+        "tts_device": getattr(config, "TTS_DEVICE", "auto"),
+        "stt_device": getattr(config, "STT_DEVICE", "auto"),
         "character_name": config.CHARACTER_NAME,
         "character_persona": config.CHARACTER_PERSONA,
         "crawler_paused": is_crawler_paused(),
@@ -432,6 +434,8 @@ class SettingsUpdateRequest(BaseModel):
     llm_api_key: Optional[str] = None
     tts_voice: Optional[str] = None
     tts_rate: Optional[str] = None
+    tts_device: Optional[str] = None
+    stt_device: Optional[str] = None
     character_name: Optional[str] = None
     character_persona: Optional[str] = None
     crawler_paused: Optional[bool] = None
@@ -468,6 +472,20 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.tts_rate is not None:
         config.TTS_RATE = req.tts_rate.strip()
         memory_manager.update_setting("tts_rate", req.tts_rate.strip())
+    if req.tts_device is not None:
+        device_val = req.tts_device.strip().lower()
+        if device_val in ("auto", "gpu", "cpu"):
+            config.TTS_DEVICE = device_val
+            memory_manager.update_setting("tts_device", device_val)
+            from app.voice.tts import reset_kokoro
+            reset_kokoro()
+    if req.stt_device is not None:
+        device_val = req.stt_device.strip().lower()
+        if device_val in ("auto", "gpu", "cpu"):
+            config.STT_DEVICE = device_val
+            memory_manager.update_setting("stt_device", device_val)
+            from app.voice.stt import reset_whisper
+            reset_whisper()
     if req.character_name is not None:
         config.CHARACTER_NAME = req.character_name.strip()
         memory_manager.update_setting("character_name", req.character_name.strip())
@@ -523,6 +541,8 @@ async def update_settings(req: SettingsUpdateRequest):
             "llm_model": config.LLM_MODEL,
             "tts_voice": config.TTS_VOICE,
             "tts_rate": config.TTS_RATE,
+            "tts_device": getattr(config, "TTS_DEVICE", "auto"),
+            "stt_device": getattr(config, "STT_DEVICE", "auto"),
             "character_name": config.CHARACTER_NAME,
             "character_persona": config.CHARACTER_PERSONA,
             "crawler_paused": crawler.is_crawler_paused(),
@@ -689,6 +709,8 @@ async def reset_profile():
             "llm_api_key": "",
             "tts_voice": "bf_isabella",
             "tts_rate": "1.0",
+            "tts_device": "auto",
+            "stt_device": "auto",
             "character_name": "Yuki",
             "character_persona": """You are Yuki, a brilliant, highly intelligent agentic 3D companion. 
 You live on the user's desktop, and you have the ability to run tools to help them control their system, look up information, and remember their preferences.
@@ -726,8 +748,16 @@ Strict constraints:
     config.LLM_API_KEY = default_profile["settings"]["llm_api_key"]
     config.TTS_VOICE = default_profile["settings"]["tts_voice"]
     config.TTS_RATE = default_profile["settings"]["tts_rate"]
+    config.TTS_DEVICE = default_profile["settings"]["tts_device"]
+    config.STT_DEVICE = default_profile["settings"]["stt_device"]
     config.CHARACTER_NAME = default_profile["settings"]["character_name"]
     config.CHARACTER_PERSONA = default_profile["settings"]["character_persona"]
+    
+    # Reset TTS/STT engines with new device settings
+    from app.voice.tts import reset_kokoro
+    from app.voice.stt import reset_whisper
+    reset_kokoro()
+    reset_whisper()
     
     memory_manager.profile = default_profile
     memory_manager._save_profile()

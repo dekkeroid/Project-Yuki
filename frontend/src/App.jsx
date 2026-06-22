@@ -4323,6 +4323,21 @@ const App = () => {
                         </select>
                       </div>
 
+                      {/* TTS Device Selection */}
+                      <div className="desktop-form-group" style={{ marginTop: '6px' }}>
+                        <label className="desktop-label">TTS Processing Device</label>
+                        <select
+                          className="desktop-select"
+                          value={profile.settings?.tts_device || 'auto'}
+                          onChange={(e) => handleUpdateSetting('tts_device', e.target.value)}
+                          style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                        >
+                          <option value="auto" style={{ background: '#120c21', color: 'white' }}>Auto (Best Available)</option>
+                          <option value="gpu" style={{ background: '#120c21', color: 'white' }}>GPU (CUDA / DirectML)</option>
+                          <option value="cpu" style={{ background: '#120c21', color: 'white' }}>CPU (Force CPU)</option>
+                        </select>
+                      </div>
+
                       {/* Microphone Input Device */}
                       <div className="desktop-form-group" style={{ marginTop: '6px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -4441,6 +4456,21 @@ const App = () => {
                               <option value="float16" style={{ background: '#120c21', color: 'white' }}>float16 (Best for RTX GPU)</option>
                               <option value="int8" style={{ background: '#120c21', color: 'white' }}>int8 (Lightweight CPU / GPU)</option>
                               <option value="float32" style={{ background: '#120c21', color: 'white' }}>float32 (Unquantized - Slowest)</option>
+                            </select>
+                          </div>
+
+                          {/* STT Device Selection */}
+                          <div className="desktop-form-group" style={{ marginTop: '6px' }}>
+                            <label className="desktop-label">STT Processing Device</label>
+                            <select
+                              className="desktop-select"
+                              value={profile.settings?.stt_device || 'auto'}
+                              onChange={(e) => handleUpdateSetting('stt_device', e.target.value)}
+                              style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                            >
+                              <option value="auto" style={{ background: '#120c21', color: 'white' }}>Auto (Best Available)</option>
+                              <option value="gpu" style={{ background: '#120c21', color: 'white' }}>GPU (CUDA)</option>
+                              <option value="cpu" style={{ background: '#120c21', color: 'white' }}>CPU (Force CPU)</option>
                             </select>
                           </div>
 

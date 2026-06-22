@@ -65,6 +65,13 @@ _ensure_model_files()
 _kokoro_instance = None
 _kokoro_lock = None
 
+def reset_kokoro():
+    """Clear the cached Kokoro instance so the next call re-initializes with current config."""
+    global _kokoro_instance, _kokoro_lock
+    _kokoro_instance = None
+    _kokoro_lock = None
+    print("[TTS] Kokoro instance cleared. Will re-initialize on next speech request.")
+
 async def get_kokoro_async() -> Kokoro:
     global _kokoro_instance, _kokoro_lock
     if _kokoro_instance is not None:
@@ -104,11 +111,23 @@ def get_kokoro() -> Kokoro:
     if _kokoro_instance is not None:
         return _kokoro_instance
 
-    print("[TTS] Loading local Kokoro-ONNX neural model into memory...")
+    device_pref = getattr(config, "TTS_DEVICE", "auto").lower()
+    print(f"[TTS] Loading local Kokoro-ONNX neural model into memory... (device preference: {device_pref})")
     import onnxruntime as ort
 
-    # Build provider list: prefer GPU, always keep CPU as fallback
+    # Build provider list based on user device preference
     available = ort.get_available_providers()
+
+    if device_pref == "cpu":
+        # Force CPU only
+        print("[TTS] Device set to CPU. Loading with CPU provider...")
+        session = _build_session(["CPUExecutionProvider"])
+        _kokoro_instance = Kokoro.from_session(session, str(VOICES_PATH))
+        print(f"[TTS] Model loaded on CPU. Active providers: {session.get_providers()}")
+        _warmup_cpu(_kokoro_instance)
+        return _kokoro_instance
+
+    # auto or gpu: try GPU providers
     gpu_provider = None
     if "CUDAExecutionProvider" in available:
         gpu_provider = "CUDAExecutionProvider"
@@ -116,17 +135,20 @@ def get_kokoro() -> Kokoro:
         gpu_provider = "DmlExecutionProvider"
 
     if gpu_provider:
+        providers = [gpu_provider, "CPUExecutionProvider"] if device_pref == "auto" else [gpu_provider]
         print(f"[TTS] Trying GPU provider: {gpu_provider}...")
         try:
-            session = _build_session([gpu_provider, "CPUExecutionProvider"])
+            session = _build_session(providers)
             active_providers = session.get_providers()
             if gpu_provider not in active_providers:
-                # Provider loaded but silently fell back (e.g. missing CUDA toolkit DLLs)
                 print(f"[TTS] {gpu_provider} listed but not active (missing runtime libs). Active: {active_providers}")
+                if device_pref == "gpu":
+                    print(f"[TTS] GPU forced but {gpu_provider} is unavailable. TTS will fail on next request.")
+                    _kokoro_instance = Kokoro.from_session(session, str(VOICES_PATH))
+                    return _kokoro_instance
                 print(f"[TTS] Falling back to CPU. Install the matching CUDA Toolkit to enable GPU.")
             else:
                 kokoro = Kokoro.from_session(session, str(VOICES_PATH))
-                # Validate actual inference works on the GPU provider
                 print("[TTS] Validating GPU provider with warm-up inference...")
                 t_warm = time.time()
                 kokoro.create("hi", voice="af_sarah", speed=1.0, lang="en-us")
@@ -135,6 +157,14 @@ def get_kokoro() -> Kokoro:
                 _kokoro_instance = kokoro
                 return _kokoro_instance
         except Exception as e:
+            if device_pref == "gpu":
+                print(f"[TTS] GPU forced but failed ({type(e).__name__}: {e}). TTS will fail on next request.")
+                try:
+                    session = _build_session([gpu_provider])
+                    _kokoro_instance = Kokoro.from_session(session, str(VOICES_PATH))
+                    return _kokoro_instance
+                except Exception:
+                    pass
             print(f"[TTS] {gpu_provider} is incompatible with this model ({type(e).__name__} : {e}). Falling back to CPU.")
 
     # CPU-only path (fallback or no GPU)
@@ -142,17 +172,20 @@ def get_kokoro() -> Kokoro:
     session = _build_session(["CPUExecutionProvider"])
     _kokoro_instance = Kokoro.from_session(session, str(VOICES_PATH))
     print(f"[TTS] Model loaded on CPU. Active providers: {session.get_providers()}")
+    _warmup_cpu(_kokoro_instance)
 
-    # Warm-up on CPU
+    return _kokoro_instance
+
+
+def _warmup_cpu(kokoro):
+    """Run CPU warm-up inference to pre-compile ONNX graph."""
     try:
         print("[TTS] Running CPU warm-up inference to pre-compile ONNX graph...")
         t_warm = time.time()
-        _kokoro_instance.create("hi", voice="af_sarah", speed=1.0, lang="en-us")
+        kokoro.create("hi", voice="af_sarah", speed=1.0, lang="en-us")
         print(f"[TTS] CPU warm-up done in {int((time.time()-t_warm)*1000)}ms - model is hot and ready.")
     except Exception as e:
         print(f"[TTS] CPU warm-up failed (non-fatal): {e}")
-
-    return _kokoro_instance
 
 
 _kks_instance = None

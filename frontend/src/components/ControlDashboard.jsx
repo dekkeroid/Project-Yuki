@@ -55,6 +55,8 @@ const ControlDashboard = ({
     llm_api_key: '',
     tts_voice: 'en-US-AnaNeural',
     tts_rate: '+15%',
+    tts_device: 'auto',
+    stt_device: 'auto',
     character_name: 'Yuki',
     character_persona: '',
     crawler_paused: false,
@@ -1024,6 +1026,31 @@ const ControlDashboard = ({
                   </select>
                 </div>
 
+                {/* TTS Device Selection */}
+                <div className="identity-field" style={{ marginTop: '4px' }}>
+                  <span className="field-label">TTS Processing Device</span>
+                  <select
+                    value={settings.tts_device || 'auto'}
+                    onChange={(e) => handleUpdateSetting('tts_device', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.78rem',
+                      outline: 'none',
+                      cursor: 'pointer',
+                      marginTop: '2px'
+                    }}
+                  >
+                    <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
+                    <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA / DirectML)</option>
+                    <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
+                  </select>
+                </div>
+
                 {/* Microphone Input Device */}
                 <div className="identity-field" style={{ marginTop: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1252,6 +1279,31 @@ const ControlDashboard = ({
                         <option value="base" style={{ background: '#0b0813', color: 'white' }}>Base Model (Accurate / ~140MB)</option>
                         <option value="small" style={{ background: '#0b0813', color: 'white' }}>Small Model (High Accuracy / ~460MB)</option>
                         <option value="tiny" style={{ background: '#0b0813', color: 'white' }}>Tiny Model (Fastest / ~70MB)</option>
+                      </select>
+                    </div>
+
+                    {/* STT Device Selection */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">STT Processing Device</span>
+                      <select
+                        value={settings.stt_device || 'auto'}
+                        onChange={(e) => handleUpdateSetting('stt_device', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '4px'
+                        }}
+                      >
+                        <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
+                        <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
+                        <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
                       </select>
                     </div>
 

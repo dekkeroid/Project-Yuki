@@ -101,6 +101,8 @@ CRAWLER_PRIMARY_DRIVE = os.environ.get("YUKI_CRAWLER_PRIMARY_DRIVE", "").strip()
 # - am_michael (Michael - Deep US Male)
 TTS_VOICE = os.environ.get("TTS_VOICE", "af_sarah")
 TTS_RATE = os.environ.get("TTS_RATE", "1.0") # Speed factor (default: 1.0)
+TTS_DEVICE = os.environ.get("TTS_DEVICE", "auto")  # "auto", "gpu", "cpu"
+STT_DEVICE = os.environ.get("STT_DEVICE", "auto")  # "auto", "gpu", "cpu"
 # Character Settings
 CHARACTER_NAME = "Yuki"
 CHARACTER_PERSONA = """You are Yuki, a brilliant, highly intelligent agentic 3D companion. 

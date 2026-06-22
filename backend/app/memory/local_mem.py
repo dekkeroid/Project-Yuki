@@ -21,6 +21,8 @@ class MemoryManager:
                 "llm_api_key": "",
                 "tts_voice": "bf_isabella",
                 "tts_rate": "1.0",
+                "tts_device": "auto",
+                "stt_device": "auto",
                 "character_name": "Yuki",
                 "character_persona": config.CHARACTER_PERSONA,
                 "crawler_paused": False,
@@ -59,6 +61,8 @@ class MemoryManager:
                 # Apply settings to runtime config
                 config.TTS_VOICE = data["settings"].get("tts_voice", config.TTS_VOICE)
                 config.TTS_RATE = data["settings"].get("tts_rate", config.TTS_RATE)
+                config.TTS_DEVICE = data["settings"].get("tts_device", config.TTS_DEVICE)
+                config.STT_DEVICE = data["settings"].get("stt_device", config.STT_DEVICE)
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
                 config.CHARACTER_PERSONA = data["settings"].get("character_persona", config.CHARACTER_PERSONA)
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
