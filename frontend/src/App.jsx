@@ -164,6 +164,9 @@ const App = () => {
   // WebSockets & Backend State
   const [socket, setSocket] = useState(null);
   const [backendStatus, setBackendStatus] = useState('offline');
+  const internetStatusRef = useRef(true);
+  const internetFailCountRef = useRef(0);
+  const internetPollRef = useRef(null);
   const [modelName, setModelName] = useState('');
   const [lmstudioUrl, setLmstudioUrl] = useState('');
   const [llmBackend, setLlmBackend] = useState('lmstudio');
@@ -914,47 +917,72 @@ const App = () => {
     }
   }, [systemIdleTime, muteVoice]);
 
-  // Internet presence status & uselessfacts fun fact getter hook
+  // Internet connectivity polling — detects drops/recovery within 2-4 seconds
   useEffect(() => {
-    const handleOnline = async () => {
-      let announced = false;
+    // Check initial state on mount
+    if (!navigator.onLine) {
+      internetStatusRef.current = false;
       if (!profile?.settings?.no_llm_mode) {
-        try {
-          const res = await fetch("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en");
-          if (res.ok) {
-            const data = await res.json();
-            const fact = data.text;
-            if (fact) {
-              const msg = `Internet connected again! Did you know? ${fact}`;
-              setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
-              speakSystemMessage(msg, 'happy');
-              announced = true;
+        const msg = "Oh no! Master, I think my connection to the internet is gone...";
+        setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
+        speakSystemMessage(msg, 'sad');
+      }
+    }
+
+    const CHECK_URL = "https://dns.google/resolve?name=google.com&type=A";
+
+    const checkInternet = async () => {
+      try {
+        const res = await fetch(CHECK_URL, { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          // Internet is online
+          internetFailCountRef.current = 0;
+          if (!internetStatusRef.current) {
+            // Recovered from offline
+            internetStatusRef.current = true;
+            if (!profile?.settings?.no_llm_mode) {
+              let announced = false;
+              try {
+                const factRes = await fetch("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en");
+                if (factRes.ok) {
+                  const factData = await factRes.json();
+                  if (factData.text) {
+                    const msg = `Internet connected again! Did you know? ${factData.text}`;
+                    setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
+                    speakSystemMessage(msg, 'happy');
+                    announced = true;
+                  }
+                }
+              } catch (_) {}
+              if (!announced) {
+                const msg = "Internet connected again! I'm so happy we are back online, Master!";
+                setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
+                speakSystemMessage(msg, 'happy');
+              }
             }
           }
-        } catch (err) {
-          console.warn("Failed to fetch fun fact:", err);
+        } else {
+          throw new Error(`HTTP ${res.status}`);
+        }
+      } catch (_) {
+        // Fetch failed — count consecutive failures
+        internetFailCountRef.current += 1;
+        // Require 2 consecutive failures (4 seconds) before announcing offline
+        if (internetStatusRef.current && internetFailCountRef.current >= 2) {
+          internetStatusRef.current = false;
+          if (!profile?.settings?.no_llm_mode) {
+            const msg = "Oh no! Master, I think my connection to the internet is gone...";
+            setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
+            speakSystemMessage(msg, 'sad');
+          }
         }
       }
-      
-      if (!announced) {
-        const msg = "Internet connected again! I'm so happy we are back online, Master!";
-        setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
-        speakSystemMessage(msg, 'happy');
-      }
     };
 
-    const handleOffline = () => {
-      const msg = "Oh no! Master, I think my connection to the internet is gone...";
-      setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
-      speakSystemMessage(msg, 'sad');
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    internetPollRef.current = setInterval(checkInternet, 2000);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      if (internetPollRef.current) clearInterval(internetPollRef.current);
     };
   }, [profile, muteVoice]);
 
