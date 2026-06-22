@@ -24,6 +24,10 @@ extraResources:
     to: backend/.env
     filter:
       - "**/*"
+  - from: ./dist
+    to: frontend/dist
+    filter:
+      - "**/*"
   - from: ./dist/models
     to: models
     filter:

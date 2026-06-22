@@ -1496,3 +1496,40 @@ async def websocket_endpoint(websocket: WebSocket):
             chat_task.cancel()
         if websocket in active_websockets:
             active_websockets.remove(websocket)
+
+
+# ---------------------------------------------------------------------------
+# Serve the React frontend (dist/) so the app is accessible via HTTP
+# on port 58392 from any browser (localhost or LAN).
+# ---------------------------------------------------------------------------
+
+def _resolve_frontend_dir():
+    """Resolve the path to the built frontend dist/ directory."""
+    if getattr(sys, 'frozen', False):
+        # Packaged: resources/frontend/dist/ next to the exe
+        return Path(sys.executable).parent / "resources" / "frontend" / "dist"
+    # Dev: frontend/dist/ relative to project root
+    return Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+_frontend_dir = _resolve_frontend_dir()
+
+if _frontend_dir.exists():
+    from starlette.staticfiles import StaticFiles
+    from starlette.responses import FileResponse
+
+    _assets_dir = _frontend_dir / "assets"
+    if _assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="static-assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """SPA catch-all: serve static files or fall back to index.html."""
+        # Try to serve the exact file (CSS, JS, fonts, images, etc.)
+        file_path = _frontend_dir / full_path
+        if full_path and file_path.is_file():
+            return FileResponse(str(file_path))
+        # SPA fallback: serve index.html for client-side routing
+        index = _frontend_dir / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return {"error": "Frontend not built. Run 'npm run build' in frontend/."}
