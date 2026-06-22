@@ -1180,6 +1180,8 @@ const App = () => {
     }
   };
   const reconnectTimeoutRef = useRef(null);
+  const reconnectAttemptRef = useRef(0);
+  const healthCheckIntervalRef = useRef(null);
 
   const isNativeSpeakingRef = useRef(false);
   const bubbleTimeoutRef = useRef(null);
@@ -1929,6 +1931,7 @@ const App = () => {
 
     ws.onopen = () => {
       setBackendStatus('online');
+      reconnectAttemptRef.current = 0;
       console.log("WebSocket connected to backend.");
     };
 
@@ -2127,11 +2130,15 @@ const App = () => {
     };
 
     ws.onclose = () => {
+      if (socketRef.current !== ws) return;
       setBackendStatus('offline');
       setSocket(null);
       socketRef.current = null;
-      console.warn("WebSocket disconnected. Retrying in 5 seconds...");
-      reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000);
+      const attempt = reconnectAttemptRef.current;
+      const delay = Math.min(5000 * Math.pow(2, attempt), 60000);
+      reconnectAttemptRef.current = attempt + 1;
+      console.warn(`WebSocket disconnected. Retrying in ${delay / 1000}s (attempt ${attempt + 1})...`);
+      reconnectTimeoutRef.current = setTimeout(connectWebSocket, delay);
     };
 
     ws.onerror = (e) => {
@@ -3149,6 +3156,22 @@ const App = () => {
     fetchVrmModels();
     fetchLlmModels();
 
+    // Periodic health check — catches dead connections that WS onclose misses
+    healthCheckIntervalRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+            setBackendStatus('online');
+          }
+        } else {
+          setBackendStatus('offline');
+        }
+      } catch {
+        setBackendStatus('offline');
+      }
+    }, 30000);
+
     return () => {
       if (socketRef.current) {
         socketRef.current.onclose = null;
@@ -3156,6 +3179,9 @@ const App = () => {
       }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (healthCheckIntervalRef.current) {
+        clearInterval(healthCheckIntervalRef.current);
       }
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       window.speechSynthesis.cancel();

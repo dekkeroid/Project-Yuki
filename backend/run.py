@@ -28,6 +28,8 @@ if __name__ == "__main__":
             from app.main import app
         else:
             from app.main_setup import app
-        uvicorn.run(app, host=host, port=port, reload=False)
+        uvicorn.run(app, host=host, port=port, reload=False,
+                    ws_ping_interval=30, ws_ping_timeout=10)
     else:
-        uvicorn.run(f"{module}:app", host=host, port=port, reload=reload)
+        uvicorn.run(f"{module}:app", host=host, port=port, reload=reload,
+                    ws_ping_interval=30, ws_ping_timeout=10)

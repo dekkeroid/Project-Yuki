@@ -1420,11 +1420,6 @@ async def websocket_endpoint(websocket: WebSocket):
         print("Frontend disconnected.")
     except Exception as e:
         print(f"WebSocket error: {e}")
-        try:
-            friendly_error = await agent_executor.get_friendly_error_explanation(str(e))
-            await websocket.send_json({"type": "error", "message": friendly_error})
-        except Exception:
-            pass
     finally:
         if chat_task and not chat_task.done():
             chat_task.cancel()
