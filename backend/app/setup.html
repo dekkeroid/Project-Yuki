@@ -676,11 +676,18 @@
   }
 
   function restartApp() {
-    if (window.electronAPI && window.electronAPI.restartApp) {
-      window.electronAPI.restartApp();
-    } else {
-      window.location.reload();
+    const btn = document.getElementById('btn-restart');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px;border-color:rgba(255,255,255,0.2);border-top-color:white"></span> Launching Yuki...';
     }
+    setTimeout(() => {
+      if (window.electronAPI && window.electronAPI.restartApp) {
+        window.electronAPI.restartApp();
+      } else {
+        window.location.reload();
+      }
+    }, 600);
   }
 </script>
 </body>

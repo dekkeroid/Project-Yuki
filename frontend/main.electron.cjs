@@ -602,6 +602,74 @@ function createSetupWindow() {
   setupWindow.on('closed', () => { setupWindow = null; });
 }
 
+// ---------- Splash Window (shown during backend startup) ----------
+
+function createSplashWindow() {
+  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+  const splashWidth = 360;
+  const splashHeight = 260;
+
+  const splash = new BrowserWindow({
+    width: splashWidth,
+    height: splashHeight,
+    x: Math.round((screenWidth - splashWidth) / 2),
+    y: Math.round((screenHeight - splashHeight) / 2),
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+
+  splash.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0612;
+    display: flex; justify-content: center; align-items: center;
+    height: 100vh; font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden; -webkit-app-region: drag;
+    border-radius: 16px;
+  }
+  .container { text-align: center; -webkit-app-region: no-drag; }
+  .logo {
+    font-size: 32px; font-weight: 700;
+    background: linear-gradient(135deg, #c084fc, #a855f7, #7c3aed);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    letter-spacing: 3px; margin-bottom: 24px;
+  }
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid rgba(168,85,247,0.15);
+    border-top-color: #a855f7;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto 18px;
+  }
+  .status {
+    font-size: 13px; color: rgba(255,255,255,0.4);
+    letter-spacing: 0.5px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">YUKI</div>
+    <div class="spinner"></div>
+    <div class="status">Launching...</div>
+  </div>
+</body>
+</html>`)}`);
+
+  splash.on('closed', () => { splash = null; });
+  return splash;
+}
+
 // ---------- App lifecycle ----------
 
 // Global IPC handlers (registered once, work for both setup and main windows)
@@ -626,6 +694,12 @@ app.whenReady().then(async () => {
   const setupDone = isSetupComplete();
   console.log(`[Electron] Setup complete: ${setupDone}`);
 
+  // Show splash screen during backend startup (packaged mode only)
+  let splash = null;
+  if (app.isPackaged && setupDone) {
+    splash = createSplashWindow();
+  }
+
   // Start the backend — it will serve either setup routes or full API
   const backendReady = await startBackend();
   if (!backendReady) {
@@ -639,6 +713,12 @@ app.whenReady().then(async () => {
     // Normal launch — show main window
     createWindow();
   }
+
+  // Close splash once main window is ready
+  if (splash && !splash.isDestroyed()) {
+    splash.close();
+  }
+
   createTray();
 
   globalShortcut.register('Alt+S', () => {
