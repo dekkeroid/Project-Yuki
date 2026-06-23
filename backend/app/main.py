@@ -50,13 +50,54 @@ from app.tools.safety import approve_pending_confirmation, authorize_tool_call, 
 # ---------------------------------------------------------------------------
 # Lifespan context manager (replaces deprecated @app.on_event)
 # ---------------------------------------------------------------------------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup and shutdown logic for the FastAPI application."""
+async def _warmup_tts():
+    """Background: load Kokoro TTS model + warmup after server is live."""
     global tts_online_status
+    print("[Startup] Initializing local Kokoro-ONNX neural TTS engine...")
+    try:
+        audio_bytes = await asyncio.wait_for(generate_speech_bytes("hi"), timeout=60.0)
+        if audio_bytes:
+            print("[Startup] Local Kokoro neural voice engine loaded successfully and active.")
+            tts_online_status = True
+    except asyncio.TimeoutError:
+        print("[Startup] Local Kokoro neural voice engine failed to load: initialization timed out after 60 seconds.")
+    except Exception as e:
+        print(f"[Startup] Local Kokoro neural voice engine failed to load: {e}")
+        tts_online_status = False
 
-    # ── Startup ──────────────────────────────────────────────────────────
-    print("Initializing background crawler and file indexing database...")
+
+async def _connect_mcp_bridge():
+    """Background: connect MCP stdio tool bridge after server is live."""
+    print("[Startup] Connecting stdio MCP tool bridge...")
+    mcp_ready = await agent_executor.mcp_tools.ensure_connected()
+    if not mcp_ready:
+        message = f"Stdio MCP tool bridge failed to start: {agent_executor.mcp_tools.last_error}"
+        if config.MCP_FALLBACK_TO_LOCAL:
+            print(f"[Startup] {message}. Falling back to local tool dispatcher.")
+        else:
+            print(f"[Startup] {message}")
+
+
+async def _validate_cloud_key():
+    """Background: validate cloud API key after server is live."""
+    backend_type = config.get_backend_type()
+    if backend_type in ("openai", "custom") and not config.LLM_API_KEY:
+        print(f"[Startup] WARNING: {backend_type.title()} backend selected but no API key configured.")
+    elif backend_type in ("openai", "custom") and config.LLM_API_KEY:
+        try:
+            from app.agent.llm_backend import get_backend
+            backend = get_backend()
+            models = await asyncio.wait_for(backend.list_models(), timeout=10.0)
+            print(f"[Startup] API key validated. Found {len(models)} model(s) on {backend.name}.")
+        except asyncio.TimeoutError:
+            print(f"[Startup] WARNING: Timed out validating API key against {backend.name}.")
+        except Exception as e:
+            print(f"[Startup] WARNING: API key validation failed for {backend.name}: {e}.")
+
+
+async def _start_crawler_bg():
+    """Background: init DB and start file crawler after server is live."""
+    print("[Startup] Initializing file crawler and indexing database...")
     try:
         from app.memory import crawler
         initial_paused = memory_manager.profile["settings"].get("crawler_paused", False)
@@ -73,53 +114,31 @@ async def lifespan(app: FastAPI):
 
         start_crawler_services()
     except Exception as e:
-        print(f"Failed to start crawler services: {e}")
+        print(f"[Startup] Failed to start crawler services: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown logic for the FastAPI application."""
+    global tts_online_status
+
+    # ── Startup — lightweight tasks only (server starts accepting ASAP) ──
+    print("[Startup] Server is live — deferring heavy initialization to background...")
+
+    # Fire-and-forget: all heavy init runs after yield (server already accepting)
+    if config.TOOL_TRANSPORT == "mcp-stdio":
+        asyncio.create_task(_connect_mcp_bridge())
 
     if not getattr(config, 'NO_LLM_MODE', False):
         backend_type = config.get_backend_type()
-        print(f"Verifying brain state. Backend: {backend_type}, model: '{config.LLM_MODEL}'")
-
-        # Validate API key for cloud backends
-        if backend_type in ("openai", "custom") and not config.LLM_API_KEY:
-            print(f"WARNING: {backend_type.title()} backend selected but no API key configured. LLM calls will likely fail with 401 errors.")
-        elif backend_type in ("openai", "custom") and config.LLM_API_KEY:
-            # Quick validation: try to list models to check if key is valid
-            try:
-                from app.agent.llm_backend import get_backend
-                backend = get_backend()
-                models = await asyncio.wait_for(backend.list_models(), timeout=10.0)
-                print(f"API key validated. Found {len(models)} model(s) on {backend.name}.")
-            except asyncio.TimeoutError:
-                print(f"WARNING: Timed out validating API key against {backend.name}. Key may be invalid or server unreachable.")
-            except Exception as e:
-                print(f"WARNING: API key validation failed for {backend.name}: {e}. LLM calls may fail.")
-
+        print(f"[Startup] Backend: {backend_type}, model: '{config.LLM_MODEL}'")
+        asyncio.create_task(_validate_cloud_key())
         asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
     else:
-        print("NO_LLM_MODE is enabled. Skipping LLM auto-load on startup.")
+        print("[Startup] NO_LLM_MODE enabled — skipping LLM auto-load.")
 
-    if config.TOOL_TRANSPORT == "mcp-stdio":
-        print("Verifying stdio MCP tool bridge...")
-        mcp_ready = await agent_executor.mcp_tools.ensure_connected()
-        if not mcp_ready:
-            message = f"Stdio MCP tool bridge failed to start: {agent_executor.mcp_tools.last_error}"
-            if config.MCP_FALLBACK_TO_LOCAL:
-                print(f"{message}. Falling back to local tool dispatcher.")
-            else:
-                raise RuntimeError(message)
-
-    print("Initializing local Kokoro-ONNX neural TTS engine...")
-    try:
-        audio_bytes = await asyncio.wait_for(generate_speech_bytes("hi"), timeout=60.0)
-        if audio_bytes:
-            print("Local Kokoro neural voice engine loaded successfully and active.")
-            tts_online_status = True
-    except asyncio.TimeoutError:
-        print("Local Kokoro neural voice engine failed to load: initialization timed out after 60 seconds.")
-    except Exception as e:
-        print(f"Local Kokoro neural voice engine failed to load: {e}")
-        print("Offline local neural TTS service is unavailable. Enabling offline browser fallback by default.")
-        tts_online_status = False
+    asyncio.create_task(_warmup_tts())
+    asyncio.create_task(_start_crawler_bg())
 
     yield
 

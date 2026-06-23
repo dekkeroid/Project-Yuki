@@ -133,9 +133,9 @@ const BATTERY_UNPLUG_RESPONSES = {
   ],
   // 30-40% — Sad + hide warning
   danger: [
-    (p) => `Unplugged... ${p}%... Master, I'm getting scared. I'm going to hide myself to save power. See you when you plug me back in!`,
-    (p) => `Power's out. We're at ${p}%. That's... that's not much left, Master... I'm going to hide until you plug me back in, okay?`,
-    (p) => `We're on battery at ${p}%. I don't... I don't like this at all. I'm going to hide myself now. Wake me up when the charger is back!`,
+    (p) => `Unplugged... ${p}%... Master, I'm getting scared. Please plug us back in.`,
+    (p) => `Power's out. We're at ${p}%. That's... that's not much left, Master... Are we gonna be okay Master?`,
+    (p) => `We're on battery at ${p}%. I don't... I don't like this at all. We need to plug back in, Master.`,
     (p) => `Unplugged! ${p}%... Master, please. I don't want to go to sleep yet, but I'm hiding to save power. Plug me back in soon, please!`,
   ],
   // 20-30% — Very worried + hide
@@ -460,6 +460,41 @@ const App = () => {
 
   const showDesktopDropdown = (cmdSuggestions.length > 0) || (desktopSearchMode !== null);
 
+  // ---------- Global error handlers (Electron) ----------
+  useEffect(() => {
+    const isElectron = window.electronAPI?.isElectron;
+    if (!isElectron) return;
+
+    const handleError = (event) => {
+      event.preventDefault();
+      console.error('[Global] Uncaught error:', event.error);
+    };
+    const handleRejection = (event) => {
+      event.preventDefault();
+      console.error('[Global] Unhandled promise rejection:', event.reason);
+    };
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+
+    // Subscribe to backend status from main process
+    const unsub = window.electronAPI.onBackendStatus?.((data) => {
+      console.log('[Backend Status]', data.status, data);
+      if (data.status === 'online') {
+        setBackendStatus('online');
+      } else if (data.status === 'crashing') {
+        setBackendStatus('offline');
+      } else if (data.status === 'stopped') {
+        setBackendStatus('offline');
+      }
+    });
+
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+      unsub?.();
+    };
+  }, []);
+
   useEffect(() => {
     setActiveCmdIdx(-1);
   }, [activeDesktopSuggestions.length]);
@@ -485,10 +520,10 @@ const App = () => {
     const newText = `${cmdPrefix} ${pathVal}`;
     setInputText(newText);
     setActiveCmdIdx(-1);
-    
+
     // Submit command immediately
     setTimeout(() => {
-      const fakeEvent = { preventDefault: () => {} };
+      const fakeEvent = { preventDefault: () => { } };
       handleSendMessage(fakeEvent, newText, true);
     }, 50);
   };
@@ -1103,7 +1138,7 @@ const App = () => {
                       announced = true;
                     }
                   }
-                } catch (_) {}
+                } catch (_) { }
               }
               if (!announced) {
                 const msg = INTERNET_RECOVERY_RESPONSES[Math.floor(Math.random() * INTERNET_RECOVERY_RESPONSES.length)];
@@ -1436,7 +1471,7 @@ const App = () => {
         isSpeechRecActiveRef.current = true;
         setIsListening(true);
         isRecordingRef.current = true;
-        
+
         const deviceId = selectedMicDeviceIdRef.current;
         const constraints = {
           audio: {
@@ -1446,9 +1481,9 @@ const App = () => {
             autoGainControl: true
           }
         };
-        
+
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        
+
         // Race condition: check if listening was stopped while requesting microphone access
         if (!isSpeechRecActiveRef.current) {
           console.log("[STT] startSpeechRecognition aborted during getUserMedia. Cleaning up stream.");
@@ -1457,29 +1492,29 @@ const App = () => {
         }
 
         micStreamRef.current = stream;
-        
+
         const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
-        
+
         mediaRecorder.ondataavailable = (event) => {
           if (event.data && event.data.size > 0) {
             audioChunksRef.current.push(event.data);
           }
         };
-        
+
         mediaRecorder.onstop = async () => {
           console.log("[STT] MediaRecorder stopped.");
-          
+
           // Stop all stream tracks to release mic resource
           if (micStreamRef.current) {
             micStreamRef.current.getTracks().forEach(track => track.stop());
             micStreamRef.current = null;
           }
-          
+
           // Clean up analyser
           if (micAudioContextRef.current) {
-            try { micAudioContextRef.current.close(); } catch(e) {}
+            try { micAudioContextRef.current.close(); } catch (e) { }
             micAudioContextRef.current = null;
           }
           micAnalyserRef.current = null;
@@ -1491,11 +1526,11 @@ const App = () => {
             isSpeechRecActiveRef.current = false;
             return;
           }
-          
+
           isRecordingRef.current = false;
           setIsListening(false);
           isSpeechRecActiveRef.current = false;
-          
+
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           if (audioChunksRef.current.length === 0 || audioBlob.size < 3000) {
             console.log(`[STT] Recording too short or empty (${audioBlob.size} bytes). Ignoring.`);
@@ -1503,30 +1538,30 @@ const App = () => {
             updateListeningState();
             return;
           }
-          
+
           // Set transcribing state FIRST to prevent coordinator race
           setIsTranscribing(true);
-          
+
           // Call transcription API
           stopAllPlayback();
-          
+
           const sttStartTime = Date.now();
           try {
             logSTTStatus(`Transcribing (${audioBlob.size} bytes)...`);
             const formData = new FormData();
             formData.append("file", audioBlob, "speech.webm");
             formData.append("model", whisperModelRef.current);
-            
+
             const res = await fetch(`${API_BASE}/api/speech/transcribe`, {
               method: "POST",
               body: formData
             });
-            
+
             if (!res.ok) throw new Error(`Server returned code ${res.status}`);
             const data = await res.json();
             const sttDurationMs = Date.now() - sttStartTime;
             logSTTStatus(`Transcribed: "${data.text}" in ${sttDurationMs}ms`);
-            
+
             setIsTranscribing(false);
             if (data.text && data.text.trim()) {
               processSTTTranscript(data.text, sttDurationMs);
@@ -1536,10 +1571,10 @@ const App = () => {
           } catch (e) {
             logSTTStatus(`Whisper STT transcription failed: ${e.message}`);
             setIsTranscribing(false);
-            
-            setMessages((prev) => [...prev, { 
-              role: 'system', 
-              content: "System Notice: Local Whisper Speech-to-Text transcription failed. Please verify your backend server is online." 
+
+            setMessages((prev) => [...prev, {
+              role: 'system',
+              content: "System Notice: Local Whisper Speech-to-Text transcription failed. Please verify your backend server is online."
             }]);
             updateListeningState();
           }
@@ -1547,28 +1582,28 @@ const App = () => {
 
         mediaRecorder.start(250);
         logSTTStatus("Listening...");
-        
+
         // Setup Web Audio VAD
         const micAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const micAnalyser = micAudioCtx.createAnalyser();
         micAnalyser.fftSize = 64;
         const micSource = micAudioCtx.createMediaStreamSource(stream);
         micSource.connect(micAnalyser);
-        
+
         micAudioContextRef.current = micAudioCtx;
         micAnalyserRef.current = micAnalyser;
-        
+
         vadSpeakingRef.current = false;
         vadSilenceStartRef.current = null;
         vadActivationTimeRef.current = Date.now();
         vadActiveRef.current = true;
-        
+
         const bufferLength = micAnalyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
-        
+
         const checkMicVolume = () => {
           if (!vadActiveRef.current || !isRecordingRef.current || !micAnalyserRef.current) return;
-          
+
           micAnalyserRef.current.getByteFrequencyData(dataArray);
           let sum = 0;
           for (let i = 0; i < bufferLength; i++) {
@@ -1576,10 +1611,10 @@ const App = () => {
           }
           const average = sum / bufferLength;
           const normalized = average / 255.0;
-          
+
           const micThreshold = vadThresholdRef.current;
           const now = Date.now();
-          
+
           if (normalized > micThreshold) {
             // Ignore volume spikes in the first 400ms to filter out hardware startup pops
             if (now - vadActivationTimeRef.current > 400) {
@@ -1604,12 +1639,12 @@ const App = () => {
               }
             }
           }
-          
+
           setTimeout(checkMicVolume, 50);
         };
-        
+
         checkMicVolume();
-        
+
         // Setup Max safety timeout to auto-stop recording after 15 seconds
         if (maxRecordingTimeoutRef.current) {
           clearTimeout(maxRecordingTimeoutRef.current);
@@ -1658,10 +1693,10 @@ const App = () => {
         clearTimeout(maxRecordingTimeoutRef.current);
         maxRecordingTimeoutRef.current = null;
       }
-      
+
       // Deactivate VAD immediately
       vadActiveRef.current = false;
-      
+
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
         try {
           mediaRecorderRef.current.stop();
@@ -1674,7 +1709,7 @@ const App = () => {
           try {
             micStreamRef.current.getTracks().forEach(track => track.stop());
             micStreamRef.current = null;
-          } catch (e) {}
+          } catch (e) { }
         }
       }
     } else {
@@ -1695,7 +1730,7 @@ const App = () => {
   const updateListeningState = () => {
     const targetListen = shouldListen();
     console.log(`[STT Coordinator] shouldListen=${targetListen} (isPlaying=${isPlayingRef.current}, isThinking=${isThinkingRef.current}, ttsStreamActive=${ttsStreamActiveRef.current}, isNativeSpeaking=${isNativeSpeakingRef.current}, isTranscribing=${isTranscribingRef.current})`);
-    
+
     if (targetListen) {
       startSpeechRecognition();
     } else {
@@ -1710,28 +1745,28 @@ const App = () => {
 
   const stopAllPlayback = () => {
     console.log("[Playback] stopAllPlayback triggered.");
-    
+
     // Abort active recording if any
     isRecordingRef.current = false;
     if (maxRecordingTimeoutRef.current) {
       clearTimeout(maxRecordingTimeoutRef.current);
       maxRecordingTimeoutRef.current = null;
     }
-    
+
     // Clear mic activation timeout if any
     if (micActivationTimeoutRef.current) {
       clearTimeout(micActivationTimeoutRef.current);
       micActivationTimeoutRef.current = null;
     }
-    
 
-    
+
+
     // 1. Clear queues and state
     audioQueueRef.current = [];
     isPlayingRef.current = false;
     isNativeSpeakingRef.current = false;
     hasReceivedAudioRef.current = false;
-    
+
     // 2. Stop HTML5 audio
     if (audioRef.current) {
       try {
@@ -1745,7 +1780,7 @@ const App = () => {
         console.warn("Error stopping HTML5 audio:", e);
       }
     }
-    
+
     // 3. Clear any pending timeouts
     if (playbackTimeoutRef.current) {
       clearTimeout(playbackTimeoutRef.current);
@@ -1755,7 +1790,7 @@ const App = () => {
       clearTimeout(bubbleTimeoutRef.current);
       bubbleTimeoutRef.current = null;
     }
-    
+
     // 4. Cancel native speech
     try {
       window.speechSynthesis.cancel();
@@ -1766,12 +1801,12 @@ const App = () => {
       clearInterval(nativeSpeechIntervalRef.current);
       nativeSpeechIntervalRef.current = null;
     }
-    
+
     // 5. Reset UI indicators
     setCurrentSpeechText('');
     setAudioLevel(0);
     setAvatarExpression('neutral');
-    
+
     // 6. Sync listening state
     updateListeningState();
   };
@@ -1849,7 +1884,7 @@ const App = () => {
       // If muted, just display subtitle bubble then play next chunk after simulated reading delay
       setCurrentSpeechText(speechText);
       setIsThinking(false);
-      
+
       const readingDelay = Math.max(2000, speechText.length * 60);
       if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
       playbackTimeoutRef.current = setTimeout(() => {
@@ -1936,12 +1971,12 @@ const App = () => {
         isPlayingRef.current = false;
         hasReceivedAudioRef.current = false;
         setAudioLevel(0);
-        
+
         // Delay clearing bubble to let the user finish reading the last sentence
         bubbleTimeoutRef.current = setTimeout(() => {
           setCurrentSpeechText('');
         }, 2000);
-        
+
         // Start 8-second Continued Conversation window if in voice command mode
         if (isVoiceCommandModeRef.current) {
           startSessionTimeout();
@@ -2019,7 +2054,7 @@ const App = () => {
       setIsThinking(false);
       setTtsStreamActive(false);
       updateListeningState();
-      
+
       if (nativeSpeechIntervalRef.current) clearInterval(nativeSpeechIntervalRef.current);
 
       // Simulate speech mouth movement by cycling audioLevel
@@ -2037,7 +2072,7 @@ const App = () => {
         clearInterval(nativeSpeechIntervalRef.current);
         nativeSpeechIntervalRef.current = null;
       }
-      
+
       // Delay clearing bubble to let the user finish reading
       bubbleTimeoutRef.current = setTimeout(() => {
         setCurrentSpeechText('');
@@ -2183,7 +2218,7 @@ const App = () => {
       } else if (msg.type === 'stream_done') {
         setIsThinking(false);
         setTtsStreamActive(false);
-        
+
         setMessages((prev) => {
           const newMessages = [...prev];
           if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
@@ -2251,14 +2286,14 @@ const App = () => {
         } else if (msg.name.startsWith("Delete file:")) {
           displayMessage = `Yuki wants to delete the following file:\n\n${msg.name.replace("Delete file:", "").trim()}`;
         }
-        
+
         setConfirmModal({
           visible: true,
           title: 'Security Confirmation',
           message: displayMessage,
           onConfirm: () => {
             setConfirmModal(prev => ({ ...prev, visible: false }));
-            
+
             // Refocus, disable clickthrough suspension temporarily
             window.yukiConfirmJustClosed = true;
             if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
@@ -2281,7 +2316,7 @@ const App = () => {
           },
           onCancel: () => {
             setConfirmModal(prev => ({ ...prev, visible: false }));
-            
+
             // Refocus, disable clickthrough suspension temporarily
             window.yukiConfirmJustClosed = true;
             if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
@@ -2336,7 +2371,7 @@ const App = () => {
     if (!deviceId) return; // Use system default
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { 
+        audio: {
           deviceId: { exact: deviceId },
           echoCancellation: false,
           noiseSuppression: false,
@@ -2375,9 +2410,9 @@ const App = () => {
       const voiceCommands = [
         {
           name: 'Stop Listening',
-          match: () => lower.includes("yuki stop listening") || 
-                       lower === "stop listening" || 
-                       (isSession && (lower === "stop" || lower === "exit" || lower === "quit")),
+          match: () => lower.includes("yuki stop listening") ||
+            lower === "stop listening" ||
+            (isSession && (lower === "stop" || lower === "exit" || lower === "quit")),
           action: () => {
             logSTTStatus("Voice Command Mode stop command detected.");
             isVoiceCommandModeRef.current = false;
@@ -2388,7 +2423,7 @@ const App = () => {
 
             setMessages((prev) => [...prev, { role: 'assistant', content: "listening mode off" }]);
             speakSystemMessage("Listening mode off.");
-            
+
             setIsThinking(false);
             setTtsStreamActive(false);
           }
@@ -2423,13 +2458,13 @@ const App = () => {
 
       // Determine what text to send
       let queryText = transcript;
-      
+
       if (hasTriggerWord) {
         // Find yuki in the text and extract query.
         const parts = cleaned.split(/\byuki\b/i);
         const before = parts[0].trim();
         const after = parts[1] ? parts[1].trim() : "";
-        
+
         if (after) {
           queryText = after;
         } else if (before) {
@@ -2452,10 +2487,10 @@ const App = () => {
         const remaining = cmdMatch[2].trim();
         const firstWord = remaining.split(/\s+/)[0].toLowerCase();
         const possibleSlashCmd = "/" + firstWord;
-        
+
         // Only convert to slash command if it is a registered local command
         const commandExists = SLASH_COMMANDS.some(c => c.cmd.toLowerCase() === possibleSlashCmd);
-        
+
         if (commandExists) {
           const commandText = "/" + remaining;
           sendMessageText(commandText, sttTimeMs);
@@ -2476,7 +2511,7 @@ const App = () => {
       setIsTalkMode(false);
       stopSpeechRecognition();
       setIsListening(false);
-      
+
       setIsThinking(false);
       setTtsStreamActive(false);
       return;
@@ -2523,7 +2558,7 @@ const App = () => {
         console.log("[STT] Session aborted silently.");
         return;
       }
-      
+
       console.warn("[STT] Speech recognition error:", event.error);
       setIsListening(false);
 
@@ -2648,10 +2683,10 @@ const App = () => {
     if (window.electronAPI && window.electronAPI.onTriggerListening) {
       const unsubscribe = window.electronAPI.onTriggerListening(() => {
         console.log(`[Hotkey] Alt+S triggered! Synchronizing chat overlay and listening mode.`);
-        
+
         setIsChatOpen(prevChatOpen => {
           const nextChatState = !prevChatOpen;
-          
+
           // Toggle Voice Command Mode based on nextChatState and hotkeyListening checkbox
           if (hotkeyListeningRef.current) {
             if (nextChatState) {
@@ -2671,7 +2706,7 @@ const App = () => {
               toggleVoiceCommandModeRef.current();
             }
           }
-          
+
           return nextChatState;
         });
       });
@@ -2699,13 +2734,13 @@ const App = () => {
 
       if (e.key === 'Escape') {
         let handled = false;
-        
+
         // 1. If settings is open, close it
         if (isSettingsOpenRef.current) {
           setIsSettingsOpen(false);
           document.activeElement?.blur();
           handled = true;
-        } 
+        }
         // 2. If chat overlay is open, close/toggle it off
         else if (isChatOpenRef.current) {
           setIsChatOpen(false);
@@ -2716,7 +2751,7 @@ const App = () => {
           }
           handled = true;
         }
-        
+
         if (handled) {
           e.preventDefault();
           e.stopPropagation();
@@ -2736,7 +2771,7 @@ const App = () => {
     } else if (computeType === 'float32') {
       multiplier = 4.0;
     }
-    
+
     let baseSize = 140;
     let label = 'Base Model (Accurate)';
     if (modelType === 'small') {
@@ -2746,7 +2781,7 @@ const App = () => {
       baseSize = 70;
       label = 'Tiny Model (Fastest)';
     }
-    
+
     const finalSize = Math.round(baseSize * multiplier);
     const sizeStr = finalSize >= 1000 ? `${(finalSize / 1000).toFixed(1)} GB` : `${finalSize} MB`;
     return `${label} / ~${sizeStr}`;
@@ -2796,10 +2831,10 @@ const App = () => {
     if (text.startsWith('/')) {
       const parts = text.split(' ');
       const cmd = parts[0].toLowerCase();
-      
+
       // Check if it's a known command
       const isKnownCommand = SLASH_COMMANDS.some(sc => sc.cmd.toLowerCase() === cmd);
-      
+
       if (!isKnownCommand) {
         // Unknown command error
         setMessages((prev) => [...prev, { role: 'user', content: text }]);
@@ -3035,7 +3070,7 @@ const App = () => {
                   message: `Yuki wants to open/run the following program:\n\n${data.name}`,
                   onConfirm: () => {
                     setConfirmModal(prev => ({ ...prev, visible: false }));
-                    
+
                     // Refocus, disable clickthrough suspension temporarily
                     window.yukiConfirmJustClosed = true;
                     if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
@@ -3053,7 +3088,7 @@ const App = () => {
                   },
                   onCancel: () => {
                     setConfirmModal(prev => ({ ...prev, visible: false }));
-                    
+
                     // Refocus, disable clickthrough suspension temporarily
                     window.yukiConfirmJustClosed = true;
                     if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
@@ -3602,21 +3637,21 @@ const App = () => {
               <div
                 ref={desktopDropdownRef}
                 style={{
-                position: 'absolute',
-                bottom: '100%',
-                left: 0,
-                right: 0,
-                marginBottom: '8px',
-                background: 'rgba(12, 8, 26, 0.97)',
-                border: '1px solid rgba(139, 92, 246, 0.35)',
-                borderRadius: '12px',
-                boxShadow: '0 -10px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(139,92,246,0.08)',
-                backdropFilter: 'blur(24px)',
-                overflow: 'hidden',
-                zIndex: 9999,
-                maxHeight: '280px',
-                overflowY: 'auto',
-              }}>
+                  position: 'absolute',
+                  bottom: '100%',
+                  left: 0,
+                  right: 0,
+                  marginBottom: '8px',
+                  background: 'rgba(12, 8, 26, 0.97)',
+                  border: '1px solid rgba(139, 92, 246, 0.35)',
+                  borderRadius: '12px',
+                  boxShadow: '0 -10px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(139,92,246,0.08)',
+                  backdropFilter: 'blur(24px)',
+                  overflow: 'hidden',
+                  zIndex: 9999,
+                  maxHeight: '280px',
+                  overflowY: 'auto',
+                }}>
                 <div style={{
                   padding: '6px 14px 5px',
                   fontSize: '9px',
@@ -4766,8 +4801,8 @@ const App = () => {
                             className="desktop-input"
                             placeholder={
                               llmBackend === 'ollama' ? 'http://127.0.0.1:11434' :
-                              llmBackend === 'openai' ? 'https://api.groq.com/openai' :
-                              'http://127.0.0.1:8000/v1'
+                                llmBackend === 'openai' ? 'https://api.groq.com/openai' :
+                                  'http://127.0.0.1:8000/v1'
                             }
                             value={profile.settings?.llm_base_url || ''}
                             onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
@@ -5152,15 +5187,15 @@ const App = () => {
               </h3>
               <p className="yuki-confirm-message">{confirmModal.message}</p>
               <div className="yuki-confirm-buttons">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="yuki-confirm-btn yuki-confirm-btn-proceed"
                   onClick={confirmModal.onConfirm}
                 >
                   Proceed (Enter)
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="yuki-confirm-btn yuki-confirm-btn-cancel"
                   onClick={confirmModal.onCancel}
                 >
@@ -5301,15 +5336,15 @@ const App = () => {
             </h3>
             <p className="yuki-confirm-message">{confirmModal.message}</p>
             <div className="yuki-confirm-buttons">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="yuki-confirm-btn yuki-confirm-btn-proceed"
                 onClick={confirmModal.onConfirm}
               >
                 Proceed (Enter)
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="yuki-confirm-btn yuki-confirm-btn-cancel"
                 onClick={confirmModal.onCancel}
               >

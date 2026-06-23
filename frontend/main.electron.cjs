@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, powerMonitor, Menu, Tray } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, powerMonitor, Menu, Tray, dialog } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -80,6 +80,147 @@ let tray = null;
 let yukiVisible = true;       // tracks our logical show/hide state
 let alwaysOnTopEnabled = true;
 let fullscreenPollTimer = null;
+
+// ---------- Backend lifecycle ----------
+let backendProcess = null;
+let backendRetryCount = 0;
+const BACKEND_MAX_RETRIES = 3;
+const BACKEND_RETRY_DELAY_MS = 2000;
+const BACKEND_UPTIME_RESET_MS = 30000;
+let backendStartTime = 0;
+let backendRestarting = false;
+let backendStderrTail = [];
+
+function sendBackendStatus(status, extra = {}) {
+  const payload = { status, ...extra };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('backend-status', payload);
+  }
+  if (setupWindow && !setupWindow.isDestroyed()) {
+    setupWindow.webContents.send('backend-status', payload);
+  }
+}
+
+function spawnBackend() {
+  const { cmd, args, cwd } = getBackendExecutable();
+  console.log(`[Electron] Spawning backend: ${cmd} ${args.join(' ')}`);
+
+  backendStderrTail = [];
+  backendProcess = spawn(cmd, args, {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env },
+    windowsHide: true,
+  });
+
+  backendProcess.stdout?.on('data', (data) => {
+    const msg = data.toString().trim();
+    if (msg) console.log(`[Backend] ${msg}`);
+  });
+
+  backendProcess.stderr?.on('data', (data) => {
+    const msg = data.toString().trim();
+    if (msg) {
+      console.error(`[Backend] ${msg}`);
+      backendStderrTail.push(msg);
+      if (backendStderrTail.length > 30) backendStderrTail.shift();
+    }
+  });
+
+  backendProcess.on('error', (err) => {
+    console.error('[Electron] Backend spawn error:', err.message);
+    backendProcess = null;
+    sendBackendStatus('stopped', { error: err.message });
+  });
+
+  backendProcess.on('exit', (code, signal) => {
+    console.log(`[Electron] Backend exited with code ${code} (signal: ${signal})`);
+    const wasRunning = backendProcess !== null;
+    backendProcess = null;
+
+    if (!wasRunning || backendRestarting) return;
+
+    const uptime = Date.now() - backendStartTime;
+    if (code === 0 || uptime > BACKEND_UPTIME_RESET_MS) {
+      console.log('[Electron] Backend exited gracefully or ran long enough — not retrying.');
+      sendBackendStatus('stopped', { exitCode: code });
+      return;
+    }
+
+    if (backendRetryCount < BACKEND_MAX_RETRIES) {
+      backendRetryCount++;
+      console.log(`[Electron] Backend crashed. Retrying in ${BACKEND_RETRY_DELAY_MS / 1000}s... (attempt ${backendRetryCount}/${BACKEND_MAX_RETRIES})`);
+      sendBackendStatus('crashing', { exitCode: code, attempt: backendRetryCount, maxAttempts: BACKEND_MAX_RETRIES });
+      setTimeout(() => {
+        spawnBackend();
+        waitForBackend(BACKEND_PORT).then((ok) => {
+          if (ok) {
+            backendStartTime = Date.now();
+            sendBackendStatus('online');
+          }
+        });
+      }, BACKEND_RETRY_DELAY_MS);
+    } else {
+      console.error(`[Electron] Backend crashed ${BACKEND_MAX_RETRIES} times — giving up.`);
+      sendBackendStatus('stopped', { exitCode: code, retriesExhausted: true });
+      showBackendCrashDialog(code);
+    }
+  });
+
+  backendStartTime = Date.now();
+  sendBackendStatus('starting');
+}
+
+function showBackendCrashDialog(exitCode) {
+  const stderrSnippet = backendStderrTail.slice(-10).join('\n');
+  const result = dialog.showMessageBoxSync({
+    type: 'error',
+    title: 'Yuki Backend Crashed',
+    message: 'The backend process has crashed repeatedly and cannot start.',
+    detail: `Exit code: ${exitCode}\n\nRecent errors:\n${stderrSnippet || '(no output captured)'}`,
+    buttons: ['Restart Yuki', 'Quit', 'Ignore'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+  });
+
+  if (result === 0) {
+    isRestarting = true;
+    app.relaunch();
+    app.exit(0);
+  } else if (result === 1) {
+    app.quit();
+  }
+  // result === 2: ignore, continue with dead backend
+}
+
+function startBackend() {
+  if (backendProcess) return Promise.resolve(true);
+  backendRetryCount = 0;
+  spawnBackend();
+  return waitForBackend(BACKEND_PORT);
+}
+
+function stopBackend() {
+  if (!backendProcess) return;
+  backendRestarting = true;
+  console.log('[Electron] Stopping backend...');
+  try {
+    backendProcess.kill('SIGTERM');
+    setTimeout(() => {
+      if (backendProcess) {
+        console.log('[Electron] Force killing backend...');
+        backendProcess.kill('SIGKILL');
+        backendProcess = null;
+      }
+      backendRestarting = false;
+    }, 3000);
+  } catch (e) {
+    console.warn('[Electron] Error stopping backend:', e.message);
+    backendProcess = null;
+    backendRestarting = false;
+  }
+}
 
 // ---------- Vite port detection ----------
 
@@ -466,10 +607,6 @@ function createTray() {
   });
 }
 
-// ---------- Backend Process Management ----------
-
-let backendProcess = null;
-
 function isSetupComplete() {
   if (app.isPackaged) {
     const backendDir = path.join(path.dirname(app.getPath('exe')), 'resources', 'backend');
@@ -518,60 +655,6 @@ function waitForBackend(port, maxAttempts = 30, intervalMs = 1000) {
     };
     check();
   });
-}
-
-function startBackend() {
-  if (backendProcess) return Promise.resolve(true);
-
-  const { cmd, args, cwd } = getBackendExecutable();
-  console.log(`[Electron] Starting backend: ${cmd} ${args.join(' ')}`);
-
-  backendProcess = spawn(cmd, args, {
-    cwd,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env },
-    windowsHide: true,
-  });
-
-  backendProcess.stdout?.on('data', (data) => {
-    const msg = data.toString().trim();
-    if (msg) console.log(`[Backend] ${msg}`);
-  });
-
-  backendProcess.stderr?.on('data', (data) => {
-    const msg = data.toString().trim();
-    if (msg) console.error(`[Backend] ${msg}`);
-  });
-
-  backendProcess.on('error', (err) => {
-    console.error('[Electron] Backend spawn error:', err.message);
-    backendProcess = null;
-  });
-
-  backendProcess.on('exit', (code) => {
-    console.log(`[Electron] Backend exited with code ${code}`);
-    backendProcess = null;
-  });
-
-  return waitForBackend(BACKEND_PORT);
-}
-
-function stopBackend() {
-  if (!backendProcess) return;
-  console.log('[Electron] Stopping backend...');
-  try {
-    backendProcess.kill('SIGTERM');
-    setTimeout(() => {
-      if (backendProcess) {
-        console.log('[Electron] Force killing backend...');
-        backendProcess.kill('SIGKILL');
-        backendProcess = null;
-      }
-    }, 3000);
-  } catch (e) {
-    console.warn('[Electron] Error stopping backend:', e.message);
-    backendProcess = null;
-  }
 }
 
 // ---------- Setup window ----------
@@ -650,18 +733,24 @@ function createSplashWindow() {
     animation: spin 0.7s linear infinite;
     margin: 0 auto 18px;
   }
+  .spinner.hidden { display: none; }
   .status {
     font-size: 13px; color: rgba(255,255,255,0.4);
     letter-spacing: 0.5px;
   }
+  .error-status { color: #f87171; }
+  .hidden { display: none; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
   <div class="container">
     <div class="logo">YUKI</div>
-    <div class="spinner"></div>
-    <div class="status">Launching...</div>
+    <div class="spinner" id="spinner"></div>
+    <div class="status" id="status">Launching...</div>
+    <div id="error-block" class="hidden">
+      <div class="status error-status" id="error-msg">Backend failed to start.</div>
+    </div>
   </div>
 </body>
 </html>`)}`);
@@ -678,13 +767,11 @@ let isRestarting = false;
 ipcMain.on('restart-app', () => {
   console.log('[Electron] Restart requested — relaunching...');
   isRestarting = true;
-  // Don't stop backend — new instance will start fresh. Just relaunch and exit.
   app.relaunch();
   app.exit(0);
 });
 
 app.whenReady().then(async () => {
-  // Deny unnecessary permissions (location, notifications, etc.) to prevent Windows prompts
   const { session } = require('electron');
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     const allowed = ['media', 'autoplay', 'clipboard-sanitized-write'];
@@ -694,27 +781,45 @@ app.whenReady().then(async () => {
   const setupDone = isSetupComplete();
   console.log(`[Electron] Setup complete: ${setupDone}`);
 
-  // Show splash screen during backend startup (packaged mode only)
   let splash = null;
+  let splashTimer = null;
+
   if (app.isPackaged && setupDone) {
     splash = createSplashWindow();
+
+    // 35-second timeout — if backend hasn't started, show error state
+    splashTimer = setTimeout(() => {
+      if (splash && !splash.isDestroyed()) {
+        console.warn('[Electron] Splash timeout — backend took too long to start.');
+        splash.webContents.send('splash-error', 'Backend took too long to start. It may have crashed.');
+      }
+    }, 35000);
   }
 
-  // Start the backend — it will serve either setup routes or full API
   const backendReady = await startBackend();
+
+  if (splashTimer) clearTimeout(splashTimer);
+
   if (!backendReady) {
     console.error('[Electron] Backend failed to start within timeout.');
+    if (splash && !splash.isDestroyed()) {
+      splash.webContents.send('splash-error', 'Backend failed to respond. Check if port 58392 is available.');
+      // Give user 10s to read the error before auto-quitting
+      setTimeout(() => {
+        if (splash && !splash.isDestroyed()) {
+          app.quit();
+        }
+      }, 10000);
+      return;
+    }
   }
 
   if (!setupDone) {
-    // First launch — show setup window
     createSetupWindow();
   } else {
-    // Normal launch — show main window
     createWindow();
   }
 
-  // Close splash once main window is ready
   if (splash && !splash.isDestroyed()) {
     splash.close();
   }

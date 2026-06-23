@@ -82,5 +82,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartApp: () => {
     ipcRenderer.send('restart-app');
   },
+  onBackendStatus: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('backend-status', handler);
+    return () => {
+      ipcRenderer.removeListener('backend-status', handler);
+    };
+  },
   isElectron: true
 });
