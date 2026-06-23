@@ -1128,6 +1128,7 @@ const ControlDashboard = ({
                     value={settings.llm_backend || 'lmstudio'}
                     onChange={async (e) => {
                       const newBackend = e.target.value;
+                      await handleUpdateSetting('llm_model', '');
                       await handleUpdateSetting('llm_backend', newBackend);
                       // Set default base URL if current is empty
                       if (!settings.llm_base_url) {

@@ -764,8 +764,8 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
             # Filter directories in-place to avoid recursing into sensitive system folders
             dirs[:] = [d for d in dirs if _is_safe_path(os.path.join(root, d), write_operation=False)]
             
-            # Pacing sleep to prevent high CPU/disk usage (0.25 seconds for low intensity)
-            time.sleep(0.2)
+            # Pacing sleep to prevent high CPU/disk usage (0.35 seconds for low intensity)
+            time.sleep(0.35)
             
             try:
                 stat_info = os.stat(root)
@@ -1457,8 +1457,8 @@ def run_metadata_enrichment_loop():
                 + "="*80
             )
             
-            # Appropriate sleep pacing (1.0s if we hit MusicBrainz API; 50ms otherwise)
-            sleep_time = 1.0 if did_query_musicbrainz else 0.05
+            # Appropriate sleep pacing (1.0s if we hit MusicBrainz API; 100ms otherwise)
+            sleep_time = 1.0 if did_query_musicbrainz else 0.1
             time.sleep(sleep_time)
             
         CURRENT_TAGGER_PATH = "Idle"
@@ -1516,7 +1516,7 @@ class YukiFileSystemHandler(FileSystemEventHandler):
         else:
             try:
                 # Give file a brief moment to finish writing if copying/moving
-                time.sleep(0.5)
+                time.sleep(1.0)
                 if not os.path.exists(file_path):
                     return
                 file_stat = os.stat(file_path)

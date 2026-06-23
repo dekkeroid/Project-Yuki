@@ -215,7 +215,7 @@ class LMStudioBackend(LLMBackend):
                         print(f"[LMStudio] Failed to auto-load. HTTP {load_resp.status}: {error_body}")
                         return False
         except Exception as e:
-            print(f"[LMStudio] Error checking/loading model: {e}")
+            print(f"[LMStudio] Could not reach LM Studio ({e}). Model will be loaded on first use.")
             return False
 
 

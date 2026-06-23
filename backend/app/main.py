@@ -102,6 +102,7 @@ async def _validate_cloud_key():
 
 async def _start_crawler_bg():
     """Background: init DB and start file crawler after server is live."""
+    await asyncio.sleep(120)  # 2-min grace period after startup
     print("[Startup] Initializing file crawler and indexing database...")
     try:
         from app.memory import crawler
@@ -303,7 +304,6 @@ async def get_available_models():
 
     fallback_models = [
         {"name": config.LLM_MODEL, "type": config.get_backend_type()},
-        {"name": "llama-3.2-3b-instruct", "type": "lmstudio"},
     ]
     seen = set()
     models = []
@@ -509,7 +509,11 @@ async def update_settings(req: SettingsUpdateRequest):
         config.LLM_MODEL = req.llm_model.strip()
         memory_manager.update_setting("llm_model", req.llm_model.strip())
     if req.llm_backend is not None:
+        old_backend = memory_manager.profile["settings"].get("llm_backend")
         memory_manager.update_setting("llm_backend", req.llm_backend.strip())
+        if old_backend and old_backend != req.llm_backend.strip():
+            config.LLM_MODEL = ""
+            memory_manager.update_setting("llm_model", "")
     if req.llm_base_url is not None:
         memory_manager.update_setting("llm_base_url", req.llm_base_url.strip())
     if req.llm_api_key is not None:

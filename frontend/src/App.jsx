@@ -4815,9 +4815,10 @@ const App = () => {
                           value={profile.settings?.llm_backend || 'lmstudio'}
                           onChange={async (e) => {
                             const newBackend = e.target.value;
+                            setAvailableLlmModels([]);
+                            await handleUpdateSetting('llm_model', '');
                             await handleUpdateSetting('llm_backend', newBackend);
                             setLlmBackend(newBackend);
-                            setAvailableLlmModels([]);
                             // Set default base URL if current is empty
                             if (!profile.settings?.llm_base_url) {
                               const defaults = { ollama: 'http://127.0.0.1:11434', vllm: 'http://127.0.0.1:8000/v1' };
