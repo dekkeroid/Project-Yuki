@@ -434,18 +434,65 @@
   async function detectBackendModels(backendType) {
     const checking = document.getElementById('lmstudio-checking');
     checking.classList.remove('hidden');
+
+    const baseUrl = document.getElementById('base-url-input')?.value || '';
+    const apiKey = document.getElementById('api-key-input')?.value || '';
+    const params = new URLSearchParams({ backend_type: backendType });
+    if (baseUrl) params.set('base_url', baseUrl);
+    if (apiKey) params.set('api_key', apiKey);
+
     try {
-      const resp = await fetch(`${API}/setup/models?backend_type=${encodeURIComponent(backendType)}`);
+      const resp = await fetch(`${API}/setup/models?${params}`);
       const data = await resp.json();
       checking.classList.add('hidden');
       if (data.available && data.models.length > 0) {
         showModelPicker(data.models, data.recommended);
       } else {
-        showCustomModelInput();
+        showWarningForBackend(backendType);
+        selectedModel = 'llama-3.2-3b-instruct';
       }
     } catch {
       checking.classList.add('hidden');
-      showCustomModelInput();
+      showWarningForBackend(backendType);
+      selectedModel = 'llama-3.2-3b-instruct';
+    }
+  }
+
+  function showWarningForBackend(backendType) {
+    const warning = document.getElementById('lmstudio-warning');
+    const desc = warning.querySelector('.warning-desc');
+    const steps = warning.querySelector('p[style]');
+    warning.classList.remove('hidden');
+
+    if (backendType === 'ollama') {
+      desc.innerHTML = 'Ollama is installed but no models were found. Models download on first use (~2-4 GB each).';
+      steps.innerHTML = `
+        1. Make sure Ollama is running: <code>ollama serve</code><br>
+        2. Or pull a model manually: <code>ollama pull llama3.2</code><br>
+        3. Yuki will use OpenAI-compatible endpoints
+      `;
+    } else if (backendType === 'vllm') {
+      desc.innerHTML = 'vLLM server not reachable. Make sure it\'s running with an OpenAI-compatible API.';
+      steps.innerHTML = `
+        1. Start vLLM: <code>vllm serve &lt;model&gt;</code><br>
+        2. Default URL: <code>http://127.0.0.1:8000/v1</code><br>
+        3. Yuki uses the standard <code>/v1/chat/completions</code> endpoint
+      `;
+    } else if (backendType === 'openai' || backendType === 'custom') {
+      desc.innerHTML = 'Could not connect to the API. Check your base URL and API key.';
+      steps.innerHTML = `
+        1. Verify the base URL is correct<br>
+        2. Check your API key is valid<br>
+        3. Ensure the service is running
+      `;
+    } else {
+      // LM Studio fallback
+      desc.innerHTML = 'Yuki needs a local LLM to power conversations. We recommend <strong>LM Studio</strong>:';
+      steps.innerHTML = `
+        1. Download from <a href="https://lmstudio.ai" target="_blank" rel="noopener">lmstudio.ai</a><br>
+        2. Install and open it<br>
+        3. Download the model: <code>llama-3.2-3b-instruct</code>
+      `;
     }
   }
 
@@ -488,7 +535,7 @@
   // ── On load: detect LM Studio ────────────────────────────────────────
   async function detectLMStudio() {
     try {
-      const resp = await fetch(`${API}/setup/models`);
+      const resp = await fetch(`${API}/setup/models?backend_type=lmstudio`);
       const data = await resp.json();
 
       document.getElementById('lmstudio-checking').classList.add('hidden');
@@ -496,7 +543,7 @@
       if (data.available && data.models.length > 0) {
         showModelPicker(data.models, data.recommended);
       } else {
-        document.getElementById('lmstudio-warning').classList.remove('hidden');
+        showWarningForBackend('lmstudio');
         selectedModel = 'llama-3.2-3b-instruct';
         document.querySelectorAll('input[name="llm-choice"]').forEach(radio => {
           radio.addEventListener('change', (e) => {
@@ -510,7 +557,7 @@
       }
     } catch (e) {
       document.getElementById('lmstudio-checking').classList.add('hidden');
-      document.getElementById('lmstudio-warning').classList.remove('hidden');
+      showWarningForBackend('lmstudio');
       selectedModel = '';
     }
   }

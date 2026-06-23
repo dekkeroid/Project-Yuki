@@ -82,12 +82,17 @@ class LLMBackend(ABC):
 class LMStudioBackend(LLMBackend):
     """LM Studio local server backend."""
 
+    def __init__(self, base_url_override: str = None):
+        self._base_url_override = base_url_override
+
     @property
     def name(self) -> str:
         return "LM Studio"
 
     @property
     def base_url(self) -> str:
+        if self._base_url_override:
+            return self._base_url_override.rstrip("/")
         return config.get_effective_base_url()
 
     def supports_context_length(self) -> bool:
@@ -217,12 +222,17 @@ class LMStudioBackend(LLMBackend):
 class OllamaBackend(LLMBackend):
     """Ollama local server backend."""
 
+    def __init__(self, base_url_override: str = None):
+        self._base_url_override = base_url_override
+
     @property
     def name(self) -> str:
         return "Ollama"
 
     @property
     def base_url(self) -> str:
+        if self._base_url_override:
+            return self._base_url_override.rstrip("/")
         return config.get_effective_base_url()
 
     def supports_context_length(self) -> bool:
@@ -246,16 +256,10 @@ class OllamaBackend(LLMBackend):
             payload["tool_choice"] = "auto"
         return payload
 
-    def get_models_url(self) -> str:
-        return f"{self.base_url}/api/tags"
-
-    def get_chat_url(self) -> str:
-        return f"{self.base_url}/api/chat"
-
     async def health_check(self) -> bool:
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_url}/api/tags", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=5)) as resp:
                     return resp.status == 200
         except Exception:
             return False
@@ -263,12 +267,12 @@ class OllamaBackend(LLMBackend):
     async def list_models(self) -> List[Dict[str, Any]]:
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_url}/api/tags", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
                         return []
                     data = await resp.json()
-                    models = data.get("models", [])
-                    return [{"id": m.get("name", ""), "name": m.get("name", ""), "loaded": True} for m in models if m.get("name")]
+                    models = data.get("data", [])
+                    return [{"id": m.get("id", ""), "name": m.get("id", ""), "loaded": True} for m in models if m.get("id")]
         except Exception as e:
             print(f"[Ollama] Error listing models: {e}")
             return []
@@ -279,7 +283,7 @@ class OllamaBackend(LLMBackend):
         if model_name in model_ids:
             print(f"[Ollama] Model '{model_name}' already available.")
             return True
-        # Ollama auto-pulls on first use via /api/chat, but we can trigger it explicitly
+        # Ollama auto-pulls on first use via /v1/chat/completions, but we can trigger it explicitly
         print(f"[Ollama] Model '{model_name}' not found locally. It will be pulled on first use.")
         return True  # Let Ollama handle the pull
 
@@ -287,12 +291,18 @@ class OllamaBackend(LLMBackend):
 class OpenAICompatibleBackend(LLMBackend):
     """Generic OpenAI-compatible API backend (OpenAI, Groq, Together, Deepseek, etc.)."""
 
+    def __init__(self, base_url_override: str = None, api_key_override: str = None):
+        self._base_url_override = base_url_override
+        self._api_key_override = api_key_override
+
     @property
     def name(self) -> str:
         return config.LLM_BACKEND_TITLE or "OpenAI-compatible"
 
     @property
     def base_url(self) -> str:
+        if self._base_url_override:
+            return self._base_url_override.rstrip("/")
         return config.get_effective_base_url()
 
     def supports_context_length(self) -> bool:
@@ -300,8 +310,9 @@ class OpenAICompatibleBackend(LLMBackend):
 
     def build_headers(self) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
-        if config.LLM_API_KEY:
-            headers["Authorization"] = f"Bearer {config.LLM_API_KEY}"
+        api_key = self._api_key_override or config.LLM_API_KEY
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         return headers
 
     def build_payload(self, model: str, messages: List[Dict], temperature: float,
@@ -352,18 +363,43 @@ class OpenAICompatibleBackend(LLMBackend):
 _backend_instance: Optional[LLMBackend] = None
 
 
-def get_backend() -> LLMBackend:
-    """Get or create the active LLM backend based on config."""
+def get_backend(base_url_override: str = None, api_key_override: str = None) -> LLMBackend:
+    """Get or create the active LLM backend based on config.
+
+    Args:
+        base_url_override: If provided, use this URL instead of config (for setup detection).
+        api_key_override: If provided, use this key instead of config (for setup detection).
+    """
     global _backend_instance
+    # When using overrides, always create a fresh instance (don't cache)
+    if base_url_override or api_key_override:
+        return _create_backend_instance(base_url_override=base_url_override, api_key_override=api_key_override)
     backend_type = getattr(config, "LLM_BACKEND", "lmstudio").lower()
     if _backend_instance is None or _backend_instance.name.lower().replace(" ", "") != backend_type.replace(" ", ""):
-        if backend_type == "ollama":
-            _backend_instance = OllamaBackend()
-        elif backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
-            _backend_instance = OpenAICompatibleBackend()
-        else:
-            _backend_instance = LMStudioBackend()
+        _backend_instance = _create_backend_instance()
     return _backend_instance
+
+
+def _create_backend_instance(base_url_override: str = None, api_key_override: str = None) -> LLMBackend:
+    """Create a backend instance based on config or overrides."""
+    backend_type = getattr(config, "LLM_BACKEND", "lmstudio").lower()
+    if base_url_override:
+        # During setup detection, infer backend type from the override URL
+        url = base_url_override.lower()
+        if "11434" in url or "ollama" in url:
+            backend_type = "ollama"
+        elif "8000" in url or "vllm" in url:
+            backend_type = "vllm"
+        elif "lmstudio" in url or "1234" in url:
+            backend_type = "lmstudio"
+    if backend_type == "none":
+        return None
+    if backend_type == "ollama":
+        return OllamaBackend(base_url_override=base_url_override)
+    elif backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
+        return OpenAICompatibleBackend(base_url_override=base_url_override, api_key_override=api_key_override)
+    else:
+        return LMStudioBackend(base_url_override=base_url_override)
 
 
 def reset_backend():

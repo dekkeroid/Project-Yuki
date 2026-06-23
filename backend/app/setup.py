@@ -294,38 +294,47 @@ async def setup_status():
 
 
 @router.get("/setup/models")
-async def list_lmstudio_models(backend_type: str = None):
-    """Fetch available models from the active LLM backend."""
-    from app.agent.llm_backend import get_backend, reset_backend
-    from fastapi import Query
-    # If a specific backend type is requested, switch to it temporarily
-    if backend_type:
-        backend_type = backend_type.strip().lower()
-        if backend_type in ("lmstudio", "ollama", "vllm", "openai", "custom", "none"):
-            config.LLM_BACKEND = backend_type
-            reset_backend()
-    if config.LLM_BACKEND == "none":
+async def list_lmstudio_models(backend_type: str = None, base_url: str = None, api_key: str = None):
+    """Fetch available models from the active LLM backend.
+
+    Uses temporary backend instances for detection — never mutates global config.
+    """
+    from app.agent.llm_backend import _create_backend_instance
+
+    bt = (backend_type or "").strip().lower()
+
+    if bt == "none":
         return JSONResponse({
             "available": False,
             "models": [],
             "recommended": "llama-3.2-3b-instruct",
             "backend": "none",
         })
-    backend = get_backend()
+
+    # Create a temporary backend for detection — global config untouched
+    backend = _create_backend_instance(base_url_override=base_url, api_key_override=api_key)
+    if backend is None:
+        return JSONResponse({
+            "available": False,
+            "models": [],
+            "recommended": "llama-3.2-3b-instruct",
+            "backend": bt or "none",
+        })
+
     try:
         models = await backend.list_models()
         return JSONResponse({
             "available": True,
             "models": [{"id": m["id"], "loaded": m.get("loaded", True)} for m in models],
             "recommended": "llama-3.2-3b-instruct",
-            "backend": config.get_backend_type(),
+            "backend": bt or config.get_backend_type(),
         })
     except Exception as e:
         return JSONResponse({
             "available": False,
             "models": [],
             "recommended": "llama-3.2-3b-instruct",
-            "backend": config.get_backend_type(),
+            "backend": bt or config.get_backend_type(),
             "error": str(e),
         })
 

@@ -3301,12 +3301,16 @@ const App = () => {
   const fetchLlmModels = async () => {
     try {
       setAvailableLlmModels([]);
-      const backendType = llmBackend || 'lmstudio';
       const response = await fetch(`${API_BASE}/api/models`);
       if (response.ok) {
         const data = await response.json();
         if (data.models && data.models.length > 0) {
           setAvailableLlmModels(data.models);
+          // Clear stale model if current selection not in new list
+          const currentModel = profile.settings?.llm_model;
+          if (currentModel && !data.models.some(m => m.name === currentModel)) {
+            handleUpdateSetting('llm_model', '');
+          }
         }
       }
     } catch (e) {
@@ -4751,11 +4755,6 @@ const App = () => {
                             checked={profile.settings?.no_llm_mode || false}
                             onChange={(e) => {
                               handleUpdateSetting('no_llm_mode', e.target.checked);
-                              if (e.target.checked) {
-                                handleUpdateSetting('llm_backend', 'none');
-                                setLlmBackend('none');
-                                setAvailableLlmModels([]);
-                              }
                             }}
                             style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
                           />
@@ -4791,6 +4790,13 @@ const App = () => {
                             await handleUpdateSetting('llm_backend', newBackend);
                             setLlmBackend(newBackend);
                             setAvailableLlmModels([]);
+                            // Set default base URL if current is empty
+                            if (!profile.settings?.llm_base_url) {
+                              const defaults = { ollama: 'http://127.0.0.1:11434', vllm: 'http://127.0.0.1:8000/v1' };
+                              if (defaults[newBackend]) {
+                                await handleUpdateSetting('llm_base_url', defaults[newBackend]);
+                              }
+                            }
                             if (newBackend !== 'none') {
                               setTimeout(() => fetchLlmModels(), 500);
                             }
@@ -4823,6 +4829,12 @@ const App = () => {
                             }
                             value={profile.settings?.llm_base_url || ''}
                             onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
+                            onBlur={(e) => {
+                              if (!e.target.value.trim()) {
+                                const defaults = { ollama: 'http://127.0.0.1:11434', vllm: 'http://127.0.0.1:8000/v1', custom: 'http://127.0.0.1:8000/v1' };
+                                if (defaults[llmBackend]) handleUpdateSetting('llm_base_url', defaults[llmBackend]);
+                              }
+                            }}
                             style={{ padding: '6px 8px', fontSize: '0.75rem' }}
                           />
                         </div>
@@ -4860,17 +4872,16 @@ const App = () => {
                           onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
                           style={{ padding: '6px 8px', fontSize: '0.75rem' }}
                         >
-                          {availableLlmModels.length === 0 ? (
-                            <option value={profile.settings?.llm_model || ''} style={{ background: '#120c21', color: 'white' }}>
-                              {profile.settings?.llm_model || 'Loading models...'}
+                          {!profile.settings?.llm_model && (
+                            <option value="" style={{ background: '#120c21', color: 'white', opacity: 0.5 }}>
+                              Select a model...
                             </option>
-                          ) : (
-                            availableLlmModels.map((model) => (
-                              <option key={model.name} value={model.name} style={{ background: '#120c21', color: 'white' }}>
-                                {model.name}
-                              </option>
-                            ))
                           )}
+                          {availableLlmModels.map((model) => (
+                            <option key={model.name} value={model.name} style={{ background: '#120c21', color: 'white' }}>
+                              {model.name}
+                            </option>
+                          ))}
                         </select>
                       </div>
                       )}

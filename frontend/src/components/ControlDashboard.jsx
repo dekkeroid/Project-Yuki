@@ -1113,6 +1113,13 @@ const ControlDashboard = ({
                     onChange={async (e) => {
                       const newBackend = e.target.value;
                       await handleUpdateSetting('llm_backend', newBackend);
+                      // Set default base URL if current is empty
+                      if (!settings.llm_base_url) {
+                        const defaults = { ollama: 'http://127.0.0.1:11434', vllm: 'http://127.0.0.1:8000/v1' };
+                        if (defaults[newBackend]) {
+                          await handleUpdateSetting('llm_base_url', defaults[newBackend]);
+                        }
+                      }
                       if (newBackend !== 'none' && onRefreshLlmModels) {
                         setTimeout(() => onRefreshLlmModels(), 500);
                       }
@@ -1155,6 +1162,12 @@ const ControlDashboard = ({
                       }
                       value={settings.llm_base_url || ''}
                       onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
+                      onBlur={(e) => {
+                        if (!e.target.value.trim()) {
+                          const defaults = { ollama: 'http://127.0.0.1:11434', vllm: 'http://127.0.0.1:8000/v1', custom: 'http://127.0.0.1:8000/v1' };
+                          if (defaults[settings.llm_backend]) handleUpdateSetting('llm_base_url', defaults[settings.llm_backend]);
+                        }
+                      }}
                       style={{
                         width: '100%',
                         padding: '7px 10px',
@@ -1224,17 +1237,16 @@ const ControlDashboard = ({
                       marginTop: '4px'
                     }}
                   >
-                    {availableLlmModels.length === 0 ? (
-                      <option value={settings.llm_model || ''} style={{ background: '#0b0813', color: 'white' }}>
-                        {settings.llm_model || 'Loading models...'}
+                    {!settings.llm_model && (
+                      <option value="" style={{ background: '#0b0813', color: 'white', opacity: 0.5 }}>
+                        Select a model...
                       </option>
-                    ) : (
-                      availableLlmModels.map((model) => (
-                        <option key={model.name} value={model.name} style={{ background: '#0b0813', color: 'white' }}>
-                          {model.name}
-                        </option>
-                      ))
                     )}
+                    {availableLlmModels.map((model) => (
+                      <option key={model.name} value={model.name} style={{ background: '#0b0813', color: 'white' }}>
+                        {model.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 )}
