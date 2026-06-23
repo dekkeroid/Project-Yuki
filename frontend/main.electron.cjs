@@ -784,7 +784,7 @@ app.whenReady().then(async () => {
   let splash = null;
   let splashTimer = null;
 
-  if (app.isPackaged && setupDone) {
+  if (app.isPackaged) {
     splash = createSplashWindow();
 
     // 35-second timeout — if backend hasn't started, show error state
