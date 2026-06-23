@@ -167,6 +167,13 @@ def get_gpu_memory_usage() -> Dict[str, Any]:
             procs.sort(key=lambda x: x["dedicated_mb"], reverse=True)
             top5[gpu_name] = procs[:5]
 
+        # Filter out ghost GPUs where all processes show 0 MB dedicated + 0 MB shared
+        # (Microsoft Basic Render Driver, inactive Intel iGPU, etc.)
+        top5 = {
+            name: procs for name, procs in top5.items()
+            if any(p["dedicated_mb"] > 0 or p["shared_mb"] > 0 for p in procs)
+        }
+
         _cache = {"gpus": gpu_list, "top5": top5}
         _cache_time = now
         return _cache
