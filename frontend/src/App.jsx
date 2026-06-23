@@ -4583,7 +4583,7 @@ const App = () => {
                           style={{ padding: '6px 8px', fontSize: '0.75rem' }}
                         >
                           <option value="auto" style={{ background: '#120c21', color: 'white' }}>Auto (Best Available)</option>
-                          <option value="gpu" style={{ background: '#120c21', color: 'white' }}>GPU (CUDA / DirectML)</option>
+                          <option value="gpu" style={{ background: '#120c21', color: 'white' }}>GPU (CUDA)</option>
                           <option value="cpu" style={{ background: '#120c21', color: 'white' }}>CPU (Force CPU)</option>
                         </select>
                       </div>
