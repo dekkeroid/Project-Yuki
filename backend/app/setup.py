@@ -36,9 +36,9 @@ BASE_DIR = _APP_DIR
 PROFILE_PATH = BASE_DIR / "profile.json"
 YUKI_READY = BASE_DIR / ".yuki-ready"
 VOICE_DIR = _INTERNAL / "app" / "voice"
-MODEL_PATH = VOICE_DIR / "kokoro-v1.0.onnx"
+MODEL_PATH = VOICE_DIR / "kokoro-v1.0.fp16.onnx"
 VOICES_PATH = VOICE_DIR / "voices-v1.0.bin"
-MODEL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+MODEL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.fp16.onnx"
 VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
 LMSTUDIO_URL = os.environ.get("LMSTUDIO_URL", "http://127.0.0.1:1234")
 
@@ -294,9 +294,23 @@ async def setup_status():
 
 
 @router.get("/setup/models")
-async def list_lmstudio_models():
+async def list_lmstudio_models(backend_type: str = None):
     """Fetch available models from the active LLM backend."""
-    from app.agent.llm_backend import get_backend
+    from app.agent.llm_backend import get_backend, reset_backend
+    from fastapi import Query
+    # If a specific backend type is requested, switch to it temporarily
+    if backend_type:
+        backend_type = backend_type.strip().lower()
+        if backend_type in ("lmstudio", "ollama", "vllm", "openai", "custom", "none"):
+            config.LLM_BACKEND = backend_type
+            reset_backend()
+    if config.LLM_BACKEND == "none":
+        return JSONResponse({
+            "available": False,
+            "models": [],
+            "recommended": "llama-3.2-3b-instruct",
+            "backend": "none",
+        })
     backend = get_backend()
     try:
         models = await backend.list_models()

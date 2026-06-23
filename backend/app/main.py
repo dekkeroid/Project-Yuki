@@ -431,6 +431,9 @@ def get_settings():
     from app.memory.crawler import is_crawler_paused, is_tagger_paused
     return {
         "llm_model": config.LLM_MODEL,
+        "llm_backend": memory_manager.profile["settings"].get("llm_backend", "lmstudio"),
+        "llm_base_url": memory_manager.profile["settings"].get("llm_base_url", ""),
+        "llm_api_key": memory_manager.profile["settings"].get("llm_api_key", ""),
         "tts_voice": config.TTS_VOICE,
         "tts_rate": config.TTS_RATE,
         "tts_device": getattr(config, "TTS_DEVICE", "auto"),
@@ -559,6 +562,9 @@ async def update_settings(req: SettingsUpdateRequest):
         "message": "Settings updated successfully.",
         "settings": {
             "llm_model": config.LLM_MODEL,
+            "llm_backend": memory_manager.profile["settings"].get("llm_backend", "lmstudio"),
+            "llm_base_url": memory_manager.profile["settings"].get("llm_base_url", ""),
+            "llm_api_key": memory_manager.profile["settings"].get("llm_api_key", ""),
             "tts_voice": config.TTS_VOICE,
             "tts_rate": config.TTS_RATE,
             "tts_device": getattr(config, "TTS_DEVICE", "auto"),

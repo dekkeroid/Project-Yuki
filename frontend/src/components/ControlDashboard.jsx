@@ -1110,7 +1110,13 @@ const ControlDashboard = ({
                   <span className="field-label">LLM Backend</span>
                   <select
                     value={settings.llm_backend || 'lmstudio'}
-                    onChange={(e) => handleUpdateSetting('llm_backend', e.target.value)}
+                    onChange={async (e) => {
+                      const newBackend = e.target.value;
+                      await handleUpdateSetting('llm_backend', newBackend);
+                      if (newBackend !== 'none' && onRefreshLlmModels) {
+                        setTimeout(() => onRefreshLlmModels(), 500);
+                      }
+                    }}
                     style={{
                       width: '100%',
                       padding: '7px 10px',
@@ -1126,21 +1132,24 @@ const ControlDashboard = ({
                   >
                     <option value="lmstudio">LM Studio (Local)</option>
                     <option value="ollama">Ollama (Local)</option>
+                    <option value="vllm">vLLM (Local)</option>
                     <option value="openai">OpenAI-Compatible (Cloud)</option>
                     <option value="custom">Custom Endpoint</option>
+                    <option value="none">No LLM (Voice + File Search Only)</option>
                   </select>
                 </div>
 
-                {/* Base URL (for Ollama / OpenAI / Custom) */}
-                {(settings.llm_backend === 'ollama' || settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                {/* Base URL (for non-local backends) */}
+                {(settings.llm_backend === 'ollama' || settings.llm_backend === 'vllm' || settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
                   <div className="identity-field" style={{ marginTop: '8px' }}>
                     <span className="field-label">
-                      {settings.llm_backend === 'ollama' ? 'Ollama URL' : settings.llm_backend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
+                      {settings.llm_backend === 'ollama' ? 'Ollama URL' : settings.llm_backend === 'vllm' ? 'vLLM URL' : settings.llm_backend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
                     </span>
                     <input
                       type="text"
                       placeholder={
                         settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
+                        settings.llm_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
                         settings.llm_backend === 'openai' ? 'https://api.groq.com/openai' :
                         'http://127.0.0.1:8000/v1'
                       }
@@ -1186,6 +1195,7 @@ const ControlDashboard = ({
                 )}
 
                 {/* Active LLM Model Selection */}
+                {settings.llm_backend !== 'none' && (
                 <div className="identity-field" style={{ marginTop: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span className="field-label">Active LLM Model</span>
@@ -1227,6 +1237,7 @@ const ControlDashboard = ({
                     )}
                   </select>
                 </div>
+                )}
 
                 {/* Speech-to-Text Engine Select */}
                 <div className="identity-field" style={{ marginTop: '10px' }}>

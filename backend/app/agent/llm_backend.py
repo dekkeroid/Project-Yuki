@@ -359,7 +359,7 @@ def get_backend() -> LLMBackend:
     if _backend_instance is None or _backend_instance.name.lower().replace(" ", "") != backend_type.replace(" ", ""):
         if backend_type == "ollama":
             _backend_instance = OllamaBackend()
-        elif backend_type in ("openai", "groq", "together", "deepseek", "custom"):
+        elif backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
             _backend_instance = OpenAICompatibleBackend()
         else:
             _backend_instance = LMStudioBackend()

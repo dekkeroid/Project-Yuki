@@ -3300,6 +3300,8 @@ const App = () => {
 
   const fetchLlmModels = async () => {
     try {
+      setAvailableLlmModels([]);
+      const backendType = llmBackend || 'lmstudio';
       const response = await fetch(`${API_BASE}/api/models`);
       if (response.ok) {
         const data = await response.json();
@@ -4747,7 +4749,14 @@ const App = () => {
                           <input
                             type="checkbox"
                             checked={profile.settings?.no_llm_mode || false}
-                            onChange={(e) => handleUpdateSetting('no_llm_mode', e.target.checked)}
+                            onChange={(e) => {
+                              handleUpdateSetting('no_llm_mode', e.target.checked);
+                              if (e.target.checked) {
+                                handleUpdateSetting('llm_backend', 'none');
+                                setLlmBackend('none');
+                                setAvailableLlmModels([]);
+                              }
+                            }}
                             style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
                           />
                           <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
@@ -4777,32 +4786,40 @@ const App = () => {
                         <select
                           className="desktop-select"
                           value={profile.settings?.llm_backend || 'lmstudio'}
-                          onChange={(e) => {
-                            handleUpdateSetting('llm_backend', e.target.value);
-                            setLlmBackend(e.target.value);
+                          onChange={async (e) => {
+                            const newBackend = e.target.value;
+                            await handleUpdateSetting('llm_backend', newBackend);
+                            setLlmBackend(newBackend);
+                            setAvailableLlmModels([]);
+                            if (newBackend !== 'none') {
+                              setTimeout(() => fetchLlmModels(), 500);
+                            }
                           }}
                           style={{ padding: '6px 8px', fontSize: '0.75rem' }}
                         >
                           <option value="lmstudio">LM Studio (Local)</option>
                           <option value="ollama">Ollama (Local)</option>
+                          <option value="vllm">vLLM (Local)</option>
                           <option value="openai">OpenAI-Compatible (Cloud)</option>
                           <option value="custom">Custom Endpoint</option>
+                          <option value="none">No LLM (Voice + File Search Only)</option>
                         </select>
                       </div>
 
-                      {/* Base URL (for Ollama / OpenAI / Custom) */}
-                      {llmBackend !== 'lmstudio' && (
+                      {/* Base URL (for non-local backends) */}
+                      {llmBackend !== 'lmstudio' && llmBackend !== 'none' && (
                         <div className="desktop-form-group">
                           <label className="desktop-label">
-                            {llmBackend === 'ollama' ? 'Ollama URL' : llmBackend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
+                            {llmBackend === 'ollama' ? 'Ollama URL' : llmBackend === 'vllm' ? 'vLLM URL' : llmBackend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
                           </label>
                           <input
                             type="text"
                             className="desktop-input"
                             placeholder={
                               llmBackend === 'ollama' ? 'http://127.0.0.1:11434' :
-                                llmBackend === 'openai' ? 'https://api.groq.com/openai' :
-                                  'http://127.0.0.1:8000/v1'
+                                llmBackend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
+                                  llmBackend === 'openai' ? 'https://api.groq.com/openai' :
+                                    'http://127.0.0.1:8000/v1'
                             }
                             value={profile.settings?.llm_base_url || ''}
                             onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
@@ -4811,7 +4828,7 @@ const App = () => {
                         </div>
                       )}
 
-                      {/* API Key (for OpenAI-compatible / Custom with auth) */}
+                      {/* API Key (for cloud backends) */}
                       {(llmBackend === 'openai' || llmBackend === 'custom') && (
                         <div className="desktop-form-group">
                           <label className="desktop-label">API Key</label>
@@ -4827,6 +4844,7 @@ const App = () => {
                       )}
 
                       {/* Active Model Selection */}
+                      {llmBackend !== 'none' && (
                       <div className="desktop-form-group">
                         <label className="desktop-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span>Active Model Selection</span>
@@ -4855,6 +4873,7 @@ const App = () => {
                           )}
                         </select>
                       </div>
+                      )}
                     </div>
 
                     {/* Rotation Behavior */}

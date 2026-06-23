@@ -268,8 +268,10 @@
         <select id="backend-type" onchange="onBackendTypeChange()" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 0.82rem; outline: none; cursor: pointer;">
           <option value="lmstudio">LM Studio (Local)</option>
           <option value="ollama">Ollama (Local)</option>
+          <option value="vllm">vLLM (Local)</option>
           <option value="openai">OpenAI-Compatible (Cloud)</option>
           <option value="custom">Custom Endpoint</option>
+          <option value="none">No LLM (Voice + File Search Only)</option>
         </select>
       </div>
 
@@ -293,7 +295,7 @@
 
       <!-- Warning: not found -->
       <div class="lmstudio-warning hidden" id="lmstudio-warning">
-        <div class="warn-title">&#9888; LM Studio not detected</div>
+        <div class="warn-title">&#9888; Backend not detected</div>
         <div class="warn-body">
           <p>Yuki needs a local LLM to power conversations. We recommend <strong>LM Studio</strong>:</p>
           <p style="margin-top:8px">
@@ -371,8 +373,21 @@
     if (type === 'lmstudio') {
       baseUrlSection.style.display = 'none';
       apiKeySection.style.display = 'none';
-      // Re-run LM Studio detection
       detectLMStudio();
+    } else if (type === 'none') {
+      baseUrlSection.style.display = 'none';
+      apiKeySection.style.display = 'none';
+      document.getElementById('lmstudio-checking').classList.add('hidden');
+      document.getElementById('lmstudio-warning').classList.add('hidden');
+      document.getElementById('model-picker').classList.add('hidden');
+      selectedModel = '';
+    } else if (type === 'vllm') {
+      baseUrlSection.style.display = 'block';
+      baseUrlLabel.textContent = 'vLLM URL';
+      baseUrlInput.placeholder = 'http://127.0.0.1:8000/v1';
+      baseUrlInput.value = 'http://127.0.0.1:8000/v1';
+      apiKeySection.style.display = 'none';
+      detectBackendModels('vllm');
     } else {
       document.getElementById('lmstudio-checking').classList.add('hidden');
       document.getElementById('lmstudio-warning').classList.add('hidden');
@@ -383,94 +398,54 @@
         baseUrlInput.placeholder = 'http://127.0.0.1:11434';
         baseUrlInput.value = 'http://127.0.0.1:11434';
         apiKeySection.style.display = 'none';
-        detectOllama();
+        detectBackendModels('ollama');
       } else if (type === 'openai') {
         baseUrlLabel.textContent = 'API Base URL';
         baseUrlInput.placeholder = 'https://api.groq.com/openai';
         baseUrlInput.value = '';
         apiKeySection.style.display = 'block';
-        detectCloudModels();
+        detectBackendModels('openai');
       } else {
         baseUrlLabel.textContent = 'Endpoint URL';
         baseUrlInput.placeholder = 'http://127.0.0.1:8000/v1';
         baseUrlInput.value = '';
         apiKeySection.style.display = 'block';
-        // Custom endpoint — show manual model input
-        document.getElementById('lmstudio-checking').classList.add('hidden');
-        document.getElementById('model-picker').classList.remove('hidden');
-        document.getElementById('picker-count').textContent = 'Enter model name below';
-        const list = document.getElementById('model-list');
-        list.innerHTML = '';
-        const item = document.createElement('div');
-        item.style.padding = '8px';
-        item.innerHTML = '<input type="text" id="custom-model-input" placeholder="model-name" style="width:100%;padding:6px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:white;font-size:0.78rem;outline:none;box-sizing:border-box;">';
-        list.appendChild(item);
-        selectedModel = '';
-        item.querySelector('input').addEventListener('input', (e) => {
-          selectedModel = e.target.value;
-        });
+        showCustomModelInput();
       }
     }
   }
 
-  async function detectOllama() {
+  function showCustomModelInput() {
+    document.getElementById('lmstudio-checking').classList.add('hidden');
+    document.getElementById('model-picker').classList.remove('hidden');
+    document.getElementById('picker-count').textContent = 'Enter model name below';
+    const list = document.getElementById('model-list');
+    list.innerHTML = '';
+    const item = document.createElement('div');
+    item.style.padding = '8px';
+    item.innerHTML = '<input type="text" id="custom-model-input" placeholder="model-name" style="width:100%;padding:6px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:white;font-size:0.78rem;outline:none;box-sizing:border-box;">';
+    list.appendChild(item);
+    selectedModel = '';
+    item.querySelector('input').addEventListener('input', (e) => {
+      selectedModel = e.target.value;
+    });
+  }
+
+  async function detectBackendModels(backendType) {
     const checking = document.getElementById('lmstudio-checking');
     checking.classList.remove('hidden');
     try {
-      const resp = await fetch(`${API}/setup/models`);
+      const resp = await fetch(`${API}/setup/models?backend_type=${encodeURIComponent(backendType)}`);
       const data = await resp.json();
       checking.classList.add('hidden');
       if (data.available && data.models.length > 0) {
         showModelPicker(data.models, data.recommended);
       } else {
-        document.getElementById('lmstudio-warning').classList.remove('hidden');
-        selectedModel = 'llama-3.2-3b-instruct';
+        showCustomModelInput();
       }
     } catch {
       checking.classList.add('hidden');
-      document.getElementById('lmstudio-warning').classList.remove('hidden');
-      selectedModel = 'llama-3.2-3b-instruct';
-    }
-  }
-
-  async function detectCloudModels() {
-    const checking = document.getElementById('lmstudio-checking');
-    checking.classList.remove('hidden');
-    try {
-      const resp = await fetch(`${API}/setup/models`);
-      const data = await resp.json();
-      checking.classList.add('hidden');
-      if (data.available && data.models.length > 0) {
-        showModelPicker(data.models, data.recommended);
-      } else {
-        // Cloud backends: user can type model name manually
-        document.getElementById('model-picker').classList.remove('hidden');
-        document.getElementById('picker-count').textContent = 'Enter model name below';
-        const list = document.getElementById('model-list');
-        list.innerHTML = '';
-        const item = document.createElement('div');
-        item.style.padding = '8px';
-        item.innerHTML = '<input type="text" id="custom-model-input" placeholder="e.g. llama-3.3-70b-versatile" style="width:100%;padding:6px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:white;font-size:0.78rem;outline:none;box-sizing:border-box;">';
-        list.appendChild(item);
-        selectedModel = '';
-        item.querySelector('input').addEventListener('input', (e) => {
-          selectedModel = e.target.value;
-        });
-      }
-    } catch {
-      checking.classList.add('hidden');
-      document.getElementById('model-picker').classList.remove('hidden');
-      document.getElementById('picker-count').textContent = 'Enter model name below';
-      const list = document.getElementById('model-list');
-      list.innerHTML = '';
-      const item = document.createElement('div');
-      item.style.padding = '8px';
-      item.innerHTML = '<input type="text" id="custom-model-input" placeholder="e.g. llama-3.3-70b-versatile" style="width:100%;padding:6px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:white;font-size:0.78rem;outline:none;box-sizing:border-box;">';
-      list.appendChild(item);
-      selectedModel = '';
-      item.querySelector('input').addEventListener('input', (e) => {
-        selectedModel = e.target.value;
-      });
+      showCustomModelInput();
     }
   }
 
@@ -511,7 +486,7 @@
   }
 
   // ── On load: detect LM Studio ────────────────────────────────────────
-  (async function detectLMStudio() {
+  async function detectLMStudio() {
     try {
       const resp = await fetch(`${API}/setup/models`);
       const data = await resp.json();
@@ -523,7 +498,6 @@
       } else {
         document.getElementById('lmstudio-warning').classList.remove('hidden');
         selectedModel = 'llama-3.2-3b-instruct';
-        // Handle radio choice: "later" keeps model, "no-llm" clears it
         document.querySelectorAll('input[name="llm-choice"]').forEach(radio => {
           radio.addEventListener('change', (e) => {
             if (e.target.value === 'no-llm') {
@@ -539,7 +513,10 @@
       document.getElementById('lmstudio-warning').classList.remove('hidden');
       selectedModel = '';
     }
-  })();
+  }
+
+  // Run detection on page load
+  detectLMStudio();
 
   // ── Setup flow ───────────────────────────────────────────────────────
   function startSetup() {

@@ -7,7 +7,7 @@
     "name": "void dekkeroid"
   },
   "homepage": "https://github.com/dekkeroid/Project-Yuki",
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "main": "main.electron.cjs",
   "productName": "Yuki AI",
