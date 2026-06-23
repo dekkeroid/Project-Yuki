@@ -319,6 +319,7 @@ const App = () => {
   const internetFailCountRef = useRef(0);
   const internetCooldownRef = useRef(0);
   const internetPollRef = useRef(null);
+  const internetStartupTimeRef = useRef(Date.now());
   const [modelName, setModelName] = useState('');
   const [lmstudioUrl, setLmstudioUrl] = useState('');
   const [llmBackend, setLlmBackend] = useState('lmstudio');
@@ -565,6 +566,7 @@ const App = () => {
   });
 
   const [availableLlmModels, setAvailableLlmModels] = useState([]);
+  const [gpuMemData, setGpuMemData] = useState({ gpus: [], top5: {} });
 
   // Sync companion local states when profile changes
   useEffect(() => {
@@ -1153,8 +1155,10 @@ const App = () => {
       } catch (_) {
         // Fetch failed — count consecutive failures
         internetFailCountRef.current += 1;
-        // Require 2 consecutive failures (0.8 seconds) before announcing offline
-        if (internetStatusRef.current && internetFailCountRef.current >= 2) {
+        // Skip disconnect detection during first 30s after mount (startup grace)
+        const inGracePeriod = Date.now() - internetStartupTimeRef.current < 30000;
+        // Require 4 consecutive failures (~2 seconds at 500ms interval) before announcing offline
+        if (!inGracePeriod && internetStatusRef.current && internetFailCountRef.current >= 4) {
           if (Date.now() - internetCooldownRef.current < 10000) return;
           internetStatusRef.current = false;
           internetCooldownRef.current = Date.now();
@@ -1167,7 +1171,7 @@ const App = () => {
       }
     };
 
-    internetPollRef.current = setInterval(checkInternet, 400);
+    internetPollRef.current = setInterval(checkInternet, 500);
 
     return () => {
       if (internetPollRef.current) clearInterval(internetPollRef.current);
@@ -1334,6 +1338,18 @@ const App = () => {
     }
   };
 
+  const fetchGpuMem = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/system/gpumem`);
+      if (res.ok) {
+        const data = await res.json();
+        setGpuMemData(data);
+      }
+    } catch (e) {
+      console.warn('Could not fetch GPU memory:', e);
+    }
+  };
+
   // Poll crawler status when Electron settings modal is open and activeTab is crawler
   // Also refresh VRM model list whenever settings panel opens (backend may not have been ready on first mount)
   useEffect(() => {
@@ -1344,6 +1360,18 @@ const App = () => {
     if (isSettingsOpen && activeTab === 'crawler') {
       fetchCrawlerStatus();
       interval = setInterval(fetchCrawlerStatus, 2500);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isSettingsOpen, activeTab]);
+
+  // Poll GPU memory when config tab is open
+  useEffect(() => {
+    let interval = null;
+    if (isSettingsOpen && activeTab === 'config') {
+      fetchGpuMem();
+      interval = setInterval(fetchGpuMem, 5000);
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -5191,6 +5219,57 @@ const App = () => {
                           <span className="spec-val">Web Speech API</span>
                         </div>
                       </div>
+                    </div>
+
+                    {/* GPU Memory Usage */}
+                    <div className="card-group" style={{ marginTop: '10px' }}>
+                      <div className="card-group-header">
+                        <Monitor className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="card-group-title">GPU Memory Usage</span>
+                      </div>
+
+                      {gpuMemData.error && (
+                        <div style={{ fontSize: '0.68rem', color: '#f87171', marginTop: '4px' }}>
+                          {gpuMemData.error}
+                        </div>
+                      )}
+
+                      {!gpuMemData.error && Object.keys(gpuMemData.top5 || {}).length === 0 && (
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          No GPU process data available
+                        </div>
+                      )}
+
+                      {Object.entries(gpuMemData.top5 || {}).map(([gpuName, procs]) => (
+                        <div key={gpuName} style={{ marginTop: '8px' }}>
+                          <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#5eead4', marginBottom: '4px' }}>
+                            {gpuName}
+                          </div>
+                          <div style={{ overflowX: 'auto', background: 'rgba(0, 0, 0, 0.25)', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                            <div style={{ minWidth: '280px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px', gap: '0', padding: '4px 8px', fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                <span>Process</span>
+                                <span style={{ textAlign: 'right' }}>Dedicated</span>
+                                <span style={{ textAlign: 'right' }}>Shared</span>
+                              </div>
+                              {procs.map((p, i) => (
+                                <div key={`${p.pid}-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px', gap: '0', padding: '3px 8px', fontSize: '0.68rem', color: '#cbd5e1', borderTop: i > 0 ? '1px solid rgba(255, 255, 255, 0.03)' : 'none' }}>
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <span style={{ color: 'var(--text-muted)', fontSize: '9px', marginRight: '4px' }}>{p.pid}</span>
+                                    {p.name}
+                                  </span>
+                                  <span style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '0.65rem' }}>
+                                    {p.dedicated_mb >= 1024 ? `${(p.dedicated_mb / 1024).toFixed(1)} GB` : `${p.dedicated_mb} MB`}
+                                  </span>
+                                  <span style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '0.65rem' }}>
+                                    {p.shared_mb >= 1024 ? `${(p.shared_mb / 1024).toFixed(1)} GB` : `${p.shared_mb} MB`}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </>
                 )}

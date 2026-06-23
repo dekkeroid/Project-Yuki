@@ -12,22 +12,6 @@ from app.agent.prompts import get_system_prompt, get_simple_system_prompt
 from app.agent.llm_backend import get_backend, reset_backend
 from app.memory.local_mem import MemoryManager
 from app.tools.definitions import get_tools_definition, get_filtered_tools
-from app.mcp_client import StdioMCPToolBridge
-from app.tools.safety import (
-    authorize_tool_call,
-    describe_tool_target,
-    issue_confirmation_grant,
-    strip_internal_auth_fields,
-)
-from app.tools.system import (
-    get_system_stats, launch_app, set_system_volume, get_current_datetime,
-    control_window, run_terminal_command, run_python_script, take_screenshot,
-    keyboard_mouse_input, media_playback_control, manage_process,
-    system_power_control
-)
-from app.tools.files import list_directory, search_files, open_or_play_file, create_file, edit_file, delete_file, read_file_content
-from app.tools.web import web_search
-from app.agent.resolver import resolve_command
 
 
 _SHORT_CIRCUIT_TOOLS = {
@@ -115,10 +99,23 @@ class AgentExecutor:
         self.memory = memory_manager
         
         async def _async_web_search(**kwargs):
+            from app.tools.web import web_search
             return await web_search(
                 query=kwargs.get("query") or kwargs.get("search") or kwargs.get("text") or (list(kwargs.values())[0] if kwargs else "")
             )
         
+        # Lazy-import tool modules to avoid blocking module-level imports
+        from app.tools.system import (
+            get_system_stats, launch_app, set_system_volume, get_current_datetime,
+            control_window, run_terminal_command, run_python_script, take_screenshot,
+            keyboard_mouse_input, media_playback_control, manage_process,
+            system_power_control
+        )
+        from app.tools.files import list_directory, search_files, open_or_play_file, create_file, edit_file, delete_file, read_file_content
+        from app.tools.web import web_search as _web_search_fn
+        from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
+        self._authorize_tool_call = _authorize_tool_call_fn
+
         # Map tool names to python functions
         self.tools = {
             "get_system_stats": get_system_stats,
@@ -205,6 +202,7 @@ class AgentExecutor:
             ),
             "web_search": _async_web_search
         }
+        from app.mcp_client import StdioMCPToolBridge
         self.mcp_tools = StdioMCPToolBridge(get_tools_definition, get_filtered_tools)
 
     # ------------------------------------------------------------------ #
@@ -222,7 +220,7 @@ class AgentExecutor:
         # Gate before dispatching to either MCP or the legacy local dispatcher.
         # Do not consume a valid grant here while MCP is enabled: the stdio MCP
         # subprocess is the final execution boundary and consumes the grant.
-        preflight = authorize_tool_call(tool_name, raw_args, consume_grant=False)
+        preflight = self._authorize_tool_call(tool_name, raw_args, consume_grant=False)
         if not preflight.allowed:
             return preflight.message
 
@@ -239,7 +237,7 @@ class AgentExecutor:
             if self.mcp_tools.last_error:
                 return f"Error: Tool '{tool_name}' is not registered. MCP status: {self.mcp_tools.last_error}"
             return f"Error: Tool '{tool_name}' is not registered."
-        local_decision = authorize_tool_call(tool_name, raw_args, consume_grant=True)
+        local_decision = self._authorize_tool_call(tool_name, raw_args, consume_grant=True)
         if not local_decision.allowed:
             return local_decision.message
 
@@ -950,6 +948,9 @@ class AgentExecutor:
             Everything else is routed through the LLM with the appropriate prompt and tool schemas.
         """
         self.memory.increment_interactions()
+
+        from app.agent.resolver import resolve_command
+        from app.tools.safety import strip_internal_auth_fields, issue_confirmation_grant, describe_tool_target
 
         # ── Layer 1: Zero-LLM Instant Resolver ───────────────────────────────
         resolved = resolve_command(user_message)

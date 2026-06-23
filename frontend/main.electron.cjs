@@ -692,7 +692,7 @@ function createSplashWindow() {
   const splashWidth = 360;
   const splashHeight = 260;
 
-  const splash = new BrowserWindow({
+  let splash = new BrowserWindow({
     width: splashWidth,
     height: splashHeight,
     x: Math.round((screenWidth - splashWidth) / 2),

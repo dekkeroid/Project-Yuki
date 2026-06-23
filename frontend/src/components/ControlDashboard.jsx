@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 
@@ -85,6 +85,7 @@ const ControlDashboard = ({
     current_root_path: 'Idle',
     watchdog_active: false
   });
+  const [gpuMemData, setGpuMemData] = useState({ gpus: [], top5: {} });
 
   // Sync character local states when settings change
   useEffect(() => {
@@ -190,6 +191,18 @@ const ControlDashboard = ({
       }
     } catch (e) {
       console.warn('Could not fetch crawler status:', e);
+    }
+  };
+
+  const fetchGpuMem = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/system/gpumem`);
+      if (res.ok) {
+        const data = await res.json();
+        setGpuMemData(data);
+      }
+    } catch (e) {
+      console.warn('Could not fetch GPU memory:', e);
     }
   };
 
@@ -392,6 +405,9 @@ const ControlDashboard = ({
       if (activeTab === 'crawler') {
         fetchCrawlerStatus();
         interval = setInterval(fetchCrawlerStatus, 2500);
+      } else if (activeTab === 'config') {
+        fetchGpuMem();
+        interval = setInterval(fetchGpuMem, 5000);
       } else {
         fetchSettings();
       }
@@ -1807,6 +1823,57 @@ const ControlDashboard = ({
                     <span className="spec-val">Web Speech API</span>
                   </div>
                 </div>
+              </div>
+
+              {/* GPU Memory Usage */}
+              <div className="card-group" style={{ marginTop: '12px' }}>
+                <div className="card-group-header">
+                  <Monitor className="w-4 h-4 text-emerald-400" />
+                  <span className="card-group-title">GPU Memory Usage</span>
+                </div>
+
+                {gpuMemData.error && (
+                  <div style={{ fontSize: '0.68rem', color: '#f87171', marginTop: '6px' }}>
+                    {gpuMemData.error}
+                  </div>
+                )}
+
+                {!gpuMemData.error && Object.keys(gpuMemData.top5 || {}).length === 0 && (
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                    No GPU process data available
+                  </div>
+                )}
+
+                {Object.entries(gpuMemData.top5 || {}).map(([gpuName, procs]) => (
+                  <div key={gpuName} style={{ marginTop: '8px' }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#5eead4', marginBottom: '4px' }}>
+                      {gpuName}
+                    </div>
+                    <div style={{ overflowX: 'auto', background: 'rgba(0, 0, 0, 0.25)', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                      <div style={{ minWidth: '280px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px', gap: '0', padding: '4px 8px', fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600, borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                          <span>Process</span>
+                          <span style={{ textAlign: 'right' }}>Dedicated</span>
+                          <span style={{ textAlign: 'right' }}>Shared</span>
+                        </div>
+                        {procs.map((p, i) => (
+                          <div key={`${p.pid}-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px', gap: '0', padding: '3px 8px', fontSize: '0.72rem', color: '#cbd5e1', borderTop: i > 0 ? '1px solid rgba(255, 255, 255, 0.03)' : 'none' }}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <span style={{ color: 'var(--text-muted)', fontSize: '9px', marginRight: '4px' }}>{p.pid}</span>
+                              {p.name}
+                            </span>
+                            <span style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '0.68rem' }}>
+                              {p.dedicated_mb >= 1024 ? `${(p.dedicated_mb / 1024).toFixed(1)} GB` : `${p.dedicated_mb} MB`}
+                            </span>
+                            <span style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '0.68rem' }}>
+                              {p.shared_mb >= 1024 ? `${(p.shared_mb / 1024).toFixed(1)} GB` : `${p.shared_mb} MB`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </>
           )}

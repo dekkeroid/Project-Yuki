@@ -42,10 +42,6 @@ builtins.print = unbuffered_print
 from app import config
 from app.memory.local_mem import MemoryManager
 from app.agent.executor import AgentExecutor
-from app.voice.tts import generate_speech_bytes
-from app.memory.crawler import start_crawler_services
-from app.tools.system import get_detailed_stats
-from app.tools.safety import approve_pending_confirmation, authorize_tool_call, issue_pending_confirmation
 
 # ---------------------------------------------------------------------------
 # Lifespan context manager (replaces deprecated @app.on_event)
@@ -55,6 +51,7 @@ async def _warmup_tts():
     global tts_online_status
     print("[Startup] Initializing local Kokoro-ONNX neural TTS engine...")
     try:
+        from app.voice.tts import generate_speech_bytes
         audio_bytes = await asyncio.wait_for(generate_speech_bytes("hi"), timeout=60.0)
         if audio_bytes:
             print("[Startup] Local Kokoro neural voice engine loaded successfully and active.")
@@ -69,6 +66,14 @@ async def _warmup_tts():
 async def _connect_mcp_bridge():
     """Background: connect MCP stdio tool bridge after server is live."""
     print("[Startup] Connecting stdio MCP tool bridge...")
+    # Wait for agent executor to be initialized
+    for _ in range(50):
+        if agent_executor is not None:
+            break
+        await asyncio.sleep(0.1)
+    if agent_executor is None:
+        print("[Startup] Agent executor not ready — skipping MCP bridge.")
+        return
     mcp_ready = await agent_executor.mcp_tools.ensure_connected()
     if not mcp_ready:
         message = f"Stdio MCP tool bridge failed to start: {agent_executor.mcp_tools.last_error}"
@@ -112,6 +117,7 @@ async def _start_crawler_bg():
         else:
             crawler.resume_tagger()
 
+        from app.memory.crawler import start_crawler_services
         start_crawler_services()
     except Exception as e:
         print(f"[Startup] Failed to start crawler services: {e}")
@@ -120,10 +126,18 @@ async def _start_crawler_bg():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown logic for the FastAPI application."""
-    global tts_online_status
+    global tts_online_status, agent_executor
 
     # ── Startup — lightweight tasks only (server starts accepting ASAP) ──
     print("[Startup] Server is live — deferring heavy initialization to background...")
+
+    # Initialize agent executor in background (heavy imports: aiohttp, mcp, tools)
+    async def _init_executor():
+        global agent_executor
+        agent_executor = AgentExecutor(memory_manager)
+        print("[Startup] Agent executor initialized.")
+
+    asyncio.create_task(_init_executor())
 
     # Fire-and-forget: all heavy init runs after yield (server already accepting)
     if config.TOOL_TRANSPORT == "mcp-stdio":
@@ -133,7 +147,16 @@ async def lifespan(app: FastAPI):
         backend_type = config.get_backend_type()
         print(f"[Startup] Backend: {backend_type}, model: '{config.LLM_MODEL}'")
         asyncio.create_task(_validate_cloud_key())
-        asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
+
+        async def _load_model_when_ready():
+            for _ in range(100):
+                if agent_executor is not None:
+                    break
+                await asyncio.sleep(0.1)
+            if agent_executor is not None:
+                await agent_executor.ensure_model_loaded(config.LLM_MODEL)
+
+        asyncio.create_task(_load_model_when_ready())
     else:
         print("[Startup] NO_LLM_MODE enabled — skipping LLM auto-load.")
 
@@ -143,7 +166,8 @@ async def lifespan(app: FastAPI):
     yield
 
     # ── Shutdown ─────────────────────────────────────────────────────────
-    await agent_executor.mcp_tools.aclose()
+    if agent_executor:
+        await agent_executor.mcp_tools.aclose()
 
 
 app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.1.1-alpha", lifespan=lifespan)
@@ -159,7 +183,7 @@ app.add_middleware(
 
 # Initialize singletons for the session
 memory_manager = MemoryManager()
-agent_executor = AgentExecutor(memory_manager)
+agent_executor = None  # Initialized in lifespan to defer heavy imports
 
 # Chat history in-memory (per session or global for a single user)
 global_chat_history: List[Dict[str, str]] = []
@@ -217,6 +241,7 @@ async def broadcast_ws(payload: dict):
 async def test_and_announce_voice_change(new_voice: str, new_rate: str = None):
     global tts_online_status
     try:
+        from app.voice.tts import generate_speech_bytes
         test_text = f"Voice changed to {new_voice.replace('_', ' ').replace('af ', '').replace('bf ', '').replace('jf ', '').title()}."
         audio_bytes = await asyncio.wait_for(generate_speech_bytes(test_text, voice=new_voice, rate=new_rate), timeout=15.0)
         if audio_bytes:
@@ -542,7 +567,8 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("no_llm_mode", req.no_llm_mode)
         if was_no_llm and not req.no_llm_mode:
             print(f"Loading LLM model '{config.LLM_MODEL}' as no_llm_mode was unchecked...")
-            asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
+            if agent_executor is not None:
+                asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
     if req.dynamic_tool_calling is not None:
         memory_manager.update_setting("dynamic_tool_calling", req.dynamic_tool_calling)
     if req.enable_rotation is not None:
@@ -598,6 +624,7 @@ async def tts_endpoint(text: str, voice: Optional[str] = None, rate: Optional[st
         return Response(status_code=500, content="TTS service is currently offline.")
         
     decoded_text = urllib.parse.unquote(text)
+    from app.voice.tts import generate_speech_bytes
     audio_bytes = await generate_speech_bytes(decoded_text, voice=voice, rate=rate)
     
     if not audio_bytes:
@@ -619,6 +646,7 @@ async def tts_test_endpoint(req: SettingsUpdateRequest):
     test_text = f"Testing voice {test_voice.replace('_', ' ').replace('af ', '').replace('bf ', '').replace('jf ', '').title()}."
     
     try:
+        from app.voice.tts import generate_speech_bytes
         audio_bytes = await asyncio.wait_for(generate_speech_bytes(test_text, voice=test_voice, rate=test_rate), timeout=15.0)
         if not audio_bytes:
             return Response(status_code=500, content="Failed to generate speech audio.")
@@ -798,9 +826,23 @@ def get_pc_stats():
     Returns comprehensive system performance statistics.
     """
     try:
+        from app.tools.system import get_detailed_stats
         return get_detailed_stats()
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.get("/api/system/gpumem")
+def get_gpu_memory():
+    """
+    Returns per-process VRAM usage for all GPUs (iGPU + dGPU).
+    Top 5 processes by dedicated VRAM per GPU.
+    """
+    from app.gpu_monitor import get_gpu_memory_usage
+    try:
+        return get_gpu_memory_usage()
+    except Exception as e:
+        return {"gpus": [], "top5": {}, "error": str(e)}
 
 
 @app.get("/api/system/suggestions")
@@ -1010,6 +1052,7 @@ def post_open_or_play(req: OpenPlayRequest):
                 resolved_path = resolve_best_file_no_llm(clean, play_mode=req.play_mode)
 
     target = resolved_path if resolved_path else req.query
+    from app.tools.safety import approve_pending_confirmation, authorize_tool_call, issue_pending_confirmation
     safety_args = {
         "file_path_or_query": target,
         "play_mode": req.play_mode,
@@ -1192,6 +1235,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     return None
                                 async with tts_semaphore:
                                     try:
+                                        from app.voice.tts import generate_speech_bytes
                                         speech_text = make_speech_friendly(sentence_text)
                                         # Use a timeout of 30.0 seconds for local Kokoro call
                                         t_start = time.time()
@@ -1298,6 +1342,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                         yield "final_history", updated_history, "local"
                                     gen = no_llm_gen()
                                 else:
+                                    if agent_executor is None:
+                                        await websocket.send_json({"type": "error", "content": "Agent is still initializing, please try again in a moment."})
+                                        return
                                     gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history)
                                 try:
                                     event = await gen.__anext__()
@@ -1473,6 +1520,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 sentences.append(sentence)
 
                         # Now synthesize and send each sentence sequentially
+                        from app.voice.tts import generate_speech_bytes
                         audio_idx = 0
                         for sentence in sentences:
                             speech_text = make_speech_friendly(sentence)
