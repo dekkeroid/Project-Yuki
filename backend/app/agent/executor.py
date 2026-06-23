@@ -425,7 +425,7 @@ class AgentExecutor:
             url,
             headers=backend.build_headers(),
             json=payload,
-            timeout=60,
+            timeout=120,
         )
         response.raise_for_status()
         res_json = response.json()
@@ -622,14 +622,16 @@ class AgentExecutor:
             stream=True,
         )
             
-        async with session.post(url, json=payload, headers=headers, timeout=60) as resp:
+        async with session.post(url, json=payload, headers=headers, timeout=120) as resp:
             if resp.status != 200:
                 try:
                     err_text = await resp.text()
                     err_json = json.loads(err_text)
                     err_msg = err_json.get("error", {}).get("message", err_text)
-                except:
-                    err_msg = f"HTTP {resp.status}"
+                except Exception:
+                    err_text_preview = err_text[:500] if err_text else "(empty body)"
+                    err_msg = f"HTTP {resp.status}: {err_text_preview}"
+                print(f"[Stream] Error from {url}: {err_msg}")
                 yield {"content": f"Error from brain server: {err_msg}"}
                 return
 

@@ -124,6 +124,52 @@ async def _start_crawler_bg():
         print(f"[Startup] Failed to start crawler services: {e}")
 
 
+async def _swap_model(new_model: str):
+    """Unload old model and preload new model in background. Fire-and-forget."""
+    from app.agent.llm_backend import get_backend
+    old_model = getattr(config, "_previous_llm_model", None)
+    config._previous_llm_model = new_model
+    if old_model == new_model or not old_model:
+        if new_model and not old_model:
+            print(f"[ModelSwap] Initial model: '{new_model}' — loading")
+            try:
+                backend = get_backend()
+                if backend:
+                    await asyncio.wait_for(backend.ensure_model_loaded(new_model), timeout=300)
+            except Exception as e:
+                print(f"[ModelSwap] Initial load failed: {e}")
+        return
+    if not new_model:
+        print(f"[ModelSwap] Model cleared — no preload")
+        return
+    print(f"[ModelSwap] Swapping '{old_model}' → '{new_model}'")
+    try:
+        backend = get_backend()
+        if backend:
+            asyncio.create_task(_do_model_swap(backend, old_model, new_model))
+    except Exception as e:
+        print(f"[ModelSwap] Swap dispatch failed: {e}")
+
+
+async def _do_model_swap(backend, old_model: str, new_model: str):
+    """Background task: unload old + preload new."""
+    import time as _time
+    try:
+        t0 = _time.time()
+        await asyncio.wait_for(backend.unload_model(old_model), timeout=15)
+        elapsed = _time.time() - t0
+        print(f"[ModelSwap] Unload '{old_model}' done ({elapsed:.1f}s)")
+    except Exception as e:
+        print(f"[ModelSwap] Unload '{old_model}' failed (non-blocking): {e}")
+    try:
+        t0 = _time.time()
+        await asyncio.wait_for(backend.ensure_model_loaded(new_model), timeout=300)
+        elapsed = _time.time() - t0
+        print(f"[ModelSwap] Preload '{new_model}' done ({elapsed:.1f}s)")
+    except Exception as e:
+        print(f"[ModelSwap] Preload '{new_model}' failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown logic for the FastAPI application."""
@@ -506,8 +552,11 @@ async def update_settings(req: SettingsUpdateRequest):
     global tts_online_status
     from app.memory import crawler
     if req.llm_model is not None:
-        config.LLM_MODEL = req.llm_model.strip()
-        memory_manager.update_setting("llm_model", req.llm_model.strip())
+        new_model = req.llm_model.strip()
+        if new_model != config.LLM_MODEL:
+            asyncio.create_task(_swap_model(new_model))
+        config.LLM_MODEL = new_model
+        memory_manager.update_setting("llm_model", new_model)
     if req.llm_backend is not None:
         old_backend = memory_manager.profile["settings"].get("llm_backend")
         memory_manager.update_setting("llm_backend", req.llm_backend.strip())

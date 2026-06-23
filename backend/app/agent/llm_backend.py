@@ -71,6 +71,10 @@ class LLMBackend(ABC):
         """Get the models listing endpoint URL."""
         return f"{self.base_url}/v1/models"
 
+    async def unload_model(self, model_name: str) -> bool:
+        """Unload a model from memory. Default: no-op. Override in backends that support it."""
+        return True
+
     def get_error_message(self, error: Exception) -> str:
         """Get a user-friendly error message for connection failures."""
         return (
@@ -218,12 +222,54 @@ class LMStudioBackend(LLMBackend):
             print(f"[LMStudio] Could not reach LM Studio ({e}). Model will be loaded on first use.")
             return False
 
+    async def unload_model(self, model_name: str) -> bool:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status != 200:
+                        return False
+                    data = await resp.json()
+                    available = data.get("data", [])
+                    if isinstance(data, dict) and not available:
+                        available = data.get("models", [])
+
+                for m in available:
+                    model_key = m.get("id") or m.get("key") or m.get("path") or ""
+                    if model_name.lower() in model_key.lower():
+                        is_loaded = (
+                            m.get("loaded", False) is True or
+                            m.get("state") == "loaded" or
+                            bool(m.get("loaded_instances"))
+                        )
+                        if not is_loaded:
+                            print(f"[LMStudio] Model '{model_name}' is not loaded.")
+                            return True
+
+                        async with session.post(
+                            f"{self.base_url}/api/v1/models/unload",
+                            json={"instance_id": model_key},
+                            timeout=aiohttp.ClientTimeout(total=15),
+                        ) as unload_resp:
+                            if unload_resp.status == 200:
+                                print(f"[LMStudio] Unloaded '{model_name}'")
+                                return True
+                            else:
+                                body = await unload_resp.text()
+                                print(f"[LMStudio] Unload failed for '{model_name}': HTTP {unload_resp.status}: {body}")
+                                return False
+                print(f"[LMStudio] Model '{model_name}' not found for unload.")
+                return True
+        except Exception as e:
+            print(f"[LMStudio] Unload request failed: {e}")
+            return False
+
 
 class OllamaBackend(LLMBackend):
     """Ollama local server backend."""
 
     def __init__(self, base_url_override: str = None):
         self._base_url_override = base_url_override
+        self._currently_loaded_model: Optional[str] = None
 
     @property
     def name(self) -> str:
@@ -277,15 +323,54 @@ class OllamaBackend(LLMBackend):
             print(f"[Ollama] Error listing models: {e}")
             return []
 
+    async def unload_model(self, model_name: str) -> bool:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/api/generate",
+                    json={"model": model_name, "prompt": "", "keep_alive": 0},
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    if resp.status == 200:
+                        print(f"[Ollama] Unloaded '{model_name}'")
+                        self._currently_loaded_model = None
+                        return True
+                    else:
+                        body = await resp.text()
+                        print(f"[Ollama] Unload failed for '{model_name}': HTTP {resp.status}: {body}")
+                        return False
+        except Exception as e:
+            print(f"[Ollama] Unload request failed for '{model_name}': {e}")
+            return False
+
     async def ensure_model_loaded(self, model_name: str) -> bool:
-        models = await self.list_models()
-        model_ids = [m["id"] for m in models]
-        if model_name in model_ids:
-            print(f"[Ollama] Model '{model_name}' already available.")
+        if self._currently_loaded_model == model_name:
+            print(f"[Ollama] Model '{model_name}' already in memory.")
             return True
-        # Ollama auto-pulls on first use via /v1/chat/completions, but we can trigger it explicitly
-        print(f"[Ollama] Model '{model_name}' not found locally. It will be pulled on first use.")
-        return True  # Let Ollama handle the pull
+        try:
+            if self._currently_loaded_model:
+                print(f"[Ollama] Preloading '{model_name}', unloading '{self._currently_loaded_model}'...")
+            else:
+                print(f"[Ollama] Preloading '{model_name}' with keep_alive=60m...")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/api/generate",
+                    json={"model": model_name, "prompt": "", "keep_alive": "60m"},
+                    timeout=aiohttp.ClientTimeout(total=300),
+                ) as resp:
+                    if resp.status == 200:
+                        self._currently_loaded_model = model_name
+                        print(f"[Ollama] Model '{model_name}' preloaded (keep_alive=60m)")
+                        return True
+                    else:
+                        body = await resp.text()
+                        print(f"[Ollama] Preload failed for '{model_name}': HTTP {resp.status}: {body}")
+                        self._currently_loaded_model = None
+                        return False
+        except Exception as e:
+            print(f"[Ollama] Preload failed for '{model_name}': {e}")
+            self._currently_loaded_model = None
+            return False
 
 
 class OpenAICompatibleBackend(LLMBackend):
