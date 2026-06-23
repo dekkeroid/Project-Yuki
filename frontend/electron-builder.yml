@@ -10,6 +10,7 @@ directories:
 # ── Files to include in the Electron app ─────────────────────────────────────
 files:
   - dist/**/*
+  - '!dist/models/**/*'
   - main.electron.cjs
   - preload.cjs
   - icon.png
@@ -28,15 +29,11 @@ extraResources:
     to: frontend/dist
     filter:
       - "**/*"
-  - from: ./dist/models
+      - '!models/**/*'
+  - from: ./bundled-models
     to: models
     filter:
-      - "default.vrm"
-      - "mizuki.vrm"
-      - "mixup.vrm"
-      - "mixup with hat.vrm"
-      - "trial.vrm"
-      - "whai.vrm"
+      - "**/*.vrm"
   - from: ./CREDITS.txt
     to: CREDITS.txt
 
