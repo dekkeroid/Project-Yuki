@@ -1130,13 +1130,14 @@ const ControlDashboard = ({
                       const newBackend = e.target.value;
                       await handleUpdateSetting('llm_model', '');
                       await handleUpdateSetting('llm_backend', newBackend);
-                      // Set default base URL if current is empty
-                      if (!settings.llm_base_url) {
-                        const defaults = { ollama: 'http://127.0.0.1:11434', vllm: 'http://127.0.0.1:8000/v1' };
-                        if (defaults[newBackend]) {
-                          await handleUpdateSetting('llm_base_url', defaults[newBackend]);
-                        }
-                      }
+                      const defaults = {
+                        lmstudio: 'http://127.0.0.1:1234',
+                        ollama: 'http://127.0.0.1:11434',
+                        vllm: 'http://127.0.0.1:8000/v1',
+                        openai: '',
+                        custom: '',
+                      };
+                      await handleUpdateSetting('llm_base_url', defaults[newBackend] || '');
                       if (newBackend !== 'none' && onRefreshLlmModels) {
                         setTimeout(() => onRefreshLlmModels(), 500);
                       }
@@ -1163,15 +1164,16 @@ const ControlDashboard = ({
                   </select>
                 </div>
 
-                {/* Base URL (for non-local backends) */}
-                {(settings.llm_backend === 'ollama' || settings.llm_backend === 'vllm' || settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                {/* Base URL */}
+                {settings.llm_backend !== 'none' && (
                   <div className="identity-field" style={{ marginTop: '8px' }}>
                     <span className="field-label">
-                      {settings.llm_backend === 'ollama' ? 'Ollama URL' : settings.llm_backend === 'vllm' ? 'vLLM URL' : settings.llm_backend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
+                      {settings.llm_backend === 'lmstudio' ? 'LM Studio URL' : settings.llm_backend === 'ollama' ? 'Ollama URL' : settings.llm_backend === 'vllm' ? 'vLLM URL' : settings.llm_backend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
                     </span>
                     <input
                       type="text"
                       placeholder={
+                        settings.llm_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
                         settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
                         settings.llm_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
                         settings.llm_backend === 'openai' ? 'https://api.groq.com/openai' :
@@ -1181,7 +1183,12 @@ const ControlDashboard = ({
                       onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
                       onBlur={(e) => {
                         if (!e.target.value.trim()) {
-                          const defaults = { ollama: 'http://127.0.0.1:11434', vllm: 'http://127.0.0.1:8000/v1', custom: 'http://127.0.0.1:8000/v1' };
+                          const defaults = {
+                            lmstudio: 'http://127.0.0.1:1234',
+                            ollama: 'http://127.0.0.1:11434',
+                            vllm: 'http://127.0.0.1:8000/v1',
+                            custom: 'http://127.0.0.1:8000/v1',
+                          };
                           if (defaults[settings.llm_backend]) handleUpdateSetting('llm_base_url', defaults[settings.llm_backend]);
                         }
                       }}

@@ -4819,13 +4819,14 @@ const App = () => {
                             await handleUpdateSetting('llm_model', '');
                             await handleUpdateSetting('llm_backend', newBackend);
                             setLlmBackend(newBackend);
-                            // Set default base URL if current is empty
-                            if (!profile.settings?.llm_base_url) {
-                              const defaults = { ollama: 'http://127.0.0.1:11434', vllm: 'http://127.0.0.1:8000/v1' };
-                              if (defaults[newBackend]) {
-                                await handleUpdateSetting('llm_base_url', defaults[newBackend]);
-                              }
-                            }
+                            const defaults = {
+                              lmstudio: 'http://127.0.0.1:1234',
+                              ollama: 'http://127.0.0.1:11434',
+                              vllm: 'http://127.0.0.1:8000/v1',
+                              openai: '',
+                              custom: '',
+                            };
+                            await handleUpdateSetting('llm_base_url', defaults[newBackend] || '');
                             if (newBackend !== 'none') {
                               setTimeout(() => fetchLlmModels(), 500);
                             }
@@ -4841,26 +4842,32 @@ const App = () => {
                         </select>
                       </div>
 
-                      {/* Base URL (for non-local backends) */}
-                      {llmBackend !== 'lmstudio' && llmBackend !== 'none' && (
+                      {/* Base URL */}
+                      {llmBackend !== 'none' && (
                         <div className="desktop-form-group">
                           <label className="desktop-label">
-                            {llmBackend === 'ollama' ? 'Ollama URL' : llmBackend === 'vllm' ? 'vLLM URL' : llmBackend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
+                            {llmBackend === 'lmstudio' ? 'LM Studio URL' : llmBackend === 'ollama' ? 'Ollama URL' : llmBackend === 'vllm' ? 'vLLM URL' : llmBackend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
                           </label>
                           <input
                             type="text"
                             className="desktop-input"
                             placeholder={
-                              llmBackend === 'ollama' ? 'http://127.0.0.1:11434' :
-                                llmBackend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
-                                  llmBackend === 'openai' ? 'https://api.groq.com/openai' :
-                                    'http://127.0.0.1:8000/v1'
+                              llmBackend === 'lmstudio' ? 'http://127.0.0.1:1234' :
+                                llmBackend === 'ollama' ? 'http://127.0.0.1:11434' :
+                                  llmBackend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
+                                    llmBackend === 'openai' ? 'https://api.groq.com/openai' :
+                                      'http://127.0.0.1:8000/v1'
                             }
                             value={profile.settings?.llm_base_url || ''}
                             onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
                             onBlur={(e) => {
                               if (!e.target.value.trim()) {
-                                const defaults = { ollama: 'http://127.0.0.1:11434', vllm: 'http://127.0.0.1:8000/v1', custom: 'http://127.0.0.1:8000/v1' };
+                                const defaults = {
+                                  lmstudio: 'http://127.0.0.1:1234',
+                                  ollama: 'http://127.0.0.1:11434',
+                                  vllm: 'http://127.0.0.1:8000/v1',
+                                  custom: 'http://127.0.0.1:8000/v1',
+                                };
                                 if (defaults[llmBackend]) handleUpdateSetting('llm_base_url', defaults[llmBackend]);
                               }
                             }}

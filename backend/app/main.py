@@ -559,11 +559,25 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("llm_model", new_model)
     if req.llm_backend is not None:
         old_backend = memory_manager.profile["settings"].get("llm_backend")
-        memory_manager.update_setting("llm_backend", req.llm_backend.strip())
-        if old_backend and old_backend != req.llm_backend.strip():
+        new_backend = req.llm_backend.strip()
+        memory_manager.update_setting("llm_backend", new_backend)
+        config.LLM_BACKEND = new_backend
+        if old_backend and old_backend != new_backend:
             config.LLM_MODEL = ""
             memory_manager.update_setting("llm_model", "")
+            _default_urls = {
+                "lmstudio": config.LMSTUDIO_URL,
+                "ollama": "http://127.0.0.1:11434",
+                "vllm": config.VLLM_URL,
+            }
+            if new_backend in _default_urls:
+                config.LLM_BASE_URL = _default_urls[new_backend]
+                memory_manager.update_setting("llm_base_url", _default_urls[new_backend])
+            elif new_backend in ("openai", "custom"):
+                config.LLM_BASE_URL = ""
+                memory_manager.update_setting("llm_base_url", "")
     if req.llm_base_url is not None:
+        config.LLM_BASE_URL = req.llm_base_url.strip()
         memory_manager.update_setting("llm_base_url", req.llm_base_url.strip())
     if req.llm_api_key is not None:
         memory_manager.update_setting("llm_api_key", req.llm_api_key.strip())
