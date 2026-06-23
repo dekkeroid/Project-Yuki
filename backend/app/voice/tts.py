@@ -30,10 +30,10 @@ from kokoro_onnx import Kokoro
 from app import config
 
 VOICE_DIR = Path(__file__).parent.resolve()
-MODEL_PATH = VOICE_DIR / "kokoro-v1.0.onnx"
+MODEL_PATH = VOICE_DIR / "kokoro-v1.0.fp16.onnx"
 VOICES_PATH = VOICE_DIR / "voices-v1.0.bin"
 
-MODEL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+MODEL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.fp16.onnx"
 VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
 
 def _ensure_model_files():

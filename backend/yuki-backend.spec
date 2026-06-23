@@ -48,7 +48,7 @@ manual_datas = [
     # Setup UI
     (os.path.join(BACKEND_DIR, 'app', 'setup.html'), os.path.join('app')),
     # Kokoro TTS models (~337MB) — bundled so setup skips download
-    (os.path.join(BACKEND_DIR, 'app', 'voice', 'kokoro-v1.0.onnx'), os.path.join('app', 'voice')),
+    (os.path.join(BACKEND_DIR, 'app', 'voice', 'kokoro-v1.0.fp16.onnx'), os.path.join('app', 'voice')),
     (os.path.join(BACKEND_DIR, 'app', 'voice', 'voices-v1.0.bin'), os.path.join('app', 'voice')),
     # Whisper STT model (~141MB) — bundled so first use skips download
     (os.path.join(BACKEND_DIR, 'app', 'voice', 'whisper-base'), os.path.join('app', 'voice', 'whisper-base')),
