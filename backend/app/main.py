@@ -124,11 +124,26 @@ async def _start_crawler_bg():
         print(f"[Startup] Failed to start crawler services: {e}")
 
 
-async def _swap_model(new_model: str):
+async def _swap_model(new_model: str, old_backend=None):
     """Unload old model and preload new model in background. Fire-and-forget."""
     from app.agent.llm_backend import get_backend
     old_model = getattr(config, "_previous_llm_model", None)
     config._previous_llm_model = new_model
+    if old_backend:
+        print(f"[ModelSwap] Backend switched — unloading '{old_model}' from old backend, preloading '{new_model}' on new")
+        if old_model:
+            try:
+                await asyncio.wait_for(old_backend.unload_model(old_model), timeout=15)
+            except Exception as e:
+                print(f"[ModelSwap] Old backend unload failed (non-blocking): {e}")
+        if new_model:
+            try:
+                backend = get_backend()
+                if backend:
+                    await asyncio.wait_for(backend.ensure_model_loaded(new_model), timeout=300)
+            except Exception as e:
+                print(f"[ModelSwap] New backend preload failed: {e}")
+        return
     if old_model == new_model or not old_model:
         if new_model and not old_model:
             print(f"[ModelSwap] Initial model: '{new_model}' — loading")
@@ -551,18 +566,33 @@ async def update_settings(req: SettingsUpdateRequest):
     """
     global tts_online_status
     from app.memory import crawler
+    from app.agent.llm_backend import get_backend
+
+    backend_switched = False
+    captured_old_backend = None
+    if req.llm_backend is not None:
+        old_backend_type = memory_manager.profile["settings"].get("llm_backend")
+        new_backend = req.llm_backend.strip()
+        if old_backend_type and old_backend_type != new_backend:
+            backend_switched = True
+            captured_old_backend = get_backend()
+            config._previous_llm_model = None
+            config._pending_old_backend = captured_old_backend
+            print(f"[ModelSwap] Backend switch detected: '{old_backend_type}' → '{new_backend}'")
     if req.llm_model is not None:
         new_model = req.llm_model.strip()
-        if new_model != config.LLM_MODEL:
-            asyncio.create_task(_swap_model(new_model))
+        pending_old = getattr(config, "_pending_old_backend", None)
+        if new_model and new_model != config.LLM_MODEL:
+            asyncio.create_task(_swap_model(new_model, old_backend=pending_old or captured_old_backend))
         config.LLM_MODEL = new_model
         memory_manager.update_setting("llm_model", new_model)
+        if pending_old:
+            config._pending_old_backend = None
     if req.llm_backend is not None:
-        old_backend = memory_manager.profile["settings"].get("llm_backend")
         new_backend = req.llm_backend.strip()
         memory_manager.update_setting("llm_backend", new_backend)
         config.LLM_BACKEND = new_backend
-        if old_backend and old_backend != new_backend:
+        if backend_switched:
             config.LLM_MODEL = ""
             memory_manager.update_setting("llm_model", "")
             _default_urls = {
