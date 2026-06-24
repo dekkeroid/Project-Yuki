@@ -183,15 +183,14 @@ def _setup_database():
 
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS directories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dir_path TEXT UNIQUE NOT NULL,
+            path TEXT PRIMARY KEY,
             last_modified REAL,
             change_count INTEGER DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_path TEXT UNIQUE NOT NULL,
-            file_name TEXT NOT NULL,
+            file_path TEXT UNIQUE,
+            file_name TEXT,
             parent_folder TEXT,
             extension TEXT,
             size INTEGER,
@@ -202,8 +201,7 @@ def _setup_database():
             transliterated_parent_folder TEXT
         );
         CREATE TABLE IF NOT EXISTS file_metadata (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_id INTEGER NOT NULL,
+            file_id INTEGER PRIMARY KEY,
             title TEXT,
             artist_or_creator TEXT,
             genre_or_tags TEXT,
@@ -221,11 +219,15 @@ def _setup_database():
     # FTS5
     conn.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
-            file_name, parent_folder, transliterated_name,
-            transliterated_parent_folder,
-            title, artist_or_creator, genre_or_tags,
-            content='file_metadata',
-            content_rowid='id'
+            file_id UNINDEXED,
+            file_name,
+            parent_folder,
+            category,
+            title,
+            artist_or_creator,
+            genre_or_tags,
+            alternate_titles,
+            tokenize='unicode61'
         )
     """)
 

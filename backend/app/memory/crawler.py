@@ -697,9 +697,10 @@ def should_handle_orphan(file_path: str, current_root: str, all_targets: List[st
                 
     return True
 
-def scan_target_root(root_dir: str, all_targets: List[str]):
+def scan_target_root(root_dir: str, all_targets: List[str]) -> bool:
     """
     Crawls a single target root directory, indexes files, and runs target-specific orphan cleanup.
+    Returns True if the root was scanned and committed successfully, False on error.
     """
     global CURRENT_CRAWL_PATH, CRAWL_ROOTS_CURRENT_PATH
     log_memory_stats(f"scan_target_root START {root_dir}")
@@ -707,12 +708,12 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
     CRAWL_ROOTS_CURRENT_PATH = root_dir
     if not os.path.exists(root_dir):
         log_memory_stats(f"scan_target_root SKIP (not exists) {root_dir}")
-        return
+        return True
 
     if _contains_blacklisted_dir_component(root_dir):
         log_message(f"[Crawler] Skipping blacklisted root path: {root_dir}")
         log_memory_stats(f"scan_target_root SKIP (blacklisted) {root_dir}")
-        return
+        return True
         
     all_seen_file_paths = set()
     folders_scanned = 0
@@ -720,6 +721,9 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
     total_files_scanned = 0
     new_files_indexed = 0
     modified_files_updated = 0
+    failed_inserts = 0
+    ext_filtered = 0
+    path_filtered = 0
     orphans = []
     
     # Only print indexing path if it's one of the main drives/folders to avoid log flooding
@@ -800,9 +804,11 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
                 # ─── PURE WHITELIST GUARD CLAUSE ───
                 # If the extension isn't explicitly tracked in your categories, skip it instantly!
                 if ext_lower not in EXT_CATEGORIES:
+                    ext_filtered += 1
                     continue
                     
                 if should_skip_by_path_constraints(full_path, ext_lower):
+                    path_filtered += 1
                     continue
                     
                 all_seen_file_paths.add(full_path)
@@ -820,11 +826,12 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
                 
                 existing_file = db.get_file_by_path(full_path, conn=conn)
                 if not existing_file:
-                    folder_changes_detected = True
-                    new_files_indexed += 1
-                    log_message(f"[Crawler] [NEW] Indexed file: '{full_path}' (guessed category: {category}) - successfully added to db")
                     file_id = db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category, conn=conn)
-                    
+                    if file_id != -1:
+                        folder_changes_detected = True
+                        new_files_indexed += 1
+                    else:
+                        failed_inserts += 1
                     if file_id != -1 and category in ('movie', 'song'):
                         meta = parse_filename_metadata(file)
                         db.upsert_metadata(
@@ -838,10 +845,12 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
                             conn=conn
                         )
                 elif existing_file["size"] != f_size or existing_file["last_modified"] != f_mtime:
-                    folder_changes_detected = True
-                    modified_files_updated += 1
-                    log_message(f"[Crawler] [MODIFIED] Updated stats for file: '{full_path}' - successfully added to db")
-                    db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category, conn=conn)
+                    file_id = db.upsert_file(full_path, file, parent_folder, ext, f_size, f_mtime, category, conn=conn)
+                    if file_id != -1:
+                        folder_changes_detected = True
+                        modified_files_updated += 1
+                    else:
+                        failed_inserts += 1
             
             change_increment = 1 if folder_changes_detected else 0
             db.upsert_directory(root, current_mtime, change_increment, conn=conn)
@@ -889,11 +898,14 @@ def scan_target_root(root_dir: str, all_targets: List[str]):
             conn.rollback()
         except:
             pass
+        log_memory_stats(f"scan_target_root END (FAILED) {root_dir}")
+        return False
     finally:
         conn.close()
             
-    log_message(f"[Crawler] Root '{root_dir}' scan summary: Scanned={folders_scanned}, Skipped={folders_skipped}, TotalFiles={total_files_scanned}, New={new_files_indexed}, Mod={modified_files_updated}, Deleted={len(orphans)}")
+    log_message(f"[Crawler] Root '{root_dir}' scan summary: Scanned={folders_scanned}, Skipped={folders_skipped}, TotalFiles={total_files_scanned}, New={new_files_indexed}, Mod={modified_files_updated}, Failed={failed_inserts}, ExtFiltered={ext_filtered}, PathFiltered={path_filtered}, Deleted={len(orphans)}")
     log_memory_stats(f"scan_target_root END {root_dir}")
+    return True
 
 def sleep_pacing_between_cycles(seconds: float):
     global CURRENT_CRAWL_PATH
@@ -976,7 +988,15 @@ def run_crawl():
         log_message(f"[DEBUG] State from DB: first_time_priority_done={first_time_priority_done}, first_cycle_done={first_cycle_done}")
         
         completed_roots_str = db.get_crawler_state("completed_roots_in_cycle")
-        completed_roots = json.loads(completed_roots_str) if completed_roots_str else []
+        if completed_roots_str:
+            try:
+                completed_roots = json.loads(completed_roots_str)
+            except (json.JSONDecodeError, TypeError):
+                # Old DBs used pipe-separated format: "root1|root2|root3"
+                completed_roots = [r for r in completed_roots_str.split("|") if r]
+                log_message(f"[Crawler] Migrated completed_roots from old pipe format ({len(completed_roots)} roots)")
+        else:
+            completed_roots = []
         log_message(f"[DEBUG] completed_roots_in_cycle count: {len(completed_roots)}")
         
         # Build targets — data drives are expanded into direct subdirs for subfolder-level resume
@@ -994,9 +1014,12 @@ def run_crawl():
                 log_message(f"[DEBUG] New cycle: scanning root {idx+1}/{len(all_targets)}: {root_dir}")
                 check_idle_and_game_pacing()
                 CRAWL_ROOTS_CURRENT = idx + 1
-                scan_target_root(root_dir, all_targets)
-                completed_roots.append(root_dir)
-                db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
+                scan_ok = scan_target_root(root_dir, all_targets)
+                if scan_ok:
+                    completed_roots.append(root_dir)
+                    db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
+                else:
+                    log_message(f"[Crawler] Root '{root_dir}' scan FAILED — will retry next cycle")
             
             # Cycle complete - clear completed roots but keep first_cycle_done/first_time_priority_done true
             completed_roots = []
@@ -1027,10 +1050,12 @@ def run_crawl():
                     log_message(f"[DEBUG] Priority scan: skipping already completed root: {root_dir}")
                     continue
                     
-                scan_target_root(root_dir, all_targets)
-                
-                completed_roots.append(root_dir)
-                db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
+                scan_ok = scan_target_root(root_dir, all_targets)
+                if scan_ok:
+                    completed_roots.append(root_dir)
+                    db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
+                else:
+                    log_message(f"[Crawler] Priority root '{root_dir}' scan FAILED — will retry next cycle")
                 
             # Mark first time priority scan permanently as true
             db.set_crawler_state("first_time_priority_done", "true")
@@ -1063,10 +1088,12 @@ def run_crawl():
                 log_message(f"[DEBUG] Resume cycle: skipping already completed root: {root_dir}")
                 continue
                 
-            scan_target_root(root_dir, all_targets)
-            
-            completed_roots.append(root_dir)
-            db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
+            scan_ok = scan_target_root(root_dir, all_targets)
+            if scan_ok:
+                completed_roots.append(root_dir)
+                db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
+            else:
+                log_message(f"[Crawler] Root '{root_dir}' scan FAILED — will retry next cycle")
             
         # Cycle complete
         log_message("[Crawler] First cycle completed successfully.")

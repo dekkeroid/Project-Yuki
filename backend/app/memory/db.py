@@ -107,33 +107,129 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def _fts_needs_migration(cursor) -> bool:
+    """
+    Detect if files_fts needs to be dropped and recreated.
+    Returns True if the table is missing, content-synced, or lacks required columns.
+    """
+    required_fts = {"file_id", "file_name", "parent_folder", "category",
+                    "title", "artist_or_creator", "genre_or_tags", "alternate_titles"}
+
+    # Check 1: Does the table exist at all?
+    row = cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='files_fts'").fetchone()
+    if not row or not row[0]:
+        print("[DB] FTS5: files_fts does not exist - will create.")
+        return True
+
+    create_sql = row[0]
+
+    # Check 2: Is it content-synced? (old schema used content='file_metadata')
+    if "content=" in create_sql.lower():
+        print("[DB] FTS5: files_fts is content-synced - will recreate as standalone.")
+        return True
+
+    # Check 3: Does it have all required columns?
+    try:
+        fts_cols = {r[1] for r in cursor.execute("PRAGMA table_info(files_fts)").fetchall()}
+        missing = required_fts - fts_cols
+        if missing:
+            print(f"[DB] FTS5: files_fts missing columns {missing} - will recreate.")
+            return True
+    except Exception:
+        print("[DB] FTS5: PRAGMA table_info failed - will recreate.")
+        return True
+
+    return False
+
+
+def _drop_all_triggers(cursor):
+    """Drop every trigger we create so they can be recreated with correct definitions."""
+    for name in ("files_ai", "files_ad", "files_au", "file_metadata_ai", "file_metadata_au"):
+        cursor.execute(f"DROP TRIGGER IF EXISTS {name}")
+
+
+def _create_triggers(cursor):
+    """Create (or replace) all FTS sync triggers."""
+    _drop_all_triggers(cursor)
+
+    cursor.execute("""
+    CREATE TRIGGER files_ai AFTER INSERT ON files BEGIN
+        INSERT INTO files_fts(file_id, file_name, parent_folder, category)
+        VALUES (new.id, new.file_name, new.parent_folder, new.category);
+    END;
+    """)
+    cursor.execute("""
+    CREATE TRIGGER files_ad AFTER DELETE ON files BEGIN
+        DELETE FROM files_fts WHERE file_id = old.id;
+    END;
+    """)
+    cursor.execute("""
+    CREATE TRIGGER files_au AFTER UPDATE ON files BEGIN
+        UPDATE files_fts SET
+            file_name = new.file_name,
+            parent_folder = new.parent_folder,
+            category = new.category
+        WHERE file_id = new.id;
+    END;
+    """)
+    cursor.execute("""
+    CREATE TRIGGER file_metadata_ai AFTER INSERT ON file_metadata BEGIN
+        UPDATE files_fts SET
+            title = new.title,
+            artist_or_creator = new.artist_or_creator,
+            genre_or_tags = new.genre_or_tags,
+            alternate_titles = new.alternate_titles
+        WHERE file_id = new.file_id;
+    END;
+    """)
+    cursor.execute("""
+    CREATE TRIGGER file_metadata_au AFTER UPDATE ON file_metadata BEGIN
+        UPDATE files_fts SET
+            title = new.title,
+            artist_or_creator = new.artist_or_creator,
+            genre_or_tags = new.genre_or_tags,
+            alternate_titles = new.alternate_titles
+        WHERE file_id = new.file_id;
+    END;
+    """)
+
+
+def _rebuild_fts_index(cursor):
+    """Rebuild the FTS5 index from files + file_metadata."""
+    try:
+        cursor.execute("""
+        INSERT INTO files_fts(file_id, file_name, parent_folder, category,
+                              title, artist_or_creator, genre_or_tags, alternate_titles)
+        SELECT f.id, f.file_name, f.parent_folder, f.category,
+               m.title, m.artist_or_creator, m.genre_or_tags, m.alternate_titles
+        FROM files f
+        LEFT JOIN file_metadata m ON f.id = m.file_id
+        """)
+        print(f"[DB] FTS5: Rebuilt index for {cursor.rowcount} files.")
+    except Exception as e:
+        print(f"[DB] FTS5: Error rebuilding index: {e}")
+
+
 def init_db():
     """
     Initializes database schema and triggers for automated FTS5 indexing.
-    Supports auto-migration by dropping and recreating tables when parent_folder is missing.
+    Handles migration from old schemas (content-synced FTS5, old file_metadata with id PK,
+    old directories with dir_path, etc.) by detecting and recreating as needed.
     """
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Migration Check
-    try:
-        cursor.execute("PRAGMA table_info(files);")
-        columns = [row[1] for row in cursor.fetchall()]
-        if columns and "parent_folder" not in columns:
-            print("[DB] Migrating database: adding parent_folder column and recreating FTS table...")
-            cursor.execute("DROP TABLE IF EXISTS files_fts;")
-            cursor.execute("DROP TRIGGER IF EXISTS files_ai;")
-            cursor.execute("DROP TRIGGER IF EXISTS files_ad;")
-            cursor.execute("DROP TRIGGER IF EXISTS files_au;")
-            cursor.execute("DROP TRIGGER IF EXISTS file_metadata_ai;")
-            cursor.execute("DROP TRIGGER IF EXISTS file_metadata_au;")
-            cursor.execute("DROP TABLE IF EXISTS files;")
-            cursor.execute("DROP TABLE IF EXISTS file_metadata;")
-            cursor.execute("DROP TABLE IF EXISTS directories;")
-    except Exception as e:
-        print(f"[DB] Error checking for migration: {e}")
+    # ── Phase 1: Migrate table schemas ──────────────────────────────────
 
-    # 1. Directories Table
+    # 1a. Directories: if old schema has 'dir_path' instead of 'path', drop it
+    try:
+        dir_cols = {r[1] for r in cursor.execute("PRAGMA table_info(directories)").fetchall()}
+        if dir_cols and "path" not in dir_cols:
+            print("[DB] Migrating: Recreating directories table (dir_path -> path)...")
+            cursor.execute("DROP TABLE IF EXISTS directories;")
+    except Exception:
+        pass
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS directories (
         path TEXT PRIMARY KEY,
@@ -142,7 +238,26 @@ def init_db():
     );
     """)
 
-    # 2. Files Table
+    # 1b. Files: drop everything and recreate if parent_folder is missing (ancient schema)
+    try:
+        columns = [row[1] for row in cursor.execute("PRAGMA table_info(files)").fetchall()]
+        if columns and "parent_folder" not in columns:
+            print("[DB] Migrating: Ancient files schema - dropping FTS/triggers/tables for full rebuild...")
+            cursor.execute("DROP TABLE IF EXISTS files_fts;")
+            _drop_all_triggers(cursor)
+            cursor.execute("DROP TABLE IF EXISTS files;")
+            cursor.execute("DROP TABLE IF EXISTS file_metadata;")
+            cursor.execute("DROP TABLE IF EXISTS directories;")
+            cursor.execute("""
+            CREATE TABLE directories (
+                path TEXT PRIMARY KEY,
+                last_modified REAL,
+                change_count INTEGER DEFAULT 0
+            );
+            """)
+    except Exception as e:
+        print(f"[DB] Error checking files schema: {e}")
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -159,10 +274,9 @@ def init_db():
     );
     """)
 
-    # Migrate existing tables if they lack transliterated columns
+    # Add transliterated columns if missing
     try:
-        cursor.execute("PRAGMA table_info(files);")
-        cols = [row[1] for row in cursor.fetchall()]
+        cols = [row[1] for row in cursor.execute("PRAGMA table_info(files)").fetchall()]
         if cols:
             if "transliterated_name" not in cols:
                 print("[DB] Migrating: Adding transliterated_name column to files...")
@@ -171,9 +285,48 @@ def init_db():
                 print("[DB] Migrating: Adding transliterated_parent_folder column to files...")
                 cursor.execute("ALTER TABLE files ADD COLUMN transliterated_parent_folder TEXT;")
     except Exception as e:
-        print(f"[DB] Error adding columns: {e}")
+        print(f"[DB] Error adding transliterated columns: {e}")
 
-    # 3. File Metadata Table (artist, genres, release year)
+    # 1c. File Metadata: if old schema has 'id' column, drop + recreate
+    #     IMPORTANT: drop FTS5 and triggers FIRST to avoid broken content-sync references
+    try:
+        meta_cols = {r[1] for r in cursor.execute("PRAGMA table_info(file_metadata)").fetchall()}
+        if meta_cols and "id" in meta_cols:
+            print("[DB] Migrating: file_metadata has old 'id' PK - dropping FTS/triggers, recreating...")
+            # Drop FTS and triggers FIRST (they may reference old file_metadata)
+            cursor.execute("DROP TABLE IF EXISTS files_fts;")
+            _drop_all_triggers(cursor)
+            # Preserve existing metadata
+            old_meta = {}
+            try:
+                for row in cursor.execute("SELECT file_id, title, artist_or_creator, genre_or_tags, release_year, alternate_titles, enriched FROM file_metadata"):
+                    old_meta[row[0]] = dict(row)
+            except Exception:
+                pass
+            cursor.execute("DROP TABLE IF EXISTS file_metadata;")
+            cursor.execute("""
+            CREATE TABLE file_metadata (
+                file_id INTEGER PRIMARY KEY,
+                title TEXT,
+                artist_or_creator TEXT,
+                genre_or_tags TEXT,
+                release_year INTEGER,
+                alternate_titles TEXT,
+                enriched INTEGER DEFAULT 0,
+                FOREIGN KEY (file_id) REFERENCES files (id) ON DELETE CASCADE
+            );
+            """)
+            if old_meta:
+                for fid, m in old_meta.items():
+                    cursor.execute("""
+                    INSERT OR REPLACE INTO file_metadata (file_id, title, artist_or_creator, genre_or_tags, release_year, alternate_titles, enriched)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (fid, m.get("title"), m.get("artist_or_creator"), m.get("genre_or_tags"),
+                          m.get("release_year"), m.get("alternate_titles"), m.get("enriched", 0)))
+                print(f"[DB] Restored {len(old_meta)} metadata records.")
+    except Exception as e:
+        print(f"[DB] Error migrating file_metadata: {e}")
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS file_metadata (
         file_id INTEGER PRIMARY KEY,
@@ -187,69 +340,46 @@ def init_db():
     );
     """)
 
-    # 4. FTS5 Virtual Table for Instant Search
-    cursor.execute("""
-    CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
-        file_id UNINDEXED,
-        file_name,
-        parent_folder,
-        category,
-        title,
-        artist_or_creator,
-        genre_or_tags,
-        alternate_titles,
-        tokenize='unicode61'
-    );
-    """)
+    # ── Phase 2: FTS5 Virtual Table ─────────────────────────────────────
 
-    # 5. Automated Triggers to sync files table insert/update/delete with FTS5
-    cursor.execute("""
-    CREATE TRIGGER IF NOT EXISTS files_ai AFTER INSERT ON files BEGIN
-        INSERT INTO files_fts(file_id, file_name, parent_folder, category)
-        VALUES (new.id, new.file_name, new.parent_folder, new.category);
-    END;
-    """)
+    if _fts_needs_migration(cursor):
+        cursor.execute("DROP TABLE IF EXISTS files_fts;")
+        cursor.execute("""
+        CREATE VIRTUAL TABLE files_fts USING fts5(
+            file_id UNINDEXED,
+            file_name,
+            parent_folder,
+            category,
+            title,
+            artist_or_creator,
+            genre_or_tags,
+            alternate_titles,
+            tokenize='unicode61'
+        );
+        """)
+        _rebuild_fts_index(cursor)
+    else:
+        # Table exists with correct schema - ensure it exists (defensive)
+        cursor.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
+            file_id UNINDEXED,
+            file_name,
+            parent_folder,
+            category,
+            title,
+            artist_or_creator,
+            genre_or_tags,
+            alternate_titles,
+            tokenize='unicode61'
+        );
+        """)
 
-    cursor.execute("""
-    CREATE TRIGGER IF NOT EXISTS files_ad AFTER DELETE ON files BEGIN
-        DELETE FROM files_fts WHERE file_id = old.id;
-    END;
-    """)
+    # ── Phase 3: Triggers (always recreate to fix stale definitions) ────
 
-    cursor.execute("""
-    CREATE TRIGGER IF NOT EXISTS files_au AFTER UPDATE ON files BEGIN
-        UPDATE files_fts SET 
-            file_name = new.file_name, 
-            parent_folder = new.parent_folder, 
-            category = new.category 
-        WHERE file_id = new.id;
-    END;
-    """)
+    _create_triggers(cursor)
 
-    # 6. Automated Triggers to sync file_metadata inserts/updates with FTS5
-    cursor.execute("""
-    CREATE TRIGGER IF NOT EXISTS file_metadata_ai AFTER INSERT ON file_metadata BEGIN
-        UPDATE files_fts SET 
-            title = new.title, 
-            artist_or_creator = new.artist_or_creator, 
-            genre_or_tags = new.genre_or_tags, 
-            alternate_titles = new.alternate_titles 
-        WHERE file_id = new.file_id;
-    END;
-    """)
+    # ── Phase 4: Crawler State Table ────────────────────────────────────
 
-    cursor.execute("""
-    CREATE TRIGGER IF NOT EXISTS file_metadata_au AFTER UPDATE ON file_metadata BEGIN
-        UPDATE files_fts SET 
-            title = new.title, 
-            artist_or_creator = new.artist_or_creator, 
-            genre_or_tags = new.genre_or_tags, 
-            alternate_titles = new.alternate_titles 
-        WHERE file_id = new.file_id;
-    END;
-    """)
-
-    # 7. Crawler State Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS crawler_state (
         key TEXT PRIMARY KEY,
@@ -259,39 +389,26 @@ def init_db():
 
     # One-time migration: rename 'value' column to 'val' if needed
     try:
-        cursor.execute("PRAGMA table_info(crawler_state);")
-        cols = [row[1] for row in cursor.fetchall()]
+        cols = [row[1] for row in cursor.execute("PRAGMA table_info(crawler_state)").fetchall()]
         if "value" in cols and "val" not in cols:
             print("[DB] Migrating: Renaming crawler_state.value to val...")
             cursor.execute("ALTER TABLE crawler_state RENAME COLUMN value TO val;")
     except Exception as e:
         print(f"[DB] Error migrating crawler_state column: {e}")
 
-    # One-time migration to populate transliterated names for existing files
+    # ── Phase 5: One-time data migrations ───────────────────────────────
+
+    # Populate transliterated names for existing files
     try:
-        cursor.execute("SELECT COUNT(*) FROM files WHERE transliterated_name IS NULL")
-        null_count = cursor.fetchone()[0]
+        null_count = cursor.execute("SELECT COUNT(*) FROM files WHERE transliterated_name IS NULL").fetchone()[0]
         if null_count > 0:
-            print(f"[DB] One-time migration: Transliterating {null_count} existing files...")
-            cursor.execute("SELECT id, file_name, parent_folder FROM files WHERE transliterated_name IS NULL")
-            rows = cursor.fetchall()
-            
-            updates = []
-            for row in rows:
-                row_id, file_name, parent_folder = row
-                trans_name = transliterate_text(file_name or "")
-                trans_parent = transliterate_text(parent_folder or "")
-                updates.append((trans_name, trans_parent, row_id))
-                
+            print(f"[DB] Transliterating {null_count} existing files...")
+            rows = cursor.execute("SELECT id, file_name, parent_folder FROM files WHERE transliterated_name IS NULL").fetchall()
+            updates = [(transliterate_text(r[1] or ""), transliterate_text(r[2] or ""), r[0]) for r in rows]
             if updates:
-                # Update in batches
-                cursor.executemany("""
-                UPDATE files 
-                SET transliterated_name = ?, transliterated_parent_folder = ? 
-                WHERE id = ?
-                """, updates)
+                cursor.executemany("UPDATE files SET transliterated_name=?, transliterated_parent_folder=? WHERE id=?", updates)
                 conn.commit()
-                print(f"[DB] One-time migration complete. Transliterated {len(updates)} files.")
+                print(f"[DB] Transliterated {len(updates)} files.")
     except Exception as e:
         print(f"[DB] Error running transliteration migration: {e}")
 
@@ -307,7 +424,7 @@ def init_db():
         changes = cursor.rowcount
         conn.commit()
         if changes > 0:
-            print(f"[DB] Reset enriched status for {changes} song(s) with empty genres to trigger MusicBrainz lookup.")
+            print(f"[DB] Reset enriched status for {changes} song(s) with empty genres.")
     except Exception as e:
         print(f"[DB] Error resetting empty genre song flags: {e}")
 
