@@ -335,15 +335,12 @@ async def test_and_announce_voice_change(new_voice: str, new_rate: str = None):
 
 @app.get("/health")
 def health_check():
-    from app.agent.llm_backend import get_backend
-    backend = get_backend()
     return {
         "status": "healthy",
         "character": config.CHARACTER_NAME,
         "model": config.LLM_MODEL,
         "llm_backend": config.get_backend_type(),
-        "llm_base_url": backend.base_url,
-        "lmstudio_url": config.LMSTUDIO_URL,
+        "llm_base_url": config.get_effective_base_url(),
     }
 
 @app.get("/api/models")

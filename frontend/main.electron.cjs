@@ -245,7 +245,7 @@ function findVitePort(ports, timeout = 500) {
   });
 }
 
-async function loadWithRetry(win, ports, maxAttempts = 10, intervalMs = 800) {
+async function loadWithRetry(win, ports, maxAttempts = 20, intervalMs = 800) {
   // In packaged mode, skip Vite detection — load the bundled dist directly
   if (app.isPackaged) {
     console.log('[Electron] Packaged mode — loading bundled dist/index.html');
@@ -796,32 +796,33 @@ app.whenReady().then(async () => {
     }, 35000);
   }
 
-  const backendReady = await startBackend();
+  // Packaged: show splash, wait for backend, handle errors
+  // Dev: fire-and-forget backend, open window immediately
+  if (app.isPackaged) {
+    const backendReady = await startBackend();
+    if (splashTimer) clearTimeout(splashTimer);
 
-  if (splashTimer) clearTimeout(splashTimer);
-
-  if (!backendReady) {
-    console.error('[Electron] Backend failed to start within timeout.');
-    if (splash && !splash.isDestroyed()) {
-      splash.webContents.send('splash-error', 'Backend failed to respond. Check if port 58392 is available.');
-      // Give user 10s to read the error before auto-quitting
-      setTimeout(() => {
-        if (splash && !splash.isDestroyed()) {
-          app.quit();
-        }
-      }, 10000);
-      return;
+    if (!backendReady) {
+      console.error('[Electron] Backend failed to start within timeout.');
+      if (splash && !splash.isDestroyed()) {
+        splash.webContents.send('splash-error', 'Backend failed to respond. Check if port 58392 is available.');
+        setTimeout(() => {
+          if (splash && !splash.isDestroyed()) app.quit();
+        }, 10000);
+        return;
+      }
     }
+
+    if (splash && !splash.isDestroyed()) splash.close();
+  } else {
+    // Dev mode: open window immediately, backend connects in background
+    startBackend();
   }
 
   if (!setupDone) {
     createSetupWindow();
   } else {
     createWindow();
-  }
-
-  if (splash && !splash.isDestroyed()) {
-    splash.close();
   }
 
   createTray();
