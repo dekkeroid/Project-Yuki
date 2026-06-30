@@ -661,6 +661,7 @@ const App = () => {
   }, [voiceVolume]);
   const [avatarExpression, setAvatarExpression] = useState('neutral');
   const [crawlerPaused, setCrawlerPaused] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
   const [taggerPaused, setTaggerPaused] = useState(false);
 
   // Microphone device selection
@@ -1084,6 +1085,30 @@ const App = () => {
         setIsHovered(hovering);
       });
       return unsubscribe;
+    }
+  }, []);
+
+  // Track window visibility & handle V8 GC commands from Electron
+  useEffect(() => {
+    if (window.electronAPI) {
+      const unsubVisibility = window.electronAPI.onVisibilityChange?.((visible) => {
+        setIsVisible(visible);
+        if (!visible && window.gc) {
+          try { window.gc(); } catch (_) {}
+        }
+      });
+      const unsubGC = window.electronAPI.onOptimizeMemory?.(() => {
+        if (window.gc) {
+          try {
+            window.gc();
+            console.log("[Renderer] Garbage collection triggered.");
+          } catch (_) {}
+        }
+      });
+      return () => {
+        if (unsubVisibility) unsubVisibility();
+        if (unsubGC) unsubGC();
+      };
     }
   }, []);
 
@@ -3470,6 +3495,7 @@ const App = () => {
             activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
             enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
             autoResetRotation={profile.settings?.auto_reset_rotation || false}
+            visible={isVisible}
           />
         </main>
 
@@ -5359,6 +5385,7 @@ const App = () => {
           activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
           enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
           autoResetRotation={profile.settings?.auto_reset_rotation || false}
+          visible={isVisible}
         />
       </main>
 

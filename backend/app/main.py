@@ -185,6 +185,22 @@ async def _do_model_swap(backend, old_model: str, new_model: str):
         print(f"[ModelSwap] Preload '{new_model}' failed: {e}")
 
 
+async def _run_memory_optimizer_bg():
+    """Background task to periodically run garbage collection and optimize process memory."""
+    print("[Startup] Memory optimizer background task started.")
+    await asyncio.sleep(30)
+    while True:
+        try:
+            from app.voice.stt import unload_whisper_if_idle
+            unload_whisper_if_idle()
+            
+            from app.memory.optimizer import optimize_all_processes
+            optimize_all_processes()
+        except Exception as e:
+            print(f"[Memory] Error in background memory optimizer: {e}")
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown logic for the FastAPI application."""
@@ -224,6 +240,7 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_warmup_tts())
     asyncio.create_task(_start_crawler_bg())
+    asyncio.create_task(_run_memory_optimizer_bg())
 
     yield
 
@@ -937,6 +954,26 @@ def get_gpu_memory():
         return get_gpu_memory_usage()
     except Exception as e:
         return {"gpus": [], "top5": {}, "error": str(e)}
+
+
+@app.post("/api/system/optimize_memory")
+def optimize_memory_endpoint():
+    """
+    Manually triggers process memory optimization.
+    Called when the app is hidden or minimized to reclaim RAM immediately.
+    """
+    try:
+        from app.voice.stt import unload_whisper_if_idle
+        unload_whisper_if_idle()
+    except Exception:
+        pass
+        
+    try:
+        from app.memory.optimizer import optimize_all_processes
+        optimize_all_processes()
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @app.get("/api/system/suggestions")

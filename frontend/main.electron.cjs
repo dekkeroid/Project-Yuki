@@ -29,8 +29,8 @@ console.log(`[Electron] Log file: ${LOG_FILE}`);
 console.log(`[Electron] Platform: ${process.platform}, arch: ${process.arch}, packaged: ${app.isPackaged}`);
 
 // ---------- Chromium Performance & VRAM Optimization Switches ----------
-// 1. Hard limit the Javascript V8 engine heap size to 1.2GB to stop virtual memory bloating
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=1200');
+// 1. Hard limit the Javascript V8 engine heap size to 512MB and expose V8 garbage collector
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512 --expose-gc');
 
 // 2. Disable asset/network caching so temporary audio/data clips don't save to disk
 app.commandLine.appendSwitch('disable-http-cache');
@@ -194,8 +194,33 @@ function showBackendCrashDialog(exitCode) {
   // result === 2: ignore, continue with dead backend
 }
 
-function startBackend() {
-  if (backendProcess) return Promise.resolve(true);
+async function isBackendRunning(port) {
+  return new Promise((resolve) => {
+    const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
+      res.destroy();
+      resolve(true);
+    });
+    req.setTimeout(500, () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.on('error', () => {
+      resolve(false);
+    });
+  });
+}
+
+async function startBackend() {
+  if (backendProcess) return true;
+
+  // Check if backend is already running (e.g. manually started or dangling)
+  const alreadyRunning = await isBackendRunning(BACKEND_PORT);
+  if (alreadyRunning) {
+    console.log(`[Electron] Backend is already running on port ${BACKEND_PORT}. Reusing existing instance.`);
+    sendBackendStatus('online');
+    return true;
+  }
+
   backendRetryCount = 0;
   spawnBackend();
   return waitForBackend(BACKEND_PORT);
@@ -282,6 +307,24 @@ function showYuki() {
   }
 }
 
+function requestBackendMemoryOptimization() {
+  const req = http.request({
+    hostname: '127.0.0.1',
+    port: BACKEND_PORT,
+    path: '/api/system/optimize_memory',
+    method: 'POST',
+    headers: {
+      'Content-Length': '0'
+    }
+  }, (res) => {
+    res.on('data', () => {});
+  });
+  req.on('error', (e) => {
+    console.warn('[Electron] Failed to call backend memory optimization:', e.message);
+  });
+  req.end();
+}
+
 function hideYuki() {
   if (!yukiVisible) return;
   yukiVisible = false;
@@ -293,10 +336,26 @@ function hideYuki() {
       mainWindow.webContents.clearHistory();
       const { session } = require('electron');
       session.defaultSession.clearCache();
+      
+      // Request renderer process to optimize memory / GC
+      mainWindow.webContents.send('yuki-optimize-memory');
     } catch (e) {
       console.warn("Failed cache wipe during hide:", e);
     }
   }
+
+  // GC in Main process
+  if (global.gc) {
+    try {
+      global.gc();
+      console.log("[Electron] Main process GC invoked.");
+    } catch (e) {
+      console.warn("Failed main process GC:", e);
+    }
+  }
+
+  // Request backend memory optimization
+  requestBackendMemoryOptimization();
 }
 
 // ---------- Fullscreen detection ----------
@@ -364,6 +423,16 @@ function createWindow() {
   };
   mainWindow.on('move', enforceSize);
   mainWindow.on('resize', enforceSize);
+
+  mainWindow.on('minimize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('yuki-optimize-memory');
+    }
+    if (global.gc) {
+      try { global.gc(); } catch (_) {}
+    }
+    requestBackendMemoryOptimization();
+  });
 
   // Debugging tools (can be opened if necessary during dev)
   // mainWindow.on('ready-to-show', () => {

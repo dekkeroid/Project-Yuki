@@ -30,7 +30,8 @@ const AvatarViewer = ({
   disabledAnimations = [],
   activeModel = 'default.vrm',
   enableRotation = true,
-  autoResetRotation = false
+  autoResetRotation = false,
+  visible = true
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -72,10 +73,15 @@ const AvatarViewer = ({
   const activeModelRef = useRef(activeModel);
   const enableRotationRef = useRef(enableRotation);
   const autoResetRotationRef = useRef(autoResetRotation);
+  const visibleRef = useRef(visible);
 
   useEffect(() => {
     activeModelRef.current = activeModel;
   }, [activeModel]);
+
+  useEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
 
   useEffect(() => {
     enableRotationRef.current = enableRotation;
@@ -1185,6 +1191,10 @@ const AvatarViewer = ({
 
     const animate = () => {
       requestRef.current = requestAnimationFrame(animate);
+
+      if (!visibleRef.current) {
+        return;
+      }
 
       let delta = clock.getDelta();
       if (delta > 0.1) delta = 0.1;

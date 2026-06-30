@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 import asyncio
 from faster_whisper import WhisperModel
@@ -11,6 +12,30 @@ _whisper_instance = None
 _current_model_size = None
 _current_compute_type = None
 _current_device = None
+
+_last_stt_request_time = 0.0
+STT_IDLE_TIMEOUT = 300.0  # 5 minutes
+
+def update_last_stt_time():
+    global _last_stt_request_time
+    _last_stt_request_time = time.time()
+
+def get_last_stt_time():
+    return _last_stt_request_time
+
+def unload_whisper_if_idle():
+    global _whisper_instance, _current_model_size, _current_compute_type, _current_device
+    if _whisper_instance is None:
+        return
+    idle_time = time.time() - _last_stt_request_time
+    if idle_time > STT_IDLE_TIMEOUT:
+        print(f"[STT] Whisper has been idle for {int(idle_time)}s. Unloading model to free RAM...")
+        _whisper_instance = None
+        _current_model_size = None
+        _current_compute_type = None
+        _current_device = None
+        import gc
+        gc.collect()
 
 def reset_whisper():
     """Clear the cached Whisper instance so the next call re-initializes with current config."""
@@ -52,6 +77,7 @@ def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16"
         _current_model_size = model_size
         _current_compute_type = actual_compute
         _current_device = device_pref
+        update_last_stt_time()
         print(f"[STT] Whisper model loaded successfully on {actual_device.upper()}.")
     except Exception as e:
         if device_pref == "gpu":
@@ -63,6 +89,7 @@ def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16"
             _current_model_size = model_size
             _current_compute_type = "int8"
             _current_device = device_pref
+            update_last_stt_time()
             print(f"[STT] Whisper model loaded successfully on CPU.")
         except Exception as cpu_err:
             print(f"[STT] Failed to load Whisper model on CPU: {cpu_err}")
@@ -77,6 +104,7 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
     """
     Transcribes an audio file on a separate worker thread to keep the FastAPI event loop unblocked.
     """
+    update_last_stt_time()
     if not os.path.exists(file_path):
         print(f"[STT] Audio file path does not exist: {file_path}")
         return ""

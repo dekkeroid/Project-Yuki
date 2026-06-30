@@ -89,5 +89,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('backend-status', handler);
     };
   },
+  onVisibilityChange: (callback) => {
+    const handler = (event, data) => callback(data.visible);
+    ipcRenderer.on('yuki-visibility', handler);
+    return () => {
+      ipcRenderer.removeListener('yuki-visibility', handler);
+    };
+  },
+  onOptimizeMemory: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('yuki-optimize-memory', handler);
+    return () => {
+      ipcRenderer.removeListener('yuki-optimize-memory', handler);
+    };
+  },
   isElectron: true
 });
