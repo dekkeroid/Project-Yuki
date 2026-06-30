@@ -38,8 +38,10 @@ app.commandLine.appendSwitch('disable-http-cache');
 // 3. Set a strict ceiling on generic disk caching (104857600 Bytes = 100 MB)
 app.commandLine.appendSwitch('disk-cache-size', '104857600');
 
-// 4. Force the 3D renderer to compile shaders directly in VRAM instead of creating massive cache files on C:
-app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+// 4. Prevent fallback to CPU software rasterization (SwiftShader) by ignoring GPU blocklists
+// and enabling hardware-level GPU rasterization for WebGL compositing.
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
 
 // 5. Prevent over-allocation of background rendering threads
 app.commandLine.appendSwitch('disable-background-networking');
@@ -303,6 +305,7 @@ function showYuki() {
   yukiVisible = true;
   sendVisibility(true);
   if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.restore();
     mainWindow.showInactive();
   }
 }
@@ -330,6 +333,7 @@ function hideYuki() {
   yukiVisible = false;
   sendVisibility(false);
   if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.minimize();
     mainWindow.hide();
     // Flush caches and clear history dynamically to free memory when idle/hidden
     try {
