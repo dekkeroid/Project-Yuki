@@ -253,9 +253,9 @@ function findVitePort(ports, timeout = 500) {
   return new Promise((resolve) => {
     let checked = 0;
     for (const port of ports) {
-      const req = http.get(`http://localhost:${port}`, () => {
+      const req = http.get(`http://127.0.0.1:${port}`, () => {
         req.destroy();
-        resolve(`http://localhost:${port}`);
+        resolve(`http://127.0.0.1:${port}`);
       });
       req.setTimeout(timeout, () => {
         req.destroy();
@@ -270,7 +270,7 @@ function findVitePort(ports, timeout = 500) {
   });
 }
 
-async function loadWithRetry(win, ports, maxAttempts = 20, intervalMs = 800) {
+async function loadWithRetry(win, ports, maxAttempts = 40, intervalMs = 800) {
   // In packaged mode, skip Vite detection — load the bundled dist directly
   if (app.isPackaged) {
     console.log('[Electron] Packaged mode — loading bundled dist/index.html');
@@ -884,8 +884,11 @@ app.whenReady().then(async () => {
 
     if (splash && !splash.isDestroyed()) splash.close();
   } else {
-    // Dev mode: open window immediately, backend connects in background
-    startBackend();
+    // Dev mode: open window immediately, defer backend start by 5 seconds
+    // to prevent CPU/IO starvation and let Vite start its dev server smoothly.
+    setTimeout(() => {
+      startBackend();
+    }, 5000);
   }
 
   if (!setupDone) {
