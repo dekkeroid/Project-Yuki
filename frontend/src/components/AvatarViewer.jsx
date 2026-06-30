@@ -85,12 +85,6 @@ const AvatarViewer = ({
   }, [visible]);
 
   useEffect(() => {
-    if (isBackendOnline && !hasVrm && activeModel) {
-      loadModel(`${API_BASE}/api/models/vrm/files/${activeModel}`);
-    }
-  }, [isBackendOnline, hasVrm, activeModel]);
-
-  useEffect(() => {
     enableRotationRef.current = enableRotation;
   }, [enableRotation]);
 
@@ -171,6 +165,12 @@ const AvatarViewer = ({
   const [hasVrm, setHasVrm] = useState(false);
   const [modelError, setModelError] = useState(false);
   const [modelName, setModelName] = useState("Sci-Fi Hologram Core");
+
+  useEffect(() => {
+    if (isBackendOnline && !hasVrm && activeModel) {
+      loadModel(`${API_BASE}/api/models/vrm/files/${activeModel}`);
+    }
+  }, [isBackendOnline, hasVrm, activeModel]);
 
   // Blend shape helper to support both VRM v0 and v1
   const setExpressionValue = (vrm, name, value) => {
