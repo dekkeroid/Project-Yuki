@@ -2203,6 +2203,10 @@ const App = () => {
       setBackendStatus('online');
       reconnectAttemptRef.current = 0;
       console.log("WebSocket connected to backend.");
+      fetchProfileDetails();
+      fetchHealthDetails();
+      fetchVrmModels();
+      fetchLlmModels();
     };
 
     ws.onmessage = (event) => {
@@ -3496,6 +3500,7 @@ const App = () => {
             enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
             autoResetRotation={profile.settings?.auto_reset_rotation || false}
             visible={isVisible}
+            isBackendOnline={backendStatus === 'online'}
           />
         </main>
 
@@ -5386,6 +5391,7 @@ const App = () => {
           enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
           autoResetRotation={profile.settings?.auto_reset_rotation || false}
           visible={isVisible}
+          isBackendOnline={backendStatus === 'online'}
         />
       </main>
 

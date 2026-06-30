@@ -31,7 +31,8 @@ const AvatarViewer = ({
   activeModel = 'default.vrm',
   enableRotation = true,
   autoResetRotation = false,
-  visible = true
+  visible = true,
+  isBackendOnline = false
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -82,6 +83,12 @@ const AvatarViewer = ({
   useEffect(() => {
     visibleRef.current = visible;
   }, [visible]);
+
+  useEffect(() => {
+    if (isBackendOnline && !hasVrm && activeModel) {
+      loadModel(`${API_BASE}/api/models/vrm/files/${activeModel}`);
+    }
+  }, [isBackendOnline, hasVrm, activeModel]);
 
   useEffect(() => {
     enableRotationRef.current = enableRotation;
