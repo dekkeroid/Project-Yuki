@@ -10,18 +10,20 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   :root {
-    --bg: #0a0a0f;
-    --surface: #12121a;
-    --surface-2: #1a1a26;
-    --border: #2a2a3a;
-    --text: #e8e8f0;
-    --text-dim: #8888a0;
-    --accent: #6c5ce7;
-    --accent-glow: #6c5ce740;
-    --success: #00d2a0;
-    --success-glow: #00d2a030;
-    --error: #ff5c5c;
-    --warning: #ffb84d;
+    --bg: #09090e;
+    --surface: #111119;
+    --surface-2: #181825;
+    --border: #252538;
+    --border-hover: #3c3b54;
+    --text: #f1f1f6;
+    --text-dim: #8e8eaf;
+    --accent: #7c3aed;
+    --accent-hover: #8b5cf6;
+    --accent-glow: rgba(124, 58, 237, 0.25);
+    --success: #10b981;
+    --success-glow: rgba(16, 185, 129, 0.2);
+    --error: #ef4444;
+    --warning: #f59e0b;
   }
 
   body {
@@ -33,296 +35,299 @@
     align-items: center;
     justify-content: center;
     overflow-y: auto;
-    user-select: none;
     margin: 0;
   }
 
   .container {
-    width: 440px;
-    padding: 48px 40px 40px;
+    width: 460px;
+    padding: 40px;
     position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    margin: 20px 0;
   }
 
   .container::before {
     content: '';
-    position: fixed;
-    top: -200px;
+    position: absolute;
+    top: -150px;
     left: 50%;
     transform: translateX(-50%);
-    width: 600px;
-    height: 600px;
+    width: 400px;
+    height: 400px;
     background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
     pointer-events: none;
     z-index: -1;
   }
 
-  .logo { text-align: center; margin-bottom: 36px; -webkit-app-region: drag; padding: 10px 0; }
-  .logo-icon { font-size: 48px; margin-bottom: 12px; filter: drop-shadow(0 0 20px var(--accent-glow)); }
-  .logo h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; }
-  .logo p { font-size: 13px; color: var(--text-dim); margin-top: 6px; font-weight: 400; }
+  .logo { text-align: center; margin-bottom: 28px; }
+  .logo-icon { font-size: 40px; margin-bottom: 8px; filter: drop-shadow(0 0 15px var(--accent-glow)); animation: float 4s ease-in-out infinite; }
+  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  .logo h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; background: linear-gradient(135deg, #fff 30%, #c4b5fd 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo p { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
 
-  /* Progress */
-  .progress-section { margin-bottom: 32px; }
-  .progress-bar-track { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-bottom: 16px; }
-  .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #8b7cf7); border-radius: 3px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); position: relative; }
-  .progress-bar-fill::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent); animation: shimmer 2s infinite; }
+  /* Progress Bar */
+  .progress-section { margin-bottom: 24px; }
+  .progress-bar-track { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
+  .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 3px; transition: width 0.3s ease; position: relative; }
+  .progress-bar-fill::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent); animation: shimmer 1.5s infinite; }
   @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-  .progress-bar-fill.complete { background: linear-gradient(90deg, var(--success), #00e8b4); }
-  .progress-bar-fill.error { background: linear-gradient(90deg, var(--error), #ff7c7c); }
+  .progress-bar-fill.complete { background: linear-gradient(90deg, var(--success), #34d399); }
+  .progress-bar-fill.error { background: linear-gradient(90deg, var(--error), #f87171); }
   .status-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .status-text { font-size: 14px; font-weight: 500; min-height: 20px; }
-  .status-percent { font-size: 13px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .status-text { font-size: 14px; font-weight: 500; }
+  .status-percent { font-size: 13px; font-weight: 600; color: var(--accent-hover); }
   .status-percent.done { color: var(--success); }
   .status-percent.error { color: var(--error); }
 
-  /* Steps */
+  /* Steps List */
   .steps { list-style: none; margin-bottom: 24px; }
-  .step { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); opacity: 0.65; transition: opacity 0.3s; }
+  .step { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); opacity: 0.5; transition: all 0.3s ease; }
   .step:last-child { border-bottom: none; }
   .step.active { opacity: 1; }
-  .step.done { opacity: 0.8; }
-  .step-icon { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; margin-top: 1px; background: var(--surface-2); color: var(--text-dim); border: 1.5px solid var(--border); transition: all 0.3s; }
-  .step.active .step-icon { background: var(--accent); color: white; border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); animation: pulse 2s infinite; }
-  .step.done .step-icon { background: var(--success); color: white; border-color: var(--success); box-shadow: 0 0 8px var(--success-glow); animation: none; }
-  @keyframes pulse { 0%, 100% { box-shadow: 0 0 12px var(--accent-glow); } 50% { box-shadow: 0 0 20px var(--accent-glow); } }
+  .step.done { opacity: 0.85; }
+  .step-icon { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border); transition: all 0.3s; }
+  .step.active .step-icon { background: var(--accent); color: white; border-color: var(--accent); box-shadow: 0 0 10px var(--accent-glow); animation: pulse 2s infinite; }
+  .step.done .step-icon { background: var(--success); color: white; border-color: var(--success); box-shadow: 0 0 6px var(--success-glow); }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 8px var(--accent-glow); } 50% { box-shadow: 0 0 16px var(--accent-glow); } }
   .step-content { flex: 1; min-width: 0; }
-  .step-title { font-size: 13px; font-weight: 500; }
-  .step-detail { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step-title { font-size: 13px; font-weight: 600; }
+  .step-detail { font-size: 12px; color: var(--text-dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* LM Studio section */
-  .lmstudio-section { margin-bottom: 24px; -webkit-app-region: no-drag; }
-  .lmstudio-section.hidden { display: none; }
-  .lmstudio-label { font-size: 12px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
-
-  .lmstudio-checking {
-    display: flex; align-items: center; gap: 10px;
-    padding: 14px 16px; border-radius: 10px;
-    background: var(--surface); border: 1px solid var(--border);
-    font-size: 13px; color: var(--text-dim);
+  /* Config Panel */
+  .config-section { margin-bottom: 24px; }
+  .config-label { font-size: 12px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px; display: block; }
+  .form-group { margin-bottom: 12px; }
+  .form-label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 5px; font-weight: 500; }
+  
+  .form-input {
+    width: 100%; padding: 10px 12px; background: rgba(0,0,0,0.25);
+    border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+    font-size: 13px; outline: none; transition: border-color 0.2s;
   }
-  .lmstudio-checking .spinner {
-    width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent);
+  .form-input:focus { border-color: var(--accent); }
+  
+  .select-input {
+    width: 100%; padding: 10px 12px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+    font-size: 13px; outline: none; cursor: pointer; transition: border-color 0.2s;
+  }
+  .select-input:focus { border-color: var(--accent); }
+
+  /* Checking Status box */
+  .status-box {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px; border-radius: 8px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    font-size: 13px; color: var(--text-dim); margin-top: 10px;
+  }
+  .status-box .spinner {
+    width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent-hover);
     border-radius: 50%; animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Warning box (LM Studio not found) */
-  .lmstudio-warning {
-    padding: 16px; border-radius: 10px;
-    background: #ffb84d08; border: 1px solid #ffb84d30;
-    -webkit-app-region: no-drag;
+  /* Warning Box (Generic Alert) */
+  .alert-box {
+    padding: 16px; border-radius: 8px;
+    background: rgba(245, 158, 11, 0.04); border: 1px solid rgba(245, 158, 11, 0.25);
+    margin-top: 12px;
   }
-  .lmstudio-warning .warn-title {
-    font-size: 13px; font-weight: 600; color: var(--warning); margin-bottom: 8px;
+  .alert-title {
+    font-size: 13px; font-weight: 600; color: var(--warning); margin-bottom: 6px;
     display: flex; align-items: center; gap: 6px;
   }
-  .lmstudio-warning .warn-body { font-size: 12.5px; color: var(--text-dim); line-height: 1.6; }
-  .lmstudio-warning .warn-body a { color: var(--accent); text-decoration: none; -webkit-app-region: no-drag; }
-  .lmstudio-warning .warn-body a:hover { text-decoration: underline; }
-  .lmstudio-warning .warn-body code {
-    background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
-    font-family: 'SF Mono', 'Consolas', monospace; font-size: 11.5px; color: var(--text);
+  .alert-desc { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; margin-bottom: 10px; }
+  .alert-steps { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+  .alert-steps code {
+    background: var(--surface-2); padding: 1px 4px; border-radius: 4px;
+    font-family: monospace; font-size: 11px; color: var(--text);
   }
-  .lmstudio-warning .skip-note {
-    margin-top: 10px; font-size: 11.5px; color: var(--text-dim); opacity: 0.7;
-  }
+  .alert-steps a { color: var(--accent-hover); text-decoration: none; }
+  .alert-steps a:hover { text-decoration: underline; }
 
-  /* LLM choice radio options */
-  .llm-option {
+  /* Radio Option Elements */
+  .fallback-options { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .fallback-option {
     display: flex; align-items: flex-start; gap: 10px;
     padding: 10px 12px; border-radius: 8px; cursor: pointer;
-    background: var(--surface); border: 1.5px solid var(--border);
+    background: var(--surface-2); border: 1px solid var(--border);
     transition: all 0.15s;
   }
-  .llm-option:hover { border-color: var(--accent); background: var(--surface-2); }
-  .llm-option:has(input:checked) { border-color: var(--accent); background: rgba(108,92,231,0.08); }
-  .llm-option input[type="radio"] {
+  .fallback-option:hover { border-color: var(--accent); }
+  .fallback-option:has(input:checked) { border-color: var(--accent); background: rgba(124, 58, 237, 0.05); }
+  .fallback-option input[type="radio"] {
     appearance: none; -webkit-appearance: none;
-    width: 16px; height: 16px; border: 2px solid var(--border); border-radius: 50%;
-    cursor: pointer; transition: all 0.15s; flex-shrink: 0; position: relative;
-    margin-top: 2px;
+    width: 14px; height: 14px; border: 2px solid var(--border); border-radius: 50%;
+    cursor: pointer; transition: all 0.15s; flex-shrink: 0; position: relative; margin-top: 2px;
   }
-  .llm-option input[type="radio"]:checked {
+  .fallback-option input[type="radio"]:checked {
     border-color: var(--accent); background: var(--accent);
   }
-  .llm-option input[type="radio"]:checked::after {
+  .fallback-option input[type="radio"]:checked::after {
     content: ''; position: absolute; top: 3px; left: 3px;
-    width: 6px; height: 6px; border-radius: 50%; background: white;
+    width: 4px; height: 4px; border-radius: 50%; background: white;
   }
-  .llm-option-title { font-size: 12.5px; font-weight: 600; color: var(--text); }
-  .llm-option-desc { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; line-height: 1.4; }
-  .llm-option-desc strong { color: var(--text); }
+  .fallback-title { font-size: 12px; font-weight: 600; color: var(--text); }
+  .fallback-desc { font-size: 11px; color: var(--text-dim); margin-top: 2px; line-height: 1.3; }
 
-  /* Model picker (LM Studio found) */
-  .model-picker { border-radius: 10px; background: var(--surface); border: 1px solid var(--border); overflow: hidden; -webkit-app-region: no-drag; }
-  .model-picker .picker-header {
-    padding: 12px 16px; border-bottom: 1px solid var(--border);
-    font-size: 12px; font-weight: 500; color: var(--text-dim);
-    display: flex; align-items: center; gap: 6px;
+  /* Model Selector Picker */
+  .model-picker { border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; margin-top: 12px; }
+  .picker-header {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    font-size: 11px; font-weight: 600; color: var(--text-dim);
+    display: flex; align-items: center; gap: 6px; text-transform: uppercase;
   }
-  .model-picker .picker-header .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
-  .model-list { max-height: 180px; overflow-y: auto; }
+  .picker-header .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
+  .model-list { max-height: 150px; overflow-y: auto; }
   .model-item {
     display: flex; align-items: center; gap: 10px;
-    padding: 10px 16px; cursor: pointer; transition: background 0.15s;
+    padding: 10px 14px; cursor: pointer; transition: background 0.15s;
     border-bottom: 1px solid var(--border);
-    -webkit-app-region: no-drag;
   }
   .model-item:last-child { border-bottom: none; }
-  .model-item:hover { background: var(--surface-2); }
+  .model-item:hover { background: rgba(255,255,255,0.02); }
   .model-item input[type="radio"] {
     appearance: none; -webkit-appearance: none;
-    width: 16px; height: 16px; border: 2px solid var(--border); border-radius: 50%;
+    width: 14px; height: 14px; border: 2px solid var(--border); border-radius: 50%;
     cursor: pointer; transition: all 0.15s; flex-shrink: 0; position: relative;
-    -webkit-app-region: no-drag;
   }
   .model-item input[type="radio"]:checked {
     border-color: var(--accent); background: var(--accent);
   }
   .model-item input[type="radio"]:checked::after {
     content: ''; position: absolute; top: 3px; left: 3px;
-    width: 6px; height: 6px; border-radius: 50%; background: white;
+    width: 4px; height: 4px; border-radius: 50%; background: white;
   }
-  .model-item .model-name { font-size: 13px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .model-item .model-badge {
-    font-size: 10px; padding: 2px 7px; border-radius: 6px; font-weight: 600; flex-shrink: 0;
-  }
+  .model-name { font-size: 12.5px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .model-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; flex-shrink: 0; }
   .model-badge.recommended { background: var(--accent); color: white; }
-  .model-badge.loaded { background: #00d2a020; color: var(--success); }
-  .model-badge.offline { background: var(--surface-2); color: var(--text-dim); }
+  .model-badge.loaded { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+  .model-badge.offline { background: var(--border); color: var(--text-dim); }
 
   /* Buttons */
-  .btn { width: 100%; padding: 14px 24px; border: none; border-radius: 12px; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; -webkit-app-region: no-drag; letter-spacing: 0.3px; }
-  .btn-start { background: linear-gradient(135deg, var(--accent), #8b7cf7); color: white; box-shadow: 0 4px 20px var(--accent-glow); }
-  .btn-start:hover { transform: translateY(-1px); box-shadow: 0 6px 28px var(--accent-glow); }
+  .btn { width: 100%; padding: 12px 24px; border: none; border-radius: 10px; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; letter-spacing: 0.2px; }
+  .btn-start { background: linear-gradient(135deg, var(--accent), var(--accent-hover)); color: white; box-shadow: 0 4px 14px var(--accent-glow); margin-top: 8px; }
+  .btn-start:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-glow); }
   .btn-start:active { transform: translateY(0); }
-  .btn-restart { background: linear-gradient(135deg, var(--success), #00e8b4); color: #0a0a0f; box-shadow: 0 4px 20px var(--success-glow); }
-  .btn-restart:hover { transform: translateY(-1px); box-shadow: 0 6px 28px var(--success-glow); }
+  .btn-restart { background: linear-gradient(135deg, var(--success), #34d399); color: #0a0a0f; box-shadow: 0 4px 14px var(--success-glow); }
+  .btn-restart:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--success-glow); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
   .btn-retry { background: var(--surface-2); color: var(--text); border: 1.5px solid var(--border); margin-top: 10px; }
   .btn-retry:hover { border-color: var(--accent); background: var(--surface); }
 
-  /* Error */
-  .error-box { background: #ff5c5c12; border: 1px solid #ff5c5c30; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; display: none; }
+  /* Error Box */
+  .error-box { background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; display: none; }
   .error-box.visible { display: block; }
-  .error-box p { font-size: 12.5px; color: var(--error); line-height: 1.5; }
+  .error-box p { font-size: 12.5px; color: var(--error); line-height: 1.4; }
 
   .hidden { display: none !important; }
 
-  /* Custom scrollbar */
-  ::-webkit-scrollbar { width: 6px; }
+  /* Scrollbars */
+  ::-webkit-scrollbar { width: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
 </style>
 </head>
 <body>
 
 <div class="container">
   <div class="logo">
-    <div class="logo-icon">&#10024;</div>
+    <div class="logo-icon">✨</div>
     <h1>Yuki AI</h1>
-    <p>First-time setup</p>
+    <p>First-time companion setup</p>
   </div>
 
-  <!-- Idle state -->
+  <!-- Setup configuration options (Idle state) -->
   <div id="state-idle">
     <ul class="steps">
       <li class="step" data-step="tts">
         <div class="step-icon">1</div>
         <div class="step-content">
-          <div class="step-title">Voice engine</div>
-          <div class="step-detail">Verify neural TTS model</div>
+          <div class="step-title">Voice Engine</div>
+          <div class="step-detail">Download local neural Kokoro TTS model</div>
         </div>
       </li>
       <li class="step" data-step="profile">
         <div class="step-icon">2</div>
         <div class="step-content">
-          <div class="step-title">Profile</div>
-          <div class="step-detail">Create your preferences</div>
+          <div class="step-title">Profile configuration</div>
+          <div class="step-detail">Set up user preferences & settings</div>
         </div>
       </li>
       <li class="step" data-step="database">
         <div class="step-icon">3</div>
         <div class="step-content">
-          <div class="step-title">Database</div>
-          <div class="step-detail">Initialize file index</div>
-        </div>
-      </li>
-      <li class="step" data-step="lmstudio">
-        <div class="step-icon">4</div>
-        <div class="step-content">
-          <div class="step-title">LM Studio</div>
-          <div class="step-detail">Verify local LLM is running</div>
+          <div class="step-title">Database initialization</div>
+          <div class="step-detail">Build system file search index</div>
         </div>
       </li>
     </ul>
 
-    <!-- LM Studio detection (fills on page load) -->
-    <div class="lmstudio-section" id="lmstudio-section">
-      <div class="lmstudio-label">Language Model</div>
+    <!-- LLM config block -->
+    <div class="config-section">
+      <span class="config-label">Language Model Backend</span>
 
       <!-- Backend Type Selector -->
-      <div style="margin-bottom: 12px;">
-        <label style="font-size: 0.78rem; color: #c4b5fd; display: block; margin-bottom: 4px;">LLM Backend</label>
-        <select id="backend-type" onchange="onBackendTypeChange()" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 0.82rem; outline: none; cursor: pointer;">
+      <div class="form-group">
+        <label class="form-label">LLM Backend</label>
+        <select id="backend-type" class="select-input">
           <option value="lmstudio">LM Studio (Local)</option>
           <option value="ollama">Ollama (Local)</option>
           <option value="vllm">vLLM (Local)</option>
-          <option value="openai">OpenAI-Compatible (Cloud)</option>
+          <option value="openai">OpenAI-Compatible API (Cloud)</option>
           <option value="custom">Custom Endpoint</option>
-          <option value="none">No LLM (Voice + File Search Only)</option>
+          <option value="none">No LLM (Voice Commands & File Search Only)</option>
         </select>
       </div>
 
-      <!-- Base URL (hidden for LM Studio) -->
-      <div id="base-url-section" style="display: none; margin-bottom: 12px;">
-        <label id="base-url-label" style="font-size: 0.78rem; color: #c4b5fd; display: block; margin-bottom: 4px;">Endpoint URL</label>
-        <input type="text" id="base-url-input" placeholder="" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 0.82rem; outline: none; box-sizing: border-box;">
+      <!-- Base URL Input -->
+      <div class="form-group id-field" id="base-url-section" style="display: none;">
+        <label class="form-label" id="base-url-label">Endpoint URL</label>
+        <input type="text" id="base-url-input" class="form-input" placeholder="">
       </div>
 
-      <!-- API Key (hidden for local backends) -->
-      <div id="api-key-section" style="display: none; margin-bottom: 12px;">
-        <label style="font-size: 0.78rem; color: #c4b5fd; display: block; margin-bottom: 4px;">API Key</label>
-        <input type="password" id="api-key-input" placeholder="sk-..." style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 0.82rem; outline: none; box-sizing: border-box;">
+      <!-- API Key Input -->
+      <div class="form-group id-field" id="api-key-section" style="display: none;">
+        <label class="form-label">API Key</label>
+        <input type="password" id="api-key-input" class="form-input" placeholder="sk-...">
       </div>
 
-      <!-- Checking state -->
-      <div class="lmstudio-checking" id="lmstudio-checking">
+      <!-- Checking State Indicator -->
+      <div class="status-box" id="lmstudio-checking">
         <div class="spinner"></div>
-        <span>Detecting backend...</span>
+        <span id="checking-text">Connecting to LM Studio...</span>
       </div>
 
-      <!-- Warning: not found -->
-      <div class="lmstudio-warning hidden" id="lmstudio-warning">
-        <div class="warn-title">&#9888; Backend not detected</div>
-        <div class="warn-body">
-          <p>Yuki needs a local LLM to power conversations. We recommend <strong>LM Studio</strong>:</p>
-          <p style="margin-top:8px">
-            1. Download from <a href="https://lmstudio.ai" target="_blank" rel="noopener">lmstudio.ai</a><br>
-            2. Install and open it<br>
-            3. Download the model: <code>llama-3.2-3b-instruct</code>
-          </p>
-        </div>
-        <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px;">
-          <label class="llm-option" id="opt-install-later">
+      <!-- Alert Box for unreachable backend -->
+      <div class="alert-box hidden" id="setup-alert-box">
+        <div class="alert-title" id="alert-title">⚠️ Connection Failed</div>
+        <div class="alert-desc" id="alert-desc">Backend not detected.</div>
+        <div class="alert-steps" id="alert-steps">Please ensure your local server is running.</div>
+        
+        <div class="fallback-options">
+          <label class="fallback-option">
             <input type="radio" name="llm-choice" value="later" checked>
             <div>
-              <div class="llm-option-title">I'll install it later</div>
-              <div class="llm-option-desc">Keep LLM mode enabled. Yuki will work once you set up LM Studio.</div>
+              <div class="fallback-title">I'll start it later</div>
+              <div class="fallback-desc">Keep LLM mode enabled. Yuki will connect automatically once your server starts.</div>
             </div>
           </label>
-          <label class="llm-option" id="opt-no-llm">
+          <label class="fallback-option">
             <input type="radio" name="llm-choice" value="no-llm">
             <div>
-              <div class="llm-option-title">I won't install it</div>
-              <div class="llm-option-desc">Turn off LLM mode (voice + file search only). You can re-enable anytime in <strong>Settings → No LLM Mode</strong>.</div>
+              <div class="fallback-title">Disable LLM conversational mode</div>
+              <div class="fallback-desc">Turn off conversational chat. (Voice Commands and File Search remain active).</div>
             </div>
           </label>
         </div>
       </div>
 
-      <!-- Model picker: found -->
+      <!-- Model Picker dropdown list -->
       <div class="model-picker hidden" id="model-picker">
         <div class="picker-header">
           <div class="dot"></div>
@@ -335,11 +340,11 @@
     <button class="btn btn-start" id="btn-start" onclick="startSetup()">Begin Setup</button>
   </div>
 
-  <!-- Running state -->
+  <!-- Running progress state -->
   <div id="state-running" class="hidden">
     <div class="progress-section">
       <div class="status-row">
-        <span class="status-text" id="status-text">Preparing...</span>
+        <span class="status-text" id="status-text">Preparing setup environment...</span>
         <span class="status-percent" id="status-percent">0%</span>
       </div>
       <div class="progress-bar-track">
@@ -353,155 +358,216 @@
       <p id="error-text"></p>
     </div>
 
-    <button class="btn btn-restart hidden" id="btn-restart" onclick="restartApp()">Restart &amp; Launch Yuki</button>
-    <button class="btn btn-retry hidden" id="btn-retry" onclick="startSetup()">Retry</button>
+    <button class="btn btn-restart hidden" id="btn-restart" onclick="restartApp()">Launch Yuki AI</button>
+    <button class="btn btn-retry hidden" id="btn-retry" onclick="startSetup()">Retry Setup</button>
   </div>
 </div>
 
 <script>
   const API = window.location.origin;
-  let selectedModel = null;
+  let selectedModel = '';
+  let detectDebounceTimer = null;
 
-  // ── Backend type change handler ───────────────────────────────────
-  function onBackendTypeChange() {
-    const type = document.getElementById('backend-type').value;
-    const baseUrlSection = document.getElementById('base-url-section');
-    const baseUrlLabel = document.getElementById('base-url-label');
-    const baseUrlInput = document.getElementById('base-url-input');
-    const apiKeySection = document.getElementById('api-key-section');
+  // Cache selectors
+  const backendSelect = document.getElementById('backend-type');
+  const urlSection = document.getElementById('base-url-section');
+  const urlLabel = document.getElementById('base-url-label');
+  const urlInput = document.getElementById('base-url-input');
+  const keySection = document.getElementById('api-key-section');
+  const keyInput = document.getElementById('api-key-input');
+  const checkingIndicator = document.getElementById('lmstudio-checking');
+  const checkingText = document.getElementById('checking-text');
+  const alertBox = document.getElementById('setup-alert-box');
+  const modelPicker = document.getElementById('model-picker');
+  const modelList = document.getElementById('model-list');
+  const pickerCount = document.getElementById('picker-count');
+
+  // Input Listeners
+  backendSelect.addEventListener('change', handleBackendChange);
+  urlInput.addEventListener('input', () => debounceDetect());
+  keyInput.addEventListener('input', () => debounceDetect());
+
+  function debounceDetect() {
+    clearTimeout(detectDebounceTimer);
+    detectDebounceTimer = setTimeout(() => {
+      runDetection();
+    }, 800);
+  }
+
+  function handleBackendChange() {
+    const type = backendSelect.value;
+    
+    // Default visibility toggles
+    urlSection.style.display = 'none';
+    keySection.style.display = 'none';
+    alertBox.classList.add('hidden');
+    modelPicker.classList.add('hidden');
+    checkingIndicator.classList.add('hidden');
+    
+    if (type === 'none') {
+      selectedModel = '';
+      return;
+    }
 
     if (type === 'lmstudio') {
-      baseUrlSection.style.display = 'none';
-      apiKeySection.style.display = 'none';
-      detectLMStudio();
-    } else if (type === 'none') {
-      baseUrlSection.style.display = 'none';
-      apiKeySection.style.display = 'none';
-      document.getElementById('lmstudio-checking').classList.add('hidden');
-      document.getElementById('lmstudio-warning').classList.add('hidden');
-      document.getElementById('model-picker').classList.add('hidden');
-      selectedModel = '';
+      runDetection();
+    } else if (type === 'ollama') {
+      urlSection.style.display = 'block';
+      urlLabel.textContent = 'Ollama Host Address';
+      urlInput.placeholder = 'http://127.0.0.1:11434';
+      urlInput.value = 'http://127.0.0.1:11434';
+      runDetection();
     } else if (type === 'vllm') {
-      baseUrlSection.style.display = 'block';
-      baseUrlLabel.textContent = 'vLLM URL';
-      baseUrlInput.placeholder = 'http://127.0.0.1:8000/v1';
-      baseUrlInput.value = 'http://127.0.0.1:8000/v1';
-      apiKeySection.style.display = 'none';
-      detectBackendModels('vllm');
-    } else {
-      document.getElementById('lmstudio-checking').classList.add('hidden');
-      document.getElementById('lmstudio-warning').classList.add('hidden');
-      document.getElementById('model-picker').classList.add('hidden');
-
-      if (type === 'ollama') {
-        baseUrlLabel.textContent = 'Ollama URL';
-        baseUrlInput.placeholder = 'http://127.0.0.1:11434';
-        baseUrlInput.value = 'http://127.0.0.1:11434';
-        apiKeySection.style.display = 'none';
-        detectBackendModels('ollama');
-      } else if (type === 'openai') {
-        baseUrlLabel.textContent = 'API Base URL';
-        baseUrlInput.placeholder = 'https://api.groq.com/openai';
-        baseUrlInput.value = '';
-        apiKeySection.style.display = 'block';
-        detectBackendModels('openai');
-      } else {
-        baseUrlLabel.textContent = 'Endpoint URL';
-        baseUrlInput.placeholder = 'http://127.0.0.1:8000/v1';
-        baseUrlInput.value = '';
-        apiKeySection.style.display = 'block';
-        showCustomModelInput();
-      }
+      urlSection.style.display = 'block';
+      urlLabel.textContent = 'vLLM Endpoint URL';
+      urlInput.placeholder = 'http://127.0.0.1:8000/v1';
+      urlInput.value = 'http://127.0.0.1:8000/v1';
+      runDetection();
+    } else if (type === 'openai') {
+      urlSection.style.display = 'block';
+      urlLabel.textContent = 'API Base URL';
+      urlInput.placeholder = 'https://api.openai.com/v1';
+      urlInput.value = 'https://api.openai.com/v1';
+      keySection.style.display = 'block';
+      keyInput.placeholder = 'sk-...';
+      keyInput.value = '';
+      runDetection();
+    } else if (type === 'custom') {
+      urlSection.style.display = 'block';
+      urlLabel.textContent = 'Endpoint Base URL';
+      urlInput.placeholder = 'http://127.0.0.1:8000/v1';
+      urlInput.value = '';
+      keySection.style.display = 'block';
+      keyInput.placeholder = 'api-key-if-required';
+      keyInput.value = '';
+      showCustomModelInput();
     }
   }
 
   function showCustomModelInput() {
-    document.getElementById('lmstudio-checking').classList.add('hidden');
-    document.getElementById('model-picker').classList.remove('hidden');
-    document.getElementById('picker-count').textContent = 'Enter model name below';
-    const list = document.getElementById('model-list');
-    list.innerHTML = '';
-    const item = document.createElement('div');
-    item.style.padding = '8px';
-    item.innerHTML = '<input type="text" id="custom-model-input" placeholder="model-name" style="width:100%;padding:6px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:white;font-size:0.78rem;outline:none;box-sizing:border-box;">';
-    list.appendChild(item);
+    checkingIndicator.classList.add('hidden');
+    alertBox.classList.add('hidden');
+    modelPicker.classList.remove('hidden');
+    pickerCount.textContent = 'Enter custom model ID';
+    modelList.innerHTML = '';
+    
+    const wrapper = document.createElement('div');
+    wrapper.style.padding = '12px 14px';
+    
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-input';
+    input.placeholder = 'e.g. meta-llama/Llama-3.2-3B-Instruct';
+    input.style.width = '100%';
+    
+    wrapper.appendChild(input);
+    modelList.appendChild(wrapper);
+    
     selectedModel = '';
-    item.querySelector('input').addEventListener('input', (e) => {
-      selectedModel = e.target.value;
+    input.addEventListener('input', (e) => {
+      selectedModel = e.target.value.trim();
     });
   }
 
-  async function detectBackendModels(backendType) {
-    const checking = document.getElementById('lmstudio-checking');
-    checking.classList.remove('hidden');
+  async function runDetection() {
+    const type = backendSelect.value;
+    if (type === 'none' || type === 'custom') return;
 
-    const baseUrl = document.getElementById('base-url-input')?.value || '';
-    const apiKey = document.getElementById('api-key-input')?.value || '';
-    const params = new URLSearchParams({ backend_type: backendType });
+    // Show indicator
+    checkingIndicator.classList.remove('hidden');
+    checkingIndicator.className = 'status-box';
+    checkingText.textContent = `Connecting to ${type.toUpperCase()}...`;
+    alertBox.classList.add('hidden');
+    modelPicker.classList.add('hidden');
+
+    const baseUrl = urlInput.value.trim();
+    const apiKey = keyInput.value.trim();
+    
+    const params = new URLSearchParams({ backend_type: type });
     if (baseUrl) params.set('base_url', baseUrl);
     if (apiKey) params.set('api_key', apiKey);
 
     try {
       const resp = await fetch(`${API}/setup/models?${params}`);
+      if (!resp.ok) throw new Error('Http error ' + resp.status);
       const data = await resp.json();
-      checking.classList.add('hidden');
+      
+      checkingIndicator.classList.add('hidden');
+      
       if (data.available && data.models.length > 0) {
         showModelPicker(data.models, data.recommended);
       } else {
-        showWarningForBackend(backendType);
-        selectedModel = 'llama-3.2-3b-instruct';
+        showWarning(type);
       }
-    } catch {
-      checking.classList.add('hidden');
-      showWarningForBackend(backendType);
-      selectedModel = 'llama-3.2-3b-instruct';
+    } catch (err) {
+      console.warn('Backend detection failed:', err);
+      checkingIndicator.classList.add('hidden');
+      showWarning(type);
     }
   }
 
-  function showWarningForBackend(backendType) {
-    const warning = document.getElementById('lmstudio-warning');
-    const desc = warning.querySelector('.warning-desc');
-    const steps = warning.querySelector('p[style]');
-    warning.classList.remove('hidden');
+  function showWarning(type) {
+    alertBox.classList.remove('hidden');
+    modelPicker.classList.add('hidden');
 
-    if (backendType === 'ollama') {
-      desc.innerHTML = 'Ollama is installed but no models were found. Models download on first use (~2-4 GB each).';
-      steps.innerHTML = `
-        1. Make sure Ollama is running: <code>ollama serve</code><br>
-        2. Or pull a model manually: <code>ollama pull llama3.2</code><br>
-        3. Yuki will use OpenAI-compatible endpoints
+    const titleEl = document.getElementById('alert-title');
+    const descEl = document.getElementById('alert-desc');
+    const stepsEl = document.getElementById('alert-steps');
+
+    titleEl.innerHTML = '⚠️ Connection Failed';
+
+    if (type === 'lmstudio') {
+      descEl.innerHTML = 'Yuki could not find LM Studio. Ensure the Local Server is running.';
+      stepsEl.innerHTML = `
+        1. Open <strong>LM Studio</strong>.<br>
+        2. Go to the <strong>Developer/Server Tab</strong> (left bar).<br>
+        3. Make sure port is <code>1234</code> and click <strong>Start Server</strong>.<br>
+        4. Download <code>llama-3.2-3b-instruct</code> model.
       `;
-    } else if (backendType === 'vllm') {
-      desc.innerHTML = 'vLLM server not reachable. Make sure it\'s running with an OpenAI-compatible API.';
-      steps.innerHTML = `
-        1. Start vLLM: <code>vllm serve &lt;model&gt;</code><br>
-        2. Default URL: <code>http://127.0.0.1:8000/v1</code><br>
-        3. Yuki uses the standard <code>/v1/chat/completions</code> endpoint
+      selectedModel = 'llama-3.2-3b-instruct';
+    } else if (type === 'ollama') {
+      descEl.innerHTML = 'Yuki could not query Ollama. Make sure the service is active.';
+      stepsEl.innerHTML = `
+        1. Start Ollama: run <code>ollama serve</code> in terminal.<br>
+        2. Pull model: run <code>ollama pull llama3.2</code> in terminal.<br>
+        3. Double check the address matches (default is <code>http://127.0.0.1:11434</code>).
       `;
-    } else if (backendType === 'openai' || backendType === 'custom') {
-      desc.innerHTML = 'Could not connect to the API. Check your base URL and API key.';
-      steps.innerHTML = `
-        1. Verify the base URL is correct<br>
-        2. Check your API key is valid<br>
-        3. Ensure the service is running
+      selectedModel = 'llama3.2';
+    } else if (type === 'vllm') {
+      descEl.innerHTML = 'vLLM server not reachable. Check your server address and launch status.';
+      stepsEl.innerHTML = `
+        1. Run vLLM with OpenAI API compatibility: <code>vllm serve &lt;model_name&gt;</code>.<br>
+        2. Confirm base URL ends with <code>/v1</code> (default <code>http://127.0.0.1:8000/v1</code>).
       `;
-    } else {
-      // LM Studio fallback
-      desc.innerHTML = 'Yuki needs a local LLM to power conversations. We recommend <strong>LM Studio</strong>:';
-      steps.innerHTML = `
-        1. Download from <a href="https://lmstudio.ai" target="_blank" rel="noopener">lmstudio.ai</a><br>
-        2. Install and open it<br>
-        3. Download the model: <code>llama-3.2-3b-instruct</code>
+      selectedModel = 'vllm-model';
+    } else if (type === 'openai') {
+      descEl.innerHTML = 'Could not verify API Key or Base URL with the OpenAI endpoint.';
+      stepsEl.innerHTML = `
+        1. Verify your API Base URL (e.g. <code>https://api.openai.com/v1</code>).<br>
+        2. Ensure your API Key is valid and starts with <code>sk-...</code>.
       `;
+      selectedModel = 'gpt-4o-mini';
     }
+
+    // Set up fallback option inputs
+    document.querySelectorAll('input[name="llm-choice"]').forEach(radio => {
+      radio.onchange = (e) => {
+        if (e.target.value === 'no-llm') {
+          selectedModel = '';
+        } else {
+          // Reset default model based on type
+          selectedModel = (type === 'ollama') ? 'llama3.2' : 'llama-3.2-3b-instruct';
+        }
+      };
+    });
   }
 
   function showModelPicker(models, recommended) {
-    const picker = document.getElementById('model-picker');
-    picker.classList.remove('hidden');
-    document.getElementById('picker-count').textContent = `${models.length} model(s) found`;
-    const list = document.getElementById('model-list');
-    list.innerHTML = '';
+    modelPicker.classList.remove('hidden');
+    pickerCount.textContent = `${models.length} model(s) found`;
+    modelList.innerHTML = '';
+    
+    // Sort so recommended and loaded models are at the top
     const sorted = [...models].sort((a, b) => {
       const aRec = a.id.toLowerCase().includes((recommended || '').toLowerCase());
       const bRec = b.id.toLowerCase().includes((recommended || '').toLowerCase());
@@ -511,79 +577,58 @@
       if (!a.loaded && b.loaded) return 1;
       return a.id.localeCompare(b.id);
     });
+
     sorted.forEach((m, i) => {
       const item = document.createElement('label');
       item.className = 'model-item';
+      
       const isRec = m.id.toLowerCase().includes((recommended || '').toLowerCase());
       let badge = '';
       if (isRec) badge = '<span class="model-badge recommended">Recommended</span>';
       else if (m.loaded) badge = '<span class="model-badge loaded">Loaded</span>';
       else badge = '<span class="model-badge offline">Available</span>';
+
       item.innerHTML = `
         <input type="radio" name="llm-model" value="${m.id}" ${i === 0 ? 'checked' : ''}>
         <span class="model-name" title="${m.id}">${m.id}</span>
         ${badge}
       `;
-      list.appendChild(item);
+      modelList.appendChild(item);
     });
+
     selectedModel = sorted[0].id;
-    list.addEventListener('change', (e) => {
+    modelList.onchange = (e) => {
       if (e.target.name === 'llm-model') selectedModel = e.target.value;
-    });
+    };
   }
 
-  // ── On load: detect LM Studio ────────────────────────────────────────
-  async function detectLMStudio() {
-    try {
-      const resp = await fetch(`${API}/setup/models?backend_type=lmstudio`);
-      const data = await resp.json();
-
-      document.getElementById('lmstudio-checking').classList.add('hidden');
-
-      if (data.available && data.models.length > 0) {
-        showModelPicker(data.models, data.recommended);
-      } else {
-        showWarningForBackend('lmstudio');
-        selectedModel = 'llama-3.2-3b-instruct';
-        document.querySelectorAll('input[name="llm-choice"]').forEach(radio => {
-          radio.addEventListener('change', (e) => {
-            if (e.target.value === 'no-llm') {
-              selectedModel = '';
-            } else {
-              selectedModel = 'llama-3.2-3b-instruct';
-            }
-          });
-        });
-      }
-    } catch (e) {
-      document.getElementById('lmstudio-checking').classList.add('hidden');
-      showWarningForBackend('lmstudio');
-      selectedModel = '';
-    }
-  }
-
-  // Run detection on page load
+  // Trigger initial detection on page load
   detectLMStudio();
 
-  // ── Setup flow ───────────────────────────────────────────────────────
+  async function detectLMStudio() {
+    // Proxy function on load
+    runDetection();
+  }
+
+  // ── Setup flow execution ─────────────────────────────────────────────
   function startSetup() {
     document.getElementById('state-idle').classList.add('hidden');
     document.getElementById('state-running').classList.remove('hidden');
     document.getElementById('btn-restart').classList.add('hidden');
     document.getElementById('btn-retry').classList.add('hidden');
-    document.getElementById('error-box').classList.remove('hidden');
     document.getElementById('error-box').classList.remove('visible');
 
-    // Build steps list
+    // Build the dynamic progress list
     const stepsList = document.getElementById('steps-list');
     stepsList.innerHTML = '';
     const steps = [
-      { key: 'tts', label: 'Voice engine', icon: '&#127908;' },
-      { key: 'profile', label: 'Profile', icon: '&#128100;' },
-      { key: 'database', label: 'Database', icon: '&#128451;' },
-      { key: 'lmstudio', label: 'LLM Backend', icon: '&#129504;' },
-      { key: 'finalize', label: 'Finalize', icon: '&#10003;' },
+      { key: 'tts', label: 'Voice engine setup', icon: '🎙️' },
+      { key: 'profile', label: 'Profile creation', icon: '👤' },
+      { key: 'database', label: 'Database indexing', icon: '📂' },
+      { key: 'lmstudio', label: 'LLM connection', icon: '🧠' },
+      { key: 'finalize', label: 'Finalization', icon: '✓' }
     ];
+
     steps.forEach(s => {
       const li = document.createElement('li');
       li.className = 'step';
@@ -593,34 +638,33 @@
         <div class="step-content">
           <div class="step-title">${s.label}</div>
           <div class="step-detail" id="detail-${s.key}">Waiting...</div>
-        </div>`;
+        </div>
+      `;
       stepsList.appendChild(li);
     });
 
-    // POST with selected model and backend config
-    const backendType = document.getElementById('backend-type').value;
-    const baseUrl = document.getElementById('base-url-input')?.value || '';
-    const apiKey = document.getElementById('api-key-input')?.value || '';
+    const type = backendSelect.value;
+    const baseUrl = urlInput.value.trim();
+    const apiKey = keyInput.value.trim();
 
     fetch(`${API}/setup/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: selectedModel || '',
-        llm_backend: backendType,
+        llm_backend: type,
         llm_base_url: baseUrl,
-        llm_api_key: apiKey,
+        llm_api_key: apiKey
       })
     })
-      .then(r => r.json())
-      .then(data => {
-        if (data.done && !data.error) { showComplete(); return; }
-        if (data.error) { showError(data.error); return; }
-      })
-      .catch(err => {
-        showError('Failed to connect to backend: ' + err.message);
-        return;
-      });
+    .then(r => r.json())
+    .then(data => {
+      if (data.done && !data.error) { showComplete(); return; }
+      if (data.error) { showError(data.error); return; }
+    })
+    .catch(err => {
+      showError('Could not launch setup: ' + err.message);
+    });
 
     pollProgress();
   }
@@ -629,6 +673,7 @@
     const poll = setInterval(async () => {
       try {
         const resp = await fetch(`${API}/setup/status`);
+        if (!resp.ok) return;
         const data = await resp.json();
         updateUI(data);
         if (data.done) {
@@ -636,8 +681,11 @@
           if (data.error) showError(data.error);
           else showComplete();
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Polling error:', e);
+      }
     }, 600);
+    // Timeout poll after 10 minutes
     setTimeout(() => clearInterval(poll), 600000);
   }
 
@@ -652,19 +700,20 @@
       { key: 'profile', min: 62, max: 66 },
       { key: 'database', min: 66, max: 73 },
       { key: 'lmstudio', min: 73, max: 85 },
-      { key: 'finalize', min: 85, max: 100 },
+      { key: 'finalize', min: 85, max: 100 }
     ];
 
     let activeFound = false;
     stepRanges.forEach(s => {
-      const el = document.querySelector(`[data-step="${s.key}"]`);
+      const el = document.querySelector(`[data-step='${s.key}']`);
       if (!el) return;
       const detail = document.getElementById(`detail-${s.key}`);
+      
       if (pct >= s.max) {
         el.classList.remove('active');
         el.classList.add('done');
-        el.querySelector('.step-icon').innerHTML = '&#10003;';
-        if (detail) detail.textContent = 'Done';
+        el.querySelector('.step-icon').innerHTML = '✓';
+        if (detail) detail.textContent = 'Completed';
       } else if (pct >= s.min && !activeFound) {
         el.classList.add('active');
         el.classList.remove('done');
@@ -678,16 +727,20 @@
 
   function showComplete() {
     document.getElementById('progress-fill').style.width = '100%';
-    document.getElementById('progress-fill').classList.add('complete');
+    document.getElementById('progress-fill').className = 'progress-bar-fill complete';
     document.getElementById('status-text').textContent = 'Setup complete!';
-    document.getElementById('status-percent').textContent = '100%';
-    document.getElementById('status-percent').classList.add('done');
+    
+    const percentEl = document.getElementById('status-percent');
+    percentEl.textContent = '100%';
+    percentEl.className = 'status-percent done';
+    
     document.getElementById('btn-restart').classList.remove('hidden');
     document.getElementById('btn-retry').classList.add('hidden');
+    
     document.querySelectorAll('#steps-list .step').forEach(el => {
       el.classList.remove('active');
       el.classList.add('done');
-      el.querySelector('.step-icon').innerHTML = '&#10003;';
+      el.querySelector('.step-icon').innerHTML = '✓';
     });
   }
 
@@ -696,14 +749,14 @@
     document.getElementById('error-text').textContent = msg;
     document.getElementById('btn-retry').classList.remove('hidden');
     document.getElementById('btn-restart').classList.add('hidden');
-    document.getElementById('progress-fill').classList.add('error');
+    document.getElementById('progress-fill').className = 'progress-bar-fill error';
   }
 
   function restartApp() {
     const btn = document.getElementById('btn-restart');
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px;border-color:rgba(255,255,255,0.2);border-top-color:white"></span> Launching Yuki...';
+      btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px;border-color:rgba(255,255,255,0.2);border-top-color:white"></span> Launching...';
     }
     setTimeout(() => {
       if (window.electronAPI && window.electronAPI.restartApp) {
