@@ -468,6 +468,16 @@ const AvatarViewer = ({
           window.vrmControls.update();
         }
         // startGreetingRef.current = true; // Disabled startup greeting wave for now
+
+        // Trigger post-load garbage collection to reclaim memory spike right away
+        if (isElectron && window.gc) {
+          setTimeout(() => {
+            try {
+              window.gc();
+              console.log("[AvatarViewer] Post-load garbage collection executed.");
+            } catch (_) {}
+          }, 3000);
+        }
       },
       (progress) => {
         // Loading progress...

@@ -56,6 +56,13 @@ async def _warmup_tts():
         if audio_bytes:
             print("[Startup] Local Kokoro neural voice engine loaded successfully and active.")
             tts_online_status = True
+            # Optimize memory after TTS engine warmup is complete
+            await asyncio.sleep(3)
+            try:
+                from app.memory.optimizer import optimize_all_processes
+                optimize_all_processes()
+            except Exception:
+                pass
     except asyncio.TimeoutError:
         print("[Startup] Local Kokoro neural voice engine failed to load: initialization timed out after 60 seconds.")
     except Exception as e:
@@ -233,6 +240,13 @@ async def lifespan(app: FastAPI):
                 await asyncio.sleep(0.1)
             if agent_executor is not None:
                 await agent_executor.ensure_model_loaded(config.LLM_MODEL)
+                # Optimize memory after model is loaded
+                await asyncio.sleep(5)
+                try:
+                    from app.memory.optimizer import optimize_all_processes
+                    optimize_all_processes()
+                except Exception:
+                    pass
 
         asyncio.create_task(_load_model_when_ready())
     else:
