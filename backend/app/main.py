@@ -43,6 +43,10 @@ from app import config
 from app.memory.local_mem import MemoryManager
 from app.agent.executor import AgentExecutor
 
+# Synchronization events for coordinated startup optimization
+llm_loaded_event = asyncio.Event()
+tts_warmed_up_event = asyncio.Event()
+
 # ---------------------------------------------------------------------------
 # Lifespan context manager (replaces deprecated @app.on_event)
 # ---------------------------------------------------------------------------
@@ -56,18 +60,13 @@ async def _warmup_tts():
         if audio_bytes:
             print("[Startup] Local Kokoro neural voice engine loaded successfully and active.")
             tts_online_status = True
-            # Optimize memory after TTS engine warmup is complete
-            await asyncio.sleep(3)
-            try:
-                from app.memory.optimizer import optimize_all_processes
-                optimize_all_processes()
-            except Exception:
-                pass
     except asyncio.TimeoutError:
         print("[Startup] Local Kokoro neural voice engine failed to load: initialization timed out after 60 seconds.")
     except Exception as e:
         print(f"[Startup] Local Kokoro neural voice engine failed to load: {e}")
         tts_online_status = False
+    finally:
+        tts_warmed_up_event.set()
 
 
 async def _connect_mcp_bridge():
@@ -195,6 +194,15 @@ async def _do_model_swap(backend, old_model: str, new_model: str):
 async def _run_memory_optimizer_bg():
     """Background task to periodically run garbage collection and optimize process memory."""
     print("[Startup] Memory optimizer background task started.")
+    # Wait for startup warmups to complete before starting the periodic loop
+    try:
+        await asyncio.gather(
+            llm_loaded_event.wait(),
+            tts_warmed_up_event.wait(),
+            return_exceptions=True
+        )
+    except Exception:
+        pass
     await asyncio.sleep(30)
     while True:
         try:
@@ -208,10 +216,41 @@ async def _run_memory_optimizer_bg():
         await asyncio.sleep(60)
 
 
+async def _coordinate_startup_optimization():
+    """Wait for all warmups to finish, then run a single memory cleanup sweep."""
+    try:
+        await asyncio.gather(
+            llm_loaded_event.wait(),
+            tts_warmed_up_event.wait(),
+            return_exceptions=True
+        )
+        await asyncio.sleep(5)
+        print("[Startup] Model warmups complete. Performing initial memory sweep...")
+        from app.memory.optimizer import optimize_all_processes
+        optimize_all_processes()
+    except Exception as e:
+        print(f"[Startup] Coordinated memory sweep failed: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown logic for the FastAPI application."""
     global tts_online_status, agent_executor
+
+    # Set custom event loop exception handler to silence Windows Proactor connection resets
+    try:
+        loop = asyncio.get_running_loop()
+        _original_handler = loop.get_exception_handler()
+        def custom_exception_handler(loop, context):
+            exception = context.get('exception')
+            if isinstance(exception, ConnectionResetError) or (exception and "WinError 10054" in str(exception)):
+                return
+            if _original_handler:
+                _original_handler(loop, context)
+            else:
+                loop.default_exception_handler(context)
+        loop.set_exception_handler(custom_exception_handler)
+    except Exception as e:
+        print(f"[Startup] Failed to set custom event loop exception handler: {e}")
 
     # ── Startup — lightweight tasks only (server starts accepting ASAP) ──
     print("[Startup] Server is live — deferring heavy initialization to background...")
@@ -234,25 +273,23 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_validate_cloud_key())
 
         async def _load_model_when_ready():
-            for _ in range(100):
+            try:
+                for _ in range(100):
+                    if agent_executor is not None:
+                        break
+                    await asyncio.sleep(0.1)
                 if agent_executor is not None:
-                    break
-                await asyncio.sleep(0.1)
-            if agent_executor is not None:
-                await agent_executor.ensure_model_loaded(config.LLM_MODEL)
-                # Optimize memory after model is loaded
-                await asyncio.sleep(5)
-                try:
-                    from app.memory.optimizer import optimize_all_processes
-                    optimize_all_processes()
-                except Exception:
-                    pass
+                    await agent_executor.ensure_model_loaded(config.LLM_MODEL)
+            finally:
+                llm_loaded_event.set()
 
         asyncio.create_task(_load_model_when_ready())
     else:
         print("[Startup] NO_LLM_MODE enabled — skipping LLM auto-load.")
+        llm_loaded_event.set()
 
     asyncio.create_task(_warmup_tts())
+    asyncio.create_task(_coordinate_startup_optimization())
     asyncio.create_task(_start_crawler_bg())
     asyncio.create_task(_run_memory_optimizer_bg())
 
@@ -1672,7 +1709,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             if not re.sub(r'[^\w\s]', '', speech_text).strip():
                                 continue
                             try:
-                                audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=8.0)
+                                audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=40.0)
                                 if audio_bytes:
                                     audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                                     audio_url = f"data:audio/wav;base64,{audio_base64}"
