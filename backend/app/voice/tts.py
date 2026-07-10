@@ -24,8 +24,6 @@ def add_nvidia_dll_directories():
                     except Exception as e:
                         print(f"[TTS] Warning: Failed to add DLL directory {bin_dir}: {e}")
 
-add_nvidia_dll_directories()
-
 from kokoro_onnx import Kokoro
 from app import config
 
@@ -58,8 +56,7 @@ def _ensure_model_files():
                         pass
                 raise e
 
-# Ensure files exist before initializing Kokoro
-_ensure_model_files()
+# Model files will be verified lazily inside get_kokoro()
 
 # Lazy-loaded Kokoro instance
 _kokoro_instance = None
@@ -110,6 +107,10 @@ def get_kokoro() -> Kokoro:
     global _kokoro_instance
     if _kokoro_instance is not None:
         return _kokoro_instance
+
+    # Defer NVIDIA DLL loading and model file checks to here to make imports instant
+    add_nvidia_dll_directories()
+    _ensure_model_files()
 
     device_pref = getattr(config, "TTS_DEVICE", "auto").lower()
     print(f"[TTS] Loading local Kokoro-ONNX neural model into memory... (device preference: {device_pref})")

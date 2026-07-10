@@ -2,7 +2,6 @@ import os
 import time
 from pathlib import Path
 import asyncio
-from faster_whisper import WhisperModel
 from app import config
 
 VOICE_DIR = Path(__file__).parent.resolve()
@@ -46,9 +45,10 @@ def reset_whisper():
     _current_device = None
     print("[STT] Whisper model cleared. Will re-initialize on next transcription request.")
 
-def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16") -> WhisperModel:
+def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16") -> "WhisperModel":
     global _whisper_instance, _current_model_size, _current_compute_type, _current_device
 
+    from faster_whisper import WhisperModel
     device_pref = getattr(config, "STT_DEVICE", "auto").lower()
 
     if model_size is None:

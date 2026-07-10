@@ -48,7 +48,7 @@ LLM_MODE = int(os.environ.get("LLM_MODE", "3"))
 # Tool transport configuration
 # mcp-stdio routes Yuki tool execution through backend/app/mcp_server.py over MCP stdio.
 # local keeps the legacy in-process Python dispatcher.
-TOOL_TRANSPORT = os.environ.get("YUKI_TOOL_TRANSPORT", "mcp-stdio").strip().lower()
+TOOL_TRANSPORT = os.environ.get("YUKI_TOOL_TRANSPORT", "local").strip().lower()
 MCP_FALLBACK_TO_LOCAL = os.environ.get("YUKI_MCP_FALLBACK_TO_LOCAL", "true").strip().lower() not in ("0", "false", "no", "off")
 # Tool selection: auto scores tool schemas like a local tool-search step; all disables filtering.
 TOOL_SELECTION_MODE = os.environ.get("YUKI_TOOL_SELECTION_MODE", "auto").strip().lower()
