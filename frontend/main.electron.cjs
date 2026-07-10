@@ -39,11 +39,17 @@ app.commandLine.appendSwitch('disable-http-cache');
 app.commandLine.appendSwitch('disk-cache-size', '104857600');
 
 // 4. Prevent fallback to CPU software rasterization (SwiftShader) by ignoring GPU blocklists
-// and enabling hardware-level GPU rasterization for WebGL compositing.
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
-app.commandLine.appendSwitch('enable-gpu-rasterization');
 
-// 5. Prevent over-allocation of background rendering threads
+// 5. Cap shader caches in system memory (in-memory cache limits)
+app.commandLine.appendSwitch('gpu-program-cache-size-kb', '512');
+app.commandLine.appendSwitch('gpu-disk-cache-size-kb', '2048');
+
+// 6. Disable hardware audio/video decoders to avoid extra GPU buffer allocations
+app.commandLine.appendSwitch('disable-accelerated-video-decode');
+app.commandLine.appendSwitch('disable-accelerated-video-encode');
+
+// 7. Prevent over-allocation of background rendering threads
 app.commandLine.appendSwitch('disable-background-networking');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 // ------------------------------------------------------------------------

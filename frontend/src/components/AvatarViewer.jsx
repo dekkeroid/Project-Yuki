@@ -659,7 +659,7 @@ const AvatarViewer = ({
       isElectron ? window.innerWidth : containerRef.current.clientWidth,
       isElectron ? window.innerHeight : containerRef.current.clientHeight
     );
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); //changed it from 2 redering density
+    renderer.setPixelRatio(isElectron ? 1.0 : Math.min(window.devicePixelRatio, 1.5)); // 1.0 in Electron saves massive GPU backbuffer memory
     renderer.shadowMap.enabled = !isElectron; // shadows cause issues on transparent bg
 
     // Cache the initial canvas rect to avoid layout thrashing in handleMouseMove
