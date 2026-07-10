@@ -651,7 +651,7 @@ const AvatarViewer = ({
       antialias: true,
       alpha: true,
       premultipliedAlpha: false,
-      powerPreference: "low-power",
+      powerPreference: "high-performance",
     });
     // CRITICAL: set clear color to fully transparent so the desktop shows through
     renderer.setClearColor(0x000000, 0);
@@ -659,7 +659,7 @@ const AvatarViewer = ({
       isElectron ? window.innerWidth : containerRef.current.clientWidth,
       isElectron ? window.innerHeight : containerRef.current.clientHeight
     );
-    renderer.setPixelRatio(isElectron ? 1.0 : Math.min(window.devicePixelRatio, 1.5)); // 1.0 in Electron saves massive GPU backbuffer memory
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Restore high-fidelity rendering
     renderer.shadowMap.enabled = !isElectron; // shadows cause issues on transparent bg
 
     // Cache the initial canvas rect to avoid layout thrashing in handleMouseMove

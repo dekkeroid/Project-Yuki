@@ -45,14 +45,7 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('gpu-program-cache-size-kb', '512');
 app.commandLine.appendSwitch('gpu-disk-cache-size-kb', '2048');
 
-// 6. Disable hardware audio/video decoders to avoid extra GPU buffer allocations
-app.commandLine.appendSwitch('disable-accelerated-video-decode');
-app.commandLine.appendSwitch('disable-accelerated-video-encode');
-
-// 7. Force the GPU process to prefer the integrated (low-power) GPU
-app.commandLine.appendSwitch('gpu-preference', 'low-power');
-
-// 8. Prevent over-allocation of background rendering threads
+// 6. Prevent over-allocation of background rendering threads
 app.commandLine.appendSwitch('disable-background-networking');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 // ------------------------------------------------------------------------
