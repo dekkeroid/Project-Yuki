@@ -651,7 +651,7 @@ const AvatarViewer = ({
       antialias: true,
       alpha: true,
       premultipliedAlpha: false,
-      powerPreference: "high-performance",
+      powerPreference: "low-power",
     });
     // CRITICAL: set clear color to fully transparent so the desktop shows through
     renderer.setClearColor(0x000000, 0);
