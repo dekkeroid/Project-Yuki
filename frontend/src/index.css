@@ -1848,7 +1848,7 @@ body.desktop-overlay .interactive-element {
   }
 }
 
-/* Standalone Desktop Settings Window UI Layout & Styling */
+/* Standalone Desktop Settings Window UI Layout & Compact Styling */
 .slide-panel-left.standalone-panel {
   position: fixed !important;
   top: 0 !important;
@@ -1861,20 +1861,21 @@ body.desktop-overlay .interactive-element {
   background: #090d16 !important;
   border: none !important;
   border-radius: 0 !important;
-  padding: 32px 48px !important;
+  padding: 20px 32px !important;
   display: flex !important;
   flex-direction: column !important;
   overflow-y: auto !important;
   box-sizing: border-box !important;
   z-index: 9999 !important;
+  font-size: 0.78rem !important;
 }
 
 .standalone-panel .panel-header {
-  margin-bottom: 20px !important;
+  margin-bottom: 12px !important;
 }
 
 .standalone-panel .panel-title {
-  font-size: 1.1rem !important;
+  font-size: 0.88rem !important;
   font-weight: 700 !important;
   letter-spacing: 0.03em !important;
   color: #fff !important;
@@ -1883,36 +1884,46 @@ body.desktop-overlay .interactive-element {
 .standalone-panel .dashboard-stats-row {
   display: flex !important;
   flex-direction: row !important;
-  gap: 16px !important;
-  margin-bottom: 24px !important;
-  max-width: 850px !important;
+  gap: 12px !important;
+  margin-bottom: 16px !important;
+  max-width: 720px !important;
 }
 
 .standalone-panel .stat-widget {
   flex: 1 !important;
   background: rgba(255, 255, 255, 0.03) !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 12px !important;
-  padding: 14px 18px !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+}
+
+.standalone-panel .stat-label {
+  font-size: 0.7rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+.standalone-panel .stat-value {
+  font-size: 0.82rem !important;
 }
 
 .standalone-panel .tab-nav-bar {
   display: flex !important;
   flex-direction: row !important;
-  gap: 10px !important;
-  margin-bottom: 28px !important;
+  gap: 6px !important;
+  margin-bottom: 20px !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-  padding-bottom: 14px !important;
-  max-width: 850px !important;
+  padding-bottom: 10px !important;
+  max-width: 720px !important;
 }
 
 .standalone-panel .tab-btn {
-  padding: 10px 22px !important;
-  border-radius: 20px !important;
+  padding: 6px 14px !important;
+  border-radius: 16px !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   background: rgba(255, 255, 255, 0.03) !important;
   color: #94a3b8 !important;
-  font-size: 0.88rem !important;
+  font-size: 0.76rem !important;
   font-weight: 600 !important;
   cursor: pointer !important;
   transition: all 0.2s ease !important;
@@ -1927,26 +1938,26 @@ body.desktop-overlay .interactive-element {
   background: linear-gradient(135deg, #8b5cf6, #ec4899) !important;
   color: #fff !important;
   border-color: transparent !important;
-  box-shadow: 0 0 16px rgba(139, 92, 246, 0.4) !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.35) !important;
 }
 
 .standalone-panel .tab-panel-body {
   flex: 1 !important;
-  max-width: 850px !important;
+  max-width: 720px !important;
   width: 100% !important;
 }
 
 .standalone-panel .card-group {
   background: #0d1322 !important;
-  border-radius: 16px !important;
-  padding: 24px 28px !important;
+  border-radius: 12px !important;
+  padding: 16px 20px !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  margin-bottom: 24px !important;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25) !important;
+  margin-bottom: 16px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
 }
 
 .standalone-panel .card-group-title {
-  font-size: 1.05rem !important;
+  font-size: 0.85rem !important;
   font-weight: 700 !important;
   color: #fff !important;
 }
@@ -1954,10 +1965,12 @@ body.desktop-overlay .interactive-element {
 .standalone-panel .field-label,
 .standalone-panel label,
 .standalone-panel .setting-label {
-  font-size: 0.82rem !important;
+  font-size: 0.72rem !important;
   font-weight: 600 !important;
   color: #94a3b8 !important;
-  margin-bottom: 6px !important;
+  margin-bottom: 4px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
 }
 
 .standalone-panel select,
@@ -1966,10 +1979,10 @@ body.desktop-overlay .interactive-element {
 .standalone-panel textarea {
   background: #131b2e !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-radius: 10px !important;
-  padding: 10px 14px !important;
+  border-radius: 8px !important;
+  padding: 6px 10px !important;
   color: #fff !important;
-  font-size: 0.88rem !important;
+  font-size: 0.78rem !important;
   box-sizing: border-box !important;
   transition: border-color 0.2s, box-shadow 0.2s !important;
 }
@@ -1978,5 +1991,5 @@ body.desktop-overlay .interactive-element {
 .standalone-panel input:focus,
 .standalone-panel textarea:focus {
   border-color: #8b5cf6 !important;
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.25) !important;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.25) !important;
 }
