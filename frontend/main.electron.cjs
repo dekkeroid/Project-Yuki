@@ -94,10 +94,10 @@ function createSettingsWindow() {
 
   const iconPath = path.join(__dirname, 'public', 'icon.png');
   settingsWindow = new BrowserWindow({
-    width: 960,
-    height: 780,
-    minWidth: 650,
-    minHeight: 500,
+    width: 780,
+    height: 680,
+    minWidth: 600,
+    minHeight: 480,
     title: 'Settings',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
