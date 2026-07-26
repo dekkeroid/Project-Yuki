@@ -461,7 +461,7 @@ def get_vrm_models():
     # Bundled: resources/models/ (PyInstaller extraResources) or frontend/public/models/ (dev)
     for candidate in [
         BASE_DIR.parent / "models",
-        BASE_DIR.parent / "frontend" / "public" / "models",
+        BASE_DIR.parent.parent / "frontend" / "public" / "models",
         BASE_DIR / "models",
     ]:
         if candidate.exists():
@@ -507,7 +507,7 @@ def serve_vrm_file(name: str):
     # Check bundled first
     for candidate in [
         BASE_DIR.parent / "models",
-        BASE_DIR.parent / "frontend" / "public" / "models",
+        BASE_DIR.parent.parent / "frontend" / "public" / "models",
         BASE_DIR / "models",
     ]:
         fpath = candidate / name
@@ -552,7 +552,7 @@ def delete_vrm_model(name: str):
     from app.config import BASE_DIR
     for candidate in [
         BASE_DIR.parent / "models",
-        BASE_DIR.parent / "frontend" / "public" / "models",
+        BASE_DIR.parent.parent / "frontend" / "public" / "models",
         BASE_DIR / "models",
     ]:
         if (candidate / name).exists():
