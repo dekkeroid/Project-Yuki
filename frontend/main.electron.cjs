@@ -269,7 +269,7 @@ function findVitePort(ports, timeout = 500) {
   });
 }
 
-async function loadWithRetry(win, ports, maxAttempts = 40, intervalMs = 800) {
+async function loadWithRetry(win, ports, maxAttempts = 120, intervalMs = 800) {
   // In packaged mode, skip Vite detection — load the bundled dist directly
   if (app.isPackaged) {
     console.log('[Electron] Packaged mode — loading bundled dist/index.html');
