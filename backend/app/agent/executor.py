@@ -407,6 +407,8 @@ class AgentExecutor:
             "adjust volume, launch apps, run commands, manage processes, and more.\n\n"
             "Given the conversation so far, does the user's LATEST message require "
             "Yuki to perform a computer action or look something up?\n\n"
+            "'No' means the user is just having a normal conversation and does not want "
+            "any kind of computer operation performed.\n\n"
             "Reply with ONLY 'Yes' or 'No'. Nothing else."
         )
 
