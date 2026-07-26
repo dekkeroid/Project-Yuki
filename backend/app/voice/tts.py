@@ -6,6 +6,7 @@ from pathlib import Path
 import soundfile as sf
 import time
 import re
+import threading
 
 def add_nvidia_dll_directories():
     # Find site-packages/nvidia directory and inject paths
@@ -29,6 +30,8 @@ from app import config
 VOICE_DIR = Path(__file__).parent.resolve()
 MODEL_PATH = VOICE_DIR / "kokoro-v1.0.fp16.onnx"
 VOICES_PATH = VOICE_DIR / "voices-v1.0.bin"
+_kokoro_instance = None
+_kokoro_lock = threading.Lock()
 
 MODEL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.fp16.onnx"
 VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
@@ -57,26 +60,27 @@ def _ensure_model_files():
 
 # Model files will be verified lazily inside get_kokoro()
 
-import threading
-import asyncio
-
 # Lazy-loaded Kokoro instance
 _kokoro_instance = None
-_kokoro_async_lock = asyncio.Lock()
-_kokoro_thread_lock = threading.Lock()
+_kokoro_lock = None
 
 def reset_kokoro():
     """Clear the cached Kokoro instance so the next call re-initializes with current config."""
-    global _kokoro_instance
+    global _kokoro_instance, _kokoro_lock
     _kokoro_instance = None
+    _kokoro_lock = None
     print("[TTS] Kokoro instance cleared. Will re-initialize on next speech request.")
 
 async def get_kokoro_async() -> "Kokoro":
-    global _kokoro_instance
+    global _kokoro_instance, _kokoro_lock
     if _kokoro_instance is not None:
         return _kokoro_instance
         
-    async with _kokoro_async_lock:
+    import asyncio
+    if _kokoro_lock is None:
+        _kokoro_lock = asyncio.Lock()
+        
+    async with _kokoro_lock:
         if _kokoro_instance is not None:
             return _kokoro_instance
         # Run the synchronous load on a background thread so it doesn't block the event loop
@@ -106,15 +110,15 @@ def get_kokoro() -> "Kokoro":
     if _kokoro_instance is not None:
         return _kokoro_instance
 
-    with _kokoro_thread_lock:
+    with _kokoro_lock:
         if _kokoro_instance is not None:
             return _kokoro_instance
 
-        from kokoro_onnx import Kokoro
+    from kokoro_onnx import Kokoro
 
-        # Defer NVIDIA DLL loading and model file checks to here to make imports instant
-        add_nvidia_dll_directories()
-        _ensure_model_files()
+    # Defer NVIDIA DLL loading and model file checks to here to make imports instant
+    add_nvidia_dll_directories()
+    _ensure_model_files()
 
     device_pref = getattr(config, "TTS_DEVICE", "auto").lower()
     print(f"[TTS] Loading local Kokoro-ONNX neural model into memory... (device preference: {device_pref})")
