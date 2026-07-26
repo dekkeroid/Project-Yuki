@@ -1861,79 +1861,79 @@ body.desktop-overlay .interactive-element {
   background: #090d16 !important;
   border: none !important;
   border-radius: 0 !important;
-  padding: 0 !important;
+  padding: 32px 48px !important;
   display: flex !important;
-  flex-direction: row !important;
-  overflow: hidden !important;
+  flex-direction: column !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
   z-index: 9999 !important;
 }
 
 .standalone-panel .panel-header {
-  display: none !important;
+  margin-bottom: 20px !important;
+}
+
+.standalone-panel .panel-title {
+  font-size: 1.1rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.03em !important;
+  color: #fff !important;
+}
+
+.standalone-panel .dashboard-stats-row {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 16px !important;
+  margin-bottom: 24px !important;
+  max-width: 850px !important;
+}
+
+.standalone-panel .stat-widget {
+  flex: 1 !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px !important;
+  padding: 14px 18px !important;
 }
 
 .standalone-panel .tab-nav-bar {
   display: flex !important;
-  flex-direction: column !important;
-  gap: 8px !important;
-  width: 250px !important;
-  min-width: 250px !important;
-  height: 100vh !important;
-  background: #0d1322 !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
-  padding: 28px 18px !important;
-  box-sizing: border-box !important;
-  flex-shrink: 0 !important;
-  margin: 0 !important;
-}
-
-.standalone-panel .tab-nav-bar::before {
-  content: '⚡ Yuki Settings';
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: #fff;
-  padding: 0 6px 20px 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 14px;
-  display: block;
-  letter-spacing: 0.02em;
+  flex-direction: row !important;
+  gap: 10px !important;
+  margin-bottom: 28px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding-bottom: 14px !important;
+  max-width: 850px !important;
 }
 
 .standalone-panel .tab-btn {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  padding: 12px 16px !important;
-  border-radius: 10px !important;
-  border: none !important;
-  background: transparent !important;
+  padding: 10px 22px !important;
+  border-radius: 20px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
   color: #94a3b8 !important;
   font-size: 0.88rem !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
   cursor: pointer !important;
   transition: all 0.2s ease !important;
-  text-align: left !important;
 }
 
 .standalone-panel .tab-btn:hover {
-  background: rgba(255, 255, 255, 0.04) !important;
-  color: #f1f5f9 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #fff !important;
 }
 
 .standalone-panel .tab-btn.active {
-  background: rgba(139, 92, 246, 0.16) !important;
-  color: #c084fc !important;
-  font-weight: 600 !important;
-  border-left: 3px solid #8b5cf6 !important;
+  background: linear-gradient(135deg, #8b5cf6, #ec4899) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.4) !important;
 }
 
 .standalone-panel .tab-panel-body {
   flex: 1 !important;
-  height: 100vh !important;
-  overflow-y: auto !important;
-  padding: 36px 48px !important;
-  box-sizing: border-box !important;
-  max-width: 950px !important;
+  max-width: 850px !important;
+  width: 100% !important;
 }
 
 .standalone-panel .card-group {
