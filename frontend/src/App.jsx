@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'rea
 import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
+import { useSystemMonitor } from './hooks/useSystemMonitor';
+import { SLASH_COMMANDS } from './constants';
 
 const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
@@ -356,23 +358,7 @@ const App = () => {
   const [newFactVal, setNewFactVal] = useState('');
   const [editingFactKey, setEditingFactKey] = useState(null);
   const [editingFactValue, setEditingFactValue] = useState('');
-  const [crawlerStatus, setCrawlerStatus] = useState({
-    paused: false,
-    tagger_paused: false,
-    current_path: 'Idle',
-    current_tagger_path: 'Idle',
-    total_files: 0,
-    pending_enrichment: 0,
-    initial_crawl_completed: false,
-    first_time_priority_done: false,
-    first_cycle_done: false,
-    completed_roots: [],
-    remaining_roots: [],
-    roots_total: 0,
-    roots_current: 0,
-    current_root_path: 'Idle',
-    watchdog_active: false
-  });
+
 
   const [availableLlmModels, setAvailableLlmModels] = useState([]);
   const [gpuMemData, setGpuMemData] = useState({ gpus: [], top5: {} });
@@ -545,8 +531,21 @@ const App = () => {
   }, []);
 
   // OS telemetry and resident companion states
-  const [cpuLoad, setCpuLoad] = useState(0);
-  const [systemIdleTime, setSystemIdleTime] = useState(0);
+  const {
+    cpuLoad,
+    setCpuLoad,
+    systemIdleTime,
+    setSystemIdleTime,
+    crawlerStatus,
+    fetchHealthDetails,
+    fetchCrawlerStatus
+  } = useSystemMonitor({
+    API_BASE,
+    setModelName,
+    isSettingsOpen,
+    activeTab
+  });
+
   const [powerConnected, setPowerConnected] = useState(true);
   const yukiSelfHiddenRef = useRef(false);
   const [lastDrivesCount, setLastDrivesCount] = useState(null);
@@ -1160,17 +1159,15 @@ const App = () => {
     }
   };
 
-  const fetchCrawlerStatus = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/crawler/status`);
-      if (res.ok) {
-        const data = await res.json();
-        setCrawlerStatus(data);
-      }
-    } catch (e) {
-      console.warn('Could not fetch crawler status:', e);
+  useEffect(() => {
+    let interval = null;
+    if (isSettingsOpen) {
+      fetchVrmModels();
     }
-  };
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isSettingsOpen]);
 
   const fetchGpuMem = async () => {
     try {
@@ -1183,22 +1180,6 @@ const App = () => {
       console.warn('Could not fetch GPU memory:', e);
     }
   };
-
-  // Poll crawler status when Electron settings modal is open and activeTab is crawler
-  // Also refresh VRM model list whenever settings panel opens (backend may not have been ready on first mount)
-  useEffect(() => {
-    let interval = null;
-    if (isSettingsOpen) {
-      fetchVrmModels();
-    }
-    if (isSettingsOpen && activeTab === 'crawler') {
-      fetchCrawlerStatus();
-      interval = setInterval(fetchCrawlerStatus, 2500);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isSettingsOpen, activeTab]);
 
   // Poll GPU memory when config tab is open
   useEffect(() => {
@@ -3150,19 +3131,6 @@ const App = () => {
     }
   };
 
-  const fetchHealthDetails = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/health`);
-      if (response.ok) {
-        const data = await response.json();
-        setModelName(data.model);
-        setLmstudioUrl(data.lm_base_url || data.lmstudio_url);
-        if (data.llm_backend) setLlmBackend(data.llm_backend);
-      }
-    } catch (e) {
-      console.warn("Could not load active LLM model from health API:", e);
-    }
-  };
 
   const fetchLlmModels = async () => {
     try {
