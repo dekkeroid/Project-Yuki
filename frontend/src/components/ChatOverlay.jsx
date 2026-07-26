@@ -2,34 +2,7 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
-
-// ─── Slash Command Registry ───────────────────────────────────────────────────
-const STATIC_COMMANDS = [
-  { cmd: '/pcstat',       description: 'Show live PC stats (CPU, RAM, GPU...)' },
-  { cmd: '/open',         description: 'Search and open any file' },
-  { cmd: '/o',            description: 'Search and open any file (Alias for /open)' },
-  { cmd: '/play',         description: 'Search and play a video or song' },
-  { cmd: '/p',            description: 'Search and play a video or song (Alias for /play)' },
-  { cmd: '/read',         description: 'Search and read document content' },
-  { cmd: '/sum',          description: 'Search and summarize document content' },
-  { cmd: '/wink',         description: 'Yuki winks at you' },
-  { cmd: '/angry',        description: 'Yuki pouts angrily' },
-  { cmd: '/sad',          description: 'Yuki sighs sadly' },
-  { cmd: '/surprised',    description: 'Yuki looks surprised' },
-  { cmd: '/relaxed',      description: 'Yuki smiles relaxedly' },
-  { cmd: '/neutral',      description: 'Reset expression to neutral' },
-];
-
-export const SLASH_COMMANDS = [
-  ...STATIC_COMMANDS,
-  ...ANIMATIONS.flatMap((anim) =>
-    anim.commands.map((c) => ({
-      cmd: c.cmd,
-      description: c.description,
-      animName: anim.name
-    }))
-  )
-];
+import { SLASH_COMMANDS } from '../constants';
 
 const formatMessageText = (text) => {
   if (!text) return '';

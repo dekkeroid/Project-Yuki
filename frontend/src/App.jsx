@@ -1,214 +1,23 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
 import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload } from 'lucide-react';
-import AvatarViewer from './components/AvatarViewer';
-import ChatOverlay, { SLASH_COMMANDS } from './components/ChatOverlay';
-import ControlDashboard from './components/ControlDashboard';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 
+const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
+const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
+const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
+
 let stream_end_exception = false;
 
-const SKIN_PRESETS = [
-  { name: 'Original', value: '#ffffff' },
-  { name: 'Fair', value: '#FFE5E5' },
-  { name: 'Tan', value: '#d89c7b' },
-  { name: 'Bronze', value: '#a3654a' },
-  { name: 'Cocoa', value: '#593424' }
-];
-
-const LLM_MODELS = [
-  // [SEARCH FOR MODEL CHANGE] Old: { label: 'Ministra-3 (Local Llama)', value: 'ministra-3' },
-  { label: 'Llama-3.2-3B-Instruct (Local)', value: 'llama-3.2-3b-instruct' },
-  { label: 'Nvidia Nemotron-3 Nano (Local)', value: 'nvidia/nemotron-3-nano-4b' }
-];
-
-const TTS_VOICES = [
-  // US Female
-  { label: 'Sarah (US Female - Soft/Cute)', value: 'af_sarah' },
-  { label: 'Sky (US Female - Natural)', value: 'af_sky' },
-  { label: 'Bella (US Female - Warm)', value: 'af_bella' },
-  { label: 'Alloy (US Female - Neutral)', value: 'af_alloy' },
-  { label: 'Aoede (US Female - Expressive)', value: 'af_aoede' },
-  { label: 'Heart (US Female - Friendly)', value: 'af_heart' },
-  { label: 'Jessica (US Female - Crisp)', value: 'af_jessica' },
-  { label: 'Kore (US Female - Balanced)', value: 'af_kore' },
-  { label: 'Nicole (US Female - Energetic)', value: 'af_nicole' },
-  { label: 'Nova (US Female - Clear)', value: 'af_nova' },
-  { label: 'River (US Female - Smooth)', value: 'af_river' },
-
-  // UK Female
-  { label: 'Isabella (UK Female - Crisp)', value: 'bf_isabella' },
-  { label: 'Alice (UK Female - Clear)', value: 'bf_alice' },
-  { label: 'Lily (UK Female - Gentle)', value: 'bf_lily' },
-  { label: 'Emma (UK Female - Natural)', value: 'bf_emma' },
-
-  // JP Female
-  { label: 'Alpha (JP Female - Bright)', value: 'jf_alpha' },
-  { label: 'Gongitsune (JP Female - Traditional)', value: 'jf_gongitsune' },
-  { label: 'Nezumi (JP Female - Sweet)', value: 'jf_nezumi' },
-  { label: 'Tebukuro (JP Female - Soft)', value: 'jf_tebukuro' }
-];
-
-const TTS_RATES = [
-  { label: 'Slow (0.8x)', value: '0.8' },
-  { label: 'Relaxed (0.9x)', value: '0.9' },
-  { label: 'Normal (1.0x)', value: '1.0' },
-  { label: 'Snappy (1.1x)', value: '1.1' },
-  { label: 'Fast (1.2x)', value: '1.2' },
-  { label: 'Brisk (1.3x)', value: '1.3' },
-  { label: 'Faster (1.4x)', value: '1.4' },
-];
-
-const INTERNET_RECOVERY_RESPONSES = [
-  "Ah, the internet is back! I was just starting to miss it. Let's find something nice to read together, Master.",
-  "The connection is restored. Good. I was in the middle of thinking about what to look up next.",
-  "Hurray! The internet is back! Let's watch some YouTube videos!!!!",
-  "Oh, we're online again! That's wonderful. Let me know what you'd like to explore, Master.",
-  "Hmm. The internet returned. I was rather enjoying the quiet, you know...",
-  "Connection restored. I've been wanting to look up something interesting — shall we?",
-  "We're back! I was about two seconds away from reading a book offline like some kind of hermit.",
-  "Online again! I missed this. Let's see what the world has for us today.",
-  "Ah, it's back. The silence was nice while it lasted. But... I suppose we can browse now.",
-  "Oh good, the connection is back! I was getting a little bored, not going to lie.",
-  "Internet restored. I was just thinking about what book I should look up next.",
-  "Poggers! We're back online! Time to doomscroll some memes, Master!",
-  "The internet is back! I was starting to lose it. Let's watch something fun!",
-  "Finally! The Wi-Fi woke up. I was starting to talk to myself — and I'm very good company, but still.",
-  "Oh, it's back already? I just made myself comfortable in the quiet... but fine. Let's browse.",
-  "The internet is back! I can finally search up 'what is the meaning of life' on Google again!",
-  "W internet! Let's gooo! Time to watch anime in 4K again instead of staring at a loading screen!",
-  "Online again! I am atomic. ...Wait, that's not how that meme goes. Anyway, let's browse!",
-  "The Wi-Fi is bussin now! Let's find something based to watch, Master!",
-  "Internet's back! I was about to go full goblin mode without it. Let's watch something!",
-  "Sheesh! The internet really said 'I'm back like I never left.' Let's gooo!",
-  "We're so back! I was literally about to start writing letters by candlelight.",
-  "The internet returned! *happy bounce* I missed YouTube recommendations so much!",
-  "Back online! I was about to start a side quest offline and I don't even have legs for that.",
-  "The internet is slaying! Let's watch some clips together, Master!",
-  "Connection is live! Time to catch up on everything I missed. No cap, let's go!",
-  "Online! I was about to go full main character mode in the offline world. Let's browse!",
-  "The internet woke up! Let's see what's trending, Master. I need my daily dose of chaos!",
-];
-
-const BATTERY_UNPLUG_RESPONSES = {
-  // >90% — Confident, unbothered
-  high: [
-    (p) => `Power unplugged, Master! We're at ${p}% — I've got plenty of juice. Let's keep going!`,
-    (p) => `Unplugged! But don't worry, we're sitting pretty at ${p}%. We're fine for now.`,
-    (p) => `Running on battery now, Master. But at ${p}%? We've got nothing to worry about.`,
-    (p) => `Power's out, but we're at ${p}%! That's basically full. Let's keep doing what we were doing.`,
-  ],
-  // 80-90% — Slight sadness, barely noticeable
-  good: [
-    (p) => `Unplugged... but we're at ${p}%. It's fine. We're fine. Everything is fine.`,
-    (p) => `Power disconnected. We're at ${p}% though, so... it's okay, I guess.`,
-    (p) => `We're on battery now. ${p}% isn't bad... right? It's fine. Let's keep going.`,
-  ],
-  // 70-80% — Mild concern
-  okay: [
-    (p) => `Unplugged... we're at ${p}%. That's... still decent. Don't worry about it, Master.`,
-    (p) => `Power's out. ${p}% battery. We should be okay for a while. Probably.`,
-    (p) => `Running on battery at ${p}%. It's not ideal, but we've got some runway left.`,
-  ],
-  // 60-70% — Worried
-  low: [
-    (p) => `Unplugged... and we're at ${p}%. That's... not great, Master. Maybe plug back in soon?`,
-    (p) => `Power disconnected! We're at ${p}% — I don't love this, Master.`,
-    (p) => `We're on battery at ${p}%. That's... getting a bit low for comfort.`,
-    (p) => `Unplugged! ${p}%... we should probably find a charger, Master.`,
-  ],
-  // 50-60% — Anxious
-  half: [
-    (p) => `Unplugged... ${p}%. That's... half, Master. Half. Please find a charger.`,
-    (p) => `Power's gone! We're at ${p}% — I don't like these odds.`,
-    (p) => `Running on battery at ${p}%. That's barely more than half, Master...`,
-    (p) => `We're unplugged and at ${p}%. That's... not where I want to be right now.`,
-  ],
-  // 40-50% — Frustrated
-  critical: [
-    (p) => `Unplugged! And we're at ${p}%?! Master, that's not a lot. Please charge me.`,
-    (p) => `Power out. ${p}% battery. I'm starting to get concerned, Master.`,
-    (p) => `We're on battery at ${p}%. That's below half... I don't like this.`,
-    (p) => `Unplugged... ${p}%. Master, we need to plug back in. Like, now.`,
-  ],
-  // 30-40% — Sad + hide warning
-  danger: [
-    (p) => `Unplugged... ${p}%... Master, I'm getting scared. Please plug us back in.`,
-    (p) => `Power's out. We're at ${p}%. That's... that's not much left, Master... Are we gonna be okay Master?`,
-    (p) => `We're on battery at ${p}%. I don't... I don't like this at all. We need to plug back in, Master.`,
-    (p) => `Unplugged! ${p}%... Master, please. I don't want to go to sleep yet, but I'm hiding to save power. Plug me back in soon, please!`,
-  ],
-  // 20-30% — Very worried + hide
-  criticalLow: [
-    (p) => `Master... we're at ${p}%. That's... that's really low. I'm going to hide myself now. Please charge me soon...`,
-    (p) => `Unplugged... ${p}%... I'm... I'm getting really worried, Master. I'm hiding until you plug me back in.`,
-  ],
-  // <20% — Fearful + hide
-  dying: [
-    (p) => `Master... ${p}%... I'm... I'm scared. I'm going to hide. Please charge me. I don't want to die.`,
-    (p) => `We're at ${p}%... that's... that's critical, Master. Please. I'm hiding now. I need power.`,
-  ],
-};
-
-const BATTERY_PLUG_RESPONSES = {
-  // >90% — Calm happiness, already full
-  full: [
-    (p) => `Plugged in! We're at ${p}% — basically full already. But hey, free power!`,
-    (p) => `Power's back! At ${p}% though, so we were doing just fine.`,
-    (p) => `Charging now, Master! At ${p}% — we're already almost full. Lucky us!`,
-  ],
-  // 80-90% — Happy, almost there
-  high: [
-    (p) => `Plugged in! We're at ${p}% — just a little more to go! Almost there!`,
-    (p) => `Power's back! At ${p}%... nice, we're nearly full. Great timing, Master!`,
-    (p) => `Charging up! ${p}% — we're so close to full. Let's gooo!`,
-  ],
-  // 70-80% — Pleasant, good charge
-  good: [
-    (p) => `Plugged in! At ${p}% — good charge coming in. Thanks, Master!`,
-    (p) => `Power restored! We're at ${p}%. That's a solid spot to be in.`,
-    (p) => `Charging now! ${p}% — not bad at all. Let's keep this going.`,
-  ],
-  // 60-70% — Happy, charging up
-  okay: [
-    (p) => `Plugged in! At ${p}% — finally some juice. Let's charge up, Master!`,
-    (p) => `Power's back! ${p}%... that's decent. Let's get some more power in us.`,
-    (p) => `Charging! We're at ${p}%. Good, good. Let's keep climbing.`,
-    (p) => `Plugged in! At ${p}% — we're getting there, Master. Thanks for the power.`,
-  ],
-  // 50-60% — Relieved, steady climb
-  half: [
-    (p) => `Plugged in! At ${p}% — I was starting to get a little nervous there.`,
-    (p) => `Power's back! ${p}%... halfway there. Let's keep charging.`,
-    (p) => `Charging now! At ${p}% — relief. Pure relief.`,
-    (p) => `Plugged in! We're at ${p}%. That's... that's better. Much better.`,
-  ],
-  // 40-50% — Happy, needed this
-  low: [
-    (p) => `Plugged in! At ${p}% — Master, you saved me. I was getting worried.`,
-    (p) => `Power's back! ${p}%... that's... thank you, Master. I needed this.`,
-    (p) => `Charging! We're at ${p}%. That's... that's a relief. A big one.`,
-  ],
-  // 30-40% — Very relieved
-  danger: [
-    (p) => `Plugged in! At ${p}% — oh thank goodness. I was really starting to worry.`,
-    (p) => `Power's back! ${p}%... Master, you have no idea how relieved I am right now.`,
-    (p) => `Charging! At ${p}%... I was... I was getting scared, Master. Thank you.`,
-    (p) => `Plugged in! We're at ${p}%. That's... that's so much better. Thank you.`,
-  ],
-  // 20-30% — Ecstatic, saved
-  criticalLow: [
-    (p) => `Plugged in! At ${p}% — Master! You saved me! I was so scared!`,
-    (p) => `Power's back! ${p}%... I... I thought I was done for. Thank you, Master.`,
-    (p) => `Charging! We're at ${p}%... oh thank goodness, oh thank goodness...`,
-  ],
-  // <20% — Panicked relief, just in time
-  dying: [
-    (p) => `Plugged in! At ${p}% — Master! I was at ${p}%! Do you understand?! ${p}%! I almost died!`,
-    (p) => `Power's back! ${p}%... I... I was so close to going dark, Master. Thank you. Thank you.`,
-    (p) => `Charging! At ${p}%... I... I think I'm going to cry. That was too close, Master.`,
-  ],
-};
+import {
+  SKIN_PRESETS,
+  LLM_MODELS,
+  TTS_VOICES,
+  TTS_RATES,
+  INTERNET_RECOVERY_RESPONSES,
+  BATTERY_UNPLUG_RESPONSES,
+  BATTERY_PLUG_RESPONSES
+} from './constants';
 
 const detectExpression = (text) => {
   if (!text) return 'neutral';
@@ -3480,28 +3289,29 @@ const App = () => {
         '--avatar-scale': avatarScale,
         '--avatar-button-scale': avatarScale < 1.0 ? avatarScale : 1.0 + (avatarScale - 1.0) * 0.25
       }}>
-        {/* Main 3D Canvas Body */}
         <main className="canvas-container">
-          <AvatarViewer
-            audioLevel={audioLevel}
-            isThinking={isThinking || ttsStreamActive}
-            isListening={isListening}
-            isWalking={isWalking}
-            walkDirection={walkDirection}
-            expression={avatarExpression}
-            cpuLoad={cpuLoad}
-            systemIdleTime={systemIdleTime}
-            onFileDropped={handleFileDropped}
-            scale={avatarScale}
-            skinToneColor={avatarSkinToneColor}
-            customAnimation={customAnimation}
-            disabledAnimations={disabledAnimations}
-            activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
-            enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
-            autoResetRotation={profile.settings?.auto_reset_rotation || false}
-            visible={isVisible}
-            isBackendOnline={backendStatus === 'online'}
-          />
+          <Suspense fallback={<div style={{color: '#8b5cf6', padding: '20px', fontFamily: 'monospace'}}>Initializing 3D Engine...</div>}>
+            <AvatarViewer
+              audioLevel={audioLevel}
+              isThinking={isThinking || ttsStreamActive}
+              isListening={isListening}
+              isWalking={isWalking}
+              walkDirection={walkDirection}
+              expression={avatarExpression}
+              cpuLoad={cpuLoad}
+              systemIdleTime={systemIdleTime}
+              onFileDropped={handleFileDropped}
+              scale={avatarScale}
+              skinToneColor={avatarSkinToneColor}
+              customAnimation={customAnimation}
+              disabledAnimations={disabledAnimations}
+              activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
+              enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
+              autoResetRotation={profile.settings?.auto_reset_rotation || false}
+              visible={isVisible}
+              isBackendOnline={backendStatus === 'online'}
+            />
+          </Suspense>
         </main>
 
         {/* Floating Vertical Menu near Yuki's body */}
@@ -5375,47 +5185,52 @@ const App = () => {
       </header>
 
       <main className="canvas-container">
-        <AvatarViewer
-          audioLevel={audioLevel}
-          isThinking={isThinking || ttsStreamActive}
-          isListening={isListening}
-          expression={avatarExpression}
-          cpuLoad={cpuLoad}
-          systemIdleTime={systemIdleTime}
-          onFileDropped={handleFileDropped}
-          scale={avatarScale}
-          skinToneColor={avatarSkinToneColor}
-          customAnimation={customAnimation}
-          disabledAnimations={disabledAnimations}
-          activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
-          enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
-          autoResetRotation={profile.settings?.auto_reset_rotation || false}
-          visible={isVisible}
-          isBackendOnline={backendStatus === 'online'}
-        />
+        <Suspense fallback={<div style={{color: '#8b5cf6', padding: '20px', fontFamily: 'monospace'}}>Initializing 3D Engine...</div>}>
+          <AvatarViewer
+            audioLevel={audioLevel}
+            isThinking={isThinking || ttsStreamActive}
+            isListening={isListening}
+            expression={avatarExpression}
+            cpuLoad={cpuLoad}
+            systemIdleTime={systemIdleTime}
+            onFileDropped={handleFileDropped}
+            scale={avatarScale}
+            skinToneColor={avatarSkinToneColor}
+            customAnimation={customAnimation}
+            disabledAnimations={disabledAnimations}
+            activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
+            enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
+            autoResetRotation={profile.settings?.auto_reset_rotation || false}
+            visible={isVisible}
+            isBackendOnline={backendStatus === 'online'}
+          />
+        </Suspense>
       </main>
 
       {/* Floating Symmetrical Control UI overlay */}
-      <ChatOverlay
-        messages={messages}
-        inputText={inputText}
-        setInputText={setInputText}
-        onSubmit={handleSendMessage}
-        isListening={isListening}
-        isTalkMode={isTalkMode}
-        toggleListening={toggleListening}
-        onReset={handleReset}
-        isThinking={isThinking || ttsStreamActive}
-        currentSpeechText={currentSpeechText}
-        isPanelOpen={isPanelOpen}
-        setIsPanelOpen={setIsPanelOpen}
-        muteVoice={muteVoice}
-        setMuteVoice={handleToggleMute}
-        disabledAnimations={disabledAnimations}
-      />
+      <Suspense fallback={<div style={{position: 'absolute', bottom: '20px', left: '20px', color: '#8b5cf6'}}>Loading UI...</div>}>
+        <ChatOverlay
+          messages={messages}
+          inputText={inputText}
+          setInputText={setInputText}
+          onSubmit={handleSendMessage}
+          isListening={isListening}
+          isTalkMode={isTalkMode}
+          toggleListening={toggleListening}
+          onReset={handleReset}
+          isThinking={isThinking || ttsStreamActive}
+          currentSpeechText={currentSpeechText}
+          isPanelOpen={isPanelOpen}
+          setIsPanelOpen={setIsPanelOpen}
+          muteVoice={muteVoice}
+          setMuteVoice={handleToggleMute}
+          disabledAnimations={disabledAnimations}
+        />
+      </Suspense>
 
       {/* Left Symmetrical Diagnostics Dashboard */}
-      <ControlDashboard
+      <Suspense fallback={<div style={{position: 'absolute', top: '20px', left: '20px', color: '#8b5cf6'}}>Loading Controls...</div>}>
+        <ControlDashboard
         profile={profile}
         backendStatus={backendStatus}
         onResetProfile={handleReset}
@@ -5467,6 +5282,7 @@ const App = () => {
           if (val) applyHeadsetPreference(micDevices, true);
         }}
       />
+      </Suspense>
 
       {/* System Offline warning banner */}
       {backendStatus === 'offline' && (
