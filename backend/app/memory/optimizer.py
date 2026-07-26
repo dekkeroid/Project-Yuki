@@ -42,6 +42,22 @@ def optimize_all_processes():
             except Exception as e:
                 print(f'[Memory] Failed to resolve parent process child tree: {e}')
 
+        # Also find all electron/node processes associated with Project Yuki
+        try:
+            for p in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
+                try:
+                    name = p.info.get('name')
+                    if name and name.lower() in ('electron.exe', 'node.exe'):
+                        exe = p.info.get('exe') or ''
+                        cmd = ' '.join(p.info.get('cmdline') or [])
+                        if 'Project Yuki' in exe or 'Project Yuki' in cmd or 'yuki' in cmd.lower():
+                            if p.pid not in pids_to_optimize:
+                                pids_to_optimize.append(p.pid)
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f'[Memory] Failed to scan global processes: {e}')
+
             PROCESS_QUERY_INFORMATION = 0x0400
             PROCESS_SET_QUOTA = 0x0100
             
