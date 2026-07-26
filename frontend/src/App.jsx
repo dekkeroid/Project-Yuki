@@ -434,11 +434,7 @@ const App = () => {
       fetchVrmModels();
       fetchLlmModels();
     },
-    onMessage: (event) => {
-      if (typeof handleWebSocketMessage === 'function') {
-        handleWebSocketMessage(event);
-      }
-    }
+    onMessage: (event) => handleWebSocketMessageRef.current?.(event)
   });
 
   const {
@@ -546,6 +542,200 @@ const App = () => {
   stopSpeechRecognitionRef.current = stopSpeechRecognition;
   startSessionTimeoutRef.current = startSessionTimeout;
   updateListeningStateRef.current = updateListeningState;
+
+  const currentResponseTextRef = useRef('');
+  const handleWebSocketMessageRef = useRef(null);
+
+      const handleWebSocketMessage = (event) => {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === 'profile_update') {
+        setProfile(msg.profile);
+        if (msg.profile.settings && msg.profile.settings.llm_model) {
+          setModelName(msg.profile.settings.llm_model);
+        }
+        if (msg.profile.settings && msg.profile.settings.crawler_paused !== undefined) {
+          setCrawlerPaused(msg.profile.settings.crawler_paused);
+        }
+        if (msg.profile.settings && msg.profile.settings.tagger_paused !== undefined) {
+          setTaggerPaused(msg.profile.settings.tagger_paused);
+        }
+      } else if (msg.type === 'status') {
+        if (msg.status === 'thinking') {
+          setIsThinking(true);
+          setTtsStreamActive(true); // WebSocket stream starts
+          // Clear speech bubble immediately since a new response generation starts
+          setCurrentSpeechText('');
+          currentResponseTextRef.current = '';
+          hasReceivedAudioRef.current = false;
+          if (msg.message) {
+            setMessages((prev) => [...prev, {
+              role: 'system',
+              content: `⚙️ [Tool Start] ${msg.message}`
+            }]);
+          }
+        } else if (msg.status === 'idle') {
+          // Do not override isThinking immediately if audio is still active
+          if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
+            setIsThinking(false);
+          }
+        }
+      } else if (msg.type === 'text_stream') {
+        // Keep isThinking true so the bubble thinking animation remains active
+        setTtsStreamActive(true);
+        currentResponseTextRef.current += msg.text;
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+            const last = newMessages[newMessages.length - 1];
+            newMessages[newMessages.length - 1] = {
+              ...last,
+              content: last.content + msg.text,
+              backend: msg.backend_used
+            };
+          } else {
+            newMessages.push({
+              role: 'assistant',
+              content: msg.text,
+              backend: msg.backend_used
+            });
+          }
+          return newMessages;
+        });
+      } else if (msg.type === 'audio_chunk') {
+        setTtsStreamActive(true);
+        hasReceivedAudioRef.current = true;
+        try {
+          console.log(`[TTS] audio_chunk received idx=${msg.index} backend=${msg.tts_backend || 'unknown'} time_ms=${msg.tts_time_ms || 0} text="${(msg.text || '').slice(0, 80)}"`);
+        } catch (e) { /* ignore logging errors */ }
+        queueAudioChunk(msg.audio_url, msg.text, msg.index);
+      } else if (msg.type === 'stream_done') {
+        setIsThinking(false);
+        setTtsStreamActive(false);
+
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+            newMessages[newMessages.length - 1] = {
+              ...newMessages[newMessages.length - 1],
+              responseTime: msg.response_time
+            };
+          }
+          return newMessages;
+        });
+
+        if (!hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice) {
+          console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0, 80)}"`);
+          speakTextNatively(currentResponseTextRef.current);
+        } else {
+          updateListeningState();
+        }
+      } else if (msg.type === 'tool_result') {
+        try {
+          if (msg.result && typeof msg.result === 'string' && msg.result.includes('window_control')) {
+            const data = JSON.parse(msg.result);
+            if (data.window_control && window.electronAPI) {
+              const act = data.window_control.action;
+              if (act === 'minimize') {
+                window.electronAPI.minimizeWindow();
+              } else if (act === 'maximize') {
+                window.electronAPI.maximizeWindow();
+              } else if (act === 'restore') {
+                window.electronAPI.restoreWindow();
+              } else if (act === 'move') {
+                const { x, y } = data.window_control;
+                if (x !== undefined && y !== undefined) {
+                  window.electronAPI.setWindowPosition(x, y);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to check tool result for window_control JSON:", e);
+        }
+
+        setMessages((prev) => [...prev, {
+          role: 'system',
+          content: `⚙️ [Tool Result] ${msg.result}`
+        }]);
+      } else if (msg.type === 'speech') {
+        setTtsStreamActive(true);
+        setIsThinking(false);
+        hasReceivedAudioRef.current = true;
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: msg.text,
+          backend: msg.backend_used,
+          responseTime: msg.response_time
+        }]);
+        playVoiceResponse(msg.audio_url, msg.text);
+      } else if (msg.type === 'confirm_request') {
+        let displayMessage = `Yuki wants to execute the following action:\n\n${msg.name}`;
+        if (msg.name.startsWith("Run terminal command:")) {
+          displayMessage = `Yuki wants to run the following terminal command:\n\n${msg.name.replace("Run terminal command:", "").trim()}`;
+        } else if (msg.name.startsWith("Run Python script:")) {
+          displayMessage = `Yuki wants to execute the following custom Python script:\n\n${msg.name.replace("Run Python script:", "").trim()}`;
+        } else if (msg.name.startsWith("System Power Action:")) {
+          displayMessage = `Yuki wants to execute the following system power command:\n\n${msg.name.replace("System Power Action:", "").trim()}`;
+        } else if (msg.name.startsWith("Delete file:")) {
+          displayMessage = `Yuki wants to delete the following file:\n\n${msg.name.replace("Delete file:", "").trim()}`;
+        }
+
+        setConfirmModal({
+          visible: true,
+          title: 'Security Confirmation',
+          message: displayMessage,
+          onConfirm: () => {
+            setConfirmModal(prev => ({ ...prev, visible: false }));
+
+            // Refocus, disable clickthrough suspension temporarily
+            window.yukiConfirmJustClosed = true;
+            if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+              window.electronAPI.setIgnoreMouseEvents(false);
+            }
+            setTimeout(() => {
+              window.yukiConfirmJustClosed = false;
+            }, 2000);
+            setTimeout(() => {
+              desktopInputRef.current?.focus();
+            }, 50);
+
+            if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+              socketRef.current.send(JSON.stringify({
+                type: 'confirm_response',
+                conf_id: msg.conf_id,
+                confirmed: true
+              }));
+            }
+          },
+          onCancel: () => {
+            setConfirmModal(prev => ({ ...prev, visible: false }));
+
+            window.yukiConfirmJustClosed = true;
+            if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+              window.electronAPI.setIgnoreMouseEvents(false);
+            }
+            setTimeout(() => {
+              window.yukiConfirmJustClosed = false;
+            }, 2000);
+            setTimeout(() => {
+              desktopInputRef.current?.focus();
+            }, 50);
+
+            if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+              socketRef.current.send(JSON.stringify({
+                type: 'confirm_response',
+                conf_id: msg.conf_id,
+                confirmed: false
+              }));
+            }
+          }
+        });
+      }
+    };
+
+  handleWebSocketMessageRef.current = handleWebSocketMessage;
+
 
   const desktopChatEndRef = useRef(null);
   useEffect(() => {
