@@ -1099,6 +1099,16 @@ class AgentExecutor:
                     tool_name = tool_call["function"]["name"]
                     try:
                         tool_args = json.loads(tool_call["function"]["arguments"])
+                        # Unwrap malformed envelope: some models output the full tool-call
+                        # object as the arguments JSON, e.g.:
+                        #   {"type": "function", "function": "web_search", "parameters": {"query": "..."}}
+                        # Detect this by checking for "type"/"function" keys typical of a
+                        # tool-call wrapper, and extract the inner parameters dict.
+                        if isinstance(tool_args, dict) and tool_args.get("type") == "function" and "function" in tool_args:
+                            inner = tool_args.get("parameters") or tool_args.get("arguments") or {}
+                            if isinstance(inner, dict) and inner:
+                                print(f"[Executor] Unwrapping malformed tool-call envelope in arguments for '{tool_name}': {tool_args}")
+                                tool_args = inner
                     except Exception:
                         tool_args = {}
                         
@@ -1216,9 +1226,25 @@ class AgentExecutor:
 
                     # Inject guidance reminder to prevent small LLMs from repeating the same tool call
                     if not tool_failed:
+                        # After a search/read tool, strongly remind the LLM to summarize now
+                        # and NOT run auxiliary tools like update_user_fact before answering.
+                        is_info_tool = tool_name in ("web_search", "read_file_content", "search_files")
+                        if is_info_tool:
+                            reminder = (
+                                f"[SYSTEM INFO] The tool '{tool_name}' has returned its results above. "
+                                "Your ONLY next action MUST be to write a clear, concise natural language summary of these results directly to the user. "
+                                "Do NOT call any other tools (including update_user_fact, web_search, or any other tool) before responding. "
+                                "Summarize now."
+                            )
+                        else:
+                            reminder = (
+                                f"[SYSTEM INFO] The tool '{tool_name}' was successfully executed and returned the output above. "
+                                f"Do NOT call the tool '{tool_name}' again with the same arguments. "
+                                "Use the returned information to write your final response or summary for the user."
+                            )
                         current_messages.append({
                             "role": "user",
-                            "content": f"[SYSTEM INFO] The tool '{tool_name}' was successfully executed and returned the output above. Do NOT call the tool '{tool_name}' again with the same arguments. Use the returned information to write your final response or summary for the user."
+                            "content": reminder
                         })
 
                     final_history.append({
