@@ -36,12 +36,32 @@ const ControlDashboard = ({
   onRefreshLlmModels,
   preferHeadsetMic = false,
   onPreferHeadsetMicChange,
+  avatarScale = 1.0,
+  onAvatarScaleChange,
   initialTab = 'memory',
   isStandalone = false
 }) => {
   const [isOpen, setIsOpen] = useState(isStandalone ? true : false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [settingsSubTab, setSettingsSubTab] = useState('brain'); // 'brain' | 'voice' | 'avatar'
+
+  // Avatar scale size state (50% to 200%)
+  const [localAvatarScale, setLocalAvatarScale] = useState(() => {
+    try {
+      const saved = localStorage.getItem('yuki-avatar-scale');
+      return saved ? parseFloat(saved) : (avatarScale || 1.0);
+    } catch {
+      return 1.0;
+    }
+  });
+
+  const currentAvatarScale = avatarScale !== undefined ? avatarScale : localAvatarScale;
+
+  const handleAvatarScaleChange = (val) => {
+    setLocalAvatarScale(val);
+    try { localStorage.setItem('yuki-avatar-scale', val.toString()); } catch {}
+    if (onAvatarScaleChange) onAvatarScaleChange(val);
+  };
 
   // Camera tracking toggle state (persisted via localStorage in AvatarViewer)
   const [cameraTracking, setCameraTracking] = useState(() => {
@@ -1470,51 +1490,29 @@ const ControlDashboard = ({
                       <span className="card-group-title">VRM Avatar & Customization</span>
                     </div>
 
-                    {/* Character Name */}
+                    {/* Companion Avatar Scale / Size Slider (up to 200%) */}
                     <div className="identity-field" style={{ marginTop: '4px' }}>
-                      <span className="field-label">Assistant Name</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Monitor style={{ width: '13px', height: '13px', color: '#a78bfa' }} />
+                          Companion Scale Size
+                        </span>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                          {Math.round(currentAvatarScale * 100)}%
+                        </span>
+                      </div>
                       <input
-                        type="text"
-                        value={charName}
-                        onChange={(e) => setCharName(e.target.value)}
-                        onBlur={() => handleUpdateSetting('character_name', charName)}
-                        placeholder="Yuki"
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          marginTop: '4px'
-                        }}
+                        type="range"
+                        min="0.5"
+                        max="2.0"
+                        step="0.05"
+                        value={currentAvatarScale}
+                        onChange={(e) => handleAvatarScaleChange(parseFloat(e.target.value))}
+                        style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
                       />
-                    </div>
-
-                    {/* Character Persona */}
-                    <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <span className="field-label">Assistant Persona</span>
-                      <textarea
-                        value={charPersona}
-                        onChange={(e) => setCharPersona(e.target.value)}
-                        onBlur={() => handleUpdateSetting('character_persona', charPersona)}
-                        placeholder="You are Yuki..."
-                        rows={3}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          marginTop: '4px',
-                          resize: 'vertical'
-                        }}
-                      />
+                      <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', display: 'block', lineHeight: '1.2' }}>
+                        Adjust avatar rendering size on screen (50% to 200%).
+                      </span>
                     </div>
 
                     {/* VRM Avatar Model */}

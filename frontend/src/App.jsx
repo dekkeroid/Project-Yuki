@@ -3994,6 +3994,11 @@ const detectExpression = (text) => {
           localStorage.setItem('yuki-prefer-headset', val.toString());
           if (val) applyHeadsetPreference(micDevices, true);
         }}
+        avatarScale={avatarScale}
+        onAvatarScaleChange={(newScale) => {
+          setAvatarScale(newScale);
+          localStorage.setItem('yuki-avatar-scale', newScale.toString());
+        }}
       />
       </Suspense>
 
