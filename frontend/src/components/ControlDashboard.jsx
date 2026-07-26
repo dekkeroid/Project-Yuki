@@ -43,7 +43,7 @@ const ControlDashboard = ({
 }) => {
   const [isOpen, setIsOpen] = useState(isStandalone ? true : false);
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [settingsSubTab, setSettingsSubTab] = useState('brain'); // 'brain' | 'voice' | 'avatar'
+  const [settingsSubTab, setSettingsSubTab] = useState('avatar'); // 'avatar' | 'voice' | 'brain'
 
   // Avatar scale size state (50% to 200%)
   const [localAvatarScale, setLocalAvatarScale] = useState(() => {
@@ -941,17 +941,17 @@ const ControlDashboard = ({
               <div className="subtab-container" style={{ display: 'flex', gap: '6px', marginBottom: '16px', background: 'rgba(0,0,0,0.25)', padding: '4px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <button
                   type="button"
-                  onClick={() => setSettingsSubTab('brain')}
+                  onClick={() => setSettingsSubTab('avatar')}
                   style={{
                     flex: 1, padding: '7px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
                     fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                    background: settingsSubTab === 'brain' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
-                    color: settingsSubTab === 'brain' ? '#fff' : '#94a3b8',
-                    boxShadow: settingsSubTab === 'brain' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
+                    background: settingsSubTab === 'avatar' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
+                    color: settingsSubTab === 'avatar' ? '#fff' : '#94a3b8',
+                    boxShadow: settingsSubTab === 'avatar' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
                   }}
                 >
-                  <Brain style={{ width: '13px', height: '13px' }} />
-                  <span>AI Brain</span>
+                  <Palette style={{ width: '13px', height: '13px' }} />
+                  <span>Avatar & Animations</span>
                 </button>
                 <button
                   type="button"
@@ -969,17 +969,17 @@ const ControlDashboard = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSettingsSubTab('avatar')}
+                  onClick={() => setSettingsSubTab('brain')}
                   style={{
                     flex: 1, padding: '7px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
                     fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                    background: settingsSubTab === 'avatar' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
-                    color: settingsSubTab === 'avatar' ? '#fff' : '#94a3b8',
-                    boxShadow: settingsSubTab === 'avatar' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
+                    background: settingsSubTab === 'brain' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
+                    color: settingsSubTab === 'brain' ? '#fff' : '#94a3b8',
+                    boxShadow: settingsSubTab === 'brain' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
                   }}
                 >
-                  <Palette style={{ width: '13px', height: '13px' }} />
-                  <span>Avatar & Persona</span>
+                  <Brain style={{ width: '13px', height: '13px' }} />
+                  <span>AI Brain</span>
                 </button>
               </div>
 
