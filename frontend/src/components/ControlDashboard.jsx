@@ -1150,344 +1150,357 @@ const ControlDashboard = ({
                 </div>
               )}
 
-              {/* Sub-tab 2: Voice & Audio */}
+              {/* Sub-tab 2: Voice & Audio (Separated into STT & TTS cards) */}
               {settingsSubTab === 'voice' && (
-                <div className="card-group">
-                  <div className="card-group-header">
-                    <Volume2 className="w-4 h-4 text-pink-400" />
-                    <span className="card-group-title">Voice Synthesis & Audio Input</span>
-                  </div>
-
-                  {/* Microphone Input Device */}
-                  <div className="identity-field" style={{ marginTop: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Mic style={{ width: '13px', height: '13px', color: '#a78bfa' }} />
-                        Microphone Input Device
-                      </span>
-                      <button
-                        type="button"
-                        onClick={onRefreshMicDevices}
-                        title="Refresh device list"
-                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
-                      >
-                        <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
-                      </button>
+                <>
+                  {/* STT Input Card Group */}
+                  <div className="card-group">
+                    <div className="card-group-header">
+                      <Mic className="w-4 h-4 text-violet-400" />
+                      <span className="card-group-title">Speech Recognition (STT Input)</span>
                     </div>
-                    <select
-                      value={selectedMicDeviceId}
-                      onChange={(e) => onMicDeviceChange && onMicDeviceChange(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        color: 'white',
-                        fontSize: '0.78rem',
-                        outline: 'none',
-                        cursor: 'pointer',
-                        marginTop: '4px'
-                      }}
-                    >
-                      <option value="" style={{ background: '#0b0813', color: 'white' }}>System Default</option>
-                      {micDevices.map((d) => (
-                        <option key={d.deviceId} value={d.deviceId} style={{ background: '#0b0813', color: 'white' }}>
-                          {d.label || `Microphone (${d.deviceId.slice(0, 8)}...)`}
-                        </option>
-                      ))}
-                    </select>
 
-                    {/* Prefer Headset Mic checkbox */}
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '7px', cursor: 'pointer', userSelect: 'none' }}>
-                      <input
-                        type="checkbox"
-                        checked={preferHeadsetMic}
-                        onChange={(e) => onPreferHeadsetMicChange && onPreferHeadsetMicChange(e.target.checked)}
-                        style={{ accentColor: '#a78bfa', width: '13px', height: '13px', cursor: 'pointer' }}
-                      />
-                      <span style={{ fontSize: '0.72rem', color: '#c4b5fd', lineHeight: 1.3 }}>
-                        Prefer headset mic — auto-select headset when connected
-                      </span>
-                    </label>
-                  </div>
-
-                  {/* STT Engine Select */}
-                  <div className="identity-field" style={{ marginTop: '10px' }}>
-                    <span className="field-label">Speech-to-Text Engine</span>
-                    <select
-                      value={settings.use_local_whisper !== false ? 'whisper' : 'web'}
-                      onChange={(e) => handleUpdateSetting('use_local_whisper', e.target.value === 'whisper')}
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        color: 'white',
-                        fontSize: '0.78rem',
-                        outline: 'none',
-                        cursor: 'pointer',
-                        marginTop: '4px'
-                      }}
-                    >
-                      <option value="whisper" style={{ background: '#0b0813', color: 'white' }}>Local Faster-Whisper (Private / GPU Accelerated)</option>
-                      <option value="web" style={{ background: '#0b0813', color: 'white' }}>Web Speech API (Browser Fallback)</option>
-                    </select>
-                  </div>
-
-                  {/* Local Whisper Options */}
-                  {(settings.use_local_whisper !== false) && (
-                    <>
-                      {/* Whisper Model Size */}
-                      <div className="identity-field" style={{ marginTop: '10px' }}>
-                        <span className="field-label">Whisper Model Size</span>
-                        <select
-                          value={settings.whisper_model || 'base'}
-                          onChange={(e) => handleUpdateSetting('whisper_model', e.target.value)}
+                    {/* Microphone Select */}
+                    <div className="identity-field" style={{ marginTop: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                        <span className="field-label" style={{ margin: 0 }}>Microphone Input Device</span>
+                        <button
+                          type="button"
+                          onClick={onRefreshMicDevices}
                           style={{
-                            width: '100%',
-                            padding: '7px 10px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontSize: '0.78rem',
-                            outline: 'none',
-                            cursor: 'pointer',
-                            marginTop: '4px'
+                            display: 'flex', alignItems: 'center', gap: '4px',
+                            fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)', cursor: 'pointer',
+                            padding: '2px 8px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.1)', transition: 'all 0.2s'
                           }}
                         >
-                          <option value="base" style={{ background: '#0b0813', color: 'white' }}>Base Model (Accurate / ~140MB)</option>
-                          <option value="small" style={{ background: '#0b0813', color: 'white' }}>Small Model (High Accuracy / ~460MB)</option>
-                          <option value="tiny" style={{ background: '#0b0813', color: 'white' }}>Tiny Model (Fastest / ~70MB)</option>
-                        </select>
+                          <RefreshCw size={11} />
+                          <span>Refresh</span>
+                        </button>
                       </div>
+                      <select
+                        value={selectedMicDeviceId}
+                        onChange={(e) => onMicDeviceChange && onMicDeviceChange(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '4px'
+                        }}
+                      >
+                        <option value="" style={{ background: '#0b0813', color: 'white' }}>System Default</option>
+                        {micDevices.map((d) => (
+                          <option key={d.deviceId} value={d.deviceId} style={{ background: '#0b0813', color: 'white' }}>
+                            {d.label || `Microphone (${d.deviceId.slice(0, 8)}...)`}
+                          </option>
+                        ))}
+                      </select>
 
-                      {/* STT Processing Device */}
-                      <div className="identity-field" style={{ marginTop: '10px' }}>
-                        <span className="field-label">STT Processing Device</span>
-                        <select
-                          value={settings.stt_device || 'auto'}
-                          onChange={(e) => handleUpdateSetting('stt_device', e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '7px 10px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontSize: '0.78rem',
-                            outline: 'none',
-                            cursor: 'pointer',
-                            marginTop: '4px'
-                          }}
-                        >
-                          <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
-                          <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
-                          <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
-                        </select>
-                      </div>
-
-                      {/* VAD Threshold */}
-                      <div className="identity-field" style={{ marginTop: '10px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span className="field-label">VAD Sensitivity Threshold</span>
-                          <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                            {vadThreshold.toFixed(3)}
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0.002"
-                          max="0.08"
-                          step="0.002"
-                          value={vadThreshold}
-                          onChange={(e) => onVadThresholdChange && onVadThresholdChange(parseFloat(e.target.value))}
-                          style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
-                        />
-                      </div>
-
-                      {/* STT Language */}
-                      <div className="identity-field" style={{ marginTop: '10px' }}>
-                        <span className="field-label">Speech-to-Text Language</span>
-                        <select
-                          value={settings.stt_language || 'en'}
-                          onChange={(e) => handleUpdateSetting('stt_language', e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '7px 10px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontSize: '0.78rem',
-                            outline: 'none',
-                            cursor: 'pointer',
-                            marginTop: '4px'
-                          }}
-                        >
-                          <option value="en" style={{ background: '#0b0813', color: 'white' }}>English</option>
-                          <option value="hi" style={{ background: '#0b0813', color: 'white' }}>Hindi (हिन्दी)</option>
-                          <option value="ja" style={{ background: '#0b0813', color: 'white' }}>Japanese (日本語)</option>
-                        </select>
-                      </div>
-                    </>
-                  )}
-
-                  {/* Voice Volume & Mute Controls */}
-                  <div className="identity-field" style={{ marginTop: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        {muteVoice ? <VolumeX style={{ width: '13px', height: '13px', color: '#f87171' }} /> : <Volume2 style={{ width: '13px', height: '13px', color: '#a78bfa' }} />}
-                        Voice Audio Output
-                      </span>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: 'white', cursor: 'pointer', margin: 0 }}>
+                      {/* Prefer Headset Mic checkbox */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '7px', cursor: 'pointer', userSelect: 'none' }}>
                         <input
                           type="checkbox"
-                          checked={muteVoice}
-                          onChange={(e) => onMuteVoiceChange && onMuteVoiceChange(e.target.checked)}
-                          style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
+                          checked={preferHeadsetMic}
+                          onChange={(e) => onPreferHeadsetMicChange && onPreferHeadsetMicChange(e.target.checked)}
+                          style={{ accentColor: '#a78bfa', width: '13px', height: '13px', cursor: 'pointer' }}
                         />
-                        Mute
+                        <span style={{ fontSize: '0.72rem', color: '#c4b5fd', lineHeight: 1.3 }}>
+                          Prefer headset mic — auto-select headset when connected
+                        </span>
                       </label>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                      <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>Volume Level</span>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                        {Math.round(voiceVolume * 100)}%
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.0"
-                      max="1.0"
-                      step="0.05"
-                      disabled={muteVoice}
-                      value={muteVoice ? 0 : voiceVolume}
-                      onChange={(e) => onVoiceVolumeChange && onVoiceVolumeChange(parseFloat(e.target.value))}
-                      style={{ width: '100%', cursor: muteVoice ? 'not-allowed' : 'pointer', accentColor: '#a78bfa', marginTop: '4px', opacity: muteVoice ? 0.5 : 1 }}
-                    />
-                  </div>
-
-                  {/* TTS Voice Selection */}
-                  <div className="identity-field" style={{ marginTop: '10px' }}>
-                    <span className="field-label">Speech Synthesis Voice</span>
-                    <select
-                      value={settings.tts_voice}
-                      onChange={(e) => handleUpdateSetting('tts_voice', e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        color: 'white',
-                        fontSize: '0.78rem',
-                        outline: 'none',
-                        cursor: 'pointer',
-                        marginTop: '2px'
-                      }}
-                    >
-                      {TTS_VOICES.map((v) => (
-                        <option key={v.value} value={v.value} style={{ background: '#0b0813', color: 'white' }}>
-                          {v.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* TTS Rate */}
-                  <div className="identity-field" style={{ marginTop: '10px' }}>
-                    <span className="field-label">Speech Delivery Rate</span>
-                    <select
-                      value={settings.tts_rate}
-                      onChange={(e) => handleUpdateSetting('tts_rate', e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        color: 'white',
-                        fontSize: '0.78rem',
-                        outline: 'none',
-                        cursor: 'pointer',
-                        marginTop: '2px'
-                      }}
-                    >
-                      {TTS_RATES.map((r) => (
-                        <option key={r.value} value={r.value} style={{ background: '#0b0813', color: 'white' }}>
-                          {r.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* TTS Device */}
-                  <div className="identity-field" style={{ marginTop: '10px' }}>
-                    <span className="field-label">TTS Processing Device</span>
-                    <select
-                      value={settings.tts_device || 'auto'}
-                      onChange={(e) => handleUpdateSetting('tts_device', e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        color: 'white',
-                        fontSize: '0.78rem',
-                        outline: 'none',
-                        cursor: 'pointer',
-                        marginTop: '2px'
-                      }}
-                    >
-                      <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
-                      <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
-                      <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
-                    </select>
-                  </div>
-
-                  {/* Preload TTS */}
-                  <div className="identity-field" style={{ marginTop: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <span className="field-label">Preload TTS on Startup</span>
-                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '1px' }}>
-                          Loads voice model on boot (~250-400 MB). Off = loads on first speech.
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateSetting('tts_preload', !settings.tts_preload)}
+                    {/* STT Engine Select */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">Speech-to-Text Engine</span>
+                      <select
+                        value={settings.use_local_whisper !== false ? 'whisper' : 'web'}
+                        onChange={(e) => handleUpdateSetting('use_local_whisper', e.target.value === 'whisper')}
                         style={{
-                          background: settings.tts_preload ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
-                          border: `1px solid ${settings.tts_preload ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
-                          borderRadius: '12px',
-                          width: '40px',
-                          height: '22px',
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
                           cursor: 'pointer',
-                          position: 'relative',
-                          transition: 'all 0.2s ease',
-                          flexShrink: 0
+                          marginTop: '4px'
                         }}
                       >
-                        <div style={{
-                          width: '16px',
-                          height: '16px',
-                          borderRadius: '50%',
-                          background: settings.tts_preload ? '#a78bfa' : 'rgba(255,255,255,0.4)',
-                          position: 'absolute',
-                          top: '2px',
-                          left: settings.tts_preload ? '20px' : '2px',
-                          transition: 'all 0.2s ease'
-                        }} />
-                      </button>
+                        <option value="whisper" style={{ background: '#0b0813', color: 'white' }}>Local Faster-Whisper (Private / GPU Accelerated)</option>
+                        <option value="web" style={{ background: '#0b0813', color: 'web' }}>Web Speech API (Browser Fallback)</option>
+                      </select>
+                    </div>
+
+                    {/* Local Whisper Options */}
+                    {(settings.use_local_whisper !== false) && (
+                      <>
+                        {/* Whisper Model Size */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <span className="field-label">Whisper Model Size</span>
+                          <select
+                            value={settings.whisper_model || 'base'}
+                            onChange={(e) => handleUpdateSetting('whisper_model', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              marginTop: '4px'
+                            }}
+                          >
+                            <option value="base" style={{ background: '#0b0813', color: 'white' }}>Base Model (Accurate / ~140MB)</option>
+                            <option value="small" style={{ background: '#0b0813', color: 'white' }}>Small Model (High Accuracy / ~460MB)</option>
+                            <option value="tiny" style={{ background: '#0b0813', color: 'white' }}>Tiny Model (Fastest / ~70MB)</option>
+                          </select>
+                        </div>
+
+                        {/* STT Processing Device */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <span className="field-label">STT Processing Device</span>
+                          <select
+                            value={settings.stt_device || 'auto'}
+                            onChange={(e) => handleUpdateSetting('stt_device', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              marginTop: '4px'
+                            }}
+                          >
+                            <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
+                            <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
+                            <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
+                          </select>
+                        </div>
+
+                        {/* VAD Threshold */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label">VAD Sensitivity Threshold</span>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                              {vadThreshold.toFixed(3)}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.002"
+                            max="0.08"
+                            step="0.002"
+                            value={vadThreshold}
+                            onChange={(e) => onVadThresholdChange && onVadThresholdChange(parseFloat(e.target.value))}
+                            style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
+                          />
+                        </div>
+
+                        {/* STT Language */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <span className="field-label">Speech-to-Text Language</span>
+                          <select
+                            value={settings.stt_language || 'en'}
+                            onChange={(e) => handleUpdateSetting('stt_language', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              marginTop: '4px'
+                            }}
+                          >
+                            <option value="en" style={{ background: '#0b0813', color: 'white' }}>English</option>
+                            <option value="hi" style={{ background: '#0b0813', color: 'white' }}>Hindi (हिन्दी)</option>
+                            <option value="ja" style={{ background: '#0b0813', color: 'white' }}>Japanese (日本語)</option>
+                          </select>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* TTS Output Card Group */}
+                  <div className="card-group" style={{ marginTop: '12px' }}>
+                    <div className="card-group-header">
+                      <Volume2 className="w-4 h-4 text-pink-400" />
+                      <span className="card-group-title">Speech Synthesis (TTS Output)</span>
+                    </div>
+
+                    {/* Voice Volume & Mute Controls */}
+                    <div className="identity-field" style={{ marginTop: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {muteVoice ? <VolumeX style={{ width: '13px', height: '13px', color: '#f87171' }} /> : <Volume2 style={{ width: '13px', height: '13px', color: '#a78bfa' }} />}
+                          Voice Audio Output
+                        </span>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: 'white', cursor: 'pointer', margin: 0 }}>
+                          <input
+                            type="checkbox"
+                            checked={muteVoice}
+                            onChange={(e) => onMuteVoiceChange && onMuteVoiceChange(e.target.checked)}
+                            style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
+                          />
+                          Mute
+                        </label>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>Volume Level</span>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                          {Math.round(voiceVolume * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="1.0"
+                        step="0.05"
+                        disabled={muteVoice}
+                        value={muteVoice ? 0 : voiceVolume}
+                        onChange={(e) => onVoiceVolumeChange && onVoiceVolumeChange(parseFloat(e.target.value))}
+                        style={{ width: '100%', cursor: muteVoice ? 'not-allowed' : 'pointer', accentColor: '#a78bfa', marginTop: '4px', opacity: muteVoice ? 0.5 : 1 }}
+                      />
+                    </div>
+
+                    {/* TTS Voice Selection */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">Speech Synthesis Voice</span>
+                      <select
+                        value={settings.tts_voice}
+                        onChange={(e) => handleUpdateSetting('tts_voice', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '2px'
+                        }}
+                      >
+                        {TTS_VOICES.map((v) => (
+                          <option key={v.value} value={v.value} style={{ background: '#0b0813', color: 'white' }}>
+                            {v.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* TTS Rate */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">Speech Delivery Rate</span>
+                      <select
+                        value={settings.tts_rate}
+                        onChange={(e) => handleUpdateSetting('tts_rate', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '2px'
+                        }}
+                      >
+                        {TTS_RATES.map((r) => (
+                          <option key={r.value} value={r.value} style={{ background: '#0b0813', color: 'white' }}>
+                            {r.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* TTS Device */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">TTS Processing Device</span>
+                      <select
+                        value={settings.tts_device || 'auto'}
+                        onChange={(e) => handleUpdateSetting('tts_device', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '2px'
+                        }}
+                      >
+                        <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
+                        <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
+                        <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
+                      </select>
+                    </div>
+
+                    {/* Preload TTS */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span className="field-label">Preload TTS on Startup</span>
+                          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '1px' }}>
+                            Loads voice model on boot (~250-400 MB). Off = loads on first speech.
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateSetting('tts_preload', !settings.tts_preload)}
+                          style={{
+                            background: settings.tts_preload ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
+                            border: `1px solid ${settings.tts_preload ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                            borderRadius: '12px',
+                            width: '40px',
+                            height: '22px',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            flexShrink: 0
+                          }}
+                        >
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            background: settings.tts_preload ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                            position: 'absolute',
+                            top: '2px',
+                            left: settings.tts_preload ? '20px' : '2px',
+                            transition: 'all 0.2s ease'
+                          }} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </>
               )}
 
               {/* Sub-tab 3: Avatar & Persona */}
