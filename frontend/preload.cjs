@@ -103,5 +103,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('yuki-optimize-memory', handler);
     };
   },
+  openSettingsWindow: () => {
+    ipcRenderer.send('open-settings-window');
+  },
   isElectron: true
 });

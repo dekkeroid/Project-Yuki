@@ -78,10 +78,56 @@ let currentWidth = DEFAULT_WINDOW_WIDTH;
 let currentHeight = DEFAULT_WINDOW_HEIGHT;
 
 let mainWindow = null;
+let settingsWindow = null;
 let tray = null;
 let yukiVisible = true;       // tracks our logical show/hide state
 let alwaysOnTopEnabled = true;
 let fullscreenPollTimer = null;
+
+function createSettingsWindow() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    if (settingsWindow.isMinimized()) settingsWindow.restore();
+    settingsWindow.show();
+    settingsWindow.focus();
+    return;
+  }
+
+  const iconPath = path.join(__dirname, 'public', 'icon.png');
+  settingsWindow = new BrowserWindow({
+    width: 960,
+    height: 780,
+    minWidth: 650,
+    minHeight: 500,
+    title: 'Yuki AI — Settings & Control Dashboard',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    autoHideMenuBar: true,
+    backgroundColor: '#090d16',
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+  });
+
+  settingsWindow.once('ready-to-show', () => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.show();
+      settingsWindow.focus();
+    }
+  });
+
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    settingsWindow.loadURL('http://localhost:5173/?mode=settings');
+  } else {
+    settingsWindow.loadFile(path.join(__dirname, 'dist', 'index.html'), { query: { mode: 'settings' } });
+  }
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
+  });
+}
 
 // ---------- Backend lifecycle ----------
 let backendProcess = null;
@@ -535,6 +581,11 @@ function createWindow() {
   ipcMain.on('yuki-show', () => showYuki());
   ipcMain.on('yuki-hide', () => hideYuki());
 
+  // Settings Window
+  ipcMain.on('open-settings-window', () => {
+    createSettingsWindow();
+  });
+
   let hoverPollTimer = null;
   let lastHoverState = null;
   let lastCursorX = -1;
@@ -652,6 +703,12 @@ function createTray() {
       label: 'Hide Yuki',
       click: () => {
         hideYuki();
+      }
+    },
+    {
+      label: 'Settings & Control Dashboard',
+      click: () => {
+        createSettingsWindow();
       }
     },
     { type: 'separator' },

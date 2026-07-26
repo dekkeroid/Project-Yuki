@@ -1959,7 +1959,11 @@ const detectExpression = (text) => {
           <button
             className={`desktop-menu-btn ${isSettingsOpen ? 'active' : ''}`}
             onClick={() => {
-              setIsSettingsOpen(true);
+              if (window.electronAPI && window.electronAPI.openSettingsWindow) {
+                window.electronAPI.openSettingsWindow();
+              } else {
+                setIsSettingsOpen(prev => !prev);
+              }
             }}
             title="Settings"
           >
@@ -3870,6 +3874,60 @@ const detectExpression = (text) => {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  const isSettingsMode = window.location.search.includes('mode=settings') || window.location.hash.includes('settings');
+
+  if (isSettingsMode) {
+    return (
+      <div style={{
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: '#090d16',
+        color: '#e2e8f0',
+        overflowY: 'auto',
+        padding: '24px',
+        boxSizing: 'border-box'
+      }}>
+        <Suspense fallback={<div style={{ color: '#a855f7', padding: '20px', fontSize: '1.1rem' }}>Loading Settings Dashboard...</div>}>
+          <ControlDashboard
+            API_BASE={API_BASE}
+            profile={profile}
+            backendStatus={backendStatus}
+            onResetProfile={handleReset}
+            modelName={modelName}
+            lmstudioUrl={lmstudioUrl}
+            onProfileUpdate={(updatedProfile) => {
+              setProfile(updatedProfile);
+              if (updatedProfile.settings && updatedProfile.settings.llm_model) {
+                setModelName(updatedProfile.settings.llm_model);
+              }
+            }}
+            skinToneColor={avatarSkinToneColor}
+            onSkinToneChange={(newColor) => {
+              setAvatarSkinToneColor(newColor);
+              localStorage.setItem('yuki-avatar-skintone-color', newColor);
+            }}
+            disabledAnimations={disabledAnimations}
+            onToggleAnimation={toggleAnimationEnabled}
+            micDevices={micDevices}
+            selectedMicDeviceId={selectedMicDeviceId}
+            onMicDeviceChange={(id) => setSelectedMicDeviceId(id)}
+            onRefreshMicDevices={refreshMicDevices}
+            vadThreshold={vadThreshold}
+            onVadThresholdChange={(val) => setVadThreshold(val)}
+            muteVoice={muteVoice}
+            onMuteVoiceChange={(muted) => handleToggleMute(muted)}
+            voiceVolume={voiceVolume}
+            onVoiceVolumeChange={(vol) => setVoiceVolume(vol)}
+            availableLlmModels={availableLlmModels}
+            onRefreshLlmModels={fetchLlmModels}
+            preferHeadsetMic={preferHeadsetMic}
+            onPreferHeadsetMicChange={applyHeadsetPreference}
+          />
+        </Suspense>
       </div>
     );
   }
