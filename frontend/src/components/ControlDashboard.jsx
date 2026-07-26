@@ -65,7 +65,10 @@ const ControlDashboard = ({
     try { localStorage.setItem('yuki-avatar-scale', val.toString()); } catch {}
     if (onAvatarScaleChange) onAvatarScaleChange(val);
     if (window.electronAPI && window.electronAPI.setWindowScale) {
-      window.electronAPI.setWindowScale(val);
+      if (window._scaleTimer) clearTimeout(window._scaleTimer);
+      window._scaleTimer = setTimeout(() => {
+        window.electronAPI.setWindowScale(val);
+      }, 50);
     }
   };
 

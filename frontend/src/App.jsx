@@ -316,6 +316,17 @@ const App = () => {
     return () => clearTimeout(timer);
   }, [avatarScale]);
 
+  // Listen for scale updates sent from external Settings window
+  useEffect(() => {
+    if (!window.electronAPI || !window.electronAPI.onAvatarScaleChanged) return;
+    const cleanup = window.electronAPI.onAvatarScaleChanged((newScale) => {
+      if (newScale && !isNaN(newScale)) {
+        setAvatarScale(newScale);
+      }
+    });
+    return cleanup;
+  }, []);
+
   // Desktop Overlay UI states
   const [isWandering, setIsWandering] = useState(false);
   const [isWalking, setIsWalking] = useState(false);

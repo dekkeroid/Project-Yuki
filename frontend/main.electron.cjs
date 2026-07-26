@@ -519,15 +519,15 @@ function createWindow() {
 
   ipcMain.on('set-window-scale', (event, scale) => {
     // Always target the main avatar window (mainWindow), never the Settings panel window
-    const targetWin = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-    if (targetWin) {
-      const newWidth = Math.round(DEFAULT_WINDOW_WIDTH * scale);
-      const newHeight = Math.round(DEFAULT_WINDOW_HEIGHT * scale);
-      const bounds = targetWin.getBounds();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const numScale = parseFloat(scale) || 1.0;
+      const newWidth = Math.round(DEFAULT_WINDOW_WIDTH * numScale);
+      const newHeight = Math.round(DEFAULT_WINDOW_HEIGHT * numScale);
+      const bounds = mainWindow.getBounds();
 
-      // Keep bottom-center anchored (so Yuki stands on same spot on desktop when scaled)
-      const anchorX = bounds.x + bounds.width / 2;
-      const anchorY = bounds.y + bounds.height;
+      // Compute anchor relative to previous known dimensions to prevent intermediate bounds drift
+      const anchorX = bounds.x + (currentWidth + windowWidthExtra) / 2;
+      const anchorY = bounds.y + currentHeight;
 
       const newX = Math.round(anchorX - (newWidth + windowWidthExtra) / 2);
       const newY = Math.round(anchorY - newHeight);
@@ -535,12 +535,15 @@ function createWindow() {
       currentWidth = newWidth;
       currentHeight = newHeight;
 
-      targetWin.setBounds({
+      mainWindow.setBounds({
         x: newX,
         y: newY,
         width: newWidth + windowWidthExtra,
         height: newHeight
       });
+
+      // Broadcast new scale to mainWindow webContents so React state in App.jsx updates!
+      mainWindow.webContents.send('yuki-avatar-scale-changed', numScale);
     }
   });
 

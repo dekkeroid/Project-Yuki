@@ -7,6 +7,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setWindowScale: (scale) => {
     ipcRenderer.send('set-window-scale', scale);
   },
+  onAvatarScaleChanged: (callback) => {
+    const handler = (event, scale) => callback(scale);
+    ipcRenderer.on('yuki-avatar-scale-changed', handler);
+    return () => ipcRenderer.removeListener('yuki-avatar-scale-changed', handler);
+  },
   getScreenSize: () => {
     return ipcRenderer.invoke('get-screen-size');
   },
