@@ -55,15 +55,18 @@ const ControlDashboard = ({
     llm_backend: 'lmstudio',
     llm_base_url: '',
     llm_api_key: '',
-    tts_voice: 'en-US-AnaNeural',
-    tts_rate: '+15%',
+    tts_voice: 'af_bella',
+    tts_rate: '1.0',
     tts_device: 'auto',
     stt_device: 'auto',
     character_name: 'Yuki',
     character_persona: '',
     crawler_paused: false,
     tagger_paused: false,
-    active_vrm_model: 'default.vrm'
+    active_vrm_model: 'default.vrm',
+    whisper_model: 'base',
+    use_local_whisper: true,
+    stt_language: 'en'
   });
 
   // Local Character States
@@ -158,7 +161,7 @@ const ControlDashboard = ({
       const res = await fetch(`${API_BASE}/api/settings`);
       if (res.ok) {
         const data = await res.json();
-        setSettings(data);
+        setSettings(data.settings || data);
       }
     } catch (e) {
       console.warn('Could not fetch settings:', e);
@@ -1372,11 +1375,14 @@ const ControlDashboard = ({
                         Select a model...
                       </option>
                     )}
-                    {availableLlmModels.map((model) => (
-                      <option key={model.name} value={model.name} style={{ background: '#0b0813', color: 'white' }}>
-                        {model.name}
-                      </option>
-                    ))}
+                    {availableLlmModels.map((model) => {
+                      const mName = typeof model === 'string' ? model : (model.name || model.id || '');
+                      return (
+                        <option key={mName} value={mName} style={{ background: '#0b0813', color: 'white' }}>
+                          {mName}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
                 )}

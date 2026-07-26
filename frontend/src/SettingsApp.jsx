@@ -46,7 +46,7 @@ export default function SettingsApp() {
 
   const fetchLlmModels = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/llm/models`);
+      const res = await fetch(`${API_BASE}/api/models`);
       if (res.ok) {
         const data = await res.json();
         setAvailableLlmModels(data.models || []);
