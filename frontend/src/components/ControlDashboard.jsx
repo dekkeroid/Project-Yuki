@@ -1150,11 +1150,172 @@ const ControlDashboard = ({
                 </div>
               )}
 
-              {/* Sub-tab 2: Voice & Audio (Separated into STT & TTS cards) */}
+              {/* Sub-tab 2: Voice & Audio (TTS first, then STT) */}
               {settingsSubTab === 'voice' && (
                 <>
-                  {/* STT Input Card Group */}
+                  {/* TTS Output Card Group */}
                   <div className="card-group">
+                    <div className="card-group-header">
+                      <Volume2 className="w-4 h-4 text-pink-400" />
+                      <span className="card-group-title">Speech Synthesis (TTS Output)</span>
+                    </div>
+
+                    {/* Voice Volume & Mute Controls */}
+                    <div className="identity-field" style={{ marginTop: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {muteVoice ? <VolumeX style={{ width: '13px', height: '13px', color: '#f87171' }} /> : <Volume2 style={{ width: '13px', height: '13px', color: '#a78bfa' }} />}
+                          Voice Audio Output
+                        </span>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: 'white', cursor: 'pointer', margin: 0 }}>
+                          <input
+                            type="checkbox"
+                            checked={muteVoice}
+                            onChange={(e) => onMuteVoiceChange && onMuteVoiceChange(e.target.checked)}
+                            style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
+                          />
+                          Mute
+                        </label>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>Volume Level</span>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                          {Math.round(voiceVolume * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="1.0"
+                        step="0.05"
+                        disabled={muteVoice}
+                        value={muteVoice ? 0 : voiceVolume}
+                        onChange={(e) => onVoiceVolumeChange && onVoiceVolumeChange(parseFloat(e.target.value))}
+                        style={{ width: '100%', cursor: muteVoice ? 'not-allowed' : 'pointer', accentColor: '#a78bfa', marginTop: '4px', opacity: muteVoice ? 0.5 : 1 }}
+                      />
+                    </div>
+
+                    {/* TTS Voice Selection */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">Speech Synthesis Voice</span>
+                      <select
+                        value={settings.tts_voice}
+                        onChange={(e) => handleUpdateSetting('tts_voice', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '2px'
+                        }}
+                      >
+                        {TTS_VOICES.map((v) => (
+                          <option key={v.value} value={v.value} style={{ background: '#0b0813', color: 'white' }}>
+                            {v.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* TTS Rate */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">Speech Delivery Rate</span>
+                      <select
+                        value={settings.tts_rate}
+                        onChange={(e) => handleUpdateSetting('tts_rate', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '2px'
+                        }}
+                      >
+                        {TTS_RATES.map((r) => (
+                          <option key={r.value} value={r.value} style={{ background: '#0b0813', color: 'white' }}>
+                            {r.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* TTS Device */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">TTS Processing Device</span>
+                      <select
+                        value={settings.tts_device || 'auto'}
+                        onChange={(e) => handleUpdateSetting('tts_device', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '2px'
+                        }}
+                      >
+                        <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
+                        <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
+                        <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
+                      </select>
+                    </div>
+
+                    {/* Preload TTS */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span className="field-label">Preload TTS on Startup</span>
+                          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '1px' }}>
+                            Loads voice model on boot (~250-400 MB). Off = loads on first speech.
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateSetting('tts_preload', !settings.tts_preload)}
+                          style={{
+                            background: settings.tts_preload ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
+                            border: `1px solid ${settings.tts_preload ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                            borderRadius: '12px',
+                            width: '40px',
+                            height: '22px',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            flexShrink: 0
+                          }}
+                        >
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            background: settings.tts_preload ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                            position: 'absolute',
+                            top: '2px',
+                            left: settings.tts_preload ? '20px' : '2px',
+                            transition: 'all 0.2s ease'
+                          }} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* STT Input Card Group */}
+                  <div className="card-group" style={{ marginTop: '12px' }}>
                     <div className="card-group-header">
                       <Mic className="w-4 h-4 text-violet-400" />
                       <span className="card-group-title">Speech Recognition (STT Input)</span>
@@ -1338,167 +1499,6 @@ const ControlDashboard = ({
                         </div>
                       </>
                     )}
-                  </div>
-
-                  {/* TTS Output Card Group */}
-                  <div className="card-group" style={{ marginTop: '12px' }}>
-                    <div className="card-group-header">
-                      <Volume2 className="w-4 h-4 text-pink-400" />
-                      <span className="card-group-title">Speech Synthesis (TTS Output)</span>
-                    </div>
-
-                    {/* Voice Volume & Mute Controls */}
-                    <div className="identity-field" style={{ marginTop: '4px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          {muteVoice ? <VolumeX style={{ width: '13px', height: '13px', color: '#f87171' }} /> : <Volume2 style={{ width: '13px', height: '13px', color: '#a78bfa' }} />}
-                          Voice Audio Output
-                        </span>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: 'white', cursor: 'pointer', margin: 0 }}>
-                          <input
-                            type="checkbox"
-                            checked={muteVoice}
-                            onChange={(e) => onMuteVoiceChange && onMuteVoiceChange(e.target.checked)}
-                            style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
-                          />
-                          Mute
-                        </label>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                        <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>Volume Level</span>
-                        <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                          {Math.round(voiceVolume * 100)}%
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.0"
-                        max="1.0"
-                        step="0.05"
-                        disabled={muteVoice}
-                        value={muteVoice ? 0 : voiceVolume}
-                        onChange={(e) => onVoiceVolumeChange && onVoiceVolumeChange(parseFloat(e.target.value))}
-                        style={{ width: '100%', cursor: muteVoice ? 'not-allowed' : 'pointer', accentColor: '#a78bfa', marginTop: '4px', opacity: muteVoice ? 0.5 : 1 }}
-                      />
-                    </div>
-
-                    {/* TTS Voice Selection */}
-                    <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <span className="field-label">Speech Synthesis Voice</span>
-                      <select
-                        value={settings.tts_voice}
-                        onChange={(e) => handleUpdateSetting('tts_voice', e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                          marginTop: '2px'
-                        }}
-                      >
-                        {TTS_VOICES.map((v) => (
-                          <option key={v.value} value={v.value} style={{ background: '#0b0813', color: 'white' }}>
-                            {v.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* TTS Rate */}
-                    <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <span className="field-label">Speech Delivery Rate</span>
-                      <select
-                        value={settings.tts_rate}
-                        onChange={(e) => handleUpdateSetting('tts_rate', e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                          marginTop: '2px'
-                        }}
-                      >
-                        {TTS_RATES.map((r) => (
-                          <option key={r.value} value={r.value} style={{ background: '#0b0813', color: 'white' }}>
-                            {r.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* TTS Device */}
-                    <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <span className="field-label">TTS Processing Device</span>
-                      <select
-                        value={settings.tts_device || 'auto'}
-                        onChange={(e) => handleUpdateSetting('tts_device', e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                          marginTop: '2px'
-                        }}
-                      >
-                        <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
-                        <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
-                        <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
-                      </select>
-                    </div>
-
-                    {/* Preload TTS */}
-                    <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <span className="field-label">Preload TTS on Startup</span>
-                          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '1px' }}>
-                            Loads voice model on boot (~250-400 MB). Off = loads on first speech.
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateSetting('tts_preload', !settings.tts_preload)}
-                          style={{
-                            background: settings.tts_preload ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
-                            border: `1px solid ${settings.tts_preload ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
-                            borderRadius: '12px',
-                            width: '40px',
-                            height: '22px',
-                            cursor: 'pointer',
-                            position: 'relative',
-                            transition: 'all 0.2s ease',
-                            flexShrink: 0
-                          }}
-                        >
-                          <div style={{
-                            width: '16px',
-                            height: '16px',
-                            borderRadius: '50%',
-                            background: settings.tts_preload ? '#a78bfa' : 'rgba(255,255,255,0.4)',
-                            position: 'absolute',
-                            top: '2px',
-                            left: settings.tts_preload ? '20px' : '2px',
-                            transition: 'all 0.2s ease'
-                          }} />
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 </>
               )}
