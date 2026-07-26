@@ -18,15 +18,32 @@ export default function SettingsApp() {
   });
   const [backendStatus, setBackendStatus] = useState('online');
   const [modelName, setModelName] = useState('default.vrm');
-  const [disabledAnimations, setDisabledAnimations] = useState([]);
+  const [disabledAnimations, setDisabledAnimations] = useState(() => {
+    try {
+      const saved = localStorage.getItem('yuki-disabled-animations');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [micDevices, setMicDevices] = useState([]);
-  const [selectedMicDeviceId, setSelectedMicDeviceId] = useState('');
-  const [vadThreshold, setVadThreshold] = useState(-45);
-  const [muteVoice, setMuteVoice] = useState(false);
-  const [voiceVolume, setVoiceVolume] = useState(1.0);
+  const [selectedMicDeviceId, setSelectedMicDeviceId] = useState(() => {
+    return localStorage.getItem('yuki-mic-device-id') || '';
+  });
+  const [vadThreshold, setVadThreshold] = useState(() => {
+    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.01');
+  });
+  const [muteVoice, setMuteVoice] = useState(() => {
+    return localStorage.getItem('yuki-mute-voice') === 'true';
+  });
+  const [voiceVolume, setVoiceVolume] = useState(() => {
+    try { return parseFloat(localStorage.getItem('yuki-voice-volume') || '1.0'); } catch { return 1.0; }
+  });
   const [availableLlmModels, setAvailableLlmModels] = useState([]);
-  const [preferHeadsetMic, setPreferHeadsetMic] = useState(false);
-  const [skinToneColor, setSkinToneColor] = useState('#ffffff');
+  const [preferHeadsetMic, setPreferHeadsetMic] = useState(() => {
+    return localStorage.getItem('yuki-prefer-headset') !== 'false';
+  });
+  const [skinToneColor, setSkinToneColor] = useState(() => {
+    return localStorage.getItem('yuki-avatar-skintone-color') || '#ffffff';
+  });
 
   const fetchProfile = async () => {
     try {
@@ -92,27 +109,48 @@ export default function SettingsApp() {
           }
         }}
         skinToneColor={skinToneColor}
-        onSkinToneChange={(color) => setSkinToneColor(color)}
+        onSkinToneChange={(color) => {
+          setSkinToneColor(color);
+          localStorage.setItem('yuki-avatar-skintone-color', color);
+        }}
         disabledAnimations={disabledAnimations}
         onToggleAnimation={(animName) => {
-          setDisabledAnimations(prev => 
-            prev.includes(animName) ? prev.filter(a => a !== animName) : [...prev, animName]
-          );
+          setDisabledAnimations(prev => {
+            const next = prev.includes(animName) ? prev.filter(a => a !== animName) : [...prev, animName];
+            localStorage.setItem('yuki-disabled-animations', JSON.stringify(next));
+            return next;
+          });
         }}
         micDevices={micDevices}
         selectedMicDeviceId={selectedMicDeviceId}
-        onMicDeviceChange={(id) => setSelectedMicDeviceId(id)}
+        onMicDeviceChange={(id) => {
+          setSelectedMicDeviceId(id);
+          if (id) localStorage.setItem('yuki-mic-device-id', id);
+          else localStorage.removeItem('yuki-mic-device-id');
+        }}
         onRefreshMicDevices={refreshMicDevices}
         vadThreshold={vadThreshold}
-        onVadThresholdChange={(val) => setVadThreshold(val)}
+        onVadThresholdChange={(val) => {
+          setVadThreshold(val);
+          localStorage.setItem('yuki-vad-threshold', val.toString());
+        }}
         muteVoice={muteVoice}
-        onMuteVoiceChange={(muted) => setMuteVoice(muted)}
+        onMuteVoiceChange={(muted) => {
+          setMuteVoice(muted);
+          localStorage.setItem('yuki-mute-voice', muted.toString());
+        }}
         voiceVolume={voiceVolume}
-        onVoiceVolumeChange={(vol) => setVoiceVolume(vol)}
+        onVoiceVolumeChange={(vol) => {
+          setVoiceVolume(vol);
+          localStorage.setItem('yuki-voice-volume', vol.toString());
+        }}
         availableLlmModels={availableLlmModels}
         onRefreshLlmModels={fetchLlmModels}
         preferHeadsetMic={preferHeadsetMic}
-        onPreferHeadsetMicChange={(val) => setPreferHeadsetMic(val)}
+        onPreferHeadsetMicChange={(val) => {
+          setPreferHeadsetMic(val);
+          localStorage.setItem('yuki-prefer-headset', val.toString());
+        }}
         initialTab="settings"
         isStandalone={true}
       />
