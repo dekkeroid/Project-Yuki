@@ -1,7 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { API_BASE } from './api';
 
-const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
+const ModernSettingsDashboard = lazy(() => import('./components/ModernSettingsDashboard'));
 
 export default function SettingsApp() {
   const [profile, setProfile] = useState({
@@ -26,7 +26,7 @@ export default function SettingsApp() {
   const [voiceVolume, setVoiceVolume] = useState(1.0);
   const [availableLlmModels, setAvailableLlmModels] = useState([]);
   const [preferHeadsetMic, setPreferHeadsetMic] = useState(false);
-  const [skinToneColor, setSkinToneColor] = useState('#ffdbac');
+  const [skinToneColor, setSkinToneColor] = useState('#ffffff');
 
   const fetchProfile = async () => {
     try {
@@ -74,58 +74,46 @@ export default function SettingsApp() {
   }, []);
 
   return (
-    <div style={{
-      width: '100vw',
-      height: '100vh',
-      backgroundColor: '#090d16',
-      color: '#e2e8f0',
-      overflowY: 'auto',
-      padding: '24px',
-      boxSizing: 'border-box',
-      fontFamily: 'Inter, system-ui, sans-serif'
-    }}>
-      <Suspense fallback={<div style={{ color: '#a855f7', padding: '20px' }}>Loading Control Dashboard...</div>}>
-        <ControlDashboard
-          API_BASE={API_BASE}
-          profile={profile}
-          backendStatus={backendStatus}
-          onResetProfile={async () => {
-            try {
-              await fetch(`${API_BASE}/api/profile/reset`, { method: 'POST' });
-              fetchProfile();
-            } catch (e) { console.warn(e); }
-          }}
-          modelName={modelName}
-          onProfileUpdate={(updatedProfile) => {
-            setProfile(updatedProfile);
-            if (updatedProfile.settings && updatedProfile.settings.llm_model) {
-              setModelName(updatedProfile.settings.llm_model);
-            }
-          }}
-          skinToneColor={skinToneColor}
-          onSkinToneChange={(color) => setSkinToneColor(color)}
-          disabledAnimations={disabledAnimations}
-          onToggleAnimation={(animName) => {
-            setDisabledAnimations(prev => 
-              prev.includes(animName) ? prev.filter(a => a !== animName) : [...prev, animName]
-            );
-          }}
-          micDevices={micDevices}
-          selectedMicDeviceId={selectedMicDeviceId}
-          onMicDeviceChange={(id) => setSelectedMicDeviceId(id)}
-          onRefreshMicDevices={refreshMicDevices}
-          vadThreshold={vadThreshold}
-          onVadThresholdChange={(val) => setVadThreshold(val)}
-          muteVoice={muteVoice}
-          onMuteVoiceChange={(muted) => setMuteVoice(muted)}
-          voiceVolume={voiceVolume}
-          onVoiceVolumeChange={(vol) => setVoiceVolume(vol)}
-          availableLlmModels={availableLlmModels}
-          onRefreshLlmModels={fetchLlmModels}
-          preferHeadsetMic={preferHeadsetMic}
-          onPreferHeadsetMicChange={(val) => setPreferHeadsetMic(val)}
-        />
-      </Suspense>
-    </div>
+    <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '30px', backgroundColor: '#090d16', minHeight: '100vh', fontFamily: 'sans-serif' }}>Loading Settings Studio...</div>}>
+      <ModernSettingsDashboard
+        profile={profile}
+        backendStatus={backendStatus}
+        onResetProfile={async () => {
+          try {
+            await fetch(`${API_BASE}/api/profile/reset`, { method: 'POST' });
+            fetchProfile();
+          } catch (e) { console.warn(e); }
+        }}
+        modelName={modelName}
+        onProfileUpdate={(updatedProfile) => {
+          setProfile(updatedProfile);
+          if (updatedProfile.settings && updatedProfile.settings.llm_model) {
+            setModelName(updatedProfile.settings.llm_model);
+          }
+        }}
+        skinToneColor={skinToneColor}
+        onSkinToneChange={(color) => setSkinToneColor(color)}
+        disabledAnimations={disabledAnimations}
+        onToggleAnimation={(animName) => {
+          setDisabledAnimations(prev => 
+            prev.includes(animName) ? prev.filter(a => a !== animName) : [...prev, animName]
+          );
+        }}
+        micDevices={micDevices}
+        selectedMicDeviceId={selectedMicDeviceId}
+        onMicDeviceChange={(id) => setSelectedMicDeviceId(id)}
+        onRefreshMicDevices={refreshMicDevices}
+        vadThreshold={vadThreshold}
+        onVadThresholdChange={(val) => setVadThreshold(val)}
+        muteVoice={muteVoice}
+        onMuteVoiceChange={(muted) => setMuteVoice(muted)}
+        voiceVolume={voiceVolume}
+        onVoiceVolumeChange={(vol) => setVoiceVolume(vol)}
+        availableLlmModels={availableLlmModels}
+        onRefreshLlmModels={fetchLlmModels}
+        preferHeadsetMic={preferHeadsetMic}
+        onPreferHeadsetMicChange={(val) => setPreferHeadsetMic(val)}
+      />
+    </Suspense>
   );
 }
