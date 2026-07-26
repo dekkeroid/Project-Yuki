@@ -98,7 +98,7 @@ function createSettingsWindow() {
     height: 780,
     minWidth: 650,
     minHeight: 500,
-    title: 'Yuki AI — Settings & Control Dashboard',
+    title: 'Settings',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     backgroundColor: '#090d16',

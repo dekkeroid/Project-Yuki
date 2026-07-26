@@ -4,7 +4,18 @@ import { API_BASE } from './api';
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
 
 export default function SettingsApp() {
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState({
+    user_name: 'User',
+    user_interests: [],
+    custom_facts: {},
+    settings: {
+      llm_model: '',
+      tts_voice: 'af_bella',
+      tts_rate: '1.0',
+      character_name: 'Yuki',
+      character_persona: ''
+    }
+  });
   const [backendStatus, setBackendStatus] = useState('online');
   const [modelName, setModelName] = useState('default.vrm');
   const [disabledAnimations, setDisabledAnimations] = useState([]);
@@ -56,6 +67,7 @@ export default function SettingsApp() {
   };
 
   useEffect(() => {
+    document.title = 'Settings';
     fetchProfile();
     fetchLlmModels();
     refreshMicDevices();
