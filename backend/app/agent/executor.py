@@ -392,40 +392,26 @@ class AgentExecutor:
         exchanges as context so the model can disambiguate figurative vs literal tool requests
         (e.g. 'play a game with me' vs 'play that towa song').
 
+        Uses a plain Yes/No question — no tool names or examples in the prompt to avoid
+        keyword anchoring that caused false positives (e.g. 'open an anime shop' → launch_app).
+
         Returns (intent, tool_name):
           intent    — 'chat' if no tool needed, 'tool' if a tool is required
-          tool_name — the specific tool name if intent=='tool', else ''
+          tool_name — always '' now (caller uses intent_tool_hint only for logging)
 
         Falls back to ('tool', '') on timeout/error — never misses a real tool call.
         """
-        _TOOL_NAMES = [
-            "web_search", "open_or_play_file", "search_files", "launch_app",
-            "set_system_volume", "get_system_stats", "run_terminal_command",
-            "create_file", "edit_file", "delete_file", "take_screenshot",
-            "media_playback_control", "keyboard_mouse_input", "control_window",
-            "manage_process", "system_power_control", "update_user_fact",
-        ]
-
         intent_system = (
-            "You are a one-line intent classifier for a desktop AI assistant named Yuki.\n"
-            "Classify the user's LATEST message into ONE of:\n"
-            "  CHAT        — it is conversation, opinion, greeting, or a question you can answer from knowledge (no computer action needed)\n"
-            "  TOOL:<name> — it requires a specific computer tool to fulfil\n\n"
-            f"Available tool names: {', '.join(_TOOL_NAMES)}\n\n"
-            "Examples:\n"
-            "  'I want to play a game with you'  → CHAT\n"
-            "  'play that towa song'             → TOOL:open_or_play_file\n"
-            "  'search on web about red 40'      → TOOL:web_search\n"
-            "  'what do you think about anime?'  → CHAT\n"
-            "  'open chrome'                     → TOOL:launch_app\n"
-            "  'what time is it'                 → TOOL:get_system_stats\n"
-            "  'open to suggestions'             → CHAT\n"
-            "  'find my config file and open it' → TOOL:search_files\n\n"
-            "Reply with ONLY 'CHAT' or 'TOOL:<toolname>'. No explanation, no punctuation, nothing else."
+            "You are an intent detector for a desktop AI assistant named Yuki. "
+            "Yuki can control the user's computer: open files, search the web, "
+            "adjust volume, launch apps, run commands, manage processes, and more.\n\n"
+            "Given the conversation so far, does the user's LATEST message require "
+            "Yuki to perform a computer action or look something up?\n\n"
+            "Reply with ONLY 'Yes' or 'No'. Nothing else."
         )
 
-        # Extract last 2 user+assistant exchanges (up to 4 messages) from chat history
-        # This gives the model context to resolve ambiguous references like 'play that' or 'open it'
+        # Extract last 2 user+assistant exchanges (up to 4 messages) from chat history.
+        # Gives the model context for ambiguous references like 'play that' or 'open it'.
         history_msgs = [m for m in chat_history if m.get("role") in ("user", "assistant")]
         last_exchanges = history_msgs[-4:]  # Last 2 pairs
 
@@ -443,9 +429,9 @@ class AgentExecutor:
             model=config.LLM_MODEL,
             messages=messages,
             temperature=0.0,   # Fully deterministic — this is a classifier, not a generator
-            use_tools=False,   # No tool schemas — pure text classification
+            use_tools=False,   # No tool schemas — pure text output
         )
-        payload["max_tokens"] = 20  # CHAT or TOOL:<name> — never more than ~5 tokens
+        payload["max_tokens"] = 5  # "Yes" or "No" — single token
 
         try:
             async with aiohttp.ClientSession() as check_session:
@@ -462,23 +448,14 @@ class AgentExecutor:
                     choices = data.get("choices", [])
                     if not choices:
                         return "tool", ""
-                    raw = (choices[0].get("message", {}).get("content") or "").strip().upper()
+                    raw = (choices[0].get("message", {}).get("content") or "").strip().lower()
                     print(f"[IntentCheck] Raw output: '{raw}'")
 
-                    if raw == "CHAT":
+                    # Accept any response that starts with "no" as a chat downgrade
+                    if raw.startswith("no"):
                         return "chat", ""
 
-                    if raw.startswith("TOOL:"):
-                        tool_name = raw[5:].strip().lower()
-                        _valid = [t.lower() for t in _TOOL_NAMES]
-                        if tool_name in _valid:
-                            return "tool", tool_name
-                        # Model output a tool-like response but invalid name — still treat as tool
-                        print(f"[IntentCheck] Unknown tool name '{tool_name}' — treating as generic tool")
-                        return "tool", ""
-
-                    # Unrecognized output — safe default
-                    print(f"[IntentCheck] Unrecognized output '{raw}' — defaulting to tool")
+                    # "yes" or anything else → proceed as tool (safe fallback)
                     return "tool", ""
 
         except asyncio.TimeoutError:
@@ -487,6 +464,7 @@ class AgentExecutor:
         except Exception as e:
             print(f"[IntentCheck] Error ({e}) — defaulting to tool")
             return "tool", ""
+
 
     def _get_model_label(self, model_name: str) -> str:
         name_lower = model_name.lower()
