@@ -39,6 +39,7 @@ const ControlDashboard = ({
   initialTab = 'memory',
   isStandalone = false
 }) => {
+  const [isOpen, setIsOpen] = useState(isStandalone ? true : false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [settingsSubTab, setSettingsSubTab] = useState('brain'); // 'brain' | 'voice' | 'avatar'
 
