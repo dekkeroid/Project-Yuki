@@ -890,15 +890,17 @@ class AgentExecutor:
             content = delta.get("content")
             if content:
                 if is_json_candidate is None:
-                    # Decide based on first non-whitespace character
-                    stripped = content.strip()
+                    text_buffer += content
+                    stripped = text_buffer.strip()
                     if stripped:
-                        if stripped.startswith("{") or stripped.startswith("`") or stripped.startswith("["):
+                        # Check if text contains JSON pattern like {"name": ...} or {"tool_calls": ...}
+                        if "{" in stripped or "`" in stripped or "[" in stripped:
                             is_json_candidate = True
-                            text_buffer += content
-                        else:
+                        elif len(stripped) > 50:
+                            # Not JSON after 50 chars of non-JSON text; flush buffer and stream normally
                             is_json_candidate = False
-                            yield "token", content, label
+                            yield "token", text_buffer, label
+                            text_buffer = ""
                 elif is_json_candidate:
                     text_buffer += content
                 else:
@@ -908,6 +910,9 @@ class AgentExecutor:
             tool_calls = delta.get("tool_calls")
             if tool_calls:
                 is_json_candidate = False
+                if text_buffer:
+                    yield "token", text_buffer, label
+                    text_buffer = ""
                 for tc_delta in tool_calls:
                     index = tc_delta.get("index", 0)
                     if index not in accumulated_tool_calls:
