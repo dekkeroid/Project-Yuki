@@ -380,6 +380,114 @@ class AgentExecutor:
             return "complex"
         return "simple"
 
+    async def _check_tool_intent(
+        self,
+        user_message: str,
+        chat_history: List[Dict[str, str]],
+        timeout: float = 6.0,
+    ) -> tuple:
+        """
+        LLM-based intent double-check called when the regex classifier says 'complex'.
+        Sends a tiny non-streaming request to the same model with the last 2 conversation
+        exchanges as context so the model can disambiguate figurative vs literal tool requests
+        (e.g. 'play a game with me' vs 'play that towa song').
+
+        Returns (intent, tool_name):
+          intent    — 'chat' if no tool needed, 'tool' if a tool is required
+          tool_name — the specific tool name if intent=='tool', else ''
+
+        Falls back to ('tool', '') on timeout/error — never misses a real tool call.
+        """
+        _TOOL_NAMES = [
+            "web_search", "open_or_play_file", "search_files", "launch_app",
+            "set_system_volume", "get_system_stats", "run_terminal_command",
+            "create_file", "edit_file", "delete_file", "take_screenshot",
+            "media_playback_control", "keyboard_mouse_input", "control_window",
+            "manage_process", "system_power_control", "update_user_fact",
+        ]
+
+        intent_system = (
+            "You are a one-line intent classifier for a desktop AI assistant named Yuki.\n"
+            "Classify the user's LATEST message into ONE of:\n"
+            "  CHAT        — it is conversation, opinion, greeting, or a question you can answer from knowledge (no computer action needed)\n"
+            "  TOOL:<name> — it requires a specific computer tool to fulfil\n\n"
+            f"Available tool names: {', '.join(_TOOL_NAMES)}\n\n"
+            "Examples:\n"
+            "  'I want to play a game with you'  → CHAT\n"
+            "  'play that towa song'             → TOOL:open_or_play_file\n"
+            "  'search on web about red 40'      → TOOL:web_search\n"
+            "  'what do you think about anime?'  → CHAT\n"
+            "  'open chrome'                     → TOOL:launch_app\n"
+            "  'what time is it'                 → TOOL:get_system_stats\n"
+            "  'open to suggestions'             → CHAT\n"
+            "  'find my config file and open it' → TOOL:search_files\n\n"
+            "Reply with ONLY 'CHAT' or 'TOOL:<toolname>'. No explanation, no punctuation, nothing else."
+        )
+
+        # Extract last 2 user+assistant exchanges (up to 4 messages) from chat history
+        # This gives the model context to resolve ambiguous references like 'play that' or 'open it'
+        history_msgs = [m for m in chat_history if m.get("role") in ("user", "assistant")]
+        last_exchanges = history_msgs[-4:]  # Last 2 pairs
+
+        messages = [
+            {"role": "system", "content": intent_system},
+            *[
+                {"role": m["role"], "content": str(m.get("content", ""))[:300]}
+                for m in last_exchanges
+            ],
+            {"role": "user", "content": user_message},
+        ]
+
+        backend = get_backend()
+        payload = backend.build_payload(
+            model=config.LLM_MODEL,
+            messages=messages,
+            temperature=0.0,   # Fully deterministic — this is a classifier, not a generator
+            use_tools=False,   # No tool schemas — pure text classification
+        )
+        payload["max_tokens"] = 20  # CHAT or TOOL:<name> — never more than ~5 tokens
+
+        try:
+            async with aiohttp.ClientSession() as check_session:
+                async with check_session.post(
+                    backend.get_chat_url(),
+                    headers=backend.build_headers(),
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                ) as resp:
+                    if resp.status != 200:
+                        print(f"[IntentCheck] Non-200 response ({resp.status}) — defaulting to tool")
+                        return "tool", ""
+                    data = await resp.json()
+                    choices = data.get("choices", [])
+                    if not choices:
+                        return "tool", ""
+                    raw = (choices[0].get("message", {}).get("content") or "").strip().upper()
+                    print(f"[IntentCheck] Raw output: '{raw}'")
+
+                    if raw == "CHAT":
+                        return "chat", ""
+
+                    if raw.startswith("TOOL:"):
+                        tool_name = raw[5:].strip().lower()
+                        _valid = [t.lower() for t in _TOOL_NAMES]
+                        if tool_name in _valid:
+                            return "tool", tool_name
+                        # Model output a tool-like response but invalid name — still treat as tool
+                        print(f"[IntentCheck] Unknown tool name '{tool_name}' — treating as generic tool")
+                        return "tool", ""
+
+                    # Unrecognized output — safe default
+                    print(f"[IntentCheck] Unrecognized output '{raw}' — defaulting to tool")
+                    return "tool", ""
+
+        except asyncio.TimeoutError:
+            print(f"[IntentCheck] Timed out after {timeout}s — defaulting to tool")
+            return "tool", ""
+        except Exception as e:
+            print(f"[IntentCheck] Error ({e}) — defaulting to tool")
+            return "tool", ""
+
     def _get_model_label(self, model_name: str) -> str:
         name_lower = model_name.lower()
         if "llama" in name_lower:
@@ -1044,6 +1152,22 @@ class AgentExecutor:
             resolved_backend = self._classify_task(user_message) if user_message else "simple"
         else:
             resolved_backend = self._classify_task(user_message) if user_message else "simple"
+
+        # ── Intent double-check ───────────────────────────────────────────────
+        # The regex classifier catches clear tool keywords but can false-positive
+        # on figurative language ('play a game with me', 'open to suggestions').
+        # If regex said 'complex', ask the same LLM to confirm — with the last
+        # 2 conversation turns as context for ambiguous references like 'play that'.
+        # On timeout or error we keep 'complex' as the safe fallback.
+        intent_tool_hint = ""   # Filled in if intent check identifies a specific tool
+        if resolved_backend == "complex" and user_message:
+            intent, intent_tool_hint = await self._check_tool_intent(user_message, chat_history)
+            if intent == "chat":
+                resolved_backend = "simple"
+                print(f"[IntentCheck] Downgraded to CHAT: '{user_message[:70]}'")
+            else:
+                print(f"[IntentCheck] Confirmed TOOL:{intent_tool_hint or '?'} — proceeding as complex")
+        # ─────────────────────────────────────────────────────────────────────
 
         current_messages = self._build_messages(user_message, chat_history, resolved_backend)
 
