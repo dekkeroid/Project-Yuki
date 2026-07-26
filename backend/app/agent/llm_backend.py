@@ -326,19 +326,41 @@ class OllamaBackend(LLMBackend):
     async def unload_model(self, model_name: str) -> bool:
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/api/generate",
-                    json={"model": model_name, "prompt": "", "keep_alive": 0},
-                    timeout=aiohttp.ClientTimeout(total=15),
-                ) as resp:
-                    if resp.status == 200:
-                        print(f"[Ollama] Unloaded '{model_name}'")
-                        self._currently_loaded_model = None
-                        return True
-                    else:
-                        body = await resp.text()
-                        print(f"[Ollama] Unload failed for '{model_name}': HTTP {resp.status}: {body}")
-                        return False
+                if model_name:
+                    async with session.post(
+                        f"{self.base_url}/api/generate",
+                        json={"model": model_name, "prompt": "", "keep_alive": 0},
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as resp:
+                        if resp.status == 200:
+                            print(f"[Ollama] Unloaded '{model_name}' (keep_alive=0)")
+                        else:
+                            body = await resp.text()
+                            print(f"[Ollama] Unload note for '{model_name}': HTTP {resp.status}: {body}")
+
+                # Query /api/ps to unload any lingering loaded models except current target
+                try:
+                    async with session.get(
+                        f"{self.base_url}/api/ps",
+                        timeout=aiohttp.ClientTimeout(total=5)
+                    ) as ps_resp:
+                        if ps_resp.status == 200:
+                            ps_data = await ps_resp.json()
+                            running_models = ps_data.get("models", [])
+                            for m in running_models:
+                                m_name = m.get("name") or m.get("model")
+                                if m_name and m_name != model_name:
+                                    print(f"[Ollama] Unloading lingering model from RAM/VRAM: '{m_name}'")
+                                    await session.post(
+                                        f"{self.base_url}/api/generate",
+                                        json={"model": m_name, "prompt": "", "keep_alive": 0},
+                                        timeout=aiohttp.ClientTimeout(total=10)
+                                    )
+                except Exception as ps_err:
+                    pass
+
+                self._currently_loaded_model = None
+                return True
         except Exception as e:
             print(f"[Ollama] Unload request failed for '{model_name}': {e}")
             return False
@@ -348,10 +370,12 @@ class OllamaBackend(LLMBackend):
             print(f"[Ollama] Model '{model_name}' already in memory.")
             return True
         try:
-            if self._currently_loaded_model:
-                print(f"[Ollama] Preloading '{model_name}', unloading '{self._currently_loaded_model}'...")
+            if self._currently_loaded_model and self._currently_loaded_model != model_name:
+                print(f"[Ollama] Preloading '{model_name}', unloading previous model '{self._currently_loaded_model}'...")
+                await self.unload_model(self._currently_loaded_model)
             else:
                 print(f"[Ollama] Preloading '{model_name}' with keep_alive=60m...")
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self.base_url}/api/generate",

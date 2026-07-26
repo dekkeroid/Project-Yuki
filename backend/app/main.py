@@ -136,16 +136,16 @@ async def _start_crawler_bg():
         print(f"[Startup] Failed to start crawler services: {e}")
 
 
-async def _swap_model(new_model: str, old_backend=None):
-    """Unload old model and preload new model in background. Fire-and-forget."""
+async def _swap_model(new_model: str, old_model: str = None, old_backend=None):
+    """Unload old model and preload new model in background."""
     from app.agent.llm_backend import get_backend
-    old_model = getattr(config, "_previous_llm_model", None)
+    prev_model = old_model or getattr(config, "_previous_llm_model", None) or config.LLM_MODEL
     config._previous_llm_model = new_model
     if old_backend:
-        print(f"[ModelSwap] Backend switched — unloading '{old_model}' from old backend, preloading '{new_model}' on new")
-        if old_model:
+        print(f"[ModelSwap] Backend switched — unloading '{prev_model}' from old backend, preloading '{new_model}' on new")
+        if prev_model:
             try:
-                await asyncio.wait_for(old_backend.unload_model(old_model), timeout=15)
+                await asyncio.wait_for(old_backend.unload_model(prev_model), timeout=15)
             except Exception as e:
                 print(f"[ModelSwap] Old backend unload failed (non-blocking): {e}")
         if new_model:
@@ -156,24 +156,12 @@ async def _swap_model(new_model: str, old_backend=None):
             except Exception as e:
                 print(f"[ModelSwap] New backend preload failed: {e}")
         return
-    if old_model == new_model or not old_model:
-        if new_model and not old_model:
-            print(f"[ModelSwap] Initial model: '{new_model}' — loading")
-            try:
-                backend = get_backend()
-                if backend:
-                    await asyncio.wait_for(backend.ensure_model_loaded(new_model), timeout=300)
-            except Exception as e:
-                print(f"[ModelSwap] Initial load failed: {e}")
-        return
-    if not new_model:
-        print(f"[ModelSwap] Model cleared — no preload")
-        return
-    print(f"[ModelSwap] Swapping '{old_model}' → '{new_model}'")
+
+    print(f"[ModelSwap] Swapping '{prev_model}' → '{new_model}'")
     try:
         backend = get_backend()
         if backend:
-            asyncio.create_task(_do_model_swap(backend, old_model, new_model))
+            asyncio.create_task(_do_model_swap(backend, prev_model, new_model))
     except Exception as e:
         print(f"[ModelSwap] Swap dispatch failed: {e}")
 
@@ -658,9 +646,10 @@ async def update_settings(req: SettingsUpdateRequest):
             print(f"[ModelSwap] Backend switch detected: '{old_backend_type}' → '{new_backend}'")
     if req.llm_model is not None:
         new_model = req.llm_model.strip()
+        old_model = config.LLM_MODEL
         pending_old = getattr(config, "_pending_old_backend", None)
-        if new_model and new_model != config.LLM_MODEL:
-            asyncio.create_task(_swap_model(new_model, old_backend=pending_old or captured_old_backend))
+        if new_model and new_model != old_model:
+            asyncio.create_task(_swap_model(new_model, old_model=old_model, old_backend=pending_old or captured_old_backend))
         config.LLM_MODEL = new_model
         memory_manager.update_setting("llm_model", new_model)
         if pending_old:
