@@ -29,8 +29,8 @@ console.log(`[Electron] Log file: ${LOG_FILE}`);
 console.log(`[Electron] Platform: ${process.platform}, arch: ${process.arch}, packaged: ${app.isPackaged}`);
 
 // ---------- Chromium Performance & VRAM Optimization Switches ----------
-// 1. Hard limit the Javascript V8 engine heap size to 512MB and expose V8 garbage collector
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512 --expose-gc');
+// 1. Hard limit the Javascript V8 engine heap size to 256MB and expose V8 garbage collector
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256 --expose-gc');
 
 // 2. Disable asset/network caching so temporary audio/data clips don't save to disk
 app.commandLine.appendSwitch('disable-http-cache');
@@ -892,9 +892,13 @@ app.whenReady().then(async () => {
   } else {
     // Dev mode: open window immediately, defer backend start by 5 seconds
     // to prevent CPU/IO starvation and let Vite start its dev server smoothly.
-    setTimeout(() => {
-      startBackend();
-    }, 5000);
+    if (process.env.YUKI_NO_AUTO_BACKEND !== '1' && process.env.YUKI_NO_AUTO_BACKEND !== 'true') {
+      setTimeout(() => {
+        startBackend();
+      }, 5000);
+    } else {
+      console.log('[Electron] YUKI_NO_AUTO_BACKEND set — skipping backend auto-spawn in dev mode.');
+    }
   }
 
   if (!setupDone) {

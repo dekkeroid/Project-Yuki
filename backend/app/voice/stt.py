@@ -13,7 +13,7 @@ _current_compute_type = None
 _current_device = None
 
 _last_stt_request_time = 0.0
-STT_IDLE_TIMEOUT = 300.0  # 5 minutes
+STT_IDLE_TIMEOUT = 120.0  # 2 minutes
 
 def update_last_stt_time():
     global _last_stt_request_time

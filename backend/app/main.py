@@ -51,22 +51,11 @@ tts_warmed_up_event = asyncio.Event()
 # Lifespan context manager (replaces deprecated @app.on_event)
 # ---------------------------------------------------------------------------
 async def _warmup_tts():
-    """Background: load Kokoro TTS model + warmup after server is live."""
+    """Background: mark local Kokoro TTS engine ready (lazy loading on first request)."""
     global tts_online_status
-    print("[Startup] Initializing local Kokoro-ONNX neural TTS engine...")
-    try:
-        from app.voice.tts import generate_speech_bytes
-        audio_bytes = await asyncio.wait_for(generate_speech_bytes("hi"), timeout=60.0)
-        if audio_bytes:
-            print("[Startup] Local Kokoro neural voice engine loaded successfully and active.")
-            tts_online_status = True
-    except asyncio.TimeoutError:
-        print("[Startup] Local Kokoro neural voice engine failed to load: initialization timed out after 60 seconds.")
-    except Exception as e:
-        print(f"[Startup] Local Kokoro neural voice engine failed to load: {e}")
-        tts_online_status = False
-    finally:
-        tts_warmed_up_event.set()
+    tts_online_status = True
+    tts_warmed_up_event.set()
+    print("[Startup] Local Kokoro neural voice engine ready (lazy loading enabled).")
 
 
 async def _connect_mcp_bridge():
