@@ -257,23 +257,32 @@ const AvatarViewer = ({
 
   const disposeObject = (obj) => {
     if (!obj) return;
-    obj.traverse((child) => {
-      if (child.geometry) {
-        child.geometry.dispose();
-      }
-      if (child.material) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        for (const mat of materials) {
-          mat.dispose();
-          for (const key of Object.keys(mat)) {
-            const value = mat[key];
-            if (value && typeof value.dispose === 'function') {
-              value.dispose();
+    try {
+      obj.traverse((child) => {
+        if (child.geometry) {
+          child.geometry.dispose();
+        }
+        if (child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          for (const mat of materials) {
+            // Dispose known texture maps attached to material
+            const textureKeys = [
+              'map', 'lightMap', 'aoMap', 'emissiveMap', 'bumpMap', 'normalMap',
+              'displacementMap', 'roughnessMap', 'metalnessMap', 'alphaMap',
+              'shadeTexture', 'rimTexture', 'outlineWidthMultiplyTexture', 'shadeMultiplierTexture'
+            ];
+            for (const key of textureKeys) {
+              if (mat[key] && typeof mat[key].dispose === 'function') {
+                try { mat[key].dispose(); } catch (_) {}
+              }
             }
+            try { mat.dispose(); } catch (_) {}
           }
         }
-      }
-    });
+      });
+    } catch (e) {
+      console.warn("[AvatarViewer] Error during object disposal:", e);
+    }
   };
 
   const applySkinTone = (vrm, colorHex) => {
@@ -348,9 +357,6 @@ const AvatarViewer = ({
         window.vrmScene.remove(vrmRef.current.scene);
       }
       vrmRef.current = null;
-      
-      // Clear Three.js texture/file caches
-      THREE.Cache.clear();
 
       // Force V8 to collect the disposed textures and geometries immediately
       if (isElectron && window.gc) {
