@@ -36,7 +36,7 @@ class MemoryManager:
                 "dynamic_tool_calling": True,
                 "enable_rotation": True,
                 "auto_reset_rotation": False,
-                "tts_preload": False,
+                "tts_preload": True,
                 "vrm_dpr": 1.5,
                 "vrm_fps": 60
             }

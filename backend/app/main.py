@@ -53,7 +53,7 @@ tts_warmed_up_event = asyncio.Event()
 async def _warmup_tts():
     """Background: preload or lazy-init local Kokoro TTS engine based on config."""
     global tts_online_status
-    tts_preload = memory_manager.profile["settings"].get("tts_preload", getattr(config, 'TTS_PRELOAD', False))
+    tts_preload = memory_manager.profile["settings"].get("tts_preload", getattr(config, 'TTS_PRELOAD', True))
     if not tts_preload:
         tts_online_status = True
         tts_warmed_up_event.set()
@@ -605,7 +605,7 @@ def get_settings():
         "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
         "stt_language": memory_manager.profile["settings"].get("stt_language", "en"),
         "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False),
-        "tts_preload": memory_manager.profile["settings"].get("tts_preload", False),
+        "tts_preload": memory_manager.profile["settings"].get("tts_preload", True),
         "vrm_dpr": memory_manager.profile["settings"].get("vrm_dpr", 1.5),
         "vrm_fps": memory_manager.profile["settings"].get("vrm_fps", 60)
     }
@@ -789,7 +789,7 @@ async def update_settings(req: SettingsUpdateRequest):
             "dynamic_tool_calling": memory_manager.profile["settings"].get("dynamic_tool_calling", True),
             "enable_rotation": memory_manager.profile["settings"].get("enable_rotation", True),
             "auto_reset_rotation": memory_manager.profile["settings"].get("auto_reset_rotation", False),
-            "tts_preload": memory_manager.profile["settings"].get("tts_preload", False)
+            "tts_preload": memory_manager.profile["settings"].get("tts_preload", True)
         }
     }
 
