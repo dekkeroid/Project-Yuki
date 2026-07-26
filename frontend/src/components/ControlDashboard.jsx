@@ -173,9 +173,6 @@ const ControlDashboard = ({
       if (res.ok) {
         const data = await res.json();
         setSettings(data.settings);
-        if (key === 'llm_model') {
-          setActiveModel(data.settings.llm_model);
-        }
       }
     } catch (e) {
       console.error('Failed to update setting:', e);

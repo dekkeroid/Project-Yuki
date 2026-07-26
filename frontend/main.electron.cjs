@@ -43,6 +43,9 @@ app.commandLine.appendSwitch('max-decoded-image-size-mb', '128');
 app.commandLine.appendSwitch('num-raster-threads', '2');
 app.commandLine.appendSwitch('default-tile-width', '256');
 app.commandLine.appendSwitch('default-tile-height', '256');
+
+// 5. Prevent Chromium from allocating massive spare WebGL renderer processes
+app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess');
 // ------------------------------------------------------------------------
 
 // ---------- Single Instance Lock ----------

@@ -8,10 +8,10 @@ import time
 LAST_OPTIMIZATION_TIME = 0
 OPTIMIZATION_COOLDOWN = 10.0
 
-def optimize_all_processes():
+def optimize_all_processes(force=False):
     global LAST_OPTIMIZATION_TIME
     now = time.time()
-    if now - LAST_OPTIMIZATION_TIME < OPTIMIZATION_COOLDOWN:
+    if not force and now - LAST_OPTIMIZATION_TIME < OPTIMIZATION_COOLDOWN:
         return
     LAST_OPTIMIZATION_TIME = now
 

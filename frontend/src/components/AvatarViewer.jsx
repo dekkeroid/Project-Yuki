@@ -439,10 +439,10 @@ const AvatarViewer = ({
 
                 textureKeys.forEach((key) => {
                   if (mat[key] && mat[key].isTexture) {
-                    mat[key].generateMipmaps = true;               // Calculate downscaled matrices
-                    mat[key].minFilter = THREE.LinearMipmapLinearFilter; // Trilinear filtering smoothstep
+                    mat[key].generateMipmaps = false;               // Disable mipmaps to save VRAM and System RAM (prevents 33% expansion)
+                    mat[key].minFilter = THREE.LinearFilter;        // Use basic LinearFilter instead of Mipmap filters
                     mat[key].magFilter = THREE.LinearFilter;
-                    mat[key].needsUpdate = true;                     // Push data block clear to GPU
+                    mat[key].needsUpdate = true;
                   }
                 });
               });
@@ -520,6 +520,22 @@ const AvatarViewer = ({
               console.log("[AvatarViewer] Post-load garbage collection executed.");
             } catch (_) {}
           }, 3000);
+        }
+
+        // Trigger backend system-level memory optimization to reclaim Normal RAM (System RAM)
+        if (isElectron) {
+          const optimizeRAM = async () => {
+            try {
+              await fetch(`${API_BASE}/api/system/optimize_memory`, { method: 'POST' });
+              console.log("[AvatarViewer] Triggered backend memory optimization to free Normal RAM.");
+            } catch (err) {
+              console.error("[AvatarViewer] Memory optimization error:", err);
+            }
+          };
+          
+          // Double-tap the RAM optimization to ensure late shader compilations are also cleared from System RAM
+          setTimeout(optimizeRAM, 2000);
+          setTimeout(optimizeRAM, 6000);
         }
       },
       (progress) => {

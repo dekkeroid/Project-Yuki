@@ -31,7 +31,6 @@ VOICE_DIR = Path(__file__).parent.resolve()
 MODEL_PATH = VOICE_DIR / "kokoro-v1.0.fp16.onnx"
 VOICES_PATH = VOICE_DIR / "voices-v1.0.bin"
 _kokoro_instance = None
-_kokoro_lock = threading.Lock()
 
 MODEL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.fp16.onnx"
 VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
@@ -62,29 +61,20 @@ def _ensure_model_files():
 
 # Lazy-loaded Kokoro instance
 _kokoro_instance = None
-_kokoro_lock = None
+_kokoro_lock = threading.Lock()
 
 def reset_kokoro():
     """Clear the cached Kokoro instance so the next call re-initializes with current config."""
-    global _kokoro_instance, _kokoro_lock
-    _kokoro_instance = None
-    _kokoro_lock = None
+    global _kokoro_instance
+    with _kokoro_lock:
+        _kokoro_instance = None
     print("[TTS] Kokoro instance cleared. Will re-initialize on next speech request.")
 
 async def get_kokoro_async() -> "Kokoro":
-    global _kokoro_instance, _kokoro_lock
     if _kokoro_instance is not None:
         return _kokoro_instance
-        
     import asyncio
-    if _kokoro_lock is None:
-        _kokoro_lock = asyncio.Lock()
-        
-    async with _kokoro_lock:
-        if _kokoro_instance is not None:
-            return _kokoro_instance
-        # Run the synchronous load on a background thread so it doesn't block the event loop
-        return await asyncio.to_thread(get_kokoro)
+    return await asyncio.to_thread(get_kokoro)
 
 
 def _build_session(providers: list):

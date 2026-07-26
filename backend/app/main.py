@@ -1041,7 +1041,7 @@ def optimize_memory_endpoint():
         
     try:
         from app.memory.optimizer import optimize_all_processes
-        optimize_all_processes()
+        optimize_all_processes(force=True)
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}

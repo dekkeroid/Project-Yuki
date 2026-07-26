@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'rea
 import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
+import { useBackendSocket } from './hooks/useBackendSocket';
+import { useSpeechRecognition } from './hooks/useSpeechRecognition';
+import { useAudioPlayback } from './hooks/useAudioPlayback';
 import { useSystemMonitor } from './hooks/useSystemMonitor';
 import { SLASH_COMMANDS } from './constants';
 
@@ -21,111 +24,8 @@ import {
   BATTERY_PLUG_RESPONSES
 } from './constants';
 
-const detectExpression = (text) => {
-  if (!text) return 'neutral';
-  const lower = text.toLowerCase();
-
-  if (lower.includes('wink')) {
-    return 'wink';
-  }
-  if (lower.includes('relaxed') || lower.includes('smug') || lower.includes('flirt')) {
-    return 'relaxed';
-  }
-  if (
-    lower.includes('smile') || lower.includes('giggle') || lower.includes('laugh') ||
-    lower.includes('happy') || lower.includes('joy') || lower.includes('😊') ||
-    lower.includes('😄') || lower.includes('😁') || lower.includes('😆') ||
-    lower.includes('😃') || lower.includes('😂') || lower.includes('🤣')
-  ) {
-    return 'happy';
-  }
-  if (
-    lower.includes('cry') || lower.includes('sad') || lower.includes('sigh') ||
-    lower.includes('sorrow') || lower.includes('😢') || lower.includes('😭') ||
-    lower.includes('😞') || lower.includes('😟') || lower.includes('😿')
-  ) {
-    return 'sad';
-  }
-  if (
-    lower.includes('pout') || lower.includes('angry') || lower.includes('anger') ||
-    lower.includes('scold') || lower.includes('😠') || lower.includes('😡') ||
-    lower.includes('🤬') || lower.includes('👿')
-  ) {
-    return 'angry';
-  }
-  if (
-    lower.includes('gasp') || lower.includes('surprise') || lower.includes('shock') ||
-    lower.includes('😮') || lower.includes('😲') || lower.includes('😳') ||
-    lower.includes('😱') || lower.includes('🙀')
-  ) {
-    return 'surprised';
-  }
-  return 'neutral';
-};
-
-const cleanTextForTTS = (text) => {
-  if (!text) return '';
-
-  // 1. Double asterisks and double underscores -> replace with inner text
-  let clean = text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/__(.*?)__/g, '$1');
-
-  // 2. Single asterisks and single underscores -> filter out actions, keep emphasis
-  const actionStems = [
-    'wink', 'smile', 'giggle', 'laugh', 'sigh', 'pout', 'wave', 'nod',
-    'shrug', 'chuckle', 'blush', 'cry', 'gasp', 'yawn', 'look', 'reset',
-    'facepalm', 'point', 'cough', 'scream', 'whisper'
-  ];
-
-  const replaceSingle = (match, p1, p2) => {
-    const inner = (p1 || p2 || '').trim();
-    if (!inner) return '';
-    const innerLower = inner.toLowerCase();
-    if (actionStems.some(stem => innerLower.includes(stem))) {
-      return ''; // strip the gesture action description entirely
-    }
-    return inner; // keep emphasis text
-  };
-
-  clean = clean.replace(/\*(.*?)\*/g, (m, p1) => replaceSingle(m, p1, ''));
-  clean = clean.replace(/_(.*?)_/g, (m, p1) => replaceSingle(m, '', p1));
-
-  // 3. Remove backticks but keep their inner text
-  clean = clean.replace(/`/g, '');
-
-  // 4. Remove emojis
-  clean = clean.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2702}-\u{27B0}\u{24C2}-\u{1F251}\u{2600}-\u{27BF}]/gu, '');
-
-  // 5. Replace multiple spaces with a single space
-  return clean.replace(/\s+/g, ' ').trim();
-};
-
-const getSpeechFriendlyText = (text) => {
-  if (!text) return '';
-  const trimmed = text.trim();
-  const lower = trimmed.toLowerCase();
-
-  if (lower.startsWith('error:') || lower.startsWith('failed:')) {
-    if (lower.includes('cannot connect to host') || lower.includes('connect call failed')) {
-      return 'Error: Unable to connect to the local server.';
-    }
-    if (lower.includes('timeout')) {
-      return 'Error: A timeout occurred while contacting the server.';
-    }
-    if (trimmed.includes(':')) {
-      return trimmed.split(':', 1)[0].trim() + '.';
-    }
-    return trimmed;
-  }
-
-  let clean = trimmed.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, 'localhost');
-  clean = clean.replace(/\s+/g, ' ').trim();
-  return clean;
-};
-
 const App = () => {
   // WebSockets & Backend State
-  const [socket, setSocket] = useState(null);
-  const [backendStatus, setBackendStatus] = useState('offline');
   const internetStatusRef = useRef(true);
   const internetFailCountRef = useRef(0);
   const internetCooldownRef = useRef(0);
@@ -382,169 +282,13 @@ const App = () => {
     isThinkingRef.current = val;
     setIsThinkingState(val);
   };
-  const [ttsStreamActive, setTtsStreamActiveState] = useState(false);
-  const ttsStreamActiveRef = useRef(false);
-  const setTtsStreamActive = (val) => {
-    ttsStreamActiveRef.current = val;
-    setTtsStreamActiveState(val);
-  };
-  const [isTranscribing, setIsTranscribingState] = useState(false);
-  const isTranscribingRef = useRef(false);
-  const setIsTranscribing = (val) => {
-    isTranscribingRef.current = val;
-    setIsTranscribingState(val);
-  };
-  const [isListening, setIsListening] = useState(false);
-  const [isTalkMode, setIsTalkMode] = useState(false);
-  const [isVoiceCommandMode, setIsVoiceCommandMode] = useState(false);
-  const isVoiceCommandModeRef = useRef(false);
-  const [isSessionActive, setIsSessionActiveState] = useState(false);
-  const isSessionActiveRef = useRef(false);
-  const setIsSessionActive = (val) => {
-    isSessionActiveRef.current = val;
-    setIsSessionActiveState(val);
-  };
-
-  useEffect(() => {
-    isVoiceCommandModeRef.current = isVoiceCommandMode;
-  }, [isVoiceCommandMode]);
-
-  const [useLocalWhisper, setUseLocalWhisperState] = useState(true);
-  const useLocalWhisperRef = useRef(true);
-  const setUseLocalWhisper = (val) => {
-    useLocalWhisperRef.current = val;
-    setUseLocalWhisperState(val);
-  };
-  const [whisperModel, setWhisperModelState] = useState('base');
-  const whisperModelRef = useRef('base');
-  const setWhisperModel = (val) => {
-    whisperModelRef.current = val;
-    setWhisperModelState(val);
-  };
-  const [vadThreshold, setVadThreshold] = useState(() => {
-    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.01');
-  });
-  const vadThresholdRef = useRef(vadThreshold);
-  useEffect(() => {
-    vadThresholdRef.current = vadThreshold;
-  }, [vadThreshold]);
-
-  useEffect(() => {
-    if (profile && profile.settings) {
-      if (profile.settings.use_local_whisper !== undefined) {
-        setUseLocalWhisper(profile.settings.use_local_whisper);
-      }
-      if (profile.settings.whisper_model) {
-        setWhisperModel(profile.settings.whisper_model);
-      }
-    }
-  }, [profile]);
-  const [currentSpeechText, setCurrentSpeechText] = useState('');
-  const [muteVoice, setMuteVoice] = useState(false);
   const [cameraTrackingState, setCameraTrackingState] = useState(() => {
     try { return localStorage.getItem('yuki-camera-tracking') !== 'false'; } catch { return true; }
   });
-  const [voiceVolume, setVoiceVolume] = useState(() => {
-    return parseFloat(localStorage.getItem('yuki-voice-volume') || '0.5');
-  });
-  const voiceVolumeRef = useRef(voiceVolume);
-  useEffect(() => {
-    voiceVolumeRef.current = voiceVolume;
-    if (audioRef.current) {
-      audioRef.current.volume = voiceVolume;
-    }
-  }, [voiceVolume]);
   const [avatarExpression, setAvatarExpression] = useState('neutral');
   const [crawlerPaused, setCrawlerPaused] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const [taggerPaused, setTaggerPaused] = useState(false);
-
-  // Microphone device selection
-  const [micDevices, setMicDevices] = useState([]);
-  const [selectedMicDeviceId, setSelectedMicDeviceId] = useState(() => {
-    return localStorage.getItem('yuki-mic-device-id') || '';
-  });
-  const selectedMicDeviceIdRef = useRef(localStorage.getItem('yuki-mic-device-id') || '');
-
-  const [preferHeadsetMic, setPreferHeadsetMic] = useState(() => {
-    return localStorage.getItem('yuki-prefer-headset') === 'true';
-  });
-
-  const [hotkeyListening, setHotkeyListening] = useState(() => {
-    const saved = localStorage.getItem('yuki-hotkey-listening');
-    return saved !== 'false';
-  });
-  const hotkeyListeningRef = useRef(hotkeyListening);
-  useEffect(() => {
-    hotkeyListeningRef.current = hotkeyListening;
-  }, [hotkeyListening]);
-
-  // Keywords used to identify headset/headphone mics
-  const HEADSET_KEYWORDS = ['headset', 'headphone', 'earphone', 'earpiece', 'bluetooth', 'wireless', 'hands-free', 'handsfree', 'airpod', 'buds'];
-
-  const applyHeadsetPreference = (devices, prefer) => {
-    if (!prefer) return;
-    const isHeadset = (d) => HEADSET_KEYWORDS.some(kw => (d.label || '').toLowerCase().includes(kw));
-    const isCommunications = (d) => (d.label || '').toLowerCase().startsWith('communications');
-
-    // First pass: headset device that is NOT a "Communications" alias
-    let headset = devices.find(d => isHeadset(d) && !isCommunications(d));
-    // Second pass: accept a communications headset if no plain one found
-    if (!headset) headset = devices.find(d => isHeadset(d));
-
-    const targetId = headset ? headset.deviceId : '';
-    selectedMicDeviceIdRef.current = targetId;
-    setSelectedMicDeviceId(targetId);
-    if (targetId) {
-      localStorage.setItem('yuki-mic-device-id', targetId);
-    } else {
-      localStorage.removeItem('yuki-mic-device-id');
-    }
-  };
-
-  const refreshMicDevices = async () => {
-    try {
-      // Need at least a temporary permission grant to get labelled devices
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioInputs = devices.filter(d => d.kind === 'audioinput');
-      setMicDevices(audioInputs);
-      // Apply headset preference first if enabled
-      if (localStorage.getItem('yuki-prefer-headset') === 'true') {
-        applyHeadsetPreference(audioInputs, true);
-      } else if (selectedMicDeviceIdRef.current && !audioInputs.find(d => d.deviceId === selectedMicDeviceIdRef.current)) {
-        // If saved device no longer exists, fall back to default
-        selectedMicDeviceIdRef.current = '';
-        setSelectedMicDeviceId('');
-        localStorage.removeItem('yuki-mic-device-id');
-      }
-    } catch (e) {
-      console.warn('Could not enumerate mic devices:', e);
-    }
-  };
-
-  useEffect(() => {
-    refreshMicDevices();
-    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
-      navigator.mediaDevices.addEventListener('devicechange', refreshMicDevices);
-      return () => navigator.mediaDevices.removeEventListener('devicechange', refreshMicDevices);
-    }
-  }, []);
-
-  // OS telemetry and resident companion states
-  const {
-    cpuLoad,
-    setCpuLoad,
-    systemIdleTime,
-    setSystemIdleTime,
-    crawlerStatus,
-    fetchHealthDetails,
-    fetchCrawlerStatus
-  } = useSystemMonitor({
-    API_BASE,
-    setModelName,
-    isSettingsOpen,
-    activeTab
-  });
 
   const [powerConnected, setPowerConnected] = useState(true);
   const yukiSelfHiddenRef = useRef(false);
@@ -651,6 +395,163 @@ const App = () => {
   useEffect(() => {
     window.yukiConfirmModalVisible = confirmModal.visible;
   }, [confirmModal.visible]);
+
+  // OS telemetry and resident companion states
+  const {
+    cpuLoad,
+    setCpuLoad,
+    systemIdleTime,
+    setSystemIdleTime,
+    crawlerStatus,
+    fetchHealthDetails,
+    fetchCrawlerStatus
+  } = useSystemMonitor({
+    API_BASE,
+    setModelName,
+    isSettingsOpen,
+    activeTab
+  });
+
+  const stopAllPlaybackRef = useRef(null);
+  const stopSpeechRecognitionRef = useRef(null);
+  const startSessionTimeoutRef = useRef(null);
+  const updateListeningStateRef = useRef(null);
+  const getIsVoiceCommandModeRef = useRef(() => false);
+
+  const {
+    socket,
+    socketRef,
+    backendStatus,
+    setBackendStatus,
+    isSessionActive,
+    isSessionActiveRef,
+    setIsSessionActive,
+    connectWebSocket
+  } = useBackendSocket({
+    onOpen: () => {
+      fetchProfileDetails();
+      fetchHealthDetails();
+      fetchVrmModels();
+      fetchLlmModels();
+    },
+    onMessage: (event) => {
+      if (typeof handleWebSocketMessage === 'function') {
+        handleWebSocketMessage(event);
+      }
+    }
+  });
+
+  const {
+    muteVoice,
+    setMuteVoice,
+    ttsStreamActive,
+    setTtsStreamActive,
+    currentSpeechText,
+    setCurrentSpeechText,
+    audioQueueRef,
+    isPlayingRef,
+    hasReceivedAudioRef,
+    isNativeSpeakingRef,
+    voiceVolume,
+    setVoiceVolume,
+    voiceVolumeRef,
+    initAudioAnalyser,
+    stopAllPlayback,
+    playVoiceResponse,
+    queueAudioChunk,
+    speakTextNatively,
+    speakSystemMessage,
+    ttsStreamActiveRef
+  } = useAudioPlayback({
+    profile,
+    setAudioLevel,
+    setAvatarExpression,
+    updateListeningStateGlobal: () => updateListeningStateRef.current?.(),
+    isVoiceCommandModeRef: { get current() { return getIsVoiceCommandModeRef.current(); } },
+    startSessionTimeout: () => startSessionTimeoutRef.current?.(),
+    socketRef,
+    stopSpeechRecognition: (force) => stopSpeechRecognitionRef.current?.(force),
+    setIsThinking
+  });
+  stopAllPlaybackRef.current = stopAllPlayback;
+
+  const {
+    isTranscribing,
+    setIsTranscribing,
+    isListening,
+    setIsListening,
+    isTalkMode,
+    setIsTalkMode,
+    isVoiceCommandMode,
+    setIsVoiceCommandMode,
+    micDevices,
+    setMicDevices,
+    selectedMicDeviceId,
+    setSelectedMicDeviceId,
+    preferHeadsetMic,
+    setPreferHeadsetMic,
+    vadThreshold,
+    setVadThreshold,
+    useLocalWhisper,
+    setUseLocalWhisper,
+    whisperModel,
+    setWhisperModel,
+    hotkeyListening,
+    setHotkeyListening,
+    isTranscribingRef,
+    isTalkModeRef,
+    isVoiceCommandModeRef,
+    selectedMicDeviceIdRef,
+    vadThresholdRef,
+    useLocalWhisperRef,
+    whisperModelRef,
+    hotkeyListeningRef,
+    updateListeningState,
+    toggleTalkMode,
+    toggleListening,
+    toggleVoiceCommandMode,
+    refreshMicDevices,
+    getWhisperModelSizeText,
+    stopSpeechRecognition,
+    startSessionTimeout,
+    clearContinuedConversationSession,
+    applyHeadsetPreference
+  } = useSpeechRecognition({
+    API_BASE,
+    isThinkingRef,
+    ttsStreamActiveRef,
+    hasReceivedAudioRef,
+    isNativeSpeakingRef,
+    isPlayingRef,
+    sessionTimeoutRef: useRef(null),
+    setIsSessionActive,
+    muteVoice,
+    setMessages,
+    setConfirmModal,
+    desktopInputRef,
+    stopAllPlayback,
+    updateListeningStateGlobal: () => updateListeningStateRef.current?.(),
+    logToTerminal: (msg) => {
+      console.log(msg);
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ type: 'log', message: msg }));
+      }
+    },
+    sendMessageText: (text) => handleSendMessage(null, text, false),
+    isSessionActiveRef,
+    toggleMute: () => setMuteVoice(prev => !prev)
+  });
+
+  getIsVoiceCommandModeRef.current = () => isVoiceCommandModeRef.current;
+  stopSpeechRecognitionRef.current = stopSpeechRecognition;
+  startSessionTimeoutRef.current = startSessionTimeout;
+  updateListeningStateRef.current = updateListeningState;
+
+  const desktopChatEndRef = useRef(null);
+  useEffect(() => {
+    isSessionActiveRef.current = isSessionActive;
+  }, [isSessionActive]);
+
 
   // Desktop positioning and alignment
   useEffect(() => {
@@ -1091,22 +992,7 @@ const App = () => {
   const handleToggleMute = (newMuteValue) => {
     setMuteVoice(newMuteValue);
     if (newMuteValue) {
-      // Clear queue and stop playback
-      audioQueueRef.current = [];
-      isPlayingRef.current = false;
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-      }
-      window.speechSynthesis.cancel();
-      if (nativeSpeechIntervalRef.current) {
-        clearInterval(nativeSpeechIntervalRef.current);
-        nativeSpeechIntervalRef.current = null;
-      }
-      setCurrentSpeechText('');
-      console.log("Clear queue and stop playback");
-      setAudioLevel(0);
-      setAvatarExpression('neutral');
+      stopAllPlayback();
     }
   };
 
@@ -1216,59 +1102,8 @@ const App = () => {
     }
   };
 
-  // Audio Context references for Lipsync
-  const audioRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const analyserRef = useRef(null);
-  const animationFrameRef = useRef(null);
-  const audioQueueRef = useRef([]);
-  const isPlayingRef = useRef(false);
-  const nativeSpeechIntervalRef = useRef(null);
-  const currentResponseTextRef = useRef('');
-  const hasReceivedAudioRef = useRef(false);
 
-  // Speech Recognition Web API (STT) & Playback Timeouts
-  const recognitionRef = useRef(null);
-  const socketRef = useRef(null);
-  const logToTerminal = (message) => {
-    console.log(message);
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({
-        type: "log",
-        message: message
-      }));
-    }
-  };
-  const reconnectTimeoutRef = useRef(null);
-  const reconnectAttemptRef = useRef(0);
-  const healthCheckIntervalRef = useRef(null);
 
-  const isNativeSpeakingRef = useRef(false);
-  const bubbleTimeoutRef = useRef(null);
-  const playbackTimeoutRef = useRef(null);
-  const micActivationTimeoutRef = useRef(null);
-  const sessionTimeoutRef = useRef(null);
-  const isSpeechRecActiveRef = useRef(false);
-  const desktopChatEndRef = useRef(null);
-
-  // Local Whisper STT Recording and VAD refs
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const isRecordingRef = useRef(false);
-  const micAudioContextRef = useRef(null);
-  const micAnalyserRef = useRef(null);
-  const micStreamRef = useRef(null);
-  const vadActiveRef = useRef(false);
-  const vadActivationTimeRef = useRef(0);
-  const vadSpeakingRef = useRef(false);
-  const vadSilenceStartRef = useRef(null);
-  const maxRecordingTimeoutRef = useRef(null);
-
-  // Talk Mode — persists between render cycles via ref so callbacks don't get stale closures
-  const isTalkModeRef = useRef(false);
-  useEffect(() => {
-    isTalkModeRef.current = isTalkMode;
-  }, [isTalkMode]);
 
   useEffect(() => {
     if (isPanelOpen && desktopChatEndRef.current) {
@@ -1276,1396 +1111,10 @@ const App = () => {
     }
   }, [isPanelOpen, messages]);
 
-  // Playback & STT Coordinator Helper Functions
-  const shouldListen = () => {
-    const modeActive = isTalkModeRef.current || isVoiceCommandModeRef.current;
-    const yukiBusy = isPlayingRef.current || isThinkingRef.current || ttsStreamActiveRef.current || isNativeSpeakingRef.current || isTranscribingRef.current || hasReceivedAudioRef.current;
-    return modeActive && !yukiBusy;
-  };
-
-  const logSTTStatus = (message) => {
-    console.log(`[STT Coordinator] ${message}`);
-  };
-
-  const clearContinuedConversationSession = () => {
-    if (sessionTimeoutRef.current) {
-      clearTimeout(sessionTimeoutRef.current);
-      sessionTimeoutRef.current = null;
-    }
-    setIsSessionActive(false);
-  };
-
-  const startSessionTimeout = () => {
-    if (sessionTimeoutRef.current) clearTimeout(sessionTimeoutRef.current);
-    setIsSessionActive(true);
-    sessionTimeoutRef.current = setTimeout(() => {
-      console.log("[STT] Continued Conversation session timed out after 8s of silence.");
-      setIsSessionActive(false);
-      updateListeningState();
-    }, 8000);
-  };
-
-  const startSpeechRecognition = async () => {
-    if (isSpeechRecActiveRef.current) return; // Already listening
-    logToTerminal("[STT] Microphone listening mode turned ON");
-
-    if (useLocalWhisperRef.current) {
-      try {
-        isSpeechRecActiveRef.current = true;
-        setIsListening(true);
-        isRecordingRef.current = true;
-
-        const deviceId = selectedMicDeviceIdRef.current;
-        const constraints = {
-          audio: {
-            deviceId: deviceId ? { exact: deviceId } : undefined,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }
-        };
-
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-
-        // Race condition: check if listening was stopped while requesting microphone access
-        if (!isSpeechRecActiveRef.current) {
-          console.log("[STT] startSpeechRecognition aborted during getUserMedia. Cleaning up stream.");
-          stream.getTracks().forEach(track => track.stop());
-          return;
-        }
-
-        micStreamRef.current = stream;
-
-        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
-
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data && event.data.size > 0) {
-            audioChunksRef.current.push(event.data);
-          }
-        };
-
-        mediaRecorder.onstop = async () => {
-          console.log("[STT] MediaRecorder stopped.");
-
-          // Stop all stream tracks to release mic resource
-          if (micStreamRef.current) {
-            micStreamRef.current.getTracks().forEach(track => track.stop());
-            micStreamRef.current = null;
-          }
-
-          // Clean up analyser
-          if (micAudioContextRef.current) {
-            try { micAudioContextRef.current.close(); } catch (e) { }
-            micAudioContextRef.current = null;
-          }
-          micAnalyserRef.current = null;
-
-          // If the recording was aborted, ignore it
-          if (!isRecordingRef.current) {
-            console.log("[STT] Recording aborted. Ignoring data.");
-            setIsListening(false);
-            isSpeechRecActiveRef.current = false;
-            return;
-          }
-
-          isRecordingRef.current = false;
-          setIsListening(false);
-          isSpeechRecActiveRef.current = false;
-
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          if (audioChunksRef.current.length === 0 || audioBlob.size < 3000) {
-            console.log(`[STT] Recording too short or empty (${audioBlob.size} bytes). Ignoring.`);
-            // Restart listening if we still should
-            updateListeningState();
-            return;
-          }
-
-          // Set transcribing state FIRST to prevent coordinator race
-          setIsTranscribing(true);
-
-          // Call transcription API
-          stopAllPlayback();
-
-          const sttStartTime = Date.now();
-          try {
-            logSTTStatus(`Transcribing (${audioBlob.size} bytes)...`);
-            const formData = new FormData();
-            formData.append("file", audioBlob, "speech.webm");
-            formData.append("model", whisperModelRef.current);
-
-            const res = await fetch(`${API_BASE}/api/speech/transcribe`, {
-              method: "POST",
-              body: formData
-            });
-
-            if (!res.ok) throw new Error(`Server returned code ${res.status}`);
-            const data = await res.json();
-            const sttDurationMs = Date.now() - sttStartTime;
-            logSTTStatus(`Transcribed: "${data.text}" in ${sttDurationMs}ms`);
-
-            setIsTranscribing(false);
-            if (data.text && data.text.trim()) {
-              processSTTTranscript(data.text, sttDurationMs);
-            } else {
-              updateListeningState();
-            }
-          } catch (e) {
-            logSTTStatus(`Whisper STT transcription failed: ${e.message}`);
-            setIsTranscribing(false);
-
-            setMessages((prev) => [...prev, {
-              role: 'system',
-              content: "System Notice: Local Whisper Speech-to-Text transcription failed. Please verify your backend server is online."
-            }]);
-            updateListeningState();
-          }
-        };
-
-        mediaRecorder.start(250);
-        logSTTStatus("Listening...");
-
-        // Setup Web Audio VAD
-        const micAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const micAnalyser = micAudioCtx.createAnalyser();
-        micAnalyser.fftSize = 64;
-        const micSource = micAudioCtx.createMediaStreamSource(stream);
-        micSource.connect(micAnalyser);
-
-        micAudioContextRef.current = micAudioCtx;
-        micAnalyserRef.current = micAnalyser;
-
-        vadSpeakingRef.current = false;
-        vadSilenceStartRef.current = null;
-        vadActivationTimeRef.current = Date.now();
-        vadActiveRef.current = true;
-
-        const bufferLength = micAnalyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-
-        const checkMicVolume = () => {
-          if (!vadActiveRef.current || !isRecordingRef.current || !micAnalyserRef.current) return;
-
-          micAnalyserRef.current.getByteFrequencyData(dataArray);
-          let sum = 0;
-          for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i];
-          }
-          const average = sum / bufferLength;
-          const normalized = average / 255.0;
-
-          const micThreshold = vadThresholdRef.current;
-          const now = Date.now();
-
-          if (normalized > micThreshold) {
-            // Ignore volume spikes in the first 400ms to filter out hardware startup pops
-            if (now - vadActivationTimeRef.current > 400) {
-              if (!vadSpeakingRef.current) {
-                logSTTStatus("User speaking...");
-                vadSpeakingRef.current = true;
-                if (sessionTimeoutRef.current) {
-                  console.log("[STT] User started speaking. Clearing 8s session timeout.");
-                  clearTimeout(sessionTimeoutRef.current);
-                  sessionTimeoutRef.current = null;
-                }
-              }
-              vadSilenceStartRef.current = null; // Reset silence timer
-            }
-          } else {
-            if (vadSpeakingRef.current) {
-              if (vadSilenceStartRef.current === null) {
-                vadSilenceStartRef.current = now;
-              } else if (now - vadSilenceStartRef.current > 1500) { // 1.5s of silence
-                stopSpeechRecognition();
-                return;
-              }
-            }
-          }
-
-          setTimeout(checkMicVolume, 50);
-        };
-
-        checkMicVolume();
-
-        // Setup Max safety timeout to auto-stop recording after 15 seconds
-        if (maxRecordingTimeoutRef.current) {
-          clearTimeout(maxRecordingTimeoutRef.current);
-        }
-        maxRecordingTimeoutRef.current = setTimeout(() => {
-          if (isRecordingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-            stopSpeechRecognition();
-          }
-        }, 15000);
-
-      } catch (e) {
-        console.warn("[STT] Failed to start local Whisper recording:", e);
-        isSpeechRecActiveRef.current = false;
-        setIsListening(false);
-        isRecordingRef.current = false;
-      }
-    } else {
-      // Legacy Web Speech API fallback
-      if (!recognitionRef.current) return;
-      try {
-        isSpeechRecActiveRef.current = true;
-        setIsListening(true);
-        await primeSelectedMicDevice();
-        recognitionRef.current.start();
-        logSTTStatus("Listening (native)...");
-      } catch (e) {
-        console.warn("[STT] Failed to start native SpeechRecognition:", e);
-        isSpeechRecActiveRef.current = false;
-        setIsListening(false);
-      }
-    }
-  };
-
-  const stopSpeechRecognition = (forceAbort = false) => {
-    if (!isSpeechRecActiveRef.current) return; // Already stopped
-    logToTerminal(`[STT] Microphone listening mode turned OFF${forceAbort ? ' (forced abort)' : ''}`);
-
-    isSpeechRecActiveRef.current = false;
-    setIsListening(false);
-    if (forceAbort) {
-      isRecordingRef.current = false;
-    }
-
-    if (useLocalWhisperRef.current) {
-      if (maxRecordingTimeoutRef.current) {
-        clearTimeout(maxRecordingTimeoutRef.current);
-        maxRecordingTimeoutRef.current = null;
-      }
-
-      // Deactivate VAD immediately
-      vadActiveRef.current = false;
-
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-        try {
-          mediaRecorderRef.current.stop();
-        } catch (e) {
-          console.warn("[STT] Error stopping MediaRecorder:", e);
-        }
-      } else {
-        // If not actively recording, clean up the stream tracks immediately
-        if (micStreamRef.current) {
-          try {
-            micStreamRef.current.getTracks().forEach(track => track.stop());
-            micStreamRef.current = null;
-          } catch (e) { }
-        }
-      }
-    } else {
-      // Native Speech Recognition
-      if (!recognitionRef.current) return;
-      try {
-        if (forceAbort) {
-          recognitionRef.current.abort(); // Instant shutdown
-        } else {
-          recognitionRef.current.stop();
-        }
-      } catch (e) {
-        console.warn("[STT] Failed to stop native SpeechRecognition:", e);
-      }
-    }
-  };
-
-  const updateListeningState = () => {
-    const targetListen = shouldListen();
-    console.log(`[STT Coordinator] shouldListen=${targetListen} (isPlaying=${isPlayingRef.current}, isThinking=${isThinkingRef.current}, ttsStreamActive=${ttsStreamActiveRef.current}, isNativeSpeaking=${isNativeSpeakingRef.current}, isTranscribing=${isTranscribingRef.current})`);
-
-    if (targetListen) {
-      startSpeechRecognition();
-    } else {
-      stopSpeechRecognition(true);
-    }
-  };
-
-  // Reactive coordinator hook to keep listening state in sync with busy/thinking indicators
-  useEffect(() => {
-    updateListeningState();
-  }, [isThinking, ttsStreamActive, isTranscribing]);
-
-  const stopAllPlayback = () => {
-    console.log("[Playback] stopAllPlayback triggered.");
-
-    // Abort active recording if any
-    isRecordingRef.current = false;
-    if (maxRecordingTimeoutRef.current) {
-      clearTimeout(maxRecordingTimeoutRef.current);
-      maxRecordingTimeoutRef.current = null;
-    }
-
-    // Clear mic activation timeout if any
-    if (micActivationTimeoutRef.current) {
-      clearTimeout(micActivationTimeoutRef.current);
-      micActivationTimeoutRef.current = null;
-    }
-
-
-
-    // 1. Clear queues and state
-    audioQueueRef.current = [];
-    isPlayingRef.current = false;
-    isNativeSpeakingRef.current = false;
-    hasReceivedAudioRef.current = false;
-
-    // 2. Stop HTML5 audio
-    if (audioRef.current) {
-      try {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-        // Unset event listeners temporarily to prevent onended firing during reset
-        audioRef.current.onended = null;
-        audioRef.current.onerror = null;
-        audioRef.current.onplay = null;
-      } catch (e) {
-        console.warn("Error stopping HTML5 audio:", e);
-      }
-    }
-
-    // 3. Clear any pending timeouts
-    if (playbackTimeoutRef.current) {
-      clearTimeout(playbackTimeoutRef.current);
-      playbackTimeoutRef.current = null;
-    }
-    if (bubbleTimeoutRef.current) {
-      clearTimeout(bubbleTimeoutRef.current);
-      bubbleTimeoutRef.current = null;
-    }
-
-    // 4. Cancel native speech
-    try {
-      window.speechSynthesis.cancel();
-    } catch (e) {
-      console.warn("Error cancelling native speech synthesis:", e);
-    }
-    if (nativeSpeechIntervalRef.current) {
-      clearInterval(nativeSpeechIntervalRef.current);
-      nativeSpeechIntervalRef.current = null;
-    }
-
-    // 5. Reset UI indicators
-    setCurrentSpeechText('');
-    setAudioLevel(0);
-    setAvatarExpression('neutral');
-
-    // 6. Sync listening state
-    updateListeningState();
-  };
-
-  // 1. Initialize Audio Analyser on user click (due to browser security)
-  const initAudioAnalyser = () => {
-    if (audioContextRef.current) return; // Already initialized
-
-    try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      const audioCtx = new AudioContext();
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 64;
-
-      // Create HTML audio element in memory
-      const audio = new Audio();
-      audio.crossOrigin = "anonymous";
-      audio.volume = voiceVolumeRef.current;
-
-      const source = audioCtx.createMediaElementSource(audio);
-      source.connect(analyser);
-      analyser.connect(audioCtx.destination);
-
-      audioRef.current = audio;
-      audioContextRef.current = audioCtx;
-      analyserRef.current = analyser;
-
-      console.log("Web Audio Analyser successfully established.");
-
-      // Setup analyser animation loop
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      const checkVolume = () => {
-        if (analyserRef.current && audioRef.current && !audioRef.current.paused) {
-          analyserRef.current.getByteFrequencyData(dataArray);
-          let sum = 0;
-          for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i];
-          }
-          const average = sum / bufferLength;
-          const normalized = Math.min(average / 90.0, 0.8);
-          setAudioLevel(normalized);
-        } else {
-          setAudioLevel(0);
-        }
-        animationFrameRef.current = requestAnimationFrame(checkVolume);
-      };
-      checkVolume();
-    } catch (e) {
-      console.warn("Failed to initialize Web Audio API:", e);
-    }
-  };
-
-  // 2. Play Audio Response & Display Subtitles
-  const playVoiceResponse = (audioUrl, speechText, forcedExpression = null) => {
-    initAudioAnalyser();
-
-    // Clear any pending bubble clear timer
-    if (bubbleTimeoutRef.current) {
-      clearTimeout(bubbleTimeoutRef.current);
-      bubbleTimeoutRef.current = null;
-    }
-
-    const expr = forcedExpression || detectExpression(speechText);
-    setAvatarExpression(expr);
-
-    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume();
-    }
-
-    isPlayingRef.current = true;
-
-    if (muteVoice || !audioRef.current) {
-      // If muted, just display subtitle bubble then play next chunk after simulated reading delay
-      setCurrentSpeechText(speechText);
-      setIsThinking(false);
-
-      const readingDelay = Math.max(2000, speechText.length * 60);
-      if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
-      playbackTimeoutRef.current = setTimeout(() => {
-        playNextAudio();
-      }, readingDelay);
-      return;
-    }
-
-    try {
-      audioRef.current.volume = voiceVolumeRef.current;
-      audioRef.current.src = audioUrl;
-      audioRef.current.load();
-      audioRef.current.playbackRate = 1.0;
-
-      audioRef.current.onloadedmetadata = () => {
-        if (audioRef.current) {
-          audioRef.current.playbackRate = 1.0;
-        }
-      };
-
-      audioRef.current.onplay = () => {
-        if (audioRef.current) {
-          audioRef.current.playbackRate = 1.0;
-        }
-        setCurrentSpeechText(speechText);
-        setIsThinking(false);
-        // Ensure STT is stopped
-        updateListeningState();
-      };
-
-      audioRef.current.onended = () => {
-        playNextAudio();
-      };
-
-      audioRef.current.onerror = (e) => {
-        console.warn("[Playback] Audio element failed to load voice clip:", e);
-        const readingDelay = Math.max(1500, speechText.length * 60);
-        if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
-        playbackTimeoutRef.current = setTimeout(() => playNextAudio(), readingDelay);
-      };
-
-      audioRef.current.play().catch(err => {
-        console.warn("[Playback] Autoplay blocked. Displaying subtitles and using fallback timer.", err);
-        const readingDelay = Math.max(1500, speechText.length * 60);
-        if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
-        playbackTimeoutRef.current = setTimeout(() => playNextAudio(), readingDelay);
-      });
-    } catch (err) {
-      console.error("[Playback] Audio trigger error:", err);
-      const readingDelay = Math.max(1500, speechText.length * 60);
-      if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
-      playbackTimeoutRef.current = setTimeout(() => playNextAudio(), readingDelay);
-    }
-  };
-
-  const queueAudioChunk = (audioUrl, speechText, index) => {
-    audioQueueRef.current.push({ url: audioUrl, text: speechText, index: index });
-    audioQueueRef.current.sort((a, b) => a.index - b.index);
-
-    if (!isPlayingRef.current) {
-      isPlayingRef.current = true;
-      playNextAudio();
-    }
-  };
-
-  const playNextAudio = () => {
-    if (bubbleTimeoutRef.current) {
-      clearTimeout(bubbleTimeoutRef.current);
-      bubbleTimeoutRef.current = null;
-    }
-
-    if (audioQueueRef.current.length === 0) {
-      // The queue is empty!
-      if (ttsStreamActiveRef.current) {
-        // Yuki is finished with the current chunks, but the backend is still streaming.
-        // Transition back to the thinking/buffering animation instead of stopping.
-        console.log("[Playback] Queue empty but stream still active. Buffering next chunks...");
-        setCurrentSpeechText('');
-        isPlayingRef.current = false; // Set to false so queueAudioChunk knows to start next chunk immediately when it arrives!
-        updateListeningState();
-      } else {
-        // Playback completely finished
-        console.log("[Playback] Playback completed. Returning to idle state.");
-        isPlayingRef.current = false;
-        hasReceivedAudioRef.current = false;
-        setAudioLevel(0);
-
-        // Delay clearing bubble to let the user finish reading the last sentence
-        bubbleTimeoutRef.current = setTimeout(() => {
-          setCurrentSpeechText('');
-        }, 2000);
-
-        // Start 8-second Continued Conversation window if in voice command mode
-        if (isVoiceCommandModeRef.current) {
-          startSessionTimeout();
-        }
-
-        // Delay turning on the mic by 700ms to let physical audio buffer drain fully
-        if (micActivationTimeoutRef.current) clearTimeout(micActivationTimeoutRef.current);
-        micActivationTimeoutRef.current = setTimeout(() => {
-          micActivationTimeoutRef.current = null;
-          updateListeningState();
-        }, 700);
-      }
-      return;
-    }
-
-    isPlayingRef.current = true;
-    const nextChunk = audioQueueRef.current.shift();
-    playVoiceResponse(nextChunk.url, nextChunk.text);
-  };
-
-  const speakTextNatively = (text, forcedExpression = null) => {
-    // 1. Cancel any active native speech
-    window.speechSynthesis.cancel();
-    if (nativeSpeechIntervalRef.current) {
-      clearInterval(nativeSpeechIntervalRef.current);
-      nativeSpeechIntervalRef.current = null;
-    }
-
-    if (bubbleTimeoutRef.current) {
-      clearTimeout(bubbleTimeoutRef.current);
-      bubbleTimeoutRef.current = null;
-    }
-
-    // 2. Filter actions, emojis and technical noise from text
-    const cleanText = cleanTextForTTS(getSpeechFriendlyText(text));
-    if (!cleanText) {
-      setAudioLevel(0);
-      isNativeSpeakingRef.current = false;
-      setIsThinking(false);
-      setTtsStreamActive(false);
-      updateListeningState();
-      return;
-    }
-
-    isNativeSpeakingRef.current = true;
-    updateListeningState();
-
-    // Set avatar expression
-    const expr = forcedExpression || detectExpression(text);
-    setAvatarExpression(expr);
-
-    // 3. Create Utterance
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.volume = voiceVolumeRef.current;
-
-    // Choose a voice if possible
-    const voices = window.speechSynthesis.getVoices();
-    const femaleVoice = voices.find(v =>
-      (v.lang.startsWith('en') && (v.name.includes('Google US English') || v.name.includes('Microsoft Zira') || v.name.includes('Natural') || v.name.includes('Female') || v.name.toLowerCase().includes('sally') || v.name.toLowerCase().includes('susan'))) ||
-      (v.lang.startsWith('ja') && v.name.toLowerCase().includes('haruka'))
-    ) || voices.find(v => v.lang.startsWith('en'));
-
-    if (femaleVoice) {
-      utterance.voice = femaleVoice;
-    }
-
-    const storedRate = parseFloat(profile.settings?.tts_rate || '1.0');
-    utterance.rate = isNaN(storedRate) ? 1.05 : storedRate;
-    utterance.pitch = 1.1; // Slightly higher pitch for Yuki
-
-    // 4. Setup lip-sync animation
-    utterance.onstart = () => {
-      isNativeSpeakingRef.current = true;
-      setCurrentSpeechText(text);
-      setIsThinking(false);
-      setTtsStreamActive(false);
-      updateListeningState();
-
-      if (nativeSpeechIntervalRef.current) clearInterval(nativeSpeechIntervalRef.current);
-
-      // Simulate speech mouth movement by cycling audioLevel
-      nativeSpeechIntervalRef.current = setInterval(() => {
-        setAudioLevel(Math.random() > 0.35 ? 0.2 + Math.random() * 0.4 : 0);
-      }, 120);
-    };
-
-    utterance.onend = () => {
-      isNativeSpeakingRef.current = false;
-      setAudioLevel(0);
-      setIsThinking(false);
-      setTtsStreamActive(false);
-      if (nativeSpeechIntervalRef.current) {
-        clearInterval(nativeSpeechIntervalRef.current);
-        nativeSpeechIntervalRef.current = null;
-      }
-
-      // Delay clearing bubble to let the user finish reading
-      bubbleTimeoutRef.current = setTimeout(() => {
-        setCurrentSpeechText('');
-      }, 2000);
-
-      updateListeningState();
-    };
-
-    utterance.onerror = (e) => {
-      console.warn("[Native TTS] utterance error:", e);
-      isNativeSpeakingRef.current = false;
-      setAudioLevel(0);
-      setIsThinking(false);
-      setTtsStreamActive(false);
-      setCurrentSpeechText('');
-      if (nativeSpeechIntervalRef.current) {
-        clearInterval(nativeSpeechIntervalRef.current);
-        nativeSpeechIntervalRef.current = null;
-      }
-      updateListeningState();
-    };
-
-    window.speechSynthesis.speak(utterance);
-  };
-
-  /**
-   * Route a short system-event message through Kokoro TTS if the WebSocket is
-   * live and Kokoro is available; fall back to native browser speech otherwise.
-   * Use this for ALL system notifications so native TTS never leaks through.
-   */
-  const speakSystemMessage = (text, expression = null) => {
-    if (muteVoice) {
-      if (expression) setAvatarExpression(expression);
-      setIsThinking(false);
-      setTtsStreamActive(false);
-      return;
-    }
-    const ws = socketRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      // Cancel any active native speech so it doesn't overlap
-      window.speechSynthesis.cancel();
-      hasReceivedAudioRef.current = false;
-      setTtsStreamActive(true);
-      if (expression) setAvatarExpression(expression);
-      ws.send(JSON.stringify({ type: 'tts_only', text, expression }));
-    } else {
-      // Offline — fall back to native
-      speakTextNatively(text, expression);
-    }
-  };
-
-
-  // 3. Establish WebSocket connection
-  const connectWebSocket = () => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-
-    if (socketRef.current) {
-      try {
-        socketRef.current.onclose = null;
-        socketRef.current.close();
-      } catch (err) {
-        console.warn("Error closing old socket:", err);
-      }
-      socketRef.current = null;
-    }
-
-    const ws = new WebSocket(`${WS_BASE}/ws`);
-    socketRef.current = ws;
-    setSocket(ws);
-
-    ws.onopen = () => {
-      setBackendStatus('online');
-      reconnectAttemptRef.current = 0;
-      console.log("WebSocket connected to backend.");
-      fetchProfileDetails();
-      fetchHealthDetails();
-      fetchVrmModels();
-      fetchLlmModels();
-    };
-
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-
-      if (msg.type === 'profile_update') {
-        setProfile(msg.profile);
-        if (msg.profile.settings && msg.profile.settings.llm_model) {
-          setModelName(msg.profile.settings.llm_model);
-        }
-        if (msg.profile.settings && msg.profile.settings.crawler_paused !== undefined) {
-          setCrawlerPaused(msg.profile.settings.crawler_paused);
-        }
-        if (msg.profile.settings && msg.profile.settings.tagger_paused !== undefined) {
-          setTaggerPaused(msg.profile.settings.tagger_paused);
-        }
-      } else if (msg.type === 'status') {
-        if (msg.status === 'thinking') {
-          setIsThinking(true);
-          setTtsStreamActive(true); // WebSocket stream starts
-          // Clear speech bubble immediately since a new response generation starts
-          setCurrentSpeechText('');
-          currentResponseTextRef.current = '';
-          hasReceivedAudioRef.current = false;
-          if (msg.message) {
-            setMessages((prev) => [...prev, {
-              role: 'system',
-              content: `⚙️ [Tool Start] ${msg.message}`
-            }]);
-          }
-        } else if (msg.status === 'idle') {
-          // Do not override isThinking immediately if audio is still active
-          if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
-            setIsThinking(false);
-          }
-        }
-      } else if (msg.type === 'text_stream') {
-        // Keep isThinking true so the bubble thinking animation remains active
-        setTtsStreamActive(true);
-        currentResponseTextRef.current += msg.text;
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
-            const last = newMessages[newMessages.length - 1];
-            newMessages[newMessages.length - 1] = {
-              ...last,
-              content: last.content + msg.text,
-              backend: msg.backend_used
-            };
-          } else {
-            newMessages.push({
-              role: 'assistant',
-              content: msg.text,
-              backend: msg.backend_used
-            });
-          }
-          return newMessages;
-        });
-      } else if (msg.type === 'audio_chunk') {
-        setTtsStreamActive(true);
-        hasReceivedAudioRef.current = true;
-        try {
-          console.log(`[TTS] audio_chunk received idx=${msg.index} backend=${msg.tts_backend || 'unknown'} time_ms=${msg.tts_time_ms || 0} text="${(msg.text || '').slice(0, 80)}"`);
-        } catch (e) { /* ignore logging errors */ }
-        queueAudioChunk(msg.audio_url, msg.text, msg.index);
-      } else if (msg.type === 'stream_done') {
-        setIsThinking(false);
-        setTtsStreamActive(false);
-
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
-            newMessages[newMessages.length - 1] = {
-              ...newMessages[newMessages.length - 1],
-              responseTime: msg.response_time
-            };
-          }
-          return newMessages;
-        });
-
-        if (!hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice) {
-          console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0, 80)}"`);
-          speakTextNatively(currentResponseTextRef.current);
-        } else {
-          updateListeningState();
-        }
-      } else if (msg.type === 'tool_result') {
-        try {
-          if (msg.result && typeof msg.result === 'string' && msg.result.includes('window_control')) {
-            const data = JSON.parse(msg.result);
-            if (data.window_control && window.electronAPI) {
-              const act = data.window_control.action;
-              if (act === 'minimize') {
-                window.electronAPI.minimizeWindow();
-              } else if (act === 'maximize') {
-                window.electronAPI.maximizeWindow();
-              } else if (act === 'restore') {
-                window.electronAPI.restoreWindow();
-              } else if (act === 'move') {
-                const { x, y } = data.window_control;
-                if (x !== undefined && y !== undefined) {
-                  window.electronAPI.setWindowPosition(x, y);
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("Failed to check tool result for window_control JSON:", e);
-        }
-
-        setMessages((prev) => [...prev, {
-          role: 'system',
-          content: `⚙️ [Tool Result] ${msg.result}`
-        }]);
-      } else if (msg.type === 'speech') {
-        setTtsStreamActive(true);
-        setIsThinking(false);
-        hasReceivedAudioRef.current = true;
-        setMessages((prev) => [...prev, {
-          role: 'assistant',
-          content: msg.text,
-          backend: msg.backend_used,
-          responseTime: msg.response_time
-        }]);
-        playVoiceResponse(msg.audio_url, msg.text);
-      } else if (msg.type === 'confirm_request') {
-        let displayMessage = `Yuki wants to execute the following action:\n\n${msg.name}`;
-        if (msg.name.startsWith("Run terminal command:")) {
-          displayMessage = `Yuki wants to run the following terminal command:\n\n${msg.name.replace("Run terminal command:", "").trim()}`;
-        } else if (msg.name.startsWith("Run Python script:")) {
-          displayMessage = `Yuki wants to execute the following custom Python script:\n\n${msg.name.replace("Run Python script:", "").trim()}`;
-        } else if (msg.name.startsWith("System Power Action:")) {
-          displayMessage = `Yuki wants to execute the following system power command:\n\n${msg.name.replace("System Power Action:", "").trim()}`;
-        } else if (msg.name.startsWith("Delete file:")) {
-          displayMessage = `Yuki wants to delete the following file:\n\n${msg.name.replace("Delete file:", "").trim()}`;
-        }
-
-        setConfirmModal({
-          visible: true,
-          title: 'Security Confirmation',
-          message: displayMessage,
-          onConfirm: () => {
-            setConfirmModal(prev => ({ ...prev, visible: false }));
-
-            // Refocus, disable clickthrough suspension temporarily
-            window.yukiConfirmJustClosed = true;
-            if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
-              window.electronAPI.setIgnoreMouseEvents(false);
-            }
-            setTimeout(() => {
-              window.yukiConfirmJustClosed = false;
-            }, 2000);
-            setTimeout(() => {
-              desktopInputRef.current?.focus();
-            }, 50);
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'confirm_response',
-                conf_id: msg.conf_id,
-                confirmed: true
-              }));
-            }
-          },
-          onCancel: () => {
-            setConfirmModal(prev => ({ ...prev, visible: false }));
-
-            // Refocus, disable clickthrough suspension temporarily
-            window.yukiConfirmJustClosed = true;
-            if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
-              window.electronAPI.setIgnoreMouseEvents(false);
-            }
-            setTimeout(() => {
-              window.yukiConfirmJustClosed = false;
-            }, 2000);
-            setTimeout(() => {
-              desktopInputRef.current?.focus();
-            }, 50);
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'confirm_response',
-                conf_id: msg.conf_id,
-                confirmed: false
-              }));
-            }
-          }
-        });
-      } else if (msg.type === 'error') {
-        setIsThinking(false);
-        setTtsStreamActive(false);
-        setMessages((prev) => [...prev, { role: 'assistant', content: `Oh no! I encountered an error: ${msg.message}` }]);
-        updateListeningState();
-      }
-    };
-
-    ws.onclose = () => {
-      if (socketRef.current !== ws) return;
-      setBackendStatus('offline');
-      setSocket(null);
-      socketRef.current = null;
-      const attempt = reconnectAttemptRef.current;
-      const delay = Math.min(5000 * Math.pow(2, attempt), 60000);
-      reconnectAttemptRef.current = attempt + 1;
-      console.warn(`WebSocket disconnected. Retrying in ${delay / 1000}s (attempt ${attempt + 1})...`);
-      reconnectTimeoutRef.current = setTimeout(connectWebSocket, delay);
-    };
-
-    ws.onerror = (e) => {
-      console.error("WebSocket error:", e);
-    };
-  };
-
-  // Prime the browser to use a specific microphone before starting SpeechRecognition.
-  // The Web Speech API doesn't accept deviceId directly, but calling getUserMedia
-  // with the selected deviceId first causes the browser to use that device.
-  const primeSelectedMicDevice = async () => {
-    const deviceId = selectedMicDeviceIdRef.current;
-    if (!deviceId) return; // Use system default
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: { exact: deviceId },
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false
-        }
-      });
-      // Stop tracks immediately — we only needed to set the active device
-      stream.getTracks().forEach(t => t.stop());
-    } catch (e) {
-      console.warn('Could not prime mic device:', e);
-    }
-  };
-
-  const processSTTTranscript = (transcript, sttTimeMs = null) => {
-    if (!transcript || !transcript.trim()) {
-      setIsThinking(false);
-      setTtsStreamActive(false);
-      if (isVoiceCommandModeRef.current && isSessionActiveRef.current) {
-        startSessionTimeout();
-      }
-      updateListeningState();
-      return;
-    }
-
-    // Clean punctuation for command checks
-    const cleaned = transcript.trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "");
-    const lower = cleaned.toLowerCase().trim();
-    logSTTStatus(`Processing transcript: "${transcript}" (cleaned: "${cleaned}", isVoiceCommandMode=${isVoiceCommandModeRef.current}, isTalkMode=${isTalkModeRef.current})`);
-
-    // If voice command mode is active
-    if (isVoiceCommandModeRef.current) {
-      const isSession = isSessionActiveRef.current;
-
-      // ─── Extensible Voice Commands List ───
-      // Easily add new commands here! Each needs a name, match(), and action().
-      const voiceCommands = [
-        {
-          name: 'Stop Listening',
-          match: () => lower.includes("yuki stop listening") ||
-            lower === "stop listening" ||
-            (isSession && (lower === "stop" || lower === "exit" || lower === "quit")),
-          action: () => {
-            logSTTStatus("Voice Command Mode stop command detected.");
-            isVoiceCommandModeRef.current = false;
-            setIsVoiceCommandMode(false);
-            clearContinuedConversationSession();
-            stopSpeechRecognition();
-            setIsListening(false);
-
-            setMessages((prev) => [...prev, { role: 'assistant', content: "listening mode off" }]);
-            speakSystemMessage("Listening mode off.");
-
-            setIsThinking(false);
-            setTtsStreamActive(false);
-          }
-        }
-      ];
-
-      // Check and execute command if matched
-      const matchedCommand = voiceCommands.find(cmd => cmd.match());
-      if (matchedCommand) {
-        logSTTStatus(`Executing custom voice command: ${matchedCommand.name}`);
-        matchedCommand.action();
-        return;
-      }
-      // ──────────────────────────────────────
-
-      // Check if this matches the wake word or if the session is currently active
-      const hasTriggerWord = /\byuki\b/i.test(cleaned);
-
-      if (!hasTriggerWord && !isSession) {
-        logSTTStatus(`Ignored transcript (no active session & missing trigger word 'Yuki'): "${cleaned}"`);
-        setIsThinking(false);
-        setTtsStreamActive(false);
-        updateListeningState();
-        return;
-      }
-
-      // Clear the active session timeout since we got a voice response
-      if (sessionTimeoutRef.current) {
-        clearTimeout(sessionTimeoutRef.current);
-        sessionTimeoutRef.current = null;
-      }
-
-      // Determine what text to send
-      let queryText = transcript;
-
-      if (hasTriggerWord) {
-        // Find yuki in the text and extract query.
-        const parts = cleaned.split(/\byuki\b/i);
-        const before = parts[0].trim();
-        const after = parts[1] ? parts[1].trim() : "";
-
-        if (after) {
-          queryText = after;
-        } else if (before) {
-          queryText = before;
-        } else {
-          queryText = "Yuki";
-        }
-      }
-
-      // If they just said "yuki" without a query, trigger a greeting
-      if (queryText.toLowerCase().trim() === "yuki") {
-        logSTTStatus("Trigger word 'Yuki' detected with no additional content. Sending greeting.");
-        sendMessageText("Yuki", sttTimeMs);
-        return;
-      }
-
-      // Check if instructions start with "command" or "slash" (with phonetic fallbacks)
-      const cmdMatch = queryText.match(/^(command|slash|come\s+on|c'mon|common|flash)\s+(.*)/i);
-      if (cmdMatch) {
-        const remaining = cmdMatch[2].trim();
-        const firstWord = remaining.split(/\s+/)[0].toLowerCase();
-        const possibleSlashCmd = "/" + firstWord;
-
-        // Only convert to slash command if it is a registered local command
-        const commandExists = SLASH_COMMANDS.some(c => c.cmd.toLowerCase() === possibleSlashCmd);
-
-        if (commandExists) {
-          const commandText = "/" + remaining;
-          sendMessageText(commandText, sttTimeMs);
-        } else {
-          // If the command does not exist, send the remaining query to the LLM (stripping the "command/slash" prefix)
-          sendMessageText(remaining, sttTimeMs);
-        }
-      } else {
-        sendMessageText(queryText, sttTimeMs);
-      }
-      return;
-    }
-
-    // Allow user to exit Talk Mode by saying "stop"
-    if (isTalkModeRef.current && (lower === 'stop' || lower === 'stop listening' || lower === 'exit' || lower === 'quit')) {
-      logSTTStatus("Exit talk mode command detected.");
-      isTalkModeRef.current = false;
-      setIsTalkMode(false);
-      stopSpeechRecognition();
-      setIsListening(false);
-
-      setIsThinking(false);
-      setTtsStreamActive(false);
-      return;
-    }
-
-    // Clean interruption: stop playback immediately before sending prompt
-    stopAllPlayback();
-    sendMessageText(transcript, sttTimeMs);
-  };
-
-  const initSpeechRecognition = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn("Browser does not support Speech Recognition Web API.");
-      return;
-    }
-
-    const rec = new SpeechRecognition();
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.lang = 'en-US';
-
-    rec.onstart = () => {
-      isSpeechRecActiveRef.current = true;
-      setIsListening(true);
-      console.log("[STT] Speech recognition active.");
-    };
-
-    rec.onspeechstart = () => {
-      if (sessionTimeoutRef.current) {
-        console.log("[STT] Native speechstart detected. Clearing 8s session timeout.");
-        clearTimeout(sessionTimeoutRef.current);
-        sessionTimeoutRef.current = null;
-      }
-    };
-
-    rec.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      processSTTTranscript(transcript);
-    };
-
-    rec.onerror = (event) => {
-      if (event.error === 'aborted') {
-        console.log("[STT] Session aborted silently.");
-        return;
-      }
-
-      console.warn("[STT] Speech recognition error:", event.error);
-      setIsListening(false);
-
-      if (event.error === 'no-speech') {
-        return;
-      }
-
-      let errMsg = "System Notice: Speech recognition encountered an error ('" + event.error + "').";
-      if (event.error === 'not-allowed') {
-        errMsg = "System Notice: Microphone access is blocked. Please click the camera/mic icon in your browser address bar and choose 'Allow'.";
-        isTalkModeRef.current = false;
-        setIsTalkMode(false);
-        isVoiceCommandModeRef.current = false;
-        setIsVoiceCommandMode(false);
-      } else if (event.error === 'network') {
-        errMsg = "System Notice: Speech recognition network error. Please check your internet connectivity.";
-      }
-      setMessages((prev) => [...prev, { role: 'system', content: errMsg }]);
-    };
-
-    rec.onend = () => {
-      console.log("[STT] Speech recognition session ended.");
-      isSpeechRecActiveRef.current = false;
-      setIsListening(false);
-
-      // If we still want to be listening, schedule a retry.
-      if (shouldListen()) {
-        setTimeout(() => {
-          if (shouldListen()) {
-            startSpeechRecognition();
-          }
-        }, 300); // Small cool-down
-      }
-    };
-
-    recognitionRef.current = rec;
-  };
-
-  const toggleTalkMode = async () => {
-    initAudioAnalyser();
-
-    if (!useLocalWhisperRef.current) {
-      if (!recognitionRef.current) {
-        initSpeechRecognition();
-      }
-
-      if (!recognitionRef.current) {
-        alert("Voice speech recognition is only supported in Chrome or Chromium-based browsers like Edge.");
-        return;
-      }
-    }
-
-    if (isVoiceCommandModeRef.current) {
-      isVoiceCommandModeRef.current = false;
-      setIsVoiceCommandMode(false);
-      clearContinuedConversationSession();
-    }
-
-    if (isTalkModeRef.current) {
-      isTalkModeRef.current = false;
-      setIsTalkMode(false);
-      clearContinuedConversationSession();
-      stopAllPlayback();
-      console.log("Talk Mode: OFF");
-    } else {
-      clearContinuedConversationSession();
-      stopAllPlayback();
-      isTalkModeRef.current = true;
-      setIsTalkMode(true);
-      console.log("Talk Mode: ON");
-      updateListeningState();
-    }
-  };
-
-  const toggleListening = toggleTalkMode;
-
-  const toggleVoiceCommandMode = async () => {
-    initAudioAnalyser();
-
-    if (!useLocalWhisperRef.current) {
-      if (!recognitionRef.current) {
-        initSpeechRecognition();
-      }
-
-      if (!recognitionRef.current) {
-        alert("Voice speech recognition is only supported in Chrome or Chromium-based browsers like Edge.");
-        return;
-      }
-    }
-
-    if (isTalkModeRef.current) {
-      isTalkModeRef.current = false;
-      setIsTalkMode(false);
-    }
-
-    if (isVoiceCommandModeRef.current) {
-      isVoiceCommandModeRef.current = false;
-      setIsVoiceCommandMode(false);
-      clearContinuedConversationSession();
-      stopAllPlayback();
-      console.log("Voice Command Mode: OFF");
-
-      setMessages((prev) => [...prev, { role: 'assistant', content: "listening mode off" }]);
-      speakSystemMessage("Listening mode off.");
-    } else {
-      clearContinuedConversationSession();
-      stopAllPlayback();
-      isVoiceCommandModeRef.current = true;
-      setIsVoiceCommandMode(true);
-      console.log("Voice Command Mode: ON");
-      updateListeningState();
-    }
-  };
-
-  const toggleVoiceCommandModeRef = useRef(toggleVoiceCommandMode);
-  useEffect(() => {
-    toggleVoiceCommandModeRef.current = toggleVoiceCommandMode;
-  });
-
-  // Listen for global recall/trigger shortcut Alt+S from Electron main process
-  useEffect(() => {
-    if (window.electronAPI && window.electronAPI.onTriggerListening) {
-      const unsubscribe = window.electronAPI.onTriggerListening(() => {
-        console.log(`[Hotkey] Alt+S triggered! Synchronizing chat overlay and listening mode.`);
-
-        setIsChatOpen(prevChatOpen => {
-          const nextChatState = !prevChatOpen;
-
-          // Toggle Voice Command Mode based on nextChatState and hotkeyListening checkbox
-          if (hotkeyListeningRef.current) {
-            if (nextChatState) {
-              // Turning chat ON -> ensure Voice Command Mode is ON
-              if (!isVoiceCommandModeRef.current) {
-                toggleVoiceCommandModeRef.current();
-              }
-            } else {
-              // Turning chat OFF -> ensure Voice Command Mode is OFF
-              if (isVoiceCommandModeRef.current) {
-                toggleVoiceCommandModeRef.current();
-              }
-            }
-          } else {
-            // If hotkey listening is disabled, still ensure Voice Command Mode is OFF when closing chat
-            if (!nextChatState && isVoiceCommandModeRef.current) {
-              toggleVoiceCommandModeRef.current();
-            }
-          }
-
-          return nextChatState;
-        });
-      });
-      return unsubscribe;
-    }
-  }, []);
-
-  // Listen for Escape key to close settings or chat overlay
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      const modal = confirmModalRef.current;
-      if (modal && modal.visible) {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          e.stopPropagation();
-          modal.onConfirm?.();
-          return;
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          modal.onCancel?.();
-          return;
-        }
-      }
-
-      if (e.key === 'Escape') {
-        let handled = false;
-
-        // 1. If settings is open, close it
-        if (isSettingsOpenRef.current) {
-          setIsSettingsOpen(false);
-          document.activeElement?.blur();
-          handled = true;
-        }
-        // 2. If chat overlay is open, close/toggle it off
-        else if (isChatOpenRef.current) {
-          setIsChatOpen(false);
-          document.activeElement?.blur();
-          // Ensure voice listening is turned off when closing chat
-          if (isVoiceCommandModeRef.current) {
-            toggleVoiceCommandModeRef.current();
-          }
-          handled = true;
-        }
-
-        if (handled) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, []);
-
-  const getWhisperModelSizeText = (modelType) => {
-    const computeType = profile.settings?.whisper_compute_type || 'int8_float16';
-    let multiplier = 1.0;
-    if (computeType === 'float16') {
-      multiplier = 2.0;
-    } else if (computeType === 'float32') {
-      multiplier = 4.0;
-    }
-
-    let baseSize = 140;
-    let label = 'Base Model (Accurate)';
-    if (modelType === 'small') {
-      baseSize = 460;
-      label = 'Small Model (High Accuracy)';
-    } else if (modelType === 'tiny') {
-      baseSize = 70;
-      label = 'Tiny Model (Fastest)';
-    }
-
-    const finalSize = Math.round(baseSize * multiplier);
-    const sizeStr = finalSize >= 1000 ? `${(finalSize / 1000).toFixed(1)} GB` : `${finalSize} MB`;
-    return `${label} / ~${sizeStr}`;
-  };
-
-  const handleTerminate = () => {
-    console.log("[Terminate] Interrupting current turn and reverting messages.");
-    stopAllPlayback();
-    setIsThinking(false);
-    setTtsStreamActive(false);
-    setCurrentSpeechText("");
-    hasReceivedAudioRef.current = false;
-
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: 'interrupt' }));
-    }
-
-    setMessages((prev) => {
-      const lastUserIdx = [...prev].reverse().findIndex(m => m.role === 'user');
-      if (lastUserIdx !== -1) {
-        const idx = prev.length - 1 - lastUserIdx;
-        console.log(`[Terminate] Slicing messages to index ${idx} to revert last user message.`);
-        return prev.slice(0, idx);
-      }
-      return prev;
-    });
-
-    setTimeout(() => {
-      updateListeningState();
-    }, 100);
-  };
-
-  // Extracted message routing core (used by both input bar submit and voice commands)
   const sendMessageText = (text, sttTimeMs = null, fromSuggestion = false) => {
     if (!text.trim()) return;
 
-    logSTTStatus(`sendMessageText: "${text}" (sttTimeMs: ${sttTimeMs})`);
+    console.log(`sendMessageText: "${text}" (sttTimeMs: ${sttTimeMs})`);
     initAudioAnalyser();
 
     // Clean interruption
@@ -2760,7 +1209,7 @@ const App = () => {
 
             // CPU
             if (data.cpu && !data.cpu.error) {
-              chatText += `🖥️ **CPU**: ${data.cpu.usage_percent}% (${data.cpu.cores_logical} cores`;
+              chatText += `箕・・**CPU**: ${data.cpu.usage_percent}% (${data.cpu.cores_logical} cores`;
               if (data.cpu.freq_mhz) {
                 chatText += ` @ ${(data.cpu.freq_mhz / 1000).toFixed(1)} GHz`;
               }
@@ -2769,15 +1218,15 @@ const App = () => {
 
             // RAM
             if (data.ram && !data.ram.error) {
-              chatText += `💾 **RAM**: ${data.ram.used_gb} GB / ${data.ram.total_gb} GB (${data.ram.usage_percent}%)\n`;
+              chatText += `沈 **RAM**: ${data.ram.used_gb} GB / ${data.ram.total_gb} GB (${data.ram.usage_percent}%)\n`;
             }
 
             // GPUs
             if (data.gpus && data.gpus.length > 0) {
               data.gpus.forEach((gpu, idx) => {
-                chatText += `🎮 **GPU ${idx + 1}**: ${gpu.name}`;
+                chatText += `式 **GPU ${idx + 1}**: ${gpu.name}`;
                 if (gpu.has_metrics) {
-                  chatText += ` (${gpu.utilization_percent}% load, ${gpu.temp_c}°C, VRAM: ${gpu.mem_used_mb} MB / ${gpu.mem_total_mb} MB)`;
+                  chatText += ` (${gpu.utilization_percent}% load, ${gpu.temp_c}ﾂｰC, VRAM: ${gpu.mem_used_mb} MB / ${gpu.mem_total_mb} MB)`;
                 }
                 chatText += "\n";
               });
@@ -2786,7 +1235,7 @@ const App = () => {
             // Battery
             if (data.battery && !data.battery.error) {
               const b = data.battery;
-              chatText += `🔋 **Battery**: ${b.percent}%`;
+              chatText += `萩 **Battery**: ${b.percent}%`;
               if (b.charging) {
                 const rate = b.charge_rate_mw ? ` at ${(b.charge_rate_mw / 1000).toFixed(1)}W` : '';
                 chatText += ` (Charging${rate})`;
@@ -2798,22 +1247,22 @@ const App = () => {
               }
               chatText += "\n";
             } else if (data.battery === null) {
-              chatText += `🔋 **Battery**: Not detected (Desktop PC)\n`;
+              chatText += `萩 **Battery**: Not detected (Desktop PC)\n`;
             }
 
             // Disk
             if (data.disk && !data.disk.error) {
-              chatText += `💽 **Disk (C:)**: ${data.disk.used_gb} GB / ${data.disk.total_gb} GB (${data.disk.usage_percent}%)\n`;
+              chatText += `朕 **Disk (C:)**: ${data.disk.used_gb} GB / ${data.disk.total_gb} GB (${data.disk.usage_percent}%)\n`;
             }
 
             // Uptime
             if (data.uptime && !data.uptime.error) {
-              chatText += `⏱️ **Uptime**: ${data.uptime.hours}h ${data.uptime.minutes}m\n`;
+              chatText += `竢ｱ・・**Uptime**: ${data.uptime.hours}h ${data.uptime.minutes}m\n`;
             }
 
             // OS info
             if (data.os) {
-              chatText += `⚙️ **OS**: ${data.os}`;
+              chatText += `笞呻ｸ・**OS**: ${data.os}`;
             }
 
             // 3. Build a natural summary for TTS
@@ -3056,7 +1505,7 @@ const App = () => {
       }
       socketRef.current.send(JSON.stringify(payload));
     } else {
-      logSTTStatus(`WebSocket offline, cannot send message. ReadyState: ${socketRef.current ? socketRef.current.readyState : 'null'}`);
+      console.log(`WebSocket offline, cannot send message. ReadyState: ${socketRef.current ? socketRef.current.readyState : 'null'}`);
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: "Hmph! I'm currently offline, Master. Make sure the backend server is running!" }
@@ -3066,6 +1515,48 @@ const App = () => {
       updateListeningState();
     }
   };
+
+const detectExpression = (text) => {
+  if (!text) return 'neutral';
+  const lower = text.toLowerCase();
+
+  if (lower.includes('wink')) {
+    return 'wink';
+  }
+  if (lower.includes('relaxed') || lower.includes('smug') || lower.includes('flirt')) {
+    return 'relaxed';
+  }
+  if (
+    lower.includes('smile') || lower.includes('giggle') || lower.includes('laugh') ||
+    lower.includes('happy') || lower.includes('joy') || lower.includes('・') ||
+    lower.includes('・') || lower.includes('・') || lower.includes('・') ||
+    lower.includes('・') || lower.includes('・') || lower.includes('､｣')
+  ) {
+    return 'happy';
+  }
+  if (
+    lower.includes('cry') || lower.includes('sad') || lower.includes('sigh') ||
+    lower.includes('sorrow') || lower.includes('个') || lower.includes('亊') ||
+    lower.includes('・') || lower.includes('弌') || lower.includes('仭')
+  ) {
+    return 'sad';
+  }
+  if (
+    lower.includes('pout') || lower.includes('angry') || lower.includes('anger') ||
+    lower.includes('scold') || lower.includes('丐') || lower.includes('丕') ||
+    lower.includes('､ｬ') || lower.includes('汰')
+  ) {
+    return 'angry';
+  }
+  if (
+    lower.includes('gasp') || lower.includes('surprise') || lower.includes('shock') ||
+    lower.includes('舒') || lower.includes('亟') || lower.includes('亠') ||
+    lower.includes('亞') || lower.includes('凰')
+  ) {
+    return 'surprised';
+  }
+  return 'neutral';
+};
 
   // 5. Send text message
   const handleSendMessage = (e, textOverride, fromSuggestion = false) => {
@@ -3091,18 +1582,7 @@ const App = () => {
     }
 
     // Clear queue and stop playback
-    audioQueueRef.current = [];
-    isPlayingRef.current = false;
-    ttsStreamActiveRef.current = false;
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-    }
-    window.speechSynthesis.cancel();
-    if (nativeSpeechIntervalRef.current) {
-      clearInterval(nativeSpeechIntervalRef.current);
-      nativeSpeechIntervalRef.current = null;
-    }
+    if (stopAllPlaybackRef.current) stopAllPlaybackRef.current();
     setMessages([]);
     setCurrentSpeechText('');
     console.log(" Clear queue and stop playback");
@@ -3213,41 +1693,34 @@ const App = () => {
     fetchHealthDetails();
     fetchVrmModels();
     fetchLlmModels();
-
-    // Periodic health check — catches dead connections that WS onclose misses
-    healthCheckIntervalRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(5000) });
-        if (res.ok) {
-          if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-            setBackendStatus('online');
-          }
-        } else {
-          setBackendStatus('offline');
-        }
-      } catch {
-        setBackendStatus('offline');
-      }
-    }, 30000);
-
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.onclose = null;
-        socketRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (healthCheckIntervalRef.current) {
-        clearInterval(healthCheckIntervalRef.current);
-      }
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-      window.speechSynthesis.cancel();
-      if (nativeSpeechIntervalRef.current) {
-        clearInterval(nativeSpeechIntervalRef.current);
-      }
-    };
   }, []);
+
+  const handleTerminate = () => {
+    console.log("[Terminate] Interrupting current turn and reverting messages.");
+    stopAllPlayback();
+    setIsThinking(false);
+    setTtsStreamActive(false);
+    setCurrentSpeechText("");
+    hasReceivedAudioRef.current = false;
+
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'interrupt' }));
+    }
+
+    setMessages((prev) => {
+      const lastUserIdx = [...prev].reverse().findIndex(m => m.role === 'user');
+      if (lastUserIdx !== -1) {
+        const idx = prev.length - 1 - lastUserIdx;
+        console.log(`[Terminate] Slicing messages to index ${idx} to revert last user message.`);
+        return prev.slice(0, idx);
+      }
+      return prev;
+    });
+
+    setTimeout(() => {
+      updateListeningState();
+    }, 100);
+  };
 
   const isElectron = window.electronAPI && window.electronAPI.isElectron;
 
