@@ -518,11 +518,12 @@ function createWindow() {
   });
 
   ipcMain.on('set-window-scale', (event, scale) => {
-    const newWidth = Math.round(DEFAULT_WINDOW_WIDTH * scale);
-    const newHeight = Math.round(DEFAULT_WINDOW_HEIGHT * scale);
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (win && !win.isDestroyed()) {
-      const bounds = win.getBounds();
+    // Always target the main avatar window (mainWindow), never the Settings panel window
+    const targetWin = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    if (targetWin) {
+      const newWidth = Math.round(DEFAULT_WINDOW_WIDTH * scale);
+      const newHeight = Math.round(DEFAULT_WINDOW_HEIGHT * scale);
+      const bounds = targetWin.getBounds();
 
       // Keep bottom-center anchored (so Yuki stands on same spot on desktop when scaled)
       const anchorX = bounds.x + bounds.width / 2;
@@ -534,7 +535,7 @@ function createWindow() {
       currentWidth = newWidth;
       currentHeight = newHeight;
 
-      win.setBounds({
+      targetWin.setBounds({
         x: newX,
         y: newY,
         width: newWidth + windowWidthExtra,
