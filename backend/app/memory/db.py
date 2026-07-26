@@ -6,13 +6,19 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 from app import config
 from anyascii import anyascii
-import pykakasi
 import pypinyin
 
 DB_PATH = Path(config.BASE_DIR) / "yuki_files.db"
 
-# Initialize pykakasi once
-kks = pykakasi.kakasi()
+# Lazy-initialized pykakasi instance (deferred to avoid ~15 MB RAM cost on import)
+_kks_instance = None
+
+def _get_kks():
+    global _kks_instance
+    if _kks_instance is None:
+        import pykakasi
+        _kks_instance = pykakasi.kakasi()
+    return _kks_instance
 
 def transliterate_text(text: str) -> str:
     """
@@ -41,7 +47,7 @@ def transliterate_text(text: str) -> str:
     if has_cjk or has_japanese_kana:
         # Get Japanese Romaji
         try:
-            res_kakasi = kks.convert(text)
+            res_kakasi = _get_kks().convert(text)
             romaji = " ".join(item['hepburn'] for item in res_kakasi)
             romaji_clean = " ".join(romaji.split())
             if romaji_clean and romaji_clean.lower() != text.lower():

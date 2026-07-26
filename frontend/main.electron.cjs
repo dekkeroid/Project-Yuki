@@ -32,22 +32,17 @@ console.log(`[Electron] Platform: ${process.platform}, arch: ${process.arch}, pa
 // 1. Hard limit the Javascript V8 engine heap size to 256MB and expose V8 garbage collector
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256 --expose-gc');
 
-// 2. Disable asset/network caching so temporary audio/data clips don't save to disk
-app.commandLine.appendSwitch('disable-http-cache');
-
-// 3. Set a strict ceiling on generic disk caching (104857600 Bytes = 100 MB)
-app.commandLine.appendSwitch('disk-cache-size', '104857600');
-
-// 4. Prevent fallback to CPU software rasterization (SwiftShader) by ignoring GPU blocklists
+// 2. Prevent fallback to CPU software rasterization (SwiftShader) by ignoring GPU blocklists
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
-// 5. Cap shader caches in system memory (in-memory cache limits)
-app.commandLine.appendSwitch('gpu-program-cache-size-kb', '512');
-app.commandLine.appendSwitch('gpu-disk-cache-size-kb', '2048');
+// 3. Limit GPU process memory: cap tile/raster memory and total GPU memory budget
+app.commandLine.appendSwitch('force-gpu-mem-available-mb', '256');
+app.commandLine.appendSwitch('max-decoded-image-size-mb', '128');
 
-// 6. Prevent over-allocation of background rendering threads
-app.commandLine.appendSwitch('disable-background-networking');
-app.commandLine.appendSwitch('disable-renderer-backgrounding');
+// 4. Reduce Chromium renderer tile memory (helps GPU process RAM usage)
+app.commandLine.appendSwitch('num-raster-threads', '2');
+app.commandLine.appendSwitch('default-tile-width', '256');
+app.commandLine.appendSwitch('default-tile-height', '256');
 // ------------------------------------------------------------------------
 
 // ---------- Single Instance Lock ----------
@@ -337,16 +332,12 @@ function hideYuki() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.minimize();
     mainWindow.hide();
-    // Flush caches and clear history dynamically to free memory when idle/hidden
+    // Request renderer process to optimize memory / GC
     try {
-      mainWindow.webContents.clearHistory();
-      const { session } = require('electron');
-      session.defaultSession.clearCache();
-      
-      // Request renderer process to optimize memory / GC
       mainWindow.webContents.send('yuki-optimize-memory');
+      optimizeElectronMemory();
     } catch (e) {
-      console.warn("Failed cache wipe during hide:", e);
+      console.warn("Failed to send memory optimization signal:", e);
     }
   }
 
@@ -834,6 +825,39 @@ function createSplashWindow() {
   return splash;
 }
 
+// ---------- Electron Memory Optimization ----------
+let electronMemoryOptTimer = null;
+
+function optimizeElectronMemory() {
+  if (process.platform !== 'win32') return;
+  try {
+    // Use Node.js child_process to call a PowerShell one-liner that trims working sets
+    // for all Electron-related processes (main, renderer, GPU helper)
+    const pid = process.pid;
+    const { execFile } = require('child_process');
+    execFile('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      `Get-Process | Where-Object { $_.Id -eq ${pid} -or $_.Parent.Id -eq ${pid} } | ForEach-Object { $null = [System.Diagnostics.Process]::GetProcessById($_.Id).MinWorkingSet = 1 } 2>$null`
+    ], { windowsHide: true, timeout: 5000 }, (err) => {
+      if (err) console.warn('[Electron] Memory trim failed (non-fatal):', err.message);
+      else console.log('[Electron] Working set trimmed for Electron process tree.');
+    });
+  } catch (e) {
+    console.warn('[Electron] Memory optimization error:', e.message);
+  }
+}
+
+function startElectronMemoryOptimizer() {
+  // Trim Electron working sets every 90 seconds
+  if (electronMemoryOptTimer) return;
+  electronMemoryOptTimer = setInterval(() => {
+    optimizeElectronMemory();
+  }, 90000);
+  // Initial trim after 60 seconds (let startup stabilize first)
+  setTimeout(optimizeElectronMemory, 60000);
+}
+// ---------------------------------------------------
+
 // ---------- App lifecycle ----------
 
 // Global IPC handlers (registered once, work for both setup and main windows)
@@ -908,6 +932,7 @@ app.whenReady().then(async () => {
   }
 
   createTray();
+  startElectronMemoryOptimizer();
 
   globalShortcut.register('Alt+S', () => {
     console.log('[Electron] Alt+S — recalling Yuki.');
@@ -936,16 +961,6 @@ app.on('window-all-closed', () => {
     return;
   }
   console.log('[Electron] All windows closed — quitting.');
-  // Clean session cleanup routine added here to clear active cache blocks on close
-  const { session } = require('electron');
-  try {
-    session.defaultSession.clearCache();
-    session.defaultSession.clearStorageData({
-      storages: ['appcache', 'filesystem', 'shadercache']
-    });
-  } catch (e) {
-    console.warn("Failed cache wipe during window close sequence:", e);
-  }
 
   // Destroy tray so the app doesn't linger
   if (tray) {

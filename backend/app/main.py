@@ -51,11 +51,28 @@ tts_warmed_up_event = asyncio.Event()
 # Lifespan context manager (replaces deprecated @app.on_event)
 # ---------------------------------------------------------------------------
 async def _warmup_tts():
-    """Background: mark local Kokoro TTS engine ready (lazy loading on first request)."""
+    """Background: preload or lazy-init local Kokoro TTS engine based on config."""
     global tts_online_status
-    tts_online_status = True
-    tts_warmed_up_event.set()
-    print("[Startup] Local Kokoro neural voice engine ready (lazy loading enabled).")
+    tts_preload = memory_manager.profile["settings"].get("tts_preload", getattr(config, 'TTS_PRELOAD', False))
+    if not tts_preload:
+        tts_online_status = True
+        tts_warmed_up_event.set()
+        print("[Startup] Local Kokoro neural voice engine ready (lazy — will load on first speech request).")
+        return
+    print("[Startup] TTS preload enabled — initializing local Kokoro-ONNX neural TTS engine...")
+    try:
+        from app.voice.tts import generate_speech_bytes
+        audio_bytes = await asyncio.wait_for(generate_speech_bytes("hi"), timeout=60.0)
+        if audio_bytes:
+            print("[Startup] Local Kokoro neural voice engine preloaded successfully and active.")
+            tts_online_status = True
+    except asyncio.TimeoutError:
+        print("[Startup] Local Kokoro neural voice engine preload timed out after 60 seconds.")
+    except Exception as e:
+        print(f"[Startup] Local Kokoro neural voice engine preload failed: {e}")
+        tts_online_status = False
+    finally:
+        tts_warmed_up_event.set()
 
 
 async def _connect_mcp_bridge():
@@ -587,7 +604,8 @@ def get_settings():
         "whisper_compute_type": memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16"),
         "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
         "stt_language": memory_manager.profile["settings"].get("stt_language", "en"),
-        "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False)
+        "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False),
+        "tts_preload": memory_manager.profile["settings"].get("tts_preload", False)
     }
 
 class SettingsUpdateRequest(BaseModel):
@@ -612,6 +630,7 @@ class SettingsUpdateRequest(BaseModel):
     dynamic_tool_calling: Optional[bool] = None
     enable_rotation: Optional[bool] = None
     auto_reset_rotation: Optional[bool] = None
+    tts_preload: Optional[bool] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -727,6 +746,9 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.auto_reset_rotation is not None:
         memory_manager.update_setting("auto_reset_rotation", req.auto_reset_rotation)
         
+    if req.tts_preload is not None:
+        memory_manager.update_setting("tts_preload", req.tts_preload)
+
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True
         new_voice = req.tts_voice.strip() if req.tts_voice is not None else config.TTS_VOICE
@@ -758,7 +780,8 @@ async def update_settings(req: SettingsUpdateRequest):
             "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False),
             "dynamic_tool_calling": memory_manager.profile["settings"].get("dynamic_tool_calling", True),
             "enable_rotation": memory_manager.profile["settings"].get("enable_rotation", True),
-            "auto_reset_rotation": memory_manager.profile["settings"].get("auto_reset_rotation", False)
+            "auto_reset_rotation": memory_manager.profile["settings"].get("auto_reset_rotation", False),
+            "tts_preload": memory_manager.profile["settings"].get("tts_preload", False)
         }
     }
 

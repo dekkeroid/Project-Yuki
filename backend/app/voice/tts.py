@@ -24,7 +24,6 @@ def add_nvidia_dll_directories():
                     except Exception as e:
                         print(f"[TTS] Warning: Failed to add DLL directory {bin_dir}: {e}")
 
-from kokoro_onnx import Kokoro
 from app import config
 
 VOICE_DIR = Path(__file__).parent.resolve()
@@ -69,7 +68,7 @@ def reset_kokoro():
     _kokoro_lock = None
     print("[TTS] Kokoro instance cleared. Will re-initialize on next speech request.")
 
-async def get_kokoro_async() -> Kokoro:
+async def get_kokoro_async() -> "Kokoro":
     global _kokoro_instance, _kokoro_lock
     if _kokoro_instance is not None:
         return _kokoro_instance
@@ -103,10 +102,12 @@ def _build_session(providers: list):
     return ort.InferenceSession(str(MODEL_PATH), sess_options=sess_options, providers=providers)
 
 
-def get_kokoro() -> Kokoro:
+def get_kokoro() -> "Kokoro":
     global _kokoro_instance
     if _kokoro_instance is not None:
         return _kokoro_instance
+
+    from kokoro_onnx import Kokoro
 
     # Defer NVIDIA DLL loading and model file checks to here to make imports instant
     add_nvidia_dll_directories()

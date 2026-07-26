@@ -52,6 +52,7 @@ const AvatarViewer = ({
   const canvasRectRef = useRef({ left: 0, top: 0, width: ELECTRON_WINDOW_WIDTH, height: ELECTRON_WINDOW_HEIGHT });
   const lastRaycastTimeRef = useRef(0);
   const lastRaycastHitRef = useRef(false);
+  const customVrmBlobUrlRef = useRef(null);
 
   // Hologram particle parameters
   const particleSystemRef = useRef(null);
@@ -244,7 +245,12 @@ const AvatarViewer = ({
   };
 
   const handleVrmFile = (file) => {
+    // Revoke previous custom VRM blob URL to prevent memory leak
+    if (customVrmBlobUrlRef.current) {
+      URL.revokeObjectURL(customVrmBlobUrlRef.current);
+    }
     const url = URL.createObjectURL(file);
+    customVrmBlobUrlRef.current = url;
     setModelName(file.name);
     loadModel(url);
   };
@@ -2730,6 +2736,10 @@ const AvatarViewer = ({
       });
 
       renderer.dispose();
+      if (customVrmBlobUrlRef.current) {
+        URL.revokeObjectURL(customVrmBlobUrlRef.current);
+        customVrmBlobUrlRef.current = null;
+      }
       if (vrmRef.current && vrmRef.current.scene) {
         scene.remove(vrmRef.current.scene);
       }

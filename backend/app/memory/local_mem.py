@@ -35,7 +35,8 @@ class MemoryManager:
                 "no_llm_mode": False,
                 "dynamic_tool_calling": True,
                 "enable_rotation": True,
-                "auto_reset_rotation": False
+                "auto_reset_rotation": False,
+                "tts_preload": False
             }
         }
         if not os.path.exists(self.profile_path):
