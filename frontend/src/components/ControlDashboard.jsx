@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 
@@ -915,39 +915,42 @@ const ControlDashboard = ({
                   onClick={() => setSettingsSubTab('brain')}
                   style={{
                     flex: 1, padding: '7px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s',
+                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                     background: settingsSubTab === 'brain' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
                     color: settingsSubTab === 'brain' ? '#fff' : '#94a3b8',
                     boxShadow: settingsSubTab === 'brain' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
                   }}
                 >
-                  🧠 AI Brain
+                  <Brain style={{ width: '13px', height: '13px' }} />
+                  <span>AI Brain</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setSettingsSubTab('voice')}
                   style={{
                     flex: 1, padding: '7px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s',
+                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                     background: settingsSubTab === 'voice' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
                     color: settingsSubTab === 'voice' ? '#fff' : '#94a3b8',
                     boxShadow: settingsSubTab === 'voice' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
                   }}
                 >
-                  🎙️ Voice & Audio
+                  <Volume2 style={{ width: '13px', height: '13px' }} />
+                  <span>Voice & Audio</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setSettingsSubTab('avatar')}
                   style={{
                     flex: 1, padding: '7px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s',
+                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                     background: settingsSubTab === 'avatar' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
                     color: settingsSubTab === 'avatar' ? '#fff' : '#94a3b8',
                     boxShadow: settingsSubTab === 'avatar' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
                   }}
                 >
-                  🎨 Avatar & Persona
+                  <Palette style={{ width: '13px', height: '13px' }} />
+                  <span>Avatar & Persona</span>
                 </button>
               </div>
 
@@ -1158,7 +1161,7 @@ const ControlDashboard = ({
                         marginTop: '4px'
                       }}
                     >
-                      <option value="" style={{ background: '#0b0813', color: 'white' }}>🎙️ System Default</option>
+                      <option value="" style={{ background: '#0b0813', color: 'white' }}>System Default</option>
                       {micDevices.map((d) => (
                         <option key={d.deviceId} value={d.deviceId} style={{ background: '#0b0813', color: 'white' }}>
                           {d.label || `Microphone (${d.deviceId.slice(0, 8)}...)`}
