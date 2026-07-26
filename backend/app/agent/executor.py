@@ -1224,24 +1224,70 @@ class AgentExecutor:
                         "content": str(tool_result)
                     })
 
-                    # Inject guidance reminder to prevent small LLMs from repeating the same tool call
+                    # ── Post-tool guidance injection ─────────────────────────────────────────
+                    # Inject a structured guidance message after every tool result so the
+                    # model knows whether to stop, summarize, or chain the next step.
+                    #
+                    # Tool categories:
+                    #  • INFO  — web_search, read_file_content
+                    #            Hard-stop: content is for summarization, never chain further.
+                    #  • DATA  — search_files, list_directory, get_system_stats
+                    #            Conditional: if original request needs another step (e.g.
+                    #            "find and open"), allow one more tool call; otherwise stop.
+                    #  • MEMORY — update_user_fact
+                    #            Hard-stop: confirm what was saved and stop.
+                    #  • ACTION — all other tools (launch, volume, power, terminal, etc.)
+                    #            Hard-stop: confirm the action briefly and stop.
+                    # ─────────────────────────────────────────────────────────────────────────
                     if not tool_failed:
-                        # After a search/read tool, strongly remind the LLM to summarize now
-                        # and NOT run auxiliary tools like update_user_fact before answering.
-                        is_info_tool = tool_name in ("web_search", "read_file_content", "search_files")
-                        if is_info_tool:
+                        _INFO_TOOLS   = {"web_search", "read_file_content"}
+                        _DATA_TOOLS   = {"search_files", "list_directory", "get_system_stats"}
+                        _MEMORY_TOOLS = {"update_user_fact"}
+                        # Everything else is treated as an action/terminal tool.
+
+                        _orig = user_message.strip()
+                        _iter_note = f"(tool call {iteration} of {max_iterations} allowed this turn)"
+
+                        if tool_name in _INFO_TOOLS:
+                            # Hard-stop: full content returned, model must summarize now.
                             reminder = (
-                                f"[SYSTEM INFO] The tool '{tool_name}' has returned its results above. "
-                                "Your ONLY next action MUST be to write a clear, concise natural language summary of these results directly to the user. "
-                                "Do NOT call any other tools (including update_user_fact, web_search, or any other tool) before responding. "
-                                "Summarize now."
+                                f"[SYSTEM] {_iter_note} Tool '{tool_name}' returned results above. "
+                                f"The user's original request was: \"{_orig}\". "
+                                "Write a spoken, natural language answer using these results — under 3 sentences. "
+                                "Do NOT call any more tools. Respond now."
                             )
+
+                        elif tool_name in _DATA_TOOLS:
+                            # Conditional: allow one more tool call only if original request needs it.
+                            reminder = (
+                                f"[SYSTEM] {_iter_note} Tool '{tool_name}' returned results above. "
+                                f"The user's original request was: \"{_orig}\". "
+                                "If this result fully satisfies the request, respond to the user now in 1-2 sentences. "
+                                "If the original request explicitly requires another action on this result "
+                                "(e.g. the user asked to open a found file, or do something with the data), "
+                                "call exactly one more appropriate tool and then respond. "
+                                "Do NOT call update_user_fact or web_search as a follow-up."
+                            )
+
+                        elif tool_name in _MEMORY_TOOLS:
+                            # Hard-stop: memory saved, confirm briefly and stop.
+                            reminder = (
+                                f"[SYSTEM] {_iter_note} Memory saved successfully. "
+                                f"The user's original request was: \"{_orig}\". "
+                                "Briefly confirm to the user what you remembered in 1 short sentence and stop. "
+                                "Do NOT call any more tools."
+                            )
+
                         else:
+                            # Action/terminal tool: confirm the action and stop.
                             reminder = (
-                                f"[SYSTEM INFO] The tool '{tool_name}' was successfully executed and returned the output above. "
-                                f"Do NOT call the tool '{tool_name}' again with the same arguments. "
-                                "Use the returned information to write your final response or summary for the user."
+                                f"[SYSTEM] {_iter_note} Tool '{tool_name}' completed. "
+                                f"The user's original request was: \"{_orig}\". "
+                                "Confirm the action to the user in 1 short sentence and stop. "
+                                f"Do NOT call '{tool_name}' again with the same arguments. "
+                                "Do NOT call any unrelated tools."
                             )
+
                         current_messages.append({
                             "role": "user",
                             "content": reminder
@@ -1266,8 +1312,10 @@ class AgentExecutor:
                     if tool_failed and troubleshoot_attempts < 4:
                         troubleshoot_attempts += 1
                         system_message_content = (
-                            f"[SYSTEM TROUBLESHOOTER - TOOL EXCEPTION] The tool '{tool_name}' failed with: {tool_result}. "
-                            "Diagnose the issue, explain it to the user, and propose a new tool call or step to resolve it."
+                            f"[SYSTEM] Tool '{tool_name}' failed with: {tool_result}. "
+                            f"The user's original request was: \"{user_message.strip()}\". "
+                            "Explain the failure to the user in 1 sentence, then either try a different approach "
+                            "or tell the user what they can do to fix it. Do NOT retry the exact same tool call."
                         )
                         current_messages.append({
                             "role": "user",
