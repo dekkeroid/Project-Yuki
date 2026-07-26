@@ -10,7 +10,7 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "get_system_stats",
-                "description": "Get system CPU, RAM, disk usage, active IP, OS version, and current date/time.",
+                "description": "Get live system metrics: CPU %, RAM %, disk %, active IP, OS version, and current date/time. Use for: 'what time is it', 'how is my PC', 'what is my IP', 'check my RAM'.",
                 "parameters": {"type": "object", "properties": {}}
             }
         },
@@ -18,13 +18,13 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "launch_app",
-                "description": "Launch desktop app or open URL in browser.",
+                "description": "Launch a desktop application or open a URL. Use ONLY when the user explicitly asks to open or launch an app (e.g. 'open Chrome', 'launch Spotify', 'open this URL'). Do NOT use for files or media — use open_or_play_file for those.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "app_name": {"type": "string", "description": "App to launch (e.g. 'chrome', 'notepad', 'kdeconnect') or browser to open URL."},
-                        "args": {"type": "string", "description": "CLI arguments or URL to open (e.g. 'https://kdeconnect.kde.org')."},
-                        "run_as_admin": {"type": "boolean", "description": "Run as admin."}
+                        "app_name": {"type": "string", "description": "App name to launch (e.g. 'chrome', 'notepad', 'spotify') or browser to open URL."},
+                        "args": {"type": "string", "description": "Optional CLI arguments or URL (e.g. 'https://example.com')."},
+                        "run_as_admin": {"type": "boolean", "description": "Run as administrator."}
                     },
                     "required": ["app_name"]
                 }
@@ -48,11 +48,11 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "web_search",
-                "description": "Search Google for info.",
+                "description": "Search the internet for real-time or unknown information. Use ONLY when the user asks for current news, recent facts, prices, or something you genuinely cannot answer from your training knowledge. Do NOT use for general knowledge, opinions, or conversational questions.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Search keywords (e.g. 'KDE Connect official website download'). Be specific."}
+                        "query": {"type": "string", "description": "Specific search query (e.g. 'red dye 40 safety side effects 2025'). Be specific."}
                     },
                     "required": ["query"]
                 }
@@ -62,12 +62,12 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "update_user_fact",
-                "description": "Save facts, name, or interests about user.",
+                "description": "Remember a personal fact the user has EXPLICITLY told you about themselves (e.g. their name, a preference, a hobby they mentioned). Do NOT call this as a side-effect of searches, system actions, or tool results. ONLY call when the user directly shares personal information.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "key": {"type": "string", "description": "Topic or key (e.g. 'name', 'interest', 'favorite_color')."},
-                        "value": {"type": "string", "description": "Information detail."}
+                        "key": {"type": "string", "description": "Category key (e.g. 'name', 'favorite_color', 'hobby')."},
+                        "value": {"type": "string", "description": "The information the user shared."}
                     },
                     "required": ["key", "value"]
                 }
@@ -90,12 +90,12 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "search_files",
-                "description": "Search local files.",
+                "description": "Find files stored on the user's local computer by name or keyword. Use when the user asks to find or locate a specific file or document on their PC.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Search query."},
-                        "start_directory": {"type": "string", "description": "Base directory."}
+                        "query": {"type": "string", "description": "Filename or keyword to search for."},
+                        "start_directory": {"type": "string", "description": "Base directory to search within (optional)."}
                     },
                     "required": ["query"]
                 }
@@ -105,12 +105,12 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "open_or_play_file",
-                "description": "Open file or play song.",
+                "description": "Open a local file, folder, or play media on the user's computer. Use for any 'play', 'open', 'watch', 'read', or 'show me' request targeting a file or media. Always pass the user's raw query words (e.g. 'towa song', 'romantic anime') — never construct or guess a file path.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "file_path_or_query": {"type": "string", "description": "File path/name/query."},
-                        "play_mode": {"type": "boolean", "description": "Set true to play media."}
+                        "file_path_or_query": {"type": "string", "description": "Raw user query words or absolute file path. Never invent filenames."},
+                        "play_mode": {"type": "boolean", "description": "Set true to play media (music, video). Leave false to open documents/folders."}
                     },
                     "required": ["file_path_or_query"]
                 }
@@ -200,12 +200,12 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "run_terminal_command",
-                "description": "Run CLI shell command.",
+                "description": "Run a shell command on the user's Windows PC (PowerShell or CMD). Use for system tasks, installs, git operations, or anything requiring a command line. Do NOT use when open_or_play_file or launch_app can handle the request.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "command": {"type": "string", "description": "Command string."},
-                        "use_powershell": {"type": "boolean", "description": "True for powershell, false for cmd."}
+                        "command": {"type": "string", "description": "The command to execute."},
+                        "use_powershell": {"type": "boolean", "description": "True for PowerShell, false for CMD."}
                     },
                     "required": ["command"]
                 }
@@ -215,11 +215,11 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "run_python_script",
-                "description": "Run Python script.",
+                "description": "Execute Python code on the user's machine. Use for calculations, data processing, or automation that specifically requires Python — not for file opening or web browsing.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "code": {"type": "string", "description": "Python source code."}
+                        "code": {"type": "string", "description": "Python source code to execute."}
                     },
                     "required": ["code"]
                 }

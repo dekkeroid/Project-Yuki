@@ -151,8 +151,10 @@ async def web_search(query: str) -> str:
                     text = soup.get_text(separator=" ")
                     # Clean whitespaces
                     cleaned_text = re.sub(r'\s+', ' ', text).strip()
-                    # Truncate to speed up context loading
-                    truncated = cleaned_text[:2000]
+                    # Truncate page content to keep 3B model context window healthy.
+                    # 800 chars is ~200 tokens — enough for factual answers without
+                    # overwhelming the model's reasoning budget.
+                    truncated = cleaned_text[:800]
                     return f"[Source: {domain} ({url})]\n{truncated}"
             except Exception as e:
                 import sys
