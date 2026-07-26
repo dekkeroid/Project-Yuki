@@ -1430,7 +1430,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                         speech_text = make_speech_friendly(sentence_text)
                                         # Use a timeout of 30.0 seconds for local Kokoro call
                                         t_start = time.time()
-                                        print(f"[TTS][QUEUE] Queued TTS idx={idx} text='{sentence_text[:80]}' speech_text='{speech_text[:80]}'")
                                         # Mark which backend we expect to use at the time of synthesis
                                         expected_backend = 'kokoro' if tts_online_status else 'backend-disabled'
                                         audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=30.0)
@@ -1438,7 +1437,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                         if audio_bytes:
                                             audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                                             audio_url = f"data:audio/wav;base64,{audio_base64}"
-                                            print(f"[TTS][DONE] idx={idx} backend={expected_backend} time_ms={int(t_elapsed*1000)} text='{speech_text[:80]}'")
+                                            print(f"[TTS] Chunk {idx} ready ({int(t_elapsed*1000)}ms): '{speech_text[:50]}'")
                                             return {
                                                 "type": "audio_chunk",
                                                 "audio_url": audio_url,

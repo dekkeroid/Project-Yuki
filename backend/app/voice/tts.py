@@ -436,7 +436,6 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
 
     try:
         t0 = time.time()
-        print(f"[TTS] generate_speech_bytes start voice={kokoro_voice} lang={lang_code} rate={speed_factor} text='{text[:80]}'")
         kokoro = await get_kokoro_async()
         import asyncio
         samples, sample_rate = await asyncio.to_thread(
@@ -446,8 +445,6 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
         # Write to WAV bytes in-memory
         audio_buffer = io.BytesIO()
         sf.write(audio_buffer, samples, sample_rate, format='WAV')
-        t_elapsed = time.time() - t0
-        print(f"[TTS] generate_speech_bytes finished time_ms={int(t_elapsed*1000)} text_len={len(text)}")
         return audio_buffer.getvalue()
     except Exception as e:
         print(f"[TTS] Kokoro Generation Error: {e}")

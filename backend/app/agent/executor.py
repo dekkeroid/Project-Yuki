@@ -1008,13 +1008,13 @@ class AgentExecutor:
             if content:
                 if is_json_candidate is None:
                     text_buffer += content
-                    stripped = text_buffer.strip()
+                    stripped = text_buffer.lstrip()
                     if stripped:
-                        # Check if text contains JSON pattern like {"name": ...} or {"tool_calls": ...}
-                        if "{" in stripped or "`" in stripped or "[" in stripped:
+                        # Check if response starts with JSON/code block markup
+                        if stripped.startswith("{") or stripped.startswith("```") or stripped.startswith("["):
                             is_json_candidate = True
-                        elif len(stripped) > 50:
-                            # Not JSON after 50 chars of non-JSON text; flush buffer and stream normally
+                        else:
+                            # Plain text response — stream immediately on first token
                             is_json_candidate = False
                             yield "token", text_buffer, label
                             text_buffer = ""
