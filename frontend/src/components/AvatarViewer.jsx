@@ -348,6 +348,19 @@ const AvatarViewer = ({
         window.vrmScene.remove(vrmRef.current.scene);
       }
       vrmRef.current = null;
+      
+      // Clear Three.js texture/file caches
+      THREE.Cache.clear();
+
+      // Force V8 to collect the disposed textures and geometries immediately
+      if (isElectron && window.gc) {
+        setTimeout(() => {
+          try {
+            window.gc();
+            console.log("[AvatarViewer] Pre-load garbage collection executed to flush old model.");
+          } catch (_) {}
+        }, 100);
+      }
     }
 
     const loader = new GLTFLoader();
