@@ -32,7 +32,9 @@ const AvatarViewer = ({
   enableRotation = true,
   autoResetRotation = false,
   visible = true,
-  isBackendOnline = false
+  isBackendOnline = false,
+  vrmDpr = 1.5,
+  vrmFps = 60
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -53,6 +55,9 @@ const AvatarViewer = ({
   const lastRaycastTimeRef = useRef(0);
   const lastRaycastHitRef = useRef(false);
   const customVrmBlobUrlRef = useRef(null);
+  const rendererRef = useRef(null);
+  const vrmDprRef = useRef(vrmDpr);
+  const vrmFpsRef = useRef(vrmFps);
 
   // Hologram particle parameters
   const particleSystemRef = useRef(null);
@@ -107,6 +112,18 @@ const AvatarViewer = ({
   useEffect(() => {
     disabledAnimationsRef.current = disabledAnimations || [];
   }, [disabledAnimations]);
+
+  useEffect(() => {
+    vrmDprRef.current = vrmDpr;
+    if (rendererRef.current) {
+      const targetRatio = parseFloat(vrmDpr) || 1.5;
+      rendererRef.current.setPixelRatio(Math.min(window.devicePixelRatio, targetRatio));
+    }
+  }, [vrmDpr]);
+
+  useEffect(() => {
+    vrmFpsRef.current = vrmFps;
+  }, [vrmFps]);
 
   useEffect(() => {
     audioLevelRef.current = audioLevel;
@@ -672,13 +689,15 @@ const AvatarViewer = ({
       premultipliedAlpha: false,
       powerPreference: "high-performance",
     });
+    rendererRef.current = renderer;
     // CRITICAL: set clear color to fully transparent so the desktop shows through
     renderer.setClearColor(0x000000, 0);
     renderer.setSize(
       isElectron ? window.innerWidth : containerRef.current.clientWidth,
       isElectron ? window.innerHeight : containerRef.current.clientHeight
     );
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Restore high-fidelity rendering
+    const targetDpr = parseFloat(vrmDprRef.current) || 1.5;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, targetDpr)); // Dynamic resolution pixel ratio
     renderer.shadowMap.enabled = !isElectron; // shadows cause issues on transparent bg
 
     // Cache the initial canvas rect to avoid layout thrashing in handleMouseMove
@@ -1221,8 +1240,6 @@ const AvatarViewer = ({
     // 9. Main Render Loop
     const clock = clockRef.current;
 
-    const targetFPS = 50;
-    const frameDelay = 1 / targetFPS;
     let accumulatedTime = 0;
 
     const animate = () => {
@@ -1231,6 +1248,9 @@ const AvatarViewer = ({
       if (!visibleRef.current) {
         return;
       }
+
+      const targetFPS = parseInt(vrmFpsRef.current, 10) || 60;
+      const frameDelay = 1 / targetFPS;
 
       let delta = clock.getDelta();
       if (delta > 0.1) delta = 0.1;

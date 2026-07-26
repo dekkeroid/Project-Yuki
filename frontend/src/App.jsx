@@ -3310,6 +3310,8 @@ const App = () => {
               autoResetRotation={profile.settings?.auto_reset_rotation || false}
               visible={isVisible}
               isBackendOnline={backendStatus === 'online'}
+              vrmDpr={profile.settings?.vrm_dpr || 1.5}
+              vrmFps={profile.settings?.vrm_fps || 60}
             />
           </Suspense>
         </main>
@@ -4346,13 +4348,49 @@ const App = () => {
                               }}>
                                 {name.replace('.vrm', '')}
                                 <button onClick={() => handleVrmDelete(name)} style={{
-                                  background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)',
-                                  cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: '0.7rem',
-                                }}>&times;</button>
+                                  background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer',
+                                  padding: 0, fontSize: '0.65rem', display: 'flex', alignItems: 'center'
+                                }}>×</button>
                               </span>
                             ))}
                           </div>
                         )}
+
+                        {/* Rendering Resolution (DPR) & FPS Limit */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '3px' }}>
+                              Resolution (DPR)
+                            </span>
+                            <select
+                              className="desktop-select"
+                              value={profile.settings?.vrm_dpr || 1.5}
+                              onChange={(e) => handleUpdateSetting('vrm_dpr', parseFloat(e.target.value))}
+                              style={{ width: '100%', padding: '5px 6px', fontSize: '0.75rem' }}
+                            >
+                              <option value={1.0} style={{ background: '#120c21', color: 'white' }}>1.0 (Low RAM)</option>
+                              <option value={1.25} style={{ background: '#120c21', color: 'white' }}>1.25 (Balanced)</option>
+                              <option value={1.5} style={{ background: '#120c21', color: 'white' }}>1.5 (High Quality)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '3px' }}>
+                              FPS Target
+                            </span>
+                            <select
+                              className="desktop-select"
+                              value={profile.settings?.vrm_fps || 60}
+                              onChange={(e) => handleUpdateSetting('vrm_fps', parseInt(e.target.value, 10))}
+                              style={{ width: '100%', padding: '5px 6px', fontSize: '0.75rem' }}
+                            >
+                              {[30, 40, 45, 50, 55, 60].map((fps) => (
+                                <option key={fps} value={fps} style={{ background: '#120c21', color: 'white' }}>
+                                  {fps} FPS
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Model Credits */}
@@ -5241,6 +5279,8 @@ const App = () => {
             autoResetRotation={profile.settings?.auto_reset_rotation || false}
             visible={isVisible}
             isBackendOnline={backendStatus === 'online'}
+            vrmDpr={profile.settings?.vrm_dpr || 1.5}
+            vrmFps={profile.settings?.vrm_fps || 60}
           />
         </Suspense>
       </main>

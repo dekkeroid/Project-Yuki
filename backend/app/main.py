@@ -605,7 +605,9 @@ def get_settings():
         "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
         "stt_language": memory_manager.profile["settings"].get("stt_language", "en"),
         "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False),
-        "tts_preload": memory_manager.profile["settings"].get("tts_preload", False)
+        "tts_preload": memory_manager.profile["settings"].get("tts_preload", False),
+        "vrm_dpr": memory_manager.profile["settings"].get("vrm_dpr", 1.5),
+        "vrm_fps": memory_manager.profile["settings"].get("vrm_fps", 60)
     }
 
 class SettingsUpdateRequest(BaseModel):
@@ -631,6 +633,8 @@ class SettingsUpdateRequest(BaseModel):
     enable_rotation: Optional[bool] = None
     auto_reset_rotation: Optional[bool] = None
     tts_preload: Optional[bool] = None
+    vrm_dpr: Optional[float] = None
+    vrm_fps: Optional[int] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -748,6 +752,10 @@ async def update_settings(req: SettingsUpdateRequest):
         
     if req.tts_preload is not None:
         memory_manager.update_setting("tts_preload", req.tts_preload)
+    if req.vrm_dpr is not None:
+        memory_manager.update_setting("vrm_dpr", req.vrm_dpr)
+    if req.vrm_fps is not None:
+        memory_manager.update_setting("vrm_fps", req.vrm_fps)
 
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True

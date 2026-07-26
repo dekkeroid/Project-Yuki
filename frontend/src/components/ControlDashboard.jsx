@@ -960,6 +960,60 @@ const ControlDashboard = ({
                         ))}
                       </div>
                     )}
+                    {/* Rendering Resolution (DPR) & FPS Limit */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+                      <div>
+                        <span className="field-label" style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '3px' }}>
+                          Resolution (DPR)
+                        </span>
+                        <select
+                          value={settings.vrm_dpr || 1.5}
+                          onChange={(e) => handleUpdateSetting('vrm_dpr', parseFloat(e.target.value))}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value={1.0} style={{ background: '#0b0813', color: 'white' }}>1.0 (Low RAM)</option>
+                          <option value={1.25} style={{ background: '#0b0813', color: 'white' }}>1.25 (Balanced)</option>
+                          <option value={1.5} style={{ background: '#0b0813', color: 'white' }}>1.5 (High Quality)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <span className="field-label" style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '3px' }}>
+                          FPS Limit
+                        </span>
+                        <select
+                          value={settings.vrm_fps || 60}
+                          onChange={(e) => handleUpdateSetting('vrm_fps', parseInt(e.target.value, 10))}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {[30, 40, 45, 50, 55, 60].map((fps) => (
+                            <option key={fps} value={fps} style={{ background: '#0b0813', color: 'white' }}>
+                              {fps} FPS
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
