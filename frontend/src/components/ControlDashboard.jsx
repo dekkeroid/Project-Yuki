@@ -36,7 +36,7 @@ const ControlDashboard = ({
   onRefreshLlmModels,
   preferHeadsetMic = false,
   onPreferHeadsetMicChange,
-  avatarScale = 1.0,
+  avatarScale,
   onAvatarScaleChange,
   initialTab = 'memory',
   isStandalone = false
@@ -49,18 +49,24 @@ const ControlDashboard = ({
   const [localAvatarScale, setLocalAvatarScale] = useState(() => {
     try {
       const saved = localStorage.getItem('yuki-avatar-scale');
-      return saved ? parseFloat(saved) : (avatarScale || 1.0);
-    } catch {
-      return 1.0;
-    }
+      if (saved) return parseFloat(saved);
+    } catch {}
+    return avatarScale || 1.0;
   });
 
-  const currentAvatarScale = avatarScale !== undefined ? avatarScale : localAvatarScale;
+  useEffect(() => {
+    if (avatarScale !== undefined && avatarScale !== null) {
+      setLocalAvatarScale(avatarScale);
+    }
+  }, [avatarScale]);
 
   const handleAvatarScaleChange = (val) => {
     setLocalAvatarScale(val);
     try { localStorage.setItem('yuki-avatar-scale', val.toString()); } catch {}
     if (onAvatarScaleChange) onAvatarScaleChange(val);
+    if (window.electronAPI && window.electronAPI.setWindowScale) {
+      window.electronAPI.setWindowScale(val);
+    }
   };
 
   // Camera tracking toggle state (persisted via localStorage in AvatarViewer)
@@ -1498,7 +1504,7 @@ const ControlDashboard = ({
                           Companion Scale Size
                         </span>
                         <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                          {Math.round(currentAvatarScale * 100)}%
+                          {Math.round(localAvatarScale * 100)}%
                         </span>
                       </div>
                       <input
@@ -1506,7 +1512,7 @@ const ControlDashboard = ({
                         min="0.5"
                         max="2.0"
                         step="0.05"
-                        value={currentAvatarScale}
+                        value={localAvatarScale}
                         onChange={(e) => handleAvatarScaleChange(parseFloat(e.target.value))}
                         style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
                       />
