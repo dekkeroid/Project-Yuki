@@ -1847,3 +1847,32 @@ body.desktop-overlay .interactive-element {
     opacity: 1;
   }
 }
+
+/* Standalone Settings Window Compact Typography & Layout */
+.standalone-panel {
+  max-width: 960px;
+  margin: 0 auto;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 0.82rem !important;
+}
+
+.standalone-panel .panel-title {
+  font-size: 0.95rem !important;
+}
+
+.standalone-panel .tab-btn {
+  font-size: 0.82rem !important;
+  padding: 8px 16px !important;
+}
+
+.standalone-panel label,
+.standalone-panel .field-label,
+.standalone-panel .setting-label {
+  font-size: 0.8rem !important;
+}
+
+.standalone-panel input,
+.standalone-panel select,
+.standalone-panel textarea {
+  font-size: 0.82rem !important;
+}

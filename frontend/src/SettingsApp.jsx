@@ -1,7 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { API_BASE } from './api';
 
-const ModernSettingsDashboard = lazy(() => import('./components/ModernSettingsDashboard'));
+const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
 
 export default function SettingsApp() {
   const [profile, setProfile] = useState({
@@ -74,8 +74,8 @@ export default function SettingsApp() {
   }, []);
 
   return (
-    <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '30px', backgroundColor: '#090d16', minHeight: '100vh', fontFamily: 'sans-serif' }}>Loading Settings Studio...</div>}>
-      <ModernSettingsDashboard
+    <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '30px', backgroundColor: '#090d16', minHeight: '100vh', fontFamily: 'sans-serif' }}>Loading Settings...</div>}>
+      <ControlDashboard
         profile={profile}
         backendStatus={backendStatus}
         onResetProfile={async () => {
@@ -113,6 +113,8 @@ export default function SettingsApp() {
         onRefreshLlmModels={fetchLlmModels}
         preferHeadsetMic={preferHeadsetMic}
         onPreferHeadsetMicChange={(val) => setPreferHeadsetMic(val)}
+        initialTab="settings"
+        isStandalone={true}
       />
     </Suspense>
   );

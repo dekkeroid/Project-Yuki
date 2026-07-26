@@ -35,10 +35,12 @@ const ControlDashboard = ({
   availableLlmModels = [],
   onRefreshLlmModels,
   preferHeadsetMic = false,
-  onPreferHeadsetMicChange
+  onPreferHeadsetMicChange,
+  initialTab = 'memory',
+  isStandalone = false
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('memory');
+  const [isOpen, setIsOpen] = useState(isStandalone ? true : false);
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   // Camera tracking toggle state (persisted via localStorage in AvatarViewer)
   const [cameraTracking, setCameraTracking] = useState(() => {
@@ -417,20 +419,36 @@ const ControlDashboard = ({
   return (
     <>
       {/* Settings Toggle Trigger Button (Top-Right Corner) */}
-      <div className="dashboard-trigger-top">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className={`trigger-gear-btn glass-panel ${isOpen ? 'active' : ''}`}
-          title="Yuki Settings & Memory"
-        >
-          <Settings className={`w-5 h-5 ${isOpen ? 'rotate-45' : ''}`} style={{ transition: 'transform 0.3s' }} />
-        </button>
-      </div>
+      {!isStandalone && (
+        <div className="dashboard-trigger-top">
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className={`trigger-gear-btn glass-panel ${isOpen ? 'active' : ''}`}
+            title="Yuki Settings & Memory"
+          >
+            <Settings className={`w-5 h-5 ${isOpen ? 'rotate-45' : ''}`} style={{ transition: 'transform 0.3s' }} />
+          </button>
+        </div>
+      )}
 
-      {/* Slide-out Settings Panel (Left side) */}
+      {/* Settings Panel */}
       <div
-        className="slide-panel-left glass-panel"
-        style={{
+        className={`slide-panel-left glass-panel ${isStandalone ? 'standalone-panel' : ''}`}
+        style={isStandalone ? {
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100vw',
+          height: '100vh',
+          transform: 'none',
+          opacity: 1,
+          borderRadius: 0,
+          padding: '24px 36px',
+          boxSizing: 'border-box',
+          overflowY: 'auto'
+        } : {
           transform: isOpen ? 'translateX(0)' : 'translateX(calc(-100% - 24px))',
           opacity: isOpen ? 1 : 0
         }}
