@@ -4429,6 +4429,44 @@ const App = () => {
                         </select>
                       </div>
 
+                      {/* TTS Preload Toggle */}
+                      <div className="desktop-form-group" style={{ marginTop: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <label className="desktop-label" style={{ marginBottom: 0 }}>Preload TTS on Startup</label>
+                            <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '2px' }}>
+                              Loads voice model on boot (~250-400 MB). Off = loads on first speech.
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSetting('tts_preload', !profile.settings?.tts_preload)}
+                            style={{
+                              background: profile.settings?.tts_preload ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
+                              border: `1px solid ${profile.settings?.tts_preload ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                              borderRadius: '12px',
+                              width: '40px',
+                              height: '22px',
+                              cursor: 'pointer',
+                              position: 'relative',
+                              transition: 'all 0.2s ease',
+                              flexShrink: 0
+                            }}
+                          >
+                            <div style={{
+                              width: '16px',
+                              height: '16px',
+                              borderRadius: '50%',
+                              background: profile.settings?.tts_preload ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                              position: 'absolute',
+                              top: '2px',
+                              left: profile.settings?.tts_preload ? '20px' : '2px',
+                              transition: 'all 0.2s ease'
+                            }} />
+                          </button>
+                        </div>
+                      </div>
+
                       {/* Microphone Input Device */}
                       <div className="desktop-form-group" style={{ marginTop: '6px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
