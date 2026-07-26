@@ -451,13 +451,24 @@ class AgentExecutor:
                     if not choices:
                         return "tool", ""
                     raw = (choices[0].get("message", {}).get("content") or "").strip().lower()
-                    print(f"[IntentCheck] Raw output: '{raw}'")
+                    # Strip punctuation that might trail the answer (e.g. "No.", "Yes!")
+                    raw_clean = raw.strip(".,!?;: ")
+                    print(f"[IntentCheck] Raw output: '{raw_clean}'")
 
-                    # Accept any response that starts with "no" as a chat downgrade
-                    if raw.startswith("no"):
+                    # Accept clear negative signals → downgrade to chat.
+                    # Handles: 'no', 'no.', 'nope', 'chat' (old format fallback)
+                    _CHAT_SIGNALS = {"no", "nope", "chat", "false", "n"}
+                    if raw_clean in _CHAT_SIGNALS or raw_clean.startswith("no"):
                         return "chat", ""
 
-                    # "yes" or anything else → proceed as tool (safe fallback)
+                    # Accept clear positive signals → proceed as tool.
+                    # Handles: 'yes', 'yes.', 'yep', 'true' (and old 'tool:...' format)
+                    _TOOL_SIGNALS = {"yes", "yep", "yeah", "true", "y"}
+                    if raw_clean in _TOOL_SIGNALS or raw_clean.startswith("yes") or raw_clean.startswith("tool:"):
+                        return "tool", ""
+
+                    # Unrecognized output → safe default (never miss a real tool call)
+                    print(f"[IntentCheck] Unrecognized output '{raw_clean}' — defaulting to tool")
                     return "tool", ""
 
         except asyncio.TimeoutError:
@@ -753,7 +764,19 @@ class AgentExecutor:
         async for chunk in self._stream_request(session, url, model_name, messages, headers=headers, temperature=temperature, use_tools=use_tools):
             yield chunk, self._get_model_label(model_name)
 
-    async def _query_llm_stream(self, session: aiohttp.ClientSession, messages: List[Dict[str, str]], user_message: str = "", use_tools: bool = False):
+    async def _query_llm_stream(
+        self,
+        session: aiohttp.ClientSession,
+        messages: List[Dict[str, str]],
+        user_message: str = "",
+        use_tools: bool = False,
+        resolved_backend: str = "",   # Pass in the intent-check result so we don't re-classify
+    ):
+        """
+        Streams tokens from the LLM.
+        resolved_backend: 'simple' or 'complex' — determined by _classify_task + intent check.
+        If not provided, falls back to re-classifying (legacy behaviour).
+        """
         if config.LLM_MODE == 1:
             backend = "simple"
         elif config.LLM_MODE == 2:
@@ -765,9 +788,15 @@ class AgentExecutor:
 
         if backend == "mode3":
             try:
-                task = self._classify_task(user_message) if user_message else "simple"
+                # Use the intent-check result if provided; only re-classify as last resort
+                if resolved_backend in ("simple", "complex"):
+                    task = resolved_backend
+                    source = "intent-check"
+                else:
+                    task = self._classify_task(user_message) if user_message else "simple"
+                    source = "regex"
                 temp = 0.2 if task == "complex" else 0.7
-                print(f"[Router][Mode 3] Task={task} -> streaming {config.LLM_MODEL} with {'full' if task == 'complex' else 'lean'} prompt (temp={temp})")
+                print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {config.LLM_MODEL} with {'full' if task == 'complex' else 'lean'} prompt (temp={temp})")
                 async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=temp, use_tools=use_tools):
                     yield chunk, label
             except Exception as e:
@@ -776,16 +805,16 @@ class AgentExecutor:
                 yield err_msg, self._get_model_label(config.LLM_MODEL)
         elif backend == "complex":
             try:
-                print(f"[Router] Task classified as complex -> using {config.LLM_MODEL_COMPLEX} Stream (temp=0.2)")
+                print(f"[Router] Task=complex (mode 2) -> streaming {config.LLM_MODEL_COMPLEX} (temp=0.2)")
                 async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL_COMPLEX, messages, temperature=0.2, use_tools=use_tools):
                     yield chunk, label
             except Exception as complex_err:
-                print(f"[Router] Complex model stream failed ({complex_err}), falling back to simple model stream (temp=0.2)")
+                print(f"[Router] Complex model stream failed ({complex_err}), falling back to simple (temp=0.2)")
                 async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=0.2, use_tools=use_tools):
                     yield chunk, label
         else:
             try:
-                print(f"[Router] Task classified as simple -> using {config.LLM_MODEL} Stream (temp=0.7)")
+                print(f"[Router] Task=simple -> streaming {config.LLM_MODEL} (temp=0.7)")
                 async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=0.7, use_tools=use_tools):
                     yield chunk, label
             except Exception as e:
@@ -1176,7 +1205,7 @@ class AgentExecutor:
                     last_msg = current_messages[-1]
                     print(f"[Executor] Last message: role={last_msg.get('role')}, content preview={str(last_msg.get('content', ''))[:150]}...")
                 
-                stream = self._query_llm_stream(session, current_messages, user_message=user_message, use_tools=use_tools)
+                stream = self._query_llm_stream(session, current_messages, user_message=user_message, use_tools=use_tools, resolved_backend=resolved_backend)
                 
                 tool_calls_to_execute = []
                 accumulated_response = ""
