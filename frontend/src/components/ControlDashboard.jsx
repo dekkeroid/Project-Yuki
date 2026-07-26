@@ -39,8 +39,8 @@ const ControlDashboard = ({
   initialTab = 'memory',
   isStandalone = false
 }) => {
-  const [isOpen, setIsOpen] = useState(isStandalone ? true : false);
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [settingsSubTab, setSettingsSubTab] = useState('brain'); // 'brain' | 'voice' | 'avatar'
 
   // Camera tracking toggle state (persisted via localStorage in AvatarViewer)
   const [cameraTracking, setCameraTracking] = useState(() => {
@@ -907,37 +907,443 @@ const ControlDashboard = ({
             </>
           ) : activeTab === 'settings' ? (
             <>
-              {/* Settings Group */}
-              <div className="card-group">
-                <div className="card-group-header">
-                  <Cpu className="w-4 h-4" />
-                  <span className="card-group-title">Yuki Assistant Settings</span>
-                </div>
+              {/* Sub-Tabs Pill Navigation */}
+              <div className="subtab-container" style={{ display: 'flex', gap: '6px', marginBottom: '16px', background: 'rgba(0,0,0,0.25)', padding: '4px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <button
+                  type="button"
+                  onClick={() => setSettingsSubTab('brain')}
+                  style={{
+                    flex: 1, padding: '7px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s',
+                    background: settingsSubTab === 'brain' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
+                    color: settingsSubTab === 'brain' ? '#fff' : '#94a3b8',
+                    boxShadow: settingsSubTab === 'brain' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
+                  }}
+                >
+                  🧠 AI Brain
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsSubTab('voice')}
+                  style={{
+                    flex: 1, padding: '7px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s',
+                    background: settingsSubTab === 'voice' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
+                    color: settingsSubTab === 'voice' ? '#fff' : '#94a3b8',
+                    boxShadow: settingsSubTab === 'voice' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
+                  }}
+                >
+                  🎙️ Voice & Audio
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsSubTab('avatar')}
+                  style={{
+                    flex: 1, padding: '7px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s',
+                    background: settingsSubTab === 'avatar' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
+                    color: settingsSubTab === 'avatar' ? '#fff' : '#94a3b8',
+                    boxShadow: settingsSubTab === 'avatar' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
+                  }}
+                >
+                  🎨 Avatar & Persona
+                </button>
+              </div>
 
+              {/* Sub-tab 1: AI Brain */}
+              {settingsSubTab === 'brain' && (
+                <div className="card-group">
+                  <div className="card-group-header">
+                    <Cpu className="w-4 h-4 text-violet-400" />
+                    <span className="card-group-title">AI Brain & Language Model</span>
+                  </div>
 
-
-                {/* VRM Avatar Model dropdown */}
-                <div className="identity-field" style={{ marginTop: '4px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
-                    <span className="field-label" style={{ margin: 0 }}>VRM Avatar Model</span>
-                    <label style={{
-                      display: 'flex', alignItems: 'center', gap: '4px',
-                      fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', cursor: 'pointer',
-                      padding: '2px 8px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.1)', transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(108,92,231,0.15)'; e.currentTarget.style.borderColor = 'rgba(108,92,231,0.3)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+                  {/* LLM Backend Type */}
+                  <div className="identity-field" style={{ marginTop: '4px' }}>
+                    <span className="field-label">LLM Backend</span>
+                    <select
+                      value={settings.llm_backend || 'lmstudio'}
+                      onChange={async (e) => {
+                        const newBackend = e.target.value;
+                        await handleUpdateSetting('llm_model', '');
+                        await handleUpdateSetting('llm_backend', newBackend);
+                        const defaults = {
+                          lmstudio: 'http://127.0.0.1:1234',
+                          ollama: 'http://127.0.0.1:11434',
+                          vllm: 'http://127.0.0.1:8000/v1',
+                          openai: '',
+                          custom: '',
+                        };
+                        await handleUpdateSetting('llm_base_url', defaults[newBackend] || '');
+                        if (newBackend !== 'none' && onRefreshLlmModels) {
+                          setTimeout(() => onRefreshLlmModels(), 500);
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        marginTop: '4px'
+                      }}
                     >
-                      <Upload size={11} />
-                      <span>{vrmUploading ? 'Uploading...' : 'Upload VRM'}</span>
-                      <input type="file" accept=".vrm" onChange={handleVrmUpload} disabled={vrmUploading} style={{ display: 'none' }} />
+                      <option value="lmstudio">LM Studio (Local)</option>
+                      <option value="ollama">Ollama (Local)</option>
+                      <option value="vllm">vLLM (Local)</option>
+                      <option value="openai">OpenAI-Compatible (Cloud)</option>
+                      <option value="custom">Custom Endpoint</option>
+                      <option value="none">No LLM (Voice + File Search Only)</option>
+                    </select>
+                  </div>
+
+                  {/* Base URL */}
+                  {settings.llm_backend !== 'none' && (
+                    <div className="identity-field" style={{ marginTop: '8px' }}>
+                      <span className="field-label">
+                        {settings.llm_backend === 'lmstudio' ? 'LM Studio URL' : settings.llm_backend === 'ollama' ? 'Ollama URL' : settings.llm_backend === 'vllm' ? 'vLLM URL' : settings.llm_backend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
+                      </span>
+                      <input
+                        type="text"
+                        placeholder={
+                          settings.llm_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
+                          settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
+                          settings.llm_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
+                          settings.llm_backend === 'openai' ? 'https://api.groq.com/openai' :
+                          'http://127.0.0.1:8000/v1'
+                        }
+                        value={settings.llm_base_url || ''}
+                        onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
+                        onBlur={(e) => {
+                          if (!e.target.value.trim()) {
+                            const defaults = {
+                              lmstudio: 'http://127.0.0.1:1234',
+                              ollama: 'http://127.0.0.1:11434',
+                              vllm: 'http://127.0.0.1:8000/v1',
+                              custom: 'http://127.0.0.1:8000/v1',
+                            };
+                            if (defaults[settings.llm_backend]) handleUpdateSetting('llm_base_url', defaults[settings.llm_backend]);
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          marginTop: '4px'
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* API Key (for OpenAI-compatible / Custom with auth) */}
+                  {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                    <div className="identity-field" style={{ marginTop: '8px' }}>
+                      <span className="field-label">API Key</span>
+                      <input
+                        type="password"
+                        placeholder="sk-..."
+                        value={settings.llm_api_key || ''}
+                        onChange={(e) => handleUpdateSetting('llm_api_key', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          marginTop: '4px'
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Active LLM Model Selection */}
+                  {settings.llm_backend !== 'none' && (
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="field-label">Active LLM Model</span>
+                        <button
+                          type="button"
+                          onClick={onRefreshLlmModels}
+                          title="Refresh model list from backend"
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                        >
+                          <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
+                        </button>
+                      </div>
+                      <select
+                        value={settings.llm_model || ''}
+                        onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '4px'
+                        }}
+                      >
+                        {!settings.llm_model && (
+                          <option value="" style={{ background: '#0b0813', color: 'white', opacity: 0.5 }}>
+                            Select a model...
+                          </option>
+                        )}
+                        {availableLlmModels.map((model) => {
+                          const mName = typeof model === 'string' ? model : (model.name || model.id || '');
+                          return (
+                            <option key={mName} value={mName} style={{ background: '#0b0813', color: 'white' }}>
+                              {mName}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sub-tab 2: Voice & Audio */}
+              {settingsSubTab === 'voice' && (
+                <div className="card-group">
+                  <div className="card-group-header">
+                    <Volume2 className="w-4 h-4 text-pink-400" />
+                    <span className="card-group-title">Voice Synthesis & Audio Input</span>
+                  </div>
+
+                  {/* Microphone Input Device */}
+                  <div className="identity-field" style={{ marginTop: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Mic style={{ width: '13px', height: '13px', color: '#a78bfa' }} />
+                        Microphone Input Device
+                      </span>
+                      <button
+                        type="button"
+                        onClick={onRefreshMicDevices}
+                        title="Refresh device list"
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                      >
+                        <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
+                      </button>
+                    </div>
+                    <select
+                      value={selectedMicDeviceId}
+                      onChange={(e) => onMicDeviceChange && onMicDeviceChange(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <option value="" style={{ background: '#0b0813', color: 'white' }}>🎙️ System Default</option>
+                      {micDevices.map((d) => (
+                        <option key={d.deviceId} value={d.deviceId} style={{ background: '#0b0813', color: 'white' }}>
+                          {d.label || `Microphone (${d.deviceId.slice(0, 8)}...)`}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Prefer Headset Mic checkbox */}
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '7px', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={preferHeadsetMic}
+                        onChange={(e) => onPreferHeadsetMicChange && onPreferHeadsetMicChange(e.target.checked)}
+                        style={{ accentColor: '#a78bfa', width: '13px', height: '13px', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '0.72rem', color: '#c4b5fd', lineHeight: 1.3 }}>
+                        Prefer headset mic — auto-select headset when connected
+                      </span>
                     </label>
                   </div>
-                  <div style={{ position: 'relative' }}>
+
+                  {/* STT Engine Select */}
+                  <div className="identity-field" style={{ marginTop: '10px' }}>
+                    <span className="field-label">Speech-to-Text Engine</span>
                     <select
-                      value={settings.active_vrm_model || 'default.vrm'}
-                      onChange={(e) => handleUpdateSetting('active_vrm_model', e.target.value)}
+                      value={settings.use_local_whisper !== false ? 'whisper' : 'web'}
+                      onChange={(e) => handleUpdateSetting('use_local_whisper', e.target.value === 'whisper')}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <option value="whisper" style={{ background: '#0b0813', color: 'white' }}>Local Faster-Whisper (Private / GPU Accelerated)</option>
+                      <option value="web" style={{ background: '#0b0813', color: 'white' }}>Web Speech API (Browser Fallback)</option>
+                    </select>
+                  </div>
+
+                  {/* Local Whisper Options */}
+                  {(settings.use_local_whisper !== false) && (
+                    <>
+                      {/* Whisper Model Size */}
+                      <div className="identity-field" style={{ marginTop: '10px' }}>
+                        <span className="field-label">Whisper Model Size</span>
+                        <select
+                          value={settings.whisper_model || 'base'}
+                          onChange={(e) => handleUpdateSetting('whisper_model', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            marginTop: '4px'
+                          }}
+                        >
+                          <option value="base" style={{ background: '#0b0813', color: 'white' }}>Base Model (Accurate / ~140MB)</option>
+                          <option value="small" style={{ background: '#0b0813', color: 'white' }}>Small Model (High Accuracy / ~460MB)</option>
+                          <option value="tiny" style={{ background: '#0b0813', color: 'white' }}>Tiny Model (Fastest / ~70MB)</option>
+                        </select>
+                      </div>
+
+                      {/* STT Processing Device */}
+                      <div className="identity-field" style={{ marginTop: '10px' }}>
+                        <span className="field-label">STT Processing Device</span>
+                        <select
+                          value={settings.stt_device || 'auto'}
+                          onChange={(e) => handleUpdateSetting('stt_device', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            marginTop: '4px'
+                          }}
+                        >
+                          <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
+                          <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
+                          <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
+                        </select>
+                      </div>
+
+                      {/* VAD Threshold */}
+                      <div className="identity-field" style={{ marginTop: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span className="field-label">VAD Sensitivity Threshold</span>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                            {vadThreshold.toFixed(3)}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.002"
+                          max="0.08"
+                          step="0.002"
+                          value={vadThreshold}
+                          onChange={(e) => onVadThresholdChange && onVadThresholdChange(parseFloat(e.target.value))}
+                          style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
+                        />
+                      </div>
+
+                      {/* STT Language */}
+                      <div className="identity-field" style={{ marginTop: '10px' }}>
+                        <span className="field-label">Speech-to-Text Language</span>
+                        <select
+                          value={settings.stt_language || 'en'}
+                          onChange={(e) => handleUpdateSetting('stt_language', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            marginTop: '4px'
+                          }}
+                        >
+                          <option value="en" style={{ background: '#0b0813', color: 'white' }}>English</option>
+                          <option value="hi" style={{ background: '#0b0813', color: 'white' }}>Hindi (हिन्दी)</option>
+                          <option value="ja" style={{ background: '#0b0813', color: 'white' }}>Japanese (日本語)</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Voice Volume & Mute Controls */}
+                  <div className="identity-field" style={{ marginTop: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {muteVoice ? <VolumeX style={{ width: '13px', height: '13px', color: '#f87171' }} /> : <Volume2 style={{ width: '13px', height: '13px', color: '#a78bfa' }} />}
+                        Voice Audio Output
+                      </span>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: 'white', cursor: 'pointer', margin: 0 }}>
+                        <input
+                          type="checkbox"
+                          checked={muteVoice}
+                          onChange={(e) => onMuteVoiceChange && onMuteVoiceChange(e.target.checked)}
+                          style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
+                        />
+                        Mute
+                      </label>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>Volume Level</span>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                        {Math.round(voiceVolume * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.0"
+                      max="1.0"
+                      step="0.05"
+                      disabled={muteVoice}
+                      value={muteVoice ? 0 : voiceVolume}
+                      onChange={(e) => onVoiceVolumeChange && onVoiceVolumeChange(parseFloat(e.target.value))}
+                      style={{ width: '100%', cursor: muteVoice ? 'not-allowed' : 'pointer', accentColor: '#a78bfa', marginTop: '4px', opacity: muteVoice ? 0.5 : 1 }}
+                    />
+                  </div>
+
+                  {/* TTS Voice Selection */}
+                  <div className="identity-field" style={{ marginTop: '10px' }}>
+                    <span className="field-label">Speech Synthesis Voice</span>
+                    <select
+                      value={settings.tts_voice}
+                      onChange={(e) => handleUpdateSetting('tts_voice', e.target.value)}
                       style={{
                         width: '100%',
                         padding: '7px 10px',
@@ -951,67 +1357,184 @@ const ControlDashboard = ({
                         marginTop: '2px'
                       }}
                     >
-                      {vrmModels.map((model) => (
-                        <option key={model} value={model} style={{ background: '#0b0813', color: 'white' }}>
-                          {model.replace('.vrm', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} {vrmCustomModels.includes(model) ? '(Custom)' : ''}
+                      {TTS_VOICES.map((v) => (
+                        <option key={v.value} value={v.value} style={{ background: '#0b0813', color: 'white' }}>
+                          {v.label}
                         </option>
                       ))}
                     </select>
-                    {vrmCustomModels.length > 0 && (
-                      <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {vrmCustomModels.map((model) => (
-                          <span key={model} style={{
-                            display: 'inline-flex', alignItems: 'center', gap: '4px',
-                            fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px',
-                            background: 'rgba(108,92,231,0.15)', color: 'rgba(255,255,255,0.7)',
-                            border: '1px solid rgba(108,92,231,0.2)',
-                          }}>
-                            {model.replace('.vrm', '')}
-                            <Trash2
-                              size={10}
-                              style={{ cursor: 'pointer', opacity: 0.6, transition: 'opacity 0.2s' }}
-                              onMouseEnter={(e) => e.target.style.opacity = 1}
-                              onMouseLeave={(e) => e.target.style.opacity = 0.6}
-                              onClick={() => handleVrmDelete(model)}
-                            />
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {/* Rendering Resolution (DPR) & FPS Limit */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
-                      <div>
-                        <span className="field-label" style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '3px' }}>
-                          Resolution (DPR)
-                        </span>
-                        <select
-                          value={settings.vrm_dpr || 1.5}
-                          onChange={(e) => handleUpdateSetting('vrm_dpr', parseFloat(e.target.value))}
-                          style={{
-                            width: '100%',
-                            padding: '7px 10px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontSize: '0.78rem',
-                            outline: 'none',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <option value={1.0} style={{ background: '#0b0813', color: 'white' }}>1.0 (Low RAM)</option>
-                          <option value={1.25} style={{ background: '#0b0813', color: 'white' }}>1.25 (Balanced)</option>
-                          <option value={1.5} style={{ background: '#0b0813', color: 'white' }}>1.5 (High Quality)</option>
-                        </select>
-                      </div>
+                  </div>
 
+                  {/* TTS Rate */}
+                  <div className="identity-field" style={{ marginTop: '10px' }}>
+                    <span className="field-label">Speech Delivery Rate</span>
+                    <select
+                      value={settings.tts_rate}
+                      onChange={(e) => handleUpdateSetting('tts_rate', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        marginTop: '2px'
+                      }}
+                    >
+                      {TTS_RATES.map((r) => (
+                        <option key={r.value} value={r.value} style={{ background: '#0b0813', color: 'white' }}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* TTS Device */}
+                  <div className="identity-field" style={{ marginTop: '10px' }}>
+                    <span className="field-label">TTS Processing Device</span>
+                    <select
+                      value={settings.tts_device || 'auto'}
+                      onChange={(e) => handleUpdateSetting('tts_device', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        marginTop: '2px'
+                      }}
+                    >
+                      <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
+                      <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
+                      <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
+                    </select>
+                  </div>
+
+                  {/* Preload TTS */}
+                  <div className="identity-field" style={{ marginTop: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <span className="field-label" style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '3px' }}>
-                          FPS Limit
-                        </span>
+                        <span className="field-label">Preload TTS on Startup</span>
+                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '1px' }}>
+                          Loads voice model on boot (~250-400 MB). Off = loads on first speech.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateSetting('tts_preload', !settings.tts_preload)}
+                        style={{
+                          background: settings.tts_preload ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
+                          border: `1px solid ${settings.tts_preload ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                          borderRadius: '12px',
+                          width: '40px',
+                          height: '22px',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          transition: 'all 0.2s ease',
+                          flexShrink: 0
+                        }}
+                      >
+                        <div style={{
+                          width: '16px',
+                          height: '16px',
+                          borderRadius: '50%',
+                          background: settings.tts_preload ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                          position: 'absolute',
+                          top: '2px',
+                          left: settings.tts_preload ? '20px' : '2px',
+                          transition: 'all 0.2s ease'
+                        }} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-tab 3: Avatar & Persona */}
+              {settingsSubTab === 'avatar' && (
+                <>
+                  <div className="card-group">
+                    <div className="card-group-header">
+                      <Sparkles className="w-4 h-4 text-teal-400" />
+                      <span className="card-group-title">VRM Avatar & Customization</span>
+                    </div>
+
+                    {/* Character Name */}
+                    <div className="identity-field" style={{ marginTop: '4px' }}>
+                      <span className="field-label">Assistant Name</span>
+                      <input
+                        type="text"
+                        value={charName}
+                        onChange={(e) => setCharName(e.target.value)}
+                        onBlur={() => handleUpdateSetting('character_name', charName)}
+                        placeholder="Yuki"
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          marginTop: '4px'
+                        }}
+                      />
+                    </div>
+
+                    {/* Character Persona */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">Assistant Persona</span>
+                      <textarea
+                        value={charPersona}
+                        onChange={(e) => setCharPersona(e.target.value)}
+                        onBlur={() => handleUpdateSetting('character_persona', charPersona)}
+                        placeholder="You are Yuki..."
+                        rows={3}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          marginTop: '4px',
+                          resize: 'vertical'
+                        }}
+                      />
+                    </div>
+
+                    {/* VRM Avatar Model */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                        <span className="field-label" style={{ margin: 0 }}>VRM Avatar Model</span>
+                        <label style={{
+                          display: 'flex', alignItems: 'center', gap: '4px',
+                          fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', cursor: 'pointer',
+                          padding: '2px 8px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)',
+                          border: '1px solid rgba(255,255,255,0.1)', transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(108,92,231,0.15)'; e.currentTarget.style.borderColor = 'rgba(108,92,231,0.3)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+                        >
+                          <Upload size={11} />
+                          <span>{vrmUploading ? 'Uploading...' : 'Upload VRM'}</span>
+                          <input type="file" accept=".vrm" onChange={handleVrmUpload} disabled={vrmUploading} style={{ display: 'none' }} />
+                        </label>
+                      </div>
+                      <div style={{ position: 'relative' }}>
                         <select
-                          value={settings.vrm_fps || 60}
-                          onChange={(e) => handleUpdateSetting('vrm_fps', parseInt(e.target.value, 10))}
+                          value={settings.active_vrm_model || 'default.vrm'}
+                          onChange={(e) => handleUpdateSetting('active_vrm_model', e.target.value)}
                           style={{
                             width: '100%',
                             padding: '7px 10px',
@@ -1021,652 +1544,175 @@ const ControlDashboard = ({
                             color: 'white',
                             fontSize: '0.78rem',
                             outline: 'none',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            marginTop: '2px'
                           }}
                         >
-                          {[30, 40, 45, 50, 55, 60].map((fps) => (
-                            <option key={fps} value={fps} style={{ background: '#0b0813', color: 'white' }}>
-                              {fps} FPS
+                          {vrmModels.map((model) => (
+                            <option key={model} value={model} style={{ background: '#0b0813', color: 'white' }}>
+                              {model.replace('.vrm', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} {vrmCustomModels.includes(model) ? '(Custom)' : ''}
                             </option>
                           ))}
                         </select>
+                        {vrmCustomModels.length > 0 && (
+                          <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            {vrmCustomModels.map((model) => (
+                              <span key={model} style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px',
+                                background: 'rgba(108,92,231,0.15)', color: 'rgba(255,255,255,0.7)',
+                                border: '1px solid rgba(108,92,231,0.2)',
+                              }}>
+                                {model.replace('.vrm', '')}
+                                <Trash2
+                                  size={10}
+                                  style={{ cursor: 'pointer', opacity: 0.6, transition: 'opacity 0.2s' }}
+                                  onMouseEnter={(e) => e.target.style.opacity = 1}
+                                  onMouseLeave={(e) => e.target.style.opacity = 0.6}
+                                  onClick={() => handleVrmDelete(model)}
+                                />
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {/* Rendering Resolution (DPR) & FPS Limit */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+                          <div>
+                            <span className="field-label" style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '3px' }}>
+                              Resolution (DPR)
+                            </span>
+                            <select
+                              value={settings.vrm_dpr || 1.5}
+                              onChange={(e) => handleUpdateSetting('vrm_dpr', parseFloat(e.target.value))}
+                              style={{
+                                width: '100%',
+                                padding: '7px 10px',
+                                background: 'rgba(0,0,0,0.3)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                color: 'white',
+                                fontSize: '0.78rem',
+                                outline: 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value={1.0} style={{ background: '#0b0813', color: 'white' }}>1.0 (Low RAM)</option>
+                              <option value={1.25} style={{ background: '#0b0813', color: 'white' }}>1.25 (Balanced)</option>
+                              <option value={1.5} style={{ background: '#0b0813', color: 'white' }}>1.5 (High Quality)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <span className="field-label" style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '3px' }}>
+                              FPS Limit
+                            </span>
+                            <select
+                              value={settings.vrm_fps || 60}
+                              onChange={(e) => handleUpdateSetting('vrm_fps', parseInt(e.target.value, 10))}
+                              style={{
+                                width: '100%',
+                                padding: '7px 10px',
+                                background: 'rgba(0,0,0,0.3)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                color: 'white',
+                                fontSize: '0.78rem',
+                                outline: 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {[30, 40, 45, 50, 55, 60].map((fps) => (
+                                <option key={fps} value={fps} style={{ background: '#0b0813', color: 'white' }}>
+                                  {fps} FPS
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Model Credits */}
-                <details style={{ marginTop: '6px' }}>
-                  <summary style={{
-                    fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', cursor: 'pointer',
-                    userSelect: 'none', outline: 'none',
-                  }}>
-                    Model Credits
-                  </summary>
-                  <div style={{
-                    marginTop: '6px', padding: '10px 12px', borderRadius: '8px',
-                    background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)',
-                    fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', lineHeight: '1.6',
-                  }}>
-                    <div style={{ marginBottom: '8px' }}>
-                      <div style={{ fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>Mizuki 2.0</div>
-                      <div>Creator: <a href="https://hub.vroid.com/en/users/121822769" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>googoogaga496</a></div>
-                      <div>Model: <a href="https://hub.vroid.com/en/characters/147433999399938929/models/4488526919145096128" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>VRoid Hub</a></div>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>Mixup, Mixup with Hat, Trial, Whai</div>
-                      <div>Creator: <a href="https://hub.vroid.com/en/users/60415018" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>opinion</a></div>
-                    </div>
-                  </div>
-                </details>
-
-                {/* TTS Voice Selection */}
-                <div className="identity-field" style={{ marginTop: '4px' }}>
-                  <span className="field-label">Speech Synthesis Voice</span>
-                  <select
-                    value={settings.tts_voice}
-                    onChange={(e) => handleUpdateSetting('tts_voice', e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '7px 10px',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      color: 'white',
-                      fontSize: '0.78rem',
-                      outline: 'none',
-                      cursor: 'pointer',
-                      marginTop: '2px'
-                    }}
-                  >
-                    {TTS_VOICES.map((v) => (
-                      <option key={v.value} value={v.value} style={{ background: '#0b0813', color: 'white' }}>
-                        {v.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* TTS Speech Speed Rate */}
-                <div className="identity-field" style={{ marginTop: '4px' }}>
-                  <span className="field-label">Speech Delivery Rate</span>
-                  <select
-                    value={settings.tts_rate}
-                    onChange={(e) => handleUpdateSetting('tts_rate', e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '7px 10px',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      color: 'white',
-                      fontSize: '0.78rem',
-                      outline: 'none',
-                      cursor: 'pointer',
-                      marginTop: '2px'
-                    }}
-                  >
-                    {TTS_RATES.map((r) => (
-                      <option key={r.value} value={r.value} style={{ background: '#0b0813', color: 'white' }}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* TTS Device Selection */}
-                <div className="identity-field" style={{ marginTop: '4px' }}>
-                  <span className="field-label">TTS Processing Device</span>
-                  <select
-                    value={settings.tts_device || 'auto'}
-                    onChange={(e) => handleUpdateSetting('tts_device', e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '7px 10px',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      color: 'white',
-                      fontSize: '0.78rem',
-                      outline: 'none',
-                      cursor: 'pointer',
-                      marginTop: '2px'
-                    }}
-                  >
-                    <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
-                    <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
-                    <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
-                  </select>
-                </div>
-
-                {/* TTS Preload Toggle */}
-                <div className="identity-field" style={{ marginTop: '4px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <span className="field-label">Preload TTS on Startup</span>
-                      <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '1px' }}>
-                        Loads voice model on boot (~250-400 MB). Off = loads on first speech.
+                    {/* Skin Tone Customization */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">Avatar Skin Color</span>
+                      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '4px' }}>
+                        {SKIN_PRESETS.map((preset) => (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            onClick={() => onSkinToneChange && onSkinToneChange(preset.value)}
+                            style={{
+                              flex: '1 1 auto',
+                              padding: '5px 6px',
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              borderRadius: '6px',
+                              border: skinToneColor === preset.value ? '2px solid #2dd4bf' : '1px solid rgba(255,255,255,0.15)',
+                              background: preset.value === '#ffffff' ? '#ffffff' : preset.value,
+                              color: preset.value === '#ffffff' || preset.value === '#FFE5E5' || preset.value === '#d89c7b' ? '#111' : '#fff',
+                              cursor: 'pointer',
+                              textAlign: 'center',
+                              boxShadow: skinToneColor === preset.value ? '0 0 8px rgba(45, 212, 191, 0.4)' : 'none',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            {preset.name}
+                          </button>
+                        ))}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateSetting('tts_preload', !settings.tts_preload)}
-                      style={{
-                        background: settings.tts_preload ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
-                        border: `1px solid ${settings.tts_preload ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
-                        borderRadius: '12px',
-                        width: '40px',
-                        height: '22px',
-                        cursor: 'pointer',
-                        position: 'relative',
-                        transition: 'all 0.2s ease',
-                        flexShrink: 0
-                      }}
-                    >
-                      <div style={{
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        background: settings.tts_preload ? '#a78bfa' : 'rgba(255,255,255,0.4)',
-                        position: 'absolute',
-                        top: '2px',
-                        left: settings.tts_preload ? '20px' : '2px',
-                        transition: 'all 0.2s ease'
-                      }} />
-                    </button>
-                  </div>
-                </div>
-                {/* Microphone Input Device */}
-                <div className="identity-field" style={{ marginTop: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Mic style={{ width: '13px', height: '13px', color: '#a78bfa' }} />
-                      Microphone Input Device
-                    </span>
-                    <button
-                      type="button"
-                      onClick={onRefreshMicDevices}
-                      title="Refresh device list"
-                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
-                    >
-                      <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
-                    </button>
-                  </div>
-                  <select
-                    value={selectedMicDeviceId}
-                    onChange={(e) => onMicDeviceChange && onMicDeviceChange(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '7px 10px',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      color: 'white',
-                      fontSize: '0.78rem',
-                      outline: 'none',
-                      cursor: 'pointer',
-                      marginTop: '4px'
-                    }}
-                  >
-                    <option value="" style={{ background: '#0b0813', color: 'white' }}>🎙️ System Default</option>
-                    {micDevices.map((d) => (
-                      <option key={d.deviceId} value={d.deviceId} style={{ background: '#0b0813', color: 'white' }}>
-                        {d.label || `Microphone (${d.deviceId.slice(0, 8)}...)`}
-                      </option>
-                    ))}
-                  </select>
 
-                  {/* Prefer Headset Mic checkbox */}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '7px', cursor: 'pointer', userSelect: 'none' }}>
-                    <input
-                      type="checkbox"
-                      checked={preferHeadsetMic}
-                      onChange={(e) => onPreferHeadsetMicChange && onPreferHeadsetMicChange(e.target.checked)}
-                      style={{ accentColor: '#a78bfa', width: '13px', height: '13px', cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: '0.72rem', color: '#c4b5fd', lineHeight: 1.3 }}>
-                      Prefer headset mic — auto-select headset when connected
-                    </span>
-                  </label>
-                </div>
-
-                {/* LLM Backend Type */}
-                <div className="identity-field" style={{ marginTop: '10px' }}>
-                  <span className="field-label">LLM Backend</span>
-                  <select
-                    value={settings.llm_backend || 'lmstudio'}
-                    onChange={async (e) => {
-                      const newBackend = e.target.value;
-                      await handleUpdateSetting('llm_model', '');
-                      await handleUpdateSetting('llm_backend', newBackend);
-                      const defaults = {
-                        lmstudio: 'http://127.0.0.1:1234',
-                        ollama: 'http://127.0.0.1:11434',
-                        vllm: 'http://127.0.0.1:8000/v1',
-                        openai: '',
-                        custom: '',
-                      };
-                      await handleUpdateSetting('llm_base_url', defaults[newBackend] || '');
-                      if (newBackend !== 'none' && onRefreshLlmModels) {
-                        setTimeout(() => onRefreshLlmModels(), 500);
-                      }
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '7px 10px',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      color: 'white',
-                      fontSize: '0.78rem',
-                      outline: 'none',
-                      cursor: 'pointer',
-                      marginTop: '4px'
-                    }}
-                  >
-                    <option value="lmstudio">LM Studio (Local)</option>
-                    <option value="ollama">Ollama (Local)</option>
-                    <option value="vllm">vLLM (Local)</option>
-                    <option value="openai">OpenAI-Compatible (Cloud)</option>
-                    <option value="custom">Custom Endpoint</option>
-                    <option value="none">No LLM (Voice + File Search Only)</option>
-                  </select>
-                </div>
-
-                {/* Base URL */}
-                {settings.llm_backend !== 'none' && (
-                  <div className="identity-field" style={{ marginTop: '8px' }}>
-                    <span className="field-label">
-                      {settings.llm_backend === 'lmstudio' ? 'LM Studio URL' : settings.llm_backend === 'ollama' ? 'Ollama URL' : settings.llm_backend === 'vllm' ? 'vLLM URL' : settings.llm_backend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
-                    </span>
-                    <input
-                      type="text"
-                      placeholder={
-                        settings.llm_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
-                        settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
-                        settings.llm_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
-                        settings.llm_backend === 'openai' ? 'https://api.groq.com/openai' :
-                        'http://127.0.0.1:8000/v1'
-                      }
-                      value={settings.llm_base_url || ''}
-                      onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
-                      onBlur={(e) => {
-                        if (!e.target.value.trim()) {
-                          const defaults = {
-                            lmstudio: 'http://127.0.0.1:1234',
-                            ollama: 'http://127.0.0.1:11434',
-                            vllm: 'http://127.0.0.1:8000/v1',
-                            custom: 'http://127.0.0.1:8000/v1',
-                          };
-                          if (defaults[settings.llm_backend]) handleUpdateSetting('llm_base_url', defaults[settings.llm_backend]);
-                        }
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        color: 'white',
-                        fontSize: '0.78rem',
-                        outline: 'none',
-                        marginTop: '4px'
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* API Key (for OpenAI-compatible / Custom with auth) */}
-                {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
-                  <div className="identity-field" style={{ marginTop: '8px' }}>
-                    <span className="field-label">API Key</span>
-                    <input
-                      type="password"
-                      placeholder="sk-..."
-                      value={settings.llm_api_key || ''}
-                      onChange={(e) => handleUpdateSetting('llm_api_key', e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        color: 'white',
-                        fontSize: '0.78rem',
-                        outline: 'none',
-                        marginTop: '4px'
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* Active LLM Model Selection */}
-                {settings.llm_backend !== 'none' && (
-                <div className="identity-field" style={{ marginTop: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="field-label">Active LLM Model</span>
-                    <button
-                      type="button"
-                      onClick={onRefreshLlmModels}
-                      title="Refresh model list from backend"
-                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
-                    >
-                      <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
-                    </button>
-                  </div>
-                  <select
-                    value={settings.llm_model || ''}
-                    onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '7px 10px',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      color: 'white',
-                      fontSize: '0.78rem',
-                      outline: 'none',
-                      cursor: 'pointer',
-                      marginTop: '4px'
-                    }}
-                  >
-                    {!settings.llm_model && (
-                      <option value="" style={{ background: '#0b0813', color: 'white', opacity: 0.5 }}>
-                        Select a model...
-                      </option>
-                    )}
-                    {availableLlmModels.map((model) => {
-                      const mName = typeof model === 'string' ? model : (model.name || model.id || '');
-                      return (
-                        <option key={mName} value={mName} style={{ background: '#0b0813', color: 'white' }}>
-                          {mName}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-                )}
-
-                {/* Speech-to-Text Engine Select */}
-                <div className="identity-field" style={{ marginTop: '10px' }}>
-                  <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Mic style={{ width: '13px', height: '13px', color: '#a78bfa' }} />
-                    Speech-to-Text Engine
-                  </span>
-                  <select
-                    value={settings.use_local_whisper !== undefined ? (settings.use_local_whisper ? 'local_whisper' : 'web_speech') : 'local_whisper'}
-                    onChange={(e) => handleUpdateSetting('use_local_whisper', e.target.value === 'local_whisper')}
-                    style={{
-                      width: '100%',
-                      padding: '7px 10px',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      color: 'white',
-                      fontSize: '0.78rem',
-                      outline: 'none',
-                      cursor: 'pointer',
-                      marginTop: '4px'
-                    }}
-                  >
-                    <option value="local_whisper" style={{ background: '#0b0813', color: 'white' }}>🎙️ Local Whisper (Offline / Recommended)</option>
-                    <option value="web_speech" style={{ background: '#0b0813', color: 'white' }}>🌐 Web Speech API (Browser Native)</option>
-                  </select>
-                </div>
-
-                {/* Local Whisper Model Select */}
-                {(settings.use_local_whisper !== false) && (
-                  <>
-                    <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <span className="field-label">Whisper Model Size</span>
-                      <select
-                        value={settings.whisper_model || 'base'}
-                        onChange={(e) => handleUpdateSetting('whisper_model', e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                          marginTop: '4px'
-                        }}
-                      >
-                        <option value="base" style={{ background: '#0b0813', color: 'white' }}>Base Model (Accurate / ~140MB)</option>
-                        <option value="small" style={{ background: '#0b0813', color: 'white' }}>Small Model (High Accuracy / ~460MB)</option>
-                        <option value="tiny" style={{ background: '#0b0813', color: 'white' }}>Tiny Model (Fastest / ~70MB)</option>
-                      </select>
-                    </div>
-
-                    {/* STT Device Selection */}
-                    <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <span className="field-label">STT Processing Device</span>
-                      <select
-                        value={settings.stt_device || 'auto'}
-                        onChange={(e) => handleUpdateSetting('stt_device', e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                          marginTop: '4px'
-                        }}
-                      >
-                        <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto (Best Available)</option>
-                        <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
-                        <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
-                      </select>
-                    </div>
-
-                    {/* VAD Sensitivity Threshold Slider */}
+                    {/* Camera Eye Tracking Toggle */}
                     <div className="identity-field" style={{ marginTop: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span className="field-label">VAD Sensitivity Threshold</span>
-                        <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                          {vadThreshold.toFixed(3)}
-                        </span>
+                        <span className="field-label">Camera Eye Tracking</span>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', margin: 0 }}>
+                          <input
+                            type="checkbox"
+                            checked={cameraTracking}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              setCameraTracking(val);
+                              try { localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false'); } catch { }
+                              if (onCameraTrackingChange) onCameraTrackingChange(val);
+                            }}
+                            style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
+                          />
+                          <span style={{ fontSize: '0.72rem', color: 'white' }}>{cameraTracking ? 'Enabled' : 'Disabled'}</span>
+                        </label>
                       </div>
-                      <input
-                        type="range"
-                        min="0.002"
-                        max="0.08"
-                        step="0.002"
-                        value={vadThreshold}
-                        onChange={(e) => onVadThresholdChange && onVadThresholdChange(parseFloat(e.target.value))}
-                        style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
-                      />
-                      <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', display: 'block', lineHeight: '1.2' }}>
-                        Increase if room noise triggers continuous listening loops.
-                      </span>
-                    </div>
-
-                    {/* Speech-to-Text Language Select */}
-                    <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <span className="field-label">Speech-to-Text Language</span>
-                      <select
-                        value={settings.stt_language || 'en'}
-                        onChange={(e) => handleUpdateSetting('stt_language', e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                          marginTop: '4px'
-                        }}
-                      >
-                        <option value="en" style={{ background: '#0b0813', color: 'white' }}>English</option>
-                        <option value="hi" style={{ background: '#0b0813', color: 'white' }}>Hindi (हिन्दी)</option>
-                        <option value="ja" style={{ background: '#0b0813', color: 'white' }}>Japanese (日本語)</option>
-                      </select>
-                    </div>
-                  </>
-                )}
-
-                {/* Voice Volume & Mute Controls */}
-                <div className="identity-field" style={{ marginTop: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      {muteVoice ? <VolumeX style={{ width: '13px', height: '13px', color: '#f87171' }} /> : <Volume2 style={{ width: '13px', height: '13px', color: '#a78bfa' }} />}
-                      Voice Audio Output
-                    </span>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: 'white', cursor: 'pointer', margin: 0 }}>
-                      <input
-                        type="checkbox"
-                        checked={muteVoice}
-                        onChange={(e) => onMuteVoiceChange && onMuteVoiceChange(e.target.checked)}
-                        style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
-                      />
-                      Mute
-                    </label>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                    <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>Volume Level</span>
-                    <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                      {Math.round(voiceVolume * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.0"
-                    max="1.0"
-                    step="0.05"
-                    disabled={muteVoice}
-                    value={muteVoice ? 0 : voiceVolume}
-                    onChange={(e) => onVoiceVolumeChange && onVoiceVolumeChange(parseFloat(e.target.value))}
-                    style={{ width: '100%', cursor: muteVoice ? 'not-allowed' : 'pointer', accentColor: '#a78bfa', marginTop: '4px', opacity: muteVoice ? 0.5 : 1 }}
-                  />
-                </div>
-
-                {/* Skin Tone Customization */}
-                <div className="identity-field" style={{ marginTop: '10px' }}>
-                  <span className="field-label">Avatar Skin Color</span>
-
-                  {/* Presets */}
-                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '4px' }}>
-                    {SKIN_PRESETS.map((preset) => (
-                      <button
-                        key={preset.value}
-                        type="button"
-                        onClick={() => onSkinToneChange && onSkinToneChange(preset.value)}
-                        style={{
-                          flex: '1 1 auto',
-                          padding: '5px 6px',
-                          fontSize: '0.68rem',
-                          fontWeight: 700,
-                          borderRadius: '6px',
-                          border: skinToneColor === preset.value ? '2px solid #2dd4bf' : '1px solid rgba(255,255,255,0.15)',
-                          background: preset.value === '#ffffff' ? '#ffffff' : preset.value,
-                          color: preset.value === '#ffffff' || preset.value === '#FFE5E5' || preset.value === '#d89c7b' ? '#111' : '#fff',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          boxShadow: skinToneColor === preset.value ? '0 0 8px rgba(45, 212, 191, 0.4)' : 'none',
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        {preset.name}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Custom color input */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Custom Color:</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                      <input
-                        type="color"
-                        value={skinToneColor}
-                        onChange={(e) => onSkinToneChange && onSkinToneChange(e.target.value)}
-                        style={{
-                          border: 'none',
-                          width: '30px',
-                          height: '30px',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          background: 'none',
-                          padding: 0
-                        }}
-                      />
-                      <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#ccc', fontWeight: 600 }}>
-                        {skinToneColor.toUpperCase()}
-                      </span>
                     </div>
                   </div>
-                </div>
-              </div>
 
-              {/* Camera-Aware Gaze Tracking Toggle */}
-              <div className="card-group" style={{ marginTop: '12px' }}>
-                <div className="card-group-header">
-                  <Cpu className="w-4 h-4 text-teal-400" />
-                  <span className="card-group-title">Rotation Behavior</span>
-                </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '6px', cursor: 'pointer', userSelect: 'none' }}>
-                  <input
-                    type="checkbox"
-                    checked={cameraTracking}
-                    onChange={(e) => {
-                      setCameraTracking(e.target.checked);
-                      if (window.yukiDebugToggles) window.yukiDebugToggles.cameraTracking = e.target.checked;
-                    }}
-                    style={{ accentColor: '#2dd4bf', width: '13px', height: '13px', cursor: 'pointer' }}
-                  />
-                  <span style={{ fontSize: '0.72rem', color: '#99f6e4', lineHeight: 1.3 }}>
-                    Enable looking at you — head tracks camera position
-                  </span>
-                </label>
-              </div>
-
-              {/* Dynamic Animations Toggles */}
-              <div className="card-group" style={{ marginTop: '12px' }}>
-                <div className="card-group-header">
-                  <Cpu className="w-4 h-4 text-violet-400" />
-                  <span className="card-group-title">Animations Toggle</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
-                  {ANIMATIONS.map((anim) => {
-                    const isEnabled = !disabledAnimations.includes(anim.name);
-                    const displayName = anim.name
-                      .split('_')
-                      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-                      .join(' ');
-                    return (
-                      <div key={anim.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0, 0, 0, 0.2)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                        <span style={{ fontSize: '0.75rem', color: '#cbd5e1', fontWeight: '500' }}>{displayName}</span>
-                        <input
-                          type="checkbox"
-                          style={{ cursor: 'pointer', accentColor: '#a855f7' }}
-                          checked={isEnabled}
-                          onChange={() => onToggleAnimation && onToggleAnimation(anim.name)}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Format / Wipe memory action at bottom of settings */}
-              <button
-                onClick={onResetProfile}
-                className="panel-btn-action"
-                style={{ marginTop: 'auto' }}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Format Memory Matrix</span>
-              </button>
+                  {/* Dynamic Animations Toggles */}
+                  <div className="card-group" style={{ marginTop: '12px' }}>
+                    <div className="card-group-header">
+                      <Cpu className="w-4 h-4 text-violet-400" />
+                      <span className="card-group-title">Animations Toggle</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                      {ANIMATIONS.map((anim) => {
+                        const isEnabled = !disabledAnimations.includes(anim.name);
+                        const displayName = anim.name
+                          .split('_')
+                          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                          .join(' ');
+                        return (
+                          <div key={anim.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0, 0, 0, 0.2)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                            <span style={{ fontSize: '0.75rem', color: '#cbd5e1', fontWeight: '500' }}>{displayName}</span>
+                            <input
+                              type="checkbox"
+                              style={{ cursor: 'pointer', accentColor: '#a855f7' }}
+                              checked={isEnabled}
+                              onChange={() => onToggleAnimation && onToggleAnimation(anim.name)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           ) : activeTab === 'crawler' ? (
             <>
