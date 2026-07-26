@@ -100,7 +100,7 @@ const AvatarViewer = ({
       return;
     }
     if (activeModel) {
-      loadModel(`${API_BASE}/api/models/vrm/files/${activeModel}`);
+      loadModel(`${API_BASE}/api/models/vrm/files/${activeModel}?t=${Date.now()}`);
     }
   }, [activeModel]);
 
@@ -169,7 +169,7 @@ const AvatarViewer = ({
 
   useEffect(() => {
     if (isBackendOnline && !hasVrm && activeModel) {
-      loadModel(`${API_BASE}/api/models/vrm/files/${activeModel}`);
+      loadModel(`${API_BASE}/api/models/vrm/files/${activeModel}?t=${Date.now()}`);
     }
   }, [isBackendOnline, hasVrm, activeModel]);
 
@@ -257,32 +257,23 @@ const AvatarViewer = ({
 
   const disposeObject = (obj) => {
     if (!obj) return;
-    try {
-      obj.traverse((child) => {
-        if (child.geometry) {
-          child.geometry.dispose();
-        }
-        if (child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material];
-          for (const mat of materials) {
-            // Dispose known texture maps attached to material
-            const textureKeys = [
-              'map', 'lightMap', 'aoMap', 'emissiveMap', 'bumpMap', 'normalMap',
-              'displacementMap', 'roughnessMap', 'metalnessMap', 'alphaMap',
-              'shadeTexture', 'rimTexture', 'outlineWidthMultiplyTexture', 'shadeMultiplierTexture'
-            ];
-            for (const key of textureKeys) {
-              if (mat[key] && typeof mat[key].dispose === 'function') {
-                try { mat[key].dispose(); } catch (_) {}
-              }
+    obj.traverse((child) => {
+      if (child.geometry) {
+        child.geometry.dispose();
+      }
+      if (child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        for (const mat of materials) {
+          mat.dispose();
+          for (const key of Object.keys(mat)) {
+            const value = mat[key];
+            if (value && typeof value.dispose === 'function') {
+              value.dispose();
             }
-            try { mat.dispose(); } catch (_) {}
           }
         }
-      });
-    } catch (e) {
-      console.warn("[AvatarViewer] Error during object disposal:", e);
-    }
+      }
+    });
   };
 
   const applySkinTone = (vrm, colorHex) => {
@@ -357,6 +348,9 @@ const AvatarViewer = ({
         window.vrmScene.remove(vrmRef.current.scene);
       }
       vrmRef.current = null;
+      
+      // Clear Three.js texture/file caches
+      THREE.Cache.clear();
 
       // Force V8 to collect the disposed textures and geometries immediately
       if (isElectron && window.gc) {
@@ -789,7 +783,7 @@ const AvatarViewer = ({
     // loadModel('/models/watame.vrm');9
     // loadModel('/models/yuki.vrm');10
     // loadModel('/models/timekeeper_cookie.vrm');11
-    loadModel(`${API_BASE}/api/models/vrm/files/${activeModelRef.current}`);
+    loadModel(`${API_BASE}/api/models/vrm/files/${activeModelRef.current}?t=${Date.now()}`);
 
     // 8. Animation Loop variables
     let blinkTimer = 0;
