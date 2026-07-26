@@ -168,47 +168,7 @@ export function useAudioPlayback(options = {}) {
     if (updateListeningStateGlobal) updateListeningStateGlobal();
   }, [stopSpeechRecognition, setAudioLevel, setAvatarExpression, updateListeningStateGlobal]);
 
-  const playNextAudio = useCallback(() => {
-    if (bubbleTimeoutRef.current) {
-      clearTimeout(bubbleTimeoutRef.current);
-      bubbleTimeoutRef.current = null;
-    }
-
-    if (audioQueueRef.current.length === 0) {
-      if (ttsStreamActiveRef.current) {
-        console.log("[Playback] Queue empty but stream still active. Buffering next chunks...");
-        setCurrentSpeechText('');
-        isPlayingRef.current = false;
-        if (updateListeningStateGlobal) updateListeningStateGlobal();
-      } else {
-        console.log("[Playback] Playback completed. Returning to idle state.");
-        isPlayingRef.current = false;
-        hasReceivedAudioRef.current = false;
-        if (setAudioLevel) setAudioLevel(0);
-
-        bubbleTimeoutRef.current = setTimeout(() => {
-          setCurrentSpeechText('');
-        }, 2000);
-
-        if (isVoiceCommandModeRef && isVoiceCommandModeRef.current && startSessionTimeout) {
-          startSessionTimeout();
-        }
-
-        if (micActivationTimeoutRef.current) clearTimeout(micActivationTimeoutRef.current);
-        micActivationTimeoutRef.current = setTimeout(() => {
-          micActivationTimeoutRef.current = null;
-          if (updateListeningStateGlobal) updateListeningStateGlobal();
-        }, 700);
-      }
-      return;
-    }
-
-    isPlayingRef.current = true;
-    const nextChunk = audioQueueRef.current.shift();
-    // playVoiceResponse is defined below, we'll invoke it using a ref or direct if ordered correctly
-  }, [setAudioLevel, updateListeningStateGlobal, isVoiceCommandModeRef, startSessionTimeout]);
-
-  const playVoiceResponseRef = useRef(null);
+  const playNextAudioRef = useRef(null);
 
   const playVoiceResponse = useCallback((audioUrl, speechText, forcedExpression = null) => {
     initAudioAnalyser();
@@ -227,15 +187,19 @@ export function useAudioPlayback(options = {}) {
 
     isPlayingRef.current = true;
 
+    const triggerNext = () => {
+      if (playNextAudioRef.current) {
+        playNextAudioRef.current();
+      }
+    };
+
     if (muteVoiceRef.current || !audioRef.current) {
       setCurrentSpeechText(speechText);
       if (setIsThinking) setIsThinking(false);
 
       const readingDelay = Math.max(2000, speechText.length * 60);
       if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
-      playbackTimeoutRef.current = setTimeout(() => {
-        playNextAudio();
-      }, readingDelay);
+      playbackTimeoutRef.current = setTimeout(triggerNext, readingDelay);
       return;
     }
 
@@ -261,34 +225,31 @@ export function useAudioPlayback(options = {}) {
       };
 
       audioRef.current.onended = () => {
-        playNextAudio();
+        triggerNext();
       };
 
       audioRef.current.onerror = (e) => {
         console.warn("[Playback] Audio element failed to load voice clip:", e);
         const readingDelay = Math.max(1500, speechText.length * 60);
         if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
-        playbackTimeoutRef.current = setTimeout(() => playNextAudio(), readingDelay);
+        playbackTimeoutRef.current = setTimeout(triggerNext, readingDelay);
       };
 
       audioRef.current.play().catch(err => {
         console.warn("[Playback] Autoplay blocked. Displaying subtitles and using fallback timer.", err);
         const readingDelay = Math.max(1500, speechText.length * 60);
         if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
-        playbackTimeoutRef.current = setTimeout(() => playNextAudio(), readingDelay);
+        playbackTimeoutRef.current = setTimeout(triggerNext, readingDelay);
       });
     } catch (err) {
       console.error("[Playback] Audio trigger error:", err);
       const readingDelay = Math.max(1500, speechText.length * 60);
       if (playbackTimeoutRef.current) clearTimeout(playbackTimeoutRef.current);
-      playbackTimeoutRef.current = setTimeout(() => playNextAudio(), readingDelay);
+      playbackTimeoutRef.current = setTimeout(triggerNext, readingDelay);
     }
-  }, [initAudioAnalyser, setAvatarExpression, setIsThinking, updateListeningStateGlobal, playNextAudio]);
+  }, [initAudioAnalyser, setAvatarExpression, setIsThinking, updateListeningStateGlobal]);
 
-  playVoiceResponseRef.current = playVoiceResponse;
-
-  // We patch playNextAudio to call playVoiceResponse
-  const realPlayNextAudio = useCallback(() => {
+  const playNextAudio = useCallback(() => {
     if (bubbleTimeoutRef.current) {
       clearTimeout(bubbleTimeoutRef.current);
       bubbleTimeoutRef.current = null;
@@ -297,7 +258,6 @@ export function useAudioPlayback(options = {}) {
     if (audioQueueRef.current.length === 0) {
       if (ttsStreamActiveRef.current) {
         console.log("[Playback] Queue empty but stream still active. Buffering next chunks...");
-        setCurrentSpeechText('');
         isPlayingRef.current = false;
         if (updateListeningStateGlobal) updateListeningStateGlobal();
       } else {
@@ -325,16 +285,10 @@ export function useAudioPlayback(options = {}) {
 
     isPlayingRef.current = true;
     const nextChunk = audioQueueRef.current.shift();
-    if (playVoiceResponseRef.current) {
-      playVoiceResponseRef.current(nextChunk.url, nextChunk.text);
-    }
-  }, [setAudioLevel, updateListeningStateGlobal, isVoiceCommandModeRef, startSessionTimeout]);
+    playVoiceResponse(nextChunk.url, nextChunk.text);
+  }, [setAudioLevel, updateListeningStateGlobal, isVoiceCommandModeRef, startSessionTimeout, playVoiceResponse]);
 
-  // Patch playNextAudio ref in playVoiceResponse
-  useEffect(() => {
-    // Actually no need, because we use playNextAudio in playVoiceResponse, which triggers realPlayNextAudio since playNextAudio is bound to the latest context?
-    // Wait, let's just make playNextAudio call playVoiceResponse directly using the ref.
-  }, []);
+  playNextAudioRef.current = playNextAudio;
 
   const queueAudioChunk = useCallback((audioUrl, speechText, index) => {
     audioQueueRef.current.push({ url: audioUrl, text: speechText, index: index });
@@ -342,9 +296,9 @@ export function useAudioPlayback(options = {}) {
 
     if (!isPlayingRef.current) {
       isPlayingRef.current = true;
-      realPlayNextAudio();
+      playNextAudio();
     }
-  }, [realPlayNextAudio]);
+  }, [playNextAudio]);
 
   const speakTextNatively = useCallback((text, forcedExpression = null) => {
     window.speechSynthesis.cancel();
