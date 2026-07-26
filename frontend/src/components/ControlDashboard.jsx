@@ -518,7 +518,7 @@ const ControlDashboard = ({
             onClick={() => setActiveTab('memory')}
             className={`tab-btn ${activeTab === 'memory' ? 'active' : ''}`}
           >
-            Memories
+            Persona
           </button>
           <button
             onClick={() => setActiveTab('settings')}
