@@ -272,23 +272,50 @@ const AvatarViewer = ({
     loadModel(url);
   };
 
+  const disposeVrm = (vrm) => {
+    if (!vrm) return;
+    try {
+      if (typeof vrm.dispose === 'function') {
+        vrm.dispose();
+      }
+    } catch (e) {
+      console.warn("[AvatarViewer] vrm.dispose() warning:", e);
+    }
+    try {
+      if (vrm.scene) {
+        VRMUtils.deepDispose(vrm.scene);
+      }
+    } catch (e) {
+      console.warn("[AvatarViewer] VRMUtils.deepDispose warning:", e);
+    }
+    if (vrm.scene) {
+      disposeObject(vrm.scene);
+    }
+  };
+
   const disposeObject = (obj) => {
     if (!obj) return;
     obj.traverse((child) => {
       if (child.geometry) {
-        child.geometry.dispose();
+        try { child.geometry.dispose(); } catch (_) {}
+        child.geometry = null;
       }
       if (child.material) {
         const materials = Array.isArray(child.material) ? child.material : [child.material];
         for (const mat of materials) {
-          mat.dispose();
           for (const key of Object.keys(mat)) {
             const value = mat[key];
             if (value && typeof value.dispose === 'function') {
-              value.dispose();
+              try { value.dispose(); } catch (_) {}
             }
           }
+          try { mat.dispose(); } catch (_) {}
         }
+        child.material = null;
+      }
+      if (child.skeleton) {
+        try { child.skeleton.dispose(); } catch (_) {}
+        child.skeleton = null;
       }
     });
   };
@@ -356,27 +383,32 @@ const AvatarViewer = ({
     const loadId = currentLoadIdRef.current;
 
     // Dispose old VRM if exists
-    if (vrmRef.current && vrmRef.current.scene) {
-      disposeObject(vrmRef.current.scene);
-      const parent = vrmRef.current.scene.parent;
-      if (parent) {
-        parent.remove(vrmRef.current.scene);
-      } else if (window.vrmScene) {
-        window.vrmScene.remove(vrmRef.current.scene);
-      }
+    if (vrmRef.current) {
+      const oldVrm = vrmRef.current;
       vrmRef.current = null;
+
+      if (oldVrm.scene) {
+        const parent = oldVrm.scene.parent;
+        if (parent) {
+          parent.remove(oldVrm.scene);
+        } else if (window.vrmScene) {
+          window.vrmScene.remove(oldVrm.scene);
+        }
+      }
+
+      disposeVrm(oldVrm);
       
       // Clear Three.js texture/file caches
       THREE.Cache.clear();
 
       // Force V8 to collect the disposed textures and geometries immediately
-      if (isElectron && window.gc) {
+      if (window.gc) {
         setTimeout(() => {
           try {
             window.gc();
-            console.log("[AvatarViewer] Pre-load garbage collection executed to flush old model.");
+            console.log("[AvatarViewer] Garbage collection executed to flush old model memory.");
           } catch (_) {}
-        }, 100);
+        }, 50);
       }
     }
 
