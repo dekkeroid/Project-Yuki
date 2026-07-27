@@ -1937,7 +1937,7 @@ const ControlDashboard = ({
                         >
                           {vrmModels.map((model) => (
                             <option key={model} value={model} style={{ background: '#0b0813', color: 'white' }}>
-                              {model.replace('.vrm', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} {vrmCustomModels.includes(model) ? '(Custom)' : ''}
+                              {model.replace('.vrm', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                             </option>
                           ))}
                         </select>
@@ -1983,9 +1983,11 @@ const ControlDashboard = ({
                                 cursor: 'pointer'
                               }}
                             >
-                              <option value={1.0} style={{ background: '#0b0813', color: 'white' }}>1.0 (Low RAM)</option>
+                              <option value={1.0} style={{ background: '#0b0813', color: 'white' }}>1.0 (Low VRAM)</option>
                               <option value={1.25} style={{ background: '#0b0813', color: 'white' }}>1.25 (Balanced)</option>
                               <option value={1.5} style={{ background: '#0b0813', color: 'white' }}>1.5 (High Quality)</option>
+                              <option value={1.75} style={{ background: '#0b0813', color: 'white' }}>1.75 (Ultra Quality)</option>
+                              <option value={2.0} style={{ background: '#0b0813', color: 'white' }}>2.0 (Max / Native)</option>
                             </select>
                           </div>
 
