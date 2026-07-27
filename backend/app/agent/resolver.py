@@ -90,9 +90,9 @@ def resolve_command(message: str) -> Optional[ResolvedCommand]:
         label = re.sub(r".*\bstopwatch\s*(for|on|about)?\s*", "", msg).strip() or "default"
         return ("manage_time", {"action": "start_stopwatch", "label": label})
 
-    # ── Open / Launch / Start ─────────────────────────────────────────────────
-    # Matches "open notepad", "launch calculator", "start chrome", etc.
-    m = re.search(r"^(open|launch|start|run)\s+(.+)$", msg)
+    # ── Open / Launch / Run ───────────────────────────────────────────────────
+    # Matches "open notepad", "launch calculator", "run chrome", etc.
+    m = re.search(r"^(open|launch|run)\s+(.+)$", msg)
     if m:
         target = m.group(2).strip()
         # Avoid intercepting time tools, terminal/script commands that require specific tools
