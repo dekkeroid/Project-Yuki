@@ -735,7 +735,7 @@ const AvatarViewer = ({
       20.0
     );
     // In Electron: position camera low and far back to see full body including legs
-    camera.position.set(0, isElectron ? 1.55 : 1.35, isElectron ? 2.2 : 1.2);
+    camera.position.set(0, (isElectron ? 1.55 : 1.35) * scale, (isElectron ? 2.2 : 1.2) * scale);
     window.vrmCamera = camera;
 
     // 3. Setup Renderer
@@ -777,7 +777,7 @@ const AvatarViewer = ({
     controls.maxDistance = 5.0;
     controls.minDistance = 0.3;
     // In Electron: target mid-body so full character is visible
-    controls.target.set(0, isElectron ? 0.75 : 1.2, 0);
+    controls.target.set(0, (isElectron ? 0.75 : 1.2) * scale, 0);
 
     // Disable OrbitControls in desktop mode to allow window dragging to work
     if (isElectron) {

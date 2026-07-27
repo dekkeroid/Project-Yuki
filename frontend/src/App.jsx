@@ -2074,7 +2074,7 @@ const detectExpression = (text) => {
     return (
       <div className="app-viewport" style={{
         '--avatar-scale': avatarScale,
-        '--avatar-button-scale': avatarScale < 1.0 ? avatarScale : 1.0 + (avatarScale - 1.0) * 0.25
+        '--avatar-button-scale': avatarScale < 1.0 ? Math.pow(avatarScale, 1.5) : 1.0 + (avatarScale - 1.0) * 0.25
       }}>
         <main className="canvas-container">
           <Suspense fallback={<div style={{color: '#8b5cf6', padding: '20px', fontFamily: 'monospace'}}>Initializing 3D Engine...</div>}>
@@ -4297,9 +4297,9 @@ const detectExpression = (text) => {
   return (
     <div className="app-viewport" style={{
       '--avatar-scale': avatarScale,
-      '--avatar-button-scale': avatarScale < 1.0 ? avatarScale : 1.0 + (avatarScale - 1.0) * 0.25
+      '--avatar-button-scale': avatarScale < 1.0 ? Math.pow(avatarScale, 1.5) : 1.0 + (avatarScale - 1.0) * 0.25
     }}>
-
+      
       {/* Top Banner Status Bar */}
       <header className="top-header glass-panel">
         <div className="header-icon">
