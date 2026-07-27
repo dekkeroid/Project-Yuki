@@ -173,6 +173,10 @@ const ControlDashboard = ({
     try { return localStorage.getItem('yuki-camera-tracking') !== 'false'; } catch { return true; }
   });
 
+  const [customSkinColor, setCustomSkinColor] = useState(() => {
+    try { return localStorage.getItem('yuki-custom-skintone-color') || '#e0ac69'; } catch { return '#e0ac69'; }
+  });
+
   // Model selector state removed
 
   // Settings State
@@ -2900,6 +2904,9 @@ const ControlDashboard = ({
                         {/* Custom Color Picker */}
                         <label
                           title="Pick custom skin color"
+                          onClick={() => {
+                            if (onSkinToneChange) onSkinToneChange(customSkinColor);
+                          }}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -2907,19 +2914,25 @@ const ControlDashboard = ({
                             padding: '4px 8px',
                             borderRadius: '6px',
                             background: 'rgba(255,255,255,0.06)',
-                            border: !SKIN_PRESETS.some(p => p.value.toLowerCase() === skinToneColor.toLowerCase()) ? '2px solid #2dd4bf' : '1px solid rgba(255,255,255,0.15)',
+                            border: skinToneColor.toLowerCase() === customSkinColor.toLowerCase() || !SKIN_PRESETS.some(p => p.value.toLowerCase() === skinToneColor.toLowerCase()) ? '2px solid #2dd4bf' : '1px solid rgba(255,255,255,0.15)',
                             cursor: 'pointer',
                             fontSize: '0.68rem',
                             color: '#fff',
-                            fontWeight: 600
+                            fontWeight: 600,
+                            boxShadow: skinToneColor.toLowerCase() === customSkinColor.toLowerCase() || !SKIN_PRESETS.some(p => p.value.toLowerCase() === skinToneColor.toLowerCase()) ? '0 0 8px rgba(45, 212, 191, 0.4)' : 'none'
                           }}
                         >
                           <Palette className="w-3 h-3 text-purple-400" />
                           <span>Custom</span>
                           <input
                             type="color"
-                            value={skinToneColor || '#FFE5E5'}
-                            onChange={(e) => onSkinToneChange && onSkinToneChange(e.target.value)}
+                            value={customSkinColor}
+                            onChange={(e) => {
+                              const newCustom = e.target.value;
+                              setCustomSkinColor(newCustom);
+                              try { localStorage.setItem('yuki-custom-skintone-color', newCustom); } catch {}
+                              if (onSkinToneChange) onSkinToneChange(newCustom);
+                            }}
                             style={{
                               width: '18px',
                               height: '18px',

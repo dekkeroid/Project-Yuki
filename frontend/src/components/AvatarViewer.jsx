@@ -1625,7 +1625,9 @@ const AvatarViewer = ({
             // Neck look-around state machine update
             const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
-            const enableCameraTracking = !!(window.yukiDebugToggles && window.yukiDebugToggles.cameraTracking);
+            const enableCameraTracking = (window.yukiDebugToggles && window.yukiDebugToggles.cameraTracking !== undefined)
+              ? window.yukiDebugToggles.cameraTracking
+              : (cameraTrackingRef.current !== false && localStorage.getItem('yuki-camera-tracking') !== 'false');
 
             // Gaze cycling: toggle between looking at user and looking away
             if (enableCameraTracking) {
@@ -1754,7 +1756,7 @@ const AvatarViewer = ({
               lookState = 'idle';
               lookTimer = 0;
             } else if (isMouseInWindow) {
-              const enableMouseTracking = cameraTrackingRef.current && (window.yukiDebugToggles ? window.yukiDebugToggles.mouseTracking : true);
+              const enableMouseTracking = !disabledAnimationsRef.current.includes('mouse_tracking') && (window.yukiDebugToggles ? window.yukiDebugToggles.mouseTracking !== false : true);
               if (isElectron) {
                 if (enableMouseTracking) {
                   const dx = cursorOffsetRef.current.x;
@@ -1788,7 +1790,7 @@ const AvatarViewer = ({
               lookState = 'idle';
               lookTimer = 0;
             } else if (!isWalkingRef.current) {
-              const enableLookAround = cameraTrackingRef.current && (window.yukiDebugToggles ? window.yukiDebugToggles.lookAround : true);
+              const enableLookAround = enableCameraTracking && (window.yukiDebugToggles ? window.yukiDebugToggles.lookAround !== false : true);
               if (enableLookAround && isElectron) {
                 lookTimer += delta;
                 if (lookState === 'idle') {
