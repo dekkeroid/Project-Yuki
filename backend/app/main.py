@@ -1043,19 +1043,13 @@ def get_search_suggestions(query: str, type: str):
     """
     import os
     from app.tools.system import _get_uwp_apps
-    from app.tools.files import query_database_union, _density_score, _is_safe_path
+    from app.tools.files import query_database_union, _density_score, _is_safe_path, parse_query_with_llm
 
     clean_query = query.strip()
     if not clean_query:
         return {"suggestions": []}
 
-    words = [w.lower() for w in clean_query.split() if w.strip()]
-    parsed = {
-        "title": words,
-        "path": [],
-        "genre": [],
-        "episode": None
-    }
+    parsed = parse_query_with_llm(clean_query)
 
     results = []
 

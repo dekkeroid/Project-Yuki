@@ -290,13 +290,22 @@ def query_database_union(parsed: Dict, limit_raw: int = 100, categories: List[st
         placeholders = ", ".join("?" for _ in categories)
         category_filter = f" AND f.category IN ({placeholders})"
 
-    order_by_clause = "ORDER BY LENGTH(f.file_name) ASC"
-    order_params = []
+    order_params: List[str] = []
+    score_expr_parts = []
+    for w in title_words:
+        w_like = f"%{w}%"
+        score_expr_parts.append("(CASE WHEN f.file_name LIKE ? OR f.transliterated_name LIKE ? THEN 1 ELSE 0 END)")
+        order_params.extend([w_like, w_like])
+        
+    kw_score_sql = " + ".join(score_expr_parts) if score_expr_parts else "0"
+
     exact_phrase = " ".join(title_words).strip()
     if exact_phrase:
-        order_by_clause = "ORDER BY CASE WHEN f.file_name LIKE ? OR f.transliterated_name LIKE ? THEN 1 ELSE 0 END DESC, LENGTH(f.file_name) ASC"
         exact_like = f"%{exact_phrase}%"
-        order_params = [exact_like, exact_like]
+        order_by_clause = f"ORDER BY CASE WHEN f.file_name LIKE ? OR f.transliterated_name LIKE ? THEN 1 ELSE 0 END DESC, ({kw_score_sql}) DESC, LENGTH(f.file_name) ASC"
+        order_params = [exact_like, exact_like] + order_params
+    else:
+        order_by_clause = f"ORDER BY ({kw_score_sql}) DESC, LENGTH(f.file_name) ASC"
 
     sql = f"""
     SELECT f.id, f.file_path, f.file_name, f.parent_folder, f.category,
