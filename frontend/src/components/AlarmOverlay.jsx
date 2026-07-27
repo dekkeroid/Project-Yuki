@@ -63,26 +63,25 @@ const AlarmOverlay = ({ alarm, onDismiss, onSnooze }) => {
       position: 'fixed',
       inset: 0,
       zIndex: 99999,
-      background: 'rgba(0, 0, 0, 0.75)',
-      backdropFilter: 'blur(12px)',
-      WebkitBackdropFilter: 'blur(12px)',
+      background: 'rgba(0, 0, 0, 0.85)',
+      backdropFilter: 'blur(16px)',
+      WebkitBackdropFilter: 'blur(16px)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      animation: 'fadeIn 0.3s ease-out'
+      transition: 'all 0.3s ease'
     }}>
       <div style={{
-        background: 'linear-gradient(145deg, rgba(20,15,35,0.95) 0%, rgba(10,8,20,0.98) 100%)',
+        background: 'linear-gradient(145deg, rgba(20,15,35,0.98) 0%, rgba(10,8,20,0.99) 100%)',
         border: `2px solid ${themeColor}`,
-        boxShadow: `0 0 40px ${glowColor}, 0 20px 50px rgba(0,0,0,0.8)`,
+        boxShadow: `0 0 40px ${glowColor}, 0 20px 50px rgba(0,0,0,0.9)`,
         borderRadius: '20px',
         padding: '28px 36px',
         width: '90%',
         maxWidth: '440px',
         textAlign: 'center',
         color: '#fff',
-        position: 'relative',
-        animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+        position: 'relative'
       }}>
         {/* Pulsing Icon Header */}
         <div style={{
@@ -95,8 +94,7 @@ const AlarmOverlay = ({ alarm, onDismiss, onSnooze }) => {
           alignItems: 'center',
           justifyContent: 'center',
           margin: '0 auto 16px auto',
-          boxShadow: `0 0 20px ${glowColor}`,
-          animation: 'pulse 1.2s infinite ease-in-out'
+          boxShadow: `0 0 20px ${glowColor}`
         }}>
           {isTimer ? (
             <Clock style={{ width: '32px', height: '32px', color: themeColor }} />

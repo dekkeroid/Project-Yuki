@@ -899,7 +899,7 @@ async def get_tools_list():
 
 async def reminder_heartbeat_loop():
     """
-    Background heartbeat running every 10 seconds.
+    Background heartbeat running every 1 second.
     Checks SQLite reminders for due items, triggers Windows Toasts, WebSocket speech announcements,
     and cross-platform active Alarm Overlay modals.
     """
@@ -923,11 +923,11 @@ async def reminder_heartbeat_loop():
                                 "category": item.get("category", "timer"),
                                 "message": msg
                             })
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            print(f"[ReminderHeartbeat] Error broadcasting ws: {e}")
         except Exception as e:
             print(f"[ReminderHeartbeat] Error processing due reminders: {e}")
-        await asyncio.sleep(10)
+        await asyncio.sleep(1)
 
 @app.get("/api/reminders/active")
 def get_active_reminders():
