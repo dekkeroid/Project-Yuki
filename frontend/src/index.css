@@ -1241,9 +1241,13 @@ body.desktop-overlay .interactive-element {
 /* Floating Vertical Menu near Yuki's body */
 .desktop-overlay-menu {
   position: absolute;
-  left: calc(50% + 112px * var(--avatar-scale, 1));
+  /* Scale the 112px offset proportionally, and clamp so it never clips past the right edge */
+  left: min(
+    calc(50% + 112px * var(--avatar-scale, 1)),
+    calc(100% - (40px * var(--avatar-button-scale, 1)) - 8px)
+  );
   top: 50%;
-  transform: translateY(-50%) translateX(calc(15px * var(--avatar-button-scale, 1)));
+  transform: translateY(-50%) translateX(calc(10px * var(--avatar-button-scale, 1)));
   display: flex;
   flex-direction: column;
   gap: calc(10px * var(--avatar-button-scale, 1));
