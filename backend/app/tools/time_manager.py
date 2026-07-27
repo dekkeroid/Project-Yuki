@@ -526,14 +526,26 @@ def init_time_manager():
     """
     Called on startup to load and schedule all active timers/reminders that survived restart.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
-    reminders = cursor.execute("""
-    SELECT id, target_time
-    FROM reminders
-    WHERE is_completed = 0
-    """).fetchall()
-    conn.close()
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        reminders = cursor.execute("""
+        SELECT id, target_time
+        FROM reminders
+        WHERE is_completed = 0
+        """).fetchall()
+        conn.close()
+    except Exception as e:
+        from app.memory.db import init_db
+        init_db()
+        conn = get_connection()
+        cursor = conn.cursor()
+        reminders = cursor.execute("""
+        SELECT id, target_time
+        FROM reminders
+        WHERE is_completed = 0
+        """).fetchall()
+        conn.close()
     
     for row in reminders:
         schedule_exact_timer(row["id"], row["target_time"])
@@ -656,9 +668,16 @@ def init_exact_timer_scheduler():
         _main_loop = asyncio.get_running_loop()
     except RuntimeError:
         pass
-    conn = get_connection()
-    rows = conn.execute("SELECT id, target_time FROM reminders WHERE is_completed = 0").fetchall()
-    conn.close()
+    try:
+        conn = get_connection()
+        rows = conn.execute("SELECT id, target_time FROM reminders WHERE is_completed = 0").fetchall()
+        conn.close()
+    except Exception as e:
+        from app.memory.db import init_db
+        init_db()
+        conn = get_connection()
+        rows = conn.execute("SELECT id, target_time FROM reminders WHERE is_completed = 0").fetchall()
+        conn.close()
     for r in rows:
         schedule_exact_timer(r["id"], r["target_time"])
 

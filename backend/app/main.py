@@ -249,6 +249,14 @@ async def lifespan(app: FastAPI):
     # ── Startup — lightweight tasks only (server starts accepting ASAP) ──
     print("[Startup] Server is live — deferring heavy initialization to background...")
 
+    # Ensure database schema (tables/indexes/migrations) is initialized before any tools query it
+    try:
+        from app.memory.db import init_db
+        init_db()
+        print("[Startup] SQLite database schema initialized.")
+    except Exception as e:
+        print(f"[Startup] Error initializing database schema: {e}")
+
     # Initialize agent executor in background (heavy imports: aiohttp, mcp, tools)
     async def _init_executor():
         global agent_executor
