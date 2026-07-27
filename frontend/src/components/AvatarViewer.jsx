@@ -2731,35 +2731,36 @@ const AvatarViewer = ({
           updateExpressions(vrm);
         }
 
-        // Real-time 3D-aligned Speech Bubble Tracking (Electron only)
-        if (isElectron) {
-          const bubbleEl = document.querySelector('.desktop-speech-bubble');
-          if (bubbleEl && camera) {
-            let targetY = 1.45 * scaleRef.current; // default height for holo core (scaled)
-            let targetX = 0;
-            let targetZ = 0;
-            let headY = 1.4 * scaleRef.current;
+        // Real-time 3D head tracking for chat overlay + speech bubble (Electron only)
+        if (isElectron && camera) {
+          let targetY = 1.45 * scaleRef.current;
+          let targetX = 0;
+          let targetZ = 0;
+          let headY = 1.4 * scaleRef.current;
 
-            if (vrmRef.current) {
-              const headNode = getBoneNode(vrmRef.current, 'head');
-              if (headNode) {
-                const tempV = new THREE.Vector3();
-                headNode.getWorldPosition(tempV);
-                targetX = tempV.x;
-                targetY = tempV.y + 0.25 * scaleRef.current; // offset above hair scaled dynamically
-                targetZ = tempV.z;
-                headY = tempV.y;
-              }
+          if (vrmRef.current) {
+            const headNode = getBoneNode(vrmRef.current, 'head');
+            if (headNode) {
+              const tempV = new THREE.Vector3();
+              headNode.getWorldPosition(tempV);
+              targetX = tempV.x;
+              targetY = tempV.y + 0.25 * scaleRef.current;
+              targetZ = tempV.z;
+              headY = tempV.y;
             }
+          }
 
-            const tempV = new THREE.Vector3(targetX, targetY, targetZ);
-            tempV.project(camera);
+          const headWorld = new THREE.Vector3(targetX, targetY, targetZ);
+          headWorld.project(camera);
 
-            const xPercent = (tempV.x * 0.5 + 0.5) * 100;
-            const yPercent = (tempV.y * -0.5 + 0.5) * 100;
-            window.yukiAvatarHeadYPercent = yPercent;
+          const xPercent = (headWorld.x * 0.5 + 0.5) * 100;
+          const yPercent = (headWorld.y * -0.5 + 0.5) * 100;
+          window.yukiAvatarHeadYPercent = yPercent;
 
-            // Project head top (head bone + hair offset) to ensure bubble bottom is always above it
+          // Speech bubble positioning (only when bubble element exists)
+          const bubbleEl = document.querySelector('.desktop-speech-bubble');
+          if (bubbleEl) {
+            // Project head top for bubble bottom clamp
             const headTopY = headY + 0.12 * scaleRef.current;
             const headTopV = new THREE.Vector3(targetX, headTopY, targetZ);
             headTopV.project(camera);

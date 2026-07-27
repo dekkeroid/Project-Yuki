@@ -329,6 +329,7 @@ const App = () => {
 
   const [powerConnected, setPowerConnected] = useState(true);
   const yukiSelfHiddenRef = useRef(false);
+  const chatContainerRef = useRef(null);
   const [lastDrivesCount, setLastDrivesCount] = useState(null);
   const hasTriggeredLowSsdWarningRef = useRef(false);
   const hasTriggeredHighRamWarningRef = useRef(false);
@@ -444,19 +445,36 @@ const App = () => {
     isChatOpenRef.current = isChatOpen;
   }, [isChatOpen]);
 
-  // Tracks vertical position of chat overlay relative to avatar head. Clamped to screen bounds.
-  const [chatBottomPx, setChatBottomPx] = useState(16);
+  // Keeps chat overlay positioned near the avatar's head when she rotates,
+  // while defaulting to bottom:16px when she faces forward. Also clamps to
+  // screen bounds so the chat never goes off-screen.
   useEffect(() => {
     if (!isChatOpen) return;
+    let baseline = null;
     let animId = null;
     const updatePosition = () => {
-      if (typeof window.yukiAvatarHeadYPercent === 'number') {
-        const headBottomPx = ((100 - window.yukiAvatarHeadYPercent) / 100) * window.innerHeight;
-        const targetBottom = headBottomPx - 260;
-        const clamped = Math.max(16, Math.min(window.innerHeight - 120, targetBottom));
-        setChatBottomPx(Math.round(clamped));
-      } else {
-        setChatBottomPx(16);
+      const el = chatContainerRef.current;
+      if (!el) {
+        animId = requestAnimationFrame(updatePosition);
+        return;
+      }
+      const currentPct = window.yukiAvatarHeadYPercent;
+      if (typeof currentPct === 'number') {
+        if (baseline === null) baseline = currentPct;
+        const headPx = ((100 - currentPct) / 100) * window.innerHeight;
+        const baselineHeadPx = ((100 - baseline) / 100) * window.innerHeight;
+        const delta = baselineHeadPx - headPx;
+        let bottom = Math.max(16, 16 + delta);
+        if (window.electronAPI) {
+          const windowScreenY = window.screenY || 0;
+          const screenHeight = window.screen.height;
+          const windowBottomScreen = windowScreenY + window.innerHeight;
+          if (windowBottomScreen > screenHeight) {
+            const minByScreen = windowBottomScreen - screenHeight;
+            if (minByScreen > bottom) bottom = minByScreen;
+          }
+        }
+        el.style.bottom = `${Math.round(bottom)}px`;
       }
       animId = requestAnimationFrame(updatePosition);
     };
@@ -2176,10 +2194,11 @@ const detectExpression = (text) => {
         {/* Floating Chat Input bar */}
         {isChatOpen && (
           <div
+            ref={chatContainerRef}
             className="desktop-chat-input-container interactive-element"
             style={{
               position: 'fixed',
-              bottom: `${chatBottomPx}px`,
+              bottom: '16px',
               left: '16px',
               right: '16px',
               maxWidth: '640px',

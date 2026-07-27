@@ -151,5 +151,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setWindowScale: (scale) => {
     ipcRenderer.send('set-window-scale', Number(scale));
   },
+  sendLog: (msg) => {
+    ipcRenderer.send('yuki-renderer-log', msg);
+  },
   isElectron: true
 });
