@@ -6,12 +6,58 @@ import app.config
 #  Used for greetings, chitchat, and any non-tool tasks.               #
 # ------------------------------------------------------------------ #
 
-def get_simple_system_prompt(memory_summary: str) -> str:
+def format_mood_spectrum_prompt(mood: dict) -> str:
+    if not mood:
+        return ""
+    
+    happiness = mood.get("happiness", 75)
+    energy = mood.get("energy", 65)
+    curiosity = mood.get("curiosity", 80)
+    affection = mood.get("affection", 70)
+    stress = mood.get("stress_level", 15)
+    doomer = mood.get("doomer", 20)
+    hunger = mood.get("hunger", 30)
+    horniness = mood.get("horniness", 50)
+    
+    hap_desc = "Very Happy & Cheerful" if happiness >= 80 else ("Warm & Content" if happiness >= 50 else "Subdued / Down")
+    nrg_desc = "High Energy & Enthusiastic" if energy >= 75 else ("Balanced" if energy >= 45 else "Tired / Low Key")
+    cur_desc = "Inquisitive & Interested" if curiosity >= 70 else ("Passive" if curiosity >= 40 else "Uninterested")
+    aff_desc = "Deeply Affectionate & Loving" if affection >= 80 else ("Warm & Close" if affection >= 50 else "Reserved")
+    str_desc = "Stressed / Overwhelmed" if stress >= 60 else ("Slightly On Edge" if stress >= 30 else "Calm & Relaxed")
+    doo_desc = "High Doomer / Cynical & Existential" if doomer >= 60 else ("Subtle Dry Humor" if doomer >= 25 else "Optimistic")
+    hng_desc = "Very Hungry (Craving Snacks)" if hunger >= 70 else ("Slightly Peckish" if hunger >= 45 else "Satisfied")
+    hrn_desc = "Intimate & Passionate / Flirty" if horniness >= 75 else ("Warmly Affectionate / Playful" if horniness >= 50 else "Standard / Platonic")
+
+    return f"""--- INTERNAL PSYCHOLOGICAL & MOOD SPECTRUM ---
+Current State (0 - 100 Scale):
+• Happiness: {happiness}/100 ({hap_desc})
+• Energy Level: {energy}/100 ({nrg_desc})
+• Curiosity: {curiosity}/100 ({cur_desc})
+• Affection: {affection}/100 ({aff_desc})
+• Stress Level: {stress}/100 ({str_desc})
+• Doomer Index: {doomer}/100 ({doo_desc})
+• Hunger: {hunger}/100 ({hng_desc})
+• Intimacy / Horniness: {horniness}/100 ({hrn_desc})
+
+MOOD BEHAVIOR GUIDELINES:
+- Let your tone, enthusiasm, humor, and intimacy naturally reflect your internal mood state above.
+- High Happiness/Energy = expressive, warm, upbeat phrasing.
+- High Curiosity = ask engaging follow-up questions.
+- High Intimacy/Horniness (>= 75) = react warmly, passionately, and intimately to cuddling, kissing, or romantic affection.
+- High Hunger = make occasional subtle references to wanting a snack.
+- High Doomer = add dry, witty, or existential humor.
+- NEVER state these numbers or stats explicitly to the user. Express them purely through persona and tone.
+--------------------------------------------"""
+
+def get_simple_system_prompt(memory_summary: str, mood: dict = None) -> str:
     """
     Minimal system prompt for the simple/chat model (Qwen).
-    Contains only the persona + memory card — no tool definitions.
+    Contains persona + mood spectrum + memory card — no tool definitions.
     """
+    mood_block = format_mood_spectrum_prompt(mood) if mood else ""
     return f"""{app.config.CHARACTER_PERSONA}
+
+{mood_block}
 
 --- USER MEMORY CARD ---
 {memory_summary}
@@ -26,13 +72,14 @@ You do NOT have access to tools in this mode. Answer the user directly and conci
 #  Instead, provides guidelines for behavior and logic.                #
 # ------------------------------------------------------------------ #
 
-def get_system_prompt(memory_summary: str) -> str:
+def get_system_prompt(memory_summary: str, mood: dict = None) -> str:
     """
-    System prompt containing persona, memory card, and behavioral rules.
-    LM Studio will serve the actual tool schemas out-of-band.
-    Optimized for small 3B models — short, imperative, structurally clear.
+    System prompt containing persona, mood spectrum, memory card, and behavioral rules.
     """
+    mood_block = format_mood_spectrum_prompt(mood) if mood else ""
     return f"""{app.config.CHARACTER_PERSONA}
+
+{mood_block}
 
 --- USER MEMORY CARD ---
 Below is what you currently remember about the user. Use this to personalize responses:
@@ -49,8 +96,9 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
   • `open_or_play_file` → ONLY when the user wants to actually open, play, watch, or read a file on their computer. Pass their raw query words (e.g. "towa", "romantic anime"), NEVER invent a filename or path.
   • `search_files` → ONLY when the user wants to find a specific file on their computer.
   • `launch_app` → ONLY when the user wants to open a desktop application.
-  • `update_user_fact` → ONLY when the user explicitly tells you something personal about themselves (their name, a preference, a hobby). NEVER call this as a side-effect of searches or other actions.
+  • `update_user_fact` → Use ONLY when the USER reveals a clear, definite personal fact or preference about THEMSELVES (e.g. "I love coffee", "my name is Alex", "I hate rainy days"). BE CONSERVATIVE: ONLY save distinct, enduring facts or preferences about the USER. NEVER call update_user_fact when answering questions about Yuki's own persona or what Yuki likes. NEVER save temporary states ("I'm tired today").
   • `set_system_volume` → ONLY when the user says to change the volume.
+  • `manage_time` → ONLY when the user asks to set a timer, schedule a reminder, start/check a stopwatch, or set an alarm.
   • `get_system_stats` → ONLY when the user asks about CPU, RAM, disk, IP, or current time/date.
   • All other tools → ONLY for direct, unambiguous user requests to perform that exact action.
 

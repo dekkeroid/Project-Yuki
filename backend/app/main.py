@@ -286,6 +286,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_coordinate_startup_optimization())
     asyncio.create_task(_start_crawler_bg())
     asyncio.create_task(_run_memory_optimizer_bg())
+    asyncio.create_task(reminder_heartbeat_loop())
 
     yield
 
@@ -895,6 +896,77 @@ async def get_tools_list():
         "tools": formatted,
         "count": len(formatted)
     }
+
+async def reminder_heartbeat_loop():
+    """
+    Background heartbeat running every 10 seconds.
+    Checks SQLite reminders for due items, triggers Windows Toasts + voice announcements.
+    """
+    from app.tools import time_manager
+    while True:
+        try:
+            due = time_manager.process_due_reminders()
+            if due and active_websockets:
+                for item in due:
+                    msg = item.get("message") or "Your scheduled reminder is due!"
+                    announcement = f"Attention: {msg}"
+                    for ws in list(active_websockets):
+                        try:
+                            await ws.send_json({
+                                "type": "speech",
+                                "text": announcement
+                            })
+                        except Exception:
+                            pass
+        except Exception as e:
+            print(f"[ReminderHeartbeat] Error processing due reminders: {e}")
+        await asyncio.sleep(10)
+
+@app.get("/api/reminders/active")
+def get_active_reminders():
+    """
+    Returns active timers, scheduled reminders, and stopwatches.
+    """
+    from app.tools import time_manager
+    return time_manager.get_active_time_items()
+
+class ReminderCancelRequest(BaseModel):
+    id: int
+
+@app.post("/api/reminders/cancel")
+def cancel_reminder(req: ReminderCancelRequest):
+    """
+    Cancels a reminder or timer by ID.
+    """
+    from app.tools import time_manager
+    time_manager.delete_reminder(req.id)
+    return {"status": "ok", "message": f"Cancelled reminder #{req.id}"}
+
+@app.get("/api/mood")
+def get_mood_spectrum():
+    """
+    Returns current internal mood spectrum.
+    """
+    return memory_manager.get_mood_spectrum()
+
+class MoodUpdateRequest(BaseModel):
+    updates: Dict[str, int]
+
+@app.post("/api/mood/update")
+def update_mood_spectrum(req: MoodUpdateRequest):
+    """
+    Updates mood spectrum values from UI sliders.
+    """
+    updated = memory_manager.update_mood_spectrum(req.updates)
+    return {"status": "ok", "mood": updated}
+
+@app.post("/api/mood/reset")
+def reset_mood_spectrum():
+    """
+    Resets mood spectrum to baseline values.
+    """
+    reset_vals = memory_manager.reset_mood_spectrum()
+    return {"status": "ok", "mood": reset_vals}
 
 @app.get("/api/profile")
 def get_profile():

@@ -56,6 +56,7 @@ _TOOL_HINTS = {
     "get_current_datetime": ("time", "date", "today", "now", "current"),
     "get_system_stats": ("cpu", "ram", "memory", "disk", "system", "stats", "pc"),
     "update_user_fact": ("remember", "memory", "preference", "name", "interest", "fact"),
+    "manage_time": ("timer", "reminder", "alarm", "stopwatch", "schedule", "remind", "clock", "countdown"),
     "create_file": ("create", "write", "new", "file"),
     "edit_file": ("edit", "replace", "change", "file"),
     "delete_file": ("delete", "remove", "file"),

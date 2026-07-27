@@ -3230,9 +3230,11 @@ const detectExpression = (text) => {
                               onChange={(e) => handleUpdateSetting('vrm_dpr', parseFloat(e.target.value))}
                               style={{ width: '100%', padding: '5px 6px', fontSize: '0.75rem' }}
                             >
-                              <option value={1.0} style={{ background: '#120c21', color: 'white' }}>1.0 (Low RAM)</option>
+                              <option value={1.0} style={{ background: '#120c21', color: 'white' }}>1.0 (Low VRAM)</option>
                               <option value={1.25} style={{ background: '#120c21', color: 'white' }}>1.25 (Balanced)</option>
                               <option value={1.5} style={{ background: '#120c21', color: 'white' }}>1.5 (High Quality)</option>
+                              <option value={1.75} style={{ background: '#120c21', color: 'white' }}>1.75 (Ultra Quality)</option>
+                              <option value={2.0} style={{ background: '#120c21', color: 'white' }}>2.0 (Max / Native)</option>
                             </select>
                           </div>
                           <div>

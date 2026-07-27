@@ -305,6 +305,69 @@ async def web_search(query: str) -> str:
     return await _guarded_tool_call("web_search", web_tools.web_search, {"query": query})
 
 
+@mcp.tool()
+async def manage_time(
+    action: str,
+    duration_seconds: int | None = None,
+    target_time: str | None = None,
+    message: str | None = None,
+    recurrence: str | None = None,
+    action_command: str | None = None,
+    label: str | None = None,
+    item_id: int | None = None
+) -> str:
+    """Manage timers, scheduled reminders, alarms, stopwatches, and background scheduled tasks.
+    
+    action options:
+    - 'set_timer': set countdown timer (e.g. action='set_timer', duration_seconds=600, message='Check oven')
+    - 'set_reminder': schedule reminder/alarm (e.g. action='set_reminder', target_time='5:30 PM', message='Call Mom')
+    - 'start_stopwatch': start stopwatch (e.g. action='start_stopwatch', label='gaming')
+    - 'check_stopwatch': check elapsed time (e.g. action='check_stopwatch', label='gaming')
+    - 'stop_stopwatch': stop stopwatch (e.g. action='stop_stopwatch', label='gaming')
+    - 'list_active': list all active timers and stopwatches
+    - 'cancel': cancel timer or reminder by item_id
+    """
+    from app.tools import time_manager
+    action_clean = (action or "").lower().strip()
+    
+    if action_clean == "set_timer":
+        dur = duration_seconds or time_manager.parse_duration_seconds(target_time or "5m")
+        res = time_manager.add_timer(dur, message or "Timer Up!", action_command)
+        return f"Successfully set a {res['formatted_duration']} timer for '{res['message']}'."
+    elif action_clean == "set_reminder":
+        res = time_manager.add_reminder(target_time or "5m", message or "Reminder", recurrence, action_command)
+        return f"Successfully scheduled reminder for {res['target_time_formatted']}: '{res['message']}'."
+    elif action_clean == "start_stopwatch":
+        res = time_manager.start_stopwatch(label or "default")
+        return f"Started stopwatch '{res['label']}'."
+    elif action_clean == "check_stopwatch":
+        res = time_manager.check_stopwatch(label or "default")
+        if res.get("status") == "ok":
+            return f"Stopwatch '{res['label']}' elapsed time: {res['formatted_elapsed']}."
+        return res.get("message", "Stopwatch not found.")
+    elif action_clean == "stop_stopwatch":
+        res = time_manager.stop_stopwatch(label or "default")
+        if res.get("status") == "ok":
+            return f"Stopped stopwatch '{res['label']}' at {res['formatted_elapsed']}."
+        return res.get("message", "Stopwatch not found.")
+    elif action_clean == "list_active":
+        items = time_manager.get_active_time_items()
+        rems = items.get("reminders", [])
+        sws = items.get("stopwatches", [])
+        out = []
+        if rems:
+            out.append("Active Timers & Reminders:\n" + "\n".join([f"- #{r['id']} [{r['category']}]: '{r['message']}' ({r['remaining_seconds']}s remaining)" for r in rems]))
+        if sws:
+            out.append("Active Stopwatches:\n" + "\n".join([f"- '{s['label']}': {s['formatted_elapsed']} elapsed" for s in sws]))
+        return "\n\n".join(out) if out else "No active timers, reminders, or stopwatches."
+    elif action_clean == "cancel":
+        if item_id:
+            time_manager.delete_reminder(item_id)
+            return f"Successfully cancelled timer/reminder #{item_id}."
+        return "Missing item_id for cancellation."
+    return f"Unknown action '{action}' for manage_time."
+
+
 def main() -> None:
     """Run the MCP server over stdio."""
     mcp.run(transport="stdio")

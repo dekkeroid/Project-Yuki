@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 
@@ -152,7 +152,86 @@ const ControlDashboard = ({
   const [expandedTool, setExpandedTool] = useState(null);
   const [toolSearch, setToolSearch] = useState('');
 
+  // Internal Mood Spectrum State
+  const [moodData, setMoodData] = useState({
+    happiness: 75,
+    energy: 65,
+    curiosity: 80,
+    affection: 70,
+    stress_level: 15,
+    doomer: 20,
+    hunger: 30,
+    horniness: 50
+  });
+
+  const fetchMood = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/mood`);
+      if (res.ok) {
+        const data = await res.json();
+        setMoodData(data);
+      }
+    } catch (e) {
+      console.warn("Could not fetch mood spectrum:", e);
+    }
+  };
+
+  const handleUpdateMood = async (key, val) => {
+    const newMood = { ...moodData, [key]: val };
+    setMoodData(newMood);
+    try {
+      await fetch(`${API_BASE}/api/mood/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates: { [key]: val } })
+      });
+    } catch (e) {
+      console.error("Failed to update mood:", e);
+    }
+  };
+
+  const handleResetMood = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/mood/reset`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setMoodData(data.mood);
+      }
+    } catch (e) {
+      console.error("Failed to reset mood:", e);
+    }
+  };
+
+  // Active Time Items State (Timers, Reminders, Stopwatches)
+  const [timeItems, setTimeItems] = useState({ reminders: [], stopwatches: [] });
+
+  const fetchTimeItems = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/reminders/active`);
+      if (res.ok) {
+        const data = await res.json();
+        setTimeItems(data);
+      }
+    } catch (e) {
+      console.warn("Could not fetch active time items:", e);
+    }
+  };
+
+  const handleCancelReminder = async (id) => {
+    try {
+      await fetch(`${API_BASE}/api/reminders/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      fetchTimeItems();
+    } catch (e) {
+      console.error("Failed to cancel reminder:", e);
+    }
+  };
+
   useEffect(() => {
+    let interval = null;
     if (isOpen) {
       fetch(`${API_BASE}/api/tools`)
         .then(res => res.json())
@@ -162,7 +241,15 @@ const ControlDashboard = ({
           }
         })
         .catch(err => console.error("Failed to fetch tools list:", err));
+      fetchMood();
+      fetchTimeItems();
+      interval = setInterval(() => {
+        fetchTimeItems();
+      }, 1000);
     }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [isOpen, activeTab]);
 
   const interests = profile.user_interests || [];
@@ -548,6 +635,12 @@ const ControlDashboard = ({
             Persona
           </button>
           <button
+            onClick={() => setActiveTab('tasks')}
+            className={`tab-btn ${activeTab === 'tasks' ? 'active' : ''}`}
+          >
+            Tasks
+          </button>
+          <button
             onClick={() => setActiveTab('settings')}
             className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
           >
@@ -571,6 +664,65 @@ const ControlDashboard = ({
         <div className="tab-panel-body">
           {activeTab === 'memory' ? (
             <>
+              {/* Internal Mood & Psychological Spectrum Card */}
+              <div className="card-group" style={{ marginBottom: '12px' }}>
+                <div className="card-group-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span className="card-group-title">Internal Mood & Psychological Spectrum</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResetMood}
+                    className="glass-button"
+                    style={{ fontSize: '0.68rem', padding: '3px 8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer' }}
+                  >
+                    Reset Baselines
+                  </button>
+                </div>
+
+                <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '4px', marginBottom: '10px' }}>
+                  Yuki's real-time psychological state. Injected into every turn to shape her tone, energy, and intimacy without being explicitly spoken.
+                </div>
+
+                {/* Mood Gauges Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {[
+                    { key: 'happiness', label: 'Happiness', color: '#34d399', icon: '😊' },
+                    { key: 'energy', label: 'Energy Level', color: '#38bdf8', icon: '⚡' },
+                    { key: 'curiosity', label: 'Curiosity', color: '#a78bfa', icon: '🔍' },
+                    { key: 'affection', label: 'Affection', color: '#fb7185', icon: '❤️' },
+                    { key: 'stress_level', label: 'Stress Level', color: '#f59e0b', icon: '🧘' },
+                    { key: 'doomer', label: 'Doomer Index', color: '#818cf8', icon: '🖤' },
+                    { key: 'hunger', label: 'Hunger', color: '#fb923c', icon: '🍕' },
+                    { key: 'horniness', label: 'Intimacy / Horniness', color: '#f43f5e', icon: '🔥' }
+                  ].map(stat => {
+                    const val = moodData[stat.key] !== undefined ? moodData[stat.key] : 50;
+                    return (
+                      <div key={stat.key} style={{ background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>
+                            <span style={{ marginRight: '4px' }}>{stat.icon}</span> {stat.label}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', fontWeight: 600, color: stat.color }}>
+                            {val}/100
+                          </span>
+                        </div>
+                        {/* Slider */}
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={val}
+                          onChange={(e) => handleUpdateMood(stat.key, parseInt(e.target.value, 10))}
+                          style={{ width: '100%', accentColor: stat.color, cursor: 'pointer', height: '14px', marginTop: '4px' }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* User Identity Card */}
               <div className="card-group">
                 <div className="card-group-header">
@@ -1157,6 +1309,84 @@ const ControlDashboard = ({
                 </button>
               </div>
             </>
+          ) : activeTab === 'tasks' ? (
+            <>
+              {/* Active Timers, Reminders & Stopwatches Card */}
+              <div className="card-group" style={{ marginBottom: '12px' }}>
+                <div className="card-group-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Clock className="w-4 h-4 text-cyan-400" />
+                    <span className="card-group-title">Active Timers, Reminders & Stopwatches</span>
+                  </div>
+                  <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '10px', background: 'rgba(56,189,248,0.15)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8', fontWeight: 600 }}>
+                    {(timeItems.reminders || []).length + (timeItems.stopwatches || []).length} Active
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '4px', marginBottom: '10px' }}>
+                  Live background timers, scheduled alarms, and stopwatches. Timers trigger native Windows notifications on completion.
+                </div>
+
+                {(timeItems.reminders || []).length === 0 && (timeItems.stopwatches || []).length === 0 ? (
+                  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)', fontStyle: 'italic', padding: '16px 0', textAlign: 'center' }}>
+                    No active timers or stopwatches currently running. Ask Yuki to set a timer or reminder anytime!
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* Active Timers / Reminders */}
+                    {(timeItems.reminders || []).map(r => {
+                      const mins = Math.floor(r.remaining_seconds / 60);
+                      const secs = r.remaining_seconds % 60;
+                      const timeFmt = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+                      return (
+                        <div key={r.id} style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(56,189,248,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(56,189,248,0.2)', color: '#38bdf8', fontWeight: 600, textTransform: 'uppercase' }}>
+                                {r.category || 'timer'}
+                              </span>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff' }}>{r.message}</span>
+                            </div>
+                            {r.action_command && (
+                              <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', fontFamily: 'monospace' }}>
+                                Command: {r.action_command}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600, color: '#38bdf8' }}>
+                              {timeFmt}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCancelReminder(r.id)}
+                              style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Active Stopwatches */}
+                    {(timeItems.stopwatches || []).map(s => (
+                      <div key={s.id} style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(167,139,250,0.2)', color: '#a78bfa', fontWeight: 600, textTransform: 'uppercase', marginRight: '6px' }}>
+                            Stopwatch
+                          </span>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff' }}>'{s.label}'</span>
+                        </div>
+                        <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>
+                          {s.formatted_elapsed}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           ) : activeTab === 'settings' ? (
             <>
               {/* Featured Chat Mode Toggle Banner */}
@@ -1606,74 +1836,6 @@ const ControlDashboard = ({
                           }} />
                         </button>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Chat Mode Card Group */}
-                  <div className="card-group" style={{ marginTop: '12px' }}>
-                    <div className="card-group-header">
-                      <MessageSquare className="w-4 h-4 text-violet-400" />
-                      <span className="card-group-title">Chat Mode (Pure Conversation)</span>
-                    </div>
-
-                    <div className="identity-field" style={{ marginTop: '4px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <span className="field-label">Enable Chat Mode</span>
-                          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '1px' }}>
-                            Treats all messages as simple chat. Disables computer control tools (apps, terminal, volume) for faster responses.
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateSetting('chat_mode', !settings.chat_mode)}
-                          style={{
-                            background: settings.chat_mode ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
-                            border: `1px solid ${settings.chat_mode ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
-                            borderRadius: '12px',
-                            width: '40px',
-                            height: '22px',
-                            cursor: 'pointer',
-                            position: 'relative',
-                            transition: 'all 0.2s ease',
-                            flexShrink: 0
-                          }}
-                        >
-                          <div style={{
-                            width: '16px',
-                            height: '16px',
-                            borderRadius: '50%',
-                            background: settings.chat_mode ? '#a78bfa' : 'rgba(255,255,255,0.4)',
-                            position: 'absolute',
-                            top: '2px',
-                            left: settings.chat_mode ? '20px' : '2px',
-                            transition: 'all 0.2s ease'
-                          }} />
-                        </button>
-                      </div>
-
-                      {/* Dependent Checkbox: Keep Memory Saving Active */}
-                      {settings.chat_mode && (
-                        <div style={{
-                          marginTop: '10px',
-                          paddingLeft: '10px',
-                          borderLeft: '2px solid rgba(139,92,246,0.5)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px'
-                        }}>
-                          <input
-                            type="checkbox"
-                            id="keep_memory_saving"
-                            checked={settings.keep_memory_saving !== false}
-                            onChange={(e) => handleUpdateSetting('keep_memory_saving', e.target.checked)}
-                            style={{ accentColor: '#a78bfa', cursor: 'pointer', width: '14px', height: '14px' }}
-                          />
-                          <label htmlFor="keep_memory_saving" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.85)', cursor: 'pointer' }}>
-                            Keep memory saving active in Chat Mode
-                          </label>
-                        </div>
-                      )}
                     </div>
                   </div>
 

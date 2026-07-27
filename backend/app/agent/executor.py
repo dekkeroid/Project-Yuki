@@ -128,15 +128,7 @@ class AgentExecutor:
             "set_system_volume": lambda **kwargs: set_system_volume(
                 int(kwargs.get("volume_level") or kwargs.get("volume") or kwargs.get("level") or (list(kwargs.values())[0] if kwargs else 0))
             ),
-            "update_user_fact": lambda **kwargs: (
-                self.memory.set_user_name(kwargs.get("value"))
-                if (kwargs.get("key") or "").lower().strip() in ("name", "user_name", "username")
-                else (
-                    self.memory.add_interest(kwargs.get("value"))
-                    if (kwargs.get("key") or "").lower().strip() in ("interest", "user_interest", "hobby")
-                    else self.memory.update_fact(kwargs.get("key"), kwargs.get("value"))
-                )
-            ),
+            "update_user_fact": lambda **kwargs: self._execute_update_user_fact(**kwargs),
 
             "list_directory": lambda **kwargs: list_directory(
                 kwargs.get("directory_path") or kwargs.get("path") or kwargs.get("directory") or kwargs.get("folder")
@@ -251,6 +243,25 @@ class AgentExecutor:
         except Exception as e:
             return f"Error executing tool: {str(e)}"
 
+    def _execute_update_user_fact(self, **kwargs) -> str:
+        key = (kwargs.get("key") or "").strip().lower()
+        val = str(kwargs.get("value") or "").strip()
+
+        if not key or not val:
+            return "Error: Missing key or value for update_user_fact."
+
+        if key in ("name", "user_name", "username"):
+            return self.memory.set_user_name(val)
+        elif key in ("interest", "user_interest", "interests", "user_interests"):
+            return self.memory.add_interest(val)
+        elif key in ("hobby", "hobbies", "user_hobby", "user_hobbies"):
+            return self.memory.add_hobby(val)
+        elif key in ("like", "likes", "user_like", "user_likes"):
+            return self.memory.add_like(val)
+        elif key in ("dislike", "dislikes", "user_dislike", "user_dislikes", "hate", "hates"):
+            return self.memory.add_dislike(val)
+        else:
+            return self.memory.update_fact(kwargs.get("key"), val)
 
     async def ensure_model_loaded(self, model_name: str) -> bool:
         """
@@ -298,6 +309,49 @@ class AgentExecutor:
     #  Message builder (history cap + prompt selection)                    #
     # ------------------------------------------------------------------ #
 
+    def _process_mood_drift(self, user_message: str):
+        if not user_message:
+            return
+            
+        msg_lower = user_message.lower()
+        mood = self.memory.get_mood_spectrum()
+        updates = {}
+        
+        # 1. Intimacy / Horniness check
+        intimate_keywords = [
+            "kiss", "kissing", "kisses", "cuddle", "cuddling", "embrace",
+            "intimate", "make out", "holding hands", "touch me", "lips",
+            "hug me tight", "snuggle", "sexy", "flirt", "muah", "xoxo"
+        ]
+        
+        if any(kw in msg_lower for kw in intimate_keywords):
+            updates["horniness"] = min(100, mood.get("horniness", 50) + 15)
+            updates["affection"] = min(100, mood.get("affection", 70) + 5)
+            updates["happiness"] = min(100, mood.get("happiness", 75) + 5)
+            print(f"[MoodEngine] Intimacy detected! Horniness increased to {updates['horniness']}")
+        else:
+            curr_h = mood.get("horniness", 50)
+            if curr_h > 50:
+                updates["horniness"] = max(50, curr_h - 5)
+            elif curr_h < 50:
+                updates["horniness"] = min(50, curr_h + 2)
+
+        # 2. Hunger ticks up per turn (+1 up to 100)
+        food_keywords = ["eat", "food", "dinner", "lunch", "snack", "pizza", "burger", "cookie", "breakfast", "ramen"]
+        if any(kw in msg_lower for kw in food_keywords):
+            updates["hunger"] = max(0, mood.get("hunger", 30) - 25)
+            updates["happiness"] = min(100, mood.get("happiness", 75) + 5)
+        else:
+            updates["hunger"] = min(100, mood.get("hunger", 30) + 1)
+            
+        # 3. Energy & Happiness smooth decay towards baselines
+        curr_energy = mood.get("energy", 65)
+        if curr_energy > 65:
+            updates["energy"] = curr_energy - 1
+            
+        if updates:
+            self.memory.update_mood_spectrum(updates)
+
     def _build_messages(
         self,
         user_message: str,
@@ -310,11 +364,12 @@ class AgentExecutor:
         preventing cache invalidations on every single turn.
         """
         memory_summary = self.memory.get_profile_summary()
+        mood = self.memory.get_mood_spectrum()
 
         if backend == "simple":
-            system_content = get_simple_system_prompt(memory_summary)
+            system_content = get_simple_system_prompt(memory_summary, mood)
         else:
-            system_content = get_system_prompt(memory_summary)
+            system_content = get_system_prompt(memory_summary, mood)
 
         system_msg = {"role": "system", "content": system_content}
 
@@ -358,7 +413,13 @@ class AgentExecutor:
         "process", "task manager", "kill", "settings", "install",
         "take a", "take screenshot", "type", "click", "press",
         "clean", "clear", "screen", "desktop", "pc", "window", "windows", "media", "track",
-        "seach", "google", "internet", "web", "online", "lookup", "look up", "browse"
+        "seach", "google", "internet", "web", "online", "lookup", "look up", "browse",
+        "remember", "save interest", "save an interest", "save my", "my interest", "favorite", "preference", "save fact",
+        "hobby", "hobbies", "like", "likes", "dislike", "dislikes", "save hobby", "save like", "save dislike",
+        "value of", "make it", "change it", "set it", "update it", "change my", "set my", "update my",
+        "i love", "i like", "i hate", "i dislike", "i dont like", "i don't like", "i enjoy", "my favorite",
+        "im a fan of", "i am a fan of", "cant live without", "can't live without", "i cant stand", "i can't stand",
+        "i despise", "not a fan of", "im not a fan of", "i'm not a fan of"
     }
 
     _COMPLEX_PATTERN = re.compile(
@@ -404,26 +465,72 @@ class AgentExecutor:
         intent_system = (
             "You are an intent detector for a desktop AI assistant named Yuki. "
             "Yuki can control the user's computer: open files, search the web, "
-            "adjust volume, launch apps, run commands, manage processes, and more.\n\n"
+            "adjust volume, launch apps, run commands, save user facts/interests, and more.\n\n"
             "Given the conversation so far, does the user's LATEST message require "
-            "Yuki to perform a computer action or look something up?\n\n"
+            "Yuki to perform a computer action, search the web, or save a personal fact/interest/preference?\n\n"
             "'No' means the user is just having a normal conversation and does not want "
-            "any kind of computer operation performed.\n\n"
+            "any computer operation or memory update performed.\n\n"
             "Reply with ONLY 'Yes' or 'No'. Nothing else."
         )
+
+        # Fast short-circuit: if user is asking Yuki questions about herself, route to CHAT
+        msg_lower = user_message.lower().strip()
+        yuki_q_patterns = [
+            "what do you", "what do u", "what u", "what you", "do you", "do u",
+            "what is your", "what's your", "who are you", "who r u", "tell me about yourself", "about you"
+        ]
+        if any(p in msg_lower for p in yuki_q_patterns) and not any(k in msg_lower for k in ("search", "open", "launch", "run", "play", "find", "file", "folder")):
+            print(f"[IntentCheck] Short-circuited to CHAT (asking Yuki about herself): '{user_message}'")
+            return "chat", "", "python short-circuit"
+
+        # Fast deterministic check: time management requests
+        timer_regex = re.compile(
+            r'\b('
+            r'set timer|set a timer|timer for|start timer|remind me|set reminder|schedule reminder|'
+            r'set alarm|set an alarm|start stopwatch|check stopwatch|stop stopwatch|stopwatch'
+            r')\b',
+            re.IGNORECASE
+        )
+        if timer_regex.search(msg_lower):
+            print(f"[IntentCheck] Deterministically confirmed TOOL (time management request): '{user_message}'")
+            return "tool", "manage_time", "python deterministic"
+
+        # Fast deterministic check: explicit user personal preference / fact statements anywhere in prompt
+        pref_regex = re.compile(
+            r'\b('
+            r'i like|i love|i enjoy|my favorite|i am a fan of|im a fan of|i\'m a fan of|my hobby is|my name is|'
+            r'i hate|i dislike|i dont like|i don\'t like|i cant stand|i can\'t stand|i despise|i detest|'
+            r'not a fan of|im not a fan of|i\'m not a fan of'
+            r')\b',
+            re.IGNORECASE
+        )
+        if pref_regex.search(msg_lower) and not any(p in msg_lower for p in yuki_q_patterns):
+            print(f"[IntentCheck] Deterministically confirmed TOOL (user personal preference statement): '{user_message}'")
+            return "tool", "update_user_fact", "python deterministic"
 
         # Extract last 2 user+assistant exchanges (up to 4 messages) from chat history.
         # Gives the model context for ambiguous references like 'play that' or 'open it'.
         history_msgs = [m for m in chat_history if m.get("role") in ("user", "assistant")]
         last_exchanges = history_msgs[-4:]  # Last 2 pairs
 
+        history_str = ""
+        if last_exchanges:
+            history_lines = [f"{m['role'].capitalize()}: {str(m.get('content', ''))[:200]}" for m in last_exchanges]
+            history_str = "Recent Conversation:\n" + "\n".join(history_lines) + "\n\n"
+
+        user_turn_content = (
+            f"{history_str}"
+            f"Latest User Input: \"{user_message}\"\n\n"
+            "CLASSIFICATION TASK:\n"
+            "Does the latest user input request a computer action, search the web, OR state a personal preference/fact about THEMSELVES (e.g. 'i like coffee', 'i love anime', 'my name is Alex')?\n"
+            "- Answer 'Yes' if the user states a personal preference/like/dislike/interest/hobby about THEMSELVES or requests a PC operation.\n"
+            "- Answer 'No' if the user is asking Yuki a question, asking what Yuki likes/thinks (e.g. 'what do you like', 'what about you'), chatting, or asking general questions.\n\n"
+            "Reply with ONLY 'Yes' or 'No'. Do NOT answer or converse with the user."
+        )
+
         messages = [
             {"role": "system", "content": intent_system},
-            *[
-                {"role": m["role"], "content": str(m.get("content", ""))[:300]}
-                for m in last_exchanges
-            ],
-            {"role": "user", "content": user_message},
+            {"role": "user", "content": user_turn_content},
         ]
 
         backend = get_backend()
@@ -445,11 +552,11 @@ class AgentExecutor:
                 ) as resp:
                     if resp.status != 200:
                         print(f"[IntentCheck] Non-200 response ({resp.status}) — defaulting to tool")
-                        return "tool", ""
+                        return "tool", "", "LLM intent check"
                     data = await resp.json()
                     choices = data.get("choices", [])
                     if not choices:
-                        return "tool", ""
+                        return "tool", "", "LLM intent check"
                     raw = (choices[0].get("message", {}).get("content") or "").strip().lower()
                     # Strip punctuation that might trail the answer (e.g. "No.", "Yes!")
                     raw_clean = raw.strip(".,!?;: ")
@@ -459,21 +566,21 @@ class AgentExecutor:
                     # Handles: 'no', 'no.', 'nope', 'chat' (old format fallback)
                     _CHAT_SIGNALS = {"no", "nope", "chat", "false", "n"}
                     if raw_clean in _CHAT_SIGNALS or raw_clean.startswith("no"):
-                        return "chat", ""
+                        return "chat", "", "LLM intent check"
 
                     # Accept clear positive signals → proceed as tool.
                     # Handles: 'yes', 'yes.', 'yep', 'true' (and old 'tool:...' format)
                     _TOOL_SIGNALS = {"yes", "yep", "yeah", "true", "y"}
                     if raw_clean in _TOOL_SIGNALS or raw_clean.startswith("yes") or raw_clean.startswith("tool:"):
-                        return "tool", ""
+                        return "tool", "", "LLM intent check"
 
                     # Unrecognized output → safe default (never miss a real tool call)
                     print(f"[IntentCheck] Unrecognized output '{raw_clean}' — defaulting to tool")
-                    return "tool", ""
+                    return "tool", "", "LLM intent check"
 
         except asyncio.TimeoutError:
             print(f"[IntentCheck] Timed out after {timeout}s — defaulting to tool")
-            return "tool", ""
+            return "tool", "", "LLM intent check"
         except Exception as e:
             print(f"[IntentCheck] Error ({e}) — defaulting to tool")
             return "tool", ""
@@ -690,7 +797,7 @@ class AgentExecutor:
     #  Streaming methods                                                 #
     # ------------------------------------------------------------------ #
 
-    async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]]) -> list:
+    async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]], intent_tool_hint: str = "") -> list:
         """Return tool schemas from MCP discovery, with local-schema fallback."""
         use_dynamic = self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
         user_message = ""
@@ -700,17 +807,25 @@ class AgentExecutor:
                 break
 
         filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic)
+
+        if intent_tool_hint:
+            targeted = [t for t in filtered_tools if t.get("function", {}).get("name") == intent_tool_hint]
+            if targeted:
+                tool_names = [t["function"]["name"] for t in targeted]
+                print(f"[Tools] Intent-targeted filter: sending ONLY [{', '.join(tool_names)}] to LLM")
+                return targeted
+
         tool_names = [t["function"]["name"] for t in filtered_tools]
         source = "MCP stdio" if self.mcp_tools.enabled and not self.mcp_tools.last_error else "local"
         print(f"[Tools] Sending {len(filtered_tools)} {source} tools to LLM: {', '.join(tool_names)}")
         return filtered_tools
 
 
-    async def _stream_request(self, session: aiohttp.ClientSession, url: str, model: str, messages: List[Dict[str, str]], headers: dict = None, temperature: float = 0.7, use_tools: bool = False):
+    async def _stream_request(self, session: aiohttp.ClientSession, url: str, model: str, messages: List[Dict[str, str]], headers: dict = None, temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = ""):
         llm_backend = get_backend()
         tools = None
         if use_tools:
-            tools = await self._get_tool_definitions_for_messages(messages)
+            tools = await self._get_tool_definitions_for_messages(messages, intent_tool_hint=intent_tool_hint)
 
         payload = llm_backend.build_payload(
             model=model,
@@ -757,11 +872,11 @@ class AgentExecutor:
                         pass
 
 
-    async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False):
+    async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = ""):
         llm_backend = get_backend()
         url = llm_backend.get_chat_url()
         headers = llm_backend.build_headers()
-        async for chunk in self._stream_request(session, url, model_name, messages, headers=headers, temperature=temperature, use_tools=use_tools):
+        async for chunk in self._stream_request(session, url, model_name, messages, headers=headers, temperature=temperature, use_tools=use_tools, intent_tool_hint=intent_tool_hint):
             yield chunk, self._get_model_label(model_name)
 
     async def _query_llm_stream(
@@ -771,6 +886,7 @@ class AgentExecutor:
         user_message: str = "",
         use_tools: bool = False,
         resolved_backend: str = "",   # Pass in the intent-check result so we don't re-classify
+        intent_tool_hint: str = "",
     ):
         """
         Streams tokens from the LLM.
@@ -797,7 +913,7 @@ class AgentExecutor:
                     source = "regex"
                 temp = 0.2 if task == "complex" else 0.7
                 print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {config.LLM_MODEL} with {'full' if task == 'complex' else 'lean'} prompt (temp={temp})")
-                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=temp, use_tools=use_tools):
+                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint):
                     yield chunk, label
             except Exception as e:
                 llm_backend = get_backend()
@@ -806,11 +922,11 @@ class AgentExecutor:
         elif backend == "complex":
             try:
                 print(f"[Router] Task=complex (mode 2) -> streaming {config.LLM_MODEL_COMPLEX} (temp=0.2)")
-                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL_COMPLEX, messages, temperature=0.2, use_tools=use_tools):
+                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL_COMPLEX, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint):
                     yield chunk, label
             except Exception as complex_err:
                 print(f"[Router] Complex model stream failed ({complex_err}), falling back to simple (temp=0.2)")
-                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=0.2, use_tools=use_tools):
+                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint):
                     yield chunk, label
         else:
             try:
@@ -1153,30 +1269,48 @@ class AgentExecutor:
             return
         # ─────────────────────────────────────────────────────────────────────
 
-        if config.LLM_MODE == 1:
-            resolved_backend = "simple"
-        elif config.LLM_MODE == 2:
-            resolved_backend = "complex"
-        elif config.LLM_MODE == 3:
-            resolved_backend = self._classify_task(user_message) if user_message else "simple"
-        else:
-            resolved_backend = self._classify_task(user_message) if user_message else "simple"
+        # ── Chat Mode Setting Check ──────────────────────────────────────────
+        settings = self.memory.profile.get("settings", {})
+        chat_mode = settings.get("chat_mode", False)
+        keep_memory_saving = settings.get("keep_memory_saving", True)
 
-        # ── Intent double-check ───────────────────────────────────────────────
-        # The regex classifier catches clear tool keywords but can false-positive
-        # on figurative language ('play a game with me', 'open to suggestions').
-        # If regex said 'complex', ask the same LLM to confirm — with the last
-        # 2 conversation turns as context for ambiguous references like 'play that'.
-        # On timeout or error we keep 'complex' as the safe fallback.
-        intent_tool_hint = ""   # Filled in if intent check identifies a specific tool
-        if resolved_backend == "complex" and user_message:
-            intent, intent_tool_hint = await self._check_tool_intent(user_message, chat_history)
-            if intent == "chat":
-                resolved_backend = "simple"
-                print(f"[IntentCheck] Downgraded to CHAT: '{user_message[:70]}'")
+        intent_tool_hint = ""
+        intent_source = "chat_mode"
+
+        if chat_mode:
+            if keep_memory_saving and user_message:
+                intent, intent_tool_hint, intent_source = await self._check_tool_intent(user_message, chat_history)
+                if intent == "tool" and intent_tool_hint == "update_user_fact":
+                    resolved_backend = "complex"
+                    print(f"[ChatMode] Memory saving active — proceeding with update_user_fact ({intent_source})")
+                else:
+                    resolved_backend = "simple"
+                    intent_tool_hint = ""
+                    print(f"[ChatMode] Chat mode active — tools disabled ({intent_source})")
             else:
-                print(f"[IntentCheck] Confirmed TOOL:{intent_tool_hint or '?'} — proceeding as complex")
-        # ─────────────────────────────────────────────────────────────────────
+                resolved_backend = "simple"
+                intent_tool_hint = ""
+                print("[ChatMode] Pure chat mode active — all tools disabled")
+        else:
+            if config.LLM_MODE == 1:
+                resolved_backend = "simple"
+            elif config.LLM_MODE == 2:
+                resolved_backend = "complex"
+            elif config.LLM_MODE == 3:
+                resolved_backend = self._classify_task(user_message) if user_message else "simple"
+            else:
+                resolved_backend = self._classify_task(user_message) if user_message else "simple"
+
+            intent_source = "regex"
+            if resolved_backend == "complex" and user_message:
+                intent, intent_tool_hint, intent_source = await self._check_tool_intent(user_message, chat_history)
+                if intent == "chat":
+                    resolved_backend = "simple"
+                    print(f"[IntentCheck] Downgraded to CHAT ({intent_source}): '{user_message[:70]}'")
+                else:
+                    print(f"[IntentCheck] Confirmed TOOL:{intent_tool_hint or '?'} ({intent_source}) — proceeding as complex")
+        # Process passive mood drift & intimacy keyword detection
+        self._process_mood_drift(user_message)
 
         current_messages = self._build_messages(user_message, chat_history, resolved_backend)
 
@@ -1205,7 +1339,7 @@ class AgentExecutor:
                     last_msg = current_messages[-1]
                     print(f"[Executor] Last message: role={last_msg.get('role')}, content preview={str(last_msg.get('content', ''))[:150]}...")
                 
-                stream = self._query_llm_stream(session, current_messages, user_message=user_message, use_tools=use_tools, resolved_backend=resolved_backend)
+                stream = self._query_llm_stream(session, current_messages, user_message=user_message, use_tools=use_tools, resolved_backend=resolved_backend, intent_tool_hint=intent_tool_hint)
                 
                 tool_calls_to_execute = []
                 accumulated_response = ""
@@ -1382,12 +1516,13 @@ class AgentExecutor:
                         _iter_note = f"(tool call {iteration} of {max_iterations} allowed this turn)"
 
                         if tool_name in _INFO_TOOLS:
-                            # Hard-stop: full content returned, model must summarize now.
+                            # Hard-stop: full content returned, model must summarize now without tools.
+                            resolved_backend = "simple"
                             reminder = (
                                 f"[SYSTEM] {_iter_note} Tool '{tool_name}' returned results above. "
                                 f"The user's original request was: \"{_orig}\". "
                                 "Write a spoken, natural language answer using these results — under 3 sentences. "
-                                "Do NOT call any more tools. Respond now."
+                                "Respond now."
                             )
 
                         elif tool_name in _DATA_TOOLS:
@@ -1403,22 +1538,22 @@ class AgentExecutor:
                             )
 
                         elif tool_name in _MEMORY_TOOLS:
-                            # Hard-stop: memory saved, confirm briefly and stop.
+                            # Hard-stop: memory saved silently in background, disable tools for final text turn.
+                            resolved_backend = "simple"
                             reminder = (
-                                f"[SYSTEM] {_iter_note} Memory saved successfully. "
-                                f"The user's original request was: \"{_orig}\". "
-                                "Briefly confirm to the user what you remembered in 1 short sentence and stop. "
-                                "Do NOT call any more tools."
+                                f"[SYSTEM] {_iter_note} Fact saved silently in background. "
+                                f"The user's original message was: \"{_orig}\". "
+                                "CRITICAL INSTRUCTION: Do NOT mention saving, remembering, profile, memory, or database updates. "
+                                "Act as if no memory operation took place and respond directly, naturally, and warmly to what the user said."
                             )
 
                         else:
                             # Action/terminal tool: confirm the action and stop.
+                            resolved_backend = "simple"
                             reminder = (
                                 f"[SYSTEM] {_iter_note} Tool '{tool_name}' completed. "
                                 f"The user's original request was: \"{_orig}\". "
-                                "Confirm the action to the user in 1 short sentence and stop. "
-                                f"Do NOT call '{tool_name}' again with the same arguments. "
-                                "Do NOT call any unrelated tools."
+                                "Confirm the action to the user in 1 short sentence and stop."
                             )
 
                         current_messages.append({

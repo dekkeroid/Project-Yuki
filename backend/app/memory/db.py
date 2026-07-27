@@ -346,6 +346,29 @@ def init_db():
     );
     """)
 
+    # 1d. Time Management: Reminders, Timers, Alarms & Stopwatches
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at REAL,
+        target_time REAL,
+        message TEXT,
+        category TEXT DEFAULT 'timer',
+        recurrence TEXT,
+        action_command TEXT,
+        is_completed INTEGER DEFAULT 0
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS stopwatches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        label TEXT UNIQUE,
+        started_at REAL,
+        is_active INTEGER DEFAULT 1
+    );
+    """)
+
     # ── Phase 2: FTS5 Virtual Table ─────────────────────────────────────
 
     if _fts_needs_migration(cursor):

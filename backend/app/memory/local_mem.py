@@ -2,6 +2,17 @@ import json
 import os
 from app import config
 
+DEFAULT_MOOD_SPECTRUM = {
+    "happiness": 75,
+    "energy": 65,
+    "curiosity": 80,
+    "affection": 70,
+    "stress_level": 15,
+    "doomer": 20,
+    "hunger": 30,
+    "horniness": 50
+}
+
 class MemoryManager:
     def __init__(self):
         self.profile_path = config.PROFILE_PATH
@@ -16,6 +27,7 @@ class MemoryManager:
             "user_dislikes": [],
             "custom_facts": {},
             "interaction_count": 0,
+            "mood_spectrum": dict(DEFAULT_MOOD_SPECTRUM),
             "settings": {
                 # [SEARCH FOR MODEL CHANGE] Old: "llm_model": "ministra-3",
                 "llm_model": "llama-3.2-3b-instruct",
@@ -233,4 +245,30 @@ class MemoryManager:
         
         summary += f"Custom Facts:\n{facts}"
         return summary
+
+    def get_mood_spectrum(self) -> dict:
+        if "mood_spectrum" not in self.profile or not isinstance(self.profile["mood_spectrum"], dict):
+            self.profile["mood_spectrum"] = dict(DEFAULT_MOOD_SPECTRUM)
+            self._save_profile()
+        else:
+            for k, v in DEFAULT_MOOD_SPECTRUM.items():
+                if k not in self.profile["mood_spectrum"]:
+                    self.profile["mood_spectrum"][k] = v
+        return self.profile["mood_spectrum"]
+
+    def update_mood_spectrum(self, updates: dict):
+        current = self.get_mood_spectrum()
+        for k, v in updates.items():
+            if k in DEFAULT_MOOD_SPECTRUM:
+                try:
+                    current[k] = max(0, min(100, int(v)))
+                except Exception:
+                    pass
+        self._save_profile()
+        return current
+
+    def reset_mood_spectrum(self):
+        self.profile["mood_spectrum"] = dict(DEFAULT_MOOD_SPECTRUM)
+        self._save_profile()
+        return self.profile["mood_spectrum"]
 

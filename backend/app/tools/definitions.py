@@ -62,12 +62,12 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "update_user_fact",
-                "description": "Remember a personal fact the user has EXPLICITLY told you about themselves (e.g. their name, a preference, a hobby they mentioned). Do NOT call this as a side-effect of searches, system actions, or tool results. ONLY call when the user directly shares personal information.",
+                "description": "Remember a personal fact, interest, hobby, like, dislike, or name shared by the user. Use key='interest' for interests, key='hobby' for hobbies, key='like' for things they like, key='dislike' for things they dislike, key='name' for user name, or a custom attribute name (e.g. 'favorite_color').",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "key": {"type": "string", "description": "Category key (e.g. 'name', 'favorite_color', 'hobby')."},
-                        "value": {"type": "string", "description": "The information the user shared."}
+                        "key": {"type": "string", "description": "Category key: 'interest', 'hobby', 'like', 'dislike', 'name', or specific custom attribute name."},
+                        "value": {"type": "string", "description": "The item or fact shared by the user (e.g. 'anime', 'spicy food', 'drawing')."}
                     },
                     "required": ["key", "value"]
                 }
