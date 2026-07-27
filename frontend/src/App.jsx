@@ -11,6 +11,7 @@ import { SLASH_COMMANDS } from './constants';
 const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
+const AlarmOverlay = lazy(() => import('./components/AlarmOverlay'));
 
 let stream_end_exception = false;
 
@@ -413,6 +414,35 @@ const App = () => {
     window.yukiConfirmModalVisible = confirmModal.visible;
   }, [confirmModal.visible]);
 
+  // Active Alarm / Timer Overlay State
+  const [activeAlarm, setActiveAlarm] = useState(null);
+
+  const handleDismissAlarm = async (id) => {
+    setActiveAlarm(null);
+    try {
+      await fetch(`${API_BASE}/api/reminders/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+    } catch (e) {
+      console.error("Failed to dismiss alarm:", e);
+    }
+  };
+
+  const handleSnoozeAlarm = async (id) => {
+    setActiveAlarm(null);
+    try {
+      await fetch(`${API_BASE}/api/reminders/snooze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, minutes: 5 })
+      });
+    } catch (e) {
+      console.error("Failed to snooze alarm:", e);
+    }
+  };
+
   // OS telemetry and resident companion states
   const {
     cpuLoad,
@@ -690,6 +720,8 @@ const App = () => {
         } else if (msg.text) {
           speakSystemMessage(msg.text, 'surprised');
         }
+      } else if (msg.type === 'alarm_triggered') {
+        setActiveAlarm(msg);
       } else if (msg.type === 'confirm_request') {
         let displayMessage = `Yuki wants to execute the following action:\n\n${msg.name}`;
         if (msg.name.startsWith("Run terminal command:")) {
@@ -4271,6 +4303,14 @@ const detectExpression = (text) => {
           </div>
         </div>
       )}
+      {/* Active Alarm & Timer Ringing Overlay */}
+      <Suspense fallback={null}>
+        <AlarmOverlay
+          alarm={activeAlarm}
+          onDismiss={handleDismissAlarm}
+          onSnooze={handleSnoozeAlarm}
+        />
+      </Suspense>
 
     </div>
   );

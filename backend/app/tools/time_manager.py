@@ -289,6 +289,15 @@ def delete_reminder(item_id: int) -> bool:
     conn.close()
     return True
 
+def snooze_reminder(item_id: int, minutes: int = 5) -> Dict[str, Any]:
+    now = time.time()
+    new_target = now + (minutes * 60)
+    conn = get_connection()
+    conn.execute("UPDATE reminders SET target_time = ?, is_completed = 0 WHERE id = ?", (new_target, item_id))
+    conn.commit()
+    conn.close()
+    return {"status": "ok", "id": item_id, "new_target": new_target}
+
 def process_due_reminders() -> List[Dict[str, Any]]:
     """
     Called every 10 seconds by the heartbeat loop in main.py.

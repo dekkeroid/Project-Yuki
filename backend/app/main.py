@@ -900,7 +900,8 @@ async def get_tools_list():
 async def reminder_heartbeat_loop():
     """
     Background heartbeat running every 10 seconds.
-    Checks SQLite reminders for due items, triggers Windows Toasts + voice announcements.
+    Checks SQLite reminders for due items, triggers Windows Toasts, WebSocket speech announcements,
+    and cross-platform active Alarm Overlay modals.
     """
     from app.tools import time_manager
     while True:
@@ -915,6 +916,12 @@ async def reminder_heartbeat_loop():
                             await ws.send_json({
                                 "type": "speech",
                                 "text": announcement
+                            })
+                            await ws.send_json({
+                                "type": "alarm_triggered",
+                                "id": item["id"],
+                                "category": item.get("category", "timer"),
+                                "message": msg
                             })
                         except Exception:
                             pass
@@ -941,6 +948,19 @@ def cancel_reminder(req: ReminderCancelRequest):
     from app.tools import time_manager
     time_manager.delete_reminder(req.id)
     return {"status": "ok", "message": f"Cancelled reminder #{req.id}"}
+
+class SnoozeRequest(BaseModel):
+    id: int
+    minutes: Optional[int] = 5
+
+@app.post("/api/reminders/snooze")
+def snooze_reminder(req: SnoozeRequest):
+    """
+    Snoozes an active alarm or timer for 5 minutes.
+    """
+    from app.tools import time_manager
+    res = time_manager.snooze_reminder(req.id, req.minutes or 5)
+    return {"status": "ok", "snooze": res}
 
 class CreateTimerRequest(BaseModel):
     message: str
