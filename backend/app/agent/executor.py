@@ -417,6 +417,7 @@ class AgentExecutor:
         "remember", "save interest", "save an interest", "save my", "my interest", "favorite", "preference", "save fact",
         "hobby", "hobbies", "like", "likes", "dislike", "dislikes", "save hobby", "save like", "save dislike",
         "value of", "make it", "change it", "set it", "update it", "change my", "set my", "update my",
+        "timer", "remind", "reminder", "alarm", "stopwatch", "schedule", "countdown",
         "i love", "i like", "i hate", "i dislike", "i dont like", "i don't like", "i enjoy", "my favorite",
         "im a fan of", "i am a fan of", "cant live without", "can't live without", "i cant stand", "i can't stand",
         "i despise", "not a fan of", "im not a fan of", "i'm not a fan of"
