@@ -678,14 +678,18 @@ const App = () => {
       } else if (msg.type === 'speech') {
         setTtsStreamActive(true);
         setIsThinking(false);
-        hasReceivedAudioRef.current = true;
-        setMessages((prev) => [...prev, {
-          role: 'assistant',
-          content: msg.text,
-          backend: msg.backend_used,
-          responseTime: msg.response_time
-        }]);
-        playVoiceResponse(msg.audio_url, msg.text);
+        if (msg.audio_url) {
+          hasReceivedAudioRef.current = true;
+          setMessages((prev) => [...prev, {
+            role: 'assistant',
+            content: msg.text,
+            backend: msg.backend_used,
+            responseTime: msg.response_time
+          }]);
+          playVoiceResponse(msg.audio_url, msg.text);
+        } else if (msg.text) {
+          speakSystemMessage(msg.text, 'surprised');
+        }
       } else if (msg.type === 'confirm_request') {
         let displayMessage = `Yuki wants to execute the following action:\n\n${msg.name}`;
         if (msg.name.startsWith("Run terminal command:")) {
