@@ -1632,11 +1632,41 @@ const AvatarViewer = ({
               ? window.yukiDebugToggles.cameraTracking
               : (cameraTrackingRef.current !== false && localStorage.getItem('yuki-camera-tracking') !== 'false');
 
+            // Gaze cycling: toggle between looking at user and looking away
+            if (enableCameraTracking) {
+              const isSpeaking = audioLevelRef.current > 0.015;
+
+              if (!alwaysLookingAtYou && isSpeaking) {
+                // Speech interrupt: snap to looking at you
+                alwaysLookingAtYou = true;
+                gazeAtUserTimer = 0;
+                gazeAtUserDuration = 5 + Math.random() * 10;
+              } else if (alwaysLookingAtYou && !isSpeaking && prevIsSpeakingRef.current) {
+                // Speech just ended: reset timer for full post-speech look duration
+                gazeAtUserTimer = 0;
+                gazeAtUserDuration = 5 + Math.random() * 10;
+              } else {
+                gazeAtUserTimer += delta;
+                if (gazeAtUserTimer >= gazeAtUserDuration) {
+                  alwaysLookingAtYou = !alwaysLookingAtYou;
+                  gazeAtUserTimer = 0;
+                  gazeAtUserDuration = alwaysLookingAtYou
+                    ? 5 + Math.random() * 10
+                    : 120 + Math.random() * 60;
+                }
+              }
+              prevIsSpeakingRef.current = isSpeaking;
+            } else {
+              // Camera tracking OFF: never look at you via camera angle
+              alwaysLookingAtYou = false;
+              gazeAtUserTimer = 0;
+            }
+
             let baseLookY = 0;
             let baseLookX = 0;
             let baseLookZ = 0;
 
-            if (enableCameraTracking) {
+            if (enableCameraTracking && alwaysLookingAtYou) {
               // ---------------------------------------------------------
               // --- CAMERA-AWARE GAZE TRACKING BASE CALCULATION ---
               // ---------------------------------------------------------
@@ -1672,6 +1702,8 @@ const AvatarViewer = ({
 
             const enableMouseTracking = !disabledAnimationsRef.current.includes('mouse_tracking') && (window.yukiDebugToggles ? window.yukiDebugToggles.mouseTracking !== false : true);
 
+            // During right-click orbit, skip mouse tracking entirely —
+            // the camera position already encodes where the user is looking from.
             const isOrbiting = isRotating;
 
             if (!isOrbiting && isMouseInWindow && postOrbitRestTimer <= 0) {
@@ -1711,7 +1743,23 @@ const AvatarViewer = ({
             }
             prevIsRotatingRef.current = isRotating;
 
-            if (isMouseInWindow) {
+            // KEY: orbit-tracking only happens when Camera Tracking is ON
+            if ((isOrbiting || postOrbitRestTimer > 0) && enableCameraTracking) {
+              // While orbiting/post-orbit, always track camera regardless of gaze cycling
+              const orbYaw = Math.atan2(camera.position.x, camera.position.z);
+              const orbBodyOffset = vrm.scene.rotation.y - baseRotation;
+              let orbTrackingYaw = Math.max(-1.2, Math.min(1.2, (orbYaw - orbBodyOffset) * 0.55));
+              const orbHeadHeight = 1.4 * scaleRef.current;
+              const orbHDist = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
+              let orbTrackingPitch = orbHDist > 0.01
+                ? Math.atan2(camera.position.y - orbHeadHeight, orbHDist) * 0.8
+                : 0;
+              orbTrackingPitch = Math.max(-0.45, Math.min(0.35, orbTrackingPitch));
+              targetLookY = orbTrackingYaw;
+              targetLookX = orbTrackingPitch;
+              lookState = 'idle';
+              lookTimer = 0;
+            } else if (isMouseInWindow) {
               if (isElectron) {
                 if (enableMouseTracking) {
                   const dx = cursorOffsetRef.current.x;
