@@ -286,6 +286,10 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_coordinate_startup_optimization())
     asyncio.create_task(_start_crawler_bg())
     asyncio.create_task(_run_memory_optimizer_bg())
+
+    from app.tools import time_manager
+    time_manager.set_due_callback(broadcast_due_reminders)
+    time_manager.init_exact_timer_scheduler()
     asyncio.create_task(reminder_heartbeat_loop())
 
     yield
@@ -896,6 +900,31 @@ async def get_tools_list():
         "tools": formatted,
         "count": len(formatted)
     }
+
+async def broadcast_due_reminders(due: List[Dict[str, Any]]):
+    """
+    Broadcasts speech announcements and alarm_triggered WebSocket events
+    for active alarm ringing overlays.
+    """
+    if due and active_websockets:
+        for item in due:
+            msg = item.get("message") or "Your scheduled reminder is due!"
+            announcement = f"Attention: {msg}"
+            for ws in list(active_websockets):
+                try:
+                    await ws.send_json({
+                        "type": "speech",
+                        "text": announcement
+                    })
+                    await ws.send_json({
+                        "type": "alarm_triggered",
+                        "id": item["id"],
+                        "category": item.get("category", "timer"),
+                        "message": msg
+                    })
+                    print(f"[WebSocket] Broadcasted alarm_triggered for timer #{item['id']}: '{msg}'")
+                except Exception as e:
+                    print(f"[WebSocket] Error broadcasting due reminder: {e}")
 
 async def reminder_heartbeat_loop():
     """
