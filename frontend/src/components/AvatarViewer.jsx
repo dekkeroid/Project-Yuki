@@ -1629,37 +1629,8 @@ const AvatarViewer = ({
               ? window.yukiDebugToggles.cameraTracking
               : (cameraTrackingRef.current !== false && localStorage.getItem('yuki-camera-tracking') !== 'false');
 
-            // Gaze cycling: toggle between looking at user and looking away
-            if (enableCameraTracking) {
-              const isSpeaking = audioLevelRef.current > 0.015;
-
-              if (!alwaysLookingAtYou && isSpeaking) {
-                // Speech interrupt: snap to looking at you
-                alwaysLookingAtYou = true;
-                gazeAtUserTimer = 0;
-                gazeAtUserDuration = 5 + Math.random() * 10;
-              } else if (alwaysLookingAtYou && !isSpeaking && prevIsSpeakingRef.current) {
-                // Speech just ended: reset timer for full post-speech look duration
-                gazeAtUserTimer = 0;
-                gazeAtUserDuration = 5 + Math.random() * 10;
-              } else {
-                gazeAtUserTimer += delta;
-                if (gazeAtUserTimer >= gazeAtUserDuration) {
-                  alwaysLookingAtYou = !alwaysLookingAtYou;
-                  gazeAtUserTimer = 0;
-                  gazeAtUserDuration = alwaysLookingAtYou
-                    ? 5 + Math.random() * 10
-                    : 120 + Math.random() * 60;
-                }
-              }
-              prevIsSpeakingRef.current = isSpeaking;
-            } else {
-              alwaysLookingAtYou = false;
-              gazeAtUserTimer = 0;
-            }
-
             let baseLookY, baseLookX, baseLookZ;
-            if (enableCameraTracking && alwaysLookingAtYou) {
+            if (enableCameraTracking) {
               // ---------------------------------------------------------
               // --- CAMERA-AWARE GAZE TRACKING BASE CALCULATION ---
               // ---------------------------------------------------------
@@ -1740,19 +1711,27 @@ const AvatarViewer = ({
             }
             prevIsRotatingRef.current = isRotating;
 
-            if ((isOrbiting || postOrbitRestTimer > 0) && enableCameraTracking) {
-              // While orbiting, always track camera regardless of gaze cycling
-              const orbYaw = Math.atan2(camera.position.x, camera.position.z);
-              const orbBodyOffset = vrm.scene.rotation.y - baseRotation;
-              let orbTrackingYaw = Math.max(-1.2, Math.min(1.2, (orbYaw - orbBodyOffset) * 0.55));
-              const orbHeadHeight = 1.4 * scaleRef.current;
-              const orbHDist = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
-              let orbTrackingPitch = orbHDist > 0.01
-                ? Math.atan2(camera.position.y - orbHeadHeight, orbHDist) * 0.8
-                : 0;
-              orbTrackingPitch = Math.max(-0.45, Math.min(0.35, orbTrackingPitch));
-              targetLookY = orbTrackingYaw;
-              targetLookX = orbTrackingPitch;
+            const isBodyRotated = isRotating || Math.abs(vrm.scene.rotation.y - baseRotation) > 0.05 || postOrbitRestTimer > 0;
+
+            if (isBodyRotated) {
+              if (enableCameraTracking) {
+                // While rotated with Camera Tracking ON: head tracks camera position
+                const orbYaw = Math.atan2(camera.position.x, camera.position.z);
+                const orbBodyOffset = vrm.scene.rotation.y - baseRotation;
+                let orbTrackingYaw = Math.max(-1.2, Math.min(1.2, (orbYaw - orbBodyOffset) * 0.55));
+                const orbHeadHeight = 1.4 * scaleRef.current;
+                const orbHDist = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
+                let orbTrackingPitch = orbHDist > 0.01
+                  ? Math.atan2(camera.position.y - orbHeadHeight, orbHDist) * 0.8
+                  : 0;
+                orbTrackingPitch = Math.max(-0.45, Math.min(0.35, orbTrackingPitch));
+                targetLookY = orbTrackingYaw;
+                targetLookX = orbTrackingPitch;
+              } else {
+                // While rotated with Camera Tracking OFF: head remains locked straight aligned with body! She does NOT look at you!
+                targetLookY = 0;
+                targetLookX = 0;
+              }
               lookState = 'idle';
               lookTimer = 0;
             } else if (isMouseInWindow) {

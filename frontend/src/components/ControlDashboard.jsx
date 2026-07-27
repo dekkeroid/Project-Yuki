@@ -2976,7 +2976,12 @@ const ControlDashboard = ({
                               const val = !isTrackingOn;
                               setLocalCameraTracking(val);
                               try { localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false'); } catch {}
+                              if (!window.yukiDebugToggles) window.yukiDebugToggles = {};
+                              window.yukiDebugToggles.cameraTracking = val;
                               if (onCameraTrackingChange) onCameraTrackingChange(val);
+                              if (window.electronAPI && window.electronAPI.setCameraTracking) {
+                                window.electronAPI.setCameraTracking(val);
+                              }
                             }}
                             style={{
                               background: isTrackingOn ? 'linear-gradient(135deg, #a855f7, #6366f1)' : 'rgba(255,255,255,0.08)',
