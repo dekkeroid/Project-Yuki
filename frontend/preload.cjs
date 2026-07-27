@@ -132,5 +132,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getOpenAtLogin: () => {
     return ipcRenderer.invoke('get-open-at-login');
   },
+  setSkinToneColor: (color) => {
+    ipcRenderer.send('set-skintone-color', color);
+  },
+  onSkinToneColorChanged: (callback) => {
+    const listener = (event, color) => callback(color);
+    ipcRenderer.on('yuki-skintone-changed', listener);
+    return () => ipcRenderer.removeListener('yuki-skintone-changed', listener);
+  },
+  setCameraTracking: (enabled) => {
+    ipcRenderer.send('set-camera-tracking', Boolean(enabled));
+  },
+  onCameraTrackingChanged: (callback) => {
+    const listener = (event, enabled) => callback(enabled);
+    ipcRenderer.on('yuki-camera-tracking-changed', listener);
+    return () => ipcRenderer.removeListener('yuki-camera-tracking-changed', listener);
+  },
   isElectron: true
 });

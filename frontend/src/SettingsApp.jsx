@@ -115,11 +115,17 @@ export default function SettingsApp() {
         onSkinToneChange={(color) => {
           setSkinToneColor(color);
           localStorage.setItem('yuki-avatar-skintone-color', color);
+          if (window.electronAPI && window.electronAPI.setSkinToneColor) {
+            window.electronAPI.setSkinToneColor(color);
+          }
         }}
         cameraTracking={cameraTracking}
         onCameraTrackingChange={(val) => {
           setCameraTracking(val);
           localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false');
+          if (window.electronAPI && window.electronAPI.setCameraTracking) {
+            window.electronAPI.setCameraTracking(val);
+          }
         }}
         disabledAnimations={disabledAnimations}
         onToggleAnimation={(animName) => {

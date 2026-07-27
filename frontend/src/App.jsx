@@ -357,7 +357,7 @@ const App = () => {
     return localStorage.getItem('yuki-camera-tracking') !== 'false';
   });
 
-  // Listen for skintone and camera tracking updates sent from external Settings window via localStorage
+  // Listen for skintone and camera tracking updates sent from external Settings window via IPC and localStorage
   useEffect(() => {
     const handleStorage = (e) => {
       if (e.key === 'yuki-avatar-skintone-color' && e.newValue) {
@@ -368,7 +368,28 @@ const App = () => {
       }
     };
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+
+    let cleanupSkin = null;
+    let cleanupCam = null;
+
+    if (window.electronAPI) {
+      if (window.electronAPI.onSkinToneColorChanged) {
+        cleanupSkin = window.electronAPI.onSkinToneColorChanged((color) => {
+          if (color) setAvatarSkinToneColor(color);
+        });
+      }
+      if (window.electronAPI.onCameraTrackingChanged) {
+        cleanupCam = window.electronAPI.onCameraTrackingChanged((enabled) => {
+          setCameraTracking(Boolean(enabled));
+        });
+      }
+    }
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      if (cleanupSkin) cleanupSkin();
+      if (cleanupCam) cleanupCam();
+    };
   }, []);
 
   // Desktop Overlay UI states

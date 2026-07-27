@@ -800,6 +800,18 @@ function createWindow() {
     };
   });
 
+  ipcMain.on('set-skintone-color', (event, color) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('yuki-skintone-changed', color);
+    }
+  });
+
+  ipcMain.on('set-camera-tracking', (event, enabled) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('yuki-camera-tracking-changed', Boolean(enabled));
+    }
+  });
+
   let hoverPollTimer = null;
   let lastHoverState = null;
   let lastCursorX = -1;
