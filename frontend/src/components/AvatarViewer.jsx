@@ -646,10 +646,13 @@ const AvatarViewer = ({
         }
       },
       get cameraTracking() {
-        try { return localStorage.getItem('yuki-camera-tracking') === 'true'; } catch { return false; }
+        // cameraTrackingRef is the canonical source of truth.
+        // It is updated by: the IPC pipeline from Settings window, and local toggles.
+        return cameraTrackingRef.current !== false;
       },
       set cameraTracking(val) {
-        try { localStorage.setItem('yuki-camera-tracking', String(val)); } catch {}
+        cameraTrackingRef.current = !!val;
+        try { localStorage.setItem('yuki-camera-tracking', String(!!val)); } catch {}
         console.log(`[Yuki Debug] cameraTracking set to ${val}`);
       },
       dragPhysics: true,
@@ -1628,9 +1631,9 @@ const AvatarViewer = ({
             // Neck look-around state machine update
             const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
-            const enableCameraTracking = (window.yukiDebugToggles && window.yukiDebugToggles.cameraTracking !== undefined)
-              ? window.yukiDebugToggles.cameraTracking
-              : (cameraTrackingRef.current !== false && localStorage.getItem('yuki-camera-tracking') !== 'false');
+            // cameraTracking is always read via window.yukiDebugToggles getter,
+            // which returns cameraTrackingRef.current — the single source of truth.
+            const enableCameraTracking = !!(window.yukiDebugToggles && window.yukiDebugToggles.cameraTracking);
 
             // Gaze cycling: toggle between looking at user and looking away
             if (enableCameraTracking) {
@@ -1681,10 +1684,10 @@ const AvatarViewer = ({
               const headHeight = 1.4 * scaleRef.current;
               const horizontalDist = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
               const trackingPitchOffset = horizontalDist > 0.01
-                ? Math.atan2(camera.position.y - headHeight, horizontalDist) * 0.8
+                ? Math.atan2(camera.position.y - headHeight, horizontalDist) * 1.1
                 : 0;
-              const minPitch = -0.45;
-              const maxPitch = 0.35;
+              const minPitch = -0.65;
+              const maxPitch = 0.85;
               const clampedPitch = Math.max(minPitch, Math.min(maxPitch, trackingPitchOffset));
 
               baseLookY = trackingYawOffset;
@@ -1743,20 +1746,25 @@ const AvatarViewer = ({
             }
             prevIsRotatingRef.current = isRotating;
 
-            // KEY: orbit-tracking only happens when Camera Tracking is ON
-            if ((isOrbiting || postOrbitRestTimer > 0) && enableCameraTracking) {
-              // While orbiting/post-orbit, always track camera regardless of gaze cycling
-              const orbYaw = Math.atan2(camera.position.x, camera.position.z);
-              const orbBodyOffset = vrm.scene.rotation.y - baseRotation;
-              let orbTrackingYaw = Math.max(-1.2, Math.min(1.2, (orbYaw - orbBodyOffset) * 0.55));
-              const orbHeadHeight = 1.4 * scaleRef.current;
-              const orbHDist = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
-              let orbTrackingPitch = orbHDist > 0.01
-                ? Math.atan2(camera.position.y - orbHeadHeight, orbHDist) * 0.8
-                : 0;
-              orbTrackingPitch = Math.max(-0.45, Math.min(0.35, orbTrackingPitch));
-              targetLookY = orbTrackingYaw;
-              targetLookX = orbTrackingPitch;
+            // Handle orbit dragging & post-orbit rest:
+            if (isOrbiting || postOrbitRestTimer > 0) {
+              if (enableCameraTracking) {
+                const orbYaw = Math.atan2(camera.position.x, camera.position.z);
+                const orbBodyOffset = vrm.scene.rotation.y - baseRotation;
+                let orbTrackingYaw = Math.max(-1.2, Math.min(1.2, (orbYaw - orbBodyOffset) * 0.55));
+                const orbHeadHeight = 1.4 * scaleRef.current;
+                const orbHDist = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
+                let orbTrackingPitch = orbHDist > 0.01
+                  ? Math.atan2(camera.position.y - orbHeadHeight, orbHDist) * 1.1
+                  : 0;
+                orbTrackingPitch = Math.max(-0.65, Math.min(0.85, orbTrackingPitch));
+                targetLookY = orbTrackingYaw;
+                targetLookX = orbTrackingPitch;
+              } else {
+                // When Camera Tracking is OFF: head stays 100% locked straight ahead aligned with body while rotating
+                targetLookY = 0;
+                targetLookX = 0;
+              }
               lookState = 'idle';
               lookTimer = 0;
             } else if (isMouseInWindow) {
@@ -1774,7 +1782,7 @@ const AvatarViewer = ({
                   }
 
                   targetLookY = Math.atan(dx / 300) * 0.45 * influence + baseLookY;
-                  targetLookX = -Math.atan(dy / 300) * 0.25 * influence + baseLookX;
+                  targetLookX = -Math.atan(dy / 300) * 0.55 * influence + baseLookX;
                 } else {
                   targetLookY = baseLookY;
                   targetLookX = baseLookX;
@@ -1783,7 +1791,7 @@ const AvatarViewer = ({
                 if (enableMouseTracking) {
                   targetLookY = mouseNDC.x * 0.45 + baseLookY;
                   const verticalCenter = 0.0;
-                  targetLookX = (mouseNDC.y - verticalCenter) * 0.22 + baseLookX;
+                  targetLookX = (mouseNDC.y - verticalCenter) * 0.45 + baseLookX;
                 } else {
                   targetLookY = baseLookY;
                   targetLookX = baseLookX;
