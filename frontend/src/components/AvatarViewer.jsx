@@ -2051,9 +2051,13 @@ const AvatarViewer = ({
             const leftEye = getBoneNode(vrm, 'leftEye');
             const rightEye = getBoneNode(vrm, 'rightEye');
             if (leftEye && rightEye) {
-              // Rotates the eyes in the same direction, using the lag-lead gaze + saccades
-              const eyeYaw = currentGazeY * 0.15 + saccadeY;
-              const eyePitch = currentGazeX * 0.15 - 0.03 + saccadeX;
+              // Rotates the eyes subtler than the neck, preventing eyeballs from rolling too high when head tilts up
+              const rawEyeYaw = currentGazeY * 0.08 + saccadeY;
+              const rawEyePitch = currentGazeX * 0.08 - 0.015 + saccadeX;
+
+              // Clamp eye rotation to human anatomical limits so eyes stay centered within eyelids
+              const eyeYaw = Math.max(-0.12, Math.min(0.12, rawEyeYaw));
+              const eyePitch = Math.max(-0.06, Math.min(0.06, rawEyePitch));
 
               leftEye.rotation.y = eyeYaw * yMult;
               leftEye.rotation.x = eyePitch * xMult;
