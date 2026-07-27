@@ -388,22 +388,33 @@ def _density_score(candidate: Dict, parsed: Dict) -> tuple:
     # 2. INDIVIDUAL WORD SCORING (Additive)
     for w in title_words:
         word_matched = False
+        filename_matched = False
         w_pattern = rf'\b{re.escape(w)}\b'
         
-        # File name match
+        # File name match (Highest priority)
         if re.search(w_pattern, file_name_lower) or re.search(w_pattern, trans_name_lower):
-            score += 40.0
+            score += 75.0
             word_matched = True
+            filename_matched = True
         elif w in file_name_lower or w in trans_name_lower:
-            score += 15.0
+            score += 30.0
             word_matched = True
+            filename_matched = True
             
-        # Full Directory Path match
-        if re.search(w_pattern, dir_path_lower) or re.search(w_pattern, trans_parent_lower):
+        # Immediate Parent Folder match (Secondary priority)
+        if re.search(w_pattern, parent_lower) or re.search(w_pattern, trans_parent_lower):
             score += 25.0
             word_matched = True
-        elif w in dir_path_lower or w in trans_parent_lower:
+        elif w in parent_lower or w in trans_parent_lower:
             score += 10.0
+            word_matched = True
+        # Ancestor Directory Path match (Lower priority fallback)
+        elif re.search(w_pattern, dir_path_lower):
+            score += 12.0
+            word_matched = True
+        elif w in dir_path_lower:
+            score += 5.0
+            word_matched = True
             
         # Metadata match
         if w in meta_combined:
@@ -411,16 +422,22 @@ def _density_score(candidate: Dict, parsed: Dict) -> tuple:
             
         if word_matched:
             matched_title_words += 1
+        if filename_matched:
             title_file_hits += 1
 
     # 3. SYNERGY MULTIPLIER
-    # If the search has multiple words, heavily reward files where ALL words are found
+    # Heavily reward files where query words are found, with full 2.5x boost if found in the actual filename
     if len(title_words) > 1 and matched_title_words > 0:
         match_ratio = matched_title_words / len(title_words)
+        filename_ratio = title_file_hits / len(title_words)
+        
         if match_ratio == 1.0:
-            score *= 2.5  # 2.5x boost if every query word exists across the file/path
+            if filename_ratio == 1.0:
+                score *= 2.5  # 2.5x boost if every query word exists in the filename
+            else:
+                score *= (1.5 + 0.5 * filename_ratio)  # Scaled boost if some words only match in path
         else:
-            score *= (1.0 + match_ratio)
+            score *= (1.0 + 0.8 * match_ratio)
 
     # 4. PATH AND GENRE HINTS
     for w in parsed.get("path", []):
@@ -1024,13 +1041,7 @@ def resolve_best_file_via_suggestions(query: str, play_mode: bool = False) -> Op
     if not clean_query:
         return None
 
-    words = [w.lower() for w in clean_query.split() if w.strip()]
-    parsed = {
-        "title": words,
-        "path": [],
-        "genre": [],
-        "episode": None
-    }
+    parsed = parse_query_with_llm(clean_query)
 
     results = []
 
