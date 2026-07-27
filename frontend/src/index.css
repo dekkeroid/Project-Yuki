@@ -1241,10 +1241,9 @@ body.desktop-overlay .interactive-element {
 /* Floating Vertical Menu near Yuki's body */
 .desktop-overlay-menu {
   position: absolute;
-  /* Right-anchor: window resizes with scale, so buttons stay near Yuki's right.
-     48px margin pulls buttons further left, closer to the model body.
-     top offset pushes tray 20px below vertical center for visual balance. */
-  right: 48px;
+  /* Right margin is dynamically set via --button-tray-right:
+     48px at ≤130%, 60px at >130%, 80px at >160% scale */
+  right: var(--button-tray-right, 48px);
   left: auto;
   top: calc(50% + 20px);
   transform: translateY(-50%) translateX(calc(10px * var(--avatar-button-scale, 1)));

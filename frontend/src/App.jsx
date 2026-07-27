@@ -2072,7 +2072,10 @@ const detectExpression = (text) => {
     return (
       <div className="app-viewport" style={{
         '--avatar-scale': avatarScale,
-        '--avatar-button-scale': avatarScale < 1.0 ? avatarScale : 1.0 + (avatarScale - 1.0) * 0.25
+        // Aggressive power-curve shrink below 100%; mild grow above
+        '--avatar-button-scale': avatarScale < 1.0 ? Math.pow(avatarScale, 2) : 1.0 + (avatarScale - 1.0) * 0.25,
+        // Step right margin up at 130% and 160% to keep tray near model at large sizes
+        '--button-tray-right': avatarScale > 1.6 ? '80px' : avatarScale > 1.3 ? '60px' : '48px'
       }}>
         <main className="canvas-container">
           <Suspense fallback={<div style={{color: '#8b5cf6', padding: '20px', fontFamily: 'monospace'}}>Initializing 3D Engine...</div>}>
@@ -4295,7 +4298,10 @@ const detectExpression = (text) => {
   return (
     <div className="app-viewport" style={{
       '--avatar-scale': avatarScale,
-      '--avatar-button-scale': avatarScale < 1.0 ? avatarScale : 1.0 + (avatarScale - 1.0) * 0.25
+      // Aggressive power-curve shrink below 100%; mild grow above
+      '--avatar-button-scale': avatarScale < 1.0 ? Math.pow(avatarScale, 2) : 1.0 + (avatarScale - 1.0) * 0.25,
+      // Step right margin up at 130% and 160% to keep tray near model at large sizes
+      '--button-tray-right': avatarScale > 1.6 ? '80px' : avatarScale > 1.3 ? '60px' : '48px'
     }}>
       
       {/* Top Banner Status Bar */}
