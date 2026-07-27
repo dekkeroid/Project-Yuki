@@ -38,12 +38,13 @@ const App = () => {
   };
 
   if (isAlarmMode) {
+    const isMuted = urlParams.get('mute') === 'true';
     const alarmData = {
       id: urlParams.get('id') || '0',
       message: safeDecode(urlParams.get('msg'), 'Timer Up!'),
       category: safeDecode(urlParams.get('category'), 'timer')
     };
-    return <AlarmOverlay alarm={alarmData} isStandaloneWindow={true} />;
+    return <AlarmOverlay alarm={alarmData} isStandaloneWindow={true} muteChime={isMuted} />;
   }
 
   if (isStopwatchMode) {

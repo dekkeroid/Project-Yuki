@@ -204,11 +204,13 @@ function createAlarmWindow(alarmData) {
   const alarmMsg = encodeURIComponent(alarmData?.message || 'Timer Up!');
   const alarmCat = encodeURIComponent(alarmData?.category || 'timer');
 
+  const isMuted = Boolean(alarmData?.muteChime);
+
   if (isDev) {
-    win.loadURL(`http://localhost:5173/?mode=alarm&id=${alarmId}&msg=${alarmMsg}&category=${alarmCat}`);
+    win.loadURL(`http://localhost:5173/?mode=alarm&id=${alarmId}&msg=${alarmMsg}&category=${alarmCat}&mute=${isMuted}`);
   } else {
     win.loadFile(path.join(__dirname, 'dist', 'index.html'), {
-      query: { mode: 'alarm', id: String(alarmId), msg: alarmData?.message || 'Timer Up!', category: alarmData?.category || 'timer' }
+      query: { mode: 'alarm', id: String(alarmId), msg: alarmData?.message || 'Timer Up!', category: alarmData?.category || 'timer', mute: String(isMuted) }
     });
   }
 

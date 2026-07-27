@@ -2,13 +2,13 @@ import React, { useEffect, useRef } from 'react';
 import { BellRing, Clock, X, RotateCcw } from 'lucide-react';
 import { API_BASE } from '../api';
 
-const AlarmOverlay = ({ alarm, onDismiss, onSnooze, isStandaloneWindow = false }) => {
+const AlarmOverlay = ({ alarm, onDismiss, onSnooze, isStandaloneWindow = false, muteChime = false }) => {
   const audioCtxRef = useRef(null);
   const intervalRef = useRef(null);
 
   // Web Audio API dual-pitch alarm chime pulse synthesizer
   useEffect(() => {
-    if (!alarm) return;
+    if (!alarm || muteChime) return;
 
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 
@@ -43,7 +43,7 @@ const ControlDashboard = ({
 }) => {
   const [isOpen, setIsOpen] = useState(isStandalone ? true : false);
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [settingsSubTab, setSettingsSubTab] = useState('avatar'); // 'avatar' | 'voice' | 'brain'
+  const [settingsSubTab, setSettingsSubTab] = useState('general'); // 'general' | 'avatar' | 'voice' | 'brain'
 
   const [isDevEnv, setIsDevEnv] = useState(false);
   useEffect(() => {
@@ -1696,143 +1696,22 @@ const ControlDashboard = ({
             </>
           ) : activeTab === 'settings' ? (
             <>
-              {/* Featured Launch on Startup Toggle Banner */}
-              <div style={{
-                background: settings.launch_on_startup ? 'linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(56,189,248,0.15) 100%)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${settings.launch_on_startup ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                borderRadius: '14px',
-                padding: '12px 16px',
-                marginBottom: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Power className="w-5 h-5 text-emerald-400" />
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>Launch on Startup (Start with PC)</span>
-                      {isDevEnv && (
-                        <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245,158,11,0.2)', color: '#fbbf24', fontWeight: 600 }}>
-                          DEV MODE (FOR SHOW ONLY)
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
-                      Automatically launch Yuki when your computer boots up. {isDevEnv ? '(Active in production builds; skipped during development)' : ''}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const newVal = !settings.launch_on_startup;
-                    handleUpdateSetting('launch_on_startup', newVal);
-                    if (window.electronAPI && window.electronAPI.setOpenAtLogin) {
-                      window.electronAPI.setOpenAtLogin(newVal);
-                    }
-                  }}
-                  style={{
-                    background: settings.launch_on_startup ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255,255,255,0.08)',
-                    border: `1px solid ${settings.launch_on_startup ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.12)'}`,
-                    borderRadius: '14px',
-                    width: '44px',
-                    height: '24px',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    transition: 'all 0.2s ease',
-                    flexShrink: 0
-                  }}
-                >
-                  <div style={{
-                    width: '18px',
-                    height: '18px',
-                    borderRadius: '50%',
-                    background: '#fff',
-                    position: 'absolute',
-                    top: '2px',
-                    left: settings.launch_on_startup ? '22px' : '2px',
-                    transition: 'all 0.2s ease',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                  }} />
-                </button>
-              </div>
-
-              {/* Featured Chat Mode Toggle Banner */}
-              <div style={{
-                background: settings.chat_mode ? 'linear-gradient(135deg, rgba(139,92,246,0.2) 0%, rgba(217,70,239,0.15) 100%)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${settings.chat_mode ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)'}`,
-                borderRadius: '14px',
-                padding: '12px 16px',
-                marginBottom: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <MessageSquare className="w-5 h-5 text-violet-400" />
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>Chat Mode (Pure Conversation)</div>
-                      <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
-                        Treats all messages as simple chat. Disables computer control tools for fast lightweight responses.
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateSetting('chat_mode', !settings.chat_mode)}
-                    style={{
-                      background: settings.chat_mode ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'rgba(255,255,255,0.08)',
-                      border: `1px solid ${settings.chat_mode ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
-                      borderRadius: '14px',
-                      width: '44px',
-                      height: '24px',
-                      cursor: 'pointer',
-                      position: 'relative',
-                      transition: 'all 0.2s ease',
-                      flexShrink: 0
-                    }}
-                  >
-                    <div style={{
-                      width: '18px',
-                      height: '18px',
-                      borderRadius: '50%',
-                      background: '#fff',
-                      position: 'absolute',
-                      top: '2px',
-                      left: settings.chat_mode ? '22px' : '2px',
-                      transition: 'all 0.2s ease',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                    }} />
-                  </button>
-                </div>
-
-                {/* Dependent Checkbox */}
-                {settings.chat_mode && (
-                  <div style={{
-                    paddingTop: '8px',
-                    borderTop: '1px solid rgba(255,255,255,0.08)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}>
-                    <input
-                      type="checkbox"
-                      id="top_keep_memory_saving"
-                      checked={settings.keep_memory_saving !== false}
-                      onChange={(e) => handleUpdateSetting('keep_memory_saving', e.target.checked)}
-                      style={{ accentColor: '#a78bfa', cursor: 'pointer', width: '14px', height: '14px' }}
-                    />
-                    <label htmlFor="top_keep_memory_saving" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.85)', cursor: 'pointer' }}>
-                      Keep memory saving active in Chat Mode
-                    </label>
-                  </div>
-                )}
-              </div>
-
               {/* Sub-Tabs Pill Navigation */}
               <div className="subtab-container" style={{ display: 'flex', gap: '6px', marginBottom: '16px', background: 'rgba(0,0,0,0.25)', padding: '4px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <button
+                  type="button"
+                  onClick={() => setSettingsSubTab('general')}
+                  style={{
+                    flex: 1, padding: '7px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    background: settingsSubTab === 'general' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
+                    color: settingsSubTab === 'general' ? '#fff' : '#94a3b8',
+                    boxShadow: settingsSubTab === 'general' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
+                  }}
+                >
+                  <Sliders style={{ width: '13px', height: '13px' }} />
+                  <span>General</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setSettingsSubTab('avatar')}
@@ -1877,8 +1756,250 @@ const ControlDashboard = ({
                 </button>
               </div>
 
-              {/* Sub-tab 1: AI Brain */}
-              {settingsSubTab === 'brain' && (
+              {/* Sub-tab 0: General Settings */}
+              {settingsSubTab === 'general' && (
+                <>
+                  {/* Featured Launch on Startup Toggle Banner */}
+                  <div style={{
+                    background: settings.launch_on_startup ? 'linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(56,189,248,0.15) 100%)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${settings.launch_on_startup ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                    borderRadius: '14px',
+                    padding: '12px 16px',
+                    marginBottom: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Power className="w-5 h-5 text-emerald-400" />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>Launch on Startup (Start with PC)</span>
+                          {isDevEnv && (
+                            <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245,158,11,0.2)', color: '#fbbf24', fontWeight: 600 }}>
+                              DEV MODE (FOR SHOW ONLY)
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                          Automatically launch Yuki when your computer boots up. {isDevEnv ? '(Active in production builds; skipped during development)' : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newVal = !settings.launch_on_startup;
+                        handleUpdateSetting('launch_on_startup', newVal);
+                        if (window.electronAPI && window.electronAPI.setOpenAtLogin) {
+                          window.electronAPI.setOpenAtLogin(newVal);
+                        }
+                      }}
+                      style={{
+                        background: settings.launch_on_startup ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255,255,255,0.08)',
+                        border: `1px solid ${settings.launch_on_startup ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                        borderRadius: '14px',
+                        width: '44px',
+                        height: '24px',
+                        cursor: 'pointer',
+                        position: 'relative',
+                        transition: 'all 0.2s ease',
+                        flexShrink: 0
+                      }}
+                    >
+                      <div style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        background: '#fff',
+                        position: 'absolute',
+                        top: '2px',
+                        left: settings.launch_on_startup ? '22px' : '2px',
+                        transition: 'all 0.2s ease',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                      }} />
+                    </button>
+                  </div>
+
+                  {/* Featured Chat Mode Toggle Banner */}
+                  <div style={{
+                    background: settings.chat_mode ? 'linear-gradient(135deg, rgba(139,92,246,0.2) 0%, rgba(217,70,239,0.15) 100%)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${settings.chat_mode ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                    borderRadius: '14px',
+                    padding: '12px 16px',
+                    marginBottom: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <MessageSquare className="w-5 h-5 text-violet-400" />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>Chat Mode (Pure Conversation)</div>
+                          <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                            Treats all messages as simple chat. Disables computer control tools for fast lightweight responses.
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateSetting('chat_mode', !settings.chat_mode)}
+                        style={{
+                          background: settings.chat_mode ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'rgba(255,255,255,0.08)',
+                          border: `1px solid ${settings.chat_mode ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                          borderRadius: '14px',
+                          width: '44px',
+                          height: '24px',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          transition: 'all 0.2s ease',
+                          flexShrink: 0
+                        }}
+                      >
+                        <div style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '50%',
+                          background: '#fff',
+                          position: 'absolute',
+                          top: '2px',
+                          left: settings.chat_mode ? '22px' : '2px',
+                          transition: 'all 0.2s ease',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                        }} />
+                      </button>
+                    </div>
+
+                    {settings.chat_mode && (
+                      <div style={{
+                        paddingTop: '8px',
+                        borderTop: '1px solid rgba(255,255,255,0.08)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        <input
+                          type="checkbox"
+                          id="top_keep_memory_saving"
+                          checked={settings.keep_memory_saving !== false}
+                          onChange={(e) => handleUpdateSetting('keep_memory_saving', e.target.checked)}
+                          style={{ accentColor: '#a78bfa', cursor: 'pointer', width: '14px', height: '14px' }}
+                        />
+                        <label htmlFor="top_keep_memory_saving" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.85)', cursor: 'pointer' }}>
+                          Keep memory saving active in Chat Mode
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Always on Top Banner */}
+                  <div style={{
+                    background: settings.always_on_top !== false ? 'linear-gradient(135deg, rgba(56,189,248,0.15) 0%, rgba(139,92,246,0.15) 100%)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${settings.always_on_top !== false ? 'rgba(56,189,248,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                    borderRadius: '14px',
+                    padding: '12px 16px',
+                    marginBottom: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Monitor className="w-5 h-5 text-sky-400" />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>Always on Top (Pin Desktop Avatar)</div>
+                        <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                          Keeps Yuki floating over all open app windows and full-screen games.
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newVal = settings.always_on_top === false;
+                        handleUpdateSetting('always_on_top', newVal);
+                        if (window.electronAPI && window.electronAPI.setAlwaysOnTop) {
+                          window.electronAPI.setAlwaysOnTop(newVal);
+                        }
+                      }}
+                      style={{
+                        background: settings.always_on_top !== false ? 'linear-gradient(135deg, #38bdf8, #0284c7)' : 'rgba(255,255,255,0.08)',
+                        border: `1px solid ${settings.always_on_top !== false ? 'rgba(56,189,248,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                        borderRadius: '14px',
+                        width: '44px',
+                        height: '24px',
+                        cursor: 'pointer',
+                        position: 'relative',
+                        transition: 'all 0.2s ease',
+                        flexShrink: 0
+                      }}
+                    >
+                      <div style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        background: '#fff',
+                        position: 'absolute',
+                        top: '2px',
+                        left: settings.always_on_top !== false ? '22px' : '2px',
+                        transition: 'all 0.2s ease',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                      }} />
+                    </button>
+                  </div>
+
+                  {/* General Preferences Group */}
+                  <div className="card-group" style={{ marginBottom: '12px' }}>
+                    <div className="card-group-header">
+                      <Layout className="w-4 h-4 text-violet-400" />
+                      <span className="card-group-title">Dashboard & Sound Preferences</span>
+                    </div>
+
+                    {/* Default Dashboard Tab */}
+                    <div className="identity-field" style={{ marginTop: '6px' }}>
+                      <span className="field-label">Default Open Tab on Dashboard</span>
+                      <select
+                        value={settings.default_dashboard_tab || 'memory'}
+                        onChange={(e) => handleUpdateSetting('default_dashboard_tab', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '4px'
+                        }}
+                      >
+                        <option value="memory">🧠 Memory & Persona</option>
+                        <option value="tasks">⏱️ Tasks & Alarms</option>
+                        <option value="chat">💬 Chat & Logs</option>
+                        <option value="settings">⚙️ Settings</option>
+                      </select>
+                    </div>
+
+                    {/* Mute System Alarm Chimes Toggle */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <BellOff className="w-4 h-4 text-rose-400" />
+                        <div>
+                          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff' }}>Mute In-App Alarm Chime Audio</div>
+                          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)' }}>Rings visual popup only without Web Audio tone synth</div>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.mute_alarm_chimes === true}
+                        onChange={(e) => handleUpdateSetting('mute_alarm_chimes', e.target.checked)}
+                        style={{ accentColor: '#f43f5e', cursor: 'pointer', width: '15px', height: '15px' }}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
                 <div className="card-group">
                   <div className="card-group-header">
                     <Cpu className="w-4 h-4 text-violet-400" />

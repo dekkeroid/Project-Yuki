@@ -629,6 +629,10 @@ class SettingsUpdateRequest(BaseModel):
     keep_memory_saving: Optional[bool] = None
     os_native_alarms: Optional[bool] = None
     launch_on_startup: Optional[bool] = None
+    always_on_top: Optional[bool] = None
+    close_to_tray: Optional[bool] = None
+    default_dashboard_tab: Optional[str] = None
+    mute_alarm_chimes: Optional[bool] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -759,6 +763,14 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("os_native_alarms", req.os_native_alarms)
     if req.launch_on_startup is not None:
         memory_manager.update_setting("launch_on_startup", req.launch_on_startup)
+    if req.always_on_top is not None:
+        memory_manager.update_setting("always_on_top", req.always_on_top)
+    if req.close_to_tray is not None:
+        memory_manager.update_setting("close_to_tray", req.close_to_tray)
+    if req.default_dashboard_tab is not None:
+        memory_manager.update_setting("default_dashboard_tab", req.default_dashboard_tab.strip())
+    if req.mute_alarm_chimes is not None:
+        memory_manager.update_setting("mute_alarm_chimes", req.mute_alarm_chimes)
 
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True
