@@ -1632,7 +1632,10 @@ const AvatarViewer = ({
               ? window.yukiDebugToggles.cameraTracking
               : (cameraTrackingRef.current !== false && localStorage.getItem('yuki-camera-tracking') !== 'false');
 
-            let baseLookY, baseLookX, baseLookZ;
+            let baseLookY = 0;
+            let baseLookX = 0;
+            let baseLookZ = 0;
+
             if (enableCameraTracking) {
               // ---------------------------------------------------------
               // --- CAMERA-AWARE GAZE TRACKING BASE CALCULATION ---
@@ -1661,10 +1664,6 @@ const AvatarViewer = ({
               baseLookZ = horizontalDist > 0.01
                 ? Math.atan2(-camera.position.x, horizontalDist) * rollScale
                 : 0;
-            } else {
-              baseLookY = 0;
-              baseLookX = 0;
-              baseLookZ = 0;
             }
 
             let targetLookY = baseLookY;
@@ -1673,8 +1672,6 @@ const AvatarViewer = ({
 
             const enableMouseTracking = !disabledAnimationsRef.current.includes('mouse_tracking') && (window.yukiDebugToggles ? window.yukiDebugToggles.mouseTracking !== false : true);
 
-            // During right-click orbit, skip mouse tracking entirely —
-            // the camera position already encodes where the user is looking from.
             const isOrbiting = isRotating;
 
             if (!isOrbiting && isMouseInWindow && postOrbitRestTimer <= 0) {
@@ -1714,31 +1711,7 @@ const AvatarViewer = ({
             }
             prevIsRotatingRef.current = isRotating;
 
-            const cameraYaw = Math.atan2(camera.position.x, camera.position.z);
-            const isBodyRotated = isRotatingRef.current || Math.abs(cameraYaw) > 0.04 || Math.abs(vrm.scene.rotation.y - baseRotation) > 0.04 || postOrbitRestTimer > 0;
-
-            if (isBodyRotated) {
-              if (enableCameraTracking) {
-                // While rotated with Camera Tracking ON: head tracks camera position
-                const orbBodyOffset = vrm.scene.rotation.y - baseRotation;
-                let orbTrackingYaw = Math.max(-1.2, Math.min(1.2, (cameraYaw - orbBodyOffset) * 0.55));
-                const orbHeadHeight = 1.4 * scaleRef.current;
-                const orbHDist = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
-                let orbTrackingPitch = orbHDist > 0.01
-                  ? Math.atan2(camera.position.y - orbHeadHeight, orbHDist) * 0.8
-                  : 0;
-                orbTrackingPitch = Math.max(-0.45, Math.min(0.35, orbTrackingPitch));
-                targetLookY = orbTrackingYaw;
-                targetLookX = orbTrackingPitch;
-              } else {
-                // While rotated with Camera Tracking OFF: head remains locked straight aligned with body! She does NOT look at you!
-                targetLookY = 0;
-                targetLookX = 0;
-              }
-              lookState = 'idle';
-              lookTimer = 0;
-            } else if (isMouseInWindow) {
-              const enableMouseTracking = !disabledAnimationsRef.current.includes('mouse_tracking') && (window.yukiDebugToggles ? window.yukiDebugToggles.mouseTracking !== false : true);
+            if (isMouseInWindow) {
               if (isElectron) {
                 if (enableMouseTracking) {
                   const dx = cursorOffsetRef.current.x;
