@@ -333,10 +333,8 @@ const App = () => {
   const [lastDrivesCount, setLastDrivesCount] = useState(null);
   const hasTriggeredLowSsdWarningRef = useRef(false);
   const hasTriggeredHighRamWarningRef = useRef(false);
-  const [avatarScale, setAvatarScale] = useState(() => {
-    const saved = localStorage.getItem('yuki-avatar-scale');
-    return saved ? parseFloat(saved) : 1.0;
-  });
+  // Always start at 100% scale on launch — no persistence across restarts
+  const [avatarScale, setAvatarScale] = useState(1.0);
   const [avatarSkinToneColor, setAvatarSkinToneColor] = useState(() => {
     const saved = localStorage.getItem('yuki-avatar-skintone-color');
     return saved ? saved : '#FFE5E5';

@@ -1241,13 +1241,12 @@ body.desktop-overlay .interactive-element {
 /* Floating Vertical Menu near Yuki's body */
 .desktop-overlay-menu {
   position: absolute;
-  /* Right-anchor: since Electron resizes the window on scale change,
-     anchoring 8px from the right keeps buttons near Yuki's right side
-     at all scales. At small scales the window is narrow so buttons
-     are naturally closer to center (toward model). */
-  right: 8px;
+  /* Right-anchor: window resizes with scale, so buttons stay near Yuki's right.
+     24px margin keeps them close to the model body but with some breathing room.
+     top offset pushes tray 20px below vertical center for visual balance. */
+  right: 24px;
   left: auto;
-  top: 50%;
+  top: calc(50% + 20px);
   transform: translateY(-50%) translateX(calc(10px * var(--avatar-button-scale, 1)));
   display: flex;
   flex-direction: column;
