@@ -137,6 +137,8 @@ def add_timer(duration_seconds: int, message: str = "Timer Up!", action_command:
     timer_id = cursor.lastrowid
     conn.close()
     
+    schedule_exact_timer(timer_id, target)
+    
     mins, secs = divmod(duration_seconds, 60)
     time_fmt = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
     print(f"[TimeManager] Timer #{timer_id} set for {time_fmt}: '{message}'")
@@ -163,6 +165,8 @@ def add_reminder(target_time_str: str, message: str, recurrence: Optional[str] =
     conn.commit()
     reminder_id = cursor.lastrowid
     conn.close()
+    
+    schedule_exact_timer(reminder_id, target)
     
     dt_str = datetime.datetime.fromtimestamp(target).strftime("%I:%M %p")
     print(f"[TimeManager] Reminder #{reminder_id} set for {dt_str}: '{message}'")
@@ -289,6 +293,98 @@ def delete_reminder(item_id: int) -> bool:
     conn.close()
     return True
 
+import asyncio
+
+_due_callback = None
+_scheduled_tasks: Dict[int, asyncio.Task] = {}
+
+def set_due_callback(callback):
+    global _due_callback
+    _due_callback = callback
+
+def schedule_exact_timer(item_id: int, target_time: float):
+    now = time.time()
+    delay = max(0.0, target_time - now)
+    
+    if item_id in _scheduled_tasks:
+        try:
+            _scheduled_tasks[item_id].cancel()
+        except Exception:
+            pass
+            
+    async def _exact_runner():
+        if delay > 0:
+            await asyncio.sleep(delay)
+        due_items = process_single_due_reminder(item_id)
+        if due_items and _due_callback:
+            try:
+                if asyncio.iscoroutinefunction(_due_callback):
+                    await _due_callback(due_items)
+                else:
+                    _due_callback(due_items)
+            except Exception as e:
+                print(f"[TimeManager] Error in due_callback for #{item_id}: {e}")
+        _scheduled_tasks.pop(item_id, None)
+
+    try:
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(_exact_runner())
+        _scheduled_tasks[item_id] = task
+        print(f"[TimeManager] Exact event scheduled for item #{item_id} in {delay:.2f}s")
+    except RuntimeError:
+        pass
+
+def init_exact_timer_scheduler():
+    now = time.time()
+    conn = get_connection()
+    rows = conn.execute("SELECT id, target_time FROM reminders WHERE is_completed = 0").fetchall()
+    conn.close()
+    for r in rows:
+        schedule_exact_timer(r["id"], r["target_time"])
+
+def process_single_due_reminder(item_id: int) -> List[Dict[str, Any]]:
+    now = time.time()
+    conn = get_connection()
+    cursor = conn.cursor()
+    row = cursor.execute("""
+    SELECT id, created_at, target_time, message, category, recurrence, action_command
+    FROM reminders
+    WHERE id = ? AND is_completed = 0
+    """, (item_id,)).fetchone()
+    
+    if not row:
+        conn.close()
+        return []
+        
+    item = dict(row)
+    
+    title = "Yuki Timer Up!" if item["category"] == "timer" else "Yuki Reminder"
+    msg = item["message"] or "Your scheduled reminder is due."
+    trigger_windows_toast(title, msg)
+    
+    if item.get("action_command"):
+        try:
+            subprocess.Popen(item["action_command"], shell=True)
+            print(f"[TimeManager] Executed background task: {item['action_command']}")
+        except Exception as cmd_err:
+            print(f"[TimeManager] Failed to execute background command: {cmd_err}")
+            
+    rec = item.get("recurrence")
+    if rec == "daily":
+        new_target = item["target_time"] + 86400
+        cursor.execute("UPDATE reminders SET target_time = ? WHERE id = ?", (new_target, item_id))
+        schedule_exact_timer(item_id, new_target)
+    elif rec == "hourly":
+        new_target = item["target_time"] + 3600
+        cursor.execute("UPDATE reminders SET target_time = ? WHERE id = ?", (new_target, item_id))
+        schedule_exact_timer(item_id, new_target)
+    else:
+        cursor.execute("UPDATE reminders SET is_completed = 1 WHERE id = ?", (item_id,))
+        
+    conn.commit()
+    conn.close()
+    return [item]
+
 def snooze_reminder(item_id: int, minutes: int = 5) -> Dict[str, Any]:
     now = time.time()
     new_target = now + (minutes * 60)
@@ -296,6 +392,7 @@ def snooze_reminder(item_id: int, minutes: int = 5) -> Dict[str, Any]:
     conn.execute("UPDATE reminders SET target_time = ?, is_completed = 0 WHERE id = ?", (new_target, item_id))
     conn.commit()
     conn.close()
+    schedule_exact_timer(item_id, new_target)
     return {"status": "ok", "id": item_id, "new_target": new_target}
 
 def process_due_reminders() -> List[Dict[str, Any]]:
