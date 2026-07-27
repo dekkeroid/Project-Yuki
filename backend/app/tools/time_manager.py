@@ -120,6 +120,10 @@ def parse_target_timestamp(time_str: str) -> float:
 # ── DB Core Actions ─────────────────────────────────────────────────────────
 
 def add_timer(duration_seconds: int, message: str = "Timer Up!", action_command: Optional[str] = None) -> Dict[str, Any]:
+    try:
+        duration_seconds = int(duration_seconds)
+    except (ValueError, TypeError):
+        duration_seconds = parse_duration_seconds(str(duration_seconds))
     now = time.time()
     target = now + max(1, duration_seconds)
     

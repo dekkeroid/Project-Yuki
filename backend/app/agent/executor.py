@@ -270,7 +270,12 @@ class AgentExecutor:
         
         # Smart action inferring if model omitted action parameter
         duration_sec = kwargs.get("duration_seconds")
-        if duration_sec is None:
+        if duration_sec is not None:
+            try:
+                duration_sec = int(duration_sec)
+            except (ValueError, TypeError):
+                duration_sec = time_manager.parse_duration_seconds(str(duration_sec))
+        else:
             dur_str = str(kwargs.get("duration") or kwargs.get("time") or "")
             unit_str = str(kwargs.get("unit") or "")
             if dur_str:
@@ -286,7 +291,7 @@ class AgentExecutor:
                 action = "set_reminder"
 
         if action == "set_timer":
-            dur = duration_sec or 300
+            dur = int(duration_sec) if duration_sec else 300
             msg = kwargs.get("message") or kwargs.get("label") or kwargs.get("name") or "Timer Up!"
             res = time_manager.add_timer(dur, msg, kwargs.get("action_command"))
             return f"Successfully set a {res['formatted_duration']} timer for '{res['message']}'."
