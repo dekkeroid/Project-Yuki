@@ -72,7 +72,7 @@ const AvatarViewer = ({
   const cpuLoadRef = useRef(cpuLoad);
   const systemIdleTimeRef = useRef(systemIdleTime);
   const sleepProgressRef = useRef(0.0);
-  const scaleRef = useRef(isElectron ? (window.innerHeight / ELECTRON_WINDOW_HEIGHT) : scale);
+  const scaleRef = useRef(scale);
   const skinToneRef = useRef(skinToneColor);
   const disabledAnimationsRef = useRef(disabledAnimations || []);
   const prevIsSpeakingRef = useRef(false);
@@ -162,10 +162,8 @@ const AvatarViewer = ({
   }, [systemIdleTime]);
 
   useEffect(() => {
-    if (!isElectron) {
-      scaleRef.current = scale;
-    }
-  }, [scale, isElectron]);
+    scaleRef.current = scale;
+  }, [scale]);
 
   useEffect(() => {
     skinToneRef.current = skinToneColor;
@@ -1271,9 +1269,6 @@ const AvatarViewer = ({
     // Resize Handler
     const handleResize = () => {
       if (!containerRef.current) return;
-      if (isElectron) {
-        scaleRef.current = window.innerHeight / ELECTRON_WINDOW_HEIGHT;
-      }
       const width = isElectron ? window.innerWidth : containerRef.current.clientWidth;
       const height = isElectron ? window.innerHeight : containerRef.current.clientHeight;
       camera.aspect = width / height;
@@ -2762,6 +2757,7 @@ const AvatarViewer = ({
 
             const xPercent = (tempV.x * 0.5 + 0.5) * 100;
             const yPercent = (tempV.y * -0.5 + 0.5) * 100;
+            window.yukiAvatarHeadYPercent = yPercent;
 
             // Project head top (head bone + hair offset) to ensure bubble bottom is always above it
             const headTopY = headY + 0.12 * scaleRef.current;

@@ -2167,7 +2167,7 @@ const detectExpression = (text) => {
             className="desktop-chat-input-container interactive-element"
             style={{
               position: 'fixed',
-              bottom: '16px',
+              bottom: `${chatBottomPx}px`,
               left: '16px',
               right: '16px',
               maxWidth: '640px',
@@ -4262,6 +4262,28 @@ const detectExpression = (text) => {
       </div>
     );
   }
+
+  const [chatBottomPx, setChatBottomPx] = useState(16);
+
+  useEffect(() => {
+    if (!isChatOpen) return;
+    let animId = null;
+    const updatePosition = () => {
+      if (typeof window.yukiAvatarHeadYPercent === 'number') {
+        const headBottomPx = ((100 - window.yukiAvatarHeadYPercent) / 100) * window.innerHeight;
+        const targetBottom = headBottomPx - 260;
+        const clamped = Math.max(16, Math.min(window.innerHeight - 120, targetBottom));
+        setChatBottomPx(Math.round(clamped));
+      } else {
+        setChatBottomPx(16);
+      }
+      animId = requestAnimationFrame(updatePosition);
+    };
+    animId = requestAnimationFrame(updatePosition);
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+    };
+  }, [isChatOpen]);
 
   return (
     <div className="app-viewport" style={{
