@@ -294,7 +294,7 @@ async def lifespan(app: FastAPI):
         await agent_executor.mcp_tools.aclose()
 
 
-app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.1.2-alpha", lifespan=lifespan)
+app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.2.0-beta", lifespan=lifespan)
 
 # Setup CORS — restrict to localhost and LAN origins
 app.add_middleware(
@@ -573,30 +573,17 @@ def get_settings():
     """
     Returns the current configuration settings.
     """
+    import copy
     from app.memory.crawler import is_crawler_paused, is_tagger_paused
-    return {
+    settings_dict = copy.deepcopy(memory_manager.profile.get("settings", {}))
+    settings_dict.update({
         "llm_model": config.LLM_MODEL,
-        "llm_backend": memory_manager.profile["settings"].get("llm_backend", "lmstudio"),
-        "llm_base_url": memory_manager.profile["settings"].get("llm_base_url", ""),
-        "llm_api_key": memory_manager.profile["settings"].get("llm_api_key", ""),
-        "tts_voice": config.TTS_VOICE,
-        "tts_rate": config.TTS_RATE,
-        "tts_device": getattr(config, "TTS_DEVICE", "auto"),
-        "stt_device": getattr(config, "STT_DEVICE", "auto"),
         "character_name": config.CHARACTER_NAME,
         "character_persona": config.CHARACTER_PERSONA,
         "crawler_paused": is_crawler_paused(),
         "tagger_paused": is_tagger_paused(),
-        "active_vrm_model": memory_manager.profile["settings"].get("active_vrm_model", "default.vrm"),
-        "whisper_model": memory_manager.profile["settings"].get("whisper_model", "base"),
-        "whisper_compute_type": memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16"),
-        "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
-        "stt_language": memory_manager.profile["settings"].get("stt_language", "en"),
-        "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False),
-        "tts_preload": memory_manager.profile["settings"].get("tts_preload", True),
-        "vrm_dpr": memory_manager.profile["settings"].get("vrm_dpr", 1.5),
-        "vrm_fps": memory_manager.profile["settings"].get("vrm_fps", 60)
-    }
+    })
+    return settings_dict
 
 class SettingsUpdateRequest(BaseModel):
     llm_model: Optional[str] = None
@@ -623,6 +610,8 @@ class SettingsUpdateRequest(BaseModel):
     tts_preload: Optional[bool] = None
     vrm_dpr: Optional[float] = None
     vrm_fps: Optional[int] = None
+    chat_mode: Optional[bool] = None
+    keep_memory_saving: Optional[bool] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -745,6 +734,10 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("vrm_dpr", req.vrm_dpr)
     if req.vrm_fps is not None:
         memory_manager.update_setting("vrm_fps", req.vrm_fps)
+    if req.chat_mode is not None:
+        memory_manager.update_setting("chat_mode", req.chat_mode)
+    if req.keep_memory_saving is not None:
+        memory_manager.update_setting("keep_memory_saving", req.keep_memory_saving)
 
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True
@@ -754,32 +747,19 @@ async def update_settings(req: SettingsUpdateRequest):
     
     await broadcast_profile_update()
     
+    import copy
+    current_settings = copy.deepcopy(memory_manager.profile.get("settings", {}))
+    current_settings.update({
+        "llm_model": config.LLM_MODEL,
+        "character_name": config.CHARACTER_NAME,
+        "character_persona": config.CHARACTER_PERSONA,
+        "crawler_paused": crawler.is_crawler_paused(),
+        "tagger_paused": crawler.is_tagger_paused(),
+    })
+    
     return {
         "message": "Settings updated successfully.",
-        "settings": {
-            "llm_model": config.LLM_MODEL,
-            "llm_backend": memory_manager.profile["settings"].get("llm_backend", "lmstudio"),
-            "llm_base_url": memory_manager.profile["settings"].get("llm_base_url", ""),
-            "llm_api_key": memory_manager.profile["settings"].get("llm_api_key", ""),
-            "tts_voice": config.TTS_VOICE,
-            "tts_rate": config.TTS_RATE,
-            "tts_device": getattr(config, "TTS_DEVICE", "auto"),
-            "stt_device": getattr(config, "STT_DEVICE", "auto"),
-            "character_name": config.CHARACTER_NAME,
-            "character_persona": config.CHARACTER_PERSONA,
-            "crawler_paused": crawler.is_crawler_paused(),
-            "tagger_paused": crawler.is_tagger_paused(),
-            "active_vrm_model": memory_manager.profile["settings"].get("active_vrm_model", "default.vrm"),
-            "whisper_model": memory_manager.profile["settings"].get("whisper_model", "base"),
-            "whisper_compute_type": memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16"),
-            "use_local_whisper": memory_manager.profile["settings"].get("use_local_whisper", True),
-            "stt_language": memory_manager.profile["settings"].get("stt_language", "en"),
-            "no_llm_mode": memory_manager.profile["settings"].get("no_llm_mode", False),
-            "dynamic_tool_calling": memory_manager.profile["settings"].get("dynamic_tool_calling", True),
-            "enable_rotation": memory_manager.profile["settings"].get("enable_rotation", True),
-            "auto_reset_rotation": memory_manager.profile["settings"].get("auto_reset_rotation", False),
-            "tts_preload": memory_manager.profile["settings"].get("tts_preload", True)
-        }
+        "settings": current_settings
     }
 
 @app.get("/api/tts")
@@ -874,6 +854,48 @@ async def speech_status(req: dict):
     print(f"[STT Frontend] {msg}")
     return {"status": "ok"}
 
+@app.get("/api/tools")
+async def get_tools_list():
+    """
+    Returns all dynamically registered local and MCP tool definitions for Yuki,
+    including name, description, parameters schema, and category.
+    """
+    if agent_executor is None:
+        return {"tools": [], "count": 0}
+    
+    tools = await agent_executor.mcp_tools.get_tool_definitions("", dynamic=False)
+    
+    formatted = []
+    for t in tools:
+        fn = t.get("function", {})
+        name = fn.get("name", "")
+        desc = fn.get("description", "")
+        params = fn.get("parameters", {})
+        
+        # Categorize tools cleanly
+        category = "System & OS"
+        if name in ("update_user_fact",):
+            category = "Memory & User Facts"
+        elif name in ("web_search", "read_file_content", "search_files", "list_directory"):
+            category = "Information & Search"
+        elif name in ("launch_app", "open_or_play_file", "media_playback_control", "set_system_volume"):
+            category = "Media & Applications"
+        elif name in ("run_terminal_command", "run_python_script", "create_file", "edit_file", "delete_file"):
+            category = "Terminal & Filesystem"
+            
+        formatted.append({
+            "name": name,
+            "description": desc,
+            "parameters": params.get("properties", {}),
+            "required_parameters": params.get("required", []),
+            "category": category
+        })
+        
+    return {
+        "tools": formatted,
+        "count": len(formatted)
+    }
+
 @app.get("/api/profile")
 def get_profile():
     """
@@ -892,6 +914,9 @@ def get_profile():
 class ProfileUpdateRequest(BaseModel):
     user_name: Optional[str] = None
     user_interests: Optional[List[str]] = None
+    user_hobbies: Optional[List[str]] = None
+    user_likes: Optional[List[str]] = None
+    user_dislikes: Optional[List[str]] = None
     custom_facts: Optional[Dict[str, str]] = None
 
 @app.post("/api/profile/update")
@@ -903,6 +928,15 @@ async def update_profile(req: ProfileUpdateRequest):
         memory_manager.set_user_name(req.user_name.strip())
     if req.user_interests is not None:
         memory_manager.set_user_interests(req.user_interests)
+    if req.user_hobbies is not None:
+        memory_manager.profile["user_hobbies"] = req.user_hobbies
+        memory_manager._save_profile()
+    if req.user_likes is not None:
+        memory_manager.profile["user_likes"] = req.user_likes
+        memory_manager._save_profile()
+    if req.user_dislikes is not None:
+        memory_manager.profile["user_dislikes"] = req.user_dislikes
+        memory_manager._save_profile()
     if req.custom_facts is not None:
         memory_manager.set_custom_facts(req.custom_facts)
         

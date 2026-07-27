@@ -1,7 +1,7 @@
 {
   "name": "yuki-ai",
   "private": true,
-  "version": "0.1.2-alpha",
+  "version": "0.2.0-beta",
   "description": "Your personal desktop AI companion with voice, memory, and personality.",
   "author": {
     "name": "void dekkeroid"

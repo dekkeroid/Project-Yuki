@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.setup import router as setup_router
 
-app = FastAPI(title="Yuki Setup", version="0.1.2-alpha")
+app = FastAPI(title="Yuki Setup", version="0.2.0-beta")
 
 app.add_middleware(
     CORSMiddleware,
