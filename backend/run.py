@@ -10,7 +10,9 @@ if sys.stderr:
 
 if __name__ == "__main__":
     print("Launching Yuki Desktop Assistant Backend...")
-    reload = os.environ.get("YUKI_DEV_RELOAD", "0") == "1"
+    is_dev = not getattr(sys, 'frozen', False)
+    default_reload = "1" if is_dev else "0"
+    reload = os.environ.get("YUKI_DEV_RELOAD", default_reload) == "1"
     host = os.environ.get("YUKI_HOST", "127.0.0.1")
     port = int(os.environ.get("YUKI_PORT", "58392"))
 
