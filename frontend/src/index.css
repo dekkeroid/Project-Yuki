@@ -1242,9 +1242,9 @@ body.desktop-overlay .interactive-element {
 .desktop-overlay-menu {
   position: absolute;
   /* Right-anchor: window resizes with scale, so buttons stay near Yuki's right.
-     24px margin keeps them close to the model body but with some breathing room.
+     48px margin pulls buttons further left, closer to the model body.
      top offset pushes tray 20px below vertical center for visual balance. */
-  right: 24px;
+  right: 48px;
   left: auto;
   top: calc(50% + 20px);
   transform: translateY(-50%) translateX(calc(10px * var(--avatar-button-scale, 1)));

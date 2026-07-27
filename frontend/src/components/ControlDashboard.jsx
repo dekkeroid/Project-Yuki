@@ -141,14 +141,8 @@ const ControlDashboard = ({
   };
 
 
-  // Avatar scale size state (50% to 200%)
-  const [localAvatarScale, setLocalAvatarScale] = useState(() => {
-    try {
-      const saved = localStorage.getItem('yuki-avatar-scale');
-      if (saved) return parseFloat(saved);
-    } catch {}
-    return avatarScale || 1.0;
-  });
+  // Avatar scale size state — always start at the prop value (1.0 on fresh load)
+  const [localAvatarScale, setLocalAvatarScale] = useState(avatarScale || 1.0);
 
   useEffect(() => {
     if (avatarScale !== undefined && avatarScale !== null) {
