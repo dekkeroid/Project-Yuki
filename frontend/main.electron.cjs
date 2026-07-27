@@ -812,6 +812,29 @@ function createWindow() {
     }
   });
 
+  ipcMain.on('set-window-scale', (event, scale) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const numScale = Math.max(0.2, Math.min(10.0, Number(scale) || 1.0));
+      const baseWidth = 800;
+      const baseHeight = 900;
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const { width: workWidth, height: workHeight } = primaryDisplay.workAreaSize;
+
+      const targetW = Math.round(baseWidth * numScale);
+      const targetH = Math.round(baseHeight * numScale);
+      const newWidth = Math.min(workWidth, Math.max(400, targetW));
+      const newHeight = Math.min(workHeight, Math.max(450, targetH));
+
+      const currentBounds = mainWindow.getBounds();
+      mainWindow.setBounds({
+        x: Math.max(0, currentBounds.x),
+        y: Math.max(0, currentBounds.y),
+        width: newWidth,
+        height: newHeight
+      });
+    }
+  });
+
   let hoverPollTimer = null;
   let lastHoverState = null;
   let lastCursorX = -1;

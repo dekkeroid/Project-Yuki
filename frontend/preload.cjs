@@ -148,5 +148,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('yuki-camera-tracking-changed', listener);
     return () => ipcRenderer.removeListener('yuki-camera-tracking-changed', listener);
   },
+  setWindowScale: (scale) => {
+    ipcRenderer.send('set-window-scale', Number(scale));
+  },
   isElectron: true
 });

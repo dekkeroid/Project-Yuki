@@ -1107,8 +1107,8 @@ const AvatarViewer = ({
         }
       }
 
-      if (isHoveringCharacter || isRotating || postOrbitRestTimer > 0) {
-        // Hovering over character or rotating: enable clicks/drags on this window immediately
+      if (isHoveringCharacter || isRotating) {
+        // Hovering over character mesh or rotating: enable clicks/drags on this window immediately
         if (ignoreTimeoutRef.current) {
           clearTimeout(ignoreTimeoutRef.current);
           ignoreTimeoutRef.current = null;
@@ -1130,16 +1130,13 @@ const AvatarViewer = ({
             isIgnoringMouseRef.current = false;
           }
         } else {
-          // Off character and off UI: ignore mouse clicks on window, but forward them to desktop.
+          // Off character and off UI: ignore mouse clicks on window, but forward them to desktop instantly.
           const enableClickthrough = window.yukiDebugToggles ? window.yukiDebugToggles.clickthrough : true;
           const suspendClickthrough = window.yukiConfirmJustClosed === true;
           if (enableClickthrough && !suspendClickthrough) {
-            if (!isIgnoringMouseRef.current && !ignoreTimeoutRef.current) {
-              ignoreTimeoutRef.current = setTimeout(() => {
-                window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
-                isIgnoringMouseRef.current = true;
-                ignoreTimeoutRef.current = null;
-              }, 350);
+            if (!isIgnoringMouseRef.current) {
+              window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+              isIgnoringMouseRef.current = true;
             }
           } else {
             // Clickthrough disabled/suspended: ensure window is not ignoring mouse events
@@ -1165,7 +1162,7 @@ const AvatarViewer = ({
         // Toggle click-through ignores state based on window bounds hovering
         const enableClickthrough = window.yukiDebugToggles ? window.yukiDebugToggles.clickthrough : true;
         const suspendClickthrough = window.yukiConfirmJustClosed === true;
-        if (enableClickthrough && !suspendClickthrough && !isRotating && postOrbitRestTimer <= 0) {
+        if (enableClickthrough && !suspendClickthrough && !isRotating) {
           if (!data.hovering) {
             if (ignoreTimeoutRef.current) {
               clearTimeout(ignoreTimeoutRef.current);

@@ -2163,7 +2163,23 @@ const detectExpression = (text) => {
 
         {/* Floating Chat Input bar */}
         {isChatOpen && (
-          <div className="desktop-chat-input-container interactive-element" style={{ position: 'absolute' }}>
+          <div
+            className="desktop-chat-input-container interactive-element"
+            style={{
+              position: 'fixed',
+              bottom: '16px',
+              left: '16px',
+              right: '16px',
+              maxWidth: '640px',
+              margin: '0 auto',
+              maxHeight: 'calc(100vh - 32px)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-end',
+              zIndex: 10000,
+              pointerEvents: 'auto'
+            }}
+          >
             {/* Chat History Log Panel */}
             {isPanelOpen && (
               <div style={{
@@ -3213,16 +3229,46 @@ const detectExpression = (text) => {
                       <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <label className="desktop-label">Companion Scale</label>
-                          <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a855f7' }}>
-                            {Math.round(avatarScale * 100)}%
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a855f7' }}>
+                              {Math.round(avatarScale * 100)}%
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '6px', border: '1px solid rgba(168,85,247,0.3)' }}>
+                              <input
+                                type="number"
+                                min="20"
+                                max="1000"
+                                step="1"
+                                value={Math.round(avatarScale * 100)}
+                                onChange={(e) => {
+                                  const parsed = parseFloat(e.target.value);
+                                  if (!isNaN(parsed)) {
+                                    const clamped = Math.max(0.2, Math.min(10.0, parsed / 100));
+                                    setAvatarScale(clamped);
+                                    try { localStorage.setItem('yuki-avatar-scale', clamped.toString()); } catch {}
+                                  }
+                                }}
+                                style={{
+                                  width: '46px',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: '#fff',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 'bold',
+                                  textAlign: 'right',
+                                  outline: 'none'
+                                }}
+                              />
+                              <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>%</span>
+                            </div>
+                          </div>
                         </div>
                         <input
                           type="range"
                           min="0.5"
                           max="2.0"
                           step="0.05"
-                          value={avatarScale}
+                          value={Math.max(0.5, Math.min(2.0, avatarScale))}
                           onChange={(e) => {
                             const newScale = parseFloat(e.target.value);
                             setAvatarScale(newScale);

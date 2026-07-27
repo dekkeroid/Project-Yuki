@@ -2727,28 +2727,57 @@ const ControlDashboard = ({
                       <span className="card-group-title">VRM Avatar & Customization</span>
                     </div>
 
-                    {/* Companion Avatar Scale / Size Slider (up to 200%) */}
+                    {/* Companion Avatar Scale / Size Slider (50%-200%) & Custom Input (20%-1000%) */}
                     <div className="identity-field" style={{ marginTop: '4px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <Monitor style={{ width: '13px', height: '13px', color: '#a78bfa' }} />
                           Companion Scale Size
                         </span>
-                        <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                          {Math.round(localAvatarScale * 100)}%
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                            {Math.round(localAvatarScale * 100)}%
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '6px', border: '1px solid rgba(167,139,250,0.3)' }}>
+                            <input
+                              type="number"
+                              min="20"
+                              max="1000"
+                              step="1"
+                              value={Math.round(localAvatarScale * 100)}
+                              onChange={(e) => {
+                                const parsed = parseFloat(e.target.value);
+                                if (!isNaN(parsed)) {
+                                  const clamped = Math.max(0.2, Math.min(10.0, parsed / 100));
+                                  handleAvatarScaleChange(clamped);
+                                }
+                              }}
+                              style={{
+                                width: '46px',
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#fff',
+                                fontSize: '0.72rem',
+                                fontWeight: 'bold',
+                                textAlign: 'right',
+                                outline: 'none'
+                              }}
+                            />
+                            <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>%</span>
+                          </div>
+                        </div>
                       </div>
                       <input
                         type="range"
                         min="0.5"
                         max="2.0"
                         step="0.05"
-                        value={localAvatarScale}
+                        value={Math.max(0.5, Math.min(2.0, localAvatarScale))}
                         onChange={(e) => handleAvatarScaleChange(parseFloat(e.target.value))}
                         style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
                       />
                       <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', display: 'block', lineHeight: '1.2' }}>
-                        Adjust avatar rendering size on screen (50% to 200%).
+                        Use slider for quick 50%-200% scale, or type custom value (20% to 1000%).
                       </span>
                     </div>
 
