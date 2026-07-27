@@ -315,6 +315,31 @@ def get_tools_definition() -> list:
                     "required": ["action"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "manage_time",
+                "description": "Manage timers, scheduled reminders, alarms, stopwatches, and background scheduled tasks.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "description": "Action to perform: set_timer, set_reminder, start_stopwatch, check_stopwatch, stop_stopwatch, list_active, cancel.",
+                            "enum": ["set_timer", "set_reminder", "start_stopwatch", "check_stopwatch", "stop_stopwatch", "list_active", "cancel"]
+                        },
+                        "duration_seconds": {"type": "integer", "description": "Timer duration in seconds (e.g. 300 for 5 minutes)."},
+                        "target_time": {"type": "string", "description": "Target time for reminder/alarm (e.g. '5:30 PM', '18:00', 'in 10 minutes')."},
+                        "message": {"type": "string", "description": "Reminder or timer message label."},
+                        "recurrence": {"type": "string", "description": "Optional recurrence ('daily', 'weekly', 'hourly')."},
+                        "action_command": {"type": "string", "description": "Optional system command/app to execute on timer completion."},
+                        "label": {"type": "string", "description": "Stopwatch label name."},
+                        "item_id": {"type": "integer", "description": "ID of reminder/timer to cancel."}
+                    },
+                    "required": ["action"]
+                }
+            }
         }
     ]
 

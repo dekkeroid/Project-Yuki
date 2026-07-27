@@ -192,6 +192,7 @@ class AgentExecutor:
                 kwargs.get("action") or "",
                 confirmed=bool(kwargs.get("confirmed", False))
             ),
+            "manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
             "web_search": _async_web_search
         }
         from app.mcp_client import StdioMCPToolBridge
@@ -262,6 +263,71 @@ class AgentExecutor:
             return self.memory.add_dislike(val)
         else:
             return self.memory.update_fact(kwargs.get("key"), val)
+
+    def _execute_manage_time(self, **kwargs) -> str:
+        from app.tools import time_manager
+        action = (kwargs.get("action") or "").lower().strip()
+        
+        # Smart action inferring if model omitted action parameter
+        duration_sec = kwargs.get("duration_seconds")
+        if duration_sec is None:
+            dur_str = str(kwargs.get("duration") or kwargs.get("time") or "")
+            unit_str = str(kwargs.get("unit") or "")
+            if dur_str:
+                combined = f"{dur_str} {unit_str}".strip()
+                duration_sec = time_manager.parse_duration_seconds(combined)
+
+        if not action:
+            if duration_sec or kwargs.get("duration"):
+                action = "set_timer"
+            elif kwargs.get("label"):
+                action = "start_stopwatch"
+            else:
+                action = "set_reminder"
+
+        if action == "set_timer":
+            dur = duration_sec or 300
+            msg = kwargs.get("message") or kwargs.get("label") or kwargs.get("name") or "Timer Up!"
+            res = time_manager.add_timer(dur, msg, kwargs.get("action_command"))
+            return f"Successfully set a {res['formatted_duration']} timer for '{res['message']}'."
+        elif action == "set_reminder":
+            target_str = str(kwargs.get("target_time") or kwargs.get("time_str") or kwargs.get("time") or "5m")
+            msg = kwargs.get("message") or kwargs.get("reminder") or "Reminder"
+            res = time_manager.add_reminder(target_str, msg, kwargs.get("recurrence"), kwargs.get("action_command"))
+            return f"Successfully scheduled reminder for {res['target_time_formatted']}: '{res['message']}'."
+        elif action == "start_stopwatch":
+            lbl = kwargs.get("label") or "default"
+            res = time_manager.start_stopwatch(lbl)
+            return f"Started stopwatch '{res['label']}'."
+        elif action == "check_stopwatch":
+            lbl = kwargs.get("label") or "default"
+            res = time_manager.check_stopwatch(lbl)
+            if res.get("status") == "ok":
+                return f"Stopwatch '{res['label']}' elapsed time: {res['formatted_elapsed']}."
+            return res.get("message", "Stopwatch not found.")
+        elif action == "stop_stopwatch":
+            lbl = kwargs.get("label") or "default"
+            res = time_manager.stop_stopwatch(lbl)
+            if res.get("status") == "ok":
+                return f"Stopped stopwatch '{res['label']}' at {res['formatted_elapsed']}."
+            return res.get("message", "Stopwatch not found.")
+        elif action == "list_active":
+            items = time_manager.get_active_time_items()
+            rems = items.get("reminders", [])
+            sws = items.get("stopwatches", [])
+            out = []
+            if rems:
+                out.append("Active Timers & Reminders:\n" + "\n".join([f"- #{r['id']} [{r['category']}]: '{r['message']}' ({r['remaining_seconds']}s remaining)" for r in rems]))
+            if sws:
+                out.append("Active Stopwatches:\n" + "\n".join([f"- '{s['label']}': {s['formatted_elapsed']} elapsed" for s in sws]))
+            return "\n\n".join(out) if out else "No active timers, reminders, or stopwatches."
+        elif action == "cancel":
+            item_id = kwargs.get("item_id") or kwargs.get("id")
+            if item_id:
+                time_manager.delete_reminder(int(item_id))
+                return f"Successfully cancelled timer/reminder #{item_id}."
+            return "Missing item_id for cancellation."
+        return f"Unknown action '{action}' for manage_time."
 
     async def ensure_model_loaded(self, model_name: str) -> bool:
         """
