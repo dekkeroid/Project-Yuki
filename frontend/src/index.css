@@ -1263,8 +1263,10 @@ body.desktop-overlay .interactive-element {
 }
 
 .desktop-menu-btn {
-  width: calc(40px * var(--avatar-button-scale, 1));
-  height: calc(40px * var(--avatar-button-scale, 1));
+  width: calc(40px * var(--avatar-button-scale, 1)) !important;
+  height: calc(40px * var(--avatar-button-scale, 1)) !important;
+  min-width: unset !important;
+  min-height: unset !important;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1278,9 +1280,15 @@ body.desktop-overlay .interactive-element {
   outline: none;
 }
 
-.desktop-menu-btn svg {
+/* Override Lucide React SVG presentational width/height attributes */
+.desktop-menu-btn svg,
+.desktop-menu-btn svg[width],
+.desktop-menu-btn svg[height] {
   width: calc(20px * var(--avatar-button-scale, 1)) !important;
   height: calc(20px * var(--avatar-button-scale, 1)) !important;
+  max-width: calc(20px * var(--avatar-button-scale, 1)) !important;
+  max-height: calc(20px * var(--avatar-button-scale, 1)) !important;
+  flex-shrink: 0;
 }
 
 .desktop-menu-btn:hover {
