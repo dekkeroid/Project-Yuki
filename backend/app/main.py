@@ -538,11 +538,52 @@ async def upload_vrm_model(file: UploadFile = File(...)):
     custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
     custom_dir.mkdir(parents=True, exist_ok=True)
 
-    dest = custom_dir / file.filename
+    return {"status": "ok", "filename": file.filename}
+
+
+@app.post("/api/settings/alarm-tone/upload")
+async def upload_alarm_tone(file: UploadFile = File(...)):
+    """Upload a custom alarm/timer audio tone file to %APPDATA%/Yuki AI/custom_tones/."""
+    from pathlib import Path
+    import os
+
+    allowed_exts = [".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"]
+    if not file.filename:
+        return Response(status_code=400, content="Invalid filename")
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in allowed_exts:
+        return Response(status_code=400, content=f"Unsupported format. Allowed: {', '.join(allowed_exts)}")
+
+    tones_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_tones"
+    tones_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_filename = file.filename.replace(" ", "_")
+    dest = tones_dir / safe_filename
     content = await file.read()
     dest.write_bytes(content)
 
-    return {"status": "ok", "filename": file.filename}
+    memory_manager.update_setting("alarm_tone", "custom")
+    memory_manager.update_setting("custom_alarm_tone_file", safe_filename)
+    await broadcast_profile_update()
+
+    return {"status": "ok", "filename": safe_filename}
+
+
+@app.get("/api/settings/alarm-tone/file/{filename}")
+def get_alarm_tone_file(filename: str):
+    """Serve a custom alarm audio tone file."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    import os
+
+    tones_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_tones"
+    target = tones_dir / filename
+    if not target.exists():
+        return Response(status_code=404, content="Custom tone file not found")
+
+    return FileResponse(target)
+
 
 
 @app.delete("/api/models/vrm/{name}")
@@ -633,6 +674,8 @@ class SettingsUpdateRequest(BaseModel):
     close_to_tray: Optional[bool] = None
     default_dashboard_tab: Optional[str] = None
     mute_alarm_chimes: Optional[bool] = None
+    alarm_tone: Optional[str] = None
+    custom_alarm_tone_file: Optional[str] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -771,6 +814,10 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("default_dashboard_tab", req.default_dashboard_tab.strip())
     if req.mute_alarm_chimes is not None:
         memory_manager.update_setting("mute_alarm_chimes", req.mute_alarm_chimes)
+    if req.alarm_tone is not None:
+        memory_manager.update_setting("alarm_tone", req.alarm_tone.strip())
+    if req.custom_alarm_tone_file is not None:
+        memory_manager.update_setting("custom_alarm_tone_file", req.custom_alarm_tone_file.strip())
 
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True

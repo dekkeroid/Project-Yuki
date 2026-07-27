@@ -39,12 +39,16 @@ const App = () => {
 
   if (isAlarmMode) {
     const isMuted = urlParams.get('mute') === 'true';
+    const toneVal = urlParams.get('tone') || 'pulse_chime';
+    const customFileVal = urlParams.get('customFile') || '';
     const alarmData = {
       id: urlParams.get('id') || '0',
       message: safeDecode(urlParams.get('msg'), 'Timer Up!'),
-      category: safeDecode(urlParams.get('category'), 'timer')
+      category: safeDecode(urlParams.get('category'), 'timer'),
+      tone: toneVal,
+      customToneFile: customFileVal
     };
-    return <AlarmOverlay alarm={alarmData} isStandaloneWindow={true} muteChime={isMuted} />;
+    return <AlarmOverlay alarm={alarmData} isStandaloneWindow={true} muteChime={isMuted} tone={toneVal} customToneFile={customFileVal} />;
   }
 
   if (isStopwatchMode) {
@@ -747,12 +751,16 @@ const App = () => {
           speakSystemMessage(msg.text, 'surprised');
         }
       } else if (msg.type === 'alarm_triggered') {
-        // Always show our popup window when app is running.
-        // OS Task Scheduler handles firing the native toast if app is closed.
+        const enrichedMsg = {
+          ...msg,
+          muteChime: profile?.settings?.mute_alarm_chimes === true,
+          tone: profile?.settings?.alarm_tone || 'pulse_chime',
+          customToneFile: profile?.settings?.custom_alarm_tone_file || ''
+        };
         if (window.electronAPI && window.electronAPI.openAlarmWindow) {
-          window.electronAPI.openAlarmWindow(msg);
+          window.electronAPI.openAlarmWindow(enrichedMsg);
         } else {
-          setActiveAlarm(msg);
+          setActiveAlarm(enrichedMsg);
         }
       } else if (msg.type === 'stopwatch_started') {
         // Open a dedicated floating stopwatch window for this label

@@ -206,11 +206,14 @@ function createAlarmWindow(alarmData) {
 
   const isMuted = Boolean(alarmData?.muteChime);
 
+  const tone = encodeURIComponent(alarmData?.tone || 'pulse_chime');
+  const customToneFile = encodeURIComponent(alarmData?.customToneFile || '');
+
   if (isDev) {
-    win.loadURL(`http://localhost:5173/?mode=alarm&id=${alarmId}&msg=${alarmMsg}&category=${alarmCat}&mute=${isMuted}`);
+    win.loadURL(`http://localhost:5173/?mode=alarm&id=${alarmId}&msg=${alarmMsg}&category=${alarmCat}&mute=${isMuted}&tone=${tone}&customFile=${customToneFile}`);
   } else {
     win.loadFile(path.join(__dirname, 'dist', 'index.html'), {
-      query: { mode: 'alarm', id: String(alarmId), msg: alarmData?.message || 'Timer Up!', category: alarmData?.category || 'timer', mute: String(isMuted) }
+      query: { mode: 'alarm', id: String(alarmId), msg: alarmData?.message || 'Timer Up!', category: alarmData?.category || 'timer', mute: String(isMuted), tone: alarmData?.tone || 'pulse_chime', customFile: alarmData?.customToneFile || '' }
     });
   }
 

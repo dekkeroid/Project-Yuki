@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
+import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
 
 const SKIN_PRESETS = [
   { name: 'Original', value: '#ffffff' },
@@ -46,13 +47,97 @@ const ControlDashboard = ({
   const [settingsSubTab, setSettingsSubTab] = useState('general'); // 'general' | 'avatar' | 'voice' | 'brain'
 
   const [isDevEnv, setIsDevEnv] = useState(false);
-  useEffect(() => {
-    if (window.electronAPI && window.electronAPI.getOpenAtLogin) {
-      window.electronAPI.getOpenAtLogin().then(res => {
-        if (res && res.isDev) setIsDevEnv(true);
-      }).catch(() => {});
+  // Alarm Tone Preview & Custom Audio State
+  const [isPlayingToneTest, setIsPlayingToneTest] = useState(false);
+  const testAudioRef = useRef(null);
+  const testIntervalRef = useRef(null);
+  const testCtxRef = useRef(null);
+  const [isUploadingTone, setIsUploadingTone] = useState(false);
+
+  const stopToneTest = () => {
+    if (testIntervalRef.current) {
+      clearInterval(testIntervalRef.current);
+      testIntervalRef.current = null;
     }
-  }, []);
+    if (testCtxRef.current) {
+      testCtxRef.current.close().catch(() => {});
+      testCtxRef.current = null;
+    }
+    if (testAudioRef.current) {
+      testAudioRef.current.pause();
+      testAudioRef.current = null;
+    }
+    setIsPlayingToneTest(false);
+  };
+
+  const handleTestTone = (toneIdOverride) => {
+    if (isPlayingToneTest) {
+      stopToneTest();
+      return;
+    }
+
+    const currentTone = toneIdOverride || settings.alarm_tone || 'pulse_chime';
+    const customFile = settings.custom_alarm_tone_file || '';
+
+    setIsPlayingToneTest(true);
+
+    if (currentTone === 'custom' && customFile) {
+      try {
+        const audioUrl = `${API_BASE}/api/settings/alarm-tone/file/${encodeURIComponent(customFile)}`;
+        const audio = new Audio(audioUrl);
+        audio.play().catch(e => {
+          console.warn("Failed to test play custom tone:", e);
+          stopToneTest();
+        });
+        audio.onended = () => stopToneTest();
+        testAudioRef.current = audio;
+      } catch (e) {
+        stopToneTest();
+      }
+    } else {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          testCtxRef.current = ctx;
+          playPresetChime(currentTone, ctx);
+          testIntervalRef.current = setInterval(() => playPresetChime(currentTone, ctx), 1200);
+
+          setTimeout(() => {
+            stopToneTest();
+          }, 4000);
+        }
+      } catch (e) {
+        stopToneTest();
+      }
+    }
+  };
+
+  const handleUploadCustomTone = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingTone(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${API_BASE}/api/settings/alarm-tone/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      if (res.ok) {
+        if (onProfileUpdate) onProfileUpdate();
+      } else {
+        const errText = await res.text();
+        alert(`Failed to upload audio tone: ${errText}`);
+      }
+    } catch (err) {
+      console.error("Tone upload failed:", err);
+      alert("Error uploading tone file.");
+    } finally {
+      setIsUploadingTone(false);
+    }
+  };
+
 
   // Avatar scale size state (50% to 200%)
   const [localAvatarScale, setLocalAvatarScale] = useState(() => {
@@ -1997,6 +2082,112 @@ const ControlDashboard = ({
                         style={{ accentColor: '#f43f5e', cursor: 'pointer', width: '15px', height: '15px' }}
                       />
                     </div>
+                  </div>
+
+                  {/* Alarm & Timer Tone Selector Card */}
+                  <div className="card-group" style={{ marginBottom: '12px' }}>
+                    <div className="card-group-header">
+                      <Music className="w-4 h-4 text-emerald-400" />
+                      <span className="card-group-title">Alarm & Timer Sound Tones</span>
+                    </div>
+
+                    {/* Ringtone Selector & Test Button */}
+                    <div className="identity-field" style={{ marginTop: '6px' }}>
+                      <span className="field-label">Active Alarm & Timer Tone</span>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
+                        <select
+                          value={settings.alarm_tone || 'pulse_chime'}
+                          onChange={(e) => handleUpdateSetting('alarm_tone', e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {ALARM_TONE_PRESETS.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+
+                        {/* Test Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleTestTone()}
+                          style={{
+                            padding: '7px 14px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: isPlayingToneTest ? 'rgba(239,68,68,0.25)' : 'linear-gradient(135deg, #10b981, #059669)',
+                            color: isPlayingToneTest ? '#fca5a5' : '#fff',
+                            fontSize: '0.76rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            flexShrink: 0
+                          }}
+                        >
+                          {isPlayingToneTest ? (
+                            <>
+                              <Square className="w-3 h-3 fill-current" />
+                              <span>Stop</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-3 h-3 fill-current" />
+                              <span>Test Tone</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Custom Audio File Upload Section */}
+                    {(settings.alarm_tone === 'custom' || settings.custom_alarm_tone_file) && (
+                      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
+                          Upload Custom Ringtone Audio File (.mp3, .wav, .ogg, .flac, .m4a)
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <label style={{
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(255,255,255,0.08)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            color: '#fff',
+                            fontSize: '0.76rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}>
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>{isUploadingTone ? 'Uploading...' : 'Choose Audio File'}</span>
+                            <input
+                              type="file"
+                              accept=".mp3,.wav,.ogg,.flac,.m4a,.aac"
+                              onChange={handleUploadCustomTone}
+                              disabled={isUploadingTone}
+                              style={{ display: 'none' }}
+                            />
+                          </label>
+
+                          {settings.custom_alarm_tone_file && (
+                            <span style={{ fontSize: '0.72rem', color: '#a78bfa', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              🎵 {settings.custom_alarm_tone_file}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

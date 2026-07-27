@@ -1,46 +1,44 @@
 import React, { useEffect, useRef } from 'react';
 import { BellRing, Clock, X, RotateCcw } from 'lucide-react';
 import { API_BASE } from '../api';
+import { playPresetChime } from '../utils/toneSynthesizer';
 
-const AlarmOverlay = ({ alarm, onDismiss, onSnooze, isStandaloneWindow = false, muteChime = false }) => {
+const AlarmOverlay = ({ alarm, onDismiss, onSnooze, isStandaloneWindow = false, muteChime = false, tone, customToneFile }) => {
   const audioCtxRef = useRef(null);
   const intervalRef = useRef(null);
+  const customAudioRef = useRef(null);
 
-  // Web Audio API dual-pitch alarm chime pulse synthesizer
+  // Audio tone playback synthesizer or custom audio player
   useEffect(() => {
     if (!alarm || muteChime) return;
 
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        const ctx = new AudioCtx();
-        audioCtxRef.current = ctx;
+    const toneId = tone || alarm.tone || 'pulse_chime';
+    const customFile = customToneFile || alarm.customToneFile || '';
 
-        const playChimeNote = (freq, startTime, duration) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(freq, startTime);
-          gain.gain.setValueAtTime(0.3, startTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(startTime);
-          osc.stop(startTime + duration);
-        };
-
-        const triggerPulse = () => {
-          if (ctx.state === 'suspended') ctx.resume();
-          const now = ctx.currentTime;
-          playChimeNote(659.25, now, 0.2);
-          playChimeNote(880.00, now + 0.25, 0.3);
-        };
-
-        triggerPulse();
-        intervalRef.current = setInterval(triggerPulse, 1200);
+    if (toneId === 'custom' && customFile) {
+      try {
+        const audioUrl = `${API_BASE}/api/settings/alarm-tone/file/${encodeURIComponent(customFile)}`;
+        const audio = new Audio(audioUrl);
+        audio.loop = true;
+        audio.play().catch(e => console.warn("Failed to play custom tone audio:", e));
+        customAudioRef.current = audio;
+      } catch (e) {
+        console.warn("Failed to initialize custom audio tone:", e);
       }
-    } catch (e) {
-      console.warn("Failed to initialize alarm audio chime:", e);
+    } else {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          audioCtxRef.current = ctx;
+
+          const triggerPulse = () => playPresetChime(toneId, ctx);
+          triggerPulse();
+          intervalRef.current = setInterval(triggerPulse, 1200);
+        }
+      } catch (e) {
+        console.warn("Failed to initialize alarm audio chime:", e);
+      }
     }
 
     return () => {
@@ -48,8 +46,12 @@ const AlarmOverlay = ({ alarm, onDismiss, onSnooze, isStandaloneWindow = false, 
       if (audioCtxRef.current) {
         audioCtxRef.current.close().catch(() => {});
       }
+      if (customAudioRef.current) {
+        customAudioRef.current.pause();
+        customAudioRef.current = null;
+      }
     };
-  }, [alarm]);
+  }, [alarm, muteChime, tone, customToneFile]);
 
   if (!alarm) return null;
 
