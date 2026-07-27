@@ -895,16 +895,35 @@ let electronMemoryOptTimer = null;
 function optimizeElectronMemory() {
   if (process.platform !== 'win32') return;
   try {
-    // Use Node.js child_process to call a PowerShell one-liner that trims working sets
-    // for all Electron-related processes (main, renderer, GPU helper)
     const pid = process.pid;
     const { execFile } = require('child_process');
+    // Use EmptyWorkingSet via P/Invoke — same API that PC Manager Boost uses.
+    // This covers the main process + all child processes (renderer, GPU, utility).
+    const psScript = `
+$sig = @'
+[DllImport("psapi.dll")] public static extern bool EmptyWorkingSet(IntPtr hProcess);
+[DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint dwAccess, bool bInheritHandle, uint dwPid);
+[DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr hObject);
+'@
+$api = Add-Type -MemberDefinition $sig -Name MemAPI -Namespace Win32 -PassThru
+$PROCESS_QUERY_INFORMATION = 0x0400
+$PROCESS_SET_QUOTA = 0x0100
+$access = $PROCESS_QUERY_INFORMATION -bor $PROCESS_SET_QUOTA
+Get-Process | Where-Object {
+  $_.Id -eq ${pid} -or $_.Parent.Id -eq ${pid} -or
+  ($_.Name -match 'electron' -and $_.MainModule.FileName -match 'Project Yuki')
+} | ForEach-Object {
+  $h = $api::OpenProcess($access, $false, $_.Id)
+  if ($h -ne [IntPtr]::Zero) {
+    $null = $api::EmptyWorkingSet($h)
+    $null = $api::CloseHandle($h)
+  }
+} 2>$null`;
     execFile('powershell.exe', [
-      '-NoProfile', '-NonInteractive', '-Command',
-      `Get-Process | Where-Object { $_.Id -eq ${pid} -or $_.Parent.Id -eq ${pid} } | ForEach-Object { $null = [System.Diagnostics.Process]::GetProcessById($_.Id).MinWorkingSet = 1 } 2>$null`
-    ], { windowsHide: true, timeout: 5000 }, (err) => {
+      '-NoProfile', '-NonInteractive', '-Command', psScript
+    ], { windowsHide: true, timeout: 8000 }, (err) => {
       if (err) console.warn('[Electron] Memory trim failed (non-fatal):', err.message);
-      else console.log('[Electron] Working set trimmed for Electron process tree.');
+      else console.log('[Electron] EmptyWorkingSet called on Electron process tree.');
     });
   } catch (e) {
     console.warn('[Electron] Memory optimization error:', e.message);
