@@ -360,7 +360,6 @@ def process_single_due_reminder(item_id: int) -> List[Dict[str, Any]]:
     
     title = "Yuki Timer Up!" if item["category"] == "timer" else "Yuki Reminder"
     msg = item["message"] or "Your scheduled reminder is due."
-    trigger_windows_toast(title, msg)
     
     if item.get("action_command"):
         try:
@@ -418,9 +417,6 @@ def process_due_reminders() -> List[Dict[str, Any]]:
         
         title = "Yuki Timer Up!" if item["category"] == "timer" else "Yuki Reminder"
         msg = item["message"] or "Your scheduled reminder is due."
-        
-        # 1. Fire Windows Toast Notification
-        trigger_windows_toast(title, msg)
         
         # 2. Execute background action command if present
         if item.get("action_command"):
