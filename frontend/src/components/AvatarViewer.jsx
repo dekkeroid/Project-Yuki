@@ -34,7 +34,8 @@ const AvatarViewer = ({
   visible = true,
   isBackendOnline = false,
   vrmDpr = 1.5,
-  vrmFps = 40
+  vrmFps = 40,
+  cameraTracking = true
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -94,9 +95,11 @@ const AvatarViewer = ({
     enableRotationRef.current = enableRotation;
   }, [enableRotation]);
 
+  const cameraTrackingRef = useRef(cameraTracking);
+
   useEffect(() => {
-    autoResetRotationRef.current = autoResetRotation;
-  }, [autoResetRotation]);
+    cameraTrackingRef.current = cameraTracking;
+  }, [cameraTracking]);
 
   const isFirstMount = useRef(true);
   useEffect(() => {
@@ -369,6 +372,8 @@ const AvatarViewer = ({
               }
               rimColorObj.copy(mat.userData.origRimColor).multiplyScalar(luminance);
             }
+
+            mat.needsUpdate = true;
           }
         });
       }
@@ -1749,6 +1754,7 @@ const AvatarViewer = ({
               lookState = 'idle';
               lookTimer = 0;
             } else if (isMouseInWindow) {
+              const enableMouseTracking = cameraTrackingRef.current && (window.yukiDebugToggles ? window.yukiDebugToggles.mouseTracking : true);
               if (isElectron) {
                 if (enableMouseTracking) {
                   const dx = cursorOffsetRef.current.x;
@@ -1769,15 +1775,20 @@ const AvatarViewer = ({
                   targetLookX = baseLookX;
                 }
               } else {
-                targetLookY = mouseNDC.x * 0.45 + baseLookY;
-                const verticalCenter = 0.0;
-                targetLookX = (mouseNDC.y - verticalCenter) * 0.22 + baseLookX;
+                if (enableMouseTracking) {
+                  targetLookY = mouseNDC.x * 0.45 + baseLookY;
+                  const verticalCenter = 0.0;
+                  targetLookX = (mouseNDC.y - verticalCenter) * 0.22 + baseLookX;
+                } else {
+                  targetLookY = baseLookY;
+                  targetLookX = baseLookX;
+                }
               }
 
               lookState = 'idle';
               lookTimer = 0;
             } else if (!isWalkingRef.current) {
-              const enableLookAround = window.yukiDebugToggles ? window.yukiDebugToggles.lookAround : true;
+              const enableLookAround = cameraTrackingRef.current && (window.yukiDebugToggles ? window.yukiDebugToggles.lookAround : true);
               if (enableLookAround && isElectron) {
                 lookTimer += delta;
                 if (lookState === 'idle') {

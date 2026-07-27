@@ -44,6 +44,9 @@ export default function SettingsApp() {
   const [skinToneColor, setSkinToneColor] = useState(() => {
     return localStorage.getItem('yuki-avatar-skintone-color') || '#ffffff';
   });
+  const [cameraTracking, setCameraTracking] = useState(() => {
+    return localStorage.getItem('yuki-camera-tracking') !== 'false';
+  });
 
   const fetchProfile = async () => {
     try {
@@ -112,6 +115,11 @@ export default function SettingsApp() {
         onSkinToneChange={(color) => {
           setSkinToneColor(color);
           localStorage.setItem('yuki-avatar-skintone-color', color);
+        }}
+        cameraTracking={cameraTracking}
+        onCameraTrackingChange={(val) => {
+          setCameraTracking(val);
+          localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false');
         }}
         disabledAnimations={disabledAnimations}
         onToggleAnimation={(animName) => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -21,6 +21,8 @@ const ControlDashboard = ({
   onProfileUpdate,
   skinToneColor = '#FFE5E5',
   onSkinToneChange,
+  cameraTracking = true,
+  onCameraTrackingChange,
   disabledAnimations = [],
   onToggleAnimation,
   micDevices = [],
@@ -167,7 +169,7 @@ const ControlDashboard = ({
   };
 
   // Camera tracking toggle state (persisted via localStorage in AvatarViewer)
-  const [cameraTracking, setCameraTracking] = useState(() => {
+  const [localCameraTracking, setLocalCameraTracking] = useState(() => {
     try { return localStorage.getItem('yuki-camera-tracking') !== 'false'; } catch { return true; }
   });
 
@@ -2870,7 +2872,7 @@ const ControlDashboard = ({
                     {/* Skin Tone Customization */}
                     <div className="identity-field" style={{ marginTop: '10px' }}>
                       <span className="field-label">Avatar Skin Color</span>
-                      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '4px' }}>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px', alignItems: 'center' }}>
                         {SKIN_PRESETS.map((preset) => (
                           <button
                             key={preset.value}
@@ -2878,45 +2880,118 @@ const ControlDashboard = ({
                             onClick={() => onSkinToneChange && onSkinToneChange(preset.value)}
                             style={{
                               flex: '1 1 auto',
-                              padding: '5px 6px',
+                              padding: '5px 8px',
                               fontSize: '0.68rem',
                               fontWeight: 700,
                               borderRadius: '6px',
-                              border: skinToneColor === preset.value ? '2px solid #2dd4bf' : '1px solid rgba(255,255,255,0.15)',
+                              border: skinToneColor.toLowerCase() === preset.value.toLowerCase() ? '2px solid #2dd4bf' : '1px solid rgba(255,255,255,0.15)',
                               background: preset.value === '#ffffff' ? '#ffffff' : preset.value,
                               color: preset.value === '#ffffff' || preset.value === '#FFE5E5' || preset.value === '#d89c7b' ? '#111' : '#fff',
                               cursor: 'pointer',
                               textAlign: 'center',
-                              boxShadow: skinToneColor === preset.value ? '0 0 8px rgba(45, 212, 191, 0.4)' : 'none',
+                              boxShadow: skinToneColor.toLowerCase() === preset.value.toLowerCase() ? '0 0 8px rgba(45, 212, 191, 0.4)' : 'none',
                               transition: 'all 0.15s'
                             }}
                           >
                             {preset.name}
                           </button>
                         ))}
-                      </div>
-                    </div>
 
-                    {/* Camera Eye Tracking Toggle */}
-                    <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span className="field-label">Camera Eye Tracking</span>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', margin: 0 }}>
+                        {/* Custom Color Picker */}
+                        <label
+                          title="Pick custom skin color"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            background: 'rgba(255,255,255,0.06)',
+                            border: !SKIN_PRESETS.some(p => p.value.toLowerCase() === skinToneColor.toLowerCase()) ? '2px solid #2dd4bf' : '1px solid rgba(255,255,255,0.15)',
+                            cursor: 'pointer',
+                            fontSize: '0.68rem',
+                            color: '#fff',
+                            fontWeight: 600
+                          }}
+                        >
+                          <Palette className="w-3 h-3 text-purple-400" />
+                          <span>Custom</span>
                           <input
-                            type="checkbox"
-                            checked={cameraTracking}
-                            onChange={(e) => {
-                              const val = e.target.checked;
-                              setCameraTracking(val);
-                              try { localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false'); } catch { }
-                              if (onCameraTrackingChange) onCameraTrackingChange(val);
+                            type="color"
+                            value={skinToneColor || '#FFE5E5'}
+                            onChange={(e) => onSkinToneChange && onSkinToneChange(e.target.value)}
+                            style={{
+                              width: '18px',
+                              height: '18px',
+                              padding: 0,
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              background: 'none'
                             }}
-                            style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
                           />
-                          <span style={{ fontSize: '0.72rem', color: 'white' }}>{cameraTracking ? 'Enabled' : 'Disabled'}</span>
                         </label>
                       </div>
                     </div>
+
+                    {/* Camera Eye Tracking Toggle Banner */}
+                    {(() => {
+                      const isTrackingOn = cameraTracking !== undefined ? cameraTracking : localCameraTracking;
+                      return (
+                        <div style={{
+                          background: isTrackingOn ? 'linear-gradient(135deg, rgba(168,85,247,0.15) 0%, rgba(56,189,248,0.15) 100%)' : 'rgba(255,255,255,0.03)',
+                          border: `1px solid ${isTrackingOn ? 'rgba(168,85,247,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                          borderRadius: '14px',
+                          padding: '12px 16px',
+                          marginTop: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <Eye className="w-5 h-5 text-purple-400" />
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>Camera Eye & Gaze Tracking</div>
+                              <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                                Follows your cursor and turns head naturally. When disabled, Yuki keeps a fixed forward gaze.
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const val = !isTrackingOn;
+                              setLocalCameraTracking(val);
+                              try { localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false'); } catch {}
+                              if (onCameraTrackingChange) onCameraTrackingChange(val);
+                            }}
+                            style={{
+                              background: isTrackingOn ? 'linear-gradient(135deg, #a855f7, #6366f1)' : 'rgba(255,255,255,0.08)',
+                              border: `1px solid ${isTrackingOn ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                              borderRadius: '14px',
+                              width: '44px',
+                              height: '24px',
+                              cursor: 'pointer',
+                              position: 'relative',
+                              transition: 'all 0.2s ease',
+                              flexShrink: 0
+                            }}
+                          >
+                            <div style={{
+                              width: '18px',
+                              height: '18px',
+                              borderRadius: '50%',
+                              background: '#fff',
+                              position: 'absolute',
+                              top: '2px',
+                              left: isTrackingOn ? '22px' : '2px',
+                              transition: 'all 0.2s ease',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                            }} />
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Dynamic Animations Toggles */}

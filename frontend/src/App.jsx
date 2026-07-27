@@ -353,15 +353,22 @@ const App = () => {
     return () => clearTimeout(timer);
   }, [avatarScale]);
 
-  // Listen for scale updates sent from external Settings window
+  const [cameraTracking, setCameraTracking] = useState(() => {
+    return localStorage.getItem('yuki-camera-tracking') !== 'false';
+  });
+
+  // Listen for skintone and camera tracking updates sent from external Settings window via localStorage
   useEffect(() => {
-    if (!window.electronAPI || !window.electronAPI.onAvatarScaleChanged) return;
-    const cleanup = window.electronAPI.onAvatarScaleChanged((newScale) => {
-      if (newScale && !isNaN(newScale)) {
-        setAvatarScale(newScale);
+    const handleStorage = (e) => {
+      if (e.key === 'yuki-avatar-skintone-color' && e.newValue) {
+        setAvatarSkinToneColor(e.newValue);
       }
-    });
-    return cleanup;
+      if (e.key === 'yuki-camera-tracking') {
+        setCameraTracking(e.newValue !== 'false');
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
   // Desktop Overlay UI states
@@ -2032,6 +2039,7 @@ const detectExpression = (text) => {
               onFileDropped={handleFileDropped}
               scale={avatarScale}
               skinToneColor={avatarSkinToneColor}
+              cameraTracking={cameraTracking}
               customAnimation={customAnimation}
               disabledAnimations={disabledAnimations}
               activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
@@ -4217,6 +4225,7 @@ const detectExpression = (text) => {
             onFileDropped={handleFileDropped}
             scale={avatarScale}
             skinToneColor={avatarSkinToneColor}
+            cameraTracking={cameraTracking}
             customAnimation={customAnimation}
             disabledAnimations={disabledAnimations}
             activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
@@ -4269,6 +4278,11 @@ const detectExpression = (text) => {
         onSkinToneChange={(newColor) => {
           setAvatarSkinToneColor(newColor);
           localStorage.setItem('yuki-avatar-skintone-color', newColor);
+        }}
+        cameraTracking={cameraTracking}
+        onCameraTrackingChange={(val) => {
+          setCameraTracking(val);
+          localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false');
         }}
         disabledAnimations={disabledAnimations}
         onToggleAnimation={toggleAnimationEnabled}
