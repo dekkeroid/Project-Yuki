@@ -11,6 +11,9 @@ class MemoryManager:
         default_profile = {
             "user_name": "Master",
             "user_interests": [],
+            "user_hobbies": [],
+            "user_likes": [],
+            "user_dislikes": [],
             "custom_facts": {},
             "interaction_count": 0,
             "settings": {
@@ -38,7 +41,9 @@ class MemoryManager:
                 "auto_reset_rotation": False,
                 "tts_preload": True,
                 "vrm_dpr": 1.5,
-                "vrm_fps": 60
+                "vrm_fps": 40,
+                "chat_mode": False,
+                "keep_memory_saving": True
             }
         }
         if not os.path.exists(self.profile_path):
@@ -114,15 +119,44 @@ class MemoryManager:
         self._save_profile()
         return "Successfully updated custom facts."
 
+    def _add_list_item(self, target_list_key: str, item: str, category_name: str) -> str:
+        if not item or not item.strip():
+            return f"No valid {category_name} provided."
+        if target_list_key not in self.profile or not isinstance(self.profile[target_list_key], list):
+            self.profile[target_list_key] = []
+
+        raw_items = [i.strip() for i in str(item).split(",") if i.strip()]
+        added = []
+        already = []
+        for single in raw_items:
+            if single not in self.profile[target_list_key]:
+                self.profile[target_list_key].append(single)
+                added.append(single)
+            else:
+                already.append(single)
+
+        self._save_profile()
+        if added and already:
+            return f"Added '{', '.join(added)}' to {category_name}. ('{', '.join(already)}' was already recorded)."
+        elif added:
+            return f"Successfully added '{', '.join(added)}' to {category_name}."
+        else:
+            return f"'{', '.join(already)}' is already in {category_name}."
+
     def add_interest(self, interest: str):
-        if interest not in self.profile["user_interests"]:
-            self.profile["user_interests"].append(interest)
-            self._save_profile()
-            return f"Successfully added '{interest}' to interests."
-        return f"'{interest}' is already in interests."
+        return self._add_list_item("user_interests", interest, "interests")
+
+    def add_hobby(self, hobby: str):
+        return self._add_list_item("user_hobbies", hobby, "hobbies")
+
+    def add_like(self, like: str):
+        return self._add_list_item("user_likes", like, "likes")
+
+    def add_dislike(self, dislike: str):
+        return self._add_list_item("user_dislikes", dislike, "dislikes")
 
     def remove_interest(self, interest: str):
-        if interest in self.profile["user_interests"]:
+        if interest in self.profile.get("user_interests", []):
             self.profile["user_interests"].remove(interest)
             self._save_profile()
             return f"Successfully removed '{interest}' from interests."
@@ -178,11 +212,20 @@ class MemoryManager:
         """
         summary = f"User Name: {self.profile['user_name']}\n"
         
-        interests = ", ".join(self.profile["user_interests"]) if self.profile["user_interests"] else "None recorded yet"
+        interests = ", ".join(self.profile.get("user_interests", [])) if self.profile.get("user_interests") else "None recorded yet"
         summary += f"Interests: {interests}\n"
+
+        hobbies = ", ".join(self.profile.get("user_hobbies", [])) if self.profile.get("user_hobbies") else "None recorded yet"
+        summary += f"Hobbies: {hobbies}\n"
+
+        likes = ", ".join(self.profile.get("user_likes", [])) if self.profile.get("user_likes") else "None recorded yet"
+        summary += f"Likes: {likes}\n"
+
+        dislikes = ", ".join(self.profile.get("user_dislikes", [])) if self.profile.get("user_dislikes") else "None recorded yet"
+        summary += f"Dislikes: {dislikes}\n"
         
         facts = ""
-        if self.profile["custom_facts"]:
+        if self.profile.get("custom_facts"):
             for k, v in self.profile["custom_facts"].items():
                 facts += f"- {k}: {v}\n"
         else:

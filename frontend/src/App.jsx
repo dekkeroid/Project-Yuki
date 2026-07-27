@@ -242,6 +242,9 @@ const App = () => {
   const [profile, setProfile] = useState({
     user_name: 'Master',
     user_interests: [],
+    user_hobbies: [],
+    user_likes: [],
+    user_dislikes: [],
     custom_facts: {},
     interaction_count: 0
   });
@@ -253,6 +256,9 @@ const App = () => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [newInterestText, setNewInterestText] = useState('');
+  const [newHobbyText, setNewHobbyText] = useState('');
+  const [newLikeText, setNewLikeText] = useState('');
+  const [newDislikeText, setNewDislikeText] = useState('');
   const [isAddingFact, setIsAddingFact] = useState(false);
   const [newFactKey, setNewFactKey] = useState('');
   const [newFactVal, setNewFactVal] = useState('');
@@ -1953,7 +1959,7 @@ const detectExpression = (text) => {
               visible={isVisible}
               isBackendOnline={backendStatus === 'online'}
               vrmDpr={profile.settings?.vrm_dpr || 1.5}
-              vrmFps={profile.settings?.vrm_fps || 60}
+              vrmFps={profile.settings?.vrm_fps || 40}
             />
           </Suspense>
         </main>
@@ -2617,6 +2623,216 @@ const detectExpression = (text) => {
                           </button>
                         </div>
                       </div>
+
+                      {/* User Hobbies */}
+                      <div className="identity-field" style={{ marginTop: '8px' }}>
+                        <span className="field-label">Hobbies</span>
+                        {profile.user_hobbies && profile.user_hobbies.length > 0 ? (
+                          <div className="interests-pill-box">
+                            {profile.user_hobbies.map((hob, i) => (
+                              <span key={i} className="interest-pill" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', padding: '1px 6px', background: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
+                                {hob}
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const updatedHobbies = profile.user_hobbies.filter(item => item !== hob);
+                                    await handleUpdateProfile({ user_hobbies: updatedHobbies });
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', padding: '0 2px', fontSize: '9px', display: 'flex', alignItems: 'center' }}
+                                >
+                                  &times;
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            No hobbies recorded yet.
+                          </span>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                          <input
+                            type="text"
+                            placeholder="Add hobby..."
+                            value={newHobbyText}
+                            onChange={(e) => setNewHobbyText(e.target.value)}
+                            onKeyDown={async (e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (!newHobbyText.trim()) return;
+                                const currentList = profile.user_hobbies || [];
+                                if (currentList.includes(newHobbyText.trim())) return;
+                                await handleUpdateProfile({ user_hobbies: [...currentList, newHobbyText.trim()] });
+                                setNewHobbyText('');
+                              }
+                            }}
+                            className="desktop-input-text"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', flex: 1 }}
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!newHobbyText.trim()) return;
+                              const currentList = profile.user_hobbies || [];
+                              if (currentList.includes(newHobbyText.trim())) return;
+                              await handleUpdateProfile({ user_hobbies: [...currentList, newHobbyText.trim()] });
+                              setNewHobbyText('');
+                            }}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '0.75rem',
+                              borderRadius: '8px',
+                              border: 'none',
+                              color: 'white',
+                              cursor: 'pointer',
+                              background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
+                            }}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* User Likes */}
+                      <div className="identity-field" style={{ marginTop: '8px' }}>
+                        <span className="field-label">Likes</span>
+                        {profile.user_likes && profile.user_likes.length > 0 ? (
+                          <div className="interests-pill-box">
+                            {profile.user_likes.map((like, i) => (
+                              <span key={i} className="interest-pill" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', padding: '1px 6px', background: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.4)' }}>
+                                {like}
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const updatedLikes = profile.user_likes.filter(item => item !== like);
+                                    await handleUpdateProfile({ user_likes: updatedLikes });
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', padding: '0 2px', fontSize: '9px', display: 'flex', alignItems: 'center' }}
+                                >
+                                  &times;
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            No likes recorded yet.
+                          </span>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                          <input
+                            type="text"
+                            placeholder="Add thing you like..."
+                            value={newLikeText}
+                            onChange={(e) => setNewLikeText(e.target.value)}
+                            onKeyDown={async (e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (!newLikeText.trim()) return;
+                                const currentList = profile.user_likes || [];
+                                if (currentList.includes(newLikeText.trim())) return;
+                                await handleUpdateProfile({ user_likes: [...currentList, newLikeText.trim()] });
+                                setNewLikeText('');
+                              }
+                            }}
+                            className="desktop-input-text"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', flex: 1 }}
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!newLikeText.trim()) return;
+                              const currentList = profile.user_likes || [];
+                              if (currentList.includes(newLikeText.trim())) return;
+                              await handleUpdateProfile({ user_likes: [...currentList, newLikeText.trim()] });
+                              setNewLikeText('');
+                            }}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '0.75rem',
+                              borderRadius: '8px',
+                              border: 'none',
+                              color: 'white',
+                              cursor: 'pointer',
+                              background: 'linear-gradient(135deg, #22c55e 0%, #15803d 100%)'
+                            }}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* User Dislikes */}
+                      <div className="identity-field" style={{ marginTop: '8px' }}>
+                        <span className="field-label">Dislikes</span>
+                        {profile.user_dislikes && profile.user_dislikes.length > 0 ? (
+                          <div className="interests-pill-box">
+                            {profile.user_dislikes.map((dis, i) => (
+                              <span key={i} className="interest-pill" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', padding: '1px 6px', background: 'rgba(239, 68, 68, 0.2)', borderColor: 'rgba(239, 68, 68, 0.4)' }}>
+                                {dis}
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const updatedDislikes = profile.user_dislikes.filter(item => item !== dis);
+                                    await handleUpdateProfile({ user_dislikes: updatedDislikes });
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', padding: '0 2px', fontSize: '9px', display: 'flex', alignItems: 'center' }}
+                                >
+                                  &times;
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            No dislikes recorded yet.
+                          </span>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                          <input
+                            type="text"
+                            placeholder="Add thing you dislike..."
+                            value={newDislikeText}
+                            onChange={(e) => setNewDislikeText(e.target.value)}
+                            onKeyDown={async (e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (!newDislikeText.trim()) return;
+                                const currentList = profile.user_dislikes || [];
+                                if (currentList.includes(newDislikeText.trim())) return;
+                                await handleUpdateProfile({ user_dislikes: [...currentList, newDislikeText.trim()] });
+                                setNewDislikeText('');
+                              }
+                            }}
+                            className="desktop-input-text"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', flex: 1 }}
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!newDislikeText.trim()) return;
+                              const currentList = profile.user_dislikes || [];
+                              if (currentList.includes(newDislikeText.trim())) return;
+                              await handleUpdateProfile({ user_dislikes: [...currentList, newDislikeText.trim()] });
+                              setNewDislikeText('');
+                            }}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '0.75rem',
+                              borderRadius: '8px',
+                              border: 'none',
+                              color: 'white',
+                              cursor: 'pointer',
+                              background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'
+                            }}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Episodic Facts Log */}
@@ -3025,7 +3241,7 @@ const detectExpression = (text) => {
                             </span>
                             <select
                               className="desktop-select"
-                              value={profile.settings?.vrm_fps || 60}
+                              value={profile.settings?.vrm_fps || 40}
                               onChange={(e) => handleUpdateSetting('vrm_fps', parseInt(e.target.value, 10))}
                               style={{ width: '100%', padding: '5px 6px', fontSize: '0.75rem' }}
                             >
@@ -3926,7 +4142,7 @@ const detectExpression = (text) => {
             visible={isVisible}
             isBackendOnline={backendStatus === 'online'}
             vrmDpr={profile.settings?.vrm_dpr || 1.5}
-            vrmFps={profile.settings?.vrm_fps || 60}
+            vrmFps={profile.settings?.vrm_fps || 40}
           />
         </Suspense>
       </main>

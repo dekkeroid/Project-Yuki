@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 
@@ -143,8 +143,32 @@ const ControlDashboard = ({
   const [newFactVal, setNewFactVal] = useState('');
   const [editingFactKey, setEditingFactKey] = useState(null);
   const [editingFactValue, setEditingFactValue] = useState('');
+  const [newHobbyText, setNewHobbyText] = useState('');
+  const [newLikeText, setNewLikeText] = useState('');
+  const [newDislikeText, setNewDislikeText] = useState('');
+
+  // LLM Dynamic Tools State
+  const [toolsList, setToolsList] = useState([]);
+  const [expandedTool, setExpandedTool] = useState(null);
+  const [toolSearch, setToolSearch] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      fetch(`${API_BASE}/api/tools`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.tools) {
+            setToolsList(data.tools);
+          }
+        })
+        .catch(err => console.error("Failed to fetch tools list:", err));
+    }
+  }, [isOpen, activeTab]);
 
   const interests = profile.user_interests || [];
+  const hobbies = profile.user_hobbies || [];
+  const likes = profile.user_likes || [];
+  const dislikes = profile.user_dislikes || [];
   const customFacts = profile.custom_facts || {};
 
 
@@ -199,6 +223,7 @@ const ControlDashboard = ({
   };
 
   const handleUpdateSetting = async (key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
     try {
       const res = await fetch(`${API_BASE}/api/settings/update`, {
         method: 'POST',
@@ -207,7 +232,9 @@ const ControlDashboard = ({
       });
       if (res.ok) {
         const data = await res.json();
-        setSettings(data.settings);
+        if (data && data.settings) {
+          setSettings(data.settings);
+        }
       }
     } catch (e) {
       console.error('Failed to update setting:', e);
@@ -536,7 +563,7 @@ const ControlDashboard = ({
             onClick={() => setActiveTab('config')}
             className={`tab-btn ${activeTab === 'config' ? 'active' : ''}`}
           >
-            System Info
+            Info
           </button>
         </div>
 
@@ -674,6 +701,201 @@ const ControlDashboard = ({
                         fontSize: '0.75rem',
                         borderRadius: '10px',
                         background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)'
+                      }}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* User Hobbies */}
+                <div className="identity-field" style={{ marginTop: '8px' }}>
+                  <span className="field-label">Hobbies</span>
+                  {hobbies.length > 0 ? (
+                    <div className="interests-pill-box">
+                      {hobbies.map((hob, i) => (
+                        <span key={i} className="interest-pill" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
+                          {hob}
+                          <button
+                            onClick={async () => {
+                              const updatedHobbies = hobbies.filter(h => h !== hob);
+                              await handleUpdateProfile({ user_hobbies: updatedHobbies });
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', padding: '0 2px', fontSize: '11px', lineHeight: 1, display: 'flex', alignItems: 'center' }}
+                            title={`Remove ${hob}`}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0' }}>
+                      No hobbies recorded yet.
+                    </span>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                    <input
+                      type="text"
+                      placeholder="Add hobby..."
+                      value={newHobbyText}
+                      onChange={(e) => setNewHobbyText(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (!newHobbyText.trim()) return;
+                          if (hobbies.includes(newHobbyText.trim())) return;
+                          await handleUpdateProfile({ user_hobbies: [...hobbies, newHobbyText.trim()] });
+                          setNewHobbyText('');
+                        }
+                      }}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', flex: 1 }}
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!newHobbyText.trim()) return;
+                        if (hobbies.includes(newHobbyText.trim())) return;
+                        await handleUpdateProfile({ user_hobbies: [...hobbies, newHobbyText.trim()] });
+                        setNewHobbyText('');
+                      }}
+                      className="glass-button"
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '0.75rem',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
+                      }}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* User Likes */}
+                <div className="identity-field" style={{ marginTop: '8px' }}>
+                  <span className="field-label">Likes</span>
+                  {likes.length > 0 ? (
+                    <div className="interests-pill-box">
+                      {likes.map((like, i) => (
+                        <span key={i} className="interest-pill" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(34, 197, 94, 0.2)', borderColor: 'rgba(34, 197, 94, 0.4)' }}>
+                          {like}
+                          <button
+                            onClick={async () => {
+                              const updatedLikes = likes.filter(l => l !== like);
+                              await handleUpdateProfile({ user_likes: updatedLikes });
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', padding: '0 2px', fontSize: '11px', lineHeight: 1, display: 'flex', alignItems: 'center' }}
+                            title={`Remove ${like}`}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0' }}>
+                      No likes recorded yet.
+                    </span>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                    <input
+                      type="text"
+                      placeholder="Add thing you like..."
+                      value={newLikeText}
+                      onChange={(e) => setNewLikeText(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (!newLikeText.trim()) return;
+                          if (likes.includes(newLikeText.trim())) return;
+                          await handleUpdateProfile({ user_likes: [...likes, newLikeText.trim()] });
+                          setNewLikeText('');
+                        }
+                      }}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', flex: 1 }}
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!newLikeText.trim()) return;
+                        if (likes.includes(newLikeText.trim())) return;
+                        await handleUpdateProfile({ user_likes: [...likes, newLikeText.trim()] });
+                        setNewLikeText('');
+                      }}
+                      className="glass-button"
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '0.75rem',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #22c55e 0%, #15803d 100%)'
+                      }}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* User Dislikes */}
+                <div className="identity-field" style={{ marginTop: '8px' }}>
+                  <span className="field-label">Dislikes</span>
+                  {dislikes.length > 0 ? (
+                    <div className="interests-pill-box">
+                      {dislikes.map((dis, i) => (
+                        <span key={i} className="interest-pill" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(239, 68, 68, 0.2)', borderColor: 'rgba(239, 68, 68, 0.4)' }}>
+                          {dis}
+                          <button
+                            onClick={async () => {
+                              const updatedDislikes = dislikes.filter(d => d !== dis);
+                              await handleUpdateProfile({ user_dislikes: updatedDislikes });
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', padding: '0 2px', fontSize: '11px', lineHeight: 1, display: 'flex', alignItems: 'center' }}
+                            title={`Remove ${dis}`}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0' }}>
+                      No dislikes recorded yet.
+                    </span>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                    <input
+                      type="text"
+                      placeholder="Add thing you dislike..."
+                      value={newDislikeText}
+                      onChange={(e) => setNewDislikeText(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (!newDislikeText.trim()) return;
+                          if (dislikes.includes(newDislikeText.trim())) return;
+                          await handleUpdateProfile({ user_dislikes: [...dislikes, newDislikeText.trim()] });
+                          setNewDislikeText('');
+                        }
+                      }}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', flex: 1 }}
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!newDislikeText.trim()) return;
+                        if (dislikes.includes(newDislikeText.trim())) return;
+                        await handleUpdateProfile({ user_dislikes: [...dislikes, newDislikeText.trim()] });
+                        setNewDislikeText('');
+                      }}
+                      className="glass-button"
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '0.75rem',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'
                       }}
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -937,6 +1159,79 @@ const ControlDashboard = ({
             </>
           ) : activeTab === 'settings' ? (
             <>
+              {/* Featured Chat Mode Toggle Banner */}
+              <div style={{
+                background: settings.chat_mode ? 'linear-gradient(135deg, rgba(139,92,246,0.2) 0%, rgba(217,70,239,0.15) 100%)' : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${settings.chat_mode ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                borderRadius: '14px',
+                padding: '12px 16px',
+                marginBottom: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <MessageSquare className="w-5 h-5 text-violet-400" />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>Chat Mode (Pure Conversation)</div>
+                      <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                        Treats all messages as simple chat. Disables computer control tools for fast lightweight responses.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateSetting('chat_mode', !settings.chat_mode)}
+                    style={{
+                      background: settings.chat_mode ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'rgba(255,255,255,0.08)',
+                      border: `1px solid ${settings.chat_mode ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                      borderRadius: '14px',
+                      width: '44px',
+                      height: '24px',
+                      cursor: 'pointer',
+                      position: 'relative',
+                      transition: 'all 0.2s ease',
+                      flexShrink: 0
+                    }}
+                  >
+                    <div style={{
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '50%',
+                      background: '#fff',
+                      position: 'absolute',
+                      top: '2px',
+                      left: settings.chat_mode ? '22px' : '2px',
+                      transition: 'all 0.2s ease',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                    }} />
+                  </button>
+                </div>
+
+                {/* Dependent Checkbox */}
+                {settings.chat_mode && (
+                  <div style={{
+                    paddingTop: '8px',
+                    borderTop: '1px solid rgba(255,255,255,0.08)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <input
+                      type="checkbox"
+                      id="top_keep_memory_saving"
+                      checked={settings.keep_memory_saving !== false}
+                      onChange={(e) => handleUpdateSetting('keep_memory_saving', e.target.checked)}
+                      style={{ accentColor: '#a78bfa', cursor: 'pointer', width: '14px', height: '14px' }}
+                    />
+                    <label htmlFor="top_keep_memory_saving" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.85)', cursor: 'pointer' }}>
+                      Keep memory saving active in Chat Mode
+                    </label>
+                  </div>
+                )}
+              </div>
+
               {/* Sub-Tabs Pill Navigation */}
               <div className="subtab-container" style={{ display: 'flex', gap: '6px', marginBottom: '16px', background: 'rgba(0,0,0,0.25)', padding: '4px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <button
@@ -1314,6 +1609,74 @@ const ControlDashboard = ({
                     </div>
                   </div>
 
+                  {/* Chat Mode Card Group */}
+                  <div className="card-group" style={{ marginTop: '12px' }}>
+                    <div className="card-group-header">
+                      <MessageSquare className="w-4 h-4 text-violet-400" />
+                      <span className="card-group-title">Chat Mode (Pure Conversation)</span>
+                    </div>
+
+                    <div className="identity-field" style={{ marginTop: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span className="field-label">Enable Chat Mode</span>
+                          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '1px' }}>
+                            Treats all messages as simple chat. Disables computer control tools (apps, terminal, volume) for faster responses.
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateSetting('chat_mode', !settings.chat_mode)}
+                          style={{
+                            background: settings.chat_mode ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
+                            border: `1px solid ${settings.chat_mode ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                            borderRadius: '12px',
+                            width: '40px',
+                            height: '22px',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            flexShrink: 0
+                          }}
+                        >
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            background: settings.chat_mode ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                            position: 'absolute',
+                            top: '2px',
+                            left: settings.chat_mode ? '20px' : '2px',
+                            transition: 'all 0.2s ease'
+                          }} />
+                        </button>
+                      </div>
+
+                      {/* Dependent Checkbox: Keep Memory Saving Active */}
+                      {settings.chat_mode && (
+                        <div style={{
+                          marginTop: '10px',
+                          paddingLeft: '10px',
+                          borderLeft: '2px solid rgba(139,92,246,0.5)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}>
+                          <input
+                            type="checkbox"
+                            id="keep_memory_saving"
+                            checked={settings.keep_memory_saving !== false}
+                            onChange={(e) => handleUpdateSetting('keep_memory_saving', e.target.checked)}
+                            style={{ accentColor: '#a78bfa', cursor: 'pointer', width: '14px', height: '14px' }}
+                          />
+                          <label htmlFor="keep_memory_saving" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.85)', cursor: 'pointer' }}>
+                            Keep memory saving active in Chat Mode
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* STT Input Card Group */}
                   <div className="card-group" style={{ marginTop: '12px' }}>
                     <div className="card-group-header">
@@ -1631,7 +1994,7 @@ const ControlDashboard = ({
                               FPS Limit
                             </span>
                             <select
-                              value={settings.vrm_fps || 60}
+                              value={settings.vrm_fps || 40}
                               onChange={(e) => handleUpdateSetting('vrm_fps', parseInt(e.target.value, 10))}
                               style={{
                                 width: '100%',
@@ -1980,6 +2343,113 @@ const ControlDashboard = ({
             </>
           ) : (
             <>
+              {/* Registered LLM Tools List Card */}
+              <div className="card-group" style={{ marginBottom: '12px' }}>
+                <div className="card-group-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Zap className="w-4 h-4 text-violet-400" />
+                    <span className="card-group-title">Registered LLM Tools</span>
+                  </div>
+                  <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '10px', background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.3)', color: '#c084fc', fontWeight: 600 }}>
+                    {toolsList.length} Active Tools
+                  </span>
+                </div>
+
+                {/* Tool Search Input */}
+                <div style={{ marginTop: '8px', marginBottom: '8px' }}>
+                  <input
+                    type="text"
+                    placeholder="Search tools or parameters..."
+                    value={toolSearch}
+                    onChange={(e) => setToolSearch(e.target.value)}
+                    className="glass-input"
+                    style={{ width: '100%', padding: '6px 10px', fontSize: '0.75rem' }}
+                  />
+                </div>
+
+                {/* Tool List Render */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {toolsList
+                    .filter(t => !toolSearch || t.name.toLowerCase().includes(toolSearch.toLowerCase()) || t.description.toLowerCase().includes(toolSearch.toLowerCase()))
+                    .map((tool) => {
+                      const isExpanded = expandedTool === tool.name;
+                      const paramEntries = Object.entries(tool.parameters || {});
+                      return (
+                        <div
+                          key={tool.name}
+                          style={{
+                            background: 'rgba(0, 0, 0, 0.25)',
+                            border: `1px solid ${isExpanded ? 'rgba(139,92,246,0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                            borderRadius: '8px',
+                            padding: '8px 10px',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <div
+                            onClick={() => setExpandedTool(isExpanded ? null : tool.name)}
+                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                          >
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#a78bfa', fontFamily: 'monospace' }}>{tool.name}</span>
+                                <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: '#94a3b8' }}>
+                                  {tool.category || 'System'}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px', lineHeight: '1.3' }}>
+                                {tool.description}
+                              </div>
+                            </div>
+                            <ChevronDown style={{ width: '14px', height: '14px', color: '#94a3b8', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease', flexShrink: 0 }} />
+                          </div>
+
+                          {/* Expanded Parameters Breakdown */}
+                          {isExpanded && (
+                            <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 600, color: '#2dd4bf', marginBottom: '6px' }}>
+                                Accepting Parameters ({paramEntries.length}):
+                              </div>
+                              {paramEntries.length === 0 ? (
+                                <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>
+                                  No arguments required (takes empty payload).
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  {paramEntries.map(([pName, pDef]) => {
+                                    const isReq = (tool.required_parameters || []).includes(pName);
+                                    return (
+                                      <div key={pName} style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                          <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#38bdf8', fontWeight: 600 }}>{pName}</span>
+                                          <div style={{ display: 'flex', gap: '4px' }}>
+                                            <span style={{ fontSize: '0.6rem', padding: '0 4px', borderRadius: '4px', background: 'rgba(255,255,255,0.08)', color: '#cbd5e1' }}>
+                                              {pDef.type || 'string'}
+                                            </span>
+                                            {isReq && (
+                                              <span style={{ fontSize: '0.6rem', padding: '0 4px', borderRadius: '4px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', fontWeight: 600 }}>
+                                                required
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        {pDef.description && (
+                                          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                                            {pDef.description}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
               {/* Connection Specs */}
               <div className="card-group">
                 <div className="card-group-header teal">
@@ -1997,7 +2467,13 @@ const ControlDashboard = ({
                   <div className="spec-row">
                     <span className="spec-label">LLM Endpoint</span>
                     <span className="spec-val" style={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all' }}>
-                      {lmstudioUrl || 'http://127.0.0.1:1234'}
+                      {settings.llm_base_url || lmstudioUrl || 'http://127.0.0.1:1234'}
+                    </span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">Active LLM Model</span>
+                    <span className="spec-val" style={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all' }}>
+                      {settings.llm_model || modelName || 'Default'}
                     </span>
                   </div>
                   <div className="spec-row">

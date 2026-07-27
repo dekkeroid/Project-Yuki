@@ -34,7 +34,7 @@ const AvatarViewer = ({
   visible = true,
   isBackendOnline = false,
   vrmDpr = 1.5,
-  vrmFps = 60
+  vrmFps = 40
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -1297,7 +1297,7 @@ const AvatarViewer = ({
         return;
       }
 
-      const targetFPS = parseInt(vrmFpsRef.current, 10) || 60;
+      const targetFPS = parseInt(vrmFpsRef.current, 10) || 40;
       const frameDelay = 1 / targetFPS;
 
       let delta = clock.getDelta();
