@@ -96,6 +96,7 @@ const AvatarViewer = ({
   }, [enableRotation]);
 
   const cameraTrackingRef = useRef(cameraTracking);
+  const isRotatingRef = useRef(false);
 
   useEffect(() => {
     cameraTrackingRef.current = cameraTracking;
@@ -598,6 +599,7 @@ const AvatarViewer = ({
     const onControlsStart = () => {
       if (isElectron && enableRotationRef.current) {
         isRotating = true;
+        isRotatingRef.current = true;
         if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
           window.electronAPI.setIgnoreMouseEvents(false);
           isIgnoringMouseRef.current = false;
@@ -606,6 +608,7 @@ const AvatarViewer = ({
     };
     const onControlsEnd = () => {
       isRotating = false;
+      isRotatingRef.current = false;
     };
     const handleContextMenu = (e) => {
       if (isElectron && enableRotationRef.current) {
@@ -1711,14 +1714,14 @@ const AvatarViewer = ({
             }
             prevIsRotatingRef.current = isRotating;
 
-            const isBodyRotated = isRotating || Math.abs(vrm.scene.rotation.y - baseRotation) > 0.05 || postOrbitRestTimer > 0;
+            const cameraYaw = Math.atan2(camera.position.x, camera.position.z);
+            const isBodyRotated = isRotatingRef.current || Math.abs(cameraYaw) > 0.04 || Math.abs(vrm.scene.rotation.y - baseRotation) > 0.04 || postOrbitRestTimer > 0;
 
             if (isBodyRotated) {
               if (enableCameraTracking) {
                 // While rotated with Camera Tracking ON: head tracks camera position
-                const orbYaw = Math.atan2(camera.position.x, camera.position.z);
                 const orbBodyOffset = vrm.scene.rotation.y - baseRotation;
-                let orbTrackingYaw = Math.max(-1.2, Math.min(1.2, (orbYaw - orbBodyOffset) * 0.55));
+                let orbTrackingYaw = Math.max(-1.2, Math.min(1.2, (cameraYaw - orbBodyOffset) * 0.55));
                 const orbHeadHeight = 1.4 * scaleRef.current;
                 const orbHDist = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
                 let orbTrackingPitch = orbHDist > 0.01
