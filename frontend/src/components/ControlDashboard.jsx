@@ -2189,8 +2189,8 @@ const ControlDashboard = ({
                       </div>
                     )}
                   </div>
-                </>
-              )}
+              {/* Sub-tab 1: AI Brain */}
+              {settingsSubTab === 'brain' && (
                 <div className="card-group">
                   <div className="card-group-header">
                     <Cpu className="w-4 h-4 text-violet-400" />

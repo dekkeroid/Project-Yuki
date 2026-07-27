@@ -496,7 +496,8 @@ function showYuki() {
   yukiVisible = true;
   sendVisibility(true);
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.restore();
+    mainWindow.setSkipTaskbar(true);
+    if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.showInactive();
   }
 }
@@ -524,7 +525,7 @@ function hideYuki() {
   yukiVisible = false;
   sendVisibility(false);
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.minimize();
+    mainWindow.setSkipTaskbar(true);
     mainWindow.hide();
     // Request renderer process to optimize memory / GC
     try {
