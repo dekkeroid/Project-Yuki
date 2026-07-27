@@ -230,6 +230,68 @@ const ControlDashboard = ({
     }
   };
 
+  // Task UI Inputs State
+  const [timerMsgInput, setTimerMsgInput] = useState('');
+  const [timerDurInput, setTimerDurInput] = useState('');
+  const [stopwatchLabelInput, setStopwatchLabelInput] = useState('');
+
+  const handleCreateTimerUI = async () => {
+    if (!timerDurInput.trim()) return;
+    try {
+      await fetch(`${API_BASE}/api/reminders/create_timer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: timerMsgInput.trim() || 'Timer Up!', duration_str: timerDurInput.trim() })
+      });
+      setTimerMsgInput('');
+      setTimerDurInput('');
+      fetchTimeItems();
+    } catch (e) {
+      console.error("Failed to create timer:", e);
+    }
+  };
+
+  const handleStartStopwatchUI = async (labelOverride) => {
+    const lbl = labelOverride || stopwatchLabelInput.trim() || 'gaming';
+    try {
+      await fetch(`${API_BASE}/api/reminders/stopwatch/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: lbl })
+      });
+      setStopwatchLabelInput('');
+      fetchTimeItems();
+    } catch (e) {
+      console.error("Failed to start stopwatch:", e);
+    }
+  };
+
+  const handleStopStopwatchUI = async (lbl) => {
+    try {
+      await fetch(`${API_BASE}/api/reminders/stopwatch/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: lbl })
+      });
+      fetchTimeItems();
+    } catch (e) {
+      console.error("Failed to stop stopwatch:", e);
+    }
+  };
+
+  const handleDeleteStopwatchUI = async (lbl) => {
+    try {
+      await fetch(`${API_BASE}/api/reminders/stopwatch/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: lbl })
+      });
+      fetchTimeItems();
+    } catch (e) {
+      console.error("Failed to delete stopwatch:", e);
+    }
+  };
+
   useEffect(() => {
     let interval = null;
     if (isOpen) {
@@ -1311,6 +1373,72 @@ const ControlDashboard = ({
             </>
           ) : activeTab === 'tasks' ? (
             <>
+              {/* Quick Create Timer & Stopwatch Card */}
+              <div className="card-group" style={{ marginBottom: '12px' }}>
+                <div className="card-group-header">
+                  <Plus className="w-4 h-4 text-emerald-400" />
+                  <span className="card-group-title">Create Timer or Stopwatch</span>
+                </div>
+
+                {/* Timer Creation Bar */}
+                <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: '6px' }}>
+                    ⏱️ Set Countdown Timer
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="Label (e.g. Oven)"
+                      value={timerMsgInput}
+                      onChange={(e) => setTimerMsgInput(e.target.value)}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', flex: 1 }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Duration (e.g. 10m, 45s)"
+                      value={timerDurInput}
+                      onChange={(e) => setTimerDurInput(e.target.value)}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', width: '130px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCreateTimerUI}
+                      className="glass-button"
+                      style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '8px', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+
+                {/* Stopwatch Start Bar */}
+                <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: '6px' }}>
+                    ⏱️ Start Stopwatch
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="Label (e.g. Gaming, Coding)"
+                      value={stopwatchLabelInput}
+                      onChange={(e) => setStopwatchLabelInput(e.target.value)}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleStartStopwatchUI()}
+                      className="glass-button"
+                      style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '8px', background: 'linear-gradient(135deg, #a78bfa, #8b5cf6)', border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      ▶ Start
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {/* Active Timers, Reminders & Stopwatches Card */}
               <div className="card-group" style={{ marginBottom: '12px' }}>
                 <div className="card-group-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1329,7 +1457,7 @@ const ControlDashboard = ({
 
                 {(timeItems.reminders || []).length === 0 && (timeItems.stopwatches || []).length === 0 ? (
                   <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)', fontStyle: 'italic', padding: '16px 0', textAlign: 'center' }}>
-                    No active timers or stopwatches currently running. Ask Yuki to set a timer or reminder anytime!
+                    No active timers or stopwatches currently running. Ask Yuki or use the controls above to start one!
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1378,9 +1506,25 @@ const ControlDashboard = ({
                           </span>
                           <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff' }}>'{s.label}'</span>
                         </div>
-                        <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>
-                          {s.formatted_elapsed}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>
+                            {s.formatted_elapsed}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleStopStopwatchUI(s.label)}
+                            style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', color: '#c084fc', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
+                          >
+                            Stop
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteStopwatchUI(s.label)}
+                            style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

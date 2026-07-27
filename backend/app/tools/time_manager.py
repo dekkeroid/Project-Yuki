@@ -233,6 +233,14 @@ def stop_stopwatch(label: str = "default") -> Dict[str, Any]:
         
     return info
 
+def delete_stopwatch(label: str = "default") -> bool:
+    label_clean = (label or "default").strip().lower()
+    conn = get_connection()
+    conn.execute("DELETE FROM stopwatches WHERE label = ?", (label_clean,))
+    conn.commit()
+    conn.close()
+    return True
+
 def get_active_time_items() -> Dict[str, Any]:
     now = time.time()
     conn = get_connection()

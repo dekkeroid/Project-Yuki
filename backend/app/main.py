@@ -942,6 +942,50 @@ def cancel_reminder(req: ReminderCancelRequest):
     time_manager.delete_reminder(req.id)
     return {"status": "ok", "message": f"Cancelled reminder #{req.id}"}
 
+class CreateTimerRequest(BaseModel):
+    message: str
+    duration_str: str
+
+@app.post("/api/reminders/create_timer")
+def create_timer(req: CreateTimerRequest):
+    """
+    Creates a new timer directly from the Tasks UI.
+    """
+    from app.tools import time_manager
+    dur = time_manager.parse_duration_seconds(req.duration_str)
+    res = time_manager.add_timer(dur, req.message or "Timer Up!")
+    return {"status": "ok", "timer": res}
+
+class StopwatchRequest(BaseModel):
+    label: str
+
+@app.post("/api/reminders/stopwatch/start")
+def start_stopwatch(req: StopwatchRequest):
+    """
+    Starts or resumes a stopwatch directly from the Tasks UI.
+    """
+    from app.tools import time_manager
+    res = time_manager.start_stopwatch(req.label or "default")
+    return {"status": "ok", "stopwatch": res}
+
+@app.post("/api/reminders/stopwatch/stop")
+def stop_stopwatch(req: StopwatchRequest):
+    """
+    Stops/pauses a stopwatch directly from the Tasks UI.
+    """
+    from app.tools import time_manager
+    res = time_manager.stop_stopwatch(req.label or "default")
+    return {"status": "ok", "stopwatch": res}
+
+@app.post("/api/reminders/stopwatch/delete")
+def delete_stopwatch(req: StopwatchRequest):
+    """
+    Deletes a stopwatch directly from the Tasks UI.
+    """
+    from app.tools import time_manager
+    time_manager.delete_stopwatch(req.label or "default")
+    return {"status": "ok", "message": f"Deleted stopwatch '{req.label}'"}
+
 @app.get("/api/mood")
 def get_mood_spectrum():
     """
