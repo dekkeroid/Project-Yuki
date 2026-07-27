@@ -85,13 +85,18 @@ def resolve_command(message: str) -> Optional[ResolvedCommand]:
     ):
         return ("get_current_datetime", {})
 
+    # ── Stopwatch / Timer ─────────────────────────────────────────────────────
+    if re.search(r"\b(start|begin|create)\s+(a\s+)?stopwatch\b", msg):
+        label = re.sub(r".*\bstopwatch\s*(for|on|about)?\s*", "", msg).strip() or "default"
+        return ("manage_time", {"action": "start_stopwatch", "label": label})
+
     # ── Open / Launch / Start ─────────────────────────────────────────────────
     # Matches "open notepad", "launch calculator", "start chrome", etc.
     m = re.search(r"^(open|launch|start|run)\s+(.+)$", msg)
     if m:
         target = m.group(2).strip()
-        # Avoid intercepting terminal/script commands that require specific tools
-        if not re.search(r"\b(terminal|cmd|powershell|python|script|command|command line|shell)\b", target):
+        # Avoid intercepting time tools, terminal/script commands that require specific tools
+        if not re.search(r"\b(timer|stopwatch|reminder|alarm|terminal|cmd|powershell|python|script|command|command line|shell)\b", target):
             return ("open_or_play_file", {"file_path_or_query": target})
 
     return None
