@@ -342,16 +342,8 @@ const App = () => {
   });
   const [customAnimation, setCustomAnimation] = useState('');
 
-  // Sync avatar scale changes to Electron window bounds size (debounced to avoid slider dragging jitter)
-  useEffect(() => {
-    if (!window.electronAPI || !window.electronAPI.setWindowScale) return;
-
-    const timer = setTimeout(() => {
-      window.electronAPI.setWindowScale(avatarScale);
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [avatarScale]);
+  // Avatar scale is controlled by 3D model world scale (scaleRef in AvatarViewer)
+  // Do NOT resize the Electron window on scale change — that causes position/camera jumps
 
   const [cameraTracking, setCameraTracking] = useState(() => {
     return localStorage.getItem('yuki-camera-tracking') !== 'false';
@@ -450,6 +442,26 @@ const App = () => {
   const isChatOpenRef = useRef(false);
   useEffect(() => {
     isChatOpenRef.current = isChatOpen;
+  }, [isChatOpen]);
+
+  // Tracks vertical position of chat overlay relative to avatar head. Clamped to screen bounds.
+  const [chatBottomPx, setChatBottomPx] = useState(16);
+  useEffect(() => {
+    if (!isChatOpen) return;
+    let animId = null;
+    const updatePosition = () => {
+      if (typeof window.yukiAvatarHeadYPercent === 'number') {
+        const headBottomPx = ((100 - window.yukiAvatarHeadYPercent) / 100) * window.innerHeight;
+        const targetBottom = headBottomPx - 260;
+        const clamped = Math.max(16, Math.min(window.innerHeight - 120, targetBottom));
+        setChatBottomPx(Math.round(clamped));
+      } else {
+        setChatBottomPx(16);
+      }
+      animId = requestAnimationFrame(updatePosition);
+    };
+    animId = requestAnimationFrame(updatePosition);
+    return () => { if (animId) cancelAnimationFrame(animId); };
   }, [isChatOpen]);
 
   const [isHovered, setIsHovered] = useState(false);
@@ -4262,28 +4274,6 @@ const detectExpression = (text) => {
       </div>
     );
   }
-
-  const [chatBottomPx, setChatBottomPx] = useState(16);
-
-  useEffect(() => {
-    if (!isChatOpen) return;
-    let animId = null;
-    const updatePosition = () => {
-      if (typeof window.yukiAvatarHeadYPercent === 'number') {
-        const headBottomPx = ((100 - window.yukiAvatarHeadYPercent) / 100) * window.innerHeight;
-        const targetBottom = headBottomPx - 260;
-        const clamped = Math.max(16, Math.min(window.innerHeight - 120, targetBottom));
-        setChatBottomPx(Math.round(clamped));
-      } else {
-        setChatBottomPx(16);
-      }
-      animId = requestAnimationFrame(updatePosition);
-    };
-    animId = requestAnimationFrame(updatePosition);
-    return () => {
-      if (animId) cancelAnimationFrame(animId);
-    };
-  }, [isChatOpen]);
 
   return (
     <div className="app-viewport" style={{
