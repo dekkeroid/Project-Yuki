@@ -126,5 +126,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimizeStopwatchWindow: (label) => {
     ipcRenderer.send('minimize-stopwatch-window', label ? { label } : {});
   },
+  setOpenAtLogin: (enabled) => {
+    ipcRenderer.send('set-open-at-login', Boolean(enabled));
+  },
+  getOpenAtLogin: () => {
+    return ipcRenderer.invoke('get-open-at-login');
+  },
   isElectron: true
 });

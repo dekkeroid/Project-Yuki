@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 
@@ -44,6 +44,15 @@ const ControlDashboard = ({
   const [isOpen, setIsOpen] = useState(isStandalone ? true : false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [settingsSubTab, setSettingsSubTab] = useState('avatar'); // 'avatar' | 'voice' | 'brain'
+
+  const [isDevEnv, setIsDevEnv] = useState(false);
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.getOpenAtLogin) {
+      window.electronAPI.getOpenAtLogin().then(res => {
+        if (res && res.isDev) setIsDevEnv(true);
+      }).catch(() => {});
+    }
+  }, []);
 
   // Avatar scale size state (50% to 200%)
   const [localAvatarScale, setLocalAvatarScale] = useState(() => {
@@ -1687,6 +1696,68 @@ const ControlDashboard = ({
             </>
           ) : activeTab === 'settings' ? (
             <>
+              {/* Featured Launch on Startup Toggle Banner */}
+              <div style={{
+                background: settings.launch_on_startup ? 'linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(56,189,248,0.15) 100%)' : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${settings.launch_on_startup ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                borderRadius: '14px',
+                padding: '12px 16px',
+                marginBottom: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Power className="w-5 h-5 text-emerald-400" />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>Launch on Startup (Start with PC)</span>
+                      {isDevEnv && (
+                        <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245,158,11,0.2)', color: '#fbbf24', fontWeight: 600 }}>
+                          DEV MODE (FOR SHOW ONLY)
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                      Automatically launch Yuki when your computer boots up. {isDevEnv ? '(Active in production builds; skipped during development)' : ''}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newVal = !settings.launch_on_startup;
+                    handleUpdateSetting('launch_on_startup', newVal);
+                    if (window.electronAPI && window.electronAPI.setOpenAtLogin) {
+                      window.electronAPI.setOpenAtLogin(newVal);
+                    }
+                  }}
+                  style={{
+                    background: settings.launch_on_startup ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255,255,255,0.08)',
+                    border: `1px solid ${settings.launch_on_startup ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                    borderRadius: '14px',
+                    width: '44px',
+                    height: '24px',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    transition: 'all 0.2s ease',
+                    flexShrink: 0
+                  }}
+                >
+                  <div style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: '2px',
+                    left: settings.launch_on_startup ? '22px' : '2px',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                  }} />
+                </button>
+              </div>
+
               {/* Featured Chat Mode Toggle Banner */}
               <div style={{
                 background: settings.chat_mode ? 'linear-gradient(135deg, rgba(139,92,246,0.2) 0%, rgba(217,70,239,0.15) 100%)' : 'rgba(255,255,255,0.03)',

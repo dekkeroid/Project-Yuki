@@ -628,6 +628,7 @@ class SettingsUpdateRequest(BaseModel):
     chat_mode: Optional[bool] = None
     keep_memory_saving: Optional[bool] = None
     os_native_alarms: Optional[bool] = None
+    launch_on_startup: Optional[bool] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -756,6 +757,8 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("keep_memory_saving", req.keep_memory_saving)
     if req.os_native_alarms is not None:
         memory_manager.update_setting("os_native_alarms", req.os_native_alarms)
+    if req.launch_on_startup is not None:
+        memory_manager.update_setting("launch_on_startup", req.launch_on_startup)
 
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True

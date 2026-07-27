@@ -769,6 +769,31 @@ function createWindow() {
     }
   });
 
+  // Launch on Startup (Start with PC) Setting
+  ipcMain.on('set-open-at-login', (event, enabled) => {
+    const isEnabled = Boolean(enabled);
+    if (!app.isPackaged) {
+      console.log(`[StartupSetting] Dev mode active: 'Launch on Startup' toggle set to ${isEnabled} (UI toggle active, but Windows registry modification skipped in dev mode)`);
+      return;
+    }
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: isEnabled,
+        path: app.getPath('exe')
+      });
+      console.log(`[StartupSetting] Production mode: set openAtLogin = ${isEnabled}`);
+    } catch (e) {
+      console.error("[StartupSetting] Failed to set login item settings:", e);
+    }
+  });
+
+  ipcMain.handle('get-open-at-login', () => {
+    return {
+      isDev: !app.isPackaged,
+      openAtLogin: app.isPackaged ? app.getLoginItemSettings().openAtLogin : false
+    };
+  });
+
   let hoverPollTimer = null;
   let lastHoverState = null;
   let lastCursorX = -1;
