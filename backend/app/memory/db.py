@@ -356,7 +356,8 @@ def init_db():
         category TEXT DEFAULT 'timer',
         recurrence TEXT,
         action_command TEXT,
-        is_completed INTEGER DEFAULT 0
+        is_completed INTEGER DEFAULT 0,
+        os_task_name TEXT
     );
     """)
 
@@ -368,6 +369,11 @@ def init_db():
         is_active INTEGER DEFAULT 1
     );
     """)
+
+    # Migration: add os_task_name column if it doesn't exist yet
+    existing_cols = [row[1] for row in cursor.execute("PRAGMA table_info(reminders)").fetchall()]
+    if "os_task_name" not in existing_cols:
+        cursor.execute("ALTER TABLE reminders ADD COLUMN os_task_name TEXT")
 
     # ── Phase 2: FTS5 Virtual Table ─────────────────────────────────────
 

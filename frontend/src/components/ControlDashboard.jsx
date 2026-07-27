@@ -230,10 +230,45 @@ const ControlDashboard = ({
     }
   };
 
+  // Inline edit state for reminders/timers (replaces broken window.prompt)
+  const [editingItem, setEditingItem] = useState(null); // { id, message }
+
+  const handleEditReminder = (id, currentMessage) => {
+    setEditingItem({ id, message: currentMessage });
+  };
+
+  const handleSaveEditReminder = async () => {
+    if (!editingItem || !editingItem.message.trim()) return;
+    try {
+      await fetch(`${API_BASE}/api/reminders/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingItem.id, message: editingItem.message.trim() })
+      });
+      fetchTimeItems();
+    } catch (e) {
+      console.error('Failed to edit reminder:', e);
+    }
+    setEditingItem(null);
+  };
+
   // Task UI Inputs State
   const [timerMsgInput, setTimerMsgInput] = useState('');
   const [timerDurInput, setTimerDurInput] = useState('');
   const [stopwatchLabelInput, setStopwatchLabelInput] = useState('');
+
+  // Specific Date & Time Alarm Input State
+  const [alarmDateInput, setAlarmDateInput] = useState('');
+  const [alarmTimeInput, setAlarmTimeInput] = useState('');
+  const [alarmMsgInput, setAlarmMsgInput] = useState('');
+
+  // OS Native Alarms Toggle State (synced via backend profile settings)
+  const osNativeAlarms = settings?.os_native_alarms !== false;
+
+  const handleToggleOsNativeAlarms = async (val) => {
+    try { localStorage.setItem('yuki-os-native-alarms', val.toString()); } catch {}
+    await handleUpdateSetting('os_native_alarms', val);
+  };
 
   const handleCreateTimerUI = async () => {
     if (!timerDurInput.trim()) return;
@@ -251,6 +286,27 @@ const ControlDashboard = ({
     }
   };
 
+  const handleCreateDatetimeAlarmUI = async () => {
+    if (!alarmDateInput || !alarmTimeInput) return;
+    try {
+      await fetch(`${API_BASE}/api/reminders/create_datetime_alarm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date_str: alarmDateInput,
+          time_str: alarmTimeInput,
+          message: alarmMsgInput.trim() || 'Alarm!'
+        })
+      });
+      setAlarmDateInput('');
+      setAlarmTimeInput('');
+      setAlarmMsgInput('');
+      fetchTimeItems();
+    } catch (e) {
+      console.error("Failed to schedule datetime alarm:", e);
+    }
+  };
+
   const handleStartStopwatchUI = async (labelOverride) => {
     const lbl = labelOverride || stopwatchLabelInput.trim() || 'gaming';
     try {
@@ -261,6 +317,9 @@ const ControlDashboard = ({
       });
       setStopwatchLabelInput('');
       fetchTimeItems();
+      if (window.electronAPI && window.electronAPI.openStopwatchWindow) {
+        window.electronAPI.openStopwatchWindow({ label: lbl });
+      }
     } catch (e) {
       console.error("Failed to start stopwatch:", e);
     }
@@ -1373,11 +1432,74 @@ const ControlDashboard = ({
             </>
           ) : activeTab === 'tasks' ? (
             <>
-              {/* Quick Create Timer & Stopwatch Card */}
+              {/* Always-On Dual Alarm System Banner */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(56,189,248,0.15) 100%)',
+                border: '1px solid rgba(16,185,129,0.4)',
+                borderRadius: '14px',
+                padding: '12px 16px',
+                marginBottom: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <Zap className="w-5 h-5 text-emerald-400" style={{ flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>Dual Alarm System — Always Active</div>
+                  <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.55)', marginTop: '3px', lineHeight: 1.5 }}>
+                    <span style={{ color: '#10b981', fontWeight: 600 }}>App running:</span> Popup window + OS toast notification &nbsp;·&nbsp;
+                    <span style={{ color: '#38bdf8', fontWeight: 600 }}>App closed:</span> OS Task Scheduler fires native toast automatically
+                  </div>
+                </div>
+                <div style={{ marginLeft: 'auto', fontSize: '0.65rem', padding: '3px 8px', borderRadius: '8px', background: 'rgba(16,185,129,0.2)', color: '#10b981', fontWeight: 700, flexShrink: 0 }}>
+                  ALWAYS ON
+                </div>
+              </div>
+
+              {/* Quick Create Timer, Alarm & Stopwatch Card */}
               <div className="card-group" style={{ marginBottom: '12px' }}>
                 <div className="card-group-header">
                   <Plus className="w-4 h-4 text-emerald-400" />
-                  <span className="card-group-title">Create Timer or Stopwatch</span>
+                  <span className="card-group-title">Create Alarm, Timer or Stopwatch</span>
+                </div>
+
+                {/* Specific Date & Time Alarm Picker */}
+                <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: '6px' }}>
+                    ⏰ Schedule Specific Alarm (Date & Time)
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <input
+                      type="date"
+                      value={alarmDateInput}
+                      onChange={(e) => setAlarmDateInput(e.target.value)}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', width: '135px', colorScheme: 'dark' }}
+                    />
+                    <input
+                      type="time"
+                      value={alarmTimeInput}
+                      onChange={(e) => setAlarmTimeInput(e.target.value)}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', width: '110px', colorScheme: 'dark' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Label (e.g. Doctor Appt)"
+                      value={alarmMsgInput}
+                      onChange={(e) => setAlarmMsgInput(e.target.value)}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', flex: 1, minWidth: '120px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCreateDatetimeAlarmUI}
+                      className="glass-button"
+                      style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '8px', background: 'linear-gradient(135deg, #f43f5e, #e11d48)', border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      + Schedule
+                    </button>
+                  </div>
                 </div>
 
                 {/* Timer Creation Bar */}
@@ -1416,7 +1538,7 @@ const ControlDashboard = ({
                 {/* Stopwatch Start Bar */}
                 <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
                   <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: '6px' }}>
-                    ⏱️ Start Stopwatch
+                    ⏱️ Start Floating Stopwatch Window
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <input
@@ -1466,33 +1588,65 @@ const ControlDashboard = ({
                       const mins = Math.floor(r.remaining_seconds / 60);
                       const secs = r.remaining_seconds % 60;
                       const timeFmt = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+                      const cat = (r.category || 'timer').toLowerCase();
+                      const isAlarm = cat === 'alarm';
+                      const isRem = cat === 'reminder';
+                      const badgeBg = isAlarm ? 'rgba(244,63,94,0.2)' : isRem ? 'rgba(245,158,11,0.2)' : 'rgba(56,189,248,0.2)';
+                      const badgeColor = isAlarm ? '#f43f5e' : isRem ? '#f59e0b' : '#38bdf8';
+                      const badgeText = isAlarm ? '⏰ ALARM' : isRem ? '📌 REMINDER' : '⏱️ TIMER';
+
                       return (
-                        <div key={r.id} style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(56,189,248,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(56,189,248,0.2)', color: '#38bdf8', fontWeight: 600, textTransform: 'uppercase' }}>
-                                {r.category || 'timer'}
-                              </span>
-                              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff' }}>{r.message}</span>
-                            </div>
-                            {r.action_command && (
-                              <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', fontFamily: 'monospace' }}>
-                                Command: {r.action_command}
+                        <div key={r.id} style={{ background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: `1px solid ${badgeColor}33`, overflow: 'hidden' }}>
+                          <div style={{ padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: badgeBg, color: badgeColor, fontWeight: 700, letterSpacing: '0.5px' }}>
+                                  {badgeText}
+                                </span>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff' }}>{r.message}</span>
                               </div>
-                            )}
+                              {r.action_command && (
+                                <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', fontFamily: 'monospace' }}>
+                                  Command: {r.action_command}
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600, color: badgeColor }}>
+                                {timeFmt}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleEditReminder(r.id, r.message)}
+                                style={{ background: 'rgba(56,189,248,0.2)', border: '1px solid rgba(56,189,248,0.4)', color: '#bae6fd', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCancelReminder(r.id)}
+                                style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600, color: '#38bdf8' }}>
-                              {timeFmt}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleCancelReminder(r.id)}
-                              style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
+                          {/* Inline edit row — expands below the item */}
+                          {editingItem?.id === r.id && (
+                            <div style={{ borderTop: `1px solid ${badgeColor}33`, padding: '8px 12px', display: 'flex', gap: '8px', background: 'rgba(0,0,0,0.2)' }}>
+                              <input
+                                autoFocus
+                                type="text"
+                                value={editingItem.message}
+                                onChange={(e) => setEditingItem(prev => ({ ...prev, message: e.target.value }))}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEditReminder(); if (e.key === 'Escape') setEditingItem(null); }}
+                                className="glass-input"
+                                style={{ flex: 1, padding: '5px 10px', fontSize: '0.78rem' }}
+                              />
+                              <button type="button" onClick={handleSaveEditReminder} style={{ padding: '5px 12px', fontSize: '0.72rem', borderRadius: '6px', background: 'linear-gradient(135deg,#10b981,#059669)', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Save</button>
+                              <button type="button" onClick={() => setEditingItem(null)} style={{ padding: '5px 10px', fontSize: '0.72rem', borderRadius: '6px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}>✕</button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

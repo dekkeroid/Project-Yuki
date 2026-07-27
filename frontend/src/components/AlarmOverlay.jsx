@@ -2,11 +2,11 @@ import React, { useEffect, useRef } from 'react';
 import { BellRing, Clock, X, RotateCcw } from 'lucide-react';
 import { API_BASE } from '../api';
 
-const AlarmOverlay = ({ alarm, onDismiss, onSnooze }) => {
+const AlarmOverlay = ({ alarm, onDismiss, onSnooze, isStandaloneWindow = false }) => {
   const audioCtxRef = useRef(null);
   const intervalRef = useRef(null);
 
-  // Cross-platform Web Audio API repeating chime synthesizer
+  // Web Audio API dual-pitch alarm chime pulse synthesizer
   useEffect(() => {
     if (!alarm) return;
 
@@ -32,7 +32,6 @@ const AlarmOverlay = ({ alarm, onDismiss, onSnooze }) => {
         const triggerPulse = () => {
           if (ctx.state === 'suspended') ctx.resume();
           const now = ctx.currentTime;
-          // Dual-pitch alarm chime pulse (E5 -> A5)
           playChimeNote(659.25, now, 0.2);
           playChimeNote(880.00, now + 0.25, 0.3);
         };
@@ -41,7 +40,7 @@ const AlarmOverlay = ({ alarm, onDismiss, onSnooze }) => {
         intervalRef.current = setInterval(triggerPulse, 1200);
       }
     } catch (e) {
-      console.warn("Failed to initialize Web Audio alarm chime:", e);
+      console.warn("Failed to initialize alarm audio chime:", e);
     }
 
     return () => {
@@ -56,59 +55,102 @@ const AlarmOverlay = ({ alarm, onDismiss, onSnooze }) => {
 
   const isTimer = alarm.category === 'timer';
   const themeColor = isTimer ? '#38bdf8' : '#f43f5e';
-  const glowColor = isTimer ? 'rgba(56,189,248,0.4)' : 'rgba(244,63,94,0.4)';
+  const glowColor = isTimer ? 'rgba(56,189,248,0.45)' : 'rgba(244,63,94,0.45)';
+
+  const handleDismissAction = async () => {
+    try {
+      if (alarm.id) {
+        await fetch(`${API_BASE}/api/reminders/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: Number(alarm.id) })
+        });
+      }
+    } catch (e) {
+      console.error("Failed to cancel alarm:", e);
+    }
+    if (window.electronAPI && window.electronAPI.closeAlarmWindow) {
+      window.electronAPI.closeAlarmWindow(alarm.id);
+    }
+    if (onDismiss) onDismiss(alarm.id);
+  };
+
+  const handleSnoozeAction = async () => {
+    try {
+      if (alarm.id) {
+        await fetch(`${API_BASE}/api/reminders/snooze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: Number(alarm.id), minutes: 5 })
+        });
+      }
+    } catch (e) {
+      console.error("Failed to snooze alarm:", e);
+    }
+    if (window.electronAPI && window.electronAPI.closeAlarmWindow) {
+      window.electronAPI.closeAlarmWindow(alarm.id);
+    }
+    if (onSnooze) onSnooze(alarm.id);
+  };
 
   return (
     <div style={{
-      position: 'fixed',
+      position: isStandaloneWindow ? 'relative' : 'fixed',
       inset: 0,
-      zIndex: 99999,
-      background: 'rgba(0, 0, 0, 0.85)',
-      backdropFilter: 'blur(16px)',
-      WebkitBackdropFilter: 'blur(16px)',
+      width: '100vw',
+      height: '100vh',
+      zIndex: 999999,
+      background: 'rgba(9, 11, 22, 0.94)',
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      transition: 'all 0.3s ease'
+      padding: '20px',
+      boxSizing: 'border-box',
+      overflow: 'hidden',
+      userSelect: 'none',
+      WebkitAppRegion: 'drag'
     }}>
       <div style={{
-        background: 'linear-gradient(145deg, rgba(20,15,35,0.98) 0%, rgba(10,8,20,0.99) 100%)',
+        background: 'linear-gradient(145deg, rgba(22, 17, 40, 0.98) 0%, rgba(10, 8, 22, 0.99) 100%)',
         border: `2px solid ${themeColor}`,
         boxShadow: `0 0 40px ${glowColor}, 0 20px 50px rgba(0,0,0,0.9)`,
-        borderRadius: '20px',
-        padding: '28px 36px',
-        width: '90%',
-        maxWidth: '440px',
+        borderRadius: '24px',
+        padding: '24px 28px',
+        width: '100%',
+        maxWidth: '420px',
         textAlign: 'center',
         color: '#fff',
-        position: 'relative'
+        position: 'relative',
+        WebkitAppRegion: 'no-drag'
       }}>
-        {/* Pulsing Icon Header */}
+        {/* Pulsing Icon */}
         <div style={{
-          width: '64px',
-          height: '64px',
+          width: '60px',
+          height: '60px',
           borderRadius: '50%',
           background: `${themeColor}22`,
           border: `2px solid ${themeColor}`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          margin: '0 auto 16px auto',
-          boxShadow: `0 0 20px ${glowColor}`
+          margin: '0 auto 14px auto',
+          boxShadow: `0 0 24px ${glowColor}`
         }}>
           {isTimer ? (
-            <Clock style={{ width: '32px', height: '32px', color: themeColor }} />
+            <Clock style={{ width: '30px', height: '30px', color: themeColor }} />
           ) : (
-            <BellRing style={{ width: '32px', height: '32px', color: themeColor }} />
+            <BellRing style={{ width: '30px', height: '30px', color: themeColor }} />
           )}
         </div>
 
         {/* Title */}
         <div style={{
-          fontSize: '0.75rem',
-          fontWeight: 700,
+          fontSize: '0.72rem',
+          fontWeight: 800,
           textTransform: 'uppercase',
-          letterSpacing: '1.5px',
+          letterSpacing: '1.8px',
           color: themeColor,
           marginBottom: '6px'
         }}>
@@ -117,32 +159,33 @@ const AlarmOverlay = ({ alarm, onDismiss, onSnooze }) => {
 
         {/* Message */}
         <h2 style={{
-          fontSize: '1.4rem',
+          fontSize: '1.35rem',
           fontWeight: 700,
-          margin: '0 0 12px 0',
+          margin: '0 0 8px 0',
           lineHeight: '1.3',
-          color: '#ffffff'
+          color: '#ffffff',
+          wordBreak: 'break-word'
         }}>
           {alarm.message || (isTimer ? 'Timer Up!' : 'Scheduled Alarm')}
         </h2>
 
-        <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', margin: '0 0 24px 0' }}>
+        <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', margin: '0 0 20px 0' }}>
           Triggered at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </p>
 
         {/* Actions */}
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '10px' }}>
           <button
             type="button"
-            onClick={() => onSnooze(alarm.id)}
+            onClick={handleSnoozeAction}
             style={{
               flex: 1,
-              padding: '12px 16px',
+              padding: '11px 14px',
               borderRadius: '12px',
               border: '1px solid rgba(255,255,255,0.15)',
               background: 'rgba(255,255,255,0.08)',
               color: '#fff',
-              fontSize: '0.85rem',
+              fontSize: '0.82rem',
               fontWeight: 600,
               cursor: 'pointer',
               display: 'flex',
@@ -152,22 +195,22 @@ const AlarmOverlay = ({ alarm, onDismiss, onSnooze }) => {
               transition: 'all 0.2s ease'
             }}
           >
-            <RotateCcw style={{ width: '15px', height: '15px' }} />
+            <RotateCcw style={{ width: '14px', height: '14px' }} />
             <span>Snooze 5m</span>
           </button>
 
           <button
             type="button"
-            onClick={() => onDismiss(alarm.id)}
+            onClick={handleDismissAction}
             style={{
               flex: 1,
-              padding: '12px 16px',
+              padding: '11px 14px',
               borderRadius: '12px',
               border: 'none',
               background: `linear-gradient(135deg, ${themeColor}, ${themeColor}bb)`,
               boxShadow: `0 4px 15px ${glowColor}`,
               color: '#fff',
-              fontSize: '0.85rem',
+              fontSize: '0.82rem',
               fontWeight: 700,
               cursor: 'pointer',
               display: 'flex',
@@ -177,7 +220,7 @@ const AlarmOverlay = ({ alarm, onDismiss, onSnooze }) => {
               transition: 'all 0.2s ease'
             }}
           >
-            <X style={{ width: '16px', height: '16px' }} />
+            <X style={{ width: '15px', height: '15px' }} />
             <span>Dismiss</span>
           </button>
         </div>

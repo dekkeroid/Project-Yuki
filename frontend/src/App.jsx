@@ -8,10 +8,12 @@ import { useAudioPlayback } from './hooks/useAudioPlayback';
 import { useSystemMonitor } from './hooks/useSystemMonitor';
 import { SLASH_COMMANDS } from './constants';
 
+import AlarmOverlay from './components/AlarmOverlay';
+import StopwatchOverlay from './components/StopwatchOverlay';
+
 const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
-const AlarmOverlay = lazy(() => import('./components/AlarmOverlay'));
 
 let stream_end_exception = false;
 
@@ -26,6 +28,29 @@ import {
 } from './constants';
 
 const App = () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const isAlarmMode = urlParams.get('mode') === 'alarm';
+  const isStopwatchMode = urlParams.get('mode') === 'stopwatch';
+
+  const safeDecode = (str, fallback = '') => {
+    if (!str) return fallback;
+    try { return decodeURIComponent(str); } catch { return str; }
+  };
+
+  if (isAlarmMode) {
+    const alarmData = {
+      id: urlParams.get('id') || '0',
+      message: safeDecode(urlParams.get('msg'), 'Timer Up!'),
+      category: safeDecode(urlParams.get('category'), 'timer')
+    };
+    return <AlarmOverlay alarm={alarmData} isStandaloneWindow={true} />;
+  }
+
+  if (isStopwatchMode) {
+    const initialLabel = safeDecode(urlParams.get('label'), 'default');
+    return <StopwatchOverlay initialLabel={initialLabel} />;
+  }
+
   // WebSockets & Backend State
   const internetStatusRef = useRef(true);
   const internetFailCountRef = useRef(0);
@@ -721,7 +746,18 @@ const App = () => {
           speakSystemMessage(msg.text, 'surprised');
         }
       } else if (msg.type === 'alarm_triggered') {
-        setActiveAlarm(msg);
+        // Always show our popup window when app is running.
+        // OS Task Scheduler handles firing the native toast if app is closed.
+        if (window.electronAPI && window.electronAPI.openAlarmWindow) {
+          window.electronAPI.openAlarmWindow(msg);
+        } else {
+          setActiveAlarm(msg);
+        }
+      } else if (msg.type === 'stopwatch_started') {
+        // Open a dedicated floating stopwatch window for this label
+        if (window.electronAPI && window.electronAPI.openStopwatchWindow) {
+          window.electronAPI.openStopwatchWindow({ label: msg.label, started_at: msg.started_at });
+        }
       } else if (msg.type === 'confirm_request') {
         let displayMessage = `Yuki wants to execute the following action:\n\n${msg.name}`;
         if (msg.name.startsWith("Run terminal command:")) {
@@ -4304,13 +4340,11 @@ const detectExpression = (text) => {
         </div>
       )}
       {/* Active Alarm & Timer Ringing Overlay */}
-      <Suspense fallback={null}>
-        <AlarmOverlay
-          alarm={activeAlarm}
-          onDismiss={handleDismissAlarm}
-          onSnooze={handleSnoozeAlarm}
-        />
-      </Suspense>
+      <AlarmOverlay
+        alarm={activeAlarm}
+        onDismiss={handleDismissAlarm}
+        onSnooze={handleSnoozeAlarm}
+      />
 
     </div>
   );

@@ -326,11 +326,11 @@ def get_tools_definition() -> list:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "description": "Action to perform: set_timer, set_reminder, start_stopwatch, check_stopwatch, stop_stopwatch, list_active, cancel.",
-                            "enum": ["set_timer", "set_reminder", "start_stopwatch", "check_stopwatch", "stop_stopwatch", "list_active", "cancel"]
+                            "description": "Action to perform. Use set_alarm when user says 'alarm'. Use set_timer when user says 'timer'. Use set_reminder for named reminders at a specific time.",
+                            "enum": ["set_timer", "set_alarm", "set_reminder", "start_stopwatch", "check_stopwatch", "stop_stopwatch", "list_active", "cancel"]
                         },
                         "duration_seconds": {"type": "integer", "description": "Timer duration in seconds (e.g. 300 for 5 minutes)."},
-                        "target_time": {"type": "string", "description": "Target time for reminder/alarm (e.g. '5:30 PM', '18:00', 'in 10 minutes')."},
+                        "target_time": {"type": "string", "description": "Target time EXACTLY as the user said it, e.g. '10:37 PM', '5:30 PM'. Never convert to 24-hour format. Never calculate hour math yourself."},
                         "message": {"type": "string", "description": "Reminder or timer message label."},
                         "recurrence": {"type": "string", "description": "Optional recurrence ('daily', 'weekly', 'hourly')."},
                         "action_command": {"type": "string", "description": "Optional system command/app to execute on timer completion."},

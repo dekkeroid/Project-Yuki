@@ -289,7 +289,9 @@ async def lifespan(app: FastAPI):
 
     from app.tools import time_manager
     time_manager.set_due_callback(broadcast_due_reminders)
+    time_manager.set_stopwatch_callback(broadcast_ws)
     time_manager.init_exact_timer_scheduler()
+    time_manager.init_time_manager()
     asyncio.create_task(reminder_heartbeat_loop())
 
     yield
@@ -617,6 +619,7 @@ class SettingsUpdateRequest(BaseModel):
     vrm_fps: Optional[int] = None
     chat_mode: Optional[bool] = None
     keep_memory_saving: Optional[bool] = None
+    os_native_alarms: Optional[bool] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -743,6 +746,8 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("chat_mode", req.chat_mode)
     if req.keep_memory_saving is not None:
         memory_manager.update_setting("keep_memory_saving", req.keep_memory_saving)
+    if req.os_native_alarms is not None:
+        memory_manager.update_setting("os_native_alarms", req.os_native_alarms)
 
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True
@@ -929,33 +934,9 @@ async def broadcast_due_reminders(due: List[Dict[str, Any]]):
 async def reminder_heartbeat_loop():
     """
     Background heartbeat running every 1 second.
-    Checks SQLite reminders for due items, triggers Windows Toasts, WebSocket speech announcements,
-    and cross-platform active Alarm Overlay modals.
+    Kept for future use if needed, but time_manager now handles timer triggers natively via asyncio.
     """
-    from app.tools import time_manager
     while True:
-        try:
-            due = time_manager.process_due_reminders()
-            if due and active_websockets:
-                for item in due:
-                    msg = item.get("message") or "Your scheduled reminder is due!"
-                    announcement = f"Attention: {msg}"
-                    for ws in list(active_websockets):
-                        try:
-                            await ws.send_json({
-                                "type": "speech",
-                                "text": announcement
-                            })
-                            await ws.send_json({
-                                "type": "alarm_triggered",
-                                "id": item["id"],
-                                "category": item.get("category", "timer"),
-                                "message": msg
-                            })
-                        except Exception as e:
-                            print(f"[ReminderHeartbeat] Error broadcasting ws: {e}")
-        except Exception as e:
-            print(f"[ReminderHeartbeat] Error processing due reminders: {e}")
         await asyncio.sleep(1)
 
 @app.get("/api/reminders/active")
@@ -977,6 +958,19 @@ def cancel_reminder(req: ReminderCancelRequest):
     from app.tools import time_manager
     time_manager.delete_reminder(req.id)
     return {"status": "ok", "message": f"Cancelled reminder #{req.id}"}
+
+class ReminderEditRequest(BaseModel):
+    id: int
+    message: str
+
+@app.post("/api/reminders/edit")
+def edit_reminder(req: ReminderEditRequest):
+    """
+    Edits the message of a reminder or timer by ID.
+    """
+    from app.tools import time_manager
+    time_manager.edit_reminder(req.id, req.message)
+    return {"status": "ok", "message": f"Updated reminder #{req.id}"}
 
 class SnoozeRequest(BaseModel):
     id: int
@@ -1004,6 +998,20 @@ def create_timer(req: CreateTimerRequest):
     dur = time_manager.parse_duration_seconds(req.duration_str)
     res = time_manager.add_timer(dur, req.message or "Timer Up!")
     return {"status": "ok", "timer": res}
+
+class CreateDatetimeAlarmRequest(BaseModel):
+    date_str: str
+    time_str: str
+    message: Optional[str] = "Alarm!"
+
+@app.post("/api/reminders/create_datetime_alarm")
+def create_datetime_alarm(req: CreateDatetimeAlarmRequest):
+    """
+    Creates a new alarm for a specific date and time from the Tasks UI.
+    """
+    from app.tools import time_manager
+    res = time_manager.add_datetime_alarm(req.date_str, req.time_str, req.message or "Alarm!")
+    return {"status": "ok", "alarm": res}
 
 class StopwatchRequest(BaseModel):
     label: str

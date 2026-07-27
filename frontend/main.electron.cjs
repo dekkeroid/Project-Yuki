@@ -84,6 +84,146 @@ let yukiVisible = true;       // tracks our logical show/hide state
 let alwaysOnTopEnabled = true;
 let fullscreenPollTimer = null;
 
+// Maps to support multiple simultaneous alarm/stopwatch windows
+// keyed by alarm id (number) or stopwatch label (string)
+const alarmWindows = new Map();
+const stopwatchWindows = new Map();
+
+function createStopwatchWindow(stopwatchData) {
+  const label = (stopwatchData?.label || 'default').toLowerCase();
+
+  // If a window for this label already exists, just bring it to front
+  if (stopwatchWindows.has(label)) {
+    const existing = stopwatchWindows.get(label);
+    if (!existing.isDestroyed()) {
+      if (existing.isMinimized()) existing.restore();
+      existing.show();
+      existing.focus();
+      return;
+    }
+    stopwatchWindows.delete(label);
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+  const winW = 340;
+  const winH = 200;
+
+  // Offset each new window slightly so they don't stack exactly
+  const offset = stopwatchWindows.size * 30;
+
+  const win = new BrowserWindow({
+    width: winW,
+    height: winH,
+    x: screenW - winW - 30 - offset,
+    y: screenH - winH - 60 - offset,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+  });
+
+  stopwatchWindows.set(label, win);
+
+  const isDev = !app.isPackaged;
+  const encodedLabel = encodeURIComponent(label);
+
+  if (isDev) {
+    win.loadURL(`http://localhost:5173/?mode=stopwatch&label=${encodedLabel}`);
+  } else {
+    win.loadFile(path.join(__dirname, 'dist', 'index.html'), {
+      query: { mode: 'stopwatch', label }
+    });
+  }
+
+  win.once('ready-to-show', () => {
+    if (!win.isDestroyed()) {
+      win.show();
+      win.focus();
+    }
+  });
+
+  win.on('closed', () => {
+    stopwatchWindows.delete(label);
+  });
+}
+
+function createAlarmWindow(alarmData) {
+  const alarmId = String(alarmData?.id || Date.now());
+
+  // If already showing this exact alarm, just focus it
+  if (alarmWindows.has(alarmId)) {
+    const existing = alarmWindows.get(alarmId);
+    if (!existing.isDestroyed()) {
+      existing.show();
+      existing.focus();
+      return;
+    }
+    alarmWindows.delete(alarmId);
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+  const winW = 460;
+  const winH = 380;
+
+  // Cascade multiple alarm windows so they don't stack exactly
+  const offset = alarmWindows.size * 30;
+
+  const win = new BrowserWindow({
+    width: winW,
+    height: winH,
+    x: Math.floor((screenW - winW) / 2) + offset,
+    y: Math.floor((screenH - winH) / 2) + offset,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+  });
+
+  win.setAlwaysOnTop(true, 'screen-saver');
+  alarmWindows.set(alarmId, win);
+
+  const isDev = !app.isPackaged;
+  const alarmMsg = encodeURIComponent(alarmData?.message || 'Timer Up!');
+  const alarmCat = encodeURIComponent(alarmData?.category || 'timer');
+
+  if (isDev) {
+    win.loadURL(`http://localhost:5173/?mode=alarm&id=${alarmId}&msg=${alarmMsg}&category=${alarmCat}`);
+  } else {
+    win.loadFile(path.join(__dirname, 'dist', 'index.html'), {
+      query: { mode: 'alarm', id: String(alarmId), msg: alarmData?.message || 'Timer Up!', category: alarmData?.category || 'timer' }
+    });
+  }
+
+  win.once('ready-to-show', () => {
+    if (!win.isDestroyed()) {
+      win.show();
+      win.focus();
+    }
+  });
+
+  win.on('closed', () => {
+    alarmWindows.delete(alarmId);
+  });
+}
+
 function createSettingsWindow() {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     if (settingsWindow.isMinimized()) settingsWindow.restore();
@@ -588,6 +728,45 @@ function createWindow() {
   // Settings Window
   ipcMain.on('open-settings-window', () => {
     createSettingsWindow();
+  });
+
+  // Dedicated Alarm Window
+  ipcMain.on('open-alarm-window', (event, alarmData) => {
+    createAlarmWindow(alarmData);
+  });
+
+  ipcMain.on('close-alarm-window', (event, { id } = {}) => {
+    // Close the exact window that emitted the event
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (senderWin && !senderWin.isDestroyed()) {
+      senderWin.close();
+    }
+    if (id !== undefined && id !== null) {
+      alarmWindows.delete(String(id));
+    }
+  });
+
+  // Dedicated Floating Stopwatch Window
+  ipcMain.on('open-stopwatch-window', (event, data) => {
+    createStopwatchWindow(data);
+  });
+
+  ipcMain.on('close-stopwatch-window', (event, { label } = {}) => {
+    // Close the exact window that emitted the event
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (senderWin && !senderWin.isDestroyed()) {
+      senderWin.close();
+    }
+    if (label) {
+      stopwatchWindows.delete(String(label).toLowerCase());
+    }
+  });
+
+  ipcMain.on('minimize-stopwatch-window', (event, { label } = {}) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (senderWin && !senderWin.isDestroyed()) {
+      senderWin.minimize();
+    }
   });
 
   let hoverPollTimer = null;

@@ -290,11 +290,30 @@ class AgentExecutor:
             else:
                 action = "set_reminder"
 
-        if action == "set_timer":
+        # If LLM sent set_timer but target_time is a clock time (not a relative duration),
+        # and duration_seconds is 0/None, it really means set_alarm/set_reminder
+        target_time_raw = str(kwargs.get("target_time") or "")
+        if action in ("set_timer", "timer") and (not duration_sec or duration_sec == 0) and target_time_raw:
+            # It's a specific time, not a countdown — treat as alarm
+            action = "set_alarm"
+
+        if action in ("set_timer", "timer"):
+
             dur = int(duration_sec) if duration_sec else 300
             msg = kwargs.get("message") or kwargs.get("label") or kwargs.get("name") or "Timer Up!"
             res = time_manager.add_timer(dur, msg, kwargs.get("action_command"))
             return f"Successfully set a {res['formatted_duration']} timer for '{res['message']}'."
+        elif action in ("set_alarm", "alarm", "create_alarm", "add_alarm"):
+            if duration_sec and duration_sec > 0:
+                dur = int(duration_sec)
+                msg = kwargs.get("message") or kwargs.get("label") or kwargs.get("name") or "Alarm!"
+                res = time_manager.add_timer(dur, msg, kwargs.get("action_command"), category="alarm")
+                return f"Successfully set an alarm for {res['formatted_duration']} from now: '{res['message']}'."
+            else:
+                target_str = str(kwargs.get("target_time") or kwargs.get("time_str") or kwargs.get("time") or "5m")
+                msg = kwargs.get("message") or kwargs.get("reminder") or "Alarm!"
+                res = time_manager.add_reminder(target_str, msg, kwargs.get("recurrence"), kwargs.get("action_command"))
+                return f"Successfully scheduled alarm for {res['target_time_formatted']}: '{res['message']}'."
         elif action == "set_reminder":
             target_str = str(kwargs.get("target_time") or kwargs.get("time_str") or kwargs.get("time") or "5m")
             msg = kwargs.get("message") or kwargs.get("reminder") or "Reminder"

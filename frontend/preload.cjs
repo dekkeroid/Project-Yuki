@@ -111,5 +111,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openSettingsWindow: () => {
     ipcRenderer.send('open-settings-window');
   },
+  openAlarmWindow: (alarmData) => {
+    ipcRenderer.send('open-alarm-window', alarmData);
+  },
+  closeAlarmWindow: (id) => {
+    ipcRenderer.send('close-alarm-window', id !== undefined ? { id } : {});
+  },
+  openStopwatchWindow: (data) => {
+    ipcRenderer.send('open-stopwatch-window', data);
+  },
+  closeStopwatchWindow: (label) => {
+    ipcRenderer.send('close-stopwatch-window', label ? { label } : {});
+  },
+  minimizeStopwatchWindow: (label) => {
+    ipcRenderer.send('minimize-stopwatch-window', label ? { label } : {});
+  },
   isElectron: true
 });

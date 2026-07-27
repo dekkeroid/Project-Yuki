@@ -330,10 +330,18 @@ async def manage_time(
     from app.tools import time_manager
     action_clean = (action or "").lower().strip()
     
-    if action_clean == "set_timer":
+    if action_clean in ("set_timer", "timer"):
         dur = duration_seconds or time_manager.parse_duration_seconds(target_time or "5m")
         res = time_manager.add_timer(dur, message or "Timer Up!", action_command)
         return f"Successfully set a {res['formatted_duration']} timer for '{res['message']}'."
+    elif action_clean in ("set_alarm", "alarm", "create_alarm", "add_alarm"):
+        if duration_seconds or (target_time and any(u in target_time.lower() for u in ["sec", "min", "in "])):
+            dur = duration_seconds or time_manager.parse_duration_seconds(target_time or "5m")
+            res = time_manager.add_timer(dur, message or "Alarm!", action_command, category="alarm")
+            return f"Successfully set an alarm for {res['formatted_duration']} from now: '{res['message']}'."
+        else:
+            res = time_manager.add_reminder(target_time or "5m", message or "Alarm!", recurrence, action_command)
+            return f"Successfully scheduled alarm for {res['target_time_formatted']}: '{res['message']}'."
     elif action_clean == "set_reminder":
         res = time_manager.add_reminder(target_time or "5m", message or "Reminder", recurrence, action_command)
         return f"Successfully scheduled reminder for {res['target_time_formatted']}: '{res['message']}'."

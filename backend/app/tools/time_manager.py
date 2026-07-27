@@ -2,39 +2,233 @@ import time
 import re
 import subprocess
 import datetime
+import tempfile
+import os
+import uuid
 from typing import Dict, Any, List, Optional
 from app.memory.db import get_connection
 
-def trigger_windows_toast(title: str, message: str):
+import sys
+
+# ── OS-Native Scheduling (works even when app is closed) ────────────────────
+
+def _get_task_name(item_id: int, prefix: str = "YukiAlarm") -> str:
+    return f"{prefix}_{item_id}"
+
+def schedule_os_native_alarm(item_id: int, target_timestamp: float, title: str, message: str) -> Optional[str]:
     """
-    Fires a native Windows Toast Notification using PowerShell.
-    Works natively on Windows 10/11 with standard OS chime and visual pop-up.
+    Schedules a real OS-level alarm/task that fires even if the app is not running.
+    - Windows: Windows Task Scheduler (schtasks) with a PowerShell Toast
+    - macOS:   launchd LaunchAgent plist in ~/Library/LaunchAgents/
+    - Linux:   `at` command one-shot job
+    Returns the task_name/identifier for later cancellation, or None on failure.
     """
+    task_name = _get_task_name(item_id)
+    dt = datetime.datetime.fromtimestamp(target_timestamp)
+    clean_title = title.replace('"', '').replace("'", "")
+    clean_msg = message.replace('"', '').replace("'", "")
+
+    if sys.platform == "win32":
+        try:
+            # Build the PowerShell toast payload as a .ps1 script file so we avoid quoting hell
+            ps_toast = f"""
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+$xmlStr = @"
+<toast scenario="alarm">
+    <visual><binding template="ToastGeneric"><text>{clean_title}</text><text>{clean_msg}</text></binding></visual>
+    <audio src="ms-winsoundevent:Notification.Looping.Alarm" loop="true"/>
+    <actions><action content="Dismiss" arguments="dismiss" activationType="background"/></actions>
+</toast>
+"@
+$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
+$xml.LoadXml($xmlStr)
+$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Project Yuki").Show($toast)
+"""
+            # Write the .ps1 to a stable temp path
+            scripts_dir = os.path.join(tempfile.gettempdir(), "yuki_alarms")
+            os.makedirs(scripts_dir, exist_ok=True)
+            script_path = os.path.join(scripts_dir, f"{task_name}.ps1")
+            with open(script_path, "w", encoding="utf-8") as f:
+                f.write(ps_toast)
+
+            # Schedule via schtasks (one-shot, fires at exact time)
+            date_str = dt.strftime("%m/%d/%Y")
+            time_str = dt.strftime("%H:%M")
+            cmd = [
+                "schtasks", "/create", "/f",
+                "/tn", task_name,
+                "/sc", "once",
+                "/sd", date_str,
+                "/st", time_str,
+                "/tr", f'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{script_path}"',
+                "/it"   # run only when user is logged in (interactive)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            if result.returncode == 0:
+                print(f"[OS Scheduler] Windows Task '{task_name}' scheduled for {date_str} {time_str}")
+                return task_name
+            else:
+                print(f"[OS Scheduler] schtasks failed: {result.stderr.strip()}")
+                return None
+        except Exception as e:
+            print(f"[OS Scheduler] Windows scheduling error: {e}")
+            return None
+
+    elif sys.platform == "darwin":
+        try:
+            plist_label = f"com.yuki.alarm.{task_name}"
+            launch_agents_dir = os.path.expanduser("~/Library/LaunchAgents")
+            os.makedirs(launch_agents_dir, exist_ok=True)
+            plist_path = os.path.join(launch_agents_dir, f"{plist_label}.plist")
+
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>{plist_label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>osascript</string>
+        <string>-e</string>
+        <string>display notification "{clean_msg}" with title "{clean_title}" sound name "Glass"</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Month</key><integer>{dt.month}</integer>
+        <key>Day</key><integer>{dt.day}</integer>
+        <key>Hour</key><integer>{dt.hour}</integer>
+        <key>Minute</key><integer>{dt.minute}</integer>
+    </dict>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>"""
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+
+            subprocess.run(["launchctl", "load", plist_path], capture_output=True)
+            print(f"[OS Scheduler] macOS LaunchAgent '{plist_label}' scheduled for {dt}")
+            return plist_label
+        except Exception as e:
+            print(f"[OS Scheduler] macOS scheduling error: {e}")
+            return None
+
+    else:  # Linux
+        try:
+            at_time = dt.strftime("%H:%M %m/%d/%Y")
+            script = f'notify-send "{clean_title}" "{clean_msg}" && paplay /usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga 2>/dev/null || true'
+            result = subprocess.run(
+                ["at", at_time],
+                input=script,
+                capture_output=True, text=True
+            )
+            # `at` outputs job ID to stderr
+            job_match = re.search(r"job (\d+)", result.stderr)
+            job_id = job_match.group(1) if job_match else None
+            if job_id:
+                print(f"[OS Scheduler] Linux `at` job #{job_id} scheduled for {at_time}")
+                return f"at_{job_id}"
+            return None
+        except Exception as e:
+            print(f"[OS Scheduler] Linux scheduling error: {e}")
+            return None
+
+def cancel_os_native_alarm(task_name: str):
+    """Cancels a previously scheduled OS task/job."""
+    if not task_name:
+        return
     try:
-        clean_title = title.replace('"', '`"').replace("'", "`'")
-        clean_msg = message.replace('"', '`"').replace("'", "`'")
-        
-        # PowerShell script using Windows.UI.Notifications
-        ps_script = f"""
-        [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
-        [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
-        $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
-        $xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
-        $xml.LoadXml($template.GetXml())
-        $textNodes = $xml.GetElementsByTagName("text")
-        $textNodes.Item(0).AppendChild($xml.CreateTextNode('{clean_title}')) | Out-Null
-        $textNodes.Item(1).AppendChild($xml.CreateTextNode('{clean_msg}')) | Out-Null
-        $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Project Yuki").Show($toast)
-        """
-        
-        subprocess.Popen(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-        print(f"[Toast] Windows Toast Notification dispatched: '{title}' - '{message}'")
+        if sys.platform == "win32":
+            subprocess.run(
+                ["schtasks", "/delete", "/f", "/tn", task_name],
+                capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            # Also clean up the .ps1 script file
+            script_path = os.path.join(tempfile.gettempdir(), "yuki_alarms", f"{task_name}.ps1")
+            if os.path.exists(script_path):
+                os.remove(script_path)
+            print(f"[OS Scheduler] Windows Task '{task_name}' cancelled")
+        elif sys.platform == "darwin":
+            plist_path = os.path.expanduser(f"~/Library/LaunchAgents/{task_name}.plist")
+            if os.path.exists(plist_path):
+                subprocess.run(["launchctl", "unload", plist_path], capture_output=True)
+                os.remove(plist_path)
+            print(f"[OS Scheduler] macOS LaunchAgent '{task_name}' cancelled")
+        else:  # Linux
+            if task_name.startswith("at_"):
+                job_id = task_name[3:]
+                subprocess.run(["atrm", job_id], capture_output=True)
+                print(f"[OS Scheduler] Linux at job #{job_id} cancelled")
     except Exception as e:
-        print(f"[Toast] Failed to trigger toast notification: {e}")
+        print(f"[OS Scheduler] Cancel error for '{task_name}': {e}")
+
+# ── Immediate Toast (fires right now, when app IS running) ──────────────────
+
+def trigger_native_os_notification(title: str, message: str):
+    """
+    Fires an immediate OS notification (used when app IS running and alarm triggers).
+    - Windows: PowerShell Toast with looping alarm scenario
+    - macOS: AppleScript Notification Center
+    - Linux: notify-send + paplay
+    """
+    clean_title = title.replace('"', '').replace("'", "")
+    clean_msg = message.replace('"', '').replace("'", "")
+
+    if sys.platform == "win32":
+        try:
+            ps_script = f"""
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+$xmlStr = @"
+<toast scenario="alarm">
+    <visual><binding template="ToastGeneric"><text>{clean_title}</text><text>{clean_msg}</text></binding></visual>
+    <audio src="ms-winsoundevent:Notification.Looping.Alarm" loop="true"/>
+    <actions><action content="Dismiss" arguments="dismiss" activationType="background"/></actions>
+</toast>
+"@
+$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
+$xml.LoadXml($xmlStr)
+$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Project Yuki").Show($toast)
+"""
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", ps_script],
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            print(f"[OS Notification] Windows Native Alarm Toast dispatched: '{title}'")
+        except Exception as e:
+            print(f"[OS Notification] Windows Toast failed: {e}")
+
+    elif sys.platform == "darwin":
+        try:
+            apple_script = f'display notification "{clean_msg}" with title "{clean_title}" sound name "Glass"'
+            subprocess.Popen(["osascript", "-e", apple_script])
+            print(f"[OS Notification] macOS Notification dispatched: '{title}'")
+        except Exception as e:
+            print(f"[OS Notification] macOS Notification failed: {e}")
+
+    else:  # Linux
+        try:
+            subprocess.Popen(["notify-send", title, message])
+            subprocess.Popen(["paplay", "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"])
+            print(f"[OS Notification] Linux Notification dispatched: '{title}'")
+        except Exception as e:
+            print(f"[OS Notification] Linux Notification failed: {e}")
+
+def trigger_windows_toast(title: str, message: str):
+    trigger_native_os_notification(title, message)
+
+def is_os_native_enabled() -> bool:
+    """Reads the os_native_alarms setting from memory_manager profile. Defaults to True."""
+    try:
+        from app.memory import manager as _mgr
+        val = _mgr.memory_manager.profile.get("settings", {}).get("os_native_alarms", True)
+        return val is not False and str(val).lower() not in ("false", "0")
+    except Exception:
+        return True  # default ON if anything fails
+
+
 
 def parse_duration_seconds(text: str) -> int:
     """
@@ -119,7 +313,11 @@ def parse_target_timestamp(time_str: str) -> float:
 
 # ── DB Core Actions ─────────────────────────────────────────────────────────
 
-def add_timer(duration_seconds: int, message: str = "Timer Up!", action_command: Optional[str] = None) -> Dict[str, Any]:
+# OS Task Scheduler only has minute-level precision.
+# Don't bother scheduling OS tasks for durations shorter than this — asyncio handles them in-app.
+MIN_OS_SCHEDULE_SECONDS = 5 * 60  # 5 minutes
+
+def add_timer(duration_seconds: int, message: str = "Timer Up!", action_command: Optional[str] = None, category: str = "timer") -> Dict[str, Any]:
     try:
         duration_seconds = int(duration_seconds)
     except (ValueError, TypeError):
@@ -131,28 +329,40 @@ def add_timer(duration_seconds: int, message: str = "Timer Up!", action_command:
     cursor = conn.cursor()
     cursor.execute("""
     INSERT INTO reminders (created_at, target_time, message, category, recurrence, action_command, is_completed)
-    VALUES (?, ?, ?, 'timer', NULL, ?, 0)
-    """, (now, target, message, action_command))
+    VALUES (?, ?, ?, ?, NULL, ?, 0)
+    """, (now, target, message, category, action_command))
     conn.commit()
     timer_id = cursor.lastrowid
+
+    # Schedule via OS Task Scheduler for alarms that are >= 5 min away
+    # (schtasks has only minute-level precision — useless for short timers and causes double-firing)
+    title = "⏰ Yuki Alarm" if category == "alarm" else "⏱️ Yuki Timer"
+    os_task_name = None
+    if duration_seconds >= MIN_OS_SCHEDULE_SECONDS:
+        os_task_name = schedule_os_native_alarm(timer_id, target, title, message)
+        if os_task_name:
+            cursor.execute("UPDATE reminders SET os_task_name = ? WHERE id = ?", (os_task_name, timer_id))
+            conn.commit()
+    else:
+        print(f"[TimeManager] Skipping OS scheduler for short {duration_seconds}s {category} (asyncio handles it)")
+
     conn.close()
-    
     schedule_exact_timer(timer_id, target)
     
     mins, secs = divmod(duration_seconds, 60)
     time_fmt = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
-    print(f"[TimeManager] Timer #{timer_id} set for {time_fmt}: '{message}'")
+    print(f"[TimeManager] {category.capitalize()} #{timer_id} set for {time_fmt}: '{message}' (OS task: {os_task_name})")
     return {
         "status": "ok",
         "id": timer_id,
-        "category": "timer",
+        "category": category,
         "duration_seconds": duration_seconds,
         "formatted_duration": time_fmt,
         "message": message,
         "target_time": target
     }
 
-def add_reminder(target_time_str: str, message: str, recurrence: Optional[str] = None, action_command: Optional[str] = None) -> Dict[str, Any]:
+def add_reminder(target_time_str: str, message: str, recurrence: Optional[str] = None, action_command: Optional[str] = None, category: str = "reminder") -> Dict[str, Any]:
     now = time.time()
     target = parse_target_timestamp(target_time_str)
     
@@ -160,23 +370,75 @@ def add_reminder(target_time_str: str, message: str, recurrence: Optional[str] =
     cursor = conn.cursor()
     cursor.execute("""
     INSERT INTO reminders (created_at, target_time, message, category, recurrence, action_command, is_completed)
-    VALUES (?, ?, ?, 'reminder', ?, ?, 0)
-    """, (now, target, message, recurrence, action_command))
+    VALUES (?, ?, ?, ?, ?, ?, 0)
+    """, (now, target, message, category, recurrence, action_command))
     conn.commit()
     reminder_id = cursor.lastrowid
+
+    # Schedule via OS Task Scheduler for reminders >= 5 min away
+    title = "⏰ Yuki Alarm" if category == "alarm" else "📌 Yuki Reminder"
+    os_task_name = None
+    time_until = target - time.time()
+    if not recurrence and time_until >= MIN_OS_SCHEDULE_SECONDS:
+        os_task_name = schedule_os_native_alarm(reminder_id, target, title, message)
+        if os_task_name:
+            cursor.execute("UPDATE reminders SET os_task_name = ? WHERE id = ?", (os_task_name, reminder_id))
+            conn.commit()
+    elif not recurrence:
+        print(f"[TimeManager] Skipping OS scheduler for near-term reminder ({int(time_until)}s away, asyncio handles it)")
+
     conn.close()
-    
     schedule_exact_timer(reminder_id, target)
     
     dt_str = datetime.datetime.fromtimestamp(target).strftime("%I:%M %p")
-    print(f"[TimeManager] Reminder #{reminder_id} set for {dt_str}: '{message}'")
+    print(f"[TimeManager] Reminder #{reminder_id} set for {dt_str}: '{message}' (OS task: {os_task_name})")
     return {
         "status": "ok",
         "id": reminder_id,
-        "category": "reminder",
+        "category": category,
         "target_time_formatted": dt_str,
         "message": message,
         "recurrence": recurrence,
+        "target_time": target
+    }
+
+def add_datetime_alarm(date_str: str, time_str: str, message: str = "Alarm!") -> Dict[str, Any]:
+    """
+    Schedules an alarm for a specific date (YYYY-MM-DD) and time (HH:MM).
+    """
+    now = time.time()
+    try:
+        dt = datetime.datetime.strptime(f"{date_str.strip()} {time_str.strip()}", "%Y-%m-%d %H:%M")
+        target = dt.timestamp()
+    except Exception:
+        target = now + 300
+        
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO reminders (created_at, target_time, message, category, recurrence, action_command, is_completed)
+    VALUES (?, ?, ?, 'alarm', NULL, NULL, 0)
+    """, (now, target, message))
+    conn.commit()
+    reminder_id = cursor.lastrowid
+
+    # Always schedule via OS Task Scheduler so alarm fires even if app is closed
+    os_task_name = schedule_os_native_alarm(reminder_id, target, "⏰ Yuki Alarm", message)
+    if os_task_name:
+        cursor.execute("UPDATE reminders SET os_task_name = ? WHERE id = ?", (os_task_name, reminder_id))
+        conn.commit()
+
+    conn.close()
+    schedule_exact_timer(reminder_id, target)
+    
+    dt_str = datetime.datetime.fromtimestamp(target).strftime("%Y-%m-%d %I:%M %p")
+    print(f"[TimeManager] Alarm #{reminder_id} scheduled for {dt_str}: '{message}' (OS task: {os_task_name})")
+    return {
+        "status": "ok",
+        "id": reminder_id,
+        "category": "alarm",
+        "target_time_formatted": dt_str,
+        "message": message,
         "target_time": target
     }
 
@@ -194,6 +456,14 @@ def start_stopwatch(label: str = "default") -> Dict[str, Any]:
     conn.close()
     
     print(f"[TimeManager] Stopwatch '{label_clean}' started at {now}")
+
+    # Notify frontend so it opens a stopwatch window
+    if _stopwatch_callback and _main_loop and _main_loop.is_running():
+        asyncio.run_coroutine_threadsafe(
+            _stopwatch_callback({"type": "stopwatch_started", "label": label_clean, "started_at": now}),
+            _main_loop
+        )
+
     return {
         "status": "ok",
         "label": label_clean,
@@ -237,6 +507,13 @@ def stop_stopwatch(label: str = "default") -> Dict[str, Any]:
         
     return info
 
+def edit_reminder(reminder_id: int, new_message: str) -> bool:
+    conn = get_connection()
+    conn.execute("UPDATE reminders SET message = ? WHERE id = ?", (new_message, reminder_id))
+    conn.commit()
+    conn.close()
+    return True
+
 def delete_stopwatch(label: str = "default") -> bool:
     label_clean = (label or "default").strip().lower()
     conn = get_connection()
@@ -244,6 +521,23 @@ def delete_stopwatch(label: str = "default") -> bool:
     conn.commit()
     conn.close()
     return True
+
+def init_time_manager():
+    """
+    Called on startup to load and schedule all active timers/reminders that survived restart.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    reminders = cursor.execute("""
+    SELECT id, target_time
+    FROM reminders
+    WHERE is_completed = 0
+    """).fetchall()
+    conn.close()
+    
+    for row in reminders:
+        schedule_exact_timer(row["id"], row["target_time"])
+        print(f"[TimeManager] Restored schedule for reminder #{row['id']}")
 
 def get_active_time_items() -> Dict[str, Any]:
     now = time.time()
@@ -288,21 +582,38 @@ def get_active_time_items() -> Dict[str, Any]:
 
 def delete_reminder(item_id: int) -> bool:
     conn = get_connection()
+    # Fetch OS task name before deleting so we can cancel it
+    row = conn.execute("SELECT os_task_name FROM reminders WHERE id = ?", (item_id,)).fetchone()
+    os_task_name = row["os_task_name"] if row else None
     conn.execute("DELETE FROM reminders WHERE id = ?", (item_id,))
     conn.commit()
     conn.close()
+    if os_task_name:
+        cancel_os_native_alarm(os_task_name)
     return True
 
 import asyncio
 
 _due_callback = None
-_scheduled_tasks: Dict[int, asyncio.Task] = {}
+_stopwatch_callback = None
+_main_loop = None
+_scheduled_tasks: Dict[int, Any] = {}
 
 def set_due_callback(callback):
-    global _due_callback
+    global _due_callback, _main_loop
     _due_callback = callback
+    try:
+        _main_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+
+def set_stopwatch_callback(callback):
+    """Called from main.py at startup. Receives an async fn(label, started_at) to broadcast stopwatch_started."""
+    global _stopwatch_callback
+    _stopwatch_callback = callback
 
 def schedule_exact_timer(item_id: int, target_time: float):
+    global _main_loop
     now = time.time()
     delay = max(0.0, target_time - now)
     
@@ -326,16 +637,25 @@ def schedule_exact_timer(item_id: int, target_time: float):
                 print(f"[TimeManager] Error in due_callback for #{item_id}: {e}")
         _scheduled_tasks.pop(item_id, None)
 
+    target_loop = None
     try:
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(_exact_runner())
-        _scheduled_tasks[item_id] = task
-        print(f"[TimeManager] Exact event scheduled for item #{item_id} in {delay:.2f}s")
+        target_loop = asyncio.get_running_loop()
     except RuntimeError:
-        pass
+        target_loop = _main_loop
+
+    if target_loop and target_loop.is_running():
+        fut = asyncio.run_coroutine_threadsafe(_exact_runner(), target_loop)
+        _scheduled_tasks[item_id] = fut
+        print(f"[TimeManager] Exact event scheduled for item #{item_id} in {delay:.2f}s")
+    else:
+        print(f"[TimeManager] Error: No running event loop available to schedule timer #{item_id}")
 
 def init_exact_timer_scheduler():
-    now = time.time()
+    global _main_loop
+    try:
+        _main_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        pass
     conn = get_connection()
     rows = conn.execute("SELECT id, target_time FROM reminders WHERE is_completed = 0").fetchall()
     conn.close()
@@ -360,6 +680,9 @@ def process_single_due_reminder(item_id: int) -> List[Dict[str, Any]]:
     
     title = "Yuki Timer Up!" if item["category"] == "timer" else "Yuki Reminder"
     msg = item["message"] or "Your scheduled reminder is due."
+    
+    # Trigger native OS Toast notification
+    trigger_windows_toast(title, msg)
     
     if item.get("action_command"):
         try:
