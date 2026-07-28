@@ -102,10 +102,15 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
     const line = vadLineRef.current;
     const label = vadLabelRef.current;
     if (!line) return;
-    const pct = Math.max(0, Math.min(100, vadThreshold * 100));
+    
+    // Convert linear RMS vadThreshold to exact same -60dB to 0dB scale as audio meter
+    const vadDb = 20 * Math.log10(Math.max(vadThreshold, 0.0001));
+    const vadNormalized = Math.max(0, Math.min(1, (vadDb + 60) / 60));
+    const pct = Math.max(0, Math.min(100, vadNormalized * 100));
+    
     line.style.left = `${pct}%`;
-    if (pct > 85) {
-      label.style.left = `${pct - 26}%`;
+    if (pct > 80) {
+      label.style.left = `${pct - 20}%`;
       label.style.textAlign = 'right';
     } else {
       label.style.left = `${pct + 1.5}%`;
