@@ -66,12 +66,12 @@ def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16"
     if device_pref == "cpu":
         actual_device = "cpu"
         actual_compute = "int8"
-        print(f"[STT] Device set to CPU. Loading Whisper model from '{model_size}' (int8)...")
+        print(f"[STT] Device set to CPU. Loading faster-whisper (CTranslate2) model '{model_size}' (int8)...")
     else:
         # auto or gpu: try CUDA first
         actual_device = "cuda"
         actual_compute = compute_pref
-        print(f"[STT] Loading Whisper model from '{model_size}' on GPU (CUDA, {compute_pref})...")
+        print(f"[STT] Loading faster-whisper (CTranslate2) model '{model_size}' on GPU (CUDA, {compute_pref})...")
 
     try:
         _whisper_instance = WhisperModel(model_size, device=actual_device, compute_type=actual_compute)
@@ -79,7 +79,7 @@ def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16"
         _current_compute_type = actual_compute
         _current_device = device_pref
         update_last_stt_time()
-        print(f"[STT] Whisper model loaded successfully on {actual_device.upper()} ({actual_compute}).")
+        print(f"[STT] faster-whisper (CTranslate2) model '{model_size}' loaded successfully on {actual_device.upper()} ({actual_compute}).")
     except Exception as e:
         if device_pref == "gpu":
             print(f"[STT] GPU load failed ({e}). GPU forced but unavailable. Falling back to CPU...")
@@ -91,7 +91,7 @@ def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16"
             _current_compute_type = "int8"
             _current_device = device_pref
             update_last_stt_time()
-            print(f"[STT] Whisper model loaded successfully on CPU (int8).")
+            print(f"[STT] faster-whisper (CTranslate2) model '{model_size}' loaded successfully on CPU (int8).")
         except Exception as cpu_err:
             print(f"[STT] Failed to load Whisper model on CPU: {cpu_err}")
             if model_size != "tiny":

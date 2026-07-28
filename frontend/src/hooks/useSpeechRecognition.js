@@ -73,12 +73,19 @@ export function useSpeechRecognition(options = {}) {
     setUseLocalWhisperState(val);
   }, []);
 
-  const [whisperModel, setWhisperModelState] = useState('base');
-  const whisperModelRef = useRef('base');
+  const [whisperModel, setWhisperModelState] = useState(options.whisperModel || 'base');
+  const whisperModelRef = useRef(options.whisperModel || 'base');
   const setWhisperModel = useCallback((val) => {
     whisperModelRef.current = val;
     setWhisperModelState(val);
   }, []);
+
+  useEffect(() => {
+    if (options.whisperModel) {
+      whisperModelRef.current = options.whisperModel;
+      setWhisperModelState(options.whisperModel);
+    }
+  }, [options.whisperModel]);
 
   const [hotkeyListening, setHotkeyListeningState] = useState(() => {
     const saved = localStorage.getItem('yuki-hotkey-listening');
@@ -342,8 +349,8 @@ export function useSpeechRecognition(options = {}) {
           isSpeechRecActiveRef.current = false;
 
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          if (audioChunksRef.current.length === 0 || audioBlob.size < 3000) {
-            console.log(`[STT] Recording too short or empty (${audioBlob.size} bytes). Ignoring.`);
+          if (audioChunksRef.current.length === 0 || audioBlob.size < 6000) {
+            console.log(`[STT] Recording too short or incomplete frame header (${audioBlob.size} bytes). Ignoring.`);
             updateListeningState();
             return;
           }

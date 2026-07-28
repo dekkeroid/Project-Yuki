@@ -673,6 +673,7 @@ const App = () => {
     applyHeadsetPreference
   } = useSpeechRecognition({
     API_BASE,
+    whisperModel: profile?.settings?.whisper_model || 'base',
     isThinkingRef,
     ttsStreamActiveRef,
     hasReceivedAudioRef,

@@ -1072,7 +1072,7 @@ async def tts_test_endpoint(req: SettingsUpdateRequest):
 @app.post("/api/speech/transcribe")
 async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str] = None):
     """
-    Receives an audio blob, writes it to a temp file, transcribes it using local Whisper, 
+    Receives an audio blob, writes it to a temp file, transcribes it using local faster-whisper, 
     and returns the transcribed text.
     """
     import tempfile
@@ -1080,7 +1080,8 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
     import uuid
     from app.voice.stt import transcribe_audio_file
     
-    active_model = model or memory_manager.profile["settings"].get("whisper_model", "base")
+    saved_model = memory_manager.profile["settings"].get("whisper_model")
+    active_model = saved_model or getattr(config, "WHISPER_MODEL", None) or model or "base"
     active_lang = memory_manager.profile["settings"].get("stt_language", "en")
     active_compute = memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16")
     
@@ -1088,9 +1089,12 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
     temp_path = os.path.join(temp_dir, f"yuki_voice_{uuid.uuid4().hex}.webm")
     
     try:
-        # Write uploaded bytes to temp file
+        content = await file.read()
+        if not content or len(content) < 4000:
+            return {"text": ""}
+
         with open(temp_path, "wb") as f:
-            f.write(await file.read())
+            f.write(content)
             
         transcript = await transcribe_audio_file(
             temp_path, 
@@ -1098,11 +1102,18 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
             compute_type=active_compute, 
             language=active_lang
         )
-        if transcript.strip():
-            print(f"[STT] Transcribed ({file.size or 0} bytes) using model '{active_model}' ({active_compute}) -> '{transcript}'")
-        return {"text": transcript}
+        if transcript and transcript.strip():
+            print(f"[STT] Transcribed ({len(content)} bytes) using model '{active_model}' ({active_compute}) -> '{transcript}'")
+        return {"text": transcript or ""}
     except Exception as e:
-        print(f"[STT] Endpoint Error: {e}")
+        print(f"[STT] Audio file transcription skipped: {e}")
+        return {"text": ""}
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
         return Response(status_code=500, content=f"Transcription failed: {e}")
     finally:
         # Clean up temp file
