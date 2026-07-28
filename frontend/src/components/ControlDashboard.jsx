@@ -39,6 +39,7 @@ const ControlDashboard = ({
   onRefreshLlmModels,
   preferHeadsetMic = false,
   onPreferHeadsetMicChange,
+  hostPlatform = 'Unknown',
   avatarScale,
   onAvatarScaleChange,
   initialTab = 'memory',
@@ -3447,7 +3448,7 @@ const ControlDashboard = ({
                   </div>
                   <div className="spec-row">
                     <span className="spec-label">Host OS</span>
-                    <span className="spec-val">Windows 10/11</span>
+                    <span className="spec-val">{hostPlatform}</span>
                   </div>
 
                 </div>
