@@ -84,7 +84,8 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
           ctx.restore();
 
           if (dbRef.current) {
-            dbRef.current.textContent = db <= -58 ? '— dB' : `${Math.round(db)} dB`;
+            const pctVal = Math.round(normalized * 100);
+            dbRef.current.textContent = db <= -58 ? '0% (— dBFS)' : `${pctVal}% (${Math.round(db)} dBFS)`;
           }
         };
         draw();
@@ -149,8 +150,8 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
           whiteSpace: 'nowrap', pointerEvents: 'none'
         }}>VAD</div>
       </div>
-      <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '3px' }}>
-        Mic Test — <span ref={dbRef} style={{ fontVariantNumeric: 'tabular-nums' }}>— dB</span>
+      <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}>
+        Mic Signal — <span ref={dbRef} style={{ fontVariantNumeric: 'tabular-nums', fontWeight: '600', color: '#c4b5fd' }}>0% (— dBFS)</span>
       </div>
       <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.2)', marginTop: '1px' }}>
         Testing: {deviceName || 'System Default'}
