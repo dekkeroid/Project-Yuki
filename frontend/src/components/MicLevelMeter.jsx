@@ -3,10 +3,9 @@ import React, { useRef, useEffect, useState } from 'react';
 const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
   const canvasRef = useRef(null);
   const dbRef = useRef(null);
-  const vadThresholdRef = useRef(vadThreshold);
+  const vadLineRef = useRef(null);
+  const vadLabelRef = useRef(null);
   const [error, setError] = useState(null);
-
-  useEffect(() => { vadThresholdRef.current = vadThreshold; }, [vadThreshold]);
 
   useEffect(() => {
     let animId;
@@ -62,11 +61,9 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
 
           ctx.clearRect(0, 0, w, h);
 
-          ctx.fillStyle = 'rgba(255,255,255,0.06)';
+          ctx.fillStyle = 'rgba(255,255,255,0.08)';
           ctx.fillRect(0, 0, w, h);
 
-          const barH = 8;
-          const barY = (h - barH) / 2;
           const barW = Math.max(2, normalized * w);
           const gradient = ctx.createLinearGradient(0, 0, w, 0);
           gradient.addColorStop(0, '#22c55e');
@@ -75,26 +72,11 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
           ctx.fillStyle = gradient;
           ctx.beginPath();
           if (ctx.roundRect) {
-            ctx.roundRect(0, barY, barW, barH, 4);
+            ctx.roundRect(0, 0, barW, h, 4);
           } else {
-            ctx.fillRect(0, barY, barW, barH);
+            ctx.fillRect(0, 0, barW, h);
           }
           ctx.fill();
-
-          const thresholdX = Math.max(1, Math.min(w - 1, vadThresholdRef.current * w));
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(thresholdX, 0);
-          ctx.lineTo(thresholdX, h);
-          ctx.stroke();
-
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 9px monospace';
-          const vadLabel = 'VAD';
-          const labelW = ctx.measureText(vadLabel).width;
-          const labelX = thresholdX + 6 > w - labelW - 4 ? thresholdX - labelW - 8 : thresholdX + 6;
-          ctx.fillText(vadLabel, labelX, h - 3);
 
           if (dbRef.current) {
             dbRef.current.textContent = db <= -40 ? '— dB' : `${Math.round(db)} dB`;
@@ -116,6 +98,21 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
     };
   }, [deviceId]);
 
+  useEffect(() => {
+    const line = vadLineRef.current;
+    const label = vadLabelRef.current;
+    if (!line) return;
+    const pct = Math.max(0, Math.min(100, vadThreshold * 100));
+    line.style.left = `${pct}%`;
+    if (pct > 85) {
+      label.style.left = `${pct - 26}%`;
+      label.style.textAlign = 'right';
+    } else {
+      label.style.left = `${pct + 1.5}%`;
+      label.style.textAlign = 'left';
+    }
+  }, [vadThreshold]);
+
   if (error) {
     return (
       <div style={{ marginTop: '8px', fontSize: '0.68rem', color: 'rgba(239,68,68,0.7)' }}>
@@ -126,10 +123,22 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
 
   return (
     <div style={{ marginTop: '8px' }}>
-      <canvas
-        ref={canvasRef}
-        style={{ width: '100%', height: '24px', borderRadius: '4px', display: 'block' }}
-      />
+      <div style={{ position: 'relative', height: '8px' }}>
+        <canvas
+          ref={canvasRef}
+          style={{ width: '100%', height: '8px', borderRadius: '4px', display: 'block' }}
+        />
+        <div ref={vadLineRef} style={{
+          position: 'absolute', top: '-6px', bottom: '-6px', width: '3px',
+          background: '#ffffff', borderRadius: '2px', pointerEvents: 'none',
+          transform: 'translateX(-50%)'
+        }} />
+        <div ref={vadLabelRef} style={{
+          position: 'absolute', top: '-10px', fontSize: '8px',
+          color: '#ffffff', fontFamily: 'monospace', fontWeight: 'bold',
+          whiteSpace: 'nowrap', pointerEvents: 'none'
+        }}>VAD</div>
+      </div>
       <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '3px' }}>
         Mic Test — <span ref={dbRef} style={{ fontVariantNumeric: 'tabular-nums' }}>— dB</span>
       </div>
