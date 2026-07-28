@@ -89,7 +89,9 @@ class MemoryManager:
                 config.NO_LLM_MODE = data["settings"].get("no_llm_mode", False)
                 config.LLM_BACKEND = data["settings"].get("llm_backend", config.LLM_BACKEND)
                 config.LLM_BASE_URL = data["settings"].get("llm_base_url", config.LLM_BASE_URL)
-                config.LLM_API_KEY = data["settings"].get("llm_api_key", config.LLM_API_KEY)
+                raw_key = data["settings"].get("llm_api_key", config.LLM_API_KEY)
+                from app.utils.security import decrypt_api_key, encrypt_api_key
+                config.LLM_API_KEY = decrypt_api_key(raw_key) if raw_key else ""
                 
                 return data
         except Exception as e:
@@ -210,7 +212,10 @@ class MemoryManager:
             from app.agent.llm_backend import reset_backend
             reset_backend()
         elif key == "llm_api_key":
-            config.LLM_API_KEY = value
+            from app.utils.security import decrypt_api_key, encrypt_api_key
+            config.LLM_API_KEY = decrypt_api_key(value) if value and value.startswith("enc_v1:") else value
+            self.profile["settings"]["llm_api_key"] = encrypt_api_key(value) if value else ""
+            self._save_profile()
             from app.agent.llm_backend import reset_backend
             reset_backend()
         elif key == "no_llm_mode":

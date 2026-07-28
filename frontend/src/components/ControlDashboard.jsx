@@ -253,6 +253,101 @@ const ControlDashboard = ({
   const [expandedTool, setExpandedTool] = useState(null);
   const [toolSearch, setToolSearch] = useState('');
 
+  // Custom LLM Endpoints & Presets State
+  const [customLabel, setCustomLabel] = useState('');
+  const [savedCustomEndpoints, setSavedCustomEndpoints] = useState([]);
+  const [saveEndpointBtnText, setSaveEndpointBtnText] = useState('Save Endpoint Preset');
+
+  const fetchSavedEndpoints = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/custom-endpoints`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.endpoints) {
+          setSavedCustomEndpoints(data.endpoints);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch custom endpoints:", e);
+    }
+  };
+
+  const autoSuggestLabel = (url) => {
+    if (!url) return '';
+    const u = url.toLowerCase().trim();
+    if (u.includes('googleapis') || u.includes('gemini')) return 'Google Gemini Cloud';
+    if (u.includes('x.ai') || u.includes('grok')) return 'xAI Grok Cloud';
+    if (u.includes('openai.com')) return 'OpenAI Cloud API';
+    if (u.includes('openrouter')) return 'OpenRouter Cloud API';
+    if (u.includes('groq.com')) return 'Groq Cloud API';
+    if (u.includes('mistral.ai')) return 'Mistral Cloud API';
+    if (u.includes('together')) return 'Together AI Cloud';
+    if (u.includes('deepseek')) return 'DeepSeek Cloud';
+    if (u.includes('1234') || u.includes('lmstudio')) return 'Local LM Studio';
+    if (u.includes('11434') || u.includes('ollama')) return 'Local Ollama';
+    try {
+      const host = new URL(url).hostname;
+      return `Custom API (${host})`;
+    } catch {
+      return 'Custom LLM Endpoint';
+    }
+  };
+
+  const handleSaveCustomEndpoint = async () => {
+    const labelToSave = customLabel.trim() || autoSuggestLabel(settings.llm_base_url) || 'Custom LLM Endpoint';
+    const baseUrlToSave = settings.llm_base_url || '';
+    if (!baseUrlToSave) {
+      alert("Please enter a valid Endpoint Base URL before saving.");
+      return;
+    }
+    setSaveEndpointBtnText("Saving...");
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: labelToSave,
+          base_url: baseUrlToSave,
+          api_key: settings.llm_api_key || '',
+          llm_backend: settings.llm_backend || 'openai',
+          model: settings.llm_model || ''
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSavedCustomEndpoints(data.endpoints || []);
+        setCustomLabel(labelToSave);
+        setSaveEndpointBtnText("✓ Saved to DB (Encrypted)");
+        setTimeout(() => setSaveEndpointBtnText('Save Endpoint Preset'), 2500);
+      } else {
+        setSaveEndpointBtnText("Save Failed");
+        setTimeout(() => setSaveEndpointBtnText('Save Endpoint Preset'), 2000);
+      }
+    } catch (e) {
+      console.error("Failed to save custom endpoint:", e);
+      setSaveEndpointBtnText("Error Saving");
+      setTimeout(() => setSaveEndpointBtnText('Save Endpoint Preset'), 2000);
+    }
+  };
+
+  const handleDeleteCustomEndpoint = async (epId, epLabel) => {
+    if (!confirm(`Delete saved endpoint "${epLabel}"?`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: epId, label: epLabel })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSavedCustomEndpoints(data.endpoints || []);
+        if (customLabel === epLabel) setCustomLabel('');
+      }
+    } catch (e) {
+      console.error("Failed to delete custom endpoint:", e);
+    }
+  };
+
   // Internal Mood Spectrum State
   const [moodData, setMoodData] = useState({
     happiness: 75,
@@ -465,6 +560,7 @@ const ControlDashboard = ({
         .catch(err => console.error("Failed to fetch tools list:", err));
       fetchMood();
       fetchTimeItems();
+      fetchSavedEndpoints();
       if (onProfileUpdate) {
         onProfileUpdate();
       }
@@ -2227,7 +2323,7 @@ const ControlDashboard = ({
                           lmstudio: 'http://127.0.0.1:1234',
                           ollama: 'http://127.0.0.1:11434',
                           vllm: 'http://127.0.0.1:8000/v1',
-                          openai: '',
+                          openai: 'https://api.openai.com/v1',
                           custom: '',
                         };
                         await handleUpdateSetting('llm_base_url', defaults[newBackend] || '');
@@ -2257,6 +2353,131 @@ const ControlDashboard = ({
                     </select>
                   </div>
 
+                  {/* Custom Endpoint Label & Saved Presets Dropdown (Below LLM Backend, Above Endpoint URL) */}
+                  {settings.llm_backend !== 'none' && (
+                    <div className="identity-field" style={{ marginTop: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="field-label">Custom API Label & Saved Presets</span>
+                        {savedCustomEndpoints.length > 0 && (
+                          <span style={{ fontSize: '0.7rem', color: '#a78bfa' }}>
+                            {savedCustomEndpoints.length} saved in DB
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '4px', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          placeholder="e.g. Google Gemini Cloud, xAI Grok, My Custom Server"
+                          value={customLabel}
+                          onChange={(e) => setCustomLabel(e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(167, 139, 250, 0.3)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none'
+                          }}
+                        />
+
+                        {/* Dropdown fetching saved endpoints from DB */}
+                        {savedCustomEndpoints.length > 0 && (
+                          <select
+                            onChange={async (e) => {
+                              const selId = e.target.value;
+                              if (!selId) return;
+                              const ep = savedCustomEndpoints.find(item => item.id === selId || item.label === selId);
+                              if (ep) {
+                                setCustomLabel(ep.label);
+                                await handleUpdateSetting('llm_backend', ep.llm_backend || 'openai');
+                                await handleUpdateSetting('llm_base_url', ep.base_url);
+                                if (ep.api_key_masked && ep.api_key_masked !== '****') {
+                                  await handleUpdateSetting('llm_api_key', ep.api_key_masked);
+                                }
+                                if (ep.model) {
+                                  await handleUpdateSetting('llm_model', ep.model);
+                                }
+                                if (onRefreshLlmModels) {
+                                  setTimeout(() => onRefreshLlmModels(), 500);
+                                }
+                              }
+                            }}
+                            defaultValue=""
+                            style={{
+                              padding: '7px 8px',
+                              background: 'rgba(18, 12, 33, 0.85)',
+                              border: '1px solid rgba(139, 92, 246, 0.4)',
+                              borderRadius: '8px',
+                              color: '#c4b5fd',
+                              fontSize: '0.75rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              maxWidth: '150px'
+                            }}
+                          >
+                            <option value="" disabled>Saved DB Presets...</option>
+                            {savedCustomEndpoints.map((ep) => (
+                              <option key={ep.id} value={ep.id}>
+                                {ep.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Popular Cloud AI Preset Suggestions */}
+                  {settings.llm_backend !== 'none' && (
+                    <div style={{ marginTop: '6px' }}>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>
+                        Quick Cloud Presets:
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {[
+                          { name: 'Gemini', label: 'Google Gemini Cloud', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
+                          { name: 'OpenAI', label: 'OpenAI Cloud API', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+                          { name: 'Grok', label: 'xAI Grok Cloud', url: 'https://api.x.ai/v1', model: 'grok-beta' },
+                          { name: 'OpenRouter', label: 'OpenRouter Cloud API', url: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
+                          { name: 'Groq', label: 'Groq Cloud API', url: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
+                          { name: 'Mistral', label: 'Mistral Cloud API', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
+                          { name: 'DeepSeek', label: 'DeepSeek Cloud', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }
+                        ].map((p) => (
+                          <button
+                            key={p.name}
+                            type="button"
+                            onClick={async () => {
+                              setCustomLabel(p.label);
+                              await handleUpdateSetting('llm_backend', 'openai');
+                              await handleUpdateSetting('llm_base_url', p.url);
+                              if (p.model && !settings.llm_model) {
+                                await handleUpdateSetting('llm_model', p.model);
+                              }
+                              if (onRefreshLlmModels) {
+                                setTimeout(() => onRefreshLlmModels(), 500);
+                              }
+                            }}
+                            className="glass-button"
+                            style={{
+                              padding: '2px 7px',
+                              fontSize: '0.68rem',
+                              borderRadius: '6px',
+                              background: settings.llm_base_url === p.url ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.06)',
+                              border: settings.llm_base_url === p.url ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
+                              color: settings.llm_base_url === p.url ? '#fff' : '#cbd5e1',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            ⚡ {p.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Base URL */}
                   {settings.llm_backend !== 'none' && (
                     <div className="identity-field" style={{ marginTop: '8px' }}>
@@ -2269,17 +2490,25 @@ const ControlDashboard = ({
                           settings.llm_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
                           settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
                           settings.llm_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
-                          settings.llm_backend === 'openai' ? 'https://api.groq.com/openai' :
+                          settings.llm_backend === 'openai' ? 'https://generativelanguage.googleapis.com/v1beta/openai' :
                           'http://127.0.0.1:8000/v1'
                         }
                         value={settings.llm_base_url || ''}
-                        onChange={(e) => handleUpdateSetting('llm_base_url', e.target.value)}
+                        onChange={(e) => {
+                          const newUrl = e.target.value;
+                          handleUpdateSetting('llm_base_url', newUrl);
+                          if (!customLabel || customLabel.startsWith('Custom API') || customLabel.endsWith('Cloud')) {
+                            const suggested = autoSuggestLabel(newUrl);
+                            if (suggested) setCustomLabel(suggested);
+                          }
+                        }}
                         onBlur={(e) => {
                           if (!e.target.value.trim()) {
                             const defaults = {
                               lmstudio: 'http://127.0.0.1:1234',
                               ollama: 'http://127.0.0.1:11434',
                               vllm: 'http://127.0.0.1:8000/v1',
+                              openai: 'https://generativelanguage.googleapis.com/v1beta/openai',
                               custom: 'http://127.0.0.1:8000/v1',
                             };
                             if (defaults[settings.llm_backend]) handleUpdateSetting('llm_base_url', defaults[settings.llm_backend]);
@@ -2303,7 +2532,7 @@ const ControlDashboard = ({
                   {/* API Key (for OpenAI-compatible / Custom with auth) */}
                   {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
                     <div className="identity-field" style={{ marginTop: '8px' }}>
-                      <span className="field-label">API Key</span>
+                      <span className="field-label">API Key (Encrypted in DB)</span>
                       <input
                         type="password"
                         placeholder="sk-..."
@@ -2321,6 +2550,36 @@ const ControlDashboard = ({
                           marginTop: '4px'
                         }}
                       />
+                    </div>
+                  )}
+
+                  {/* Save Endpoint Preset Button */}
+                  {settings.llm_backend !== 'none' && (
+                    <div style={{ marginTop: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={handleSaveCustomEndpoint}
+                        className="glass-button"
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          fontSize: '0.78rem',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                          color: 'white',
+                          fontWeight: '600',
+                          border: 'none',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 12px rgba(109,40,217,0.35)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        {saveEndpointBtnText}
+                      </button>
                     </div>
                   )}
 
