@@ -1,7 +1,8 @@
 """
 Advanced Jarvis PC Tools Implementation for Project Yuki.
+Completely independent, self-contained toolsuite for Frontier Cloud LLMs.
 Provides deep system diagnostics, SQLite file database queries, code review, 
-web page scraping, git status, and PC desktop automation tools.
+web page scraping, git status, file management, app launcher, and PC desktop automation.
 """
 
 import os
@@ -16,7 +17,7 @@ import urllib.parse
 from pathlib import Path
 import app.config as config
 
-def query_file_database(query: str, limit: int = 15) -> str:
+def jarvis_query_file_db(query: str, limit: int = 15) -> str:
     """
     Queries the backend SQLite database (yuki_files.db) using FTS5 full-text search 
     and path matching to locate files instantly across indexed drives.
@@ -28,14 +29,12 @@ def query_file_database(query: str, limit: int = 15) -> str:
     if not os.path.exists(db_path):
         return f"Database error: SQLite file database '{db_path}' does not exist yet."
 
-    results = []
     clean_query = query.strip()
     
     try:
         conn = sqlite3.connect(db_path, timeout=5)
         cursor = conn.cursor()
         
-        # Check if table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('files', 'file_index');")
         tables = [row[0] for row in cursor.fetchall()]
         
@@ -44,7 +43,6 @@ def query_file_database(query: str, limit: int = 15) -> str:
             conn.close()
             return "Database notice: File index table has not been initialized yet."
 
-        # Search query
         sql = f"""
             SELECT path, size, extension, modified 
             FROM {target_table} 
@@ -55,7 +53,6 @@ def query_file_database(query: str, limit: int = 15) -> str:
         like_pattern = f"%{clean_query}%"
         cursor.execute(sql, (like_pattern, like_pattern, max(1, min(limit, 50))))
         rows = cursor.fetchall()
-        
         conn.close()
         
         if not rows:
@@ -73,7 +70,7 @@ def query_file_database(query: str, limit: int = 15) -> str:
         return f"File Database Query Exception: {str(e)}"
 
 
-def read_and_review_file(file_path: str, max_lines: int = 200, start_line: int = 1) -> str:
+def jarvis_read_file(file_path: str, max_lines: int = 250, start_line: int = 1) -> str:
     """
     Reads the content of a local text or code file with line range slicing for code review and analysis.
     """
@@ -84,10 +81,9 @@ def read_and_review_file(file_path: str, max_lines: int = 200, start_line: int =
     if not os.path.isfile(clean_path):
         return f"File Error: Path '{clean_path}' is a directory, not a file."
 
-    # Prevent reading gigantic binary files directly
     file_size = os.path.getsize(clean_path)
     if file_size > 10 * 1024 * 1024:
-        return f"File Error: File '{os.path.basename(clean_path)}' is too large ({file_size / 1024 / 1024:.1f} MB) to read into LLM context."
+        return f"File Error: File '{os.path.basename(clean_path)}' is too large ({file_size / 1024 / 1024:.1f} MB) to read into context."
 
     try:
         lines = []
@@ -120,7 +116,22 @@ def read_and_review_file(file_path: str, max_lines: int = 200, start_line: int =
         return f"Read File Error: {str(e)}"
 
 
-def list_directory_tree(dir_path: str, max_depth: int = 2) -> str:
+def jarvis_create_or_edit_file(file_path: str, content: str, mode: str = "write") -> str:
+    """
+    Creates or edits a file on disk. Mode: 'write' (overwrite/create) or 'append'.
+    """
+    clean_path = os.path.abspath(file_path.strip('"\''))
+    try:
+        os.makedirs(os.path.dirname(clean_path), exist_ok=True)
+        file_mode = "a" if mode == "append" else "w"
+        with open(clean_path, file_mode, encoding="utf-8") as f:
+            f.write(content)
+        return f"Success: File '{clean_path}' written successfully ({len(content)} characters)."
+    except Exception as e:
+        return f"File Write Error: {str(e)}"
+
+
+def jarvis_list_dir_tree(dir_path: str, max_depth: int = 2) -> str:
     """
     Inspects folder structure and subdirectories up to max_depth.
     """
@@ -138,7 +149,7 @@ def list_directory_tree(dir_path: str, max_depth: int = 2) -> str:
             return
         try:
             entries = os.listdir(current_dir)
-            for entry in entries[:40]: # limit per dir to avoid blowup
+            for entry in entries[:40]:
                 if entry.startswith('.') or entry in ('__pycache__', 'node_modules', 'venv', 'dist', 'build'):
                     continue
                 full_p = os.path.join(current_dir, entry)
@@ -156,7 +167,7 @@ def list_directory_tree(dir_path: str, max_depth: int = 2) -> str:
     return "\n".join(output[:100])
 
 
-def git_status_and_history(repo_path: str = None) -> str:
+def jarvis_git_status(repo_path: str = None) -> str:
     """
     Inspects active git branch, modified files, and recent 5 commit history.
     """
@@ -173,7 +184,7 @@ def git_status_and_history(repo_path: str = None) -> str:
         return f"Git Error: {str(e)}"
 
 
-def system_diagnostics_and_processes(filter_name: str = None, top_n: int = 10) -> str:
+def jarvis_system_diagnostics(filter_name: str = None, top_n: int = 10) -> str:
     """
     Retrieves system CPU, RAM, disk usage, and top resource-heavy active processes.
     """
@@ -217,16 +228,15 @@ def system_diagnostics_and_processes(filter_name: str = None, top_n: int = 10) -
         return f"System Diagnostics Error: {str(e)}"
 
 
-def network_and_connectivity_check(host: str = "8.8.8.8") -> str:
+def jarvis_network_status(host: str = "8.8.8.8") -> str:
     """
-    Inspects active listening network ports, IP, and web ping connectivity.
+    Inspects active listening network ports, local IP, and web ping connectivity.
     """
     try:
         import socket
         hostname = socket.gethostname()
         local_ip = socket.gethostbyname(hostname)
 
-        # Quick ping test
         param = '-n' if sys.platform.lower() == 'win32' else '-c'
         ping_cmd = ['ping', param, '1', host]
         ping_res = subprocess.run(ping_cmd, capture_output=True, text=True, timeout=4)
@@ -237,7 +247,7 @@ def network_and_connectivity_check(host: str = "8.8.8.8") -> str:
         return f"Network Check Error: {str(e)}"
 
 
-def scrape_web_page(url: str, max_chars: int = 4000) -> str:
+def jarvis_web_scrape(url: str, max_chars: int = 4000) -> str:
     """
     Fetches a web page URL over HTTP and returns clean readable markdown text.
     """
@@ -252,7 +262,6 @@ def scrape_web_page(url: str, max_chars: int = 4000) -> str:
         with urllib.request.urlopen(req, timeout=8) as response:
             html = response.read().decode('utf-8', errors='replace')
 
-        # Clean HTML tags using regex
         clean_html = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<[^>]+>', ' ', clean_html)
         text = re.sub(r'\s+', ' ', text).strip()
@@ -265,7 +274,7 @@ def scrape_web_page(url: str, max_chars: int = 4000) -> str:
         return f"Web Scraper Error: {str(e)}"
 
 
-def desktop_window_control(action: str = "list", title_query: str = None) -> str:
+def jarvis_window_control(action: str = "list", title_query: str = None) -> str:
     """
     Inspects active desktop windows or sends window control actions.
     """

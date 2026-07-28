@@ -111,13 +111,10 @@ class AgentExecutor:
             keyboard_mouse_input, media_playback_control, manage_process,
             system_power_control
         )
-        from app.tools.files import list_directory, search_files, open_or_play_file, create_file, edit_file, delete_file, read_file_content
-        from app.tools.web import web_search as _web_search_fn
-        from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         from app.tools.jarvis import (
-            query_file_database, read_and_review_file, list_directory_tree,
-            git_status_and_history, system_diagnostics_and_processes,
-            network_and_connectivity_check, scrape_web_page, desktop_window_control
+            jarvis_query_file_db, jarvis_read_file, jarvis_create_or_edit_file,
+            jarvis_list_dir_tree, jarvis_git_status, jarvis_system_diagnostics,
+            jarvis_network_status, jarvis_web_scrape, jarvis_window_control
         )
         self._authorize_tool_call = _authorize_tool_call_fn
 
@@ -199,38 +196,60 @@ class AgentExecutor:
             ),
             "manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
             "web_search": _async_web_search,
-            # --- ADVANCED JARVIS TOOLS ---
-            "query_file_database": lambda **kwargs: query_file_database(
+
+            # --- INDEPENDENT ADVANCED JARVIS TOOLS ---
+            "jarvis_query_file_db": lambda **kwargs: jarvis_query_file_db(
                 kwargs.get("query") or "",
                 int(kwargs.get("limit", 15))
             ),
-            "read_and_review_file": lambda **kwargs: read_and_review_file(
+            "jarvis_read_file": lambda **kwargs: jarvis_read_file(
                 kwargs.get("file_path") or kwargs.get("path") or "",
-                int(kwargs.get("max_lines", 200)),
+                int(kwargs.get("max_lines", 250)),
                 int(kwargs.get("start_line", 1))
             ),
-            "list_directory_tree": lambda **kwargs: list_directory_tree(
+            "jarvis_create_or_edit_file": lambda **kwargs: jarvis_create_or_edit_file(
+                kwargs.get("file_path") or kwargs.get("path") or "",
+                kwargs.get("content") or "",
+                kwargs.get("mode", "write")
+            ),
+            "jarvis_list_dir_tree": lambda **kwargs: jarvis_list_dir_tree(
                 kwargs.get("dir_path") or kwargs.get("path") or "",
                 int(kwargs.get("max_depth", 2))
             ),
-            "git_status_and_history": lambda **kwargs: git_status_and_history(
+            "jarvis_git_status": lambda **kwargs: jarvis_git_status(
                 kwargs.get("repo_path")
             ),
-            "system_diagnostics_and_processes": lambda **kwargs: system_diagnostics_and_processes(
+            "jarvis_system_diagnostics": lambda **kwargs: jarvis_system_diagnostics(
                 kwargs.get("filter_name"),
                 int(kwargs.get("top_n", 10))
             ),
-            "network_and_connectivity_check": lambda **kwargs: network_and_connectivity_check(
+            "jarvis_network_status": lambda **kwargs: jarvis_network_status(
                 kwargs.get("host", "8.8.8.8")
             ),
-            "scrape_web_page": lambda **kwargs: scrape_web_page(
+            "jarvis_web_search": _async_web_search,
+            "jarvis_web_scrape": lambda **kwargs: jarvis_web_scrape(
                 kwargs.get("url") or "",
                 int(kwargs.get("max_chars", 4000))
             ),
-            "desktop_window_control": lambda **kwargs: desktop_window_control(
+            "jarvis_launch_app": lambda **kwargs: launch_app(
+                kwargs.get("app_name") or kwargs.get("name") or "",
+                args=kwargs.get("args")
+            ),
+            "jarvis_open_or_play_file": lambda **kwargs: open_or_play_file(
+                kwargs.get("file_path_or_query") or kwargs.get("query") or ""
+            ),
+            "jarvis_window_control": lambda **kwargs: jarvis_window_control(
                 kwargs.get("action", "list"),
                 kwargs.get("title_query")
-            )
+            ),
+            "jarvis_system_volume": lambda **kwargs: set_system_volume(
+                int(kwargs.get("volume_level") or 0)
+            ),
+            "jarvis_system_power": lambda **kwargs: system_power_control(
+                kwargs.get("action") or ""
+            ),
+            "jarvis_manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
+            "jarvis_remember_user_fact": lambda **kwargs: self._execute_update_user_fact(**kwargs)
         }
         from app.mcp_client import StdioMCPToolBridge
         self.mcp_tools = StdioMCPToolBridge(get_tools_definition, get_filtered_tools)

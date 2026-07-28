@@ -1,16 +1,17 @@
+import app.config as config
 from app.tools.selector import select_relevant_tools
 
-def get_tools_definition() -> list:
+def get_basic_tools_definition() -> list:
     """
-    Returns the list of tool schemas for LM Studio native tool calling.
-    Optimized for compact token size to prevent exceeding context window limits.
+    Returns the basic tool schemas optimized for weak/local LLMs.
+    Compact token size, single-turn execution.
     """
     return [
         {
             "type": "function",
             "function": {
                 "name": "get_system_stats",
-                "description": "Get live system metrics: CPU %, RAM %, disk %, active IP, OS version, and current date/time. Use for: 'what time is it', 'how is my PC', 'what is my IP', 'check my RAM'.",
+                "description": "Get live system metrics: CPU %, RAM %, disk %, active IP, OS version, and current date/time.",
                 "parameters": {"type": "object", "properties": {}}
             }
         },
@@ -18,12 +19,12 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "launch_app",
-                "description": "Launch a desktop application or open a URL. Use ONLY when the user explicitly asks to open or launch an app (e.g. 'open Chrome', 'launch Spotify', 'open this URL'). Do NOT use for files or media — use open_or_play_file for those.",
+                "description": "Launch a desktop application or open a URL.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "app_name": {"type": "string", "description": "App name to launch (e.g. 'chrome', 'notepad', 'spotify') or browser to open URL."},
-                        "args": {"type": "string", "description": "Optional CLI arguments or URL (e.g. 'https://example.com')."},
+                        "app_name": {"type": "string", "description": "App name to launch or browser to open URL."},
+                        "args": {"type": "string", "description": "Optional CLI arguments or URL."},
                         "run_as_admin": {"type": "boolean", "description": "Run as administrator."}
                     },
                     "required": ["app_name"]
@@ -33,26 +34,12 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "set_system_volume",
-                "description": "Set speaker volume.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "volume_level": {"type": "integer", "description": "Percent (0-100)."}
-                    },
-                    "required": ["volume_level"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "web_search",
-                "description": "Search the internet for real-time or unknown information. Use ONLY when the user asks for current news, recent facts, prices, or something you genuinely cannot answer from your training knowledge. Do NOT use for general knowledge, opinions, or conversational questions.",
+                "description": "Search the internet for real-time or unknown information.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Specific search query (e.g. 'red dye 40 safety side effects 2025'). Be specific."}
+                        "query": {"type": "string", "description": "Specific search query."}
                     },
                     "required": ["query"]
                 }
@@ -62,12 +49,12 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "update_user_fact",
-                "description": "Remember a personal fact, interest, hobby, like, dislike, or name shared by the user. Use key='interest' for interests, key='hobby' for hobbies, key='like' for things they like, key='dislike' for things they dislike, key='name' for user name, or a custom attribute name (e.g. 'favorite_color').",
+                "description": "Remember a personal fact or preference shared by the user.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "key": {"type": "string", "description": "Category key: 'interest', 'hobby', 'like', 'dislike', 'name', or specific custom attribute name."},
-                        "value": {"type": "string", "description": "The item or fact shared by the user (e.g. 'anime', 'spicy food', 'drawing')."}
+                        "key": {"type": "string", "description": "Category key ('interest', 'hobby', 'like', 'dislike', 'name')."},
+                        "value": {"type": "string", "description": "The item or fact shared."}
                     },
                     "required": ["key", "value"]
                 }
@@ -76,26 +63,12 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "list_directory",
-                "description": "List files in folder.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "directory_path": {"type": "string", "description": "Absolute folder path."}
-                    }
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "search_files",
-                "description": "Find files stored on the user's local computer by name or keyword. Use when the user asks to find or locate a specific file or document on their PC.",
+                "description": "Find files stored on the user's local computer by name or keyword.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Filename or keyword to search for."},
-                        "start_directory": {"type": "string", "description": "Base directory to search within (optional)."}
+                        "query": {"type": "string", "description": "Filename or keyword to search for."}
                     },
                     "required": ["query"]
                 }
@@ -105,12 +78,11 @@ def get_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "open_or_play_file",
-                "description": "Open a local file, folder, or play media on the user's computer. Use for any 'play', 'open', 'watch', 'read', or 'show me' request targeting a file or media. Always pass the user's raw query words (e.g. 'towa song', 'romantic anime') — never construct or guess a file path.",
+                "description": "Open or play a local file, media, or video.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "file_path_or_query": {"type": "string", "description": "Raw user query words or absolute file path. Never invent filenames."},
-                        "play_mode": {"type": "boolean", "description": "Set true to play media (music, video). Leave false to open documents/folders."}
+                        "file_path_or_query": {"type": "string", "description": "File path or query to open/play."}
                     },
                     "required": ["file_path_or_query"]
                 }
@@ -119,233 +91,36 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "create_file",
-                "description": "Create text file.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {"type": "string", "description": "Absolute path."},
-                        "content": {"type": "string", "description": "Text content."}
-                    },
-                    "required": ["file_path", "content"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "edit_file",
-                "description": "Search and replace text in file.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {"type": "string", "description": "Absolute path."},
-                        "search_text": {"type": "string", "description": "Target text block."},
-                        "replace_text": {"type": "string", "description": "New replacement text."}
-                    },
-                    "required": ["file_path", "search_text", "replace_text"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "delete_file",
-                "description": "Delete file. Requires a user approval dialog; do not add confirmation flags yourself.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {"type": "string", "description": "Absolute path."}
-                    },
-                    "required": ["file_path"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "read_file_content",
-                "description": "Read the contents of a local text, code, or PDF file.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {"type": "string", "description": "Absolute path to the file to read."}
-                    },
-                    "required": ["file_path"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "control_window",
-                "description": "Manage active windows.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "description": "Action type.",
-                            "enum": ["minimize", "maximize", "restore", "move", "focus", "close", "list"]
-                        },
-                        "window_title": {"type": "string", "description": "Target window. Use 'all', 'all windows', '*', or 'them all' for all visible windows. Partial match for specific (e.g. 'chrome', 'notepad'). Required except for 'list'."},
-                        "x": {"type": "integer", "description": "Move target X (only for 'move' action)."},
-                        "y": {"type": "integer", "description": "Move target Y (only for 'move' action)."}
-                    },
-                    "required": ["action"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "run_terminal_command",
-                "description": "Run a shell command on the user's Windows PC (PowerShell or CMD). Use for system tasks, installs, git operations, or anything requiring a command line. Do NOT use when open_or_play_file or launch_app can handle the request.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "command": {"type": "string", "description": "The command to execute."},
-                        "use_powershell": {"type": "boolean", "description": "True for PowerShell, false for CMD."}
-                    },
-                    "required": ["command"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "run_python_script",
-                "description": "Execute Python code on the user's machine. Use for calculations, data processing, or automation that specifically requires Python — not for file opening or web browsing.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "code": {"type": "string", "description": "Python source code to execute."}
-                    },
-                    "required": ["code"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "take_screenshot",
-                "description": "Take screen capture.",
-                "parameters": {"type": "object", "properties": {}}
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "keyboard_mouse_input",
-                "description": "Simulate keyboard/mouse inputs.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "description": "Input action.",
-                            "enum": ["type", "press_keys", "click", "double_click", "move_to", "scroll"]
-                        },
-                        "text": {"type": "string", "description": "Text to type."},
-                        "keys": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Keys (e.g. ['ctrl', 'c'])."
-                        },
-                        "x": {"type": "integer", "description": "Mouse X."},
-                        "y": {"type": "integer", "description": "Mouse Y."},
-                        "amount": {"type": "integer", "description": "Scroll amount."}
-                    },
-                    "required": ["action"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "media_playback_control",
-                "description": "Simulate media keys.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "description": "Playback action.",
-                            "enum": ["play_pause", "next", "previous", "volume_up", "volume_down", "mute"]
-                        }
-                    },
-                    "required": ["action"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "manage_process",
-                "description": "List or kill processes.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "description": "Action type.",
-                            "enum": ["list", "kill"]
-                        },
-                        "name": {"type": "string", "description": "Process name (e.g. notepad.exe)."},
-                        "pid": {"type": "integer", "description": "Process ID."}
-                    },
-                    "required": ["action"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "system_power_control",
-                "description": "Lock PC, sleep PC, or sign out PC after user approval. Shutdown/restart are sandbox-blocked by default.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "description": "Power action.",
-                            "enum": ["lock", "sleep", "sign_out", "shutdown", "restart"]
-                        }
-                    },
-                    "required": ["action"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "manage_time",
-                "description": "Manage timers, scheduled reminders, alarms, stopwatches, and background scheduled tasks.",
+                "description": "Manage timers, scheduled reminders, alarms, and stopwatches.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "description": "Action to perform. Use set_alarm when user says 'alarm'. Use set_timer when user says 'timer'. Use set_reminder for named reminders at a specific time.",
                             "enum": ["set_timer", "set_alarm", "set_reminder", "start_stopwatch", "check_stopwatch", "stop_stopwatch", "list_active", "cancel"]
                         },
-                        "duration_seconds": {"type": "integer", "description": "Timer duration in seconds (e.g. 300 for 5 minutes)."},
-                        "target_time": {"type": "string", "description": "Target time EXACTLY as the user said it, e.g. '10:37 PM', '5:30 PM'. Never convert to 24-hour format. Never calculate hour math yourself."},
-                        "message": {"type": "string", "description": "Reminder or timer message label."},
-                        "recurrence": {"type": "string", "description": "Optional recurrence ('daily', 'weekly', 'hourly')."},
-                        "action_command": {"type": "string", "description": "Optional system command/app to execute on timer completion."},
-                        "label": {"type": "string", "description": "Stopwatch label name."},
-                        "item_id": {"type": "integer", "description": "ID of reminder/timer to cancel."}
+                        "duration_seconds": {"type": "integer", "description": "Timer duration in seconds."},
+                        "target_time": {"type": "string", "description": "Target time string."},
+                        "message": {"type": "string", "description": "Reminder or timer message."}
                     },
                     "required": ["action"]
                 }
             }
-        },
-        # --- ADVANCED JARVIS TOOLS ---
+        }
+    ]
+
+
+def get_advanced_jarvis_tools_definition() -> list:
+    """
+    Returns the completely independent Advanced Jarvis tool schemas engineered for Frontier Cloud LLMs.
+    Supports parallel tool calling, multi-step ReAct reasoning, SQLite DB queries, code review, and PC automation.
+    """
+    return [
         {
             "type": "function",
             "function": {
-                "name": "query_file_database",
+                "name": "jarvis_query_file_db",
                 "description": "Search the SQLite indexed file database (yuki_files.db) for files across PC drives. Instant FTS5 text and path matching.",
                 "parameters": {
                     "type": "object",
@@ -360,13 +135,13 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "read_and_review_file",
-                "description": "Read text or code file content for analysis, code review, debugging, or troubleshooting.",
+                "name": "jarvis_read_file",
+                "description": "Read text or code file content with line slicing for analysis, code review, and debugging.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "file_path": {"type": "string", "description": "Absolute path to local text/code file."},
-                        "max_lines": {"type": "integer", "description": "Max lines to read (default 200)."},
+                        "max_lines": {"type": "integer", "description": "Max lines to read (default 250)."},
                         "start_line": {"type": "integer", "description": "Starting line number (default 1)."}
                     },
                     "required": ["file_path"]
@@ -376,13 +151,29 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "list_directory_tree",
+                "name": "jarvis_create_or_edit_file",
+                "description": "Create or edit a text/code file on disk. Mode: 'write' (overwrite) or 'append'.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "description": "Absolute path to file."},
+                        "content": {"type": "string", "description": "File content to write."},
+                        "mode": {"type": "string", "description": "Write mode ('write' or 'append')."}
+                    },
+                    "required": ["file_path", "content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_list_dir_tree",
                 "description": "Inspect directory tree structure and subdirectories.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "dir_path": {"type": "string", "description": "Absolute folder path."},
-                        "max_depth": {"type": "integer", "description": "Max directory depth to inspect (default 2)."}
+                        "max_depth": {"type": "integer", "description": "Max directory depth (default 2)."}
                     },
                     "required": ["dir_path"]
                 }
@@ -391,7 +182,7 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "git_status_and_history",
+                "name": "jarvis_git_status",
                 "description": "Inspect git working tree status, modified files, and recent commit history.",
                 "parameters": {
                     "type": "object",
@@ -404,8 +195,8 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "system_diagnostics_and_processes",
-                "description": "Retrieve CPU %, RAM %, disk usage, and active top resource-heavy processes.",
+                "name": "jarvis_system_diagnostics",
+                "description": "Retrieve CPU %, RAM %, disk usage, and top resource-heavy active processes.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -418,7 +209,7 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "network_and_connectivity_check",
+                "name": "jarvis_network_status",
                 "description": "Check local IP, network interfaces, and ping test web connectivity.",
                 "parameters": {
                     "type": "object",
@@ -431,7 +222,21 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "scrape_web_page",
+                "name": "jarvis_web_search",
+                "description": "Perform web search for news, real-time facts, documentation, or prices.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query string."}
+                    },
+                    "required": ["query"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_web_scrape",
                 "description": "Fetch a web page URL and extract clean text/markdown content for deep reading.",
                 "parameters": {
                     "type": "object",
@@ -446,25 +251,124 @@ def get_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "desktop_window_control",
+                "name": "jarvis_launch_app",
+                "description": "Launch a desktop application or open a web URL.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "app_name": {"type": "string", "description": "Application name or URL to launch."},
+                        "args": {"type": "string", "description": "Optional CLI arguments or URL parameters."}
+                    },
+                    "required": ["app_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_open_or_play_file",
+                "description": "Open or play a local file, document, or media.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path_or_query": {"type": "string", "description": "File path or query to open/play."}
+                    },
+                    "required": ["file_path_or_query"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_window_control",
                 "description": "List active desktop windows or query window titles.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {"type": "string", "description": "Action ('list')."},
-                        "title_query": {"type": "string", "description": "Window title to search for."}
+                        "title_query": {"type": "string", "description": "Window title query."}
                     }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_system_volume",
+                "description": "Set speaker volume level.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "volume_level": {"type": "integer", "description": "Volume percent (0-100)."}
+                    },
+                    "required": ["volume_level"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_system_power",
+                "description": "Lock PC, sleep PC, or sign out PC.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["lock", "sleep", "sign_out", "shutdown", "restart"]
+                        }
+                    },
+                    "required": ["action"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_manage_time",
+                "description": "Manage timers, scheduled reminders, alarms, and stopwatches.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["set_timer", "set_alarm", "set_reminder", "start_stopwatch", "check_stopwatch", "stop_stopwatch", "list_active", "cancel"]
+                        },
+                        "duration_seconds": {"type": "integer", "description": "Timer duration in seconds."},
+                        "target_time": {"type": "string", "description": "Target time string."},
+                        "message": {"type": "string", "description": "Timer or reminder message."}
+                    },
+                    "required": ["action"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_remember_user_fact",
+                "description": "Remember a personal fact or preference shared by the user.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string", "description": "Category key."},
+                        "value": {"type": "string", "description": "Fact or preference value."}
+                    },
+                    "required": ["key", "value"]
                 }
             }
         }
     ]
 
 
-def get_filtered_tools(user_message: str) -> list:
-    """Return a compact, schema-ranked tool list for the current user message.
-
-    This replaces the old keyword buckets with a local retrieval step over tool
-    names, descriptions, and JSON-schema fields. If the message has weak tool
-    signal, the selector returns all tools rather than hiding a needed tool.
+def get_tools_definition() -> list:
     """
+    Dynamically returns tool definitions based on runtime TOOL_MODE.
+    """
+    if getattr(config, "TOOL_MODE", "basic") == "advanced":
+        return get_advanced_jarvis_tools_definition()
+    return get_basic_tools_definition()
+
+
+def get_filtered_tools(user_message: str) -> list:
+    """Return a schema-ranked tool list for the current user message."""
     return select_relevant_tools(get_tools_definition(), user_message)
