@@ -3449,14 +3449,7 @@ const ControlDashboard = ({
                     <span className="spec-label">Host OS</span>
                     <span className="spec-val">Windows 10/11</span>
                   </div>
-                  <div className="spec-row">
-                    <span className="spec-label">Audio Output</span>
-                    <span className="spec-val">Web Audio Synthesizer</span>
-                  </div>
-                  <div className="spec-row">
-                    <span className="spec-label">STT Listener</span>
-                    <span className="spec-val">Web Speech API</span>
-                  </div>
+
                 </div>
               </div>
 
