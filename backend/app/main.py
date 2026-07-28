@@ -685,6 +685,9 @@ class SettingsUpdateRequest(BaseModel):
     custom_alarm_tone_file: Optional[str] = None
     llm_mode: Optional[int] = None
     enable_intent_check: Optional[bool] = None
+    whisper_compute_type: Optional[str] = None
+    vad_threshold: Optional[float] = None
+    silence_timeout_ms: Optional[int] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -780,9 +783,17 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.active_vrm_model is not None:
         memory_manager.update_setting("active_vrm_model", req.active_vrm_model.strip())
     if req.whisper_model is not None:
+        config.WHISPER_MODEL = req.whisper_model.strip()
         memory_manager.update_setting("whisper_model", req.whisper_model.strip())
     if req.whisper_compute_type is not None:
+        config.WHISPER_COMPUTE_TYPE = req.whisper_compute_type.strip()
         memory_manager.update_setting("whisper_compute_type", req.whisper_compute_type.strip())
+    if req.vad_threshold is not None:
+        config.SILERO_VAD_THRESHOLD = float(req.vad_threshold)
+        memory_manager.update_setting("vad_threshold", float(req.vad_threshold))
+    if req.silence_timeout_ms is not None:
+        config.SILENCE_TIMEOUT_MS = int(req.silence_timeout_ms)
+        memory_manager.update_setting("silence_timeout_ms", int(req.silence_timeout_ms))
     if req.use_local_whisper is not None:
         memory_manager.update_setting("use_local_whisper", req.use_local_whisper)
     if req.stt_language is not None:

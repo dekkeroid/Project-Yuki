@@ -105,6 +105,10 @@ TTS_RATE = os.environ.get("TTS_RATE", "1.0") # Speed factor (default: 1.0)
 TTS_DEVICE = os.environ.get("TTS_DEVICE", "auto")  # "auto", "gpu", "cpu"
 TTS_PRELOAD = os.environ.get("TTS_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload TTS model on startup (uses ~250-400 MB extra RAM)
 STT_DEVICE = os.environ.get("STT_DEVICE", "auto")  # "auto", "gpu", "cpu"
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
+WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8_float16")
+SILERO_VAD_THRESHOLD = float(os.environ.get("SILERO_VAD_THRESHOLD", "0.5"))
+SILENCE_TIMEOUT_MS = int(os.environ.get("SILENCE_TIMEOUT_MS", "450"))
 # Character Settings
 CHARACTER_NAME = "Yuki"
 CHARACTER_PERSONA = """You are Yuki, a brilliant, highly intelligent agentic 3D companion. 

@@ -429,13 +429,15 @@ export function useSpeechRecognition(options = {}) {
           }
 
           const micThreshold = vadThresholdRef.current;
+          const silenceTimeoutMs = parseInt(localStorage.getItem('yuki-silence-timeout') || '450', 10);
           const now = Date.now();
 
           if (normalized > micThreshold) {
-            if (now - vadActivationTimeRef.current > 400) {
+            if (now - vadActivationTimeRef.current > 150) {
               if (!vadSpeakingRef.current) {
-                logSTTStatus("User speaking...");
+                logSTTStatus("User speech detected — triggering instant barge-in interrupt");
                 vadSpeakingRef.current = true;
+                if (stopAllPlayback) stopAllPlayback();
                 if (sessionTimeoutRef.current) {
                   clearTimeout(sessionTimeoutRef.current);
                   sessionTimeoutRef.current = null;
@@ -447,14 +449,15 @@ export function useSpeechRecognition(options = {}) {
             if (vadSpeakingRef.current) {
               if (vadSilenceStartRef.current === null) {
                 vadSilenceStartRef.current = now;
-              } else if (now - vadSilenceStartRef.current > 1500) {
+              } else if (now - vadSilenceStartRef.current > silenceTimeoutMs) {
+                logSTTStatus(`Silence threshold reached (${silenceTimeoutMs}ms). Stopping recording...`);
                 stopSpeechRecognition();
                 return;
               }
             }
           }
 
-          setTimeout(checkMicVolume, 50);
+          setTimeout(checkMicVolume, 30);
         };
 
         checkMicVolume();

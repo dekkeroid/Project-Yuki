@@ -3012,9 +3012,11 @@ const ControlDashboard = ({
                               marginTop: '4px'
                             }}
                           >
+                            <option value="distil-small.en" style={{ background: '#0b0813', color: '#c4b5fd' }}>⚡ Distil-Small.en (Ultra-Fast &lt;100ms / ~150MB VRAM)</option>
                             <option value="base" style={{ background: '#0b0813', color: 'white' }}>Base Model (Accurate / ~140MB)</option>
                             <option value="small" style={{ background: '#0b0813', color: 'white' }}>Small Model (High Accuracy / ~460MB)</option>
                             <option value="tiny" style={{ background: '#0b0813', color: 'white' }}>Tiny Model (Fastest / ~70MB)</option>
+                            <option value="medium" style={{ background: '#0b0813', color: 'white' }}>Medium Model (Pro Quality / ~1.5GB)</option>
                           </select>
                         </div>
 
@@ -3043,23 +3045,81 @@ const ControlDashboard = ({
                           </select>
                         </div>
 
-                        {/* VAD Threshold */}
+                        {/* Whisper Quantization / Compute Type */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <span className="field-label">Whisper VRAM Quantization Mode</span>
+                          <select
+                            value={settings.whisper_compute_type || 'int8_float16'}
+                            onChange={(e) => handleUpdateSetting('whisper_compute_type', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(167, 139, 250, 0.3)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              marginTop: '4px'
+                            }}
+                          >
+                            <option value="int8_float16" style={{ background: '#0b0813', color: 'white' }}>Int8 Weights + FP16 Activations (Recommended - ~250MB VRAM)</option>
+                            <option value="int8" style={{ background: '#0b0813', color: 'white' }}>Full Int8 Quantization (Max VRAM Savings - ~180MB VRAM)</option>
+                            <option value="float16" style={{ background: '#0b0813', color: 'white' }}>Standard Float16 (~500MB VRAM)</option>
+                          </select>
+                        </div>
+
+                        {/* Silero VAD Confidence Threshold */}
                         <div className="identity-field" style={{ marginTop: '10px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">VAD Sensitivity Threshold</span>
+                            <span className="field-label">Silero VAD Speech Confidence</span>
                             <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                              {vadThreshold.toFixed(3)}
+                              {(settings.vad_threshold !== undefined ? settings.vad_threshold : vadThreshold).toFixed(2)}
                             </span>
                           </div>
                           <input
                             type="range"
-                            min="0.002"
-                            max="0.3"
-                            step="0.005"
-                            value={vadThreshold}
-                            onChange={(e) => onVadThresholdChange && onVadThresholdChange(parseFloat(e.target.value))}
+                            min="0.30"
+                            max="0.85"
+                            step="0.05"
+                            value={settings.vad_threshold !== undefined ? settings.vad_threshold : (vadThreshold < 0.3 ? 0.5 : vadThreshold)}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value);
+                              handleUpdateSetting('vad_threshold', val);
+                              if (onVadThresholdChange) onVadThresholdChange(val);
+                            }}
                             style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
                           />
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            Detects true vocal cord speech. Ignores keyboard clicks, fan hums, and breath smacks. (Default: 0.50)
+                          </span>
+                        </div>
+
+                        {/* Silence Timeout */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <span className="field-label">Silence Timeout (End of Speech Wait)</span>
+                          <select
+                            value={settings.silence_timeout_ms || 450}
+                            onChange={(e) => handleUpdateSetting('silence_timeout_ms', parseInt(e.target.value, 10))}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              marginTop: '4px'
+                            }}
+                          >
+                            <option value={300} style={{ background: '#0b0813', color: 'white' }}>300ms (Fast Turn-Taking)</option>
+                            <option value={450} style={{ background: '#0b0813', color: 'white' }}>450ms (Recommended - Balanced)</option>
+                            <option value={600} style={{ background: '#0b0813', color: 'white' }}>600ms (Relaxed)</option>
+                            <option value={800} style={{ background: '#0b0813', color: 'white' }}>800ms (Slow)</option>
+                          </select>
                         </div>
 
                         {/* STT Language */}
@@ -3084,6 +3144,7 @@ const ControlDashboard = ({
                             <option value="en" style={{ background: '#0b0813', color: 'white' }}>English</option>
                             <option value="hi" style={{ background: '#0b0813', color: 'white' }}>Hindi (हिन्दी)</option>
                             <option value="ja" style={{ background: '#0b0813', color: 'white' }}>Japanese (日本語)</option>
+                            <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto Detect</option>
                           </select>
                         </div>
                       </>
