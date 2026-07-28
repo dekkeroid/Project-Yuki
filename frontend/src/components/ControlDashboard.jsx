@@ -2366,7 +2366,7 @@ const ControlDashboard = ({
                   </div>
 
                   {/* Custom Endpoint Label & Saved Presets Dropdown (Below LLM Backend, Above Endpoint URL) */}
-                  {settings.llm_backend !== 'none' && (
+                  {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
                     <div className="identity-field" style={{ marginTop: '8px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span className="field-label">Custom API Label & Saved Presets</span>
@@ -2443,7 +2443,7 @@ const ControlDashboard = ({
                   )}
 
                   {/* Popular Cloud AI Preset Suggestions */}
-                  {settings.llm_backend !== 'none' && (
+                  {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
                     <div style={{ marginTop: '6px' }}>
                       <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>
                         Quick Cloud Presets:
@@ -2566,7 +2566,7 @@ const ControlDashboard = ({
                   )}
 
                   {/* Save Endpoint Preset Button */}
-                  {settings.llm_backend !== 'none' && (
+                  {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
                     <div style={{ marginTop: '10px' }}>
                       <button
                         type="button"
