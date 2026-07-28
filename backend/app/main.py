@@ -785,9 +785,13 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.whisper_model is not None:
         config.WHISPER_MODEL = req.whisper_model.strip()
         memory_manager.update_setting("whisper_model", req.whisper_model.strip())
+        from app.voice.stt import reset_whisper
+        reset_whisper()
     if req.whisper_compute_type is not None:
         config.WHISPER_COMPUTE_TYPE = req.whisper_compute_type.strip()
         memory_manager.update_setting("whisper_compute_type", req.whisper_compute_type.strip())
+        from app.voice.stt import reset_whisper
+        reset_whisper()
     if req.vad_threshold is not None:
         config.SILERO_VAD_THRESHOLD = float(req.vad_threshold)
         memory_manager.update_setting("vad_threshold", float(req.vad_threshold))
