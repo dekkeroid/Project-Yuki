@@ -340,6 +340,122 @@ def get_tools_definition() -> list:
                     "required": ["action"]
                 }
             }
+        },
+        # --- ADVANCED JARVIS TOOLS ---
+        {
+            "type": "function",
+            "function": {
+                "name": "query_file_database",
+                "description": "Search the SQLite indexed file database (yuki_files.db) for files across PC drives. Instant FTS5 text and path matching.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Filename, project name, or file extension keyword to search in DB."},
+                        "limit": {"type": "integer", "description": "Max results to return (default 15)."}
+                    },
+                    "required": ["query"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_and_review_file",
+                "description": "Read text or code file content for analysis, code review, debugging, or troubleshooting.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "description": "Absolute path to local text/code file."},
+                        "max_lines": {"type": "integer", "description": "Max lines to read (default 200)."},
+                        "start_line": {"type": "integer", "description": "Starting line number (default 1)."}
+                    },
+                    "required": ["file_path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_directory_tree",
+                "description": "Inspect directory tree structure and subdirectories.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dir_path": {"type": "string", "description": "Absolute folder path."},
+                        "max_depth": {"type": "integer", "description": "Max directory depth to inspect (default 2)."}
+                    },
+                    "required": ["dir_path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "git_status_and_history",
+                "description": "Inspect git working tree status, modified files, and recent commit history.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "repo_path": {"type": "string", "description": "Path to git repository folder (optional)."}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "system_diagnostics_and_processes",
+                "description": "Retrieve CPU %, RAM %, disk usage, and active top resource-heavy processes.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filter_name": {"type": "string", "description": "Optional process name filter (e.g. 'chrome', 'python')."},
+                        "top_n": {"type": "integer", "description": "Number of top processes to return (default 10)."}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "network_and_connectivity_check",
+                "description": "Check local IP, network interfaces, and ping test web connectivity.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "host": {"type": "string", "description": "Host/IP to ping test (default 8.8.8.8)."}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "scrape_web_page",
+                "description": "Fetch a web page URL and extract clean text/markdown content for deep reading.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "Web URL to fetch and scrape."},
+                        "max_chars": {"type": "integer", "description": "Max text characters to extract (default 4000)."}
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "desktop_window_control",
+                "description": "List active desktop windows or query window titles.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "description": "Action ('list')."},
+                        "title_query": {"type": "string", "description": "Window title to search for."}
+                    }
+                }
+            }
         }
     ]
 

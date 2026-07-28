@@ -59,7 +59,8 @@ class MemoryManager:
                 "vrm_dpr": 1.5,
                 "vrm_fps": 40,
                 "chat_mode": False,
-                "keep_memory_saving": True
+                "keep_memory_saving": True,
+                "tool_mode": "basic"
             }
         }
         if not os.path.exists(self.profile_path):
@@ -91,6 +92,7 @@ class MemoryManager:
                 config.WHISPER_COMPUTE_TYPE = data["settings"].get("whisper_compute_type", getattr(config, "WHISPER_COMPUTE_TYPE", "int8_float16"))
                 config.SILERO_VAD_THRESHOLD = float(data["settings"].get("vad_threshold", getattr(config, "SILERO_VAD_THRESHOLD", 0.015)))
                 config.SILENCE_TIMEOUT_MS = int(data["settings"].get("silence_timeout_ms", getattr(config, "SILENCE_TIMEOUT_MS", 450)))
+                config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
                 config.CHARACTER_PERSONA = data["settings"].get("character_persona", config.CHARACTER_PERSONA)
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)

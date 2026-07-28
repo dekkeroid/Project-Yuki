@@ -8,7 +8,7 @@ import inspect
 import os
 from typing import Dict, Any, List, Tuple
 from app import config
-from app.agent.prompts import get_system_prompt, get_simple_system_prompt
+from app.agent.prompts import get_system_prompt, get_simple_system_prompt, get_advanced_jarvis_system_prompt
 from app.agent.llm_backend import get_backend, reset_backend
 from app.memory.local_mem import MemoryManager
 from app.tools.definitions import get_tools_definition, get_filtered_tools
@@ -114,6 +114,11 @@ class AgentExecutor:
         from app.tools.files import list_directory, search_files, open_or_play_file, create_file, edit_file, delete_file, read_file_content
         from app.tools.web import web_search as _web_search_fn
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
+        from app.tools.jarvis import (
+            query_file_database, read_and_review_file, list_directory_tree,
+            git_status_and_history, system_diagnostics_and_processes,
+            network_and_connectivity_check, scrape_web_page, desktop_window_control
+        )
         self._authorize_tool_call = _authorize_tool_call_fn
 
         # Map tool names to python functions
@@ -193,7 +198,39 @@ class AgentExecutor:
                 confirmed=bool(kwargs.get("confirmed", False))
             ),
             "manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
-            "web_search": _async_web_search
+            "web_search": _async_web_search,
+            # --- ADVANCED JARVIS TOOLS ---
+            "query_file_database": lambda **kwargs: query_file_database(
+                kwargs.get("query") or "",
+                int(kwargs.get("limit", 15))
+            ),
+            "read_and_review_file": lambda **kwargs: read_and_review_file(
+                kwargs.get("file_path") or kwargs.get("path") or "",
+                int(kwargs.get("max_lines", 200)),
+                int(kwargs.get("start_line", 1))
+            ),
+            "list_directory_tree": lambda **kwargs: list_directory_tree(
+                kwargs.get("dir_path") or kwargs.get("path") or "",
+                int(kwargs.get("max_depth", 2))
+            ),
+            "git_status_and_history": lambda **kwargs: git_status_and_history(
+                kwargs.get("repo_path")
+            ),
+            "system_diagnostics_and_processes": lambda **kwargs: system_diagnostics_and_processes(
+                kwargs.get("filter_name"),
+                int(kwargs.get("top_n", 10))
+            ),
+            "network_and_connectivity_check": lambda **kwargs: network_and_connectivity_check(
+                kwargs.get("host", "8.8.8.8")
+            ),
+            "scrape_web_page": lambda **kwargs: scrape_web_page(
+                kwargs.get("url") or "",
+                int(kwargs.get("max_chars", 4000))
+            ),
+            "desktop_window_control": lambda **kwargs: desktop_window_control(
+                kwargs.get("action", "list"),
+                kwargs.get("title_query")
+            )
         }
         from app.mcp_client import StdioMCPToolBridge
         self.mcp_tools = StdioMCPToolBridge(get_tools_definition, get_filtered_tools)
@@ -459,7 +496,10 @@ class AgentExecutor:
         if backend == "simple":
             system_content = get_simple_system_prompt(memory_summary, mood)
         else:
-            system_content = get_system_prompt(memory_summary, mood)
+            if getattr(config, "TOOL_MODE", "basic") == "advanced":
+                system_content = get_advanced_jarvis_system_prompt(memory_summary, mood)
+            else:
+                system_content = get_system_prompt(memory_summary, mood)
 
         system_msg = {"role": "system", "content": system_content}
 

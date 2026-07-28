@@ -688,6 +688,7 @@ class SettingsUpdateRequest(BaseModel):
     whisper_compute_type: Optional[str] = None
     vad_threshold: Optional[float] = None
     silence_timeout_ms: Optional[int] = None
+    tool_mode: Optional[str] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -700,6 +701,12 @@ async def update_settings(req: SettingsUpdateRequest):
 
     backend_switched = False
     captured_old_backend = None
+    if req.tool_mode is not None:
+        mode_val = req.tool_mode.strip().lower()
+        if mode_val in ("basic", "advanced"):
+            config.TOOL_MODE = mode_val
+            memory_manager.update_setting("tool_mode", mode_val)
+            print(f"[Settings] Tool Operating Mode updated to '{mode_val}'")
     if req.llm_backend is not None:
         old_backend_type = memory_manager.profile["settings"].get("llm_backend")
         new_backend = req.llm_backend.strip()

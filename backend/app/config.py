@@ -45,6 +45,9 @@ LLM_MODEL_COMPLEX = os.environ.get("LLM_MODEL_COMPLEX", "nvidia/nemotron-3-nano-
 #         but uses the full tool-aware prompt for complex tasks (default)
 LLM_MODE = int(os.environ.get("LLM_MODE", "3"))
 
+# Tool Operating Mode — "basic" (weak/local LLMs) vs "advanced" (frontier cloud LLMs with parallel multi-step execution)
+TOOL_MODE = os.environ.get("TOOL_MODE", "basic").strip().lower()
+
 # Tool transport configuration
 # mcp-stdio routes Yuki tool execution through backend/app/mcp_server.py over MCP stdio.
 # local keeps the legacy in-process Python dispatcher.

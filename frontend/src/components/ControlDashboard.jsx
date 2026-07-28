@@ -2733,6 +2733,61 @@ const ControlDashboard = ({
                         </select>
                       </div>
                     )}
+
+                    {/* Tool Operating Mode Segment */}
+                    <div className="identity-field" style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div className="field-label" style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Wrench style={{ width: '13px', height: '13px', color: '#c084fc' }} />
+                        Tool Operating Suite
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateSetting('tool_mode', 'basic')}
+                          style={{
+                            padding: '9px 10px',
+                            borderRadius: '10px',
+                            border: (settings.tool_mode || 'basic') === 'basic' ? '1.5px solid #a78bfa' : '1px solid rgba(255,255,255,0.1)',
+                            background: (settings.tool_mode || 'basic') === 'basic' ? 'rgba(167,139,250,0.18)' : 'rgba(0,0,0,0.3)',
+                            color: 'white',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <div style={{ fontWeight: '600', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <Zap style={{ width: '12px', height: '12px', color: '#a78bfa' }} />
+                            Basic Tools
+                          </div>
+                          <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '3px', lineHeight: '1.2' }}>
+                            For local/fast models. Single-turn tool calling.
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateSetting('tool_mode', 'advanced')}
+                          style={{
+                            padding: '9px 10px',
+                            borderRadius: '10px',
+                            border: settings.tool_mode === 'advanced' ? '1.5px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                            background: settings.tool_mode === 'advanced' ? 'rgba(56,189,248,0.18)' : 'rgba(0,0,0,0.3)',
+                            color: 'white',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <div style={{ fontWeight: '600', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <Cpu style={{ width: '12px', height: '12px', color: '#38bdf8' }} />
+                            Autonomous Jarvis
+                          </div>
+                          <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '3px', lineHeight: '1.2' }}>
+                            Frontier cloud LLMs. Parallel tools, multi-step ReAct, DB search.
+                          </div>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
