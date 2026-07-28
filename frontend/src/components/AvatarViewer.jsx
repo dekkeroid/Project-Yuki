@@ -1678,7 +1678,7 @@ const AvatarViewer = ({
               const trackingPitchOffset = horizontalDist > 0.01
                 ? Math.atan2(camera.position.y - headHeight, horizontalDist) * 1.1
                 : 0;
-              const minPitch = -0.65;
+              const minPitch = -0.30;
               const maxPitch = 0.85;
               const clampedPitch = Math.max(minPitch, Math.min(maxPitch, trackingPitchOffset));
 
@@ -1749,7 +1749,7 @@ const AvatarViewer = ({
                 let orbTrackingPitch = orbHDist > 0.01
                   ? Math.atan2(camera.position.y - orbHeadHeight, orbHDist) * 1.1
                   : 0;
-                orbTrackingPitch = Math.max(-0.65, Math.min(0.85, orbTrackingPitch));
+                orbTrackingPitch = Math.max(-0.30, Math.min(0.85, orbTrackingPitch));
                 targetLookY = orbTrackingYaw;
                 targetLookX = orbTrackingPitch;
               } else {
