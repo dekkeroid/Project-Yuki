@@ -450,6 +450,7 @@ const App = () => {
     if (!isChatOpen) return;
     let baseline = null;
     let animId = null;
+    let currentBottom = 16;
     const updatePosition = () => {
       const el = chatContainerRef.current;
       if (!el) {
@@ -462,17 +463,21 @@ const App = () => {
         const headPx = ((100 - currentPct) / 100) * window.innerHeight;
         const baselineHeadPx = ((100 - baseline) / 100) * window.innerHeight;
         const delta = baselineHeadPx - headPx;
-        let bottom = Math.max(16, 16 + delta);
-        if (window.electronAPI) {
-          const windowScreenY = window.screenY || 0;
-          const screenHeight = window.screen.height;
-          const windowBottomScreen = windowScreenY + window.innerHeight;
-          if (windowBottomScreen > screenHeight) {
-            const minByScreen = windowBottomScreen - screenHeight;
-            if (minByScreen > bottom) bottom = minByScreen;
+        const DEADZONE = 25;
+        if (Math.abs(delta) > DEADZONE) {
+          let bottom = Math.max(16, 16 + delta);
+          if (window.electronAPI) {
+            const windowScreenY = window.screenY || 0;
+            const screenHeight = window.screen.height;
+            const windowBottomScreen = windowScreenY + window.innerHeight;
+            if (windowBottomScreen > screenHeight) {
+              const minByScreen = windowBottomScreen - screenHeight;
+              if (minByScreen > bottom) bottom = minByScreen;
+            }
           }
+          currentBottom = bottom;
+          el.style.bottom = `${Math.round(bottom)}px`;
         }
-        el.style.bottom = `${Math.round(bottom)}px`;
       }
       animId = requestAnimationFrame(updatePosition);
     };
