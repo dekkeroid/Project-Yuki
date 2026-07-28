@@ -134,7 +134,7 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
           transform: 'translateX(-50%)'
         }} />
         <div ref={vadLabelRef} style={{
-          position: 'absolute', top: '-10px', fontSize: '8px',
+          position: 'absolute', bottom: '-10px', fontSize: '8px',
           color: '#ffffff', fontFamily: 'monospace', fontWeight: 'bold',
           whiteSpace: 'nowrap', pointerEvents: 'none'
         }}>VAD</div>
