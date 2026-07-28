@@ -1090,7 +1090,9 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
     
     try:
         content = await file.read()
-        if not content or len(content) < 4000:
+        print(f"[STT Backend] Audio payload received: {len(content)} bytes. Model='{active_model}', compute='{active_compute}', lang='{active_lang}'")
+        if not content or len(content) < 1000:
+            print(f"[STT Backend] Audio payload too short ({len(content)} bytes). Skipping.")
             return {"text": ""}
 
         with open(temp_path, "wb") as f:
