@@ -2688,14 +2688,14 @@ const ControlDashboard = ({
                       <div>
                         <span className="field-label" style={{ opacity: settings.llm_mode === 1 ? 0.5 : 1 }}>LLM Intent Check</span>
                         <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
-                          Double-checks task intent with a secondary LLM query. <strong style={{ color: '#f472b6' }}>Keep ON for sub-5B models</strong>. (Default: OFF)
+                          Double-checks task intent with a secondary LLM query. <strong style={{ color: '#f472b6' }}>Recommended ON for sub-5B models</strong>. (Default: ON)
                         </span>
                       </div>
                       <label className="switch" style={{ opacity: settings.llm_mode === 1 ? 0.4 : 1, cursor: settings.llm_mode === 1 ? 'not-allowed' : 'pointer' }}>
                         <input
                           type="checkbox"
                           disabled={settings.llm_mode === 1}
-                          checked={settings.llm_mode !== 1 && !!settings.enable_intent_check}
+                          checked={settings.llm_mode !== 1 && (settings.enable_intent_check !== undefined ? settings.enable_intent_check : true)}
                           onChange={(e) => handleUpdateSetting('enable_intent_check', e.target.checked)}
                         />
                         <span className="slider round"></span>
@@ -2709,14 +2709,14 @@ const ControlDashboard = ({
                       <div>
                         <span className="field-label" style={{ opacity: settings.llm_mode === 1 ? 0.5 : 1 }}>Dynamic Tool Calling</span>
                         <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
-                          Filters tool schemas dynamically by query relevance. When <strong>OFF</strong> (default), all tool definitions are sent with complex prompts.
+                          Filters tool schemas dynamically by query relevance. When <strong>OFF</strong>, all tool definitions are sent with complex prompts. (Default: ON)
                         </span>
                       </div>
                       <label className="switch" style={{ opacity: settings.llm_mode === 1 ? 0.4 : 1, cursor: settings.llm_mode === 1 ? 'not-allowed' : 'pointer' }}>
                         <input
                           type="checkbox"
                           disabled={settings.llm_mode === 1}
-                          checked={settings.llm_mode !== 1 && !!settings.dynamic_tool_calling}
+                          checked={settings.llm_mode !== 1 && (settings.dynamic_tool_calling !== undefined ? settings.dynamic_tool_calling : true)}
                           onChange={(e) => handleUpdateSetting('dynamic_tool_calling', e.target.checked)}
                         />
                         <span className="slider round"></span>
