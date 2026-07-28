@@ -2642,6 +2642,87 @@ const ControlDashboard = ({
                       </select>
                     </div>
                   )}
+
+                  {/* Prompt Strategy / LLM Mode (Mixed, Simple Only, Complex Only) */}
+                  <div className="identity-field" style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd' }}>Prompt Strategy / LLM Mode</span>
+                    <select
+                      value={settings.llm_mode !== undefined ? settings.llm_mode : 3}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        handleUpdateSetting('llm_mode', val);
+                        if (val === 1) {
+                          handleUpdateSetting('enable_intent_check', false);
+                          handleUpdateSetting('dynamic_tool_calling', false);
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(167, 139, 250, 0.3)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                        cursor: 'pointer',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <option value={3} style={{ background: '#0b0813', color: 'white' }}>Dynamic Mixed Prompts (Default & Recommended)</option>
+                      <option value={1} style={{ background: '#0b0813', color: 'white' }}>Simple Prompts Only (Lean & Fast)</option>
+                      <option value={2} style={{ background: '#0b0813', color: 'white' }}>Complex Prompts Only (Full Capabilities)</option>
+                    </select>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px', lineHeight: '1.3' }}>
+                      {settings.llm_mode === 1
+                        ? '⚡ Simple Prompts Only: Uses lean prompts for fast responses. Disables tools, intent checking, and dynamic filtering.'
+                        : settings.llm_mode === 2
+                        ? '🧠 Complex Prompts Only: Forces full tool-aware system prompts for all turns.'
+                        : '🔄 Dynamic Mixed Prompts: Automatically uses lightweight prompts for basic chatter and tool-aware prompts for desktop tasks.'}
+                    </span>
+                  </div>
+
+                  {/* LLM Intent Check Toggle */}
+                  <div className="identity-field" style={{ marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span className="field-label" style={{ opacity: settings.llm_mode === 1 ? 0.5 : 1 }}>LLM Intent Check</span>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
+                          Double-checks task intent with a secondary LLM query. <strong style={{ color: '#f472b6' }}>Keep ON for sub-5B models</strong>. (Default: OFF)
+                        </span>
+                      </div>
+                      <label className="switch" style={{ opacity: settings.llm_mode === 1 ? 0.4 : 1, cursor: settings.llm_mode === 1 ? 'not-allowed' : 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          disabled={settings.llm_mode === 1}
+                          checked={settings.llm_mode !== 1 && !!settings.enable_intent_check}
+                          onChange={(e) => handleUpdateSetting('enable_intent_check', e.target.checked)}
+                        />
+                        <span className="slider round"></span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Tool Calling Toggle */}
+                  <div className="identity-field" style={{ marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span className="field-label" style={{ opacity: settings.llm_mode === 1 ? 0.5 : 1 }}>Dynamic Tool Calling</span>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
+                          Filters tool schemas dynamically by query relevance. When <strong>OFF</strong> (default), all tool definitions are sent with complex prompts.
+                        </span>
+                      </div>
+                      <label className="switch" style={{ opacity: settings.llm_mode === 1 ? 0.4 : 1, cursor: settings.llm_mode === 1 ? 'not-allowed' : 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          disabled={settings.llm_mode === 1}
+                          checked={settings.llm_mode !== 1 && !!settings.dynamic_tool_calling}
+                          onChange={(e) => handleUpdateSetting('dynamic_tool_calling', e.target.checked)}
+                        />
+                        <span className="slider round"></span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
               )}
 

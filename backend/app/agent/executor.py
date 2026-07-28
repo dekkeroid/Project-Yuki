@@ -1393,7 +1393,8 @@ class AgentExecutor:
                 resolved_backend = self._classify_task(user_message) if user_message else "simple"
 
             intent_source = "regex"
-            if resolved_backend == "complex" and user_message:
+            enable_intent = settings.get("enable_intent_check", False)
+            if config.LLM_MODE != 1 and enable_intent and resolved_backend == "complex" and user_message:
                 intent, intent_tool_hint, intent_source = await self._check_tool_intent(user_message, chat_history)
                 if intent == "chat":
                     resolved_backend = "simple"

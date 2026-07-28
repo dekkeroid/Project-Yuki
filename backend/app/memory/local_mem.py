@@ -48,7 +48,9 @@ class MemoryManager:
                 "use_local_whisper": True,
                 "stt_language": "en",
                 "no_llm_mode": False,
-                "dynamic_tool_calling": True,
+                "dynamic_tool_calling": False,
+                "enable_intent_check": False,
+                "llm_mode": 3,
                 "enable_rotation": True,
                 "auto_reset_rotation": False,
                 "tts_preload": True,
@@ -89,6 +91,7 @@ class MemoryManager:
                 config.NO_LLM_MODE = data["settings"].get("no_llm_mode", False)
                 config.LLM_BACKEND = data["settings"].get("llm_backend", config.LLM_BACKEND)
                 config.LLM_BASE_URL = data["settings"].get("llm_base_url", config.LLM_BASE_URL)
+                config.LLM_MODE = int(data["settings"].get("llm_mode", config.LLM_MODE))
                 raw_key = data["settings"].get("llm_api_key", config.LLM_API_KEY)
                 from app.utils.security import decrypt_api_key, encrypt_api_key
                 config.LLM_API_KEY = decrypt_api_key(raw_key) if raw_key else ""
@@ -220,6 +223,8 @@ class MemoryManager:
             reset_backend()
         elif key == "no_llm_mode":
             config.NO_LLM_MODE = bool(value)
+        elif key == "llm_mode":
+            config.LLM_MODE = int(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

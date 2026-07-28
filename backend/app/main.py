@@ -174,6 +174,8 @@ async def _swap_model(new_model: str, old_model: str = None, old_backend=None):
 async def _do_model_swap(backend, old_model: str, new_model: str):
     """Background task: unload old + preload new."""
     import time as _time
+    if backend and backend.__class__.__name__ == "OpenAICompatibleBackend":
+        return
     try:
         t0 = _time.time()
         await asyncio.wait_for(backend.unload_model(old_model), timeout=15)
@@ -681,6 +683,8 @@ class SettingsUpdateRequest(BaseModel):
     mute_alarm_chimes: Optional[bool] = None
     alarm_tone: Optional[str] = None
     custom_alarm_tone_file: Optional[str] = None
+    llm_mode: Optional[int] = None
+    enable_intent_check: Optional[bool] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -792,6 +796,11 @@ async def update_settings(req: SettingsUpdateRequest):
                 asyncio.create_task(agent_executor.ensure_model_loaded(config.LLM_MODEL))
     if req.dynamic_tool_calling is not None:
         memory_manager.update_setting("dynamic_tool_calling", req.dynamic_tool_calling)
+    if req.llm_mode is not None:
+        config.LLM_MODE = int(req.llm_mode)
+        memory_manager.update_setting("llm_mode", int(req.llm_mode))
+    if req.enable_intent_check is not None:
+        memory_manager.update_setting("enable_intent_check", req.enable_intent_check)
     if req.enable_rotation is not None:
         memory_manager.update_setting("enable_rotation", req.enable_rotation)
     if req.auto_reset_rotation is not None:
