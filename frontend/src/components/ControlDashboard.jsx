@@ -2683,8 +2683,8 @@ const ControlDashboard = ({
                           <input
                             type="range"
                             min="0.002"
-                            max="0.08"
-                            step="0.002"
+                            max="0.3"
+                            step="0.005"
                             value={vadThreshold}
                             onChange={(e) => onVadThresholdChange && onVadThresholdChange(parseFloat(e.target.value))}
                             style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}

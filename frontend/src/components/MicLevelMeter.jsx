@@ -80,9 +80,9 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
           ctx.fill();
 
           const thresholdX = Math.max(1, Math.min(w - 1, vadThresholdRef.current * w));
-          ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 3]);
+          ctx.strokeStyle = 'rgba(168,85,247,0.65)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 3]);
           ctx.beginPath();
           ctx.moveTo(thresholdX, 0);
           ctx.lineTo(thresholdX, h);
