@@ -465,9 +465,16 @@ const ControlDashboard = ({
         .catch(err => console.error("Failed to fetch tools list:", err));
       fetchMood();
       fetchTimeItems();
+      if (onProfileUpdate) {
+        onProfileUpdate();
+      }
       interval = setInterval(() => {
         fetchTimeItems();
-      }, 1000);
+        fetchMood();
+        if (onProfileUpdate) {
+          onProfileUpdate();
+        }
+      }, 2500);
     }
     return () => {
       if (interval) clearInterval(interval);

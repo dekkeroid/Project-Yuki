@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import { API_BASE } from './api';
 
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
@@ -47,6 +47,17 @@ export default function SettingsApp() {
   const [cameraTracking, setCameraTracking] = useState(() => {
     return localStorage.getItem('yuki-camera-tracking') !== 'false';
   });
+
+  const preferHeadsetRef = useRef(preferHeadsetMic);
+  preferHeadsetRef.current = preferHeadsetMic;
+  const selectedMicRef = useRef(selectedMicDeviceId);
+  selectedMicRef.current = selectedMicDeviceId;
+
+  const handleMicDeviceChange = useCallback((id) => {
+    setSelectedMicDeviceId(id);
+    if (id) localStorage.setItem('yuki-mic-device-id', id);
+    else localStorage.removeItem('yuki-mic-device-id');
+  }, []);
 
   const hostPlatform = useMemo(() => {
     if (window.electronAPI?.platform) {
@@ -100,6 +111,34 @@ export default function SettingsApp() {
     fetchProfile();
     fetchLlmModels();
     refreshMicDevices();
+
+    const onDeviceChange = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+        setMicDevices(audioInputs);
+        if (preferHeadsetRef.current) {
+          const HEADSET_KEYWORDS = [
+            'headset', 'headphone', 'headphones', 'earphone', 'earphones', 'earpiece',
+            'bluetooth', 'wireless', 'hands-free', 'handsfree', 'airpod', 'airpods',
+            'buds', 'external', 'usb', 'ag audio', 'stereo', 'voice'
+          ];
+          const label = (d) => (d.label || '').toLowerCase();
+          const isCommunications = (d) => label(d).includes('communications');
+          const hasKeyword = (d) => HEADSET_KEYWORDS.some(kw => label(d).includes(kw));
+          let headset = audioInputs.find(d => hasKeyword(d) && !isCommunications(d));
+          if (!headset) headset = audioInputs.find(d => hasKeyword(d));
+          if (headset && headset.deviceId !== selectedMicRef.current) {
+            handleMicDeviceChange(headset.deviceId);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to enumerate mic devices:", e);
+      }
+    };
+
+    navigator.mediaDevices?.addEventListener('devicechange', onDeviceChange);
+    return () => navigator.mediaDevices?.removeEventListener('devicechange', onDeviceChange);
   }, []);
 
   return (
@@ -115,9 +154,13 @@ export default function SettingsApp() {
         }}
         modelName={modelName}
         onProfileUpdate={(updatedProfile) => {
-          setProfile(updatedProfile);
-          if (updatedProfile.settings && updatedProfile.settings.llm_model) {
-            setModelName(updatedProfile.settings.llm_model);
+          if (updatedProfile) {
+            setProfile(updatedProfile);
+            if (updatedProfile.settings && updatedProfile.settings.llm_model) {
+              setModelName(updatedProfile.settings.llm_model);
+            }
+          } else {
+            fetchProfile();
           }
         }}
         skinToneColor={skinToneColor}
@@ -146,11 +189,7 @@ export default function SettingsApp() {
         }}
         micDevices={micDevices}
         selectedMicDeviceId={selectedMicDeviceId}
-        onMicDeviceChange={(id) => {
-          setSelectedMicDeviceId(id);
-          if (id) localStorage.setItem('yuki-mic-device-id', id);
-          else localStorage.removeItem('yuki-mic-device-id');
-        }}
+        onMicDeviceChange={handleMicDeviceChange}
         onRefreshMicDevices={refreshMicDevices}
         vadThreshold={vadThreshold}
         onVadThresholdChange={(val) => {
@@ -174,11 +213,16 @@ export default function SettingsApp() {
           setPreferHeadsetMic(val);
           localStorage.setItem('yuki-prefer-headset', val.toString());
           if (val) {
-            const HEADSET_KEYWORDS = ['headset', 'headphone', 'earphone', 'earpiece', 'bluetooth', 'wireless', 'hands-free', 'handsfree', 'airpod', 'buds'];
-            const isHeadset = (d) => HEADSET_KEYWORDS.some(kw => (d.label || '').toLowerCase().includes(kw));
-            const isCommunications = (d) => (d.label || '').toLowerCase().startsWith('communications');
-            let headset = micDevices.find(d => isHeadset(d) && !isCommunications(d));
-            if (!headset) headset = micDevices.find(d => isHeadset(d));
+            const HEADSET_KEYWORDS = [
+              'headset', 'headphone', 'headphones', 'earphone', 'earphones', 'earpiece',
+              'bluetooth', 'wireless', 'hands-free', 'handsfree', 'airpod', 'airpods',
+              'buds', 'external', 'usb', 'ag audio', 'stereo', 'voice'
+            ];
+            const label = (d) => (d.label || '').toLowerCase();
+            const isCommunications = (d) => label(d).includes('communications');
+            const hasKeyword = (d) => HEADSET_KEYWORDS.some(kw => label(d).includes(kw));
+            let headset = micDevices.find(d => hasKeyword(d) && !isCommunications(d));
+            if (!headset) headset = micDevices.find(d => hasKeyword(d));
             if (headset) onMicDeviceChange(headset.deviceId);
           } else {
             onMicDeviceChange('');

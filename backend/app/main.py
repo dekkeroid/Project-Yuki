@@ -18,6 +18,7 @@ class TelemetryLogFilter(logging.Filter):
     def filter(self, record):
         msg = record.getMessage()
         return (
+            "/api/reminders/active" not in msg and
             "/api/system/pcstat" not in msg and 
             "/api/crawler/status" not in msg and 
             "/api/speech/status" not in msg and 

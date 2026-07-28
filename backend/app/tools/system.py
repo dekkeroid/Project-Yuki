@@ -286,6 +286,8 @@ def set_system_volume(volume_level: int) -> str:
 
     # ── Method 1: pycaw (most reliable, direct Windows Core Audio API) ────
     try:
+        import comtypes
+        comtypes.CoInitialize()
         from pycaw.pycaw import AudioUtilities
         speakers = AudioUtilities.GetSpeakers()
         volume = speakers.EndpointVolume

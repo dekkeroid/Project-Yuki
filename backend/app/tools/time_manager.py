@@ -526,16 +526,9 @@ def init_time_manager():
     """
     Called on startup to load and schedule all active timers/reminders that survived restart.
     """
+    reminders = []
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        reminders = cursor.execute("""
-        SELECT id, target_time
-        FROM reminders
-        WHERE is_completed = 0
-        """).fetchall()
-        conn.close()
-    except Exception as e:
+        # Always ensure schema exists before querying (guards against fresh installs / schema upgrades)
         from app.memory.db import init_db
         init_db()
         conn = get_connection()
@@ -546,7 +539,10 @@ def init_time_manager():
         WHERE is_completed = 0
         """).fetchall()
         conn.close()
-    
+    except Exception as e:
+        print(f"[TimeManager] Warning: could not restore reminders on startup: {e}")
+        reminders = []
+
     for row in reminders:
         schedule_exact_timer(row["id"], row["target_time"])
         print(f"[TimeManager] Restored schedule for reminder #{row['id']}")
@@ -668,16 +664,19 @@ def init_exact_timer_scheduler():
         _main_loop = asyncio.get_running_loop()
     except RuntimeError:
         pass
+
+    rows = []
     try:
-        conn = get_connection()
-        rows = conn.execute("SELECT id, target_time FROM reminders WHERE is_completed = 0").fetchall()
-        conn.close()
-    except Exception as e:
+        # Always ensure schema exists before querying (guards against fresh installs / schema upgrades)
         from app.memory.db import init_db
         init_db()
         conn = get_connection()
         rows = conn.execute("SELECT id, target_time FROM reminders WHERE is_completed = 0").fetchall()
         conn.close()
+    except Exception as e:
+        print(f"[TimeManager] Warning: could not load pending reminders on startup: {e}")
+        rows = []
+
     for r in rows:
         schedule_exact_timer(r["id"], r["target_time"])
 

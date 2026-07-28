@@ -59,6 +59,31 @@ Default policy:
 
 Long desktop chat bubbles are clamped to the Electron window viewport using `frontend/src/utils/desktopBubblePosition.js`. The bubble now has max width/height, scroll handling, and robust word wrapping so longer 4-5 line messages no longer clip through the window.
 
+## Building the app
+
+The build pipeline runs four sequential steps. Each step depends on the previous one completing successfully.
+
+```bash
+# 1. Build the React frontend
+\frontend > npm run build:frontend
+
+# 2. Bundle the Python backend with PyInstaller
+\backend > venv\Scripts\pyinstaller.exe yuki-backend.spec --noconfirm
+
+# 3. Package the Electron app
+\frontend > npm run build:electron
+
+# 4. Create the Windows installer with Inno Setup
+\frontend > & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer.iss
+```
+
+The final installer is output to `frontend/installer-output/`.
+
+**Prerequisites:**
+- Node.js and npm (for frontend and Electron builds)
+- Python venv with all backend dependencies installed in `backend/venv`
+- [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed at the default location
+
 ## Development checks
 
 Backend:

@@ -352,13 +352,14 @@ export function useSpeechRecognition(options = {}) {
           if (stopAllPlayback) stopAllPlayback();
 
           const sttStartTime = Date.now();
+          let res;
           try {
             logSTTStatus(`Transcribing (${audioBlob.size} bytes)...`);
             const formData = new FormData();
             formData.append("file", audioBlob, "speech.webm");
             formData.append("model", whisperModelRef.current);
 
-            const res = await fetch(`${API_BASE}/api/speech/transcribe`, {
+            res = await fetch(`${API_BASE}/api/speech/transcribe`, {
               method: "POST",
               body: formData
             });
@@ -375,7 +376,12 @@ export function useSpeechRecognition(options = {}) {
               updateListeningState();
             }
           } catch (e) {
-            logSTTStatus(`Whisper STT transcription failed: ${e.message}`);
+            let errMsg = e.message;
+            if (res) {
+              const body = await res.text().catch(() => '<unreadable>');
+              errMsg += ` | status=${res.status} body="${body}"`;
+            }
+            logSTTStatus(`Whisper STT transcription failed: ${errMsg}`);
             setIsTranscribing(false);
             if (setMessages) {
               setMessages((prev) => [...prev, {
@@ -576,15 +582,20 @@ export function useSpeechRecognition(options = {}) {
     }
   };
 
-  const HEADSET_KEYWORDS = ['headset', 'headphone', 'earphone', 'earpiece', 'bluetooth', 'wireless', 'hands-free', 'handsfree', 'airpod', 'buds'];
+  const HEADSET_KEYWORDS = [
+    'headset', 'headphone', 'headphones', 'earphone', 'earphones', 'earpiece',
+    'bluetooth', 'wireless', 'hands-free', 'handsfree', 'airpod', 'airpods',
+    'buds', 'external', 'usb', 'ag audio', 'stereo', 'voice'
+  ];
 
   const applyHeadsetPreference = useCallback((devices, prefer) => {
     if (!prefer) return;
-    const isHeadset = (d) => HEADSET_KEYWORDS.some(kw => (d.label || '').toLowerCase().includes(kw));
-    const isCommunications = (d) => (d.label || '').toLowerCase().startsWith('communications');
+    const label = (d) => (d.label || '').toLowerCase();
+    const isCommunications = (d) => label(d).includes('communications');
+    const hasKeyword = (d) => HEADSET_KEYWORDS.some(kw => label(d).includes(kw));
 
-    let headset = devices.find(d => isHeadset(d) && !isCommunications(d));
-    if (!headset) headset = devices.find(d => isHeadset(d));
+    let headset = devices.find(d => hasKeyword(d) && !isCommunications(d));
+    if (!headset) headset = devices.find(d => hasKeyword(d));
 
     if (headset && selectedMicDeviceIdRef.current !== headset.deviceId) {
       setSelectedMicDeviceId(headset.deviceId);

@@ -356,7 +356,14 @@ const App = () => {
     return localStorage.getItem('yuki-camera-tracking') !== 'false';
   });
 
-  // Listen for skintone and camera tracking updates sent from external Settings window via IPC and localStorage
+  // Always reset avatar scale in localStorage to 1.0 on main app startup so external Settings window also defaults to 100%
+  useEffect(() => {
+    try {
+      localStorage.setItem('yuki-avatar-scale', '1.0');
+    } catch (e) {}
+  }, []);
+
+  // Listen for skintone, camera tracking, and avatar scale updates sent from external Settings window via IPC and localStorage
   useEffect(() => {
     const handleStorage = (e) => {
       if (e.key === 'yuki-avatar-skintone-color' && e.newValue) {
@@ -364,6 +371,12 @@ const App = () => {
       }
       if (e.key === 'yuki-camera-tracking') {
         setCameraTracking(e.newValue !== 'false');
+      }
+      if (e.key === 'yuki-avatar-scale' && e.newValue) {
+        const parsed = parseFloat(e.newValue);
+        if (!isNaN(parsed) && parsed > 0) {
+          setAvatarScale(parsed);
+        }
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -1917,7 +1930,7 @@ const detectExpression = (text) => {
 
   // 5. Send text message
   const handleSendMessage = (e, textOverride, fromSuggestion = false) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     const textToSubmit = textOverride !== undefined ? textOverride : inputText;
     if (!textToSubmit.trim()) return;
     const text = textToSubmit.trim();
@@ -4386,9 +4399,13 @@ const detectExpression = (text) => {
         modelName={modelName}
         lmstudioUrl={lmstudioUrl}
         onProfileUpdate={(updatedProfile) => {
-          setProfile(updatedProfile);
-          if (updatedProfile.settings && updatedProfile.settings.llm_model) {
-            setModelName(updatedProfile.settings.llm_model);
+          if (updatedProfile) {
+            setProfile(updatedProfile);
+            if (updatedProfile.settings && updatedProfile.settings.llm_model) {
+              setModelName(updatedProfile.settings.llm_model);
+            }
+          } else {
+            fetchProfileDetails();
           }
         }}
         skinToneColor={avatarSkinToneColor}

@@ -18,7 +18,7 @@
     "preview": "vite preview",
     "electron": "electron main.electron.cjs",
     "dev:electron": "concurrently -k -s first \"npm run dev\" \"npm run electron\"",
-    "build:backend": "cd ../backend && pyinstaller yuki-backend.spec --noconfirm && copy .env.default dist\\backend\\.env",
+    "build:backend": "cd ../backend && venv\\Scripts\\pyinstaller.exe yuki-backend.spec --noconfirm",
     "build:frontend": "vite build",
     "build:electron": "electron-builder --win",
     "build:all": "npm run build:backend && npm run build:frontend && npm run build:electron"
