@@ -1,9 +1,12 @@
 import React, { useRef, useEffect, useState } from 'react';
 
-const MicLevelMeter = ({ deviceId, deviceName = '' }) => {
+const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
   const canvasRef = useRef(null);
   const dbRef = useRef(null);
+  const vadThresholdRef = useRef(vadThreshold);
   const [error, setError] = useState(null);
+
+  useEffect(() => { vadThresholdRef.current = vadThreshold; }, [vadThreshold]);
 
   useEffect(() => {
     let animId;
@@ -75,6 +78,16 @@ const MicLevelMeter = ({ deviceId, deviceName = '' }) => {
             ctx.fillRect(0, 0, barW, h);
           }
           ctx.fill();
+
+          const thresholdX = Math.max(1, Math.min(w - 1, vadThresholdRef.current * w));
+          ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(thresholdX, 0);
+          ctx.lineTo(thresholdX, h);
+          ctx.stroke();
+          ctx.setLineDash([]);
 
           if (dbRef.current) {
             dbRef.current.textContent = db <= -40 ? '— dB' : `${Math.round(db)} dB`;

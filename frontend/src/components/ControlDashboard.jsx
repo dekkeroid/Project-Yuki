@@ -2592,7 +2592,7 @@ const ControlDashboard = ({
                         </span>
                       </label>
 
-                      <MicLevelMeter deviceId={selectedMicDeviceId} deviceName={micDevices.find(d => d.deviceId === selectedMicDeviceId)?.label || ''} />
+                      <MicLevelMeter deviceId={selectedMicDeviceId} deviceName={micDevices.find(d => d.deviceId === selectedMicDeviceId)?.label || ''} vadThreshold={vadThreshold} />
                     </div>
 
                     {/* STT Engine Select */}
