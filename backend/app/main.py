@@ -22,7 +22,11 @@ class TelemetryLogFilter(logging.Filter):
             "/api/system/pcstat" not in msg and 
             "/api/crawler/status" not in msg and 
             "/api/speech/status" not in msg and 
-            "/api/speech/transcribe" not in msg
+            "/api/speech/transcribe" not in msg and
+            "/api/mood" not in msg and
+            "/api/profile" not in msg and
+            "/health" not in msg and
+            "/api/time" not in msg
         )
 
 logging.getLogger("uvicorn.access").addFilter(TelemetryLogFilter())

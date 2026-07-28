@@ -550,27 +550,39 @@ const ControlDashboard = ({
   useEffect(() => {
     let interval = null;
     if (isOpen) {
-      fetch(`${API_BASE}/api/tools`)
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.tools) {
-            setToolsList(data.tools);
-          }
-        })
-        .catch(err => console.error("Failed to fetch tools list:", err));
-      fetchMood();
-      fetchTimeItems();
-      fetchSavedEndpoints();
-      if (onProfileUpdate) {
-        onProfileUpdate();
+      if (activeTab === 'brain') {
+        fetch(`${API_BASE}/api/tools`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.tools) {
+              setToolsList(data.tools);
+            }
+          })
+          .catch(err => console.error("Failed to fetch tools list:", err));
+        fetchSavedEndpoints();
       }
-      interval = setInterval(() => {
-        fetchTimeItems();
+
+      if (activeTab === 'memory') {
         fetchMood();
         if (onProfileUpdate) {
           onProfileUpdate();
         }
-      }, 2500);
+      }
+
+      if (activeTab === 'reminders') {
+        fetchTimeItems();
+      }
+
+      interval = setInterval(() => {
+        if (activeTab === 'memory') {
+          fetchMood();
+          if (onProfileUpdate) {
+            onProfileUpdate();
+          }
+        } else if (activeTab === 'reminders') {
+          fetchTimeItems();
+        }
+      }, 3000);
     }
     return () => {
       if (interval) clearInterval(interval);
