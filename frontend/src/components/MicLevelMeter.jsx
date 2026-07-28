@@ -62,9 +62,11 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
 
           ctx.clearRect(0, 0, w, h);
 
-          ctx.fillStyle = 'rgba(255,255,255,0.08)';
+          ctx.fillStyle = 'rgba(255,255,255,0.06)';
           ctx.fillRect(0, 0, w, h);
 
+          const barH = 8;
+          const barY = (h - barH) / 2;
           const barW = Math.max(2, normalized * w);
           const gradient = ctx.createLinearGradient(0, 0, w, 0);
           gradient.addColorStop(0, '#22c55e');
@@ -73,21 +75,26 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
           ctx.fillStyle = gradient;
           ctx.beginPath();
           if (ctx.roundRect) {
-            ctx.roundRect(0, 0, barW, h, 4);
+            ctx.roundRect(0, barY, barW, barH, 4);
           } else {
-            ctx.fillRect(0, 0, barW, h);
+            ctx.fillRect(0, barY, barW, barH);
           }
           ctx.fill();
 
           const thresholdX = Math.max(1, Math.min(w - 1, vadThresholdRef.current * w));
-          ctx.strokeStyle = 'rgba(168,85,247,0.65)';
-          ctx.lineWidth = 2;
-          ctx.setLineDash([4, 3]);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 3;
           ctx.beginPath();
           ctx.moveTo(thresholdX, 0);
           ctx.lineTo(thresholdX, h);
           ctx.stroke();
-          ctx.setLineDash([]);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 9px monospace';
+          const vadLabel = 'VAD';
+          const labelW = ctx.measureText(vadLabel).width;
+          const labelX = thresholdX + 6 > w - labelW - 4 ? thresholdX - labelW - 8 : thresholdX + 6;
+          ctx.fillText(vadLabel, labelX, h - 3);
 
           if (dbRef.current) {
             dbRef.current.textContent = db <= -40 ? '— dB' : `${Math.round(db)} dB`;
@@ -121,7 +128,7 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
     <div style={{ marginTop: '8px' }}>
       <canvas
         ref={canvasRef}
-        style={{ width: '100%', height: '8px', borderRadius: '4px', display: 'block' }}
+        style={{ width: '100%', height: '24px', borderRadius: '4px', display: 'block' }}
       />
       <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '3px' }}>
         Mic Test — <span ref={dbRef} style={{ fontVariantNumeric: 'tabular-nums' }}>— dB</span>
