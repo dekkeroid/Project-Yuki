@@ -154,5 +154,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendLog: (msg) => {
     ipcRenderer.send('yuki-renderer-log', msg);
   },
+  platform: process.platform,
   isElectron: true
 });

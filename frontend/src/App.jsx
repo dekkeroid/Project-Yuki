@@ -333,6 +333,14 @@ const App = () => {
   const [lastDrivesCount, setLastDrivesCount] = useState(null);
   const hasTriggeredLowSsdWarningRef = useRef(false);
   const hasTriggeredHighRamWarningRef = useRef(false);
+  const hostPlatform = useMemo(() => {
+    if (window.electronAPI?.platform) {
+      const p = window.electronAPI.platform;
+      return p === 'win32' ? 'Windows 10/11' : p === 'darwin' ? 'macOS' : 'Linux';
+    }
+    const ua = navigator.userAgent;
+    return ua.includes('Windows') ? 'Windows' : ua.includes('Mac') ? 'macOS' : 'Linux';
+  }, []);
   // Always start at 100% scale on launch — no persistence across restarts
   const [avatarScale, setAvatarScale] = useState(1.0);
   const [avatarSkinToneColor, setAvatarSkinToneColor] = useState(() => {
@@ -1558,7 +1566,7 @@ const App = () => {
 
             // CPU
             if (data.cpu && !data.cpu.error) {
-              chatText += `箕・・**CPU**: ${data.cpu.usage_percent}% (${data.cpu.cores_logical} cores`;
+              chatText += `🖥️ **CPU**: ${data.cpu.usage_percent}% (${data.cpu.cores_logical} cores`;
               if (data.cpu.freq_mhz) {
                 chatText += ` @ ${(data.cpu.freq_mhz / 1000).toFixed(1)} GHz`;
               }
@@ -1567,15 +1575,15 @@ const App = () => {
 
             // RAM
             if (data.ram && !data.ram.error) {
-              chatText += `沈 **RAM**: ${data.ram.used_gb} GB / ${data.ram.total_gb} GB (${data.ram.usage_percent}%)\n`;
+              chatText += `🧠 **RAM**: ${data.ram.used_gb} GB / ${data.ram.total_gb} GB (${data.ram.usage_percent}%)\n`;
             }
 
             // GPUs
             if (data.gpus && data.gpus.length > 0) {
               data.gpus.forEach((gpu, idx) => {
-                chatText += `式 **GPU ${idx + 1}**: ${gpu.name}`;
+                chatText += `🎮 **GPU ${idx + 1}**: ${gpu.name}`;
                 if (gpu.has_metrics) {
-                  chatText += ` (${gpu.utilization_percent}% load, ${gpu.temp_c}ﾂｰC, VRAM: ${gpu.mem_used_mb} MB / ${gpu.mem_total_mb} MB)`;
+                  chatText += ` (${gpu.utilization_percent}% load, ${gpu.temp_c}°C, VRAM: ${gpu.mem_used_mb} MB / ${gpu.mem_total_mb} MB)`;
                 }
                 chatText += "\n";
               });
@@ -1584,7 +1592,7 @@ const App = () => {
             // Battery
             if (data.battery && !data.battery.error) {
               const b = data.battery;
-              chatText += `萩 **Battery**: ${b.percent}%`;
+              chatText += `🔋 **Battery**: ${b.percent}%`;
               if (b.charging) {
                 const rate = b.charge_rate_mw ? ` at ${(b.charge_rate_mw / 1000).toFixed(1)}W` : '';
                 chatText += ` (Charging${rate})`;
@@ -1596,22 +1604,22 @@ const App = () => {
               }
               chatText += "\n";
             } else if (data.battery === null) {
-              chatText += `萩 **Battery**: Not detected (Desktop PC)\n`;
+              chatText += `🔋 **Battery**: Not detected (Desktop PC)\n`;
             }
 
             // Disk
             if (data.disk && !data.disk.error) {
-              chatText += `朕 **Disk (C:)**: ${data.disk.used_gb} GB / ${data.disk.total_gb} GB (${data.disk.usage_percent}%)\n`;
+              chatText += `💿 **Disk (C:)**: ${data.disk.used_gb} GB / ${data.disk.total_gb} GB (${data.disk.usage_percent}%)\n`;
             }
 
             // Uptime
             if (data.uptime && !data.uptime.error) {
-              chatText += `竢ｱ・・**Uptime**: ${data.uptime.hours}h ${data.uptime.minutes}m\n`;
+              chatText += `⏱️ **Uptime**: ${data.uptime.hours}h ${data.uptime.minutes}m\n`;
             }
 
             // OS info
             if (data.os) {
-              chatText += `笞呻ｸ・**OS**: ${data.os}`;
+              chatText += `💻 **OS**: ${data.os}`;
             }
 
             // 3. Build a natural summary for TTS
@@ -4192,7 +4200,7 @@ const detectExpression = (text) => {
                         </div>
                         <div className="spec-row">
                           <span className="spec-label">Host OS</span>
-                          <span className="spec-val">Windows 10/11</span>
+                          <span className="spec-val">{hostPlatform}</span>
                         </div>
                         <div className="spec-row">
                           <span className="spec-label">Audio Output</span>
