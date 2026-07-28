@@ -765,22 +765,18 @@ class AgentExecutor:
                 )
         elif backend == "complex":
             try:
-                print(f"[Router] Task classified as complex -> using {config.LLM_MODEL_COMPLEX} (temp=0.2)")
-                return self._query_lmstudio_model(messages, config.LLM_MODEL_COMPLEX, temperature=0.2, use_tools=use_tools)
+                print(f"[Router][Mode 2] Task=complex -> using {config.LLM_MODEL} with full prompt (temp=0.2)")
+                return self._query_lmstudio_model(messages, config.LLM_MODEL, temperature=0.2, use_tools=use_tools)
             except Exception as complex_err:
-                print(f"[Router] Complex model '{config.LLM_MODEL_COMPLEX}' failed ({complex_err}), falling back to simple model '{config.LLM_MODEL}' (temp=0.2)")
-                try:
-                    return self._query_lmstudio_model(messages, config.LLM_MODEL, temperature=0.2, use_tools=use_tools)
-                except Exception as fallback_err:
-                    return (
-                        f"Hmph! Both complex and simple models failed. "
-                        f"Complex error: {complex_err} | Simple error: {fallback_err}",
-                        None,
-                        self._get_model_label(config.LLM_MODEL)
-                    )
+                llm_backend = get_backend()
+                return (
+                    llm_backend.get_error_message(complex_err),
+                    None,
+                    self._get_model_label(config.LLM_MODEL)
+                )
         else:
             try:
-                print(f"[Router] Task classified as simple -> using {config.LLM_MODEL} (temp=0.7)")
+                print(f"[Router][Mode 1] Task=simple -> using {config.LLM_MODEL} with simple prompt (temp=0.7)")
                 return self._query_lmstudio_model(messages, config.LLM_MODEL, temperature=0.7, use_tools=use_tools)
             except Exception as e:
                 llm_backend = get_backend()
@@ -1012,13 +1008,13 @@ class AgentExecutor:
                 yield err_msg, self._get_model_label(config.LLM_MODEL)
         elif backend == "complex":
             try:
-                print(f"[Router] Task=complex (mode 2) -> streaming {config.LLM_MODEL_COMPLEX} (temp=0.2)")
-                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL_COMPLEX, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint):
-                    yield chunk, label
-            except Exception as complex_err:
-                print(f"[Router] Complex model stream failed ({complex_err}), falling back to simple (temp=0.2)")
+                print(f"[Router][Mode 2] Task=complex -> streaming {config.LLM_MODEL} with full prompt (temp=0.2)")
                 async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint):
                     yield chunk, label
+            except Exception as e:
+                llm_backend = get_backend()
+                err_msg = {"content": llm_backend.get_error_message(e)}
+                yield err_msg, self._get_model_label(config.LLM_MODEL)
         else:
             try:
                 print(f"[Router] Task=simple -> streaming {config.LLM_MODEL} (temp=0.7)")
