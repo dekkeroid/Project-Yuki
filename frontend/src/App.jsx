@@ -4433,7 +4433,12 @@ const detectExpression = (text) => {
         onPreferHeadsetMicChange={(val) => {
           setPreferHeadsetMic(val);
           localStorage.setItem('yuki-prefer-headset', val.toString());
-          if (val) applyHeadsetPreference(micDevices, true);
+          if (val) {
+            applyHeadsetPreference(micDevices, true);
+          } else {
+            setSelectedMicDeviceId('');
+            localStorage.removeItem('yuki-mic-device-id');
+          }
         }}
         hostPlatform={hostPlatform}
         avatarScale={avatarScale}

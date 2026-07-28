@@ -180,6 +180,8 @@ export default function SettingsApp() {
             let headset = micDevices.find(d => isHeadset(d) && !isCommunications(d));
             if (!headset) headset = micDevices.find(d => isHeadset(d));
             if (headset) onMicDeviceChange(headset.deviceId);
+          } else {
+            onMicDeviceChange('');
           }
         }}
         hostPlatform={hostPlatform}
