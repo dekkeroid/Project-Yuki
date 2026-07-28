@@ -523,7 +523,9 @@ export function useSpeechRecognition(options = {}) {
     if (logToTerminal) logToTerminal(`[STT] Microphone listening mode turned OFF${forceAbort ? ' (forced abort)' : ''}`);
 
     isSpeechRecActiveRef.current = false;
-    isRecordingRef.current = false;
+    if (forceAbort) {
+      isRecordingRef.current = false;
+    }
 
     if (useLocalWhisperRef.current) {
       if (maxRecordingTimeoutRef.current) {
