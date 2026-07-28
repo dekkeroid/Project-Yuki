@@ -494,9 +494,13 @@ export function useSpeechRecognition(options = {}) {
 
       } catch (e) {
         console.warn("[STT] Failed to start local Whisper recording:", e);
+        if (logToTerminal) logToTerminal(`[STT Error] Could not access mic (${e.message}). Retrying in 400ms...`);
         isSpeechRecActiveRef.current = false;
         setIsListening(false);
         isRecordingRef.current = false;
+        setTimeout(() => {
+          updateListeningState();
+        }, 400);
       }
     } else {
       if (!recognitionRef.current) return;
