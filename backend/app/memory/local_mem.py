@@ -50,6 +50,8 @@ class MemoryManager:
                 "no_llm_mode": False,
                 "dynamic_tool_calling": True,
                 "enable_intent_check": True,
+                "vad_threshold": 0.015,
+                "silence_timeout_ms": 450,
                 "llm_mode": 3,
                 "enable_rotation": True,
                 "auto_reset_rotation": False,

@@ -59,12 +59,15 @@ export function useSpeechRecognition(options = {}) {
   });
 
   const [vadThreshold, setVadThreshold] = useState(() => {
-    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.01');
+    const optVal = options.vadThreshold;
+    if (optVal !== undefined && optVal < 0.2) return optVal;
+    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.015');
   });
   const vadThresholdRef = useRef(vadThreshold);
   useEffect(() => {
-    vadThresholdRef.current = vadThreshold;
-  }, [vadThreshold]);
+    const val = (options.vadThreshold !== undefined && options.vadThreshold < 0.2) ? options.vadThreshold : vadThreshold;
+    vadThresholdRef.current = val;
+  }, [options.vadThreshold, vadThreshold]);
 
   const [useLocalWhisper, setUseLocalWhisperState] = useState(true);
   const useLocalWhisperRef = useRef(true);

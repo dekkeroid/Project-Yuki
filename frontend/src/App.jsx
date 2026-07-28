@@ -674,6 +674,7 @@ const App = () => {
   } = useSpeechRecognition({
     API_BASE,
     whisperModel: profile?.settings?.whisper_model || 'base',
+    vadThreshold: profile?.settings?.vad_threshold,
     isThinkingRef,
     ttsStreamActiveRef,
     hasReceivedAudioRef,

@@ -3070,20 +3070,20 @@ const ControlDashboard = ({
                           </select>
                         </div>
 
-                        {/* Silero VAD Confidence Threshold */}
+                        {/* Silero VAD Confidence / Sensitivity Threshold */}
                         <div className="identity-field" style={{ marginTop: '10px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">Silero VAD Speech Confidence</span>
+                            <span className="field-label">VAD Speech Sensitivity Threshold</span>
                             <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                              {(settings.vad_threshold !== undefined ? settings.vad_threshold : vadThreshold).toFixed(2)}
+                              {(settings.vad_threshold !== undefined && settings.vad_threshold < 0.2 ? settings.vad_threshold : 0.015).toFixed(3)}
                             </span>
                           </div>
                           <input
                             type="range"
-                            min="0.30"
-                            max="0.85"
-                            step="0.05"
-                            value={settings.vad_threshold !== undefined ? settings.vad_threshold : (vadThreshold < 0.3 ? 0.5 : vadThreshold)}
+                            min="0.005"
+                            max="0.060"
+                            step="0.002"
+                            value={settings.vad_threshold !== undefined && settings.vad_threshold < 0.2 ? settings.vad_threshold : 0.015}
                             onChange={(e) => {
                               const val = parseFloat(e.target.value);
                               handleUpdateSetting('vad_threshold', val);
@@ -3092,7 +3092,7 @@ const ControlDashboard = ({
                             style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
                           />
                           <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            Detects true vocal cord speech. Ignores keyboard clicks, fan hums, and breath smacks. (Default: 0.50)
+                            Acoustic sensitivity for speech detection. Lower = more sensitive; Higher = ignores noise. (Recommended: 0.015)
                           </span>
                         </div>
 
