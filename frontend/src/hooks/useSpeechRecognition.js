@@ -442,9 +442,12 @@ export function useSpeechRecognition(options = {}) {
           if (normalized > micThreshold) {
             if (now - vadActivationTimeRef.current > 150) {
               if (!vadSpeakingRef.current) {
-                logSTTStatus("User speech detected — triggering instant barge-in interrupt");
+                logSTTStatus("User speech detected — speech start");
                 vadSpeakingRef.current = true;
-                if (stopAllPlayback) stopAllPlayback();
+                if ((isPlayingRef?.current || ttsStreamActiveRef?.current) && stopAllPlayback) {
+                  logSTTStatus("Interrupting active Yuki speech playback (barge-in)");
+                  stopAllPlayback();
+                }
                 if (sessionTimeoutRef.current) {
                   clearTimeout(sessionTimeoutRef.current);
                   sessionTimeoutRef.current = null;
@@ -501,14 +504,11 @@ export function useSpeechRecognition(options = {}) {
   };
 
   const stopSpeechRecognition = (forceAbort = false) => {
-    if (!isSpeechRecActiveRef.current) return;
+    if (!isSpeechRecActiveRef.current && !isRecordingRef.current) return;
     if (logToTerminal) logToTerminal(`[STT] Microphone listening mode turned OFF${forceAbort ? ' (forced abort)' : ''}`);
 
     isSpeechRecActiveRef.current = false;
-    setIsListening(false);
-    if (forceAbort) {
-      isRecordingRef.current = false;
-    }
+    isRecordingRef.current = false;
 
     if (useLocalWhisperRef.current) {
       if (maxRecordingTimeoutRef.current) {
@@ -548,9 +548,13 @@ export function useSpeechRecognition(options = {}) {
   const updateListeningState = useCallback(() => {
     const targetListen = shouldListen();
     if (targetListen) {
-      startSpeechRecognition();
+      if (!isSpeechRecActiveRef.current && !isTranscribingRef.current) {
+        startSpeechRecognition();
+      }
     } else {
-      stopSpeechRecognition(true);
+      if (isSpeechRecActiveRef.current || isRecordingRef.current) {
+        stopSpeechRecognition(true);
+      }
     }
   }, []);
 
