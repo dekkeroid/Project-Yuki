@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 
-const MicLevelMeter = ({ deviceId }) => {
+const MicLevelMeter = ({ deviceId, deviceName = '' }) => {
   const canvasRef = useRef(null);
   const [error, setError] = useState(null);
 
@@ -107,6 +107,9 @@ const MicLevelMeter = ({ deviceId }) => {
       />
       <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '3px' }}>
         Mic Test — speak to see input level
+      </div>
+      <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.2)', marginTop: '1px' }}>
+        Testing: {deviceName || 'System Default'}
       </div>
     </div>
   );
