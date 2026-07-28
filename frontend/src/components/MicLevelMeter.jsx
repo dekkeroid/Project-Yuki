@@ -50,11 +50,15 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
 
           const canvas = canvasRef.current;
           if (!canvas) return;
-          const dpr = window.devicePixelRatio || 1;
           const rect = canvas.getBoundingClientRect();
-          canvas.width = rect.width * dpr;
-          canvas.height = rect.height * dpr;
+          if (canvas.clientWidth !== rect.width || canvas.clientHeight !== rect.height) {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+          }
+          const dpr = window.devicePixelRatio || 1;
           const ctx = canvas.getContext('2d');
+          ctx.save();
           ctx.scale(dpr, dpr);
           const w = rect.width;
           const h = rect.height;
@@ -77,9 +81,10 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
             ctx.fillRect(0, 0, barW, h);
           }
           ctx.fill();
+          ctx.restore();
 
           if (dbRef.current) {
-            dbRef.current.textContent = db <= -40 ? '— dB' : `${Math.round(db)} dB`;
+            dbRef.current.textContent = db <= -58 ? '— dB' : `${Math.round(db)} dB`;
           }
         };
         draw();
