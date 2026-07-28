@@ -2316,414 +2316,425 @@ const ControlDashboard = ({
 
               {/* Sub-tab 1: AI Brain */}
               {settingsSubTab === 'brain' && (
-                <div className="card-group">
-                  <div className="card-group-header">
-                    <Cpu className="w-4 h-4 text-violet-400" />
-                    <span className="card-group-title">AI Brain & Language Model</span>
-                  </div>
+                <>
+                  {/* Card 1: Prompt & Execution Strategy (First Card) */}
+                  <div className="card-group">
+                    <div className="card-group-header">
+                      <Zap className="w-4 h-4 text-amber-400" />
+                      <span className="card-group-title">Prompt & Execution Strategy</span>
+                    </div>
 
-                  {/* LLM Backend Type */}
-                  <div className="identity-field" style={{ marginTop: '4px' }}>
-                    <span className="field-label">LLM Backend</span>
-                    <select
-                      value={settings.llm_backend || 'lmstudio'}
-                      onChange={async (e) => {
-                        const newBackend = e.target.value;
-                        await handleUpdateSetting('llm_model', '');
-                        await handleUpdateSetting('llm_backend', newBackend);
-                        const defaults = {
-                          lmstudio: 'http://127.0.0.1:1234',
-                          ollama: 'http://127.0.0.1:11434',
-                          vllm: 'http://127.0.0.1:8000/v1',
-                          openai: 'https://api.openai.com/v1',
-                          custom: '',
-                        };
-                        await handleUpdateSetting('llm_base_url', defaults[newBackend] || '');
-                        if (newBackend !== 'none' && onRefreshLlmModels) {
-                          setTimeout(() => onRefreshLlmModels(), 500);
-                        }
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        color: 'white',
-                        fontSize: '0.78rem',
-                        outline: 'none',
-                        cursor: 'pointer',
-                        marginTop: '4px'
-                      }}
-                    >
-                      <option value="lmstudio">LM Studio (Local)</option>
-                      <option value="ollama">Ollama (Local)</option>
-                      <option value="vllm">vLLM (Local)</option>
-                      <option value="custom">Custom / Cloud API (OpenAI-Compatible)</option>
-                      <option value="none">No LLM (Voice + File Search Only)</option>
-                    </select>
-                  </div>
+                    {/* Prompt Strategy / LLM Mode (Mixed, Simple Only, Complex Only) */}
+                    <div className="identity-field" style={{ marginTop: '4px' }}>
+                      <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd' }}>Prompt Strategy / LLM Mode</span>
+                      <select
+                        value={settings.llm_mode !== undefined ? settings.llm_mode : 3}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          handleUpdateSetting('llm_mode', val);
+                          if (val === 1) {
+                            handleUpdateSetting('enable_intent_check', false);
+                            handleUpdateSetting('dynamic_tool_calling', false);
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(167, 139, 250, 0.3)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '4px'
+                        }}
+                      >
+                        <option value={3} style={{ background: '#0b0813', color: 'white' }}>Dynamic Mixed Prompts (Default & Recommended)</option>
+                        <option value={1} style={{ background: '#0b0813', color: 'white' }}>Simple Prompts Only (Lean & Fast)</option>
+                        <option value={2} style={{ background: '#0b0813', color: 'white' }}>Complex Prompts Only (Full Capabilities)</option>
+                      </select>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px', lineHeight: '1.3' }}>
+                        {settings.llm_mode === 1
+                          ? '⚡ Simple Prompts Only: Uses lean prompts for fast responses. Disables tools, intent checking, and dynamic filtering.'
+                          : settings.llm_mode === 2
+                          ? '🧠 Complex Prompts Only: Forces full tool-aware system prompts for all turns.'
+                          : '🔄 Dynamic Mixed Prompts: Automatically uses lightweight prompts for basic chatter and tool-aware prompts for desktop tasks.'}
+                      </span>
+                    </div>
 
-                  {/* Custom Endpoint Label & Saved Presets Dropdown (Below LLM Backend, Above Endpoint URL) */}
-                  {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
-                    <div className="identity-field" style={{ marginTop: '8px' }}>
+                    {/* LLM Intent Check Toggle */}
+                    <div className="identity-field" style={{ marginTop: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span className="field-label">Custom API Label & Saved Presets</span>
-                        {savedCustomEndpoints.length > 0 && (
-                          <span style={{ fontSize: '0.7rem', color: '#a78bfa' }}>
-                            {savedCustomEndpoints.length} saved in DB
+                        <div>
+                          <span className="field-label" style={{ opacity: settings.llm_mode === 1 ? 0.5 : 1 }}>LLM Intent Check</span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
+                            Double-checks task intent with a secondary LLM query. <strong style={{ color: '#f472b6' }}>Recommended ON for sub-5B models</strong>. (Default: ON)
                           </span>
-                        )}
+                        </div>
+                        <label className="switch" style={{ opacity: settings.llm_mode === 1 ? 0.4 : 1, cursor: settings.llm_mode === 1 ? 'not-allowed' : 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            disabled={settings.llm_mode === 1}
+                            checked={settings.llm_mode !== 1 && (settings.enable_intent_check !== undefined ? settings.enable_intent_check : true)}
+                            onChange={(e) => handleUpdateSetting('enable_intent_check', e.target.checked)}
+                          />
+                          <span className="slider round"></span>
+                        </label>
                       </div>
+                    </div>
 
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '4px', alignItems: 'center' }}>
-                        <input
-                          type="text"
-                          placeholder="e.g. Google Gemini Cloud, xAI Grok, My Custom Server"
-                          value={customLabel}
-                          onChange={(e) => setCustomLabel(e.target.value)}
-                          style={{
-                            flex: 1,
-                            padding: '7px 10px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(167, 139, 250, 0.3)',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontSize: '0.78rem',
-                            outline: 'none'
-                          }}
-                        />
+                    {/* Dynamic Tool Calling Toggle */}
+                    <div className="identity-field" style={{ marginTop: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span className="field-label" style={{ opacity: settings.llm_mode === 1 ? 0.5 : 1 }}>Dynamic Tool Calling</span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
+                            Filters tool schemas dynamically by query relevance. When <strong>OFF</strong>, all tool definitions are sent with complex prompts. (Default: ON)
+                          </span>
+                        </div>
+                        <label className="switch" style={{ opacity: settings.llm_mode === 1 ? 0.4 : 1, cursor: settings.llm_mode === 1 ? 'not-allowed' : 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            disabled={settings.llm_mode === 1}
+                            checked={settings.llm_mode !== 1 && (settings.dynamic_tool_calling !== undefined ? settings.dynamic_tool_calling : true)}
+                            onChange={(e) => handleUpdateSetting('dynamic_tool_calling', e.target.checked)}
+                          />
+                          <span className="slider round"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
 
-                        {/* Dropdown fetching saved endpoints from DB */}
-                        {savedCustomEndpoints.length > 0 && (
-                          <select
-                            onChange={async (e) => {
-                              const selId = e.target.value;
-                              if (!selId) return;
-                              const ep = savedCustomEndpoints.find(item => item.id === selId || item.label === selId);
-                              if (ep) {
-                                setCustomLabel(ep.label);
-                                const targetBackend = settings.llm_backend === 'custom' || settings.llm_backend === 'openai' ? settings.llm_backend : (ep.llm_backend || 'custom');
-                                await handleUpdateSetting('llm_backend', targetBackend);
-                                await handleUpdateSetting('llm_base_url', ep.base_url);
-                                if (ep.api_key_masked && ep.api_key_masked !== '****') {
-                                  await handleUpdateSetting('llm_api_key', ep.api_key_masked);
+                  {/* Card 2: AI Brain & Language Model (LLM API Configuration) */}
+                  <div className="card-group">
+                    <div className="card-group-header">
+                      <Cpu className="w-4 h-4 text-violet-400" />
+                      <span className="card-group-title">AI Brain & Language Model</span>
+                    </div>
+
+                    {/* LLM Backend Type */}
+                    <div className="identity-field" style={{ marginTop: '4px' }}>
+                      <span className="field-label">LLM Backend</span>
+                      <select
+                        value={settings.llm_backend || 'lmstudio'}
+                        onChange={async (e) => {
+                          const newBackend = e.target.value;
+                          await handleUpdateSetting('llm_model', '');
+                          await handleUpdateSetting('llm_backend', newBackend);
+                          const defaults = {
+                            lmstudio: 'http://127.0.0.1:1234',
+                            ollama: 'http://127.0.0.1:11434',
+                            vllm: 'http://127.0.0.1:8000/v1',
+                            openai: 'https://api.openai.com/v1',
+                            custom: '',
+                          };
+                          await handleUpdateSetting('llm_base_url', defaults[newBackend] || '');
+                          if (newBackend !== 'none' && onRefreshLlmModels) {
+                            setTimeout(() => onRefreshLlmModels(), 500);
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '4px'
+                        }}
+                      >
+                        <option value="lmstudio">LM Studio (Local)</option>
+                        <option value="ollama">Ollama (Local)</option>
+                        <option value="vllm">vLLM (Local)</option>
+                        <option value="custom">Custom / Cloud API (OpenAI-Compatible)</option>
+                        <option value="none">No LLM (Voice + File Search Only)</option>
+                      </select>
+                    </div>
+
+                    {/* Custom Endpoint Label & Saved Presets Dropdown (Below LLM Backend, Above Endpoint URL) */}
+                    {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                      <div className="identity-field" style={{ marginTop: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span className="field-label">Custom API Label & Saved Presets</span>
+                          {savedCustomEndpoints.length > 0 && (
+                            <span style={{ fontSize: '0.7rem', color: '#a78bfa' }}>
+                              {savedCustomEndpoints.length} saved in DB
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '4px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            placeholder="e.g. Google Gemini Cloud, xAI Grok, My Custom Server"
+                            value={customLabel}
+                            onChange={(e) => setCustomLabel(e.target.value)}
+                            style={{
+                              flex: 1,
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(167, 139, 250, 0.3)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none'
+                            }}
+                          />
+
+                          {/* Dropdown fetching saved endpoints from DB */}
+                          {savedCustomEndpoints.length > 0 && (
+                            <select
+                              onChange={async (e) => {
+                                const selId = e.target.value;
+                                if (!selId) return;
+                                const ep = savedCustomEndpoints.find(item => item.id === selId || item.label === selId);
+                                if (ep) {
+                                  setCustomLabel(ep.label);
+                                  const targetBackend = settings.llm_backend === 'custom' || settings.llm_backend === 'openai' ? settings.llm_backend : (ep.llm_backend || 'custom');
+                                  await handleUpdateSetting('llm_backend', targetBackend);
+                                  await handleUpdateSetting('llm_base_url', ep.base_url);
+                                  if (ep.api_key_masked && ep.api_key_masked !== '****') {
+                                    await handleUpdateSetting('llm_api_key', ep.api_key_masked);
+                                  }
+                                  if (ep.model) {
+                                    await handleUpdateSetting('llm_model', ep.model);
+                                  }
+                                  if (onRefreshLlmModels) {
+                                    setTimeout(() => onRefreshLlmModels(), 500);
+                                  }
                                 }
-                                if (ep.model) {
-                                  await handleUpdateSetting('llm_model', ep.model);
+                              }}
+                              defaultValue=""
+                              style={{
+                                padding: '7px 8px',
+                                background: 'rgba(18, 12, 33, 0.85)',
+                                border: '1px solid rgba(139, 92, 246, 0.4)',
+                                borderRadius: '8px',
+                                color: '#c4b5fd',
+                                fontSize: '0.75rem',
+                                outline: 'none',
+                                cursor: 'pointer',
+                                maxWidth: '150px'
+                              }}
+                            >
+                              <option value="" disabled>Saved DB Presets...</option>
+                              {savedCustomEndpoints.map((ep) => (
+                                <option key={ep.id} value={ep.id}>
+                                  {ep.label}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Popular Cloud AI Preset Suggestions */}
+                    {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                      <div style={{ marginTop: '6px' }}>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>
+                          Quick Cloud Presets:
+                        </span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                          {[
+                            { name: 'Gemini', label: 'Google Gemini Cloud', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
+                            { name: 'OpenAI', label: 'OpenAI Cloud API', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+                            { name: 'Grok', label: 'xAI Grok Cloud', url: 'https://api.x.ai/v1', model: 'grok-beta' },
+                            { name: 'OpenRouter', label: 'OpenRouter Cloud API', url: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
+                            { name: 'Groq', label: 'Groq Cloud API', url: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
+                            { name: 'Mistral', label: 'Mistral Cloud API', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
+                            { name: 'DeepSeek', label: 'DeepSeek Cloud', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }
+                          ].map((p) => (
+                            <button
+                              key={p.name}
+                              type="button"
+                              onClick={async () => {
+                                setCustomLabel(p.label);
+                                const activeBackend = settings.llm_backend === 'openai' || settings.llm_backend === 'custom' ? settings.llm_backend : 'custom';
+                                await handleUpdateSetting('llm_backend', activeBackend);
+                                await handleUpdateSetting('llm_base_url', p.url);
+                                if (p.model && !settings.llm_model) {
+                                  await handleUpdateSetting('llm_model', p.model);
                                 }
                                 if (onRefreshLlmModels) {
                                   setTimeout(() => onRefreshLlmModels(), 500);
                                 }
-                              }
-                            }}
-                            defaultValue=""
-                            style={{
-                              padding: '7px 8px',
-                              background: 'rgba(18, 12, 33, 0.85)',
-                              border: '1px solid rgba(139, 92, 246, 0.4)',
-                              borderRadius: '8px',
-                              color: '#c4b5fd',
-                              fontSize: '0.75rem',
-                              outline: 'none',
-                              cursor: 'pointer',
-                              maxWidth: '150px'
-                            }}
-                          >
-                            <option value="" disabled>Saved DB Presets...</option>
-                            {savedCustomEndpoints.map((ep) => (
-                              <option key={ep.id} value={ep.id}>
-                                {ep.label}
-                              </option>
-                            ))}
-                          </select>
-                        )}
+                              }}
+                              className="glass-button"
+                              style={{
+                                padding: '2px 7px',
+                                fontSize: '0.68rem',
+                                borderRadius: '6px',
+                                background: settings.llm_base_url === p.url ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.06)',
+                                border: settings.llm_base_url === p.url ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
+                                color: settings.llm_base_url === p.url ? '#fff' : '#cbd5e1',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              ⚡ {p.name}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Popular Cloud AI Preset Suggestions */}
-                  {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
-                    <div style={{ marginTop: '6px' }}>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>
-                        Quick Cloud Presets:
-                      </span>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {[
-                          { name: 'Gemini', label: 'Google Gemini Cloud', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
-                          { name: 'OpenAI', label: 'OpenAI Cloud API', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-                          { name: 'Grok', label: 'xAI Grok Cloud', url: 'https://api.x.ai/v1', model: 'grok-beta' },
-                          { name: 'OpenRouter', label: 'OpenRouter Cloud API', url: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
-                          { name: 'Groq', label: 'Groq Cloud API', url: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
-                          { name: 'Mistral', label: 'Mistral Cloud API', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
-                          { name: 'DeepSeek', label: 'DeepSeek Cloud', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }
-                        ].map((p) => (
-                          <button
-                            key={p.name}
-                            type="button"
-                            onClick={async () => {
-                              setCustomLabel(p.label);
-                              const activeBackend = settings.llm_backend === 'openai' || settings.llm_backend === 'custom' ? settings.llm_backend : 'custom';
-                              await handleUpdateSetting('llm_backend', activeBackend);
-                              await handleUpdateSetting('llm_base_url', p.url);
-                              if (p.model && !settings.llm_model) {
-                                await handleUpdateSetting('llm_model', p.model);
-                              }
-                              if (onRefreshLlmModels) {
-                                setTimeout(() => onRefreshLlmModels(), 500);
-                              }
-                            }}
-                            className="glass-button"
-                            style={{
-                              padding: '2px 7px',
-                              fontSize: '0.68rem',
-                              borderRadius: '6px',
-                              background: settings.llm_base_url === p.url ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.06)',
-                              border: settings.llm_base_url === p.url ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
-                              color: settings.llm_base_url === p.url ? '#fff' : '#cbd5e1',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            ⚡ {p.name}
-                          </button>
-                        ))}
+                    {/* Base URL */}
+                    {settings.llm_backend !== 'none' && (
+                      <div className="identity-field" style={{ marginTop: '8px' }}>
+                        <span className="field-label">
+                          {settings.llm_backend === 'lmstudio' ? 'LM Studio URL' : settings.llm_backend === 'ollama' ? 'Ollama URL' : settings.llm_backend === 'vllm' ? 'vLLM URL' : settings.llm_backend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
+                        </span>
+                        <input
+                          type="text"
+                          placeholder={
+                            settings.llm_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
+                            settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
+                            settings.llm_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
+                            settings.llm_backend === 'openai' ? 'https://generativelanguage.googleapis.com/v1beta/openai' :
+                            'http://127.0.0.1:8000/v1'
+                          }
+                          value={settings.llm_base_url || ''}
+                          onChange={(e) => {
+                            const newUrl = e.target.value;
+                            handleUpdateSetting('llm_base_url', newUrl);
+                            if (!customLabel || customLabel.startsWith('Custom API') || customLabel.endsWith('Cloud')) {
+                              const suggested = autoSuggestLabel(newUrl);
+                              if (suggested) setCustomLabel(suggested);
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (!e.target.value.trim()) {
+                              const defaults = {
+                                lmstudio: 'http://127.0.0.1:1234',
+                                ollama: 'http://127.0.0.1:11434',
+                                vllm: 'http://127.0.0.1:8000/v1',
+                                openai: 'https://generativelanguage.googleapis.com/v1beta/openai',
+                                custom: 'http://127.0.0.1:8000/v1',
+                              };
+                              if (defaults[settings.llm_backend]) handleUpdateSetting('llm_base_url', defaults[settings.llm_backend]);
+                            }
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            marginTop: '4px'
+                          }}
+                        />
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Base URL */}
-                  {settings.llm_backend !== 'none' && (
-                    <div className="identity-field" style={{ marginTop: '8px' }}>
-                      <span className="field-label">
-                        {settings.llm_backend === 'lmstudio' ? 'LM Studio URL' : settings.llm_backend === 'ollama' ? 'Ollama URL' : settings.llm_backend === 'vllm' ? 'vLLM URL' : settings.llm_backend === 'openai' ? 'API Base URL' : 'Endpoint URL'}
-                      </span>
-                      <input
-                        type="text"
-                        placeholder={
-                          settings.llm_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
-                          settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
-                          settings.llm_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
-                          settings.llm_backend === 'openai' ? 'https://generativelanguage.googleapis.com/v1beta/openai' :
-                          'http://127.0.0.1:8000/v1'
-                        }
-                        value={settings.llm_base_url || ''}
-                        onChange={(e) => {
-                          const newUrl = e.target.value;
-                          handleUpdateSetting('llm_base_url', newUrl);
-                          if (!customLabel || customLabel.startsWith('Custom API') || customLabel.endsWith('Cloud')) {
-                            const suggested = autoSuggestLabel(newUrl);
-                            if (suggested) setCustomLabel(suggested);
-                          }
-                        }}
-                        onBlur={(e) => {
-                          if (!e.target.value.trim()) {
-                            const defaults = {
-                              lmstudio: 'http://127.0.0.1:1234',
-                              ollama: 'http://127.0.0.1:11434',
-                              vllm: 'http://127.0.0.1:8000/v1',
-                              openai: 'https://generativelanguage.googleapis.com/v1beta/openai',
-                              custom: 'http://127.0.0.1:8000/v1',
-                            };
-                            if (defaults[settings.llm_backend]) handleUpdateSetting('llm_base_url', defaults[settings.llm_backend]);
-                          }
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          marginTop: '4px'
-                        }}
-                      />
-                    </div>
-                  )}
+                    {/* API Key (for OpenAI-compatible / Custom with auth) */}
+                    {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                      <div className="identity-field" style={{ marginTop: '8px' }}>
+                        <span className="field-label">API Key (Encrypted in DB)</span>
+                        <input
+                          type="password"
+                          placeholder="sk-..."
+                          value={settings.llm_api_key || ''}
+                          onChange={(e) => handleUpdateSetting('llm_api_key', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            marginTop: '4px'
+                          }}
+                        />
+                      </div>
+                    )}
 
-                  {/* API Key (for OpenAI-compatible / Custom with auth) */}
-                  {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
-                    <div className="identity-field" style={{ marginTop: '8px' }}>
-                      <span className="field-label">API Key (Encrypted in DB)</span>
-                      <input
-                        type="password"
-                        placeholder="sk-..."
-                        value={settings.llm_api_key || ''}
-                        onChange={(e) => handleUpdateSetting('llm_api_key', e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          marginTop: '4px'
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {/* Save Endpoint Preset Button */}
-                  {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
-                    <div style={{ marginTop: '10px' }}>
-                      <button
-                        type="button"
-                        onClick={handleSaveCustomEndpoint}
-                        className="glass-button"
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          fontSize: '0.78rem',
-                          borderRadius: '8px',
-                          background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-                          color: 'white',
-                          fontWeight: '600',
-                          border: 'none',
-                          cursor: 'pointer',
-                          boxShadow: '0 4px 12px rgba(109,40,217,0.35)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px'
-                        }}
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        {saveEndpointBtnText}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Active LLM Model Selection */}
-                  {settings.llm_backend !== 'none' && (
-                    <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span className="field-label">Active LLM Model</span>
+                    {/* Save Endpoint Preset Button */}
+                    {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                      <div style={{ marginTop: '10px' }}>
                         <button
                           type="button"
-                          onClick={onRefreshLlmModels}
-                          title="Refresh model list from backend"
-                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                          onClick={handleSaveCustomEndpoint}
+                          className="glass-button"
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            fontSize: '0.78rem',
+                            borderRadius: '8px',
+                            background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                            color: 'white',
+                            fontWeight: '600',
+                            border: 'none',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(109,40,217,0.35)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px'
+                          }}
                         >
-                          <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
+                          <Sparkles className="w-3.5 h-3.5" />
+                          {saveEndpointBtnText}
                         </button>
                       </div>
-                      <select
-                        value={settings.llm_model || ''}
-                        onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                          marginTop: '4px'
-                        }}
-                      >
-                        {!settings.llm_model && (
-                          <option value="" style={{ background: '#0b0813', color: 'white', opacity: 0.5 }}>
-                            Select a model...
-                          </option>
-                        )}
-                        {availableLlmModels.map((model) => {
-                          const mName = typeof model === 'string' ? model : (model.name || model.id || '');
-                          return (
-                            <option key={mName} value={mName} style={{ background: '#0b0813', color: 'white' }}>
-                              {mName}
+                    )}
+
+                    {/* Active LLM Model Selection */}
+                    {settings.llm_backend !== 'none' && (
+                      <div className="identity-field" style={{ marginTop: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span className="field-label">Active LLM Model</span>
+                          <button
+                            type="button"
+                            onClick={onRefreshLlmModels}
+                            title="Refresh model list from backend"
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                          >
+                            <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
+                          </button>
+                        </div>
+                        <select
+                          value={settings.llm_model || ''}
+                          onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            marginTop: '4px'
+                          }}
+                        >
+                          {!settings.llm_model && (
+                            <option value="" style={{ background: '#0b0813', color: 'white', opacity: 0.5 }}>
+                              Select a model...
                             </option>
-                          );
-                        })}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Prompt Strategy / LLM Mode (Mixed, Simple Only, Complex Only) */}
-                  <div className="identity-field" style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                    <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd' }}>Prompt Strategy / LLM Mode</span>
-                    <select
-                      value={settings.llm_mode !== undefined ? settings.llm_mode : 3}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        handleUpdateSetting('llm_mode', val);
-                        if (val === 1) {
-                          handleUpdateSetting('enable_intent_check', false);
-                          handleUpdateSetting('dynamic_tool_calling', false);
-                        }
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(167, 139, 250, 0.3)',
-                        borderRadius: '8px',
-                        color: 'white',
-                        fontSize: '0.78rem',
-                        outline: 'none',
-                        cursor: 'pointer',
-                        marginTop: '4px'
-                      }}
-                    >
-                      <option value={3} style={{ background: '#0b0813', color: 'white' }}>Dynamic Mixed Prompts (Default & Recommended)</option>
-                      <option value={1} style={{ background: '#0b0813', color: 'white' }}>Simple Prompts Only (Lean & Fast)</option>
-                      <option value={2} style={{ background: '#0b0813', color: 'white' }}>Complex Prompts Only (Full Capabilities)</option>
-                    </select>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px', lineHeight: '1.3' }}>
-                      {settings.llm_mode === 1
-                        ? '⚡ Simple Prompts Only: Uses lean prompts for fast responses. Disables tools, intent checking, and dynamic filtering.'
-                        : settings.llm_mode === 2
-                        ? '🧠 Complex Prompts Only: Forces full tool-aware system prompts for all turns.'
-                        : '🔄 Dynamic Mixed Prompts: Automatically uses lightweight prompts for basic chatter and tool-aware prompts for desktop tasks.'}
-                    </span>
-                  </div>
-
-                  {/* LLM Intent Check Toggle */}
-                  <div className="identity-field" style={{ marginTop: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <span className="field-label" style={{ opacity: settings.llm_mode === 1 ? 0.5 : 1 }}>LLM Intent Check</span>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
-                          Double-checks task intent with a secondary LLM query. <strong style={{ color: '#f472b6' }}>Recommended ON for sub-5B models</strong>. (Default: ON)
-                        </span>
+                          )}
+                          {availableLlmModels.map((model) => {
+                            const mName = typeof model === 'string' ? model : (model.name || model.id || '');
+                            return (
+                              <option key={mName} value={mName} style={{ background: '#0b0813', color: 'white' }}>
+                                {mName}
+                              </option>
+                            );
+                          })}
+                        </select>
                       </div>
-                      <label className="switch" style={{ opacity: settings.llm_mode === 1 ? 0.4 : 1, cursor: settings.llm_mode === 1 ? 'not-allowed' : 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          disabled={settings.llm_mode === 1}
-                          checked={settings.llm_mode !== 1 && (settings.enable_intent_check !== undefined ? settings.enable_intent_check : true)}
-                          onChange={(e) => handleUpdateSetting('enable_intent_check', e.target.checked)}
-                        />
-                        <span className="slider round"></span>
-                      </label>
-                    </div>
+                    )}
                   </div>
-
-                  {/* Dynamic Tool Calling Toggle */}
-                  <div className="identity-field" style={{ marginTop: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <span className="field-label" style={{ opacity: settings.llm_mode === 1 ? 0.5 : 1 }}>Dynamic Tool Calling</span>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
-                          Filters tool schemas dynamically by query relevance. When <strong>OFF</strong>, all tool definitions are sent with complex prompts. (Default: ON)
-                        </span>
-                      </div>
-                      <label className="switch" style={{ opacity: settings.llm_mode === 1 ? 0.4 : 1, cursor: settings.llm_mode === 1 ? 'not-allowed' : 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          disabled={settings.llm_mode === 1}
-                          checked={settings.llm_mode !== 1 && (settings.dynamic_tool_calling !== undefined ? settings.dynamic_tool_calling : true)}
-                          onChange={(e) => handleUpdateSetting('dynamic_tool_calling', e.target.checked)}
-                        />
-                        <span className="slider round"></span>
-                      </label>
-                    </div>
-                  </div>
-                </div>
+                </>
               )}
 
               {/* Sub-tab 2: Voice & Audio (TTS first, then STT) */}
