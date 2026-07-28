@@ -353,8 +353,7 @@ export function useSpeechRecognition(options = {}) {
 
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           if (audioChunksRef.current.length === 0 || audioBlob.size < 1200) {
-            logSTTStatus(`[STT VAD] Ignored short clip (${audioBlob.size} bytes, ${audioChunksRef.current.length} chunks).`);
-            if (logToTerminal) logToTerminal(`[STT VAD] Ignored short clip (${audioBlob.size} bytes).`);
+            logSTTStatus(`[STT] Ignored short clip (${audioBlob.size} bytes).`);
             updateListeningState();
             return;
           }
@@ -367,7 +366,6 @@ export function useSpeechRecognition(options = {}) {
           try {
             const activeModelName = whisperModelRef.current;
             logSTTStatus(`Transcribing (${audioBlob.size} bytes) with model '${activeModelName}'...`);
-            if (logToTerminal) logToTerminal(`[STT VAD] Transcribing ${audioBlob.size} bytes with Whisper '${activeModelName}'...`);
 
             const formData = new FormData();
             formData.append("file", audioBlob, "speech.webm");
@@ -382,7 +380,7 @@ export function useSpeechRecognition(options = {}) {
             const data = await res.json();
             const sttDurationMs = Date.now() - sttStartTime;
             logSTTStatus(`Transcribed: "${data.text}" in ${sttDurationMs}ms`);
-            if (logToTerminal) logToTerminal(`[STT VAD] Transcribed: "${data.text}" (${sttDurationMs}ms)`);
+            if (logToTerminal) logToTerminal(`[STT] Transcribed: "${data.text}" (${sttDurationMs}ms)`);
 
             setIsTranscribing(false);
             if (data.text && data.text.trim()) {
@@ -451,11 +449,10 @@ export function useSpeechRecognition(options = {}) {
             if (now - vadActivationTimeRef.current > 150) {
               if (!vadSpeakingRef.current) {
                 logSTTStatus("User speech detected — speech start");
-                if (logToTerminal) logToTerminal(`[STT VAD] Speech START detected (level=${normalized.toFixed(4)}, thresh=${micThreshold.toFixed(4)})`);
                 vadSpeakingRef.current = true;
                 if ((isPlayingRef?.current || ttsStreamActiveRef?.current) && stopAllPlayback) {
                   logSTTStatus("Interrupting active Yuki speech playback (barge-in)");
-                  if (logToTerminal) logToTerminal("[STT VAD] Interrupting active Yuki speech playback (barge-in)");
+                  if (logToTerminal) logToTerminal("[STT] User speech detected — interrupting playback");
                   stopAllPlayback();
                 }
                 if (sessionTimeoutRef.current) {
@@ -471,7 +468,6 @@ export function useSpeechRecognition(options = {}) {
                 vadSilenceStartRef.current = now;
               } else if (now - vadSilenceStartRef.current > silenceTimeoutMs) {
                 logSTTStatus(`Silence threshold reached (${silenceTimeoutMs}ms). Stopping recording...`);
-                if (logToTerminal) logToTerminal(`[STT VAD] Silence threshold reached (${silenceTimeoutMs}ms). Transmitting...`);
                 stopSpeechRecognition();
                 return;
               }
