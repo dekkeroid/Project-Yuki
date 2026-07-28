@@ -2197,6 +2197,8 @@ const detectExpression = (text) => {
           <div
             ref={chatContainerRef}
             className="desktop-chat-input-container interactive-element"
+            onMouseEnter={() => { window.yukiChatOverlayHovered = true; }}
+            onMouseLeave={() => { window.yukiChatOverlayHovered = false; }}
             style={{
               position: 'fixed',
               bottom: '16px',

@@ -1701,7 +1701,8 @@ const AvatarViewer = ({
             // the camera position already encodes where the user is looking from.
             const isOrbiting = isRotating;
 
-            if (!isOrbiting && isMouseInWindow && postOrbitRestTimer <= 0) {
+            const isOverChatOverlay = !!window.yukiChatOverlayHovered;
+            if (!isOrbiting && isMouseInWindow && !isOverChatOverlay && postOrbitRestTimer <= 0) {
               if (!enableMouseTracking) {
                 isMouseInWindow = false;
                 lookState = 'returning';
@@ -1759,7 +1760,7 @@ const AvatarViewer = ({
               }
               lookState = 'idle';
               lookTimer = 0;
-            } else if (isMouseInWindow) {
+            } else if (isMouseInWindow && !isOverChatOverlay) {
               if (isElectron) {
                 if (enableMouseTracking) {
                   const dx = cursorOffsetRef.current.x;
