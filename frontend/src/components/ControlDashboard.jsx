@@ -2359,8 +2359,7 @@ const ControlDashboard = ({
                       <option value="lmstudio">LM Studio (Local)</option>
                       <option value="ollama">Ollama (Local)</option>
                       <option value="vllm">vLLM (Local)</option>
-                      <option value="openai">OpenAI-Compatible (Cloud)</option>
-                      <option value="custom">Custom Endpoint</option>
+                      <option value="custom">Custom / Cloud API (OpenAI-Compatible)</option>
                       <option value="none">No LLM (Voice + File Search Only)</option>
                     </select>
                   </div>
@@ -2404,7 +2403,8 @@ const ControlDashboard = ({
                               const ep = savedCustomEndpoints.find(item => item.id === selId || item.label === selId);
                               if (ep) {
                                 setCustomLabel(ep.label);
-                                await handleUpdateSetting('llm_backend', ep.llm_backend || 'openai');
+                                const targetBackend = settings.llm_backend === 'custom' || settings.llm_backend === 'openai' ? settings.llm_backend : (ep.llm_backend || 'custom');
+                                await handleUpdateSetting('llm_backend', targetBackend);
                                 await handleUpdateSetting('llm_base_url', ep.base_url);
                                 if (ep.api_key_masked && ep.api_key_masked !== '****') {
                                   await handleUpdateSetting('llm_api_key', ep.api_key_masked);
@@ -2463,7 +2463,8 @@ const ControlDashboard = ({
                             type="button"
                             onClick={async () => {
                               setCustomLabel(p.label);
-                              await handleUpdateSetting('llm_backend', 'openai');
+                              const activeBackend = settings.llm_backend === 'openai' || settings.llm_backend === 'custom' ? settings.llm_backend : 'custom';
+                              await handleUpdateSetting('llm_backend', activeBackend);
                               await handleUpdateSetting('llm_base_url', p.url);
                               if (p.model && !settings.llm_model) {
                                 await handleUpdateSetting('llm_model', p.model);
