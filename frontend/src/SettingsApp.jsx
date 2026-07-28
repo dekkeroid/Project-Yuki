@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { API_BASE } from './api';
 
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
@@ -47,6 +47,15 @@ export default function SettingsApp() {
   const [cameraTracking, setCameraTracking] = useState(() => {
     return localStorage.getItem('yuki-camera-tracking') !== 'false';
   });
+
+  const hostPlatform = useMemo(() => {
+    if (window.electronAPI?.platform) {
+      const p = window.electronAPI.platform;
+      return p === 'win32' ? 'Windows 10/11' : p === 'darwin' ? 'macOS' : 'Linux';
+    }
+    const ua = navigator.userAgent;
+    return ua.includes('Windows') ? 'Windows' : ua.includes('Mac') ? 'macOS' : 'Linux';
+  }, []);
 
   const fetchProfile = async () => {
     try {
@@ -165,6 +174,7 @@ export default function SettingsApp() {
           setPreferHeadsetMic(val);
           localStorage.setItem('yuki-prefer-headset', val.toString());
         }}
+        hostPlatform={hostPlatform}
         initialTab="settings"
         isStandalone={true}
       />
