@@ -173,6 +173,14 @@ export default function SettingsApp() {
         onPreferHeadsetMicChange={(val) => {
           setPreferHeadsetMic(val);
           localStorage.setItem('yuki-prefer-headset', val.toString());
+          if (val) {
+            const HEADSET_KEYWORDS = ['headset', 'headphone', 'earphone', 'earpiece', 'bluetooth', 'wireless', 'hands-free', 'handsfree', 'airpod', 'buds'];
+            const isHeadset = (d) => HEADSET_KEYWORDS.some(kw => (d.label || '').toLowerCase().includes(kw));
+            const isCommunications = (d) => (d.label || '').toLowerCase().startsWith('communications');
+            let headset = micDevices.find(d => isHeadset(d) && !isCommunications(d));
+            if (!headset) headset = micDevices.find(d => isHeadset(d));
+            if (headset) onMicDeviceChange(headset.deviceId);
+          }
         }}
         hostPlatform={hostPlatform}
         initialTab="settings"
