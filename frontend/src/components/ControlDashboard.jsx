@@ -3,6 +3,7 @@ import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDow
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
+import MicLevelMeter from './MicLevelMeter';
 
 const SKIN_PRESETS = [
   { name: 'Original', value: '#ffffff' },
@@ -2590,6 +2591,8 @@ const ControlDashboard = ({
                           Prefer headset mic — auto-select headset when connected
                         </span>
                       </label>
+
+                      <MicLevelMeter deviceId={selectedMicDeviceId} />
                     </div>
 
                     {/* STT Engine Select */}
