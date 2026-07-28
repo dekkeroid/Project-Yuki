@@ -81,6 +81,10 @@ TOOL_SANDBOX_REQUIRE_CONFIRMATION_TOOLS = os.environ.get(
         "keyboard_mouse_input",
         "manage_process",
         "control_window",
+        "jarvis_run_terminal",
+        "jarvis_close_app",
+        "jarvis_run_python",
+        "jarvis_keyboard_mouse_input",
     ]),
 )
 TOOL_SANDBOX_BLOCKED_POWER_ACTIONS = os.environ.get("YUKI_TOOL_SANDBOX_BLOCKED_POWER_ACTIONS", "shutdown,restart")

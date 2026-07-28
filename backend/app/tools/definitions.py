@@ -356,6 +356,100 @@ def get_advanced_jarvis_tools_definition() -> list:
                     "required": ["key", "value"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_close_app",
+                "description": "Close or terminate a running desktop application by name.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "app_name": {"type": "string", "description": "Application name to terminate (e.g. 'chrome', 'notepad', 'spotify')."},
+                        "pid": {"type": "integer", "description": "Optional process ID if you want to kill a specific instance."}
+                    },
+                    "required": ["app_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_run_terminal",
+                "description": "Run a terminal command in PowerShell or Cmd and return the output. Returns both stdout and stderr.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string", "description": "Shell command to execute."},
+                        "use_powershell": {"type": "boolean", "description": "Use PowerShell (true) or Cmd (false). Default true."}
+                    },
+                    "required": ["command"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_run_python",
+                "description": "Execute a block of Python code and return the output.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": {"type": "string", "description": "Python code to execute."}
+                    },
+                    "required": ["code"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_take_screenshot",
+                "description": "Open the Windows Snipping Tool overlay (Win+Shift+S) so the user can select an area to capture.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_keyboard_mouse_input",
+                "description": "Simulate keyboard keystrokes, key combinations, mouse clicks, movements, or scrolls.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["type", "press_keys", "click", "double_click", "move_to", "scroll"]
+                        },
+                        "text": {"type": "string", "description": "Text to type (for 'type' action)."},
+                        "keys": {"type": "array", "items": {"type": "string"}, "description": "List of keys to press (for 'press_keys' action)."},
+                        "x": {"type": "integer", "description": "X coordinate for click/move."},
+                        "y": {"type": "integer", "description": "Y coordinate for click/move."},
+                        "amount": {"type": "integer", "description": "Scroll amount (for 'scroll' action)."}
+                    },
+                    "required": ["action"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_media_playback_control",
+                "description": "Control media playback: play, pause, next track, previous track, or stop.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["play", "pause", "next", "previous", "stop"]
+                        }
+                    },
+                    "required": ["action"]
+                }
+            }
         }
     ]
 

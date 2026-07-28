@@ -547,19 +547,23 @@ const ControlDashboard = ({
     }
   };
 
+  const fetchToolsList = () => {
+    fetch(`${API_BASE}/api/tools`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.tools) {
+          setToolsList(data.tools);
+        }
+      })
+      .catch(err => console.error("Failed to fetch tools list:", err));
+  };
+
   useEffect(() => {
     let interval = null;
     if (isOpen) {
-      if (activeTab === 'brain') {
-        fetch(`${API_BASE}/api/tools`)
-          .then(res => res.json())
-          .then(data => {
-            if (data && data.tools) {
-              setToolsList(data.tools);
-            }
-          })
-          .catch(err => console.error("Failed to fetch tools list:", err));
-        fetchSavedEndpoints();
+      if (activeTab === 'brain' || activeTab === 'info') {
+        fetchToolsList();
+        if (activeTab === 'brain') fetchSavedEndpoints();
       }
 
       if (activeTab === 'memory') {
@@ -648,6 +652,9 @@ const ControlDashboard = ({
 
   const handleUpdateSetting = async (key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }));
+    if (key === 'tool_mode') {
+      setTimeout(() => fetchToolsList(), 100);
+    }
     try {
       const res = await fetch(`${API_BASE}/api/settings/update`, {
         method: 'POST',
@@ -658,6 +665,9 @@ const ControlDashboard = ({
         const data = await res.json();
         if (data && data.settings) {
           setSettings(data.settings);
+        }
+        if (key === 'tool_mode') {
+          fetchToolsList();
         }
       }
     } catch (e) {

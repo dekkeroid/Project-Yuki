@@ -28,7 +28,13 @@ _SHORT_CIRCUIT_TOOLS = {
     "delete_file",
     "run_python_script",
     "run_terminal_command",
-    "take_screenshot"
+    "take_screenshot",
+    "jarvis_close_app",
+    "jarvis_run_terminal",
+    "jarvis_run_python",
+    "jarvis_take_screenshot",
+    "jarvis_keyboard_mouse_input",
+    "jarvis_media_playback_control",
 }
 
 
@@ -116,6 +122,7 @@ class AgentExecutor:
             jarvis_list_dir_tree, jarvis_git_status, jarvis_system_diagnostics,
             jarvis_network_status, jarvis_web_scrape, jarvis_window_control
         )
+        from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
 
         # Map tool names to python functions
@@ -249,7 +256,31 @@ class AgentExecutor:
                 kwargs.get("action") or ""
             ),
             "jarvis_manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
-            "jarvis_remember_user_fact": lambda **kwargs: self._execute_update_user_fact(**kwargs)
+            "jarvis_remember_user_fact": lambda **kwargs: self._execute_update_user_fact(**kwargs),
+            "jarvis_close_app": lambda **kwargs: manage_process(
+                "kill",
+                name=kwargs.get("app_name") or kwargs.get("name") or "",
+                pid=kwargs.get("pid")
+            ),
+            "jarvis_run_terminal": lambda **kwargs: run_terminal_command(
+                kwargs.get("command") or "",
+                use_powershell=bool(kwargs.get("use_powershell", True))
+            ),
+            "jarvis_run_python": lambda **kwargs: run_python_script(
+                kwargs.get("code") or ""
+            ),
+            "jarvis_take_screenshot": take_screenshot,
+            "jarvis_keyboard_mouse_input": lambda **kwargs: keyboard_mouse_input(
+                kwargs.get("action") or "",
+                text=kwargs.get("text"),
+                keys=kwargs.get("keys"),
+                x=kwargs.get("x"),
+                y=kwargs.get("y"),
+                amount=kwargs.get("amount")
+            ),
+            "jarvis_media_playback_control": lambda **kwargs: media_playback_control(
+                kwargs.get("action") or ""
+            ),
         }
         from app.mcp_client import StdioMCPToolBridge
         self.mcp_tools = StdioMCPToolBridge(get_tools_definition, get_filtered_tools)

@@ -1152,14 +1152,16 @@ async def get_tools_list():
         
         # Categorize tools cleanly
         category = "System & OS"
-        if name in ("update_user_fact",):
+        if name in ("update_user_fact", "jarvis_remember_user_fact"):
             category = "Memory & User Facts"
-        elif name in ("web_search", "read_file_content", "search_files", "list_directory"):
+        elif name in ("web_search", "read_file_content", "search_files", "list_directory", "jarvis_query_file_db", "jarvis_web_search", "jarvis_web_scrape"):
             category = "Information & Search"
-        elif name in ("launch_app", "open_or_play_file", "media_playback_control", "set_system_volume"):
-            category = "Media & Applications"
-        elif name in ("run_terminal_command", "run_python_script", "create_file", "edit_file", "delete_file"):
-            category = "Terminal & Filesystem"
+        elif name in ("launch_app", "open_or_play_file", "media_playback_control", "set_system_volume", "jarvis_launch_app", "jarvis_open_or_play_file", "jarvis_system_volume", "jarvis_media_playback_control", "jarvis_take_screenshot"):
+            category = "Media & Control"
+        elif name in ("run_terminal_command", "run_python_script", "create_file", "edit_file", "delete_file", "jarvis_read_file", "jarvis_create_or_edit_file", "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_run_terminal", "jarvis_run_python"):
+            category = "Code & Filesystem"
+        elif name in ("jarvis_system_diagnostics", "jarvis_network_status", "jarvis_window_control", "jarvis_system_power", "system_power_control", "manage_process", "jarvis_manage_time", "manage_time", "jarvis_close_app"):
+            category = "Diagnostics & Automation"
             
         formatted.append({
             "name": name,

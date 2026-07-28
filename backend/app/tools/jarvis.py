@@ -44,10 +44,10 @@ def jarvis_query_file_db(query: str, limit: int = 15) -> str:
             return "Database notice: File index table has not been initialized yet."
 
         sql = f"""
-            SELECT path, size, extension, modified 
+            SELECT file_path, size, extension, last_modified 
             FROM {target_table} 
-            WHERE path LIKE ? OR filename LIKE ? 
-            ORDER BY modified DESC 
+            WHERE file_path LIKE ? OR file_name LIKE ? 
+            ORDER BY last_modified DESC 
             LIMIT ?
         """
         like_pattern = f"%{clean_query}%"
