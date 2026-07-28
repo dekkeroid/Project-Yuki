@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 
 const MicLevelMeter = ({ deviceId, deviceName = '' }) => {
   const canvasRef = useRef(null);
+  const dbRef = useRef(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -74,6 +75,10 @@ const MicLevelMeter = ({ deviceId, deviceName = '' }) => {
             ctx.fillRect(0, 0, barW, h);
           }
           ctx.fill();
+
+          if (dbRef.current) {
+            dbRef.current.textContent = db <= -40 ? '— dB' : `${Math.round(db)} dB`;
+          }
         };
         draw();
       } catch (e) {
@@ -106,7 +111,7 @@ const MicLevelMeter = ({ deviceId, deviceName = '' }) => {
         style={{ width: '100%', height: '8px', borderRadius: '4px', display: 'block' }}
       />
       <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '3px' }}>
-        Mic Test — speak to see input level
+        Mic Test — <span ref={dbRef} style={{ fontVariantNumeric: 'tabular-nums' }}>— dB</span>
       </div>
       <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.2)', marginTop: '1px' }}>
         Testing: {deviceName || 'System Default'}
