@@ -2188,6 +2188,21 @@ const detectExpression = (text) => {
             <MessageSquare className="w-5 h-5" />
           </button>
           <button
+            className="desktop-menu-btn"
+            onClick={() => {
+              if (window.electronAPI && window.electronAPI.openChatWindow) {
+                window.electronAPI.openChatWindow();
+              } else {
+                const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
+                window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+              }
+            }}
+            title="Pop-out Agentic Workspace Window"
+            style={{ color: '#c4b5fd' }}
+          >
+            <Maximize2 className="w-5 h-5" />
+          </button>
+          <button
             className={`desktop-menu-btn ${isSettingsOpen ? 'active' : ''}`}
             onClick={() => {
               if (window.electronAPI && window.electronAPI.openSettingsWindow) {
@@ -2320,13 +2335,30 @@ const detectExpression = (text) => {
                       Conversation Log
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsPanelOpen(false)}
-                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 0 }}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.electronAPI && window.electronAPI.openChatWindow) {
+                          window.electronAPI.openChatWindow();
+                        } else {
+                          const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
+                          window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+                        }
+                      }}
+                      title="Pop-out into Standalone Workspace Window"
+                      style={{ background: 'none', border: 'none', color: '#c4b5fd', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsPanelOpen(false)}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 0 }}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Messages scroll area */}
