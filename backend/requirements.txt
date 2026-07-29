@@ -25,4 +25,6 @@ pypinyin>=0.55.0
 anyascii>=0.3.3
 tinytag>=2.0.0
 colorlog>=6.0.0
+pymysql>=1.1.0
+mysql-connector-python>=8.0.0
 
