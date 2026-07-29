@@ -1464,11 +1464,53 @@ export const AgenticWorkspaceWindow = ({
                 </div>
               </div>
 
-              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '12px' }}>
-                <div style={{ fontSize: '0.66rem', color: '#94a3b8' }}>Active AI Model</div>
-                <div style={{ fontSize: '0.80rem', fontWeight: 600, color: '#c4b5fd', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                  {profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
+              {/* Strategy Pill & Active Model Breakdown */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.66rem', color: '#94a3b8' }}>Endpoint Strategy</span>
+                  <span style={{
+                    fontSize: '0.64rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    background: profileData?.settings?.endpoint_strategy === 'separate' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(167, 139, 250, 0.2)',
+                    color: profileData?.settings?.endpoint_strategy === 'separate' ? '#38bdf8' : '#c4b5fd',
+                    border: profileData?.settings?.endpoint_strategy === 'separate' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(167, 139, 250, 0.4)'
+                  }}>
+                    {profileData?.settings?.endpoint_strategy === 'separate' ? '⚡ Separate Endpoints' : '🎯 Single Endpoint'}
+                  </span>
                 </div>
+
+                {profileData?.settings?.endpoint_strategy === 'separate' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div style={{ fontSize: '0.62rem', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        ⚡ Fast/Simple Queries Model
+                      </div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(167, 139, 250, 0.2)' }}>
+                      <div style={{ fontSize: '0.62rem', color: '#c4b5fd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        🧠 Complex & Agentic Tasks Model
+                      </div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_complex_backend || profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_complex_model || profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: '0.62rem', color: '#c4b5fd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Unified Model
+                    </div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(56,189,248,0.2)', fontSize: '0.74rem', color: '#94a3b8' }}>
