@@ -297,7 +297,7 @@ function createChatWorkspaceWindow() {
     height: 820,
     minWidth: 800,
     minHeight: 600,
-    title: 'Yuki Agentic Workspace',
+    title: 'Chat',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     backgroundColor: '#090d16',

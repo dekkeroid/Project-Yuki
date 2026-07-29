@@ -212,6 +212,7 @@ export const AgenticWorkspaceWindow = ({
   };
 
   useEffect(() => {
+    document.title = 'Chat';
     fetchProfileInfo();
   }, []);
 
