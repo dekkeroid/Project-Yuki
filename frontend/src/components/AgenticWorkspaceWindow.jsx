@@ -1091,7 +1091,7 @@ export const AgenticWorkspaceWindow = ({
                 </div>
 
                 {/* Right Side: Mic + Circular Send Button */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
                   {onToggleListening && (
                     <button
                       type="button"
