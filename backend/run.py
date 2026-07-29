@@ -34,4 +34,6 @@ if __name__ == "__main__":
                     ws_ping_interval=30, ws_ping_timeout=10)
     else:
         uvicorn.run(f"{module}:app", host=host, port=port, reload=reload,
+                    reload_dirs=["app"] if reload else None,
+                    reload_includes=["*.py"] if reload else None,
                     ws_ping_interval=30, ws_ping_timeout=10)

@@ -192,7 +192,8 @@ def get_advanced_jarvis_tools_definition() -> list:
                     "type": "object",
                     "properties": {
                         "dir_path": {"type": "string", "description": "Absolute folder path."},
-                        "max_depth": {"type": "integer", "description": "Max directory depth (default 2)."}
+                        "max_depth": {"type": "integer", "description": "Max directory depth (default 2)."},
+                        "limit": {"type": "integer", "description": "Max output lines (default 100). Increase for large directories."}
                     },
                     "required": ["dir_path"]
                 }
@@ -356,7 +357,7 @@ def get_advanced_jarvis_tools_definition() -> list:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "key": {"type": "string", "description": "Category key."},
+                        "key": {"type": "string", "description": "Category key ('interest', 'hobby', 'like', 'dislike', 'name') or a custom label (e.g. 'favourite drink'). Multiple values for the same key accumulate as a list."},
                         "value": {"type": "string", "description": "Fact or preference value."}
                     },
                     "required": ["key", "value"]

@@ -1570,7 +1570,12 @@ class AgentExecutor:
         # Process passive mood drift & intimacy keyword detection
         self._process_mood_drift(user_message)
 
-        current_messages = self._build_messages(user_message, chat_history, resolved_backend)
+        try:
+            current_messages = self._build_messages(user_message, chat_history, resolved_backend)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            current_messages = [{"role": "user", "content": user_message}]
 
         async with aiohttp.ClientSession() as session:
             max_iterations = 10
@@ -1759,7 +1764,7 @@ class AgentExecutor:
                     #  • DATA  — search_files, list_directory, get_system_stats
                     #            Conditional: if original request needs another step (e.g.
                     #            "find and open"), allow one more tool call; otherwise stop.
-                    #  • MEMORY — update_user_fact
+                    #  • MEMORY — update_user_fact / jarvis_remember_user_fact
                     #            Hard-stop: confirm what was saved and stop.
                     #  • ACTION — all other tools (launch, volume, power, terminal, etc.)
                     #            Hard-stop: confirm the action briefly and stop.
@@ -1767,7 +1772,7 @@ class AgentExecutor:
                     if not tool_failed:
                         _INFO_TOOLS   = {"web_search", "read_file_content"}
                         _DATA_TOOLS   = {"search_files", "list_directory", "get_system_stats", "jarvis_query_file_db", "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics", "jarvis_network_status", "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_run_terminal", "jarvis_run_python"}
-                        _MEMORY_TOOLS = {"update_user_fact"}
+                        _MEMORY_TOOLS = {"update_user_fact", "jarvis_remember_user_fact"}
                         # Everything else is treated as an action/terminal tool.
 
                         _orig = user_message.strip()
@@ -1792,7 +1797,7 @@ class AgentExecutor:
                                 "If the original request explicitly requires another action on this result "
                                 "(e.g. the user asked to open a found file, or do something with the data), "
                                 "call exactly one more appropriate tool and then respond. "
-                                "Do NOT call update_user_fact or web_search as a follow-up."
+                                "Do NOT call update_user_fact, jarvis_remember_user_fact, or web_search as a follow-up."
                             )
 
                         elif tool_name in _MEMORY_TOOLS:

@@ -1436,11 +1436,11 @@ async def broadcast_due_reminders(due: List[Dict[str, Any]]):
 
 async def reminder_heartbeat_loop():
     """
-    Background heartbeat running every 1 second.
+    Background heartbeat running every 60 seconds.
     Kept for future use if needed, but time_manager now handles timer triggers natively via asyncio.
     """
     while True:
-        await asyncio.sleep(1)
+        await asyncio.sleep(60)
 
 @app.get("/api/reminders/active")
 def get_active_reminders():
@@ -2327,7 +2327,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                 except StopAsyncIteration:
                                     pass
                             except Exception as e:
+                                import traceback
                                 print(f"Error during stream generation: {e}")
+                                traceback.print_exc()
                                 friendly_error = await agent_executor.get_friendly_error_explanation(str(e))
                                 await websocket.send_json({"type": "error", "message": friendly_error})
                             
@@ -2493,6 +2495,14 @@ def _resolve_frontend_dir():
     return Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 _frontend_dir = _resolve_frontend_dir()
+
+@app.get("/api/debug/threads")
+def debug_threads():
+    import traceback
+    result = {}
+    for thread_id, frame in sys._current_frames().items():
+        result[str(thread_id)] = [f"{f.filename}:{f.lineno} ({f.name})" for f in traceback.extract_stack(frame)]
+    return result
 
 if _frontend_dir.exists():
     from starlette.staticfiles import StaticFiles

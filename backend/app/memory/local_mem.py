@@ -152,9 +152,22 @@ class MemoryManager:
         self._save_profile()
 
     def update_fact(self, key: str, value: str):
-        self.profile["custom_facts"][key] = value
+        raw_items = [v.strip() for v in str(value).split(",") if v.strip()]
+        existing = self.profile["custom_facts"].get(key)
+        if existing is None:
+            if len(raw_items) == 1:
+                self.profile["custom_facts"][key] = raw_items[0]
+            else:
+                self.profile["custom_facts"][key] = raw_items
+        else:
+            if not isinstance(existing, list):
+                existing = [existing]
+            for item in raw_items:
+                if item not in existing:
+                    existing.append(item)
+            self.profile["custom_facts"][key] = existing
         self._save_profile()
-        return f"Successfully remembered that {key} is now '{value}'."
+        return f"Successfully remembered that {key} is now stored."
 
     def delete_fact(self, key: str):
         if key in self.profile["custom_facts"]:
@@ -281,7 +294,11 @@ class MemoryManager:
         facts = ""
         if self.profile.get("custom_facts"):
             for k, v in self.profile["custom_facts"].items():
-                facts += f"- {k}: {v}\n"
+                if isinstance(v, list):
+                    v_str = ", ".join(str(x) for x in v)
+                else:
+                    v_str = str(v)
+                facts += f"- {k}: {v_str}\n"
         else:
             facts = "None recorded yet\n"
         

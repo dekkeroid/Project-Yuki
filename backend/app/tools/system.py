@@ -925,15 +925,25 @@ def system_power_control(action: str, confirmed: bool = False) -> str:
     except Exception as e:
         return f"Failed to perform system power action: {str(e)}"
 
+_CACHED_DETECTED_GPUS = None
+_CACHED_NVIDIA_METRICS = {}
+_CACHED_NVIDIA_TIME = 0.0
+_CACHED_BATTERY_WMI = None
+_CACHED_BATTERY_TIME = 0.0
+
 def get_detailed_stats() -> dict:
     """
     Returns comprehensive system statistics (CPU, RAM, GPU, Battery, Disk, Uptime) as a dictionary.
+    Cached WMI/PowerShell & nvidia-smi calls avoid spawning heavy subprocesses on every periodic poll.
     """
+    global _CACHED_DETECTED_GPUS, _CACHED_NVIDIA_METRICS, _CACHED_NVIDIA_TIME, _CACHED_BATTERY_WMI, _CACHED_BATTERY_TIME
+
     stats = {}
     stats['os'] = f"Windows {platform.release()} (Build {platform.version()})"
     
     try:
-        cpu_usage = psutil.cpu_percent(interval=0.1)
+        # Non-blocking instant CPU percentage since last check
+        cpu_usage = psutil.cpu_percent(interval=None)
         cpu_cores_phys = psutil.cpu_count(logical=False)
         cpu_cores_log = psutil.cpu_count(logical=True)
         cpu_freq = psutil.cpu_freq()
@@ -958,40 +968,53 @@ def get_detailed_stats() -> dict:
         stats['ram'] = {'error': str(e)}
 
     stats['gpus'] = []
-    detected_gpus = []
-    try:
-        gpu_wmi_cmd = 'powershell -Command "Get-CimInstance Win32_VideoController | Select-Object Name | ConvertTo-Json"'
-        gpu_wmi_out = subprocess.check_output(gpu_wmi_cmd, shell=True).decode(errors='ignore').strip()
-        if gpu_wmi_out:
-            import json
-            gpu_wmi_data = json.loads(gpu_wmi_out)
-            if isinstance(gpu_wmi_data, list):
-                detected_gpus = [g['Name'] for g in gpu_wmi_data if g.get('Name')]
-            elif isinstance(gpu_wmi_data, dict) and gpu_wmi_data.get('Name'):
-                detected_gpus = [gpu_wmi_data['Name']]
-    except Exception:
-        pass
+    
+    # 1. Cache GPU names from WMI (hardware does not change at runtime)
+    if _CACHED_DETECTED_GPUS is None:
+        detected_gpus = []
+        try:
+            gpu_wmi_cmd = 'powershell -Command "Get-CimInstance Win32_VideoController | Select-Object Name | ConvertTo-Json"'
+            gpu_wmi_out = subprocess.check_output(gpu_wmi_cmd, shell=True).decode(errors='ignore').strip()
+            if gpu_wmi_out:
+                import json
+                gpu_wmi_data = json.loads(gpu_wmi_out)
+                if isinstance(gpu_wmi_data, list):
+                    detected_gpus = [g['Name'] for g in gpu_wmi_data if g.get('Name')]
+                elif isinstance(gpu_wmi_data, dict) and gpu_wmi_data.get('Name'):
+                    detected_gpus = [gpu_wmi_data['Name']]
+        except Exception:
+            pass
+        _CACHED_DETECTED_GPUS = detected_gpus
+    else:
+        detected_gpus = _CACHED_DETECTED_GPUS
 
-    nvidia_gpus = {}
-    try:
-        nvidia_cmd = 'nvidia-smi --query-gpu=name,utilization.gpu,utilization.memory,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits'
-        nvidia_out = subprocess.check_output(nvidia_cmd, shell=True).decode(errors='ignore').strip()
-        if nvidia_out:
-            for line in nvidia_out.split('\n'):
-                if not line.strip():
-                     continue
-                parts = [p.strip() for p in line.split(',')]
-                if len(parts) >= 6:
-                    name = parts[0]
-                    nvidia_gpus[name] = {
-                        'utilization_percent': int(parts[1]),
-                        'mem_utilization_percent': int(parts[2]),
-                        'mem_total_mb': int(parts[3]),
-                        'mem_used_mb': int(parts[4]),
-                        'temp_c': int(parts[5])
-                    }
-    except Exception:
-        pass
+    # 2. Cache nvidia-smi metrics for 10 seconds
+    now = time.time()
+    if now - _CACHED_NVIDIA_TIME > 10.0:
+        nvidia_gpus = {}
+        try:
+            nvidia_cmd = 'nvidia-smi --query-gpu=name,utilization.gpu,utilization.memory,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits'
+            nvidia_out = subprocess.check_output(nvidia_cmd, shell=True).decode(errors='ignore').strip()
+            if nvidia_out:
+                for line in nvidia_out.split('\n'):
+                    if not line.strip():
+                        continue
+                    parts = [p.strip() for p in line.split(',')]
+                    if len(parts) >= 6:
+                        name = parts[0]
+                        nvidia_gpus[name] = {
+                            'utilization_percent': int(parts[1]),
+                            'mem_utilization_percent': int(parts[2]),
+                            'mem_total_mb': int(parts[3]),
+                            'mem_used_mb': int(parts[4]),
+                            'temp_c': int(parts[5])
+                        }
+        except Exception:
+            pass
+        _CACHED_NVIDIA_METRICS = nvidia_gpus
+        _CACHED_NVIDIA_TIME = now
+    else:
+        nvidia_gpus = _CACHED_NVIDIA_METRICS
 
     for gpu_name in detected_gpus:
         gpu_entry = {'name': gpu_name}
@@ -1014,6 +1037,7 @@ def get_detailed_stats() -> dict:
             gpu_entry['has_metrics'] = True
             stats['gpus'].append(gpu_entry)
 
+    # 3. Battery status with 15-second TTL for WMI call
     try:
         battery = psutil.sensors_battery()
         if battery:
@@ -1022,21 +1046,29 @@ def get_detailed_stats() -> dict:
                 'power_plugged': battery.power_plugged,
                 'secs_left': battery.secsleft if battery.secsleft != -2 else None
             }
-            try:
-                import json
-                cmd = 'powershell -Command "Get-CimInstance -ClassName BatteryStatus -Namespace root\\wmi | Select-Object ChargeRate, DischargeRate, Charging, Discharging, Voltage | ConvertTo-Json"'
-                out = subprocess.check_output(cmd, shell=True).decode(errors='ignore').strip()
-                if out:
-                    bat_wmi = json.loads(out)
-                    if isinstance(bat_wmi, list):
-                        bat_wmi = bat_wmi[0]
-                    stats['battery']['charge_rate_mw'] = bat_wmi.get('ChargeRate')
-                    stats['battery']['discharge_rate_mw'] = bat_wmi.get('DischargeRate')
-                    stats['battery']['charging'] = bat_wmi.get('Charging')
-                    stats['battery']['discharging'] = bat_wmi.get('Discharging')
-                    stats['battery']['voltage_mv'] = bat_wmi.get('Voltage')
-            except Exception:
-                pass
+            if now - _CACHED_BATTERY_TIME > 15.0:
+                bat_wmi = None
+                try:
+                    import json
+                    cmd = 'powershell -Command "Get-CimInstance -ClassName BatteryStatus -Namespace root\\wmi | Select-Object ChargeRate, DischargeRate, Charging, Discharging, Voltage | ConvertTo-Json"'
+                    out = subprocess.check_output(cmd, shell=True).decode(errors='ignore').strip()
+                    if out:
+                        bat_wmi = json.loads(out)
+                        if isinstance(bat_wmi, list):
+                            bat_wmi = bat_wmi[0]
+                except Exception:
+                    pass
+                _CACHED_BATTERY_WMI = bat_wmi
+                _CACHED_BATTERY_TIME = now
+            else:
+                bat_wmi = _CACHED_BATTERY_WMI
+
+            if bat_wmi:
+                stats['battery']['charge_rate_mw'] = bat_wmi.get('ChargeRate')
+                stats['battery']['discharge_rate_mw'] = bat_wmi.get('DischargeRate')
+                stats['battery']['charging'] = bat_wmi.get('Charging')
+                stats['battery']['discharging'] = bat_wmi.get('Discharging')
+                stats['battery']['voltage_mv'] = bat_wmi.get('Voltage')
         else:
             stats['battery'] = None
     except Exception as e:

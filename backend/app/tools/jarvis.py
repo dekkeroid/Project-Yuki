@@ -186,7 +186,7 @@ def jarvis_create_or_edit_file(file_path: str, content: str, mode: str = "write"
         return f"File Write Error: {str(e)}"
 
 
-def jarvis_list_dir_tree(dir_path: str, max_depth: int = 2) -> str:
+def jarvis_list_dir_tree(dir_path: str, max_depth: int = 2, limit: int = 100) -> str:
     """
     Inspects folder structure and subdirectories up to max_depth.
     """
@@ -202,24 +202,28 @@ def jarvis_list_dir_tree(dir_path: str, max_depth: int = 2) -> str:
     def _walk(current_dir, current_depth):
         if current_depth > max_depth:
             return
+        if len(output) >= limit:
+            return
         try:
-            entries = os.listdir(current_dir)
-            for entry in entries[:40]:
+            entries = sorted(os.listdir(current_dir))
+            for entry in entries:
                 if entry.startswith('.') or entry in ('__pycache__', 'node_modules', 'venv', 'dist', 'build'):
                     continue
+                if len(output) >= limit:
+                    return
                 full_p = os.path.join(current_dir, entry)
                 indent = "  " * current_depth
                 if os.path.isdir(full_p):
-                    output.append(f"{indent}📁 {entry}/")
+                    output.append(f"{indent}{entry}/")
                     _walk(full_p, current_depth + 1)
                 else:
                     size_kb = os.path.getsize(full_p) / 1024
-                    output.append(f"{indent}📄 {entry} ({size_kb:.1f} KB)")
+                    output.append(f"{indent}{entry}  ({size_kb:.1f} KB)")
         except Exception as err:
             output.append(f"{'  ' * current_depth} (Error reading dir: {err})")
 
     _walk(clean_path, 0)
-    return "\n".join(output[:100])
+    return "\n".join(output[:limit])
 
 
 def jarvis_git_status(repo_path: str = None) -> str:
