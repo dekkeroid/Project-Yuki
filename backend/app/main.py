@@ -2534,6 +2534,13 @@ async def get_chat_session_history(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+async def broadcast_ws_event(payload: dict):
+    for ws in list(active_websockets):
+        try:
+            await ws.send_json(payload)
+        except Exception as e:
+            pass
+
 class ActivateSessionRequest(BaseModel):
     session_id: str
 
@@ -2553,7 +2560,7 @@ async def activate_chat_session_api(req: ActivateSessionRequest):
     chat_history = msgs
     
     # Broadcast session switch event to connected WebSocket clients
-    await manager.broadcast({
+    await broadcast_ws_event({
         "type": "session_switched",
         "session_id": active_session_id,
         "messages": chat_history
@@ -2570,7 +2577,7 @@ async def create_new_chat_session():
     chat_history = []
     print(f"[Session] Started new user session: {active_session_id}")
     
-    await manager.broadcast({
+    await broadcast_ws_event({
         "type": "session_switched",
         "session_id": active_session_id,
         "messages": []

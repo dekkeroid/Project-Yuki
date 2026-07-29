@@ -43,8 +43,17 @@ export const AgenticWorkspaceWindow = ({
   const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
   const messagesEndRef = useRef(null);
 
-  // Standalone Settings Modal State
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  // Standalone Preferences Modal & Active Tab State
+  const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
+  const [prefTab, setPrefTab] = useState('appearance'); // 'appearance' | 'engine' | 'prompts' | 'audio'
+
+  // Appearance Preferences (Saved in localStorage)
+  const [themeAccent, setThemeAccent] = useState(() => {
+    return localStorage.getItem('yuki-chatwindow-theme') || '#8b5cf6';
+  });
+  const [chatFontSize, setChatFontSize] = useState(() => {
+    return localStorage.getItem('yuki-chatwindow-fontsize') || '0.84rem';
+  });
 
   // Chat Window Local Override Tool Mode (Saved in localStorage)
   const [chatWindowToolMode, setChatWindowToolMode] = useState(() => {
@@ -351,17 +360,17 @@ export const AgenticWorkspaceWindow = ({
             </button>
           </div>
 
-          {/* Standalone Settings Button */}
+          {/* Standalone Preferences Button */}
           <button
             type="button"
-            onClick={() => setIsSettingsModalOpen(true)}
-            title="Open Workspace Settings"
+            onClick={() => setIsPreferencesOpen(true)}
+            title="Open Workspace Preferences"
             style={{
               padding: '6px 10px',
               borderRadius: '7px',
-              border: '1px solid rgba(167, 139, 250, 0.3)',
-              background: 'rgba(167, 139, 250, 0.15)',
-              color: '#c4b5fd',
+              border: `1px solid ${themeAccent}60`,
+              background: `${themeAccent}25`,
+              color: '#ffffff',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -371,8 +380,8 @@ export const AgenticWorkspaceWindow = ({
               transition: 'all 0.15s ease'
             }}
           >
-            <Settings style={{ width: '13px', height: '13px' }} />
-            Settings
+            <Sliders style={{ width: '13px', height: '13px' }} />
+            Preferences
           </button>
 
           {/* Close Window / Dock Back Button */}
@@ -1186,13 +1195,13 @@ export const AgenticWorkspaceWindow = ({
         </section>
       </div>
 
-      {/* ── Standalone Workspace Settings Modal ─── */}
-      {isSettingsModalOpen && (
+      {/* ── Standalone Workspace Preferences Modal (Tabbed) ─── */}
+      {isPreferencesOpen && (
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(5, 8, 15, 0.82)',
-          backdropFilter: 'blur(16px)',
+          background: 'rgba(5, 8, 15, 0.85)',
+          backdropFilter: 'blur(18px)',
           zIndex: 99999,
           display: 'flex',
           alignItems: 'center',
@@ -1201,11 +1210,11 @@ export const AgenticWorkspaceWindow = ({
         }}>
           <div style={{
             width: '100%',
-            maxWidth: '520px',
+            maxWidth: '560px',
             background: 'rgba(15, 23, 42, 0.98)',
-            border: '1px solid rgba(167, 139, 250, 0.35)',
+            border: `1px solid ${themeAccent}40`,
             borderRadius: '16px',
-            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(139, 92, 246, 0.2)',
+            boxShadow: `0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px ${themeAccent}30`,
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column'
@@ -1216,164 +1225,335 @@ export const AgenticWorkspaceWindow = ({
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '14px 18px',
-              borderBottom: '1px solid rgba(167, 139, 250, 0.2)',
-              background: 'linear-gradient(135deg, rgba(167, 139, 250, 0.15) 0%, rgba(56, 189, 248, 0.1) 100%)'
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              background: `linear-gradient(135deg, ${themeAccent}25 0%, rgba(56, 189, 248, 0.1) 100%)`
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Settings style={{ width: '18px', height: '18px', color: '#c4b5fd' }} />
+                <Sliders style={{ width: '18px', height: '18px', color: themeAccent }} />
                 <h3 style={{ margin: 0, fontSize: '0.94rem', fontWeight: 700, color: '#ffffff' }}>
-                  Workspace Settings & LLM Config
+                  Workspace Preferences
                 </h3>
               </div>
               <button
                 type="button"
-                onClick={() => setIsSettingsModalOpen(false)}
+                onClick={() => setIsPreferencesOpen(false)}
                 style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
               >
                 <X style={{ width: '16px', height: '16px' }} />
               </button>
             </div>
 
-            {/* Modal Content */}
-            <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
-              
-              {/* Default Chat Window Tool Mode */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div>
-                  <div style={{ fontSize: '0.80rem', fontWeight: 600, color: '#ffffff' }}>Chat Window Tool Mode</div>
-                  <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>Overrides execution tool budget for chats sent from this workspace</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextMode = chatWindowToolMode === 'advanced' ? 'basic' : 'advanced';
-                    setChatWindowToolMode(nextMode);
-                    localStorage.setItem('yuki-chatwindow-tool-mode', nextMode);
-                  }}
-                  style={{
-                    padding: '5px 12px',
-                    borderRadius: '8px',
-                    border: chatWindowToolMode === 'advanced' ? '1px solid #38bdf8' : '1px solid #a78bfa',
-                    background: chatWindowToolMode === 'advanced' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(167, 139, 250, 0.25)',
-                    color: chatWindowToolMode === 'advanced' ? '#38bdf8' : '#c4b5fd',
-                    fontWeight: 600,
-                    fontSize: '0.74rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {chatWindowToolMode === 'advanced' ? '🧠 Jarvis (40k)' : '⚡ Basic (2.5k)'}
-                </button>
-              </div>
+            {/* Modal Navigation Tabs */}
+            <div style={{
+              display: 'flex',
+              background: 'rgba(0, 0, 0, 0.3)',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              padding: '4px 12px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setPrefTab('appearance')}
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  fontSize: '0.74rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  borderRadius: '6px',
+                  background: prefTab === 'appearance' ? `${themeAccent}30` : 'transparent',
+                  color: prefTab === 'appearance' ? '#ffffff' : '#94a3b8',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                🎨 Appearance
+              </button>
 
-              {/* System Prompt Components Preferences */}
-              <div style={{ background: 'rgba(0,0,0,0.3)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div style={{ fontSize: '0.80rem', fontWeight: 600, color: '#ffffff', marginBottom: '8px' }}>
-                  System Prompt Module Defaults
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.72rem' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={promptPersona}
-                      onChange={(e) => {
-                        setPromptPersona(e.target.checked);
-                        localStorage.setItem('yuki-prompt-persona', String(e.target.checked));
-                      }}
-                      style={{ accentColor: '#8b5cf6' }}
-                    />
-                    🎭 Persona & Mood
-                  </label>
+              <button
+                type="button"
+                onClick={() => setPrefTab('engine')}
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  fontSize: '0.74rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  borderRadius: '6px',
+                  background: prefTab === 'engine' ? `${themeAccent}30` : 'transparent',
+                  color: prefTab === 'engine' ? '#ffffff' : '#94a3b8',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                ⚙️ Engine
+              </button>
 
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={promptExpressions}
-                      onChange={(e) => {
-                        setPromptExpressions(e.target.checked);
-                        localStorage.setItem('yuki-prompt-expressions', String(e.target.checked));
-                      }}
-                      style={{ accentColor: '#8b5cf6' }}
-                    />
-                    🎬 Avatar Expressions
-                  </label>
+              <button
+                type="button"
+                onClick={() => setPrefTab('prompts')}
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  fontSize: '0.74rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  borderRadius: '6px',
+                  background: prefTab === 'prompts' ? `${themeAccent}30` : 'transparent',
+                  color: prefTab === 'prompts' ? '#ffffff' : '#94a3b8',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                🎭 Prompts
+              </button>
 
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={promptMemory}
-                      onChange={(e) => {
-                        setPromptMemory(e.target.checked);
-                        localStorage.setItem('yuki-prompt-memory', String(e.target.checked));
-                      }}
-                      style={{ accentColor: '#8b5cf6' }}
-                    />
-                    🧠 User Memory Card
-                  </label>
-
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={promptDirectives}
-                      onChange={(e) => {
-                        setPromptDirectives(e.target.checked);
-                        localStorage.setItem('yuki-prompt-directives', String(e.target.checked));
-                      }}
-                      style={{ accentColor: '#8b5cf6' }}
-                    />
-                    ⚙️ Tool Guidelines
-                  </label>
-
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer', gridColumn: 'span 2' }}>
-                    <input
-                      type="checkbox"
-                      checked={promptPlanning}
-                      onChange={(e) => {
-                        setPromptPlanning(e.target.checked);
-                        localStorage.setItem('yuki-prompt-planning', String(e.target.checked));
-                      }}
-                      style={{ accentColor: '#8b5cf6' }}
-                    />
-                    📋 Implementation Plan Etiquette (Section 5)
-                  </label>
-                </div>
-              </div>
-
-              {/* Voice Volume Control */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Volume2 style={{ width: '13px', height: '13px' }} /> Voice Speech Volume (TTS):
-                  </label>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#ffffff' }}>{Math.round(voiceVolume * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={voiceVolume}
-                  onChange={(e) => onVolumeChange && onVolumeChange(parseFloat(e.target.value))}
-                  style={{ width: '100%', accentColor: '#8b5cf6' }}
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => setPrefTab('audio')}
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  fontSize: '0.74rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  borderRadius: '6px',
+                  background: prefTab === 'audio' ? `${themeAccent}30` : 'transparent',
+                  color: prefTab === 'audio' ? '#ffffff' : '#94a3b8',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                🔊 Audio
+              </button>
             </div>
+
+            {/* Tab 1: Appearance */}
+            {prefTab === 'appearance' && (
+              <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '65vh', overflowY: 'auto' }}>
+                <div>
+                  <label style={{ fontSize: '0.76rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '8px' }}>
+                    🎨 Theme Accent Color:
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px' }}>
+                    {[
+                      { label: 'Violet Neon', color: '#8b5cf6' },
+                      { label: 'Cyber Cyan', color: '#38bdf8' },
+                      { label: 'Emerald Pulse', color: '#34d399' },
+                      { label: 'Rose Gold', color: '#f472b6' }
+                    ].map((t) => (
+                      <button
+                        key={t.color}
+                        type="button"
+                        onClick={() => {
+                          setThemeAccent(t.color);
+                          localStorage.setItem('yuki-chatwindow-theme', t.color);
+                        }}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          border: themeAccent === t.color ? `2px solid ${t.color}` : '1px solid rgba(255,255,255,0.1)',
+                          background: themeAccent === t.color ? `${t.color}35` : 'rgba(0,0,0,0.3)',
+                          color: '#ffffff',
+                          fontSize: '0.70rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: t.color }}></span>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.76rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '8px' }}>
+                    🔤 Chat Font Size:
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[
+                      { label: 'Compact (0.78rem)', size: '0.78rem' },
+                      { label: 'Standard (0.84rem)', size: '0.84rem' },
+                      { label: 'Large (0.92rem)', size: '0.92rem' }
+                    ].map((f) => (
+                      <button
+                        key={f.size}
+                        type="button"
+                        onClick={() => {
+                          setChatFontSize(f.size);
+                          localStorage.setItem('yuki-chatwindow-fontsize', f.size);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '8px',
+                          borderRadius: '8px',
+                          border: chatFontSize === f.size ? `1px solid ${themeAccent}` : '1px solid rgba(255,255,255,0.1)',
+                          background: chatFontSize === f.size ? `${themeAccent}30` : 'rgba(0,0,0,0.3)',
+                          color: chatFontSize === f.size ? '#ffffff' : '#94a3b8',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Workspace Engine */}
+            {prefTab === 'engine' && (
+              <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '65vh', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div>
+                    <div style={{ fontSize: '0.80rem', fontWeight: 600, color: '#ffffff' }}>Chat Window Tool Suite Mode</div>
+                    <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>Overrides execution tool budget for chats sent from this workspace</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextMode = chatWindowToolMode === 'advanced' ? 'basic' : 'advanced';
+                      setChatWindowToolMode(nextMode);
+                      localStorage.setItem('yuki-chatwindow-tool-mode', nextMode);
+                    }}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '8px',
+                      border: chatWindowToolMode === 'advanced' ? '1px solid #38bdf8' : '1px solid #a78bfa',
+                      background: chatWindowToolMode === 'advanced' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(167, 139, 250, 0.25)',
+                      color: chatWindowToolMode === 'advanced' ? '#38bdf8' : '#c4b5fd',
+                      fontWeight: 600,
+                      fontSize: '0.74rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {chatWindowToolMode === 'advanced' ? '🧠 Jarvis (40k)' : '⚡ Basic (2.5k)'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 3: System Prompt Modules */}
+            {prefTab === 'prompts' && (
+              <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '65vh', overflowY: 'auto' }}>
+                <div style={{ background: 'rgba(0,0,0,0.3)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ fontSize: '0.80rem', fontWeight: 600, color: '#ffffff', marginBottom: '10px' }}>
+                    System Prompt Module Defaults
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.74rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={promptPersona}
+                        onChange={(e) => {
+                          setPromptPersona(e.target.checked);
+                          localStorage.setItem('yuki-prompt-persona', String(e.target.checked));
+                        }}
+                        style={{ accentColor: themeAccent }}
+                      />
+                      🎭 Persona & Mood
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={promptExpressions}
+                        onChange={(e) => {
+                          setPromptExpressions(e.target.checked);
+                          localStorage.setItem('yuki-prompt-expressions', String(e.target.checked));
+                        }}
+                        style={{ accentColor: themeAccent }}
+                      />
+                      🎬 Avatar Expressions
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={promptMemory}
+                        onChange={(e) => {
+                          setPromptMemory(e.target.checked);
+                          localStorage.setItem('yuki-prompt-memory', String(e.target.checked));
+                        }}
+                        style={{ accentColor: themeAccent }}
+                      />
+                      🧠 User Memory Card
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={promptDirectives}
+                        onChange={(e) => {
+                          setPromptDirectives(e.target.checked);
+                          localStorage.setItem('yuki-prompt-directives', String(e.target.checked));
+                        }}
+                        style={{ accentColor: themeAccent }}
+                      />
+                      ⚙️ Tool Guidelines
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer', gridColumn: 'span 2' }}>
+                      <input
+                        type="checkbox"
+                        checked={promptPlanning}
+                        onChange={(e) => {
+                          setPromptPlanning(e.target.checked);
+                          localStorage.setItem('yuki-prompt-planning', String(e.target.checked));
+                        }}
+                        style={{ accentColor: themeAccent }}
+                      />
+                      📋 Implementation Plan Etiquette (Section 5)
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 4: Audio & Speech */}
+            {prefTab === 'audio' && (
+              <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '65vh', overflowY: 'auto' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{ fontSize: '0.76rem', fontWeight: 600, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Volume2 style={{ width: '14px', height: '14px' }} /> Voice Speech Volume (TTS):
+                    </label>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#ffffff' }}>{Math.round(voiceVolume * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={voiceVolume}
+                    onChange={(e) => onVolumeChange && onVolumeChange(parseFloat(e.target.value))}
+                    style={{ width: '100%', accentColor: themeAccent }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Modal Footer */}
             <div style={{
               padding: '12px 18px',
-              borderTop: '1px solid rgba(167, 139, 250, 0.2)',
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
               background: 'rgba(9, 13, 22, 0.95)',
               display: 'flex',
               justify: 'flex-end'
             }}>
               <button
                 type="button"
-                onClick={() => setIsSettingsModalOpen(false)}
+                onClick={() => setIsPreferencesOpen(false)}
                 style={{
-                  padding: '7px 16px',
+                  padding: '7px 18px',
                   borderRadius: '8px',
                   border: 'none',
-                  background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                  background: `linear-gradient(135deg, ${themeAccent} 0%, #6d28d9 100%)`,
                   color: '#ffffff',
                   fontWeight: 600,
                   fontSize: '0.76rem',
