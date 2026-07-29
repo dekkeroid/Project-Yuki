@@ -217,6 +217,41 @@ export const AgenticWorkspaceWindow = ({
     return localStorage.getItem('yuki-prompt-planning') !== 'false';
   });
 
+  const generateDynamicPromptPreview = () => {
+    const parts = [];
+
+    if (promptPersona) {
+      parts.push(`[1. CHARACTER PERSONA & MOOD SPECTRUM]\nYou are Yuki, a cute, playful, intelligent anime-style companion and AI assistant.\n[Mood Spectrum: Joy: 85%, Playfulness: 90%, Affection: 80%]`);
+    }
+
+    if (promptExpressions) {
+      parts.push(`[2. 3D AVATAR EXPRESSION TAGS]\nYou can trigger 3D Avatar Animations using tags like <anim:happy>, <anim:thinking>, <anim:wave>, <anim:nod>.`);
+    }
+
+    if (promptMemory) {
+      const summaryText = settings?.user_name ? `• User Name: ${settings.user_name}` : `(No personal facts stored in memory card)`;
+      parts.push(`[3. USER MEMORY CARD]\n--- USER MEMORY CARD ---\n${summaryText}\n------------------------`);
+    }
+
+    if (promptDirectives) {
+      if (chatWindowToolMode === 'advanced') {
+        parts.push(`[4. AUTONOMOUS JARVIS OPERATING DIRECTIVES]\nYou are operating in ADVANCED JARVIS MODE powered by Frontier LLM.\n- Parallel multi-step reasoning\n- SQLite file database search (yuki_files.db)\n- Full terminal execution & Python auto-installation\n- Code review & git inspection`);
+      } else {
+        parts.push(`[4. CORE TOOL RULES & TRIGGER CONDITIONS]\n- RULE 1: Conversational intent -> No tool calls\n- RULE 2: Specific tool triggers (web_search, launch_app, open_or_play_file...)\n- RULE 3: One tool per turn\n- RULE 4: Summarize tool outputs in < 3 sentences\n- RULE 5: Confirmation required for destructive actions`);
+      }
+    }
+
+    if (promptPlanning) {
+      parts.push(`[5. SECTION 5 IMPLEMENTATION PLANNING ETIQUETTE]\nFor complex requests, create implementation_plan.md and present a structured plan before taking code actions.`);
+    }
+
+    if (parts.length === 0) {
+      return `⚠️ All prompt modules disabled. LLM will execute with zero system prompt instructions.`;
+    }
+
+    return parts.join('\n\n═══════════════════════════════════════\n\n');
+  };
+
   // Profile & System Details State
   const [profileData, setProfileData] = useState(null);
 
@@ -1773,6 +1808,36 @@ export const AgenticWorkspaceWindow = ({
                     {mod.label}
                   </label>
                 ))}
+              </div>
+
+              {/* Section 5: Dynamic System Prompt Live Inspector */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(167, 139, 250, 0.25)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '0.68rem', color: '#c4b5fd', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Code style={{ width: '13px', height: '13px' }} />
+                    Live Compiled System Prompt Preview
+                  </div>
+                  <span style={{ fontSize: '0.60rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(167, 139, 250, 0.2)', color: '#c4b5fd', border: '1px solid rgba(167, 139, 250, 0.3)' }}>
+                    Real-Time Dynamic
+                  </span>
+                </div>
+
+                <div style={{
+                  background: '#060911',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '6px',
+                  padding: '10px',
+                  fontSize: '0.68rem',
+                  fontFamily: 'Consolas, Monaco, monospace',
+                  color: '#cbd5e1',
+                  whiteSpace: 'pre-wrap',
+                  maxHeight: '280px',
+                  overflowY: 'auto',
+                  lineHeight: '1.45',
+                  scrollbarWidth: 'thin'
+                }}>
+                  {generateDynamicPromptPreview()}
+                </div>
               </div>
             </div>
           )}
