@@ -988,14 +988,24 @@ def get_hierarchical_chat_sessions() -> Dict[str, Any]:
     finally:
         conn.close()
 
-def get_session_messages(session_id: str) -> List[Dict[str, str]]:
+def get_session_messages(session_id: str, limit: Optional[int] = None) -> List[Dict[str, str]]:
     conn = get_connection()
     try:
-        rows = conn.execute("""
-        SELECT role, content FROM chat_messages
-        WHERE session_id = ?
-        ORDER BY id ASC
-        """, (session_id,)).fetchall()
+        if limit and isinstance(limit, int) and limit > 0:
+            rows = conn.execute("""
+            SELECT role, content FROM (
+                SELECT id, role, content FROM chat_messages
+                WHERE session_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+            ) ORDER BY id ASC
+            """, (session_id, limit)).fetchall()
+        else:
+            rows = conn.execute("""
+            SELECT role, content FROM chat_messages
+            WHERE session_id = ?
+            ORDER BY id ASC
+            """, (session_id,)).fetchall()
         return [{"role": r["role"], "content": r["content"]} for r in rows]
     except Exception as e:
         print(f"[DB] Error fetching messages for session '{session_id}': {e}")

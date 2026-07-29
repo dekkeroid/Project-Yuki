@@ -43,6 +43,7 @@ export const AgenticWorkspaceWindow = ({
   const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  const chatContainerRef = useRef(null);
 
   // Local Input Text State (Fixes standalone typing when props are unpassed)
   const [localInputText, setLocalInputText] = useState('');
@@ -133,6 +134,15 @@ export const AgenticWorkspaceWindow = ({
 
   const handleSendPrompt = (textToSend) => {
     if (!textToSend.trim()) return;
+
+    // 1. Instantly append User message & pending AI thinking card to local view
+    const userMsg = { role: 'user', content: textToSend };
+    const pendingAiMsg = { role: 'assistant', content: '...', isThinking: true };
+
+    if (selectedPastSessionId && viewMessages) {
+      setViewMessages(prev => [...(prev || []), userMsg, pendingAiMsg]);
+    }
+
     if (onSendMessage) {
       onSendMessage(textToSend);
     } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -303,9 +313,12 @@ export const AgenticWorkspaceWindow = ({
     });
   };
 
-  // Inspect and Promote a session to Global Active Session
+  // Inspect and Promote a session to Global Active Session (Instant 0ms Highlight)
   const handleSelectSession = async (sessionId) => {
+    // Instantly highlight target session node in tree with 0ms delay
     setSelectedPastSessionId(sessionId);
+    setActiveSessionId(sessionId);
+
     try {
       const actRes = await fetch(`${API_BASE}/api/chat/sessions/activate`, {
         method: 'POST',
@@ -314,7 +327,6 @@ export const AgenticWorkspaceWindow = ({
       });
       if (actRes.ok) {
         const actData = await actRes.json();
-        setActiveSessionId(sessionId);
         if (actData.messages) {
           setViewMessages(actData.messages);
         }
@@ -366,10 +378,12 @@ export const AgenticWorkspaceWindow = ({
   // Displayed messages: either active turn messages or inspected past session messages
   const displayMessages = selectedPastSessionId && viewMessages ? viewMessages : messages;
 
-  // Auto-scroll to bottom of chat
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [displayMessages]);
+  // Instant Bottom-Up Scroll (Industry Standard 0-Jump Layout)
+  React.useLayoutEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [displayMessages, selectedPastSessionId]);
 
   // Extract all tool execution events for Inspector
   const toolLogs = React.useMemo(() => {
@@ -862,17 +876,20 @@ export const AgenticWorkspaceWindow = ({
             </div>
           )}
 
-          {/* Chat Messages Feed */}
-          <div style={{
-            flex: 1,
-            padding: '16px 20px',
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-            scrollbarWidth: 'thin',
-            scrollbarColor: 'rgba(167, 139, 250, 0.3) transparent'
-          }}>
+          {/* Chat Messages Feed (Instant Bottom-Up Scroll) */}
+          <div
+            ref={chatContainerRef}
+            style={{
+              flex: 1,
+              padding: '16px 20px',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              scrollbarWidth: 'thin',
+              scrollbarColor: 'rgba(167, 139, 250, 0.3) transparent'
+            }}
+          >
             {displayMessages.length === 0 ? (
               <div style={{
                 margin: 'auto',
@@ -897,6 +914,41 @@ export const AgenticWorkspaceWindow = ({
 
                 if (isToolEvent) {
                   return <AgenticToolTimelineItem key={index} content={msg.content} />;
+                }
+
+                // Render Instant AI Thinking Bubble
+                if (msg.isThinking) {
+                  return (
+                    <div
+                      key={index}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        maxWidth: '88%',
+                        alignSelf: 'flex-start'
+                      }}
+                    >
+                      <span style={{ fontSize: '0.64rem', fontWeight: 700, color: '#38bdf8', marginBottom: '3px', paddingLeft: '4px' }}>
+                        Yuki AI
+                      </span>
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: '14px 14px 14px 2px',
+                        background: 'rgba(15, 23, 42, 0.85)',
+                        border: `1px solid ${themeAccent}45`,
+                        color: '#cbd5e1',
+                        fontSize: '0.80rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: `0 4px 14px ${themeAccent}20`
+                      }}>
+                        <Sparkles style={{ width: '14px', height: '14px', color: themeAccent }} />
+                        <span>Yuki is processing your request...</span>
+                      </div>
+                    </div>
+                  );
                 }
 
                 const { thoughts, cleanContent } = parseMessageThought(msg.content);
