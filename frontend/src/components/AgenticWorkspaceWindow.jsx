@@ -42,6 +42,16 @@ export const AgenticWorkspaceWindow = ({
   const [viewMessages, setViewMessages] = useState(null); // Loaded messages when inspecting past session
   const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
   const messagesEndRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  // Auto-expand textarea vertically up to 200px max height
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollH = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = `${Math.min(Math.max(38, scrollH), 200)}px`;
+    }
+  }, [currentInputText]);
   // Sidebar Resizing States (Width in pixels, saved in localStorage)
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => {
     const saved = localStorage.getItem('yuki-left-sidebar-width');
@@ -927,8 +937,9 @@ export const AgenticWorkspaceWindow = ({
                 gap: '10px'
               }}
             >
-              {/* Top Textarea Input Area */}
+              {/* Top Textarea Input Area (Auto-expanding up to 200px max height) */}
               <textarea
+                ref={textareaRef}
                 value={currentInputText}
                 onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={(e) => {
@@ -938,9 +949,10 @@ export const AgenticWorkspaceWindow = ({
                   }
                 }}
                 placeholder="Ask Yuki anything, run code, or search session history (Shift+Enter for line break)..."
-                rows={2}
                 style={{
                   width: '100%',
+                  minHeight: '38px',
+                  maxHeight: '200px',
                   background: 'transparent',
                   border: 'none',
                   outline: 'none',
@@ -948,7 +960,10 @@ export const AgenticWorkspaceWindow = ({
                   fontSize: chatFontSize || '0.84rem',
                   lineHeight: '1.5',
                   resize: 'none',
-                  fontFamily: 'inherit'
+                  fontFamily: 'inherit',
+                  overflowY: 'auto',
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: `${themeAccent}60 transparent`
                 }}
               />
 
