@@ -6,7 +6,7 @@ import asyncio
 import concurrent.futures
 import inspect
 import os
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from app import config
 from app.agent.prompts import get_system_prompt, get_simple_system_prompt, get_advanced_jarvis_system_prompt
 from app.agent.llm_backend import get_backend, reset_backend
