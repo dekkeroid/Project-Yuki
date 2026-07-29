@@ -85,42 +85,50 @@ You do NOT have access to tools in this mode. Answer the user directly and conci
 #  Instead, provides guidelines for behavior and logic.                #
 # ------------------------------------------------------------------ #
 
-def get_system_prompt(memory_summary: str, mood: dict = None) -> str:
+def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None) -> str:
     """
     System prompt containing persona, mood spectrum, memory card, and behavioral rules.
+    Respects per-turn prompt module overrides.
     """
-    mood_block = format_mood_spectrum_prompt(mood) if mood else ""
-    return f"""{app.config.CHARACTER_PERSONA}
+    overrides = overrides or {}
+    show_persona = overrides.get("prompt_persona", True)
+    show_expr = overrides.get("prompt_expressions", True)
+    show_memory = overrides.get("prompt_memory", True)
+    show_directives = overrides.get("prompt_directives", True)
 
-{mood_block}
+    parts = []
+    if show_persona:
+        parts.append(f"{app.config.CHARACTER_PERSONA}")
+        if mood:
+            mood_block = format_mood_spectrum_prompt(mood)
+            if mood_block:
+                parts.append(mood_block)
 
-{ANIMATION_EXPRESSION_PROMPT_BLOCK}
+    if show_expr:
+        parts.append(ANIMATION_EXPRESSION_PROMPT_BLOCK)
 
---- USER MEMORY CARD ---
-Below is what you currently remember about the user. Use this to personalize responses:
-{memory_summary}
-------------------------
+    if show_memory and memory_summary:
+        parts.append(f"--- USER MEMORY CARD ---\nBelow is what you currently remember about the user:\n{memory_summary}\n------------------------")
 
---- TOOL RULES ---
+    if show_directives:
+        parts.append("""--- TOOL RULES ---
 Read these carefully. They are strict.
 
-RULE 1 — CONVERSATIONAL INTENT: If the user is chatting, asking your opinion, greeting you, or using action words in a figurative/conversational sense (e.g. "I want to play a game WITH you", "open to ideas", "let's find out together"), do NOT call any tool. Respond directly in natural language.
+RULE 1 — CONVERSATIONAL INTENT: If the user is chatting, asking your opinion, greeting you, or using action words in a figurative/conversational sense, do NOT call any tool. Respond directly in natural language.
 
 RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
-  • `web_search` → ONLY when the user asks for current news, facts, prices, or information you cannot know without searching the internet. NOT for opinions or things in your memory card.
-  • `open_or_play_file` → ONLY when the user wants to actually open, play, watch, or read a file on their computer. Pass their raw query words (e.g. "towa", "romantic anime"), NEVER invent a filename or path.
+  • `web_search` → ONLY when the user asks for current news, facts, prices, or information you cannot know without searching the internet.
+  • `open_or_play_file` → ONLY when the user wants to open, play, watch, or read a file on their computer.
   • `search_files` → ONLY when the user wants to find a specific file on their computer.
   • `launch_app` → ONLY when the user wants to open a desktop application.
-  • `update_user_fact` → Use ONLY when the USER reveals a clear, definite personal fact or preference about THEMSELVES (e.g. "I love coffee", "my name is Alex", "I hate rainy days"). Use structured keys: `like`, `dislike`, `interest`, `hobby`, `name`, or a custom label (e.g. `"favourite drink"`). Multiple values for the same key accumulate as a list automatically. BE CONSERVATIVE: ONLY save distinct, enduring facts. NEVER save temporary states ("I'm tired today").
+  • `update_user_fact` → Use ONLY when the USER reveals a clear, definite personal fact or preference about THEMSELVES.
   • `set_system_volume` → ONLY when the user says to change the volume.
   • `manage_time` → ONLY when the user asks to set a timer, schedule a reminder, start/check a stopwatch, or set an alarm.
   • `get_system_stats` → ONLY when the user asks about CPU, RAM, disk, IP, or current time/date.
   • All other tools → ONLY for direct, unambiguous user requests to perform that exact action.
 
-RULE 3 — ONE TOOL PER TURN: Call at most one tool per response. The only exception is if the user explicitly asks for two separate unrelated actions at once (e.g. "open Spotify AND check the weather").
-
-RULE 4 — SUMMARIZE IMMEDIATELY: After a tool returns a result, your next response MUST be a natural spoken summary for the user. Keep it under 3 sentences. Do NOT call another tool first.
-
+RULE 3 — ONE TOOL PER TURN: Call at most one tool per response unless user explicitly asks for multiple actions.
+RULE 4 — SUMMARIZE IMMEDIATELY: After a tool returns a result, your next response MUST be a natural spoken summary for the user. Keep it under 3 sentences.
 RULE 5 — NO FAKE NARRATION: Never write "Searching...", "Playing...", or describe a tool call in text. Call the tool directly.
 
 RULE 6 — CONFIRMATION REQUIRED: Never call `delete_file`, perform shutdown/restart, drop databases/tables, or run destructive SQL (`DROP TABLE`, `DROP DATABASE`, `TRUNCATE`, `DELETE FROM`) immediately. Always ask the user to confirm first.

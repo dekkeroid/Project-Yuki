@@ -2255,7 +2255,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                     if agent_executor is None:
                                         await broadcast_ws_event({"type": "error", "content": "Agent is still initializing, please try again in a moment."})
                                         return
-                                    gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history)
+                                    overrides = payload_data.get("overrides") or {}
+                                    gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides)
                                 try:
                                     event = await gen.__anext__()
                                     while True:

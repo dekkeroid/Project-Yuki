@@ -539,22 +539,26 @@ class AgentExecutor:
         user_message: str,
         chat_history: List[Dict[str, str]],
         backend: str,
+        overrides: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, str]]:
         """
         Builds the message list to send to the LLM.
         Applies a character-based history limit rather than a message count limit,
         preventing cache invalidations on every single turn.
         """
+        overrides = overrides or {}
         memory_summary = self.memory.get_profile_summary()
         mood = self.memory.get_mood_spectrum()
+
+        effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
 
         if backend == "simple" and not getattr(config, "SEND_TOOLS_IN_SIMPLE", False):
             system_content = get_simple_system_prompt(memory_summary, mood)
         else:
-            if getattr(config, "TOOL_MODE", "basic") == "advanced":
-                system_content = get_advanced_jarvis_system_prompt(memory_summary, mood)
+            if effective_tool_mode == "advanced":
+                system_content = get_advanced_jarvis_system_prompt(memory_summary, mood, overrides=overrides)
             else:
-                system_content = get_system_prompt(memory_summary, mood)
+                system_content = get_system_prompt(memory_summary, mood, overrides=overrides)
 
         system_msg = {"role": "system", "content": system_content}
 
@@ -1047,8 +1051,10 @@ class AgentExecutor:
     #  Streaming methods                                                 #
     # ------------------------------------------------------------------ #
 
-    async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]], intent_tool_hint: str = "") -> list:
+    async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]], intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None) -> list:
         """Return tool schemas from MCP discovery, with local-schema fallback."""
+        overrides = overrides or {}
+        effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
         use_dynamic = self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
         user_message = ""
         for msg in reversed(messages):
@@ -1058,24 +1064,32 @@ class AgentExecutor:
 
         filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic)
 
+        # Filter tool definition list based on per-turn effective_tool_mode override
+        if effective_tool_mode == "basic":
+            basic_allowed = {
+                "web_search", "read_file_content", "search_files", "list_directory",
+                "launch_app", "open_or_play_file", "set_system_volume", "manage_time",
+                "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script"
+            }
+            filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in basic_allowed]
+
         if intent_tool_hint:
             targeted = [t for t in filtered_tools if t.get("function", {}).get("name") == intent_tool_hint]
             if targeted:
                 tool_names = [t["function"]["name"] for t in targeted]
-                print(f"[Tools] Intent-targeted filter: sending ONLY [{', '.join(tool_names)}] to LLM")
+                print(f"[Tools] Intent-targeted filter ({effective_tool_mode}): sending ONLY [{', '.join(tool_names)}] to LLM")
                 return targeted
 
         tool_names = [t["function"]["name"] for t in filtered_tools]
         source = "MCP stdio" if self.mcp_tools.enabled and not self.mcp_tools.last_error else "local"
-        print(f"[Tools] Sending {len(filtered_tools)} {source} tools to LLM: {', '.join(tool_names)}")
+        print(f"[Tools] Sending {len(filtered_tools)} {source} tools to LLM (mode: {effective_tool_mode}): {', '.join(tool_names)}")
         return filtered_tools
 
-
-    async def _stream_request(self, session: aiohttp.ClientSession, url: str, model: str, messages: List[Dict[str, str]], headers: dict = None, temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = ""):
+    async def _stream_request(self, session: aiohttp.ClientSession, url: str, model: str, messages: List[Dict[str, str]], headers: dict = None, temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None):
         llm_backend = get_backend()
         tools = None
         if use_tools:
-            tools = await self._get_tool_definitions_for_messages(messages, intent_tool_hint=intent_tool_hint)
+            tools = await self._get_tool_definitions_for_messages(messages, intent_tool_hint=intent_tool_hint, overrides=overrides)
 
         payload = llm_backend.build_payload(
             model=model,
@@ -1122,14 +1136,14 @@ class AgentExecutor:
                         pass
 
 
-    async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", backend=None):
+    async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", backend=None, overrides: Optional[Dict[str, Any]] = None):
         if backend is None:
             llm_backend = get_backend()
         else:
             llm_backend = backend
         url = llm_backend.get_chat_url()
         headers = llm_backend.build_headers()
-        async for chunk in self._stream_request(session, url, model_name, messages, headers=headers, temperature=temperature, use_tools=use_tools, intent_tool_hint=intent_tool_hint):
+        async for chunk in self._stream_request(session, url, model_name, messages, headers=headers, temperature=temperature, use_tools=use_tools, intent_tool_hint=intent_tool_hint, overrides=overrides):
             yield chunk, self._get_model_label(model_name)
 
     async def _query_llm_stream(
@@ -1141,6 +1155,7 @@ class AgentExecutor:
         resolved_backend: str = "",   # Pass in the classification result so we don't re-classify
         intent_tool_hint: str = "",
         intent_source: str = "regex",
+        overrides: Optional[Dict[str, Any]] = None,
     ):
         """
         Streams tokens from the LLM.
@@ -1168,7 +1183,7 @@ class AgentExecutor:
                 temp = 0.2 if task == "complex" else 0.7
                 tb, tm = self._get_backend_and_model_for_task(task)
                 print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {tm} via {tb.name} with {'full' if task == 'complex' else 'lean'} prompt (temp={temp})")
-                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb):
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides):
                     yield chunk, label
             except Exception as e:
                 tb_e, tm_e = self._get_backend_and_model_for_task(task)
@@ -1177,7 +1192,7 @@ class AgentExecutor:
         elif backend == "complex":
             try:
                 print(f"[Router][Mode 2] Task=complex -> streaming {config.LLM_MODEL} with full prompt (temp=0.2)")
-                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint):
+                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint, overrides=overrides):
                     yield chunk, label
             except Exception as e:
                 llm_backend = get_backend()
@@ -1187,7 +1202,7 @@ class AgentExecutor:
             try:
                 tb, tm = self._get_backend_and_model_for_task("simple")
                 print(f"[Router] Task=simple -> streaming {tm} via {tb.name} (temp=0.7)")
-                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.7, use_tools=use_tools, backend=tb):
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.7, use_tools=use_tools, backend=tb, overrides=overrides):
                     yield chunk, label
             except Exception as e:
                 tb_e, tm_e = self._get_backend_and_model_for_task("simple")
@@ -1432,17 +1447,13 @@ class AgentExecutor:
             compiled_calls = [accumulated_tool_calls[idx] for idx in sorted_indices]
             yield "tool_calls", compiled_calls, last_label
 
-    async def execute_chat_turn_stream(self, user_message: str, chat_history: List[Dict[str, str]]):
+    async def execute_chat_turn_stream(self, user_message: str, chat_history: List[Dict[str, str]], overrides: Optional[Dict[str, Any]] = None):
         """
-        Executes a chat turn in a streaming ReAct loop. Supports multiple sequential tool calls.
-
-        Layer 1 — Zero-LLM Instant Resolver:
-            Matches unambiguous PC-control commands (volume, media, screenshot, time, stats)
-            and executes them directly without calling the LLM, giving near-instant responses.
-
-        Layer 2 — LLM-backed ReAct loop:
-            Everything else is routed through the LLM with the appropriate prompt and tool schemas.
+        Executes a chat turn in a streaming ReAct loop. Supports per-turn overrides from Chat Window.
         """
+        overrides = overrides or {}
+        effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
+
         self.memory.increment_interactions()
 
         from app.agent.resolver import resolve_command
@@ -1450,7 +1461,7 @@ class AgentExecutor:
 
         # ── Layer 1: Zero-LLM Instant Resolver ───────────────────────────────
         # Skip in advanced/autonomous Jarvis mode — the LLM should decide tool calls
-        resolved = resolve_command(user_message) if getattr(config, "TOOL_MODE", "basic") == "basic" else None
+        resolved = resolve_command(user_message) if effective_tool_mode == "basic" else None
         if resolved:
             tool_name, tool_args = resolved
             print(f"[Resolver] '{user_message}' -> {tool_name}({tool_args}) - LLM skipped")
@@ -1571,7 +1582,7 @@ class AgentExecutor:
         self._process_mood_drift(user_message)
 
         try:
-            current_messages = self._build_messages(user_message, chat_history, resolved_backend)
+            current_messages = self._build_messages(user_message, chat_history, resolved_backend, overrides=overrides)
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -1602,7 +1613,7 @@ class AgentExecutor:
                     last_msg = current_messages[-1]
                     print(f"[Executor] Last message: role={last_msg.get('role')}, content preview={str(last_msg.get('content', ''))[:150]}...")
                 
-                stream = self._query_llm_stream(session, current_messages, user_message=user_message, use_tools=use_tools, resolved_backend=resolved_backend, intent_tool_hint=intent_tool_hint, intent_source=intent_source)
+                stream = self._query_llm_stream(session, current_messages, user_message=user_message, use_tools=use_tools, resolved_backend=resolved_backend, intent_tool_hint=intent_tool_hint, intent_source=intent_source, overrides=overrides)
                 
                 tool_calls_to_execute = []
                 accumulated_response = ""
