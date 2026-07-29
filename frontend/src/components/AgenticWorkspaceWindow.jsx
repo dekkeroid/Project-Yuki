@@ -46,12 +46,27 @@ export const AgenticWorkspaceWindow = ({
   // Standalone Settings Modal State
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
-  // Per-Message Prompt Overrides
-  const [overrideJarvis, setOverrideJarvis] = useState(true);
-  const [overrideIntentCheck, setOverrideIntentCheck] = useState(true);
-  const [overrideDynamicTools, setOverrideDynamicTools] = useState(true);
-  const [overrideWebSearch, setOverrideWebSearch] = useState(true);
-  const [overrideTts, setOverrideTts] = useState(true);
+  // Chat Window Local Override Tool Mode (Saved in localStorage)
+  const [chatWindowToolMode, setChatWindowToolMode] = useState(() => {
+    return localStorage.getItem('yuki-chatwindow-tool-mode') || 'advanced';
+  });
+
+  // Per-Message System Prompt Component Toggles (Saved in localStorage)
+  const [promptPersona, setPromptPersona] = useState(() => {
+    return localStorage.getItem('yuki-prompt-persona') !== 'false';
+  });
+  const [promptExpressions, setPromptExpressions] = useState(() => {
+    return localStorage.getItem('yuki-prompt-expressions') !== 'false';
+  });
+  const [promptMemory, setPromptMemory] = useState(() => {
+    return localStorage.getItem('yuki-prompt-memory') !== 'false';
+  });
+  const [promptDirectives, setPromptDirectives] = useState(() => {
+    return localStorage.getItem('yuki-prompt-directives') !== 'false';
+  });
+  const [promptPlanning, setPromptPlanning] = useState(() => {
+    return localStorage.getItem('yuki-prompt-planning') !== 'false';
+  });
 
   // Cross-Window BroadcastChannel Sync
   useEffect(() => {
@@ -286,40 +301,27 @@ export const AgenticWorkspaceWindow = ({
               Yuki Agentic Workspace
             </span>
           </div>
-
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '0.72rem',
-            color: '#94a3b8',
-            background: 'rgba(255,255,255,0.04)',
-            padding: '4px 10px',
-            borderRadius: '6px',
-            border: '1px solid rgba(255,255,255,0.08)'
-          }}>
-            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }}></span>
-            <span>{settings.llm_model || modelName || 'Frontier Agent'}</span>
-            <span style={{ opacity: 0.4 }}>•</span>
-            <span style={{ color: '#c4b5fd' }}>{settings.tool_mode === 'advanced' ? 'Autonomous Jarvis' : 'Basic Tools'}</span>
-          </div>
         </div>
 
         {/* Right Header Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Tool Suite Mode Toggle */}
+          {/* Local Chat Window Tool Suite Override Toggle */}
           <div style={{ display: 'flex', background: 'rgba(0,0,0,0.4)', padding: '2px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
             <button
               type="button"
-              onClick={() => onUpdateSetting && onUpdateSetting('tool_mode', 'basic')}
+              onClick={() => {
+                setChatWindowToolMode('basic');
+                localStorage.setItem('yuki-chatwindow-tool-mode', 'basic');
+              }}
+              title="Override Chat Window mode to Basic Tools (Does not affect main desktop app)"
               style={{
                 padding: '4px 10px',
                 borderRadius: '6px',
                 fontSize: '0.70rem',
                 fontWeight: 600,
                 border: 'none',
-                background: (settings.tool_mode || 'basic') === 'basic' ? 'rgba(167, 139, 250, 0.3)' : 'transparent',
-                color: (settings.tool_mode || 'basic') === 'basic' ? '#ffffff' : '#94a3b8',
+                background: chatWindowToolMode === 'basic' ? 'rgba(167, 139, 250, 0.3)' : 'transparent',
+                color: chatWindowToolMode === 'basic' ? '#ffffff' : '#94a3b8',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease'
               }}
@@ -328,15 +330,19 @@ export const AgenticWorkspaceWindow = ({
             </button>
             <button
               type="button"
-              onClick={() => onUpdateSetting && onUpdateSetting('tool_mode', 'advanced')}
+              onClick={() => {
+                setChatWindowToolMode('advanced');
+                localStorage.setItem('yuki-chatwindow-tool-mode', 'advanced');
+              }}
+              title="Override Chat Window mode to Autonomous Jarvis (Does not affect main desktop app)"
               style={{
                 padding: '4px 10px',
                 borderRadius: '6px',
                 fontSize: '0.70rem',
                 fontWeight: 600,
                 border: 'none',
-                background: settings.tool_mode === 'advanced' ? 'rgba(56, 189, 248, 0.3)' : 'transparent',
-                color: settings.tool_mode === 'advanced' ? '#ffffff' : '#94a3b8',
+                background: chatWindowToolMode === 'advanced' ? 'rgba(56, 189, 248, 0.3)' : 'transparent',
+                color: chatWindowToolMode === 'advanced' ? '#ffffff' : '#94a3b8',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease'
               }}
@@ -774,7 +780,7 @@ export const AgenticWorkspaceWindow = ({
             background: 'rgba(15, 23, 42, 0.95)',
             borderTop: '1px solid rgba(167, 139, 250, 0.2)'
           }}>
-            {/* Per-Message Prompt Execution Toggles */}
+            {/* Per-Message System Prompt Component Toggles */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -786,97 +792,117 @@ export const AgenticWorkspaceWindow = ({
               flexWrap: 'wrap'
             }}>
               <span style={{ fontWeight: 600, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                <Sliders style={{ width: '11px', height: '11px' }} /> Prompt Flags:
+                <Sliders style={{ width: '11px', height: '11px' }} /> Prompt Modules:
               </span>
               
               <button
                 type="button"
-                onClick={() => setOverrideJarvis(!overrideJarvis)}
-                title="Toggle Autonomous Jarvis Mode vs Basic Tools for this prompt"
+                onClick={() => {
+                  const val = !promptPersona;
+                  setPromptPersona(val);
+                  localStorage.setItem('yuki-prompt-persona', String(val));
+                }}
+                title="Include/Exclude Yuki Persona & Mood guidelines in system prompt for this turn"
                 style={{
                   padding: '2px 8px',
                   borderRadius: '12px',
-                  border: overrideJarvis ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255,255,255,0.1)',
-                  background: overrideJarvis ? 'rgba(56, 189, 248, 0.2)' : 'rgba(0,0,0,0.3)',
-                  color: overrideJarvis ? '#38bdf8' : '#64748b',
+                  border: promptPersona ? '1px solid rgba(167, 139, 250, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                  background: promptPersona ? 'rgba(167, 139, 250, 0.2)' : 'rgba(0,0,0,0.3)',
+                  color: promptPersona ? '#c4b5fd' : '#64748b',
                   cursor: 'pointer',
                   fontSize: '0.66rem',
                   fontWeight: 600
                 }}
               >
-                🧠 Jarvis {overrideJarvis ? 'ON' : 'OFF'}
+                🎭 Persona {promptPersona ? 'ON' : 'OFF'}
               </button>
 
               <button
                 type="button"
-                onClick={() => setOverrideIntentCheck(!overrideIntentCheck)}
-                title="Toggle Router Intent Checking for this prompt"
+                onClick={() => {
+                  const val = !promptExpressions;
+                  setPromptExpressions(val);
+                  localStorage.setItem('yuki-prompt-expressions', String(val));
+                }}
+                title="Include/Exclude 3D Avatar Animation & Emotion expression tags in system prompt"
                 style={{
                   padding: '2px 8px',
                   borderRadius: '12px',
-                  border: overrideIntentCheck ? '1px solid rgba(167, 139, 250, 0.6)' : '1px solid rgba(255,255,255,0.1)',
-                  background: overrideIntentCheck ? 'rgba(167, 139, 250, 0.2)' : 'rgba(0,0,0,0.3)',
-                  color: overrideIntentCheck ? '#c4b5fd' : '#64748b',
+                  border: promptExpressions ? '1px solid rgba(244, 114, 182, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                  background: promptExpressions ? 'rgba(244, 114, 182, 0.2)' : 'rgba(0,0,0,0.3)',
+                  color: promptExpressions ? '#f472b6' : '#64748b',
                   cursor: 'pointer',
                   fontSize: '0.66rem',
                   fontWeight: 600
                 }}
               >
-                🎯 Intent Router {overrideIntentCheck ? 'ON' : 'OFF'}
+                🎬 Expressions {promptExpressions ? 'ON' : 'OFF'}
               </button>
 
               <button
                 type="button"
-                onClick={() => setOverrideDynamicTools(!overrideDynamicTools)}
-                title="Toggle Dynamic Tool Schema Filtering for this prompt"
+                onClick={() => {
+                  const val = !promptMemory;
+                  setPromptMemory(val);
+                  localStorage.setItem('yuki-prompt-memory', String(val));
+                }}
+                title="Include/Exclude User Memory Card facts in system prompt"
                 style={{
                   padding: '2px 8px',
                   borderRadius: '12px',
-                  border: overrideDynamicTools ? '1px solid rgba(52, 211, 153, 0.6)' : '1px solid rgba(255,255,255,0.1)',
-                  background: overrideDynamicTools ? 'rgba(52, 211, 153, 0.2)' : 'rgba(0,0,0,0.3)',
-                  color: overrideDynamicTools ? '#34d399' : '#64748b',
+                  border: promptMemory ? '1px solid rgba(52, 211, 153, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                  background: promptMemory ? 'rgba(52, 211, 153, 0.2)' : 'rgba(0,0,0,0.3)',
+                  color: promptMemory ? '#34d399' : '#64748b',
                   cursor: 'pointer',
                   fontSize: '0.66rem',
                   fontWeight: 600
                 }}
               >
-                ⚡ Dynamic Schema {overrideDynamicTools ? 'ON' : 'OFF'}
+                🧠 Memory {promptMemory ? 'ON' : 'OFF'}
               </button>
 
               <button
                 type="button"
-                onClick={() => setOverrideWebSearch(!overrideWebSearch)}
-                title="Allow Web Search / Web Scraping for this prompt"
+                onClick={() => {
+                  const val = !promptDirectives;
+                  setPromptDirectives(val);
+                  localStorage.setItem('yuki-prompt-directives', String(val));
+                }}
+                title="Include/Exclude Jarvis Tool Guidelines & Safety rules in system prompt"
                 style={{
                   padding: '2px 8px',
                   borderRadius: '12px',
-                  border: overrideWebSearch ? '1px solid rgba(251, 146, 60, 0.6)' : '1px solid rgba(255,255,255,0.1)',
-                  background: overrideWebSearch ? 'rgba(251, 146, 60, 0.2)' : 'rgba(0,0,0,0.3)',
-                  color: overrideWebSearch ? '#fb923c' : '#64748b',
+                  border: promptDirectives ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                  background: promptDirectives ? 'rgba(56, 189, 248, 0.2)' : 'rgba(0,0,0,0.3)',
+                  color: promptDirectives ? '#38bdf8' : '#64748b',
                   cursor: 'pointer',
                   fontSize: '0.66rem',
                   fontWeight: 600
                 }}
               >
-                🌐 Web Search {overrideWebSearch ? 'ON' : 'OFF'}
+                ⚙️ Directives {promptDirectives ? 'ON' : 'OFF'}
               </button>
 
               <button
                 type="button"
-                onClick={() => setOverrideTts(!overrideTts)}
-                title="Enable or Mute Voice Output (TTS) for this response"
+                onClick={() => {
+                  const val = !promptPlanning;
+                  setPromptPlanning(val);
+                  localStorage.setItem('yuki-prompt-planning', String(val));
+                }}
+                title="Include/Exclude Section 5 Complex Coding Implementation Planning directives"
                 style={{
                   padding: '2px 8px',
                   borderRadius: '12px',
-                  border: overrideTts ? '1px solid rgba(244, 114, 182, 0.6)' : '1px solid rgba(255,255,255,0.1)',
-                  background: overrideTts ? 'rgba(244, 114, 182, 0.2)' : 'rgba(0,0,0,0.3)',
-                  color: overrideTts ? '#f472b6' : '#64748b',
+                  border: promptPlanning ? '1px solid rgba(251, 146, 60, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                  background: promptPlanning ? 'rgba(251, 146, 60, 0.2)' : 'rgba(0,0,0,0.3)',
+                  color: promptPlanning ? '#fb923c' : '#64748b',
                   cursor: 'pointer',
                   fontSize: '0.66rem',
                   fontWeight: 600
                 }}
               >
-                🔊 Voice {overrideTts ? 'ON' : 'OFF'}
+                📋 Planning {promptPlanning ? 'ON' : 'OFF'}
               </button>
             </div>
             <form
@@ -1210,65 +1236,106 @@ export const AgenticWorkspaceWindow = ({
 
             {/* Modal Content */}
             <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
-              {/* LLM Model Selection */}
-              <div>
-                <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '6px' }}>
-                  🧠 Frontier AI Model Selection:
-                </label>
-                <SearchableModelSelect
-                  value={settings.llm_model || modelName}
-                  onChange={(val) => onUpdateSetting && onUpdateSetting('llm_model', val)}
-                  options={availableLlmModels}
-                  placeholder="Select AI model..."
-                />
-              </div>
-
-              {/* Default Tool Mode */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              
+              {/* Default Chat Window Tool Mode */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
                 <div>
-                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#ffffff' }}>Autonomous Jarvis Mode</div>
-                  <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>Enables full multi-tool execution budget (40k tokens)</div>
+                  <div style={{ fontSize: '0.80rem', fontWeight: 600, color: '#ffffff' }}>Chat Window Tool Mode</div>
+                  <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>Overrides execution tool budget for chats sent from this workspace</div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => onUpdateSetting && onUpdateSetting('tool_mode', settings.tool_mode === 'advanced' ? 'basic' : 'advanced')}
+                  onClick={() => {
+                    const nextMode = chatWindowToolMode === 'advanced' ? 'basic' : 'advanced';
+                    setChatWindowToolMode(nextMode);
+                    localStorage.setItem('yuki-chatwindow-tool-mode', nextMode);
+                  }}
                   style={{
                     padding: '5px 12px',
                     borderRadius: '8px',
-                    border: settings.tool_mode === 'advanced' ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.2)',
-                    background: settings.tool_mode === 'advanced' ? 'rgba(56, 189, 248, 0.25)' : 'transparent',
-                    color: settings.tool_mode === 'advanced' ? '#38bdf8' : '#94a3b8',
+                    border: chatWindowToolMode === 'advanced' ? '1px solid #38bdf8' : '1px solid #a78bfa',
+                    background: chatWindowToolMode === 'advanced' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(167, 139, 250, 0.25)',
+                    color: chatWindowToolMode === 'advanced' ? '#38bdf8' : '#c4b5fd',
                     fontWeight: 600,
-                    fontSize: '0.72rem',
+                    fontSize: '0.74rem',
                     cursor: 'pointer'
                   }}
                 >
-                  {settings.tool_mode === 'advanced' ? 'ON' : 'OFF'}
+                  {chatWindowToolMode === 'advanced' ? '🧠 Jarvis (40k)' : '⚡ Basic (2.5k)'}
                 </button>
               </div>
 
-              {/* Simple Prompt Tools */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div>
-                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#ffffff' }}>Enable Tools for Simple Prompts</div>
-                  <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>Executes tools even on general conversational queries</div>
+              {/* System Prompt Components Preferences */}
+              <div style={{ background: 'rgba(0,0,0,0.3)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: '0.80rem', fontWeight: 600, color: '#ffffff', marginBottom: '8px' }}>
+                  System Prompt Module Defaults
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onUpdateSetting && onUpdateSetting('send_tools_in_simple', !settings.send_tools_in_simple)}
-                  style={{
-                    padding: '5px 12px',
-                    borderRadius: '8px',
-                    border: settings.send_tools_in_simple ? '1px solid #34d399' : '1px solid rgba(255,255,255,0.2)',
-                    background: settings.send_tools_in_simple ? 'rgba(52, 211, 153, 0.25)' : 'transparent',
-                    color: settings.send_tools_in_simple ? '#34d399' : '#94a3b8',
-                    fontWeight: 600,
-                    fontSize: '0.72rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {settings.send_tools_in_simple ? 'ON' : 'OFF'}
-                </button>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.72rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={promptPersona}
+                      onChange={(e) => {
+                        setPromptPersona(e.target.checked);
+                        localStorage.setItem('yuki-prompt-persona', String(e.target.checked));
+                      }}
+                      style={{ accentColor: '#8b5cf6' }}
+                    />
+                    🎭 Persona & Mood
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={promptExpressions}
+                      onChange={(e) => {
+                        setPromptExpressions(e.target.checked);
+                        localStorage.setItem('yuki-prompt-expressions', String(e.target.checked));
+                      }}
+                      style={{ accentColor: '#8b5cf6' }}
+                    />
+                    🎬 Avatar Expressions
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={promptMemory}
+                      onChange={(e) => {
+                        setPromptMemory(e.target.checked);
+                        localStorage.setItem('yuki-prompt-memory', String(e.target.checked));
+                      }}
+                      style={{ accentColor: '#8b5cf6' }}
+                    />
+                    🧠 User Memory Card
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={promptDirectives}
+                      onChange={(e) => {
+                        setPromptDirectives(e.target.checked);
+                        localStorage.setItem('yuki-prompt-directives', String(e.target.checked));
+                      }}
+                      style={{ accentColor: '#8b5cf6' }}
+                    />
+                    ⚙️ Tool Guidelines
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#e2e8f0', cursor: 'pointer', gridColumn: 'span 2' }}>
+                    <input
+                      type="checkbox"
+                      checked={promptPlanning}
+                      onChange={(e) => {
+                        setPromptPlanning(e.target.checked);
+                        localStorage.setItem('yuki-prompt-planning', String(e.target.checked));
+                      }}
+                      style={{ accentColor: '#8b5cf6' }}
+                    />
+                    📋 Implementation Plan Etiquette (Section 5)
+                  </label>
+                </div>
               </div>
 
               {/* Voice Volume Control */}
