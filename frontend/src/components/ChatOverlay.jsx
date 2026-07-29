@@ -117,83 +117,154 @@ export const extractToolArgsString = (text) => {
   return "";
 };
 
-export const RenderMessageContent = ({ content, isSystem }) => {
-  const { thoughts, cleanContent } = parseMessageThought(content || "");
+export const AgenticToolTimelineItem = ({ content }) => {
+  const text = content || "";
+  const isStart = text.includes("⚙️ [Tool Start]");
+  const isResult = text.includes("⚙️ [Tool Result]");
 
-  // Check if content is a tool start/status message
-  const isToolStart = cleanContent.includes("⚙️ [Tool Start]");
-  const isToolResult = cleanContent.includes("⚙️ [Tool Result]");
+  if (isStart) {
+    const match = text.match(/Running tool ['"]?([^'"]+)['"]?/i);
+    const rawTool = match ? match[1] : "";
+    const toolLabel = formatToolName(rawTool);
+    const argsStr = extractToolArgsString(text);
 
-  if (isToolStart || isToolResult) {
-    if (isToolStart) {
-      const match = cleanContent.match(/Running tool ['"]?([^'"]+)['"]?/i);
-      const rawTool = match ? match[1] : "";
-      const toolLabel = formatToolName(rawTool);
-      const argsStr = extractToolArgsString(cleanContent);
+    return (
+      <div style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '3px 12px',
+        borderRadius: '20px',
+        background: 'rgba(45, 212, 191, 0.08)',
+        border: '1px solid rgba(45, 212, 191, 0.22)',
+        fontSize: '0.66rem',
+        color: '#2dd4bf',
+        backdropFilter: 'blur(4px)',
+        margin: '4px 0'
+      }}>
+        <span style={{ fontSize: '0.70rem' }}>⚙️</span>
+        <span style={{ fontWeight: 600 }}>Executing: {toolLabel}</span>
+        {argsStr && <span style={{ opacity: 0.85, color: '#99f6e4', fontSize: '0.62rem', fontFamily: 'monospace' }}>{argsStr}</span>}
+      </div>
+    );
+  }
 
-      return (
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '5px',
-          padding: '2px 8px',
-          borderRadius: '6px',
-          background: 'rgba(45, 212, 191, 0.08)',
-          border: '1px solid rgba(45, 212, 191, 0.2)',
-          fontSize: '0.66rem',
-          color: '#2dd4bf',
-          margin: '1px 0',
-          maxWidth: '100%',
-          wordBreak: 'break-word'
-        }}>
-          <span style={{ fontSize: '0.68rem' }}>⚙️</span>
-          <span style={{ fontWeight: 600 }}>Executing: {toolLabel}</span>
-          {argsStr && <span style={{ opacity: 0.85, color: '#99f6e4', fontSize: '0.62rem' }}>{argsStr}</span>}
-        </div>
-      );
-    }
+  if (isResult) {
+    const cleanResult = text.replace(/⚙️\s*\[Tool Result\]\s*/i, '').trim();
+    const firstLine = cleanResult.split('\n')[0] || "Tool execution completed";
 
-    if (isToolResult) {
-      const cleanResult = cleanContent.replace(/⚙️\s*\[Tool Result\]\s*/i, '').trim();
-      const firstLine = cleanResult.split('\n')[0] || "Tool output received";
-
-      return (
+    return (
+      <div style={{ margin: '3px 0', width: '100%', maxWidth: '90%', display: 'flex', justifyContent: 'center' }}>
         <details style={{
-          margin: '2px 0',
-          background: 'rgba(15, 23, 42, 0.4)',
-          border: '1px solid rgba(56, 189, 248, 0.2)',
-          borderRadius: '6px',
-          padding: '2px 8px',
+          width: '100%',
+          background: 'rgba(15, 23, 42, 0.55)',
+          border: '1px solid rgba(56, 189, 248, 0.25)',
+          borderRadius: '8px',
+          padding: '4px 10px',
           fontSize: '0.66rem',
           color: '#38bdf8',
-          maxWidth: '100%'
+          backdropFilter: 'blur(6px)'
         }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 600, userSelect: 'none', display: 'flex', alignItems: 'center', gap: '5px', outline: 'none' }}>
-            <span style={{ fontSize: '0.68rem' }}>⚡</span>
-            <span>Tool Output</span>
-            <span style={{ fontSize: '0.62rem', opacity: 0.8, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
+          <summary style={{
+            cursor: 'pointer',
+            fontWeight: 600,
+            userSelect: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            outline: 'none',
+            whiteSpace: 'nowrap'
+          }}>
+            <span style={{ fontSize: '0.70rem', color: '#10b981' }}>✓</span>
+            <span style={{ fontWeight: 700, color: '#38bdf8' }}>Result:</span>
+            <span style={{
+              fontSize: '0.64rem',
+              color: '#e2e8f0',
+              opacity: 0.9,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: '260px'
+            }}>
               {firstLine}
             </span>
-            <span style={{ fontSize: '0.58rem', opacity: 0.5, marginLeft: 'auto', flexShrink: 0 }}>(click to view)</span>
+            <span style={{ fontSize: '0.58rem', opacity: 0.5, color: '#94a3b8', marginLeft: 'auto', flexShrink: 0 }}>
+              (click to expand)
+            </span>
           </summary>
           <div style={{
-            marginTop: '4px',
-            paddingTop: '4px',
-            borderTop: '1px solid rgba(56, 189, 248, 0.12)',
+            marginTop: '5px',
+            paddingTop: '5px',
+            borderTop: '1px solid rgba(56, 189, 248, 0.15)',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             fontSize: '0.64rem',
             color: '#cbd5e1',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
-            maxHeight: '130px',
-            overflowY: 'auto'
+            maxHeight: '140px',
+            overflowY: 'auto',
+            lineHeight: '1.4'
           }}>
             {cleanResult}
           </div>
         </details>
-      );
-    }
+      </div>
+    );
   }
+
+  return (
+    <div style={{
+      margin: '2px 0',
+      padding: '3px 10px',
+      borderRadius: '12px',
+      background: 'rgba(255, 255, 255, 0.04)',
+      border: '1px solid rgba(255, 255, 255, 0.08)',
+      fontSize: '0.66rem',
+      color: '#94a3b8'
+    }}>
+      {text}
+    </div>
+  );
+};
+
+export const RenderMessageContent = ({ content, isSystem }) => {
+  const { thoughts, cleanContent } = parseMessageThought(content || "");
+
+  return (
+    <div>
+      {thoughts.map((thought, idx) => (
+        <details
+          key={idx}
+          style={{
+            margin: '2px 0 6px 0',
+            background: 'rgba(139, 92, 246, 0.08)',
+            border: '1px solid rgba(139, 92, 246, 0.18)',
+            borderRadius: '6px',
+            padding: '2px 7px',
+            fontSize: '0.66rem',
+            color: '#a78bfa',
+            maxWidth: '100%'
+          }}
+        >
+          <summary style={{ cursor: 'pointer', fontWeight: '500', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px', outline: 'none' }}>
+            <span style={{ fontSize: '0.68rem' }}>🧠</span>
+            <span style={{ fontWeight: 600, color: '#c084fc' }}>Thought Process</span>
+            <span style={{ fontSize: '0.60rem', opacity: 0.5, marginLeft: 'auto' }}>(click to toggle)</span>
+          </summary>
+          <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid rgba(139, 92, 246, 0.12)', fontStyle: 'italic', fontSize: '0.72rem', color: '#cbd5e1', whiteSpace: 'pre-line', lineHeight: '1.35', maxHeight: '160px', overflowY: 'auto' }}>
+            {thought}
+          </div>
+        </details>
+      ))}
+      {cleanContent && (
+        <p style={{ margin: 0, whiteSpace: 'pre-line' }}>
+          {isSystem && !cleanContent.startsWith("⚙️") && <span style={{ color: 'var(--accent-teal)', fontWeight: 'bold', marginRight: '6px' }}>[SYSTEM]</span>}
+          {formatMessageText(cleanContent)}
+        </p>
+      )}
+    </div>
+  );
+};
 
   return (
     <div>
@@ -501,11 +572,20 @@ const ChatOverlay = ({
           {messages.map((msg, index) => {
             const isUser = msg.role === 'user';
             const isSystem = msg.role === 'system';
-            
+            const isToolEvent = isSystem || (msg.content && (msg.content.includes('⚙️ [Tool Start]') || msg.content.includes('⚙️ [Tool Result]')));
+
+            if (isToolEvent) {
+              return (
+                <div key={index} style={{ alignSelf: 'center', width: '100%', display: 'flex', justifyContent: 'center', margin: '2px 0' }}>
+                  <AgenticToolTimelineItem content={msg.content} />
+                </div>
+              );
+            }
+
             return (
               <div
                 key={index}
-                className={`chat-bubble-wrapper ${isUser ? 'user' : 'assistant'} ${isSystem ? 'system' : ''}`}
+                className={`chat-bubble-wrapper ${isUser ? 'user' : 'assistant'}`}
               >
                 {/* Sender badge + model flag */}
                 {!isSystem && (() => {

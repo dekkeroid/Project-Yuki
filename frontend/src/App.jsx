@@ -14,7 +14,7 @@ import StopwatchOverlay from './components/StopwatchOverlay';
 const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
-import { RenderMessageContent } from './components/ChatOverlay';
+import { RenderMessageContent, AgenticToolTimelineItem } from './components/ChatOverlay';
 
 let stream_end_exception = false;
 
@@ -2332,9 +2332,19 @@ const detectExpression = (text) => {
                     messages.map((msg, index) => {
                       const isUser = msg.role === 'user';
                       const isSystem = msg.role === 'system';
+                      const isToolEvent = isSystem || (msg.content && (msg.content.includes('⚙️ [Tool Start]') || msg.content.includes('⚙️ [Tool Result]')));
+
+                      if (isToolEvent) {
+                        return (
+                          <div key={index} style={{ alignSelf: 'center', width: '100%', display: 'flex', justifyContent: 'center', margin: '2px 0' }}>
+                            <AgenticToolTimelineItem content={msg.content} />
+                          </div>
+                        );
+                      }
+
                       return (
                         <div key={index} style={{
-                          alignSelf: isSystem ? 'center' : isUser ? 'flex-end' : 'flex-start',
+                          alignSelf: isUser ? 'flex-end' : 'flex-start',
                           maxWidth: '85%',
                           display: 'flex',
                           flexDirection: 'column',
@@ -2342,33 +2352,27 @@ const detectExpression = (text) => {
                         }}>
                           <span style={{
                             fontSize: '9px',
-                            color: isSystem ? '#2dd4bf' : isUser ? '#c4b5fd' : '#94a3b8',
+                            color: isUser ? '#c4b5fd' : '#94a3b8',
                             alignSelf: isUser ? 'flex-end' : 'flex-start',
                             fontWeight: '600'
                           }}>
-                            {isSystem ? 'Tool' : isUser ? 'Master' : 'Yuki'}
+                            {isUser ? 'Master' : 'Yuki'}
                           </span>
                           <div style={{
-                            background: isSystem
-                              ? 'rgba(45, 212, 191, 0.1)'
-                              : isUser
-                                ? 'rgba(139, 92, 246, 0.25)'
-                                : 'rgba(255, 255, 255, 0.08)',
-                            border: isSystem
-                              ? '1px solid rgba(45, 212, 191, 0.2)'
-                              : isUser
-                                ? '1px solid rgba(139, 92, 246, 0.3)'
-                                : '1px solid rgba(255, 255, 255, 0.08)',
+                            background: isUser
+                              ? 'rgba(139, 92, 246, 0.25)'
+                              : 'rgba(255, 255, 255, 0.08)',
+                            border: isUser
+                              ? '1px solid rgba(139, 92, 246, 0.3)'
+                              : '1px solid rgba(255, 255, 255, 0.08)',
                             borderRadius: '8px',
                             padding: '6px 10px',
                             color: '#e2e8f0',
                             fontSize: '11px',
                             wordBreak: 'break-word',
-                            whiteSpace: 'pre-line',
-                            maxHeight: isSystem ? '80px' : 'none',
-                            overflowY: isSystem ? 'auto' : 'visible'
+                            whiteSpace: 'pre-line'
                           }}>
-                            <RenderMessageContent content={msg.content} isSystem={isSystem} />
+                            <RenderMessageContent content={msg.content} isSystem={false} />
                           </div>
                         </div>
                       );
