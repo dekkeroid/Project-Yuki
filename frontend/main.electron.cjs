@@ -710,6 +710,18 @@ function createWindow() {
     return mainWindow ? mainWindow.getBounds() : { x: 0, y: 0, width: currentWidth + windowWidthExtra, height: currentHeight };
   });
 
+  ipcMain.handle('select-directory', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showOpenDialog(win || mainWindow, {
+      title: 'Select Workspace Directory for Yuki Coding Agent',
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+    return result.filePaths[0];
+  });
+
   ipcMain.on('set-window-position', (event, { x, y }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win) {

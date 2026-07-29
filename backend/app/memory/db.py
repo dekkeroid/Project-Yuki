@@ -406,6 +406,18 @@ def init_db():
     if "os_task_name" not in existing_cols:
         cursor.execute("ALTER TABLE reminders ADD COLUMN os_task_name TEXT")
 
+    # 1f. Session Metadata (Per-session Custom Facts & Workspace Directories)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS session_metadata (
+        session_id TEXT NOT NULL,
+        meta_type TEXT NOT NULL,
+        meta_key TEXT NOT NULL,
+        meta_value TEXT NOT NULL,
+        created_at REAL DEFAULT (strftime('%s', 'now')),
+        PRIMARY KEY (session_id, meta_type, meta_key)
+    );
+    """)
+
     # ── Phase 2: FTS5 Virtual Table ─────────────────────────────────────
 
     if _fts_needs_migration(cursor):
@@ -1017,9 +1029,76 @@ def delete_chat_session(session_id: str):
     conn = get_connection()
     try:
         conn.execute("DELETE FROM chat_sessions WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM session_metadata WHERE session_id = ?", (session_id,))
         conn.commit()
     except Exception as e:
         print(f"[DB] Error deleting session '{session_id}': {e}")
     finally:
         conn.close()
+
+
+# ── Session Metadata Helpers (Facts & Workspace Directories) ─────────
+
+def save_session_meta(session_id: str, meta_type: str, meta_key: str, meta_value: str):
+    """
+    Saves or updates a session metadata entry (meta_type: 'fact' | 'directory').
+    """
+    conn = get_connection()
+    try:
+        conn.execute("""
+            INSERT OR REPLACE INTO session_metadata (session_id, meta_type, meta_key, meta_value, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (session_id, meta_type, meta_key, meta_value, time.time()))
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Error saving session meta for '{session_id}': {e}")
+    finally:
+        conn.close()
+
+def get_session_meta(session_id: str) -> Dict[str, List[Dict[str, str]]]:
+    """
+    Returns session metadata grouped into facts and directories.
+    """
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT meta_type, meta_key, meta_value, created_at
+            FROM session_metadata
+            WHERE session_id = ?
+            ORDER BY created_at ASC
+        """, (session_id,)).fetchall()
+        
+        facts = []
+        directories = []
+        for r in rows:
+            item = {"key": r["meta_key"], "value": r["meta_value"], "created_at": r["created_at"]}
+            if r["meta_type"] == "fact":
+                facts.append(item)
+            elif r["meta_type"] == "directory":
+                directories.append(item)
+                
+        return {"facts": facts, "directories": directories}
+    except Exception as e:
+        print(f"[DB] Error fetching session meta for '{session_id}': {e}")
+        return {"facts": [], "directories": []}
+    finally:
+        conn.close()
+
+def delete_session_meta(session_id: str, meta_type: str, meta_key: str):
+    """
+    Deletes a session metadata entry.
+    """
+    conn = get_connection()
+    try:
+        conn.execute("""
+            DELETE FROM session_metadata
+            WHERE session_id = ? AND meta_type = ? AND meta_key = ?
+        """, (session_id, meta_type, meta_key))
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Error deleting session meta for '{session_id}': {e}")
+    finally:
+        conn.close()
+
 

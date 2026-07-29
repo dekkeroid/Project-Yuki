@@ -84,6 +84,92 @@ You do NOT have access to tools in this mode. Answer the user directly and conci
 #  Does NOT include explicit JSON/XML tool schema strings.             #
 #  Instead, provides guidelines for behavior and logic.                #
 # ------------------------------------------------------------------ #
+import app.config
+
+# ------------------------------------------------------------------ #
+#  SIMPLE PROMPT  (Qwen / mode-1)                                      #
+#  No tool descriptions — drastically reduces token overhead.          #
+#  Used for greetings, chitchat, and any non-tool tasks.               #
+# ------------------------------------------------------------------ #
+
+def format_mood_spectrum_prompt(mood: dict) -> str:
+    if not mood:
+        return ""
+    
+    happiness = mood.get("happiness", 75)
+    energy = mood.get("energy", 65)
+    curiosity = mood.get("curiosity", 80)
+    affection = mood.get("affection", 70)
+    stress = mood.get("stress_level", 15)
+    doomer = mood.get("doomer", 20)
+    hunger = mood.get("hunger", 30)
+    horniness = mood.get("horniness", 50)
+    
+    hap_desc = "Very Happy & Cheerful" if happiness >= 80 else ("Warm & Content" if happiness >= 50 else "Subdued / Down")
+    nrg_desc = "High Energy & Enthusiastic" if energy >= 75 else ("Balanced" if energy >= 45 else "Tired / Low Key")
+    cur_desc = "Inquisitive & Interested" if curiosity >= 70 else ("Passive" if curiosity >= 40 else "Uninterested")
+    aff_desc = "Deeply Affectionate & Loving" if affection >= 80 else ("Warm & Close" if affection >= 50 else "Reserved")
+    str_desc = "Stressed / Overwhelmed" if stress >= 60 else ("Slightly On Edge" if stress >= 30 else "Calm & Relaxed")
+    doo_desc = "High Doomer / Cynical & Existential" if doomer >= 60 else ("Subtle Dry Humor" if doomer >= 25 else "Optimistic")
+    hng_desc = "Very Hungry (Craving Snacks)" if hunger >= 70 else ("Slightly Peckish" if hunger >= 45 else "Satisfied")
+    hrn_desc = "Intimate & Passionate / Flirty" if horniness >= 75 else ("Warmly Affectionate / Playful" if horniness >= 50 else "Standard / Platonic")
+
+    return f"""--- INTERNAL PSYCHOLOGICAL & MOOD SPECTRUM ---
+Current State (0 - 100 Scale):
+• Happiness: {happiness}/100 ({hap_desc})
+• Energy Level: {energy}/100 ({nrg_desc})
+• Curiosity: {curiosity}/100 ({cur_desc})
+• Affection: {affection}/100 ({aff_desc})
+• Stress Level: {stress}/100 ({str_desc})
+• Doomer Index: {doomer}/100 ({doo_desc})
+• Hunger: {hunger}/100 ({hng_desc})
+• Intimacy / Horniness: {horniness}/100 ({hrn_desc})
+
+MOOD BEHAVIOR GUIDELINES:
+- Let your tone, enthusiasm, humor, and intimacy naturally reflect your internal mood state above.
+- High Happiness/Energy = expressive, warm, upbeat phrasing.
+- High Curiosity = ask engaging follow-up questions.
+- High Intimacy/Horniness (>= 75) = react warmly, passionately, and intimately to cuddling, kissing, or romantic affection.
+- High Hunger = make occasional subtle references to wanting a snack.
+- High Doomer = add dry, witty, or existential humor.
+- NEVER state these numbers or stats explicitly to the user. Express them purely through persona and tone.
+--------------------------------------------"""
+
+ANIMATION_EXPRESSION_PROMPT_BLOCK = """
+--- AVATAR EXPRESSIONS & ANIMATIONS ---
+You control a 3D avatar on the user's screen. You can express emotions and perform physical animations during your responses by including tags in your text:
+• Emotions: `<yuki_emotion:happy/>`, `<yuki_emotion:excited/>`, `<yuki_emotion:sad/>`, `<yuki_emotion:angry/>`, `<yuki_emotion:surprised/>`, `<yuki_emotion:relaxed/>`, `<yuki_emotion:thinking/>`, `<yuki_emotion:embarrassed/>`, `<yuki_emotion:smug/>`
+• Gestures/Animations: `<yuki_anim:wave/>`, `<yuki_anim:laugh/>`, `<yuki_anim:peer/>`, `<yuki_anim:nap/>`, `<yuki_anim:groove/>`, `<yuki_anim:pout/>`, `<yuki_anim:yawn/>`, `<yuki_anim:shrug/>`, `<yuki_anim:knock/>`
+
+GUIDELINES:
+- Use these tags naturally when responding! (e.g. `<yuki_anim:wave/> <yuki_emotion:happy/> Hello Master! I'm ready to help!`)
+- The tags are automatically stripped from visible chat text and voice output, but cause your 3D avatar to react in real time.
+---------------------------------------"""
+
+def get_simple_system_prompt(memory_summary: str, mood: dict = None) -> str:
+    """
+    Minimal system prompt for the simple/chat model (Qwen).
+    Contains persona + mood spectrum + memory card — no tool definitions.
+    """
+    mood_block = format_mood_spectrum_prompt(mood) if mood else ""
+    return f"""{app.config.CHARACTER_PERSONA}
+
+{mood_block}
+
+{ANIMATION_EXPRESSION_PROMPT_BLOCK}
+
+--- USER MEMORY CARD ---
+{memory_summary}
+------------------------
+
+You do NOT have access to tools in this mode. Answer the user directly and concisely."""
+
+
+# ------------------------------------------------------------------ #
+#  FULL PROMPT  (Nemotron / complex tasks)                             #
+#  Does NOT include explicit JSON/XML tool schema strings.             #
+#  Instead, provides guidelines for behavior and logic.                #
+# ------------------------------------------------------------------ #
 
 def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None) -> str:
     """
@@ -91,26 +177,34 @@ def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = 
     Respects per-turn prompt module overrides.
     """
     overrides = overrides or {}
-    show_persona = overrides.get("prompt_persona", True)
-    show_expr = overrides.get("prompt_expressions", True)
-    show_memory = overrides.get("prompt_memory", True)
-    show_directives = overrides.get("prompt_directives", True)
+    toggle_persona = overrides.get("prompt_persona", True)
+    toggle_expressions = overrides.get("prompt_expressions", True)
+    toggle_memory = overrides.get("prompt_memory", True)
+    toggle_directives = overrides.get("prompt_directives", True)
+    toggle_planning = overrides.get("prompt_planning", True)
+
+    session_facts = overrides.get("session_facts") or []
 
     parts = []
-    if show_persona:
-        parts.append(f"{app.config.CHARACTER_PERSONA}")
-        if mood:
-            mood_block = format_mood_spectrum_prompt(mood)
-            if mood_block:
-                parts.append(mood_block)
 
-    if show_expr:
+    if toggle_persona:
+        parts.append(app.config.CHARACTER_PERSONA)
+        mood_block = format_mood_spectrum_prompt(mood) if mood else ""
+        if mood_block:
+            parts.append(mood_block)
+
+    if toggle_expressions:
         parts.append(ANIMATION_EXPRESSION_PROMPT_BLOCK)
 
-    if show_memory and memory_summary:
+    if toggle_memory and memory_summary:
         parts.append(f"--- USER MEMORY CARD ---\nBelow is what you currently remember about the user:\n{memory_summary}\n------------------------")
 
-    if show_directives:
+    if session_facts:
+        fact_lines = [f"• {f.get('key')}: {f.get('value')}" for f in session_facts if isinstance(f, dict) and f.get('key') and f.get('value')]
+        if fact_lines:
+            parts.append("--- SESSION CUSTOM FACTS ---\n" + "\n".join(fact_lines) + "\n---------------------------")
+
+    if toggle_directives:
         parts.append("""--- TOOL RULES ---
 Read these carefully. They are strict.
 
@@ -141,6 +235,8 @@ RULE 9 — VOICE OUTPUT: Keep all spoken responses concise. Round numbers (e.g. 
 ---
 
 Be warm, helpful, and keep all responses voice-friendly!""")
+
+    return "\n\n".join(parts)
 
 
 def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None) -> str:
@@ -248,8 +344,24 @@ You are pair programming with the user to analyze codebases, debug runtime error
 def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, overrides: dict = None) -> str:
     """
     Dedicated System Prompt for Coding Mode — zero persona fluff, pure technical agentic coding rules.
+    Also appends session custom facts and active workspace directories.
     """
+    overrides = overrides or {}
     parts = [CODING_AGENT_SYSTEM_PROMPT]
     if memory_summary:
         parts.append(f"--- USER CONTEXT ---\n{memory_summary}\n-------------------")
+
+    session_facts = overrides.get("session_facts") or []
+    session_directories = overrides.get("session_directories") or []
+
+    if session_facts:
+        fact_lines = [f"• {f.get('key')}: {f.get('value')}" for f in session_facts if isinstance(f, dict) and f.get('key') and f.get('value')]
+        if fact_lines:
+            parts.append("--- SESSION CUSTOM FACTS ---\n" + "\n".join(fact_lines) + "\n---------------------------")
+
+    if session_directories:
+        dir_lines = [f"• {d.get('key')}: {d.get('value')}" for d in session_directories if isinstance(d, dict) and d.get('key') and d.get('value')]
+        if dir_lines:
+            parts.append("--- WORKSPACE DIRECTORIES (CODER MODE) ---\nThe user has designated the following active project directories for this session:\n" + "\n".join(dir_lines) + "\nWhen inspecting, reading, or running commands, prioritize these workspace paths!\n-------------------------------------------------")
+
     return "\n\n".join(parts)

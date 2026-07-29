@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWindowBounds: () => {
     return ipcRenderer.invoke('get-window-bounds');
   },
+  selectDirectory: () => {
+    return ipcRenderer.invoke('select-directory');
+  },
   setWindowPosition: (x, y) => {
     ipcRenderer.send('set-window-position', { x, y });
   },

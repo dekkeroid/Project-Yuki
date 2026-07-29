@@ -2603,6 +2603,31 @@ async def delete_chat_session_by_id(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/chat/sessions/{session_id}/meta")
+async def get_session_metadata_api(session_id: str):
+    """Fetches custom facts and workspace directories for a specific session."""
+    from app.memory.db import get_session_meta
+    return get_session_meta(session_id)
+
+@app.post("/api/chat/sessions/{session_id}/meta")
+async def save_session_metadata_api(session_id: str, payload: dict = Body(...)):
+    """Saves or updates a custom fact or workspace directory for a specific session."""
+    from app.memory.db import save_session_meta
+    meta_type = payload.get("type", "fact")
+    meta_key = payload.get("key", "").strip()
+    meta_value = payload.get("value", "").strip()
+    if not meta_key or not meta_value:
+        raise HTTPException(status_code=400, detail="key and value are required")
+    save_session_meta(session_id, meta_type, meta_key, meta_value)
+    return {"status": "success", "session_id": session_id, "meta_type": meta_type, "meta_key": meta_key, "meta_value": meta_value}
+
+@app.delete("/api/chat/sessions/{session_id}/meta")
+async def delete_session_metadata_api(session_id: str, meta_type: str, meta_key: str):
+    """Deletes a custom fact or workspace directory entry for a specific session."""
+    from app.memory.db import delete_session_meta
+    delete_session_meta(session_id, meta_type, meta_key)
+    return {"status": "success", "session_id": session_id, "meta_type": meta_type, "meta_key": meta_key}
+
 @app.get("/api/debug/threads")
 def debug_threads():
     import traceback

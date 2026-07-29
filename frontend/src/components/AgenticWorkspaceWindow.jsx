@@ -152,6 +152,79 @@ export const AgenticWorkspaceWindow = ({
   // Dedicated Coding Mode State (OFF by default on open — zero persistence as requested)
   const [isCodingMode, setIsCodingMode] = useState(false);
 
+  // Per-Session Metadata (Facts & Workspace Directories) State
+  const [sessionFacts, setSessionFacts] = useState([]);
+  const [sessionDirectories, setSessionDirectories] = useState([]);
+  const [showFactForm, setShowFactForm] = useState(false);
+  const [showDirForm, setShowDirForm] = useState(false);
+  const [factKeyInput, setFactKeyInput] = useState('');
+  const [factValInput, setFactValInput] = useState('');
+  const [dirKeyInput, setDirKeyInput] = useState('');
+  const [dirValInput, setDirValInput] = useState('');
+
+  const fetchSessionMeta = useCallback(async (sid) => {
+    if (!sid) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/sessions/${encodeURIComponent(sid)}/meta`);
+      if (res.ok) {
+        const data = await res.json();
+        setSessionFacts(data.facts || []);
+        setSessionDirectories(data.directories || []);
+      }
+    } catch (err) {
+      console.error("[SessionMeta] Error fetching session meta:", err);
+    }
+  }, []);
+
+  const handleSaveSessionMeta = async (type, key, value) => {
+    const targetSession = selectedPastSessionId || activeSessionId;
+    if (!targetSession || !key.trim() || !value.trim()) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/sessions/${encodeURIComponent(targetSession)}/meta`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, key: key.trim(), value: value.trim() })
+      });
+      if (res.ok) {
+        fetchSessionMeta(targetSession);
+        if (type === 'fact') { setFactKeyInput(''); setFactValInput(''); setShowFactForm(false); }
+        if (type === 'directory') { setDirKeyInput(''); setDirValInput(''); setShowDirForm(false); }
+      }
+    } catch (err) {
+      console.error("[SessionMeta] Error saving session meta:", err);
+    }
+  };
+
+  const handleDeleteSessionMeta = async (type, key) => {
+    const targetSession = selectedPastSessionId || activeSessionId;
+    if (!targetSession || !key) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/sessions/${encodeURIComponent(targetSession)}/meta?meta_type=${encodeURIComponent(type)}&meta_key=${encodeURIComponent(key)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchSessionMeta(targetSession);
+      }
+    } catch (err) {
+      console.error("[SessionMeta] Error deleting session meta:", err);
+    }
+  };
+
+  const handlePickFolder = async () => {
+    try {
+      if (window.electronAPI && window.electronAPI.selectDirectory) {
+        const selectedPath = await window.electronAPI.selectDirectory();
+        if (selectedPath) {
+          setDirValInput(selectedPath);
+        }
+      } else {
+        alert("Directory picker is running in Electron mode. If running in a web browser, please enter or paste the absolute folder path directly.");
+      }
+    } catch (err) {
+      console.error("[FolderPicker] Error picking folder:", err);
+    }
+  };
+
   const handleSendPrompt = (textToSend) => {
     if (!textToSend.trim()) return;
 
@@ -171,6 +244,8 @@ export const AgenticWorkspaceWindow = ({
         message: textToSend,
         overrides: {
           coding_mode: isCodingMode,
+          session_facts: sessionFacts,
+          session_directories: isCodingMode ? sessionDirectories : [],
           tool_mode: chatWindowToolMode,
           llm_mode: llmModeOverride,
           enable_intent_check: enableIntentCheckOverride,
@@ -299,6 +374,13 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 • Temperature: ${isCodingMode ? '0.1 (Low Entropy Coder)' : (llmModeOverride === 2 ? '0.2 (Deterministic)' : '0.7 (Creative)')}
 `;
   };
+
+  useEffect(() => {
+    const targetSid = selectedPastSessionId || activeSessionId;
+    if (targetSid) {
+      fetchSessionMeta(targetSid);
+    }
+  }, [selectedPastSessionId, activeSessionId, fetchSessionMeta]);
 
   // Profile & System Details State
   const [profileData, setProfileData] = useState(null);
@@ -1641,6 +1723,154 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Section 0.5: Per-Session Custom Facts & Workspace Directories */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.25)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Layers style={{ width: '13px', height: '13px' }} />
+                    Session Facts & Workspace Paths
+                  </div>
+                  <span style={{ fontSize: '0.60rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>
+                    Per-Session DB Saved
+                  </span>
+                </div>
+
+                {/* Session Facts List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.66rem', color: '#cbd5e1', fontWeight: 600 }}>📌 Custom Session Facts ({sessionFacts.length})</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowFactForm(prev => !prev)}
+                      style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.62rem', background: 'rgba(167, 139, 250, 0.2)', color: '#c4b5fd', border: '1px solid rgba(167, 139, 250, 0.4)', cursor: 'pointer' }}
+                    >
+                      {showFactForm ? 'Cancel' : '+ Add Fact'}
+                    </button>
+                  </div>
+
+                  {showFactForm && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '8px', borderRadius: '6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(167, 139, 250, 0.3)' }}>
+                      <input
+                        type="text"
+                        placeholder="Label / Key (e.g. Target Database, User Role)"
+                        value={factKeyInput}
+                        onChange={(e) => setFactKeyInput(e.target.value)}
+                        style={{ padding: '5px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.15)', background: '#090d16', color: '#fff', fontSize: '0.70rem' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Value (e.g. PostgreSQL v16, Senior Dev)"
+                        value={factValInput}
+                        onChange={(e) => setFactValInput(e.target.value)}
+                        style={{ padding: '5px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.15)', background: '#090d16', color: '#fff', fontSize: '0.70rem' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveSessionMeta('fact', factKeyInput, factValInput)}
+                        style={{ padding: '5px', borderRadius: '4px', background: '#8b5cf6', color: '#fff', fontSize: '0.70rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+                      >
+                        Save Custom Fact
+                      </button>
+                    </div>
+                  )}
+
+                  {sessionFacts.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {sessionFacts.map((fact, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 8px', borderRadius: '5px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', fontSize: '0.68rem' }}>
+                          <span style={{ color: '#cbd5e1' }}>
+                            <strong style={{ color: '#c4b5fd' }}>{fact.key}:</strong> {fact.value}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSessionMeta('fact', fact.key)}
+                            title="Delete Fact"
+                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.75rem', padding: '2px 4px' }}
+                          >
+                            <Trash2 style={{ width: '12px', height: '12px' }} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.64rem', color: '#64748b', fontStyle: 'italic' }}>No custom facts added for this session yet.</div>
+                  )}
+                </div>
+
+                {/* Workspace Directories (In Coder Mode or general) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.66rem', color: '#cbd5e1', fontWeight: 600 }}>📁 Workspace Directories ({sessionDirectories.length})</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowDirForm(prev => !prev)}
+                      style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.62rem', background: 'rgba(16, 185, 129, 0.2)', color: '#6ee7b7', border: '1px solid rgba(16, 185, 129, 0.4)', cursor: 'pointer' }}
+                    >
+                      {showDirForm ? 'Cancel' : '+ Add Directory'}
+                    </button>
+                  </div>
+
+                  {showDirForm && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '8px', borderRadius: '6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                      <input
+                        type="text"
+                        placeholder="Directory Label (e.g. Project Root, Backend)"
+                        value={dirKeyInput}
+                        onChange={(e) => setDirKeyInput(e.target.value)}
+                        style={{ padding: '5px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.15)', background: '#090d16', color: '#fff', fontSize: '0.70rem' }}
+                      />
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input
+                          type="text"
+                          placeholder="Absolute Path (e.g. D:/Projects/Yuki)"
+                          value={dirValInput}
+                          onChange={(e) => setDirValInput(e.target.value)}
+                          style={{ flex: 1, padding: '5px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.15)', background: '#090d16', color: '#fff', fontSize: '0.70rem' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handlePickFolder}
+                          title="Browse Local Folder System (Electron Dialog)"
+                          style={{ padding: '5px 8px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.4)', fontSize: '0.70rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <FolderOpen style={{ width: '13px', height: '13px' }} />
+                          Browse
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveSessionMeta('directory', dirKeyInput, dirValInput)}
+                        style={{ padding: '5px', borderRadius: '4px', background: '#10b981', color: '#fff', fontSize: '0.70rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+                      >
+                        Save Workspace Directory
+                      </button>
+                    </div>
+                  )}
+
+                  {sessionDirectories.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {sessionDirectories.map((dir, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 8px', borderRadius: '5px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', fontSize: '0.68rem' }}>
+                          <span style={{ color: '#cbd5e1', wordBreak: 'break-all' }}>
+                            <strong style={{ color: '#6ee7b7' }}>{dir.key}:</strong> <code style={{ color: '#94a3b8' }}>{dir.value}</code>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSessionMeta('directory', dir.key)}
+                            title="Delete Directory"
+                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.75rem', padding: '2px 4px', marginLeft: '6px' }}
+                          >
+                            <Trash2 style={{ width: '12px', height: '12px' }} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.64rem', color: '#64748b', fontStyle: 'italic' }}>No workspace directories added. (Directories are sent to LLM during Coder Mode).</div>
+                  )}
+                </div>
               </div>
 
               {/* Section 1: Tool Operating Suite */}
