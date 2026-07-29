@@ -95,3 +95,25 @@ def optimize_all_processes(force=False):
 
     if pids_to_optimize:
         print(f'[Memory] EmptyWorkingSet called on {optimized_count}/{len(pids_to_optimize)} Electron/Node process(es).')
+
+    # 6. If system RAM > 95%, trim top 10 memory-hogging processes
+    try:
+        ram = psutil.virtual_memory()
+        if ram.percent > 95:
+            all_procs = sorted(
+                [p for p in psutil.process_iter(['pid', 'name', 'memory_percent'])],
+                key=lambda p: p.info.get('memory_percent') or 0,
+                reverse=True
+            )[:10]
+            trimmed = 0
+            for p in all_procs:
+                try:
+                    pid = p.info['pid']
+                    if pid not in pids_to_optimize:
+                        if _empty_working_set(pid):
+                            trimmed += 1
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            print(f'[Memory] RAM at {ram.percent}% — trimmed top {trimmed} memory-heavy processes.')
+    except Exception as e:
+        print(f'[Memory] RAM-triggered optimization error: {e}')

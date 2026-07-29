@@ -214,7 +214,7 @@ async def _run_memory_optimizer_bg():
             optimize_all_processes()
         except Exception as e:
             print(f"[Memory] Error in background memory optimizer: {e}")
-        await asyncio.sleep(60)
+        await asyncio.sleep(300)
 
 
 async def _coordinate_startup_optimization():
@@ -644,6 +644,12 @@ async def upload_vrm_model(file: UploadFile = File(...)):
     custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
     custom_dir.mkdir(parents=True, exist_ok=True)
 
+    try:
+        from app.memory.optimizer import optimize_all_processes
+        optimize_all_processes(force=True)
+    except Exception:
+        pass
+
     return {"status": "ok", "filename": file.filename}
 
 
@@ -978,6 +984,11 @@ async def update_settings(req: SettingsUpdateRequest):
             crawler.resume_tagger()
     if req.active_vrm_model is not None:
         memory_manager.update_setting("active_vrm_model", req.active_vrm_model.strip())
+        try:
+            from app.memory.optimizer import optimize_all_processes
+            optimize_all_processes(force=True)
+        except Exception:
+            pass
     if req.whisper_model is not None:
         config.WHISPER_MODEL = req.whisper_model.strip()
         memory_manager.update_setting("whisper_model", req.whisper_model.strip())

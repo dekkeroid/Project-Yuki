@@ -1013,7 +1013,8 @@ const App = () => {
           if (ramPercent > 95) {
             if (!hasTriggeredHighRamWarningRef.current) {
               hasTriggeredHighRamWarningRef.current = true;
-              const msg = `Master, your system RAM is almost full! Usage has reached ${ramPercent} percent. Please close some heavy applications!`;
+              fetch('/api/system/optimize_memory', { method: 'POST' }).catch(() => {});
+              const msg = `Master, your system RAM is almost full at ${ramPercent}%! I've automatically trimmed the heaviest processes behind the scenes — should help some.`;
               setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to RAM* ${msg}` }]);
               speakSystemMessage(msg, 'surprised');
             }
