@@ -167,6 +167,7 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
    • `git_status_and_history` → Inspect git branch status, modified files, and recent commit history.
    • `system_diagnostics_and_processes` → Check CPU %, RAM %, disk space, and top resource-heavy processes.
    • `scrape_web_page` → Fetch public web URLs and convert HTML content into clean text for deep reading.
+   • `jarvis_run_python` → Execute Python code for complex math, stats, data parsing (CSV/JSON/XML), batch file operations (rename, deduplicate, hash), text processing, format conversion, and custom logic. Full Python stdlib + numpy/pandas available. Runs in Yuki's own Python environment (sys.executable) so it works seamlessly on any PC without requiring a separate user Python installation!
    • `jarvis_remember_user_fact` → When the USER reveals a clear, definite personal fact or preference about THEMSELVES. Use structured keys when possible: `like` (preferences), `dislike` (aversions), `interest` (topics), `hobby` (activities), `name`. For anything else, use a custom label (e.g. `"favourite drink"`). Multiple entries for the same key accumulate as a list automatically:
      "I love coffee" → key="like", value="coffee" → user_likes: ["coffee"]
      "I love tea too" → key="like", value="tea" → user_likes: ["coffee", "tea"]
