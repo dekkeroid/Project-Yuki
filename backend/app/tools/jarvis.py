@@ -21,6 +21,7 @@ def jarvis_query_file_db(
     category: str = None,
     extension: str = None,
     path_hint: str = None,
+    search_scope: str = "all",
     limit: int = 15
 ) -> str:
     """
@@ -33,6 +34,7 @@ def jarvis_query_file_db(
         category: Optional category filter ("video", "audio", "image", "document", "executable", "archive", "code").
         extension: Optional file extension filter (e.g. ".mp4", ".mkv", ".pdf", ".zip").
         path_hint: Optional folder or drive hint (e.g. "D:", "Downloads", "Anime", "Desktop").
+        search_scope: Optional target scope ("all", "folder_only", "file_only", "metadata_only").
         limit: Max results to return (default 15).
     """
     query_str = str(query).strip() if query is not None else ""
@@ -43,6 +45,7 @@ def jarvis_query_file_db(
     category_str = str(category).strip() if category is not None else ""
     extension_str = str(extension).strip() if extension is not None else ""
     path_hint_str = str(path_hint).strip() if path_hint is not None else ""
+    scope_clean = str(search_scope).strip().lower() if search_scope else "all"
 
     try:
         from app.tools.files import parse_query_with_llm, query_database_union, _density_score, _is_unwanted_installer_or_uninstaller
@@ -61,6 +64,14 @@ def jarvis_query_file_db(
 
         if not candidates:
             return f"No indexed files found matching query '{clean_query}'."
+
+        # Filter by search_scope if specified
+        if scope_clean == "folder_only":
+            q_words = [w for w in clean_query.lower().split() if len(w) > 1]
+            candidates = [c for c in candidates if any(w in (c.get("parent_folder") or "").lower() or w in (c.get("file_path") or "").lower() for w in q_words)]
+        elif scope_clean == "file_only":
+            q_words = [w for w in clean_query.lower().split() if len(w) > 1]
+            candidates = [c for c in candidates if any(w in (c.get("file_name") or "").lower() for w in q_words)]
 
         # Filter by extension if provided
         if extension_str:

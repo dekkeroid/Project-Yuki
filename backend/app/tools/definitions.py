@@ -141,6 +141,10 @@ def get_advanced_jarvis_tools_definition() -> list:
                             "type": "string",
                             "description": "Optional folder or drive path hint (e.g. 'D:', 'Downloads', 'Anime', 'Desktop', 'Games')."
                         },
+                        "search_scope": {
+                            "type": "string",
+                            "description": "Optional target search scope: 'all' (default), 'folder_only' (search folder names & parent paths), 'file_only' (search file names), 'metadata_only' (search title/artist/tags)."
+                        },
                         "limit": {
                             "type": "integer",
                             "description": "Max results to return (default 15)."

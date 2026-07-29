@@ -207,8 +207,12 @@ class AgentExecutor:
 
             # --- INDEPENDENT ADVANCED JARVIS TOOLS ---
             "jarvis_query_file_db": lambda **kwargs: jarvis_query_file_db(
-                kwargs.get("query") or "",
-                int(kwargs.get("limit", 15))
+                query=kwargs.get("query") or "",
+                category=kwargs.get("category"),
+                extension=kwargs.get("extension"),
+                path_hint=kwargs.get("path_hint"),
+                search_scope=kwargs.get("search_scope", "all"),
+                limit=int(kwargs.get("limit", 15))
             ),
             "jarvis_read_file": lambda **kwargs: jarvis_read_file(
                 kwargs.get("file_path") or kwargs.get("path") or "",
