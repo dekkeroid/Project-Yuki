@@ -7,6 +7,7 @@ import { useSpeechRecognition } from './hooks/useSpeechRecognition';
 import { useAudioPlayback } from './hooks/useAudioPlayback';
 import { useSystemMonitor } from './hooks/useSystemMonitor';
 import { SLASH_COMMANDS } from './constants';
+import { parseResponseTags } from './utils/responseParser';
 
 import AlarmOverlay from './components/AlarmOverlay';
 import StopwatchOverlay from './components/StopwatchOverlay';
@@ -750,19 +751,29 @@ const App = () => {
         // Keep isThinking true so the bubble thinking animation remains active
         setTtsStreamActive(true);
         currentResponseTextRef.current += msg.text;
+
+        const { cleanText, animations, emotions } = parseResponseTags(currentResponseTextRef.current, {
+          onAnimation: (animName) => {
+            setCustomAnimation(animName);
+          },
+          onEmotion: (emotionName) => {
+            setAvatarExpression(emotionName);
+          }
+        });
+
         setMessages((prev) => {
           const newMessages = [...prev];
           if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
             const last = newMessages[newMessages.length - 1];
             newMessages[newMessages.length - 1] = {
               ...last,
-              content: last.content + msg.text,
+              content: cleanText,
               backend: msg.backend_used
             };
           } else {
             newMessages.push({
               role: 'assistant',
-              content: msg.text,
+              content: cleanText,
               backend: msg.backend_used
             });
           }

@@ -255,8 +255,11 @@ export const detectExpression = (text) => {
 export const cleanTextForTTS = (text) => {
   if (!text) return '';
 
+  // 0. Strip unique animation and emotion tags
+  let clean = text.replace(/<(?:yuki_)?(?:anim|emotion):[a-zA-Z0-9_\-]+\/?>|\[(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\]/gi, '');
+
   // 1. Double asterisks and double underscores -> replace with inner text
-  let clean = text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/__(.*?)__/g, '$1');
+  clean = clean.replace(/\*\*(.*?)\*\*/g, '$1').replace(/__(.*?)__/g, '$1');
 
   // 2. Single asterisks and single underscores -> filter out actions, keep emphasis
   const actionStems = [
@@ -310,4 +313,3 @@ export const getSpeechFriendlyText = (text) => {
   clean = clean.replace(/\s+/g, ' ').trim();
   return clean;
 };
-

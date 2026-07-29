@@ -5,7 +5,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Upload, Sparkles } from 'lucide-react';
-import { ANIMATIONS } from '../animationsRegistry';
+import { ANIMATIONS, EMOTIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
 
 // Default Window Dimensions Configuration (Electron Mode)
@@ -2560,8 +2560,18 @@ const AvatarViewer = ({
           let targetBrowDown = 0.0;
 
           if (currentExpr && currentExpr !== 'neutral') {
+            const emotionDef = EMOTIONS[currentExpr];
             if (currentExpr === 'wink') {
               targetHappy = winkVal * 0.5;
+            } else if (emotionDef && emotionDef.blendShapes) {
+              const bs = emotionDef.blendShapes;
+              targetHappy = bs.happy || 0.0;
+              targetSad = bs.sad || 0.0;
+              targetAngry = bs.angry || 0.0;
+              targetSurprised = bs.surprised || 0.0;
+              targetRelaxed = bs.relaxed || 0.0;
+              targetBrowUp = bs.browUp || 0.0;
+              targetBrowDown = bs.browDown || 0.0;
             } else if (currentExpr === 'happy') {
               targetHappy = 0.0; // Set to 0 to avoid VRM's pre-baked eye closing morphs on joy
               targetRelaxed = 1.0; // Use open-eyed relaxed smile instead

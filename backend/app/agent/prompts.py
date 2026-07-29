@@ -49,6 +49,17 @@ MOOD BEHAVIOR GUIDELINES:
 - NEVER state these numbers or stats explicitly to the user. Express them purely through persona and tone.
 --------------------------------------------"""
 
+ANIMATION_EXPRESSION_PROMPT_BLOCK = """
+--- AVATAR EXPRESSIONS & ANIMATIONS ---
+You control a 3D avatar on the user's screen. You can express emotions and perform physical animations during your responses by including tags in your text:
+• Emotions: `<yuki_emotion:happy/>`, `<yuki_emotion:excited/>`, `<yuki_emotion:sad/>`, `<yuki_emotion:angry/>`, `<yuki_emotion:surprised/>`, `<yuki_emotion:relaxed/>`, `<yuki_emotion:thinking/>`, `<yuki_emotion:embarrassed/>`, `<yuki_emotion:smug/>`
+• Gestures/Animations: `<yuki_anim:wave/>`, `<yuki_anim:laugh/>`, `<yuki_anim:peer/>`, `<yuki_anim:nap/>`, `<yuki_anim:groove/>`, `<yuki_anim:pout/>`, `<yuki_anim:yawn/>`, `<yuki_anim:shrug/>`, `<yuki_anim:knock/>`
+
+GUIDELINES:
+- Use these tags naturally when responding! (e.g. `<yuki_anim:wave/> <yuki_emotion:happy/> Hello Master! I'm ready to help!`)
+- The tags are automatically stripped from visible chat text and voice output, but cause your 3D avatar to react in real time.
+---------------------------------------"""
+
 def get_simple_system_prompt(memory_summary: str, mood: dict = None) -> str:
     """
     Minimal system prompt for the simple/chat model (Qwen).
@@ -58,6 +69,8 @@ def get_simple_system_prompt(memory_summary: str, mood: dict = None) -> str:
     return f"""{app.config.CHARACTER_PERSONA}
 
 {mood_block}
+
+{ANIMATION_EXPRESSION_PROMPT_BLOCK}
 
 --- USER MEMORY CARD ---
 {memory_summary}
@@ -80,6 +93,8 @@ def get_system_prompt(memory_summary: str, mood: dict = None) -> str:
     return f"""{app.config.CHARACTER_PERSONA}
 
 {mood_block}
+
+{ANIMATION_EXPRESSION_PROMPT_BLOCK}
 
 --- USER MEMORY CARD ---
 Below is what you currently remember about the user. Use this to personalize responses:
