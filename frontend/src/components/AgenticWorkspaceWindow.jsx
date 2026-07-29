@@ -41,6 +41,7 @@ export const AgenticWorkspaceWindow = ({
   const [selectedPastSessionId, setSelectedPastSessionId] = useState(null);
   const [viewMessages, setViewMessages] = useState(null); // Loaded messages when inspecting past session
   const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
+  const messagesEndRef = useRef(null);
   // Sidebar Resizing States (Width in pixels, saved in localStorage)
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => {
     const saved = localStorage.getItem('yuki-left-sidebar-width');
