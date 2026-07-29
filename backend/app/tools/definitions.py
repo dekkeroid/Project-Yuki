@@ -404,7 +404,8 @@ def get_advanced_jarvis_tools_definition() -> list:
                     "type": "object",
                     "properties": {
                         "command": {"type": "string", "description": "Shell command to execute."},
-                        "use_powershell": {"type": "boolean", "description": "Use PowerShell (true) or Cmd (false). Default true."}
+                        "use_powershell": {"type": "boolean", "description": "Use PowerShell (true) or Cmd (false). Default true."},
+                        "cwd": {"type": "string", "description": "Optional working directory path to execute the command in (e.g. 'D:/Projects/App')."}
                     },
                     "required": ["command"]
                 }

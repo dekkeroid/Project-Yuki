@@ -120,7 +120,7 @@ class AgentExecutor:
             jarvis_query_file_db, jarvis_read_file, jarvis_create_or_edit_file,
             jarvis_replace_file_content, jarvis_list_dir_tree, jarvis_git_status,
             jarvis_system_diagnostics, jarvis_network_status, jarvis_web_scrape,
-            jarvis_window_control
+            jarvis_window_control, jarvis_run_terminal
         )
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
@@ -240,6 +240,11 @@ class AgentExecutor:
             "jarvis_system_diagnostics": lambda **kwargs: jarvis_system_diagnostics(
                 kwargs.get("filter_name"),
                 int(kwargs.get("top_n", 10))
+            ),
+            "jarvis_run_terminal": lambda **kwargs: jarvis_run_terminal(
+                kwargs.get("command") or "",
+                use_powershell=bool(kwargs.get("use_powershell", True)),
+                cwd=kwargs.get("cwd") or kwargs.get("dir") or (overrides.get("session_directories", [{}])[0].get("value") if overrides.get("session_directories") and isinstance(overrides.get("session_directories"), list) and len(overrides.get("session_directories")) > 0 and isinstance(overrides.get("session_directories")[0], dict) else None)
             ),
             "jarvis_web_search": _async_web_search,
             "jarvis_web_scrape": lambda **kwargs: jarvis_web_scrape(

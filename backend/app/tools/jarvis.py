@@ -389,3 +389,48 @@ def jarvis_window_control(action: str = "list", title_query: str = None) -> str:
             return f"Window Control Error: {str(e)}"
     
     return f"Window action '{action}' executed for query '{title_query or ''}'."
+
+
+def jarvis_run_terminal(command: str, use_powershell: bool = True, cwd: str = None) -> str:
+    """
+    Runs a shell command in Cmd or PowerShell with optional working directory (cwd) support.
+    """
+    clean_command = str(command).strip()
+    if not clean_command:
+        return "Terminal Error: Command string cannot be empty."
+
+    clean_cwd = None
+    if cwd:
+        candidate_cwd = os.path.abspath(str(cwd).strip('"\''))
+        if os.path.exists(candidate_cwd) and os.path.isdir(candidate_cwd):
+            clean_cwd = candidate_cwd
+
+    try:
+        shell_exe = "powershell.exe" if use_powershell else "cmd.exe"
+        shell_arg = "-Command" if use_powershell else "/c"
+        
+        result = subprocess.run(
+            [shell_exe, shell_arg, clean_command],
+            capture_output=True,
+            text=True,
+            shell=True,
+            cwd=clean_cwd,
+            timeout=45
+        )
+        stdout = (result.stdout or "").strip()
+        stderr = (result.stderr or "").strip()
+        
+        output = [f"=== Terminal Output (cwd: {clean_cwd or os.getcwd()}) ==="]
+        if stdout:
+            output.append(stdout)
+        if stderr:
+            output.append(f"[STDERR]\n{stderr}")
+            
+        if len(output) == 1:
+            return f"Command executed successfully (exit code: {result.returncode}), but returned no output."
+            
+        return "\n\n".join(output)
+    except subprocess.TimeoutExpired:
+        return f"Terminal Execution Timeout: Command '{clean_command}' exceeded 45-second execution limit."
+    except Exception as e:
+        return f"Terminal Execution Error: {str(e)}"
