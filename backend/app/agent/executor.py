@@ -1069,11 +1069,12 @@ class AgentExecutor:
         # Filter tool definition list based on per-turn coding_mode or effective_tool_mode override
         if overrides.get("coding_mode"):
             coding_allowed = {
-                "run_terminal_command", "run_python_script", "read_and_review_file",
-                "read_file_content", "jarvis_create_or_edit_file", "list_directory_tree",
-                "list_directory", "git_status_and_history", "search_files",
-                "jarvis_query_file_db", "web_search", "scrape_web_page",
-                "system_diagnostics_and_processes", "update_user_fact", "jarvis_remember_user_fact"
+                "jarvis_run_terminal", "jarvis_run_python", "jarvis_read_file",
+                "jarvis_create_or_edit_file", "jarvis_replace_file_content",
+                "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_query_file_db",
+                "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
+                "jarvis_remember_user_fact", "read_and_review_file", "search_files",
+                "read_file_content", "run_terminal_command", "run_python_script"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in coding_allowed]
         elif effective_tool_mode == "basic":

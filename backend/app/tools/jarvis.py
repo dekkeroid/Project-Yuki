@@ -186,6 +186,31 @@ def jarvis_create_or_edit_file(file_path: str, content: str, mode: str = "write"
         return f"File Write Error: {str(e)}"
 
 
+def jarvis_replace_file_content(file_path: str, target_content: str, replacement_content: str) -> str:
+    """
+    Replaces exact instances of target_content with replacement_content in a file on disk.
+    This allows non-destructive, precise edits without overwriting the whole file.
+    """
+    clean_path = os.path.abspath(file_path.strip('"\''))
+    if not os.path.exists(clean_path):
+        return f"File Error: Path '{clean_path}' does not exist."
+    try:
+        with open(clean_path, "r", encoding="utf-8") as f:
+            full_text = f.read()
+
+        if target_content not in full_text:
+            return f"Error: Target text block not found in '{clean_path}'. Please check line numbers or read the file first."
+
+        updated_text = full_text.replace(target_content, replacement_content, 1)
+
+        with open(clean_path, "w", encoding="utf-8") as f:
+            f.write(updated_text)
+
+        return f"Success: Replaced target block in '{clean_path}' successfully."
+    except Exception as e:
+        return f"File Edit Error: {str(e)}"
+
+
 def jarvis_list_dir_tree(dir_path: str, max_depth: int = 2, limit: int = 100) -> str:
     """
     Inspects folder structure and subdirectories up to max_depth.

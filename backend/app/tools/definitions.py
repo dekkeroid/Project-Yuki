@@ -186,6 +186,22 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
+                "name": "jarvis_replace_file_content",
+                "description": "Replaces an exact target_content text block with replacement_content in a file. Allows precise code refactoring without rewriting entire files.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "description": "Absolute path to file."},
+                        "target_content": {"type": "string", "description": "Exact target string to find and replace."},
+                        "replacement_content": {"type": "string", "description": "Replacement string."}
+                    },
+                    "required": ["file_path", "target_content", "replacement_content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "jarvis_list_dir_tree",
                 "description": "Inspect directory tree structure and subdirectories.",
                 "parameters": {
