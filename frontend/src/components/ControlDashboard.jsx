@@ -255,6 +255,7 @@ const ControlDashboard = ({
 
   // Custom LLM Endpoints & Presets State
   const [customLabel, setCustomLabel] = useState('');
+  const [selectedEndpointId, setSelectedEndpointId] = useState('');
   const [savedCustomEndpoints, setSavedCustomEndpoints] = useState([]);
   const [saveEndpointBtnText, setSaveEndpointBtnText] = useState('Save Endpoint Preset');
 
@@ -265,6 +266,12 @@ const ControlDashboard = ({
         const data = await res.json();
         if (data && data.endpoints) {
           setSavedCustomEndpoints(data.endpoints);
+          // Sync selected ID with current settings base_url
+          const active = data.endpoints.find(e => e.base_url && settings.llm_base_url && e.base_url.replace(/\/$/, '') === settings.llm_base_url.replace(/\/$/, ''));
+          if (active) {
+            setSelectedEndpointId(active.id);
+            if (!customLabel) setCustomLabel(active.label);
+          }
         }
       }
     } catch (e) {
@@ -306,6 +313,7 @@ const ControlDashboard = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: selectedEndpointId || '',
           label: labelToSave,
           base_url: baseUrlToSave,
           api_key: settings.llm_api_key || '',
@@ -317,6 +325,9 @@ const ControlDashboard = ({
         const data = await res.json();
         setSavedCustomEndpoints(data.endpoints || []);
         setCustomLabel(labelToSave);
+        if (data.saved && data.saved.id) {
+          setSelectedEndpointId(data.saved.id);
+        }
         setSaveEndpointBtnText("✓ Saved to DB (Encrypted)");
         setTimeout(() => setSaveEndpointBtnText('Save Endpoint Preset'), 2500);
       } else {
@@ -330,18 +341,25 @@ const ControlDashboard = ({
     }
   };
 
-  const handleDeleteCustomEndpoint = async (epId, epLabel) => {
-    if (!confirm(`Delete saved endpoint "${epLabel}"?`)) return;
+  const handleDeleteCustomEndpoint = async (epId) => {
+    const targetId = epId || selectedEndpointId;
+    const targetEp = savedCustomEndpoints.find(e => e.id === targetId || e.label === customLabel);
+    if (!targetEp) {
+      alert("Please select a saved preset to delete.");
+      return;
+    }
+    if (!confirm(`Delete saved endpoint "${targetEp.label}"?`)) return;
     try {
       const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: epId, label: epLabel })
+        body: JSON.stringify({ id: targetEp.id, label: targetEp.label })
       });
       if (res.ok) {
         const data = await res.json();
         setSavedCustomEndpoints(data.endpoints || []);
-        if (customLabel === epLabel) setCustomLabel('');
+        setSelectedEndpointId('');
+        if (customLabel === targetEp.label) setCustomLabel('');
       }
     } catch (e) {
       console.error("Failed to delete custom endpoint:", e);
@@ -350,8 +368,9 @@ const ControlDashboard = ({
 
   const handleSelectCustomEndpoint = async (ep) => {
     if (!ep) return;
+    setSelectedEndpointId(ep.id || '');
+    setCustomLabel(ep.label || '');
     try {
-      setCustomLabel(ep.label || '');
       const targetBackend = settings.llm_backend === 'custom' || settings.llm_backend === 'openai' ? settings.llm_backend : (ep.llm_backend || 'custom');
       await handleUpdateSetting('llm_backend', targetBackend);
       await handleUpdateSetting('llm_base_url', ep.base_url || '');
@@ -2563,11 +2582,11 @@ const ControlDashboard = ({
 
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                               <select
-                                value={savedCustomEndpoints.find(e => e.base_url === settings.llm_base_url || e.label === customLabel)?.id || ''}
+                                value={selectedEndpointId}
                                 onChange={(e) => {
                                   const selId = e.target.value;
-                                  if (!selId) return;
-                                  const ep = savedCustomEndpoints.find(item => item.id === selId || item.label === selId);
+                                  setSelectedEndpointId(selId);
+                                  const ep = savedCustomEndpoints.find(item => item.id === selId);
                                   if (ep) {
                                     handleSelectCustomEndpoint(ep);
                                   }
@@ -2575,20 +2594,23 @@ const ControlDashboard = ({
                                 style={{
                                   flex: 1,
                                   padding: '7px 10px',
-                                  background: 'rgba(18, 12, 33, 0.85)',
-                                  border: '1px solid rgba(167, 139, 250, 0.4)',
+                                  background: 'rgba(18, 12, 33, 0.95)',
+                                  border: '1px solid rgba(167, 139, 250, 0.45)',
                                   borderRadius: '8px',
-                                  color: '#e2e8f0',
+                                  color: '#ffffff',
                                   fontSize: '0.78rem',
+                                  fontWeight: 500,
                                   outline: 'none',
                                   cursor: 'pointer'
                                 }}
                               >
-                                <option value="" disabled>-- Select Saved Key Preset --</option>
+                                <option value="" style={{ background: '#120c21', color: '#94a3b8' }}>
+                                  -- Select Saved API Key Preset --
+                                </option>
                                 {savedCustomEndpoints.map((ep) => {
                                   const isActive = settings.llm_base_url === ep.base_url;
                                   return (
-                                    <option key={ep.id} value={ep.id} style={{ background: '#0b0813', color: 'white' }}>
+                                    <option key={ep.id} value={ep.id} style={{ background: '#120c21', color: '#ffffff' }}>
                                       {isActive ? '● ' : ''}{ep.label || 'Saved Endpoint'} ({ep.has_key ? '🔑 Key Saved' : 'No Key'})
                                     </option>
                                   );
