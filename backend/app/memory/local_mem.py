@@ -66,7 +66,12 @@ class MemoryManager:
                 "llm_simple_backend": "lmstudio",
                 "llm_simple_base_url": "http://127.0.0.1:1234",
                 "llm_simple_api_key": "",
-                "llm_simple_model": ""
+                "llm_simple_model": "",
+                "persistent_chat_history": False,
+                "basic_history_token_limit": 2500,
+                "basic_history_keep_turns": 6,
+                "advanced_history_token_limit": 40000,
+                "advanced_history_keep_turns": 16
             }
         }
         if not os.path.exists(self.profile_path):

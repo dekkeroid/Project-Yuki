@@ -14,6 +14,7 @@ import StopwatchOverlay from './components/StopwatchOverlay';
 const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
+import { RenderMessageContent } from './components/ChatOverlay';
 
 let stream_end_exception = false;
 
@@ -1372,12 +1373,13 @@ const App = () => {
     }
   };
 
-  const handleUpdateSetting = async (key, value) => {
+  const handleUpdateSetting = async (keyOrObj, value) => {
     try {
+      const payload = typeof keyOrObj === 'object' && keyOrObj !== null ? keyOrObj : { [keyOrObj]: value };
       const response = await fetch(`${API_BASE}/api/settings/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [key]: value })
+        body: JSON.stringify(payload)
       });
       if (response.ok) {
         const data = await response.json();
@@ -1988,9 +1990,9 @@ const detectExpression = (text) => {
   };
 
 
-  const fetchLlmModels = async () => {
+  const fetchLlmModels = async (force = false) => {
     const now = Date.now();
-    if (now - lastFetchTime.current < FETCH_COOLDOWN_MS) return;
+    if (!force && now - lastFetchTime.current < FETCH_COOLDOWN_MS) return;
     lastFetchTime.current = now;
     try {
       setAvailableLlmModels([]);
@@ -2010,7 +2012,10 @@ const detectExpression = (text) => {
     }
   };
 
-  const fetchSimpleLlmModels = async () => {
+  const fetchSimpleLlmModels = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastSimpleFetchTime.current < FETCH_COOLDOWN_MS) return;
+    lastSimpleFetchTime.current = now;
     try {
       setAvailableSimpleLlmModels([]);
       const response = await fetch(`${API_BASE}/api/models?target=simple`);
@@ -2341,7 +2346,7 @@ const detectExpression = (text) => {
                             alignSelf: isUser ? 'flex-end' : 'flex-start',
                             fontWeight: '600'
                           }}>
-                            {isSystem ? '[TOOL]' : isUser ? 'Master' : 'Yuki'}
+                            {isSystem ? 'Tool' : isUser ? 'Master' : 'Yuki'}
                           </span>
                           <div style={{
                             background: isSystem
@@ -2363,7 +2368,7 @@ const detectExpression = (text) => {
                             maxHeight: isSystem ? '80px' : 'none',
                             overflowY: isSystem ? 'auto' : 'visible'
                           }}>
-                            {msg.content}
+                            <RenderMessageContent content={msg.content} isSystem={isSystem} />
                           </div>
                         </div>
                       );
@@ -3841,8 +3846,6 @@ const detectExpression = (text) => {
                           onChange={async (e) => {
                             const newBackend = e.target.value;
                             setAvailableLlmModels([]);
-                            await handleUpdateSetting('llm_model', '');
-                            await handleUpdateSetting('llm_backend', newBackend);
                             setLlmBackend(newBackend);
                             const defaults = {
                               lmstudio: 'http://127.0.0.1:1234',
@@ -3851,9 +3854,13 @@ const detectExpression = (text) => {
                               openai: '',
                               custom: '',
                             };
-                            await handleUpdateSetting('llm_base_url', defaults[newBackend] || '');
+                            await handleUpdateSetting({
+                              llm_model: '',
+                              llm_backend: newBackend,
+                              llm_base_url: defaults[newBackend] || ''
+                            });
                             if (newBackend !== 'none') {
-                              setTimeout(() => fetchLlmModels(), 500);
+                              setTimeout(() => fetchLlmModels(true), 300);
                             }
                           }}
                           style={{ padding: '6px 8px', fontSize: '0.75rem' }}

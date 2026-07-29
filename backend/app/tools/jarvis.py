@@ -16,11 +16,24 @@ import urllib.parse
 from pathlib import Path
 import app.config as config
 
-def jarvis_query_file_db(query: str, limit: int = 15) -> str:
+def jarvis_query_file_db(
+    query: str,
+    category: str = None,
+    extension: str = None,
+    path_hint: str = None,
+    limit: int = 15
+) -> str:
     """
-    Searches indexed files using multi-column matching including transliterated
-    names (Japanese/Chinese→Romaji/Pinyin), metadata (title, artist, genre),
-    and density-ranked results.
+    Searches indexed files across all PC drives using density ranking (/o algorithm).
+    Searches file names, parent folders, full directory paths, Japanese/Chinese transliterations,
+    and metadata tags (artist, title, genre).
+
+    Args:
+        query: Freeform search query (e.g. "fate stay night episode 1", "elden ring save file").
+        category: Optional category filter ("video", "audio", "image", "document", "executable", "archive", "code").
+        extension: Optional file extension filter (e.g. ".mp4", ".mkv", ".pdf", ".zip").
+        path_hint: Optional folder or drive hint (e.g. "D:", "Downloads", "Anime", "Desktop").
+        limit: Max results to return (default 15).
     """
     if not query or not query.strip():
         return "Error: Query string cannot be empty."
@@ -28,17 +41,41 @@ def jarvis_query_file_db(query: str, limit: int = 15) -> str:
     clean_query = query.strip()
 
     try:
-        from app.tools.files import parse_query_with_llm, query_database_union
+        from app.tools.files import parse_query_with_llm, query_database_union, _density_score, _is_unwanted_installer_or_uninstaller
 
         parsed = parse_query_with_llm(clean_query)
-        candidates = query_database_union(parsed, limit_raw=limit + 10, silent=True)
+
+        # Inject explicit path_hint if provided
+        if path_hint:
+            path_hint_clean = path_hint.strip().lower().rstrip("\\/")
+            if path_hint_clean and path_hint_clean not in parsed.get("path", []):
+                parsed.setdefault("path", []).append(path_hint_clean)
+
+        categories = [category.strip().lower()] if category and category.strip() else None
+
+        candidates = query_database_union(parsed, limit_raw=max(limit * 4, 60), categories=categories, silent=True)
 
         if not candidates:
             return f"No indexed files found matching query '{clean_query}'."
 
+        # Filter by extension if provided
+        if extension and extension.strip():
+            ext_clean = extension.strip().lower()
+            if not ext_clean.startswith('.'):
+                ext_clean = '.' + ext_clean
+            candidates = [c for c in candidates if (c.get("extension") or "").lower() == ext_clean or (c.get("file_path") or "").lower().endswith(ext_clean)]
+
+        # Filter unwanted installers unless query asks for setup/install
+        filtered_candidates = [c for c in candidates if not _is_unwanted_installer_or_uninstaller(c.get("file_path", ""), clean_query)]
+        if filtered_candidates:
+            candidates = filtered_candidates
+
+        # Apply Density Ranking (/o algorithm)
+        ranked = sorted(candidates, key=lambda c: _density_score(c, parsed), reverse=True)
+
         seen = set()
         unique = []
-        for c in candidates:
+        for c in ranked:
             p = c.get("file_path", "")
             if p not in seen:
                 seen.add(p)
@@ -46,14 +83,17 @@ def jarvis_query_file_db(query: str, limit: int = 15) -> str:
                 if len(unique) >= limit:
                     break
 
-        output_lines = [f"Found {len(unique)} indexed files for '{clean_query}':"]
+        output_lines = [f"Found {len(unique)} indexed files matching query '{clean_query}':"]
         for r in unique:
             path_str = r.get("file_path", "")
             size_bytes = r.get("size", 0) or 0
             ext = r.get("extension", "") or ""
+            cat = r.get("category", "") or ""
             size_mb = size_bytes / (1024 * 1024)
 
             meta_parts = []
+            if cat:
+                meta_parts.append(f"Category: {cat}")
             if r.get("title") and r["title"].lower() != r.get("file_name", "").lower():
                 meta_parts.append(f"Title: {r['title']}")
             if r.get("artist_or_creator"):

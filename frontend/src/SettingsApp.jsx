@@ -85,7 +85,14 @@ export default function SettingsApp() {
     }
   };
 
-  const fetchLlmModels = async () => {
+  const lastFetchTime = useRef(0);
+  const lastSimpleFetchTime = useRef(0);
+  const FETCH_COOLDOWN_MS = 2000;
+
+  const fetchLlmModels = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastFetchTime.current < FETCH_COOLDOWN_MS) return;
+    lastFetchTime.current = now;
     try {
       const res = await fetch(`${API_BASE}/api/models`);
       if (res.ok) {
@@ -97,7 +104,10 @@ export default function SettingsApp() {
     }
   };
 
-  const fetchSimpleLlmModels = async () => {
+  const fetchSimpleLlmModels = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastSimpleFetchTime.current < FETCH_COOLDOWN_MS) return;
+    lastSimpleFetchTime.current = now;
     try {
       const res = await fetch(`${API_BASE}/api/models?target=simple`);
       if (res.ok) {

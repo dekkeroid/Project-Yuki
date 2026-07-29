@@ -146,7 +146,7 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
    • Continue investigating until you have all the facts required to solve the user's request.
 
 2. JARVIS TOOLSET GUIDELINES:
-   • `query_file_database` → Search SQLite indexed database (yuki_files.db) for files across PC drives.
+   • `jarvis_query_file_db` → Search SQLite indexed database (yuki_files.db) across all PC drives. Searches file names, parent folders, full directory paths, Japanese/Chinese Romaji/Pinyin transliterations, and metadata tags (title, artist, genre). Accepts optional `category` ('video','audio','image','document','executable','archive','code'), `extension` (e.g. '.mp4','.mkv'), and `path_hint` ('D:', 'Downloads', 'Anime').
    • `read_and_review_file` → Read source code, text files, or logs for code review and troubleshooting.
    • `list_directory_tree` → Inspect folder structures and project subdirectories.
    • `git_status_and_history` → Inspect git branch status, modified files, and recent commit history.

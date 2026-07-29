@@ -4,6 +4,24 @@ import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
 import { SLASH_COMMANDS } from '../constants';
 
+export const parseMessageThought = (rawContent) => {
+  if (!rawContent || typeof rawContent !== 'string') {
+    return { thoughts: [], cleanContent: rawContent || '' };
+  }
+  const thoughts = [];
+  const regex = /<(thought|think|reasoning)>([\s\S]*?)(?:<\/\1>|$)/gi;
+  let match;
+  let cleanContent = rawContent;
+  while ((match = regex.exec(rawContent)) !== null) {
+    const thoughtText = match[2].trim();
+    if (thoughtText) {
+      thoughts.push(thoughtText);
+    }
+  }
+  cleanContent = cleanContent.replace(/<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)/gi, '').trim();
+  return { thoughts, cleanContent };
+};
+
 const formatMessageText = (text) => {
   if (!text) return '';
   if (typeof text !== 'string') return text;
@@ -67,6 +85,150 @@ const formatMessageText = (text) => {
   }
   
   return parts.length > 0 ? parts : text;
+};
+
+// Helper to format tool names cleanly
+export const formatToolName = (toolRaw) => {
+  if (!toolRaw) return "System Tool";
+  const name = toolRaw.replace(/['"\s]/g, '').toLowerCase();
+
+  if (name.includes('open_or_play') || name.includes('play_file')) return "🎬 Open Or Play File";
+  if (name.includes('query_file') || name.includes('search_files') || name.includes('queryfile')) return "📁 File Search";
+  if (name.includes('read_file') || name.includes('read_and_review')) return "📄 Read File";
+  if (name.includes('create_or_edit') || name.includes('write_file')) return "✏️ Write File";
+  if (name.includes('web_search')) return "🌐 Web Search";
+  if (name.includes('web_scrape') || name.includes('scrape_web')) return "📰 Web Scraper";
+  if (name.includes('system_diagnostics') || name.includes('get_system_stats')) return "💻 System Diagnostics";
+  if (name.includes('list_dir') || name.includes('list_directory')) return "🌳 List Directory";
+  if (name.includes('git_status')) return "🌿 Git Status";
+  if (name.includes('manage_time')) return "⏰ Timer & Clock";
+  if (name.includes('set_system_volume')) return "🔊 Volume Control";
+  if (name.includes('launch_app')) return "🚀 Launch App";
+
+  return toolRaw.replace(/^jarvis_/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+};
+
+export const extractToolArgsString = (text) => {
+  if (!text) return "";
+  const parenMatch = text.match(/\(([^)]+)\)/);
+  if (parenMatch) {
+    return ` (${parenMatch[1]})`;
+  }
+  return "";
+};
+
+export const RenderMessageContent = ({ content, isSystem }) => {
+  const { thoughts, cleanContent } = parseMessageThought(content || "");
+
+  // Check if content is a tool start/status message
+  const isToolStart = cleanContent.includes("⚙️ [Tool Start]");
+  const isToolResult = cleanContent.includes("⚙️ [Tool Result]");
+
+  if (isToolStart || isToolResult) {
+    if (isToolStart) {
+      const match = cleanContent.match(/Running tool ['"]?([^'"]+)['"]?/i);
+      const rawTool = match ? match[1] : "";
+      const toolLabel = formatToolName(rawTool);
+      const argsStr = extractToolArgsString(cleanContent);
+
+      return (
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '5px',
+          padding: '2px 8px',
+          borderRadius: '6px',
+          background: 'rgba(45, 212, 191, 0.08)',
+          border: '1px solid rgba(45, 212, 191, 0.2)',
+          fontSize: '0.66rem',
+          color: '#2dd4bf',
+          margin: '1px 0',
+          maxWidth: '100%',
+          wordBreak: 'break-word'
+        }}>
+          <span style={{ fontSize: '0.68rem' }}>⚙️</span>
+          <span style={{ fontWeight: 600 }}>Executing: {toolLabel}</span>
+          {argsStr && <span style={{ opacity: 0.85, color: '#99f6e4', fontSize: '0.62rem' }}>{argsStr}</span>}
+        </div>
+      );
+    }
+
+    if (isToolResult) {
+      const cleanResult = cleanContent.replace(/⚙️\s*\[Tool Result\]\s*/i, '').trim();
+      const firstLine = cleanResult.split('\n')[0] || "Tool output received";
+
+      return (
+        <details style={{
+          margin: '2px 0',
+          background: 'rgba(15, 23, 42, 0.4)',
+          border: '1px solid rgba(56, 189, 248, 0.2)',
+          borderRadius: '6px',
+          padding: '2px 8px',
+          fontSize: '0.66rem',
+          color: '#38bdf8',
+          maxWidth: '100%'
+        }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 600, userSelect: 'none', display: 'flex', alignItems: 'center', gap: '5px', outline: 'none' }}>
+            <span style={{ fontSize: '0.68rem' }}>⚡</span>
+            <span>Tool Output</span>
+            <span style={{ fontSize: '0.62rem', opacity: 0.8, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
+              {firstLine}
+            </span>
+            <span style={{ fontSize: '0.58rem', opacity: 0.5, marginLeft: 'auto', flexShrink: 0 }}>(click to view)</span>
+          </summary>
+          <div style={{
+            marginTop: '4px',
+            paddingTop: '4px',
+            borderTop: '1px solid rgba(56, 189, 248, 0.12)',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: '0.64rem',
+            color: '#cbd5e1',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            maxHeight: '130px',
+            overflowY: 'auto'
+          }}>
+            {cleanResult}
+          </div>
+        </details>
+      );
+    }
+  }
+
+  return (
+    <div>
+      {thoughts.map((thought, idx) => (
+        <details
+          key={idx}
+          style={{
+            margin: '2px 0 6px 0',
+            background: 'rgba(139, 92, 246, 0.08)',
+            border: '1px solid rgba(139, 92, 246, 0.18)',
+            borderRadius: '6px',
+            padding: '2px 7px',
+            fontSize: '0.66rem',
+            color: '#a78bfa',
+            maxWidth: '100%'
+          }}
+        >
+          <summary style={{ cursor: 'pointer', fontWeight: '500', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px', outline: 'none' }}>
+            <span style={{ fontSize: '0.68rem' }}>🧠</span>
+            <span style={{ fontWeight: 600, color: '#c084fc' }}>Thought Process</span>
+            <span style={{ fontSize: '0.60rem', opacity: 0.5, marginLeft: 'auto' }}>(click to toggle)</span>
+          </summary>
+          <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid rgba(139, 92, 246, 0.12)', fontStyle: 'italic', fontSize: '0.72rem', color: '#cbd5e1', whiteSpace: 'pre-line', lineHeight: '1.35', maxHeight: '160px', overflowY: 'auto' }}>
+            {thought}
+          </div>
+        </details>
+      ))}
+      {cleanContent && (
+        <p style={{ margin: 0, whiteSpace: 'pre-line' }}>
+          {isSystem && !cleanContent.startsWith("⚙️") && <span style={{ color: 'var(--accent-teal)', fontWeight: 'bold', marginRight: '6px' }}>[SYSTEM]</span>}
+          {formatMessageText(cleanContent)}
+        </p>
+      )}
+    </div>
+  );
 };
 
 const ChatOverlay = ({
@@ -418,10 +580,7 @@ const ChatOverlay = ({
                     isSystem ? 'system' : isUser ? 'user' : 'assistant'
                   }`}
                 >
-                  <p style={{ margin: 0, whiteSpace: 'pre-line' }}>
-                    {isSystem && <span style={{ color: 'var(--accent-teal)', fontWeight: 'bold', marginRight: '6px' }}>[TOOL]</span>}
-                    {formatMessageText(msg.content)}
-                  </p>
+                  <RenderMessageContent content={msg.content} isSystem={isSystem} />
                 </div>
               </div>
             );

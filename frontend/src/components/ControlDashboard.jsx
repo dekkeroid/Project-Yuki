@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -710,8 +710,11 @@ const ControlDashboard = ({
     }
   };
 
-  const fetchToolsList = () => {
-    fetch(`${API_BASE}/api/tools`)
+  const [toolViewMode, setToolViewMode] = useState('active');
+
+  const fetchToolsList = (mode = toolViewMode) => {
+    const query = mode && mode !== 'active' ? `?mode=${mode}` : '';
+    fetch(`${API_BASE}/api/tools${query}`)
       .then(res => res.json())
       .then(data => {
         if (data && data.tools) {
@@ -729,9 +732,7 @@ const ControlDashboard = ({
     let interval = null;
     if (isOpen) {
       fetchSavedEndpoints();
-      if (activeTab === 'brain' || activeTab === 'info') {
-        fetchToolsList();
-      }
+      fetchToolsList();
 
       if (activeTab === 'memory') {
         fetchMood();
@@ -817,29 +818,30 @@ const ControlDashboard = ({
     }
   };
 
-  const handleUpdateSetting = async (key, value) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
-    if (key === 'tool_mode') {
+  const handleUpdateSetting = async (keyOrObj, value) => {
+    const updates = typeof keyOrObj === 'object' && keyOrObj !== null ? keyOrObj : { [keyOrObj]: value };
+    setSettings(prev => ({ ...prev, ...updates }));
+    if (updates.tool_mode) {
       setTimeout(() => fetchToolsList(), 100);
     }
     try {
       const res = await fetch(`${API_BASE}/api/settings/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [key]: value }),
+        body: JSON.stringify(updates),
       });
       if (res.ok) {
         const data = await res.json();
         if (data && data.settings) {
           setSettings(data.settings);
         }
-        if (key === 'tool_mode') {
+        if (updates.tool_mode) {
           fetchToolsList();
         }
-        if (['llm_simple_backend', 'llm_simple_base_url', 'llm_simple_api_key'].includes(key)) {
+        if (['llm_simple_backend', 'llm_simple_base_url', 'llm_simple_api_key'].some(k => k in updates)) {
           if (onRefreshSimpleLlmModels) setTimeout(() => onRefreshSimpleLlmModels(), 300);
         }
-        if (['llm_backend', 'llm_base_url', 'llm_api_key'].includes(key)) {
+        if (['llm_backend', 'llm_base_url', 'llm_api_key'].some(k => k in updates)) {
           if (onRefreshLlmModels) setTimeout(() => onRefreshLlmModels(), 300);
         }
       }
@@ -2211,6 +2213,61 @@ const ControlDashboard = ({
                     </button>
                   </div>
 
+                  {/* Always on Top Banner */}
+                  <div style={{
+                    background: settings.always_on_top !== false ? 'linear-gradient(135deg, rgba(56,189,248,0.15) 0%, rgba(139,92,246,0.15) 100%)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${settings.always_on_top !== false ? 'rgba(56,189,248,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                    borderRadius: '14px',
+                    padding: '12px 16px',
+                    marginBottom: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Monitor className="w-5 h-5 text-sky-400" />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>Always on Top (Pin Desktop Avatar)</div>
+                        <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                          Keeps Yuki floating over all open app windows and full-screen games.
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newVal = settings.always_on_top === false;
+                        handleUpdateSetting('always_on_top', newVal);
+                        if (window.electronAPI && window.electronAPI.setAlwaysOnTop) {
+                          window.electronAPI.setAlwaysOnTop(newVal);
+                        }
+                      }}
+                      style={{
+                        background: settings.always_on_top !== false ? 'linear-gradient(135deg, #38bdf8, #0284c7)' : 'rgba(255,255,255,0.08)',
+                        border: `1px solid ${settings.always_on_top !== false ? 'rgba(56,189,248,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                        borderRadius: '14px',
+                        width: '44px',
+                        height: '24px',
+                        cursor: 'pointer',
+                        position: 'relative',
+                        transition: 'all 0.2s ease',
+                        flexShrink: 0
+                      }}
+                    >
+                      <div style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        background: '#fff',
+                        position: 'absolute',
+                        top: '2px',
+                        left: settings.always_on_top !== false ? '22px' : '2px',
+                        transition: 'all 0.2s ease',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                      }} />
+                    </button>
+                  </div>
+
                   {/* Featured Chat Mode Toggle Banner */}
                   <div style={{
                     background: settings.chat_mode ? 'linear-gradient(135deg, rgba(139,92,246,0.2) 0%, rgba(217,70,239,0.15) 100%)' : 'rgba(255,255,255,0.03)',
@@ -2283,60 +2340,183 @@ const ControlDashboard = ({
                     )}
                   </div>
 
-                  {/* Always on Top Banner */}
+                  {/* Persistent Chat History Toggle Banner */}
                   <div style={{
-                    background: settings.always_on_top !== false ? 'linear-gradient(135deg, rgba(56,189,248,0.15) 0%, rgba(139,92,246,0.15) 100%)' : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${settings.always_on_top !== false ? 'rgba(56,189,248,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                    background: settings.persistent_chat_history ? 'linear-gradient(135deg, rgba(56,189,248,0.18) 0%, rgba(139,92,246,0.15) 100%)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${settings.persistent_chat_history ? 'rgba(56,189,248,0.4)' : 'rgba(255,255,255,0.08)'}`,
                     borderRadius: '14px',
                     padding: '12px 16px',
                     marginBottom: '12px',
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
+                    flexDirection: 'column',
+                    gap: '8px'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <Monitor className="w-5 h-5 text-sky-400" />
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>Always on Top (Pin Desktop Avatar)</div>
-                        <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
-                          Keeps Yuki floating over all open app windows and full-screen games.
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <History className="w-5 h-5 text-sky-400" />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>
+                            Persistent Chat History
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                            Save conversation logs to disk (<code style={{ color: '#38bdf8' }}>chat_history.json</code>) and restore them on app restart.
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newVal = !settings.persistent_chat_history;
+                          handleUpdateSetting('persistent_chat_history', newVal);
+                        }}
+                        style={{
+                          background: settings.persistent_chat_history ? 'linear-gradient(135deg, #0284c7, #0369a1)' : 'rgba(255,255,255,0.08)',
+                          border: `1px solid ${settings.persistent_chat_history ? 'rgba(56,189,248,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                          borderRadius: '14px',
+                          width: '44px',
+                          height: '24px',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          transition: 'all 0.2s ease',
+                          flexShrink: 0
+                        }}
+                      >
+                        <div style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '50%',
+                          background: '#fff',
+                          position: 'absolute',
+                          top: '2px',
+                          left: settings.persistent_chat_history ? '22px' : '2px',
+                          transition: 'all 0.2s ease',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                        }} />
+                      </button>
+                    </div>
+
+                    <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.5)', background: 'rgba(0,0,0,0.2)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', lineHeight: '1.4' }}>
+                      ℹ️ <strong>Storage & Pruning Note:</strong> When enabled, chat history is saved to <code>backend/chat_history.json</code>. Older turns are automatically summarized into a rolling context recap (up to ~2,500 tokens for local models, 40,000 tokens for cloud APIs) to preserve long-term context while staying within token limits.
+                    </div>
+                  </div>
+
+                  {/* Context Pruning & History Controls Card */}
+                  <div className="card-group" style={{ marginBottom: '12px' }}>
+                    <div className="card-group-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Sliders className="w-4 h-4 text-cyan-400" />
+                      <span className="card-group-title">Context Pruning & History Limits</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+                      {/* Basic AI Suite (<5B Local LLMs) */}
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '10px' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.78rem', color: '#38bdf8', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Cpu className="w-3.5 h-3.5" />
+                          <span>Basic Suite (Sub-5B Models)</span>
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>
+                          Tight budget tuned for weak local LLMs.
+                        </div>
+
+                        <div style={{ marginBottom: '8px' }}>
+                          <label style={{ fontSize: '0.68rem', color: '#cbd5e1', display: 'block', marginBottom: '2px' }}>Max Context Ceiling (Tokens):</label>
+                          <input
+                            type="number"
+                            min="500"
+                            max="15000"
+                            step="250"
+                            value={settings.basic_history_token_limit || 2500}
+                            onChange={(e) => handleUpdateSetting('basic_history_token_limit', parseInt(e.target.value) || 2500)}
+                            style={{
+                              width: '100%',
+                              padding: '4px 8px',
+                              fontSize: '0.75rem',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '6px',
+                              color: '#fff'
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '0.68rem', color: '#cbd5e1', display: 'block', marginBottom: '2px' }}>Min Intact Recent Turns:</label>
+                          <input
+                            type="number"
+                            min="2"
+                            max="20"
+                            step="1"
+                            value={settings.basic_history_keep_turns || 6}
+                            onChange={(e) => handleUpdateSetting('basic_history_keep_turns', parseInt(e.target.value) || 6)}
+                            style={{
+                              width: '100%',
+                              padding: '4px 8px',
+                              fontSize: '0.75rem',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '6px',
+                              color: '#fff'
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Advanced AI Suite (Cloud / Free Tier APIs) */}
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '10px' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.78rem', color: '#c084fc', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>Advanced Suite (Cloud / API)</span>
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>
+                          Large budget for strong APIs (Gemini, Groq, OpenRouter).
+                        </div>
+
+                        <div style={{ marginBottom: '8px' }}>
+                          <label style={{ fontSize: '0.68rem', color: '#cbd5e1', display: 'block', marginBottom: '2px' }}>Max Context Ceiling (Tokens):</label>
+                          <input
+                            type="number"
+                            min="5000"
+                            max="200000"
+                            step="2500"
+                            value={settings.advanced_history_token_limit || 40000}
+                            onChange={(e) => handleUpdateSetting('advanced_history_token_limit', parseInt(e.target.value) || 40000)}
+                            style={{
+                              width: '100%',
+                              padding: '4px 8px',
+                              fontSize: '0.75rem',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '6px',
+                              color: '#fff'
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '0.68rem', color: '#cbd5e1', display: 'block', marginBottom: '2px' }}>Min Intact Recent Turns:</label>
+                          <input
+                            type="number"
+                            min="6"
+                            max="50"
+                            step="2"
+                            value={settings.advanced_history_keep_turns || 16}
+                            onChange={(e) => handleUpdateSetting('advanced_history_keep_turns', parseInt(e.target.value) || 16)}
+                            style={{
+                              width: '100%',
+                              padding: '4px 8px',
+                              fontSize: '0.75rem',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '6px',
+                              color: '#fff'
+                            }}
+                          />
                         </div>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newVal = settings.always_on_top === false;
-                        handleUpdateSetting('always_on_top', newVal);
-                        if (window.electronAPI && window.electronAPI.setAlwaysOnTop) {
-                          window.electronAPI.setAlwaysOnTop(newVal);
-                        }
-                      }}
-                      style={{
-                        background: settings.always_on_top !== false ? 'linear-gradient(135deg, #38bdf8, #0284c7)' : 'rgba(255,255,255,0.08)',
-                        border: `1px solid ${settings.always_on_top !== false ? 'rgba(56,189,248,0.6)' : 'rgba(255,255,255,0.12)'}`,
-                        borderRadius: '14px',
-                        width: '44px',
-                        height: '24px',
-                        cursor: 'pointer',
-                        position: 'relative',
-                        transition: 'all 0.2s ease',
-                        flexShrink: 0
-                      }}
-                    >
-                      <div style={{
-                        width: '18px',
-                        height: '18px',
-                        borderRadius: '50%',
-                        background: '#fff',
-                        position: 'absolute',
-                        top: '2px',
-                        left: settings.always_on_top !== false ? '22px' : '2px',
-                        transition: 'all 0.2s ease',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                      }} />
-                    </button>
                   </div>
+
+
 
                   {/* General Preferences Group */}
                   <div className="card-group" style={{ marginBottom: '12px' }}>
@@ -2715,14 +2895,15 @@ const ControlDashboard = ({
                             value={settings.llm_simple_backend || 'lmstudio'}
                             onChange={async (e) => {
                               const newBackend = e.target.value;
-                              await handleUpdateSetting('llm_simple_backend', newBackend);
                               const defaults = {
                                 lmstudio: 'http://127.0.0.1:1234',
                                 ollama: 'http://127.0.0.1:11434',
                                 vllm: 'http://127.0.0.1:8000/v1',
                                 custom: 'https://generativelanguage.googleapis.com/v1beta/openai',
                               };
-                              if (defaults[newBackend]) handleUpdateSetting('llm_simple_base_url', defaults[newBackend]);
+                              const updates = { llm_simple_backend: newBackend };
+                              if (defaults[newBackend]) updates.llm_simple_base_url = defaults[newBackend];
+                              await handleUpdateSetting(updates);
                             }}
                             style={{
                               width: '100%',
@@ -3060,18 +3241,17 @@ const ControlDashboard = ({
                         value={settings.llm_backend || 'lmstudio'}
                         onChange={async (e) => {
                           const newBackend = e.target.value;
-                          await handleUpdateSetting('llm_model', '');
-                          await handleUpdateSetting('llm_backend', newBackend);
                           const defaults = {
                             lmstudio: 'http://127.0.0.1:1234',
                             ollama: 'http://127.0.0.1:11434',
                             vllm: 'http://127.0.0.1:8000/v1',
                             custom: 'https://generativelanguage.googleapis.com/v1beta/openai',
                           };
-                          if (defaults[newBackend]) await handleUpdateSetting('llm_base_url', defaults[newBackend]);
-                          if (newBackend !== 'none' && onRefreshLlmModels) {
-                            setTimeout(() => onRefreshLlmModels(), 500);
-                          }
+                          await handleUpdateSetting({
+                            llm_model: '',
+                            llm_backend: newBackend,
+                            ...(defaults[newBackend] ? { llm_base_url: defaults[newBackend] } : {})
+                          });
                         }}
                         style={{
                           width: '100%',
@@ -3200,14 +3380,14 @@ const ControlDashboard = ({
                                 onClick={async () => {
                                   setCustomLabel(p.label);
                                   const activeBackend = settings.llm_backend === 'openai' || settings.llm_backend === 'custom' ? settings.llm_backend : 'custom';
-                                  await handleUpdateSetting('llm_backend', activeBackend);
-                                  await handleUpdateSetting('llm_base_url', p.url);
+                                  const updates = {
+                                    llm_backend: activeBackend,
+                                    llm_base_url: p.url
+                                  };
                                   if (p.model && !settings.llm_model) {
-                                    await handleUpdateSetting('llm_model', p.model);
+                                    updates.llm_model = p.model;
                                   }
-                                  if (onRefreshLlmModels) {
-                                    setTimeout(() => onRefreshLlmModels(), 400);
-                                  }
+                                  await handleUpdateSetting(updates);
                                 }}
                                 className="glass-button"
                                 style={{
@@ -4447,8 +4627,34 @@ const ControlDashboard = ({
                     <span className="card-group-title">Registered LLM Tools</span>
                   </div>
                   <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '10px', background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.3)', color: '#c084fc', fontWeight: 600 }}>
-                    {toolsList.length} Active Tools
+                    {toolsList.length} Tools
                   </span>
+                </div>
+
+                {/* Mode Filter Selector */}
+                <div style={{ display: 'flex', gap: '4px', marginTop: '8px', marginBottom: '4px' }}>
+                  {['active', 'basic', 'advanced', 'all'].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setToolViewMode(m);
+                        fetchToolsList(m);
+                      }}
+                      style={{
+                        padding: '3px 8px',
+                        fontSize: '0.66rem',
+                        borderRadius: '6px',
+                        background: toolViewMode === m ? 'rgba(139, 92, 246, 0.35)' : 'rgba(255, 255, 255, 0.05)',
+                        border: toolViewMode === m ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
+                        color: toolViewMode === m ? '#fff' : '#cbd5e1',
+                        cursor: 'pointer',
+                        textTransform: 'capitalize'
+                      }}
+                    >
+                      {m === 'active' ? `Active (${settings.tool_mode || 'basic'})` : m}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Tool Search Input */}

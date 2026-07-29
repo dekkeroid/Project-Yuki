@@ -331,8 +331,34 @@ app.add_middleware(
 memory_manager = MemoryManager()
 agent_executor = None  # Initialized in lifespan to defer heavy imports
 
-# Chat history in-memory (per session or global for a single user)
-global_chat_history: List[Dict[str, str]] = []
+# Chat history helper functions
+def save_persistent_chat_history(history: list):
+    try:
+        if memory_manager.profile.get("settings", {}).get("persistent_chat_history", False):
+            import json
+            h_path = config.BASE_DIR / "chat_history.json"
+            with open(h_path, "w", encoding="utf-8") as f:
+                json.dump(history, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[History] Could not save chat_history.json: {e}")
+
+def load_persistent_chat_history() -> list:
+    try:
+        if memory_manager.profile.get("settings", {}).get("persistent_chat_history", False):
+            h_path = config.BASE_DIR / "chat_history.json"
+            if h_path.exists():
+                import json
+                with open(h_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        print(f"[Startup] Loaded {len(data)} persistent chat messages from chat_history.json")
+                        return data
+    except Exception as e:
+        print(f"[Startup] Could not load chat_history.json: {e}")
+    return []
+
+# Chat history in-memory or loaded from disk if persistent setting enabled
+global_chat_history: List[Dict[str, str]] = load_persistent_chat_history()
 tts_online_status = True
 
 active_websockets: List[WebSocket] = []
@@ -341,6 +367,9 @@ active_websockets: List[WebSocket] = []
 def make_speech_friendly(text: str) -> str:
     if not text:
         return ""
+    # Strip thought/think/reasoning blocks
+    text = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<(thought|think|reasoning)>[\s\S]*$', '', text, flags=re.IGNORECASE)
     normalized = text.strip()
     lower = normalized.lower()
 
@@ -427,71 +456,104 @@ def health_check():
         "llm_base_url": config.get_effective_base_url(),
     }
 
+_models_cache = {}
+_models_in_flight = {}
+MODELS_CACHE_TTL_SECONDS = 15.0
+
+def invalidate_models_cache():
+    global _models_cache
+    _models_cache.clear()
+
 @app.get("/api/models")
 async def get_available_models(target: str = "complex"):
     """
     Returns the dynamically loaded list of models from the active LLM backend.
+    Includes 15-second TTL caching and in-flight request deduplication to prevent
+    spamming outbound provider API calls.
     """
     from app.agent.llm_backend import get_backend
     from app.utils.security import decrypt_api_key
-    
-    print(f"\n[ModelFetch] === /api/models called with target='{target}' ===")
 
-    # If target is simple, instantiate backend with simple config
+    # Extract backend config details for cache key
     if target == "simple":
         simple_backend_type = getattr(config, "LLM_SIMPLE_BACKEND", "lmstudio")
         simple_base_url = getattr(config, "LLM_SIMPLE_BASE_URL", "")
         simple_api_key = getattr(config, "LLM_SIMPLE_API_KEY", "")
-        masked_key = (simple_api_key[:4] + "...") if simple_api_key and len(simple_api_key) > 8 else ("(set)" if simple_api_key else "(empty)")
-        print(f"[ModelFetch][Simple] backend_type='{simple_backend_type}', base_url='{simple_base_url}', api_key={masked_key}")
         if simple_api_key and (simple_api_key.startswith("enc_v1:") or simple_api_key.startswith("gAAAA")):
             simple_api_key = decrypt_api_key(simple_api_key)
-            print(f"[ModelFetch][Simple] api_key was encrypted, decrypted (len={len(simple_api_key)})")
-        
-        # We need a temporary override to config to trick get_backend, or we can just construct it
-        from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
-        if simple_backend_type == "ollama":
-            backend = OllamaBackend(base_url_override=simple_base_url)
-            print(f"[ModelFetch][Simple] Created OllamaBackend, base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
-        elif simple_backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
-            backend = OpenAICompatibleBackend(base_url_override=simple_base_url, api_key_override=simple_api_key)
-            print(f"[ModelFetch][Simple] Created OpenAICompatibleBackend, base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
-        elif simple_backend_type == "none":
-            print(f"[ModelFetch][Simple] Backend type is 'none', returning empty")
-            return {"models": [], "active": getattr(config, "LLM_SIMPLE_MODEL", "")}
-        else:
-            backend = LMStudioBackend(base_url_override=simple_base_url)
-            print(f"[ModelFetch][Simple] Created LMStudioBackend, base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
+        b_type = simple_backend_type
+        b_url = simple_base_url
+        b_key = simple_api_key
+        active_model = getattr(config, "LLM_SIMPLE_MODEL", "")
     else:
         if config.LLM_API_KEY and (config.LLM_API_KEY.startswith("enc_v1:") or config.LLM_API_KEY.startswith("gAAAA")):
             config.LLM_API_KEY = decrypt_api_key(config.LLM_API_KEY)
-        backend = get_backend()
-        print(f"[ModelFetch][Complex] backend '{backend.name}', base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
+        b_type = config.get_backend_type()
+        b_url = config.get_effective_base_url()
+        b_key = config.LLM_API_KEY
+        active_model = config.LLM_MODEL
+
+    cache_key = (target, b_type, b_url, hash(b_key or ""))
+
+    # 1. Check TTL cache
+    now = time.time()
+    if cache_key in _models_cache:
+        cached = _models_cache[cache_key]
+        if now - cached["timestamp"] < MODELS_CACHE_TTL_SECONDS:
+            print(f"[ModelFetch][{target}] Serving {len(cached['models'])} models from cache (TTL left: {round(MODELS_CACHE_TTL_SECONDS - (now - cached['timestamp']), 1)}s)")
+            return {"models": cached["models"], "active": active_model}
+
+    # 2. Check in-flight requests (request coalescing)
+    if cache_key in _models_in_flight:
+        print(f"[ModelFetch][{target}] Request already in-flight — waiting for shared result...")
+        models = await _models_in_flight[cache_key]
+        return {"models": models, "active": active_model}
+
+    # 3. Create in-flight task
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+    _models_in_flight[cache_key] = fut
+
+    print(f"\n[ModelFetch] === /api/models called with target='{target}' ===")
+
     try:
+        if target == "simple":
+            masked_key = (simple_api_key[:4] + "...") if simple_api_key and len(simple_api_key) > 8 else ("(set)" if simple_api_key else "(empty)")
+            print(f"[ModelFetch][Simple] backend_type='{simple_backend_type}', base_url='{simple_base_url}', api_key={masked_key}")
+            from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
+            if simple_backend_type == "ollama":
+                backend = OllamaBackend(base_url_override=simple_base_url)
+            elif simple_backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
+                backend = OpenAICompatibleBackend(base_url_override=simple_base_url, api_key_override=simple_api_key)
+            elif simple_backend_type == "none":
+                print(f"[ModelFetch][Simple] Backend type is 'none', returning empty")
+                fut.set_result([])
+                _models_in_flight.pop(cache_key, None)
+                return {"models": [], "active": active_model}
+            else:
+                backend = LMStudioBackend(base_url_override=simple_base_url)
+        else:
+            backend = get_backend()
+            print(f"[ModelFetch][Complex] backend '{backend.name}', base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
+
         print(f"[ModelFetch] Calling backend.list_models() ...")
-        models = await backend.list_models()
-        print(f"[ModelFetch] list_models() returned {len(models)} models: {[m.get('id', '?') for m in models]}")
-        b_type = simple_backend_type if target == "simple" else config.get_backend_type()
-        result = [{"name": m["id"], "type": b_type} for m in models]
-        active_model = getattr(config, "LLM_SIMPLE_MODEL", "") if target == "simple" else config.LLM_MODEL
-        print(f"[ModelFetch] Retrieved {len(result)} models from {backend.name}, active_model='{active_model}'")
-        return {"models": result, "active": active_model}
+        raw_models = await backend.list_models()
+        print(f"[ModelFetch] list_models() returned {len(raw_models)} models")
+        result_models = [{"name": m["id"], "type": b_type} for m in raw_models]
+        
+        # Save to cache
+        _models_cache[cache_key] = {"models": result_models, "timestamp": time.time()}
+        fut.set_result(result_models)
+        return {"models": result_models, "active": active_model}
+
     except Exception as e:
-        print(f"[ModelFetch][{target}] Could not reach {backend.name} — {e}. Using fallback model.")
+        print(f"[ModelFetch][{target}] Could not reach backend — {e}. Using fallback model.")
+        fallback_models = [{"name": active_model, "type": b_type}] if active_model else []
+        fut.set_result(fallback_models)
+        return {"models": fallback_models, "active": active_model}
+    finally:
+        _models_in_flight.pop(cache_key, None)
 
-    active_model = getattr(config, "LLM_SIMPLE_MODEL", "") if target == "simple" else config.LLM_MODEL
-    b_type = simple_backend_type if target == "simple" else config.get_backend_type()
-    fallback_models = [
-        {"name": active_model, "type": b_type},
-    ]
-    seen = set()
-    models = []
-    for m in fallback_models:
-        if m["name"] not in seen:
-            seen.add(m["name"])
-            models.append(m)
-
-    return {"models": models, "active": active_model}
 
 @app.get("/api/models/vrm")
 def get_vrm_models():
@@ -745,6 +807,11 @@ class SettingsUpdateRequest(BaseModel):
     llm_simple_base_url: Optional[str] = None
     llm_simple_api_key: Optional[str] = None
     llm_simple_model: Optional[str] = None
+    persistent_chat_history: Optional[bool] = None
+    basic_history_token_limit: Optional[int] = None
+    basic_history_keep_turns: Optional[int] = None
+    advanced_history_token_limit: Optional[int] = None
+    advanced_history_keep_turns: Optional[int] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -757,6 +824,19 @@ async def update_settings(req: SettingsUpdateRequest):
 
     backend_switched = False
     captured_old_backend = None
+    if req.persistent_chat_history is not None:
+        val = bool(req.persistent_chat_history)
+        memory_manager.update_setting("persistent_chat_history", val)
+        if val:
+            save_persistent_chat_history(global_chat_history)
+    if req.basic_history_token_limit is not None:
+        memory_manager.update_setting("basic_history_token_limit", int(req.basic_history_token_limit))
+    if req.basic_history_keep_turns is not None:
+        memory_manager.update_setting("basic_history_keep_turns", int(req.basic_history_keep_turns))
+    if req.advanced_history_token_limit is not None:
+        memory_manager.update_setting("advanced_history_token_limit", int(req.advanced_history_token_limit))
+    if req.advanced_history_keep_turns is not None:
+        memory_manager.update_setting("advanced_history_keep_turns", int(req.advanced_history_keep_turns))
     if req.send_tools_in_simple is not None:
         config.SEND_TOOLS_IN_SIMPLE = bool(req.send_tools_in_simple)
         memory_manager.update_setting("send_tools_in_simple", bool(req.send_tools_in_simple))
@@ -832,6 +912,9 @@ async def update_settings(req: SettingsUpdateRequest):
             elif new_backend in ("openai", "custom"):
                 config.LLM_BASE_URL = ""
                 memory_manager.update_setting("llm_base_url", "")
+    if any(k is not None for k in [req.llm_backend, req.llm_base_url, req.llm_api_key, req.llm_simple_backend, req.llm_simple_base_url, req.llm_simple_api_key]):
+        invalidate_models_cache()
+
     if req.llm_base_url is not None:
         config.LLM_BASE_URL = req.llm_base_url.strip()
         memory_manager.update_setting("llm_base_url", req.llm_base_url.strip())
@@ -1143,6 +1226,7 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
         memory_manager.update_setting("llm_api_key", ep.get("api_key", ""))
         reset_backend()
 
+    invalidate_models_cache()
     await broadcast_profile_update()
     return {
         "message": f"Activated custom endpoint '{ep.get('label')}' for {target_type}",
@@ -1250,13 +1334,24 @@ async def speech_status(req: dict):
     return {"status": "ok"}
 
 @app.get("/api/tools")
-async def get_tools_list():
+async def get_tools_list(mode: Optional[str] = None):
     """
-    Returns all registered tool definitions based on active TOOL_MODE ('basic' vs 'advanced'),
+    Returns registered tool definitions based on mode ('basic', 'advanced', 'all', or default active TOOL_MODE),
     including name, description, parameters schema, and category.
     """
-    from app.tools.definitions import get_tools_definition
-    tools = get_tools_definition()
+    from app.tools.definitions import get_basic_tools_definition, get_advanced_jarvis_tools_definition, get_tools_definition
+    
+    if mode == "basic":
+        tools = get_basic_tools_definition()
+    elif mode == "advanced":
+        tools = get_advanced_jarvis_tools_definition()
+    elif mode == "all":
+        basic = get_basic_tools_definition()
+        adv = get_advanced_jarvis_tools_definition()
+        existing = {t.get("function", {}).get("name") for t in basic if isinstance(t, dict)}
+        tools = list(basic) + [t for t in adv if t.get("function", {}).get("name") not in existing]
+    else:
+        tools = get_tools_definition()
     
     # Also merge any active MCP tools if available
     if agent_executor and hasattr(agent_executor, "mcp_tools"):
@@ -2168,25 +2263,37 @@ async def websocket_endpoint(websocket: WebSocket):
                                                     "backend_used": backend_used
                                                 })
                                                 
-                                                # Batch into sentences for TTS
+                                                # Batch into sentences for TTS (skipping <thought>/<think>/<reasoning> blocks)
                                                 sentence_buffer += value
                                                 while True:
+                                                    sentence_buffer = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', sentence_buffer, flags=re.IGNORECASE)
+                                                    if re.search(r'<(thought|think|reasoning)>(?![\s\S]*?</\1>)', sentence_buffer, flags=re.IGNORECASE):
+                                                        break
                                                     boundary = find_sentence_boundary(sentence_buffer)
                                                     if boundary == -1:
                                                         break
                                                     sentence = sentence_buffer[:boundary + 1].strip()
                                                     sentence_buffer = sentence_buffer[boundary + 1:]
-                                                    if sentence:
-                                                        queue_sentence(sentence, audio_idx)
+                                                    clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
+                                                    if clean_s:
+                                                        queue_sentence(clean_s, audio_idx)
                                                         audio_idx += 1
                                                         
                                             elif event_type == "tool_start":
                                                 tool_start_time = time.time()
-                                                # Notify frontend about tool call execution
+                                                tool_name = value.get("name") if isinstance(value, dict) else str(value)
+                                                tool_args = value.get("args") if isinstance(value, dict) else {}
+                                                args_str = ""
+                                                if tool_args and isinstance(tool_args, dict):
+                                                    parts = [f"{k}={repr(v)}" for k, v in tool_args.items() if k != "confirmation_grant_id"]
+                                                    args_str = f" ({', '.join(parts)})" if parts else ""
+
                                                 await websocket.send_json({
                                                     "type": "status",
                                                     "status": "thinking",
-                                                    "message": f"Running tool '{value}'..."
+                                                    "message": f"Running tool '{tool_name}'{args_str}...",
+                                                    "tool_name": tool_name,
+                                                    "tool_args": tool_args
                                                 })
                                             elif event_type == "tool_result":
                                                 if tool_start_time is not None:
@@ -2203,6 +2310,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                                 })
                                             elif event_type == "final_history":
                                                 global_chat_history = value
+                                                save_persistent_chat_history(global_chat_history)
                                                 
                                             event = await gen.__anext__()
                                 except StopAsyncIteration:
@@ -2213,8 +2321,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                 await websocket.send_json({"type": "error", "message": friendly_error})
                             
                             # Feed any remaining text in sentence buffer
-                            if sentence_buffer.strip():
-                                queue_sentence(sentence_buffer.strip(), audio_idx)
+                            clean_remaining = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence_buffer, flags=re.IGNORECASE).strip()
+                            if clean_remaining:
+                                queue_sentence(clean_remaining, audio_idx)
                                 audio_idx += 1
                                 
                             # Signal the worker to finish and wait for it
@@ -2281,7 +2390,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 expression = data.get("expression", None)
                 if tts_text and tts_online_status:
                     try:
-                        import re
                         # Split text into sentences
                         sentences = []
                         remaining_text = tts_text

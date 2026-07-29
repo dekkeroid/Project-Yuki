@@ -556,37 +556,73 @@ class AgentExecutor:
 
         system_msg = {"role": "system", "content": system_content}
 
-        # Token-approximate history capping.
-        # Frontier models (Gemini, GPT-4o, etc.) have 100K–1M+ context windows
-        # so we use much looser limits in advanced mode.
-        # Local models (8–32K context) keep the original tight budget.
+        # Dual-Tier Rolling Summarization Pruning Strategy:
+        # Dynamically uses user-configured token limits and intact turn settings
         APPROX_CHARS_PER_TOKEN = 3.5
         is_advanced = getattr(config, "TOOL_MODE", "basic") == "advanced"
+        settings = self.memory.profile.get("settings", {}) if hasattr(self, "memory") and hasattr(self.memory, "profile") else {}
+
         if is_advanced:
-            history_limit = int(100000 * APPROX_CHARS_PER_TOKEN)   # ~350 000 chars
-            pruned_target = int(50000 * APPROX_CHARS_PER_TOKEN)    # ~175 000 chars
+            user_token_limit = int(settings.get("advanced_history_token_limit", 40000))
+            min_keep_turns = int(settings.get("advanced_history_keep_turns", 16))
         else:
-            history_limit = int(1000 * APPROX_CHARS_PER_TOKEN)     # ~3 500 chars
-            pruned_target = int(500 * APPROX_CHARS_PER_TOKEN)      # ~1 750 chars
+            user_token_limit = int(settings.get("basic_history_token_limit", 2500))
+            min_keep_turns = int(settings.get("basic_history_keep_turns", 6))
+
+        history_limit = int(user_token_limit * APPROX_CHARS_PER_TOKEN)
+        pruned_target = int((user_token_limit / 2) * APPROX_CHARS_PER_TOKEN)
 
         pruned_history = list(chat_history)
         total_chars = sum(len(m.get("content") or "") for m in pruned_history)
 
+        removed_turns = []
         if total_chars > history_limit:
             est_tokens = int(total_chars / APPROX_CHARS_PER_TOKEN)
-            print(f"[History] {total_chars} chars (~{est_tokens} tokens) exceeds budget. Pruning oldest turns...")
-            while total_chars > pruned_target and len(pruned_history) > 2:
+            print(f"[History] {total_chars} chars (~{est_tokens} tokens) exceeds budget limit ({int(history_limit/APPROX_CHARS_PER_TOKEN)} tokens). Summarizing oldest turns...")
+            while total_chars > pruned_target and len(pruned_history) > min_keep_turns:
                 removed_1 = pruned_history.pop(0)
-                removed_2 = pruned_history.pop(0)
-                total_chars -= (len(removed_1.get("content") or "") + len(removed_2.get("content") or ""))
-                # Never orphan a tool result — if the next message is a tool response
-                # whose matching assistant(tool_calls) was just removed, toss it too.
+                total_chars -= len(removed_1.get("content") or "")
+                removed_turns.append(removed_1)
+
+                if pruned_history and len(pruned_history) > min_keep_turns:
+                    removed_2 = pruned_history.pop(0)
+                    total_chars -= len(removed_2.get("content") or "")
+                    removed_turns.append(removed_2)
+
+                # Never orphan a tool result
                 if pruned_history and pruned_history[0].get("role") == "tool":
                     orphan = pruned_history.pop(0)
                     total_chars -= len(orphan.get("content") or "")
-            print(f"[History] Pruned to {total_chars} chars (~{int(total_chars / APPROX_CHARS_PER_TOKEN)} tokens, {len(pruned_history)} messages).")
+                    removed_turns.append(orphan)
 
-        return [system_msg] + pruned_history + [{"role": "user", "content": user_message}]
+            print(f"[History] Retained {len(pruned_history)} active turns (~{int(total_chars / APPROX_CHARS_PER_TOKEN)} tokens). Summarized {len(removed_turns)} older messages into conversation recap.")
+
+        # Build rolling conversation summary from removed_turns
+        recap_msg = None
+        if removed_turns:
+            recap_snippets = []
+            for m in removed_turns:
+                role = m.get("role", "")
+                content = (m.get("content") or "").strip()
+                # Clean thought blocks from recap
+                content = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', content, flags=re.IGNORECASE).strip()
+                if not content:
+                    continue
+                speaker = "User" if role == "user" else ("Yuki" if role == "assistant" else "Tool")
+                snippet = content[:160] + ("..." if len(content) > 160 else "")
+                recap_snippets.append(f"- {speaker}: {snippet}")
+
+            if recap_snippets:
+                recap_text = "[EARLIER CONVERSATION RECAP]\nKey details from archived earlier context:\n" + "\n".join(recap_snippets[-12:])
+                recap_msg = {"role": "system", "content": recap_text}
+
+        final_messages = [system_msg]
+        if recap_msg:
+            final_messages.append(recap_msg)
+        final_messages.extend(pruned_history)
+        final_messages.append({"role": "user", "content": user_message})
+
+        return final_messages
 
     # ------------------------------------------------------------------ #
     #  Task router                                                          #
@@ -1431,7 +1467,7 @@ class AgentExecutor:
                 # Give the backend/frontend a moment to stream, generate TTS, and start playback
                 await asyncio.sleep(1.0)
                 
-            yield "tool_start", tool_name, "resolver"
+            yield "tool_start", {"name": tool_name, "args": tool_args}, "resolver"
             tool_result = str(await self._run_tool_async(tool_name, tool_args))
 
             target_path = _extract_confirmation_target(tool_result)
@@ -1630,7 +1666,7 @@ class AgentExecutor:
                     executed_calls.add(call_signature)
                     
                     print(f"Agent triggered tool '{tool_name}' with args {tool_args} (iteration {iteration})")
-                    yield "tool_start", tool_name, backend_used
+                    yield "tool_start", {"name": tool_name, "args": tool_args}, backend_used
 
                     if not skip_execution:
                         tool_result = await self._run_tool_async(tool_name, tool_args)

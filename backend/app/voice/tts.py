@@ -261,10 +261,12 @@ def transliterate_for_tts(text: str) -> str:
 
 
 def clean_text_for_tts(text: str) -> str:
-    if not text:
-        return ""
     import re
-    
+
+    # 0. Strip thought / reasoning / think blocks (including unclosed tags)
+    text = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<(thought|think|reasoning)>[\s\S]*$', '', text, flags=re.IGNORECASE)
+
     # 1. Clean URLs/web links: e.g. "https://dsad.com/dsad/last" -> "dsad.com"
     text = re.sub(r'\bhttps?://(?:www\.)?([^/\s]+)(?:/[^\s]*)?', r'\1', text)
     text = re.sub(r'(?<!http://)(?<!https://)\bwww\.([^/\s]+)(?:/[^\s]*)?', r'\1', text)

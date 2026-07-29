@@ -121,12 +121,30 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_query_file_db",
-                "description": "Search the SQLite indexed file database (yuki_files.db) for files across PC drives. Instant FTS5 text and path matching.",
+                "description": "Search the SQLite indexed file database (yuki_files.db) across all PC drives. Matches file names, parent folders, full directory paths, Japanese/Chinese Romaji/Pinyin transliterations, and metadata tags (title, artist, genre). Uses density ranking (/o algorithm).",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Filename, project name, or file extension keyword to search in DB."},
-                        "limit": {"type": "integer", "description": "Max results to return (default 15)."}
+                        "query": {
+                            "type": "string",
+                            "description": "Search query keywords (e.g. 'fate stay night ep 1', 'elden ring save file', 'python script'). Searches file names AND parent folder paths."
+                        },
+                        "category": {
+                            "type": "string",
+                            "description": "Optional category filter: 'video', 'audio', 'image', 'document', 'executable', 'archive', or 'code'."
+                        },
+                        "extension": {
+                            "type": "string",
+                            "description": "Optional exact file extension filter (e.g. '.mp4', '.mkv', '.pdf', '.zip', '.exe')."
+                        },
+                        "path_hint": {
+                            "type": "string",
+                            "description": "Optional folder or drive path hint (e.g. 'D:', 'Downloads', 'Anime', 'Desktop', 'Games')."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results to return (default 15)."
+                        }
                     },
                     "required": ["query"]
                 }
