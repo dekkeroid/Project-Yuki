@@ -1055,7 +1055,7 @@ class AgentExecutor:
         """Return tool schemas from MCP discovery, with local-schema fallback."""
         overrides = overrides or {}
         effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
-        use_dynamic = self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
+        use_dynamic = overrides.get("dynamic_tool_calling") if overrides.get("dynamic_tool_calling") is not None else self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
         user_message = ""
         for msg in reversed(messages):
             if msg.get("role") == "user":
@@ -1560,18 +1560,20 @@ class AgentExecutor:
                 intent_tool_hint = ""
                 print("[ChatMode] Pure chat mode active — all tools disabled")
         else:
-            if config.LLM_MODE == 1:
+            effective_llm_mode = overrides.get("llm_mode") if overrides.get("llm_mode") is not None else getattr(config, "LLM_MODE", 3)
+            effective_enable_intent = overrides.get("enable_intent_check") if overrides.get("enable_intent_check") is not None else settings.get("enable_intent_check", True)
+
+            if effective_llm_mode == 1:
                 resolved_backend = "simple"
-            elif config.LLM_MODE == 2:
+            elif effective_llm_mode == 2:
                 resolved_backend = "complex"
-            elif config.LLM_MODE == 3:
+            elif effective_llm_mode == 3:
                 resolved_backend = self._classify_task(user_message) if user_message else "simple"
             else:
                 resolved_backend = self._classify_task(user_message) if user_message else "simple"
 
             intent_source = "regex"
-            enable_intent = settings.get("enable_intent_check", True)
-            if config.LLM_MODE != 1 and enable_intent and resolved_backend == "complex" and user_message:
+            if effective_llm_mode != 1 and effective_enable_intent and resolved_backend == "complex" and user_message:
                 intent, intent_tool_hint, intent_source = await self._check_tool_intent(user_message, chat_history)
                 if intent == "chat":
                     resolved_backend = "simple"
@@ -1604,7 +1606,8 @@ class AgentExecutor:
             while iteration < max_iterations:
                 iteration += 1
                 
-                use_tools = (resolved_backend != "simple") or (resolved_backend == "simple" and getattr(config, "SEND_TOOLS_IN_SIMPLE", False))
+                effective_send_tools = overrides.get("send_tools_in_simple") if overrides.get("send_tools_in_simple") is not None else getattr(config, "SEND_TOOLS_IN_SIMPLE", False)
+                use_tools = (resolved_backend != "simple") or (resolved_backend == "simple" and effective_send_tools)
                 
                 # Debug: Show what's being sent to LLM
                 msg_roles = [m.get('role') for m in current_messages]

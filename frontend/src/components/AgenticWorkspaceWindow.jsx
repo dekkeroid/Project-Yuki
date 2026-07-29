@@ -132,6 +132,23 @@ export const AgenticWorkspaceWindow = ({
     };
   }, [onSendMessage]);
 
+  const [llmModeOverride, setLlmModeOverride] = useState(() => {
+    const saved = localStorage.getItem('yuki-override-llm-mode');
+    return saved !== null ? parseInt(saved, 10) : 3;
+  });
+  const [enableIntentCheckOverride, setEnableIntentCheckOverride] = useState(() => {
+    const saved = localStorage.getItem('yuki-override-intent-check');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [dynamicToolCallingOverride, setDynamicToolCallingOverride] = useState(() => {
+    const saved = localStorage.getItem('yuki-override-dynamic-tools');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [sendToolsInSimpleOverride, setSendToolsInSimpleOverride] = useState(() => {
+    const saved = localStorage.getItem('yuki-override-tools-in-simple');
+    return saved !== null ? saved === 'true' : false;
+  });
+
   const handleSendPrompt = (textToSend) => {
     if (!textToSend.trim()) return;
 
@@ -151,6 +168,10 @@ export const AgenticWorkspaceWindow = ({
         message: textToSend,
         overrides: {
           tool_mode: chatWindowToolMode,
+          llm_mode: llmModeOverride,
+          enable_intent_check: enableIntentCheckOverride,
+          dynamic_tool_calling: dynamicToolCallingOverride,
+          send_tools_in_simple: sendToolsInSimpleOverride,
           prompt_persona: promptPersona,
           prompt_expressions: promptExpressions,
           prompt_memory: promptMemory,
@@ -1375,8 +1396,8 @@ export const AgenticWorkspaceWindow = ({
               onClick={() => setActiveTab('memory')}
               style={{
                 flex: 1,
-                padding: '7px 10px',
-                fontSize: '0.74rem',
+                padding: '7px 8px',
+                fontSize: '0.72rem',
                 fontWeight: 600,
                 border: 'none',
                 borderRadius: '6px',
@@ -1386,11 +1407,33 @@ export const AgenticWorkspaceWindow = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '5px',
+                gap: '4px',
                 transition: 'all 0.15s ease'
               }}
             >
-              <Brain style={{ width: '13px', height: '13px' }} /> Memory & State
+              <Brain style={{ width: '13px', height: '13px' }} /> Memory
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('brain')}
+              style={{
+                flex: 1,
+                padding: '7px 8px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                border: 'none',
+                borderRadius: '6px',
+                background: activeTab === 'brain' ? 'rgba(167, 139, 250, 0.22)' : 'transparent',
+                color: activeTab === 'brain' ? '#c4b5fd' : '#94a3b8',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Cpu style={{ width: '13px', height: '13px' }} /> AI Brain
             </button>
           </div>
 
@@ -1531,6 +1574,250 @@ export const AgenticWorkspaceWindow = ({
               <div style={{ background: 'rgba(15, 23, 42, 0.7)', borderRadius: '8px', padding: '10px', border: '1px solid rgba(244, 114, 182, 0.25)', fontSize: '0.74rem', color: '#e2e8f0', lineHeight: '1.4' }}>
                 <div style={{ fontSize: '0.68rem', color: '#f472b6', fontWeight: 600, marginBottom: '4px' }}>Saved Profile & Persona Facts</div>
                 {settings.user_name ? `• User Name: ${settings.user_name}` : '• No personal user facts remembered yet.'}
+              </div>
+            </div>
+          )}
+
+          {/* Tab 4: AI Brain & Execution Overrides */}
+          {activeTab === 'brain' && (
+            <div style={{ flex: 1, padding: '14px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ fontWeight: '600', fontSize: '0.76rem', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Cpu style={{ width: '14px', height: '14px' }} />
+                Per-Turn AI Brain & Execution Overrides
+              </div>
+
+              {/* Section 1: Tool Operating Suite */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600, marginBottom: '8px' }}>
+                  Tool Operating Suite
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChatWindowToolMode('basic');
+                      localStorage.setItem('yuki-chat-tool-mode', 'basic');
+                    }}
+                    style={{
+                      padding: '7px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      border: chatWindowToolMode === 'basic' ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                      background: chatWindowToolMode === 'basic' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(0,0,0,0.3)',
+                      color: chatWindowToolMode === 'basic' ? '#38bdf8' : '#94a3b8',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ⚡ Basic Mode
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChatWindowToolMode('advanced');
+                      localStorage.setItem('yuki-chat-tool-mode', 'advanced');
+                    }}
+                    style={{
+                      padding: '7px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      border: chatWindowToolMode === 'advanced' ? '1px solid #c4b5fd' : '1px solid rgba(255,255,255,0.1)',
+                      background: chatWindowToolMode === 'advanced' ? 'rgba(167, 139, 250, 0.2)' : 'rgba(0,0,0,0.3)',
+                      color: chatWindowToolMode === 'advanced' ? '#c4b5fd' : '#94a3b8',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🤖 Autonomous Jarvis
+                  </button>
+                </div>
+              </div>
+
+              {/* Section 2: Prompt Strategy / LLM Mode */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600, marginBottom: '8px' }}>
+                  Prompt Strategy (LLM Mode)
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLlmModeOverride(3);
+                      localStorage.setItem('yuki-override-llm-mode', '3');
+                    }}
+                    style={{
+                      padding: '7px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      textAlign: 'left',
+                      border: llmModeOverride === 3 ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                      background: llmModeOverride === 3 ? 'rgba(56, 189, 248, 0.2)' : 'rgba(0,0,0,0.3)',
+                      color: llmModeOverride === 3 ? '#38bdf8' : '#94a3b8',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🔄 Mode 3 — Dynamic Mixed Prompts (Default)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLlmModeOverride(1);
+                      localStorage.setItem('yuki-override-llm-mode', '1');
+                    }}
+                    style={{
+                      padding: '7px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      textAlign: 'left',
+                      border: llmModeOverride === 1 ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.1)',
+                      background: llmModeOverride === 1 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(0,0,0,0.3)',
+                      color: llmModeOverride === 1 ? '#f59e0b' : '#94a3b8',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ⚡ Mode 1 — Fast/Simple Single Prompt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLlmModeOverride(2);
+                      localStorage.setItem('yuki-override-llm-mode', '2');
+                    }}
+                    style={{
+                      padding: '7px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      textAlign: 'left',
+                      border: llmModeOverride === 2 ? '1px solid #c4b5fd' : '1px solid rgba(255,255,255,0.1)',
+                      background: llmModeOverride === 2 ? 'rgba(167, 139, 250, 0.2)' : 'rgba(0,0,0,0.3)',
+                      color: llmModeOverride === 2 ? '#c4b5fd' : '#94a3b8',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🧠 Mode 2 — Full Agentic Complex Prompt
+                  </button>
+                </div>
+              </div>
+
+              {/* Section 3: Granular Execution Flags */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600 }}>
+                  Granular Execution Flags
+                </div>
+
+                {/* LLM Intent Check */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.74rem', color: '#e2e8f0' }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>LLM Intent Check</div>
+                    <div style={{ fontSize: '0.64rem', color: '#94a3b8' }}>Double-checks tool intent before calling</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !enableIntentCheckOverride;
+                      setEnableIntentCheckOverride(next);
+                      localStorage.setItem('yuki-override-intent-check', String(next));
+                    }}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '12px',
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      border: enableIntentCheckOverride ? '1px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
+                      background: enableIntentCheckOverride ? 'rgba(34, 197, 94, 0.2)' : 'rgba(0,0,0,0.4)',
+                      color: enableIntentCheckOverride ? '#4ade80' : '#94a3b8',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {enableIntentCheckOverride ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                {/* Dynamic Tool Calling */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.74rem', color: '#e2e8f0' }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Dynamic Tool Calling</div>
+                    <div style={{ fontSize: '0.64rem', color: '#94a3b8' }}>Filters tool schemas by query relevance</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !dynamicToolCallingOverride;
+                      setDynamicToolCallingOverride(next);
+                      localStorage.setItem('yuki-override-dynamic-tools', String(next));
+                    }}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '12px',
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      border: dynamicToolCallingOverride ? '1px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
+                      background: dynamicToolCallingOverride ? 'rgba(34, 197, 94, 0.2)' : 'rgba(0,0,0,0.4)',
+                      color: dynamicToolCallingOverride ? '#4ade80' : '#94a3b8',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {dynamicToolCallingOverride ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                {/* Tools in Simple Prompts */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.74rem', color: '#e2e8f0' }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Tools in Simple Prompts</div>
+                    <div style={{ fontSize: '0.64rem', color: '#94a3b8' }}>Sends tool schemas during simple chatter</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !sendToolsInSimpleOverride;
+                      setSendToolsInSimpleOverride(next);
+                      localStorage.setItem('yuki-override-tools-in-simple', String(next));
+                    }}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '12px',
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      border: sendToolsInSimpleOverride ? '1px solid #22c55e' : '1px solid rgba(255,255,255,0.2)',
+                      background: sendToolsInSimpleOverride ? 'rgba(34, 197, 94, 0.2)' : 'rgba(0,0,0,0.4)',
+                      color: sendToolsInSimpleOverride ? '#4ade80' : '#94a3b8',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {sendToolsInSimpleOverride ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Section 4: System Prompt Modules */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600, marginBottom: '2px' }}>
+                  System Prompt Modules
+                </div>
+                {[
+                  { id: 'persona', label: 'Persona & Mood Spectrum', state: promptPersona, set: setPromptPersona, key: 'yuki-prompt-persona' },
+                  { id: 'expressions', label: '3D Avatar Expressions', state: promptExpressions, set: setPromptExpressions, key: 'yuki-prompt-expressions' },
+                  { id: 'memory', label: 'User Memory Card', state: promptMemory, set: setPromptMemory, key: 'yuki-prompt-memory' },
+                  { id: 'directives', label: 'Behavioral Tool Directives', state: promptDirectives, set: setPromptDirectives, key: 'yuki-prompt-directives' },
+                  { id: 'planning', label: 'Section 5 Implementation Planning', state: promptPlanning, set: setPromptPlanning, key: 'yuki-prompt-planning' }
+                ].map(mod => (
+                  <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.73rem', color: '#cbd5e1', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={mod.state}
+                      onChange={(e) => {
+                        mod.set(e.target.checked);
+                        localStorage.setItem(mod.key, String(e.target.checked));
+                      }}
+                      style={{ accentColor: '#a78bfa' }}
+                    />
+                    {mod.label}
+                  </label>
+                ))}
               </div>
             </div>
           )}
