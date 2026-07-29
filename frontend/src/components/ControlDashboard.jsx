@@ -348,6 +348,27 @@ const ControlDashboard = ({
     }
   };
 
+  const handleSelectCustomEndpoint = async (ep) => {
+    if (!ep) return;
+    try {
+      setCustomLabel(ep.label || '');
+      const targetBackend = settings.llm_backend === 'custom' || settings.llm_backend === 'openai' ? settings.llm_backend : (ep.llm_backend || 'custom');
+      await handleUpdateSetting('llm_backend', targetBackend);
+      await handleUpdateSetting('llm_base_url', ep.base_url || '');
+      if (ep.api_key_masked && ep.api_key_masked !== '****') {
+        await handleUpdateSetting('llm_api_key', ep.api_key_masked);
+      }
+      if (ep.model) {
+        await handleUpdateSetting('llm_model', ep.model);
+      }
+      if (onRefreshLlmModels) {
+        setTimeout(() => onRefreshLlmModels(), 400);
+      }
+    } catch (e) {
+      console.error("Failed to select custom endpoint:", e);
+    }
+  };
+
   // Internal Mood Spectrum State
   const [moodData, setMoodData] = useState({
     happiness: 75,
@@ -559,11 +580,15 @@ const ControlDashboard = ({
   };
 
   useEffect(() => {
+    fetchSavedEndpoints();
+  }, []);
+
+  useEffect(() => {
     let interval = null;
     if (isOpen) {
+      fetchSavedEndpoints();
       if (activeTab === 'brain' || activeTab === 'info') {
         fetchToolsList();
-        if (activeTab === 'brain') fetchSavedEndpoints();
       }
 
       if (activeTab === 'memory') {
@@ -2520,129 +2545,154 @@ const ControlDashboard = ({
                       </select>
                     </div>
 
-                    {/* Custom Endpoint Label & Saved Presets Dropdown (Below LLM Backend, Above Endpoint URL) */}
+                    {/* Custom / Cloud API Key Vault & Saved Presets */}
                     {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
-                      <div className="identity-field" style={{ marginTop: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span className="field-label">Custom API Label & Saved Presets</span>
-                          {savedCustomEndpoints.length > 0 && (
-                            <span style={{ fontSize: '0.7rem', color: '#a78bfa' }}>
-                              {savedCustomEndpoints.length} saved in DB
-                            </span>
-                          )}
+                      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                        
+                        {/* Saved Key Vault Cards */}
+                        {savedCustomEndpoints.length > 0 && (
+                          <div style={{ marginBottom: '10px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd', fontSize: '0.74rem' }}>
+                                🔑 Saved API Key Vault ({savedCustomEndpoints.length})
+                              </span>
+                              <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)' }}>
+                                Click to load preset
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(135px, 1fr))', gap: '6px' }}>
+                              {savedCustomEndpoints.map((ep) => {
+                                const isActive = settings.llm_base_url === ep.base_url;
+                                return (
+                                  <div
+                                    key={ep.id || ep.label}
+                                    onClick={() => handleSelectCustomEndpoint(ep)}
+                                    style={{
+                                      padding: '7px 9px',
+                                      borderRadius: '8px',
+                                      background: isActive ? 'rgba(167, 139, 250, 0.18)' : 'rgba(0, 0, 0, 0.28)',
+                                      border: isActive ? '1.5px solid #a78bfa' : '1px solid rgba(255, 255, 255, 0.08)',
+                                      cursor: 'pointer',
+                                      position: 'relative',
+                                      transition: 'all 0.2s ease'
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                      <div style={{ fontWeight: '600', fontSize: '0.74rem', color: isActive ? '#f472b6' : '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100px' }}>
+                                        {ep.label || 'Saved Endpoint'}
+                                      </div>
+                                      <button
+                                        type="button"
+                                        title="Delete preset"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteCustomEndpoint(ep.id, ep.label);
+                                        }}
+                                        style={{
+                                          background: 'none',
+                                          border: 'none',
+                                          color: 'rgba(255,255,255,0.3)',
+                                          cursor: 'pointer',
+                                          padding: 0,
+                                          fontSize: '0.75rem',
+                                          lineHeight: 1
+                                        }}
+                                        onMouseEnter={(e) => e.target.style.color = '#ef4444'}
+                                        onMouseLeave={(e) => e.target.style.color = 'rgba(255,255,255,0.3)'}
+                                      >
+                                        <Trash2 style={{ width: '11px', height: '11px' }} />
+                                      </button>
+                                    </div>
+
+                                    <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {ep.base_url ? ep.base_url.replace('https://', '').replace('http://', '') : 'Custom URL'}
+                                    </div>
+
+                                    <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                      <span style={{ fontSize: '0.58rem', padding: '1px 5px', borderRadius: '4px', background: ep.has_key ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)', color: ep.has_key ? '#4ade80' : '#94a3b8' }}>
+                                        {ep.has_key ? '🔑 Key Saved' : 'No Key'}
+                                      </span>
+                                      {isActive && (
+                                        <span style={{ fontSize: '0.58rem', fontWeight: 600, color: '#38bdf8' }}>
+                                          ● Active
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Quick Provider Templates */}
+                        <div style={{ marginTop: '6px', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                            Quick Cloud Provider Presets:
+                          </span>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            {[
+                              { name: 'Gemini', label: 'Google Gemini Cloud', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
+                              { name: 'OpenAI', label: 'OpenAI Cloud API', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+                              { name: 'Grok', label: 'xAI Grok Cloud', url: 'https://api.x.ai/v1', model: 'grok-beta' },
+                              { name: 'OpenRouter', label: 'OpenRouter Cloud API', url: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
+                              { name: 'Groq', label: 'Groq Cloud API', url: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
+                              { name: 'Mistral', label: 'Mistral Cloud API', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
+                              { name: 'DeepSeek', label: 'DeepSeek Cloud', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }
+                            ].map((p) => (
+                              <button
+                                key={p.name}
+                                type="button"
+                                onClick={async () => {
+                                  setCustomLabel(p.label);
+                                  const activeBackend = settings.llm_backend === 'openai' || settings.llm_backend === 'custom' ? settings.llm_backend : 'custom';
+                                  await handleUpdateSetting('llm_backend', activeBackend);
+                                  await handleUpdateSetting('llm_base_url', p.url);
+                                  if (p.model && !settings.llm_model) {
+                                    await handleUpdateSetting('llm_model', p.model);
+                                  }
+                                  if (onRefreshLlmModels) {
+                                    setTimeout(() => onRefreshLlmModels(), 400);
+                                  }
+                                }}
+                                className="glass-button"
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '0.66rem',
+                                  borderRadius: '6px',
+                                  background: settings.llm_base_url === p.url ? 'rgba(139, 92, 246, 0.35)' : 'rgba(255, 255, 255, 0.05)',
+                                  border: settings.llm_base_url === p.url ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
+                                  color: settings.llm_base_url === p.url ? '#fff' : '#cbd5e1',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                ⚡ {p.name}
+                              </button>
+                            ))}
+                          </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '6px', marginTop: '4px', alignItems: 'center' }}>
+                        {/* Preset Name / Label Input */}
+                        <div className="identity-field" style={{ marginTop: '8px' }}>
+                          <span className="field-label">Preset Name / Label</span>
                           <input
                             type="text"
-                            placeholder="e.g. Google Gemini Cloud, xAI Grok, My Custom Server"
+                            placeholder="e.g. Google Gemini Cloud, My Custom vLLM, xAI Grok"
                             value={customLabel}
                             onChange={(e) => setCustomLabel(e.target.value)}
                             style={{
-                              flex: 1,
+                              width: '100%',
                               padding: '7px 10px',
                               background: 'rgba(0,0,0,0.3)',
                               border: '1px solid rgba(167, 139, 250, 0.3)',
                               borderRadius: '8px',
                               color: 'white',
                               fontSize: '0.78rem',
-                              outline: 'none'
+                              outline: 'none',
+                              marginTop: '3px'
                             }}
                           />
-
-                          {/* Dropdown fetching saved endpoints from DB */}
-                          {savedCustomEndpoints.length > 0 && (
-                            <select
-                              onChange={async (e) => {
-                                const selId = e.target.value;
-                                if (!selId) return;
-                                const ep = savedCustomEndpoints.find(item => item.id === selId || item.label === selId);
-                                if (ep) {
-                                  setCustomLabel(ep.label);
-                                  const targetBackend = settings.llm_backend === 'custom' || settings.llm_backend === 'openai' ? settings.llm_backend : (ep.llm_backend || 'custom');
-                                  await handleUpdateSetting('llm_backend', targetBackend);
-                                  await handleUpdateSetting('llm_base_url', ep.base_url);
-                                  if (ep.api_key_masked && ep.api_key_masked !== '****') {
-                                    await handleUpdateSetting('llm_api_key', ep.api_key_masked);
-                                  }
-                                  if (ep.model) {
-                                    await handleUpdateSetting('llm_model', ep.model);
-                                  }
-                                  if (onRefreshLlmModels) {
-                                    setTimeout(() => onRefreshLlmModels(), 500);
-                                  }
-                                }
-                              }}
-                              defaultValue=""
-                              style={{
-                                padding: '7px 8px',
-                                background: 'rgba(18, 12, 33, 0.85)',
-                                border: '1px solid rgba(139, 92, 246, 0.4)',
-                                borderRadius: '8px',
-                                color: '#c4b5fd',
-                                fontSize: '0.75rem',
-                                outline: 'none',
-                                cursor: 'pointer',
-                                maxWidth: '150px'
-                              }}
-                            >
-                              <option value="" disabled>Saved DB Presets...</option>
-                              {savedCustomEndpoints.map((ep) => (
-                                <option key={ep.id} value={ep.id}>
-                                  {ep.label}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Popular Cloud AI Preset Suggestions */}
-                    {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
-                      <div style={{ marginTop: '6px' }}>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>
-                          Quick Cloud Presets:
-                        </span>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                          {[
-                            { name: 'Gemini', label: 'Google Gemini Cloud', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
-                            { name: 'OpenAI', label: 'OpenAI Cloud API', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-                            { name: 'Grok', label: 'xAI Grok Cloud', url: 'https://api.x.ai/v1', model: 'grok-beta' },
-                            { name: 'OpenRouter', label: 'OpenRouter Cloud API', url: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
-                            { name: 'Groq', label: 'Groq Cloud API', url: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
-                            { name: 'Mistral', label: 'Mistral Cloud API', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
-                            { name: 'DeepSeek', label: 'DeepSeek Cloud', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }
-                          ].map((p) => (
-                            <button
-                              key={p.name}
-                              type="button"
-                              onClick={async () => {
-                                setCustomLabel(p.label);
-                                const activeBackend = settings.llm_backend === 'openai' || settings.llm_backend === 'custom' ? settings.llm_backend : 'custom';
-                                await handleUpdateSetting('llm_backend', activeBackend);
-                                await handleUpdateSetting('llm_base_url', p.url);
-                                if (p.model && !settings.llm_model) {
-                                  await handleUpdateSetting('llm_model', p.model);
-                                }
-                                if (onRefreshLlmModels) {
-                                  setTimeout(() => onRefreshLlmModels(), 500);
-                                }
-                              }}
-                              className="glass-button"
-                              style={{
-                                padding: '2px 7px',
-                                fontSize: '0.68rem',
-                                borderRadius: '6px',
-                                background: settings.llm_base_url === p.url ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.06)',
-                                border: settings.llm_base_url === p.url ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
-                                color: settings.llm_base_url === p.url ? '#fff' : '#cbd5e1',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              ⚡ {p.name}
-                            </button>
-                          ))}
                         </div>
                       </div>
                     )}
