@@ -11,6 +11,7 @@ import { parseResponseTags } from './utils/responseParser';
 
 import AlarmOverlay from './components/AlarmOverlay';
 import StopwatchOverlay from './components/StopwatchOverlay';
+import AgenticWorkspaceWindow from './components/AgenticWorkspaceWindow';
 
 const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
@@ -33,6 +34,7 @@ const App = () => {
   const urlParams = new URLSearchParams(window.location.search);
   const isAlarmMode = urlParams.get('mode') === 'alarm';
   const isStopwatchMode = urlParams.get('mode') === 'stopwatch';
+  const isStandaloneChatMode = urlParams.get('mode') === 'chat';
 
   const safeDecode = (str, fallback = '') => {
     if (!str) return fallback;
@@ -4371,6 +4373,40 @@ const detectExpression = (text) => {
           </div>
         )}
       </div>
+    );
+  }
+
+  if (isStandaloneChatMode) {
+    return (
+      <AgenticWorkspaceWindow
+        messages={messages}
+        inputText={inputText}
+        onInputChange={setInputText}
+        onSendMessage={(txt) => handleSendMessage({ preventDefault: () => {} }, txt)}
+        isGenerating={isThinking || ttsStreamActive}
+        modelName={modelName}
+        llmBackend={llmBackend}
+        availableLlmModels={availableLlmModels}
+        onRefreshLlmModels={fetchLlmModels}
+        settings={profile.settings || {}}
+        onUpdateSetting={updateProfileSetting}
+        micDevices={micDevices}
+        selectedMic={selectedMicDeviceId}
+        onMicChange={(id) => {
+          setSelectedMicDeviceId(id);
+          localStorage.setItem('yuki-mic-device-id', id);
+        }}
+        isListening={isListening}
+        onToggleListening={toggleListening}
+        vadLevel={vadLevel}
+        voiceVolume={voiceVolume}
+        onVolumeChange={(val) => {
+          setVoiceVolume(val);
+          localStorage.setItem('yuki-voice-volume', val.toString());
+        }}
+        hostPlatform={hostPlatform}
+        systemStats={systemStats}
+      />
     );
   }
 

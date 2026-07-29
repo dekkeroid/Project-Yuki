@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File } from 'lucide-react';
+import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, Maximize2 } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
 import { SLASH_COMMANDS } from '../constants';
@@ -515,12 +515,25 @@ const ChatOverlay = ({
             <Terminal className="w-4.5 h-4.5 text-violet-400" />
             <h3 className="panel-title">Neural Conversation Log</h3>
           </div>
-          <button
-            onClick={() => setIsPanelOpen(false)}
-            className="panel-close-btn"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              onClick={() => {
+                const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
+                window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+              }}
+              className="panel-close-btn"
+              title="Open in Standalone Agentic Workspace Window"
+              style={{ color: '#c4b5fd' }}
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setIsPanelOpen(false)}
+              className="panel-close-btn"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Message Log Scroll Container */}
