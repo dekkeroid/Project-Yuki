@@ -41,6 +41,49 @@ export const AgenticWorkspaceWindow = ({
   const [selectedPastSessionId, setSelectedPastSessionId] = useState(null);
   const [viewMessages, setViewMessages] = useState(null); // Loaded messages when inspecting past session
   const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
+  // Sidebar Resizing States (Width in pixels, saved in localStorage)
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem('yuki-left-sidebar-width');
+    return saved ? parseInt(saved, 10) : 260;
+  });
+
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem('yuki-right-sidebar-width');
+    return saved ? parseInt(saved, 10) : 340;
+  });
+
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+
+  // Global Mouse Drag Handlers for Horizontal Sidebar Resizing
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (isResizingLeft) {
+        const newWidth = Math.min(Math.max(180, e.clientX), 500);
+        setLeftSidebarWidth(newWidth);
+        localStorage.setItem('yuki-left-sidebar-width', String(newWidth));
+      } else if (isResizingRight) {
+        const newWidth = Math.min(Math.max(220, window.innerWidth - e.clientX), 650);
+        setRightSidebarWidth(newWidth);
+        localStorage.setItem('yuki-right-sidebar-width', String(newWidth));
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingLeft(false);
+      setIsResizingRight(false);
+    };
+
+    if (isResizingLeft || isResizingRight) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingLeft, isResizingRight]);
+
   // Local Input Text State (Fixes standalone typing when props are unpassed)
   const [localInputText, setLocalInputText] = useState('');
   const currentInputText = onInputChange ? inputText : localInputText;
@@ -466,12 +509,19 @@ export const AgenticWorkspaceWindow = ({
       </header>
 
       {/* ── Main Layout Body ────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{
+        display: 'flex',
+        flex: 1,
+        overflow: 'hidden',
+        cursor: (isResizingLeft || isResizingRight) ? 'col-resize' : 'default',
+        userSelect: (isResizingLeft || isResizingRight) ? 'none' : 'auto'
+      }}>
 
-        {/* ── SIDEBAR: Hierarchical Chat Session History (Collapsible) ─── */}
+        {/* ── SIDEBAR: Hierarchical Chat Session History (Collapsible & Resizable) ─── */}
         {showSidebar && (
           <aside style={{
-            width: '260px',
+            width: `${leftSidebarWidth}px`,
+            minWidth: `${leftSidebarWidth}px`,
             background: 'rgba(11, 15, 25, 0.98)',
             borderRight: '1px solid rgba(167, 139, 250, 0.15)',
             display: 'flex',
@@ -684,6 +734,22 @@ export const AgenticWorkspaceWindow = ({
               )}
             </div>
           </aside>
+        )}
+
+        {/* Left Sidebar Drag Resizer Handle */}
+        {showSidebar && (
+          <div
+            onMouseDown={() => setIsResizingLeft(true)}
+            title="Drag to resize left sidebar width"
+            style={{
+              width: '5px',
+              background: isResizingLeft ? themeAccent : 'rgba(255, 255, 255, 0.05)',
+              cursor: 'col-resize',
+              userSelect: 'none',
+              zIndex: 10,
+              transition: 'background 0.15s ease'
+            }}
+          />
         )}
         
         {/* ── MIDDLE PANE: Agentic Timeline & Chat ────────────────────── */}
@@ -1086,9 +1152,24 @@ export const AgenticWorkspaceWindow = ({
           </div>
         </section>
 
-        {/* ── RIGHT PANE: Live Inspector & Context Monitor (35% Width) ─── */}
+        {/* Right Sidebar Drag Resizer Handle */}
+        <div
+          onMouseDown={() => setIsResizingRight(true)}
+          title="Drag to resize right sidebar width"
+          style={{
+            width: '5px',
+            background: isResizingRight ? themeAccent : 'rgba(255, 255, 255, 0.05)',
+            cursor: 'col-resize',
+            userSelect: 'none',
+            zIndex: 10,
+            transition: 'background 0.15s ease'
+          }}
+        />
+
+        {/* ── RIGHT PANE: Live Inspector & Context Monitor (Resizable Width) ─── */}
         <section style={{
-          width: '35%',
+          width: `${rightSidebarWidth}px`,
+          minWidth: `${rightSidebarWidth}px`,
           display: 'flex',
           flexDirection: 'column',
           background: 'rgba(7, 10, 18, 0.95)',
