@@ -1138,8 +1138,9 @@ class AgentExecutor:
         messages: List[Dict[str, str]],
         user_message: str = "",
         use_tools: bool = False,
-        resolved_backend: str = "",   # Pass in the intent-check result so we don't re-classify
+        resolved_backend: str = "",   # Pass in the classification result so we don't re-classify
         intent_tool_hint: str = "",
+        intent_source: str = "regex",
     ):
         """
         Streams tokens from the LLM.
@@ -1157,10 +1158,10 @@ class AgentExecutor:
 
         if backend == "mode3":
             try:
-                # Use the intent-check result if provided; only re-classify as last resort
+                # Use the intent-check/regex result if provided; only re-classify as last resort
                 if resolved_backend in ("simple", "complex"):
                     task = resolved_backend
-                    source = "intent-check"
+                    source = intent_source or "regex"
                 else:
                     task = self._classify_task(user_message) if user_message else "simple"
                     source = "regex"
@@ -1596,7 +1597,7 @@ class AgentExecutor:
                     last_msg = current_messages[-1]
                     print(f"[Executor] Last message: role={last_msg.get('role')}, content preview={str(last_msg.get('content', ''))[:150]}...")
                 
-                stream = self._query_llm_stream(session, current_messages, user_message=user_message, use_tools=use_tools, resolved_backend=resolved_backend, intent_tool_hint=intent_tool_hint)
+                stream = self._query_llm_stream(session, current_messages, user_message=user_message, use_tools=use_tools, resolved_backend=resolved_backend, intent_tool_hint=intent_tool_hint, intent_source=intent_source)
                 
                 tool_calls_to_execute = []
                 accumulated_response = ""
