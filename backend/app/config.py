@@ -45,6 +45,16 @@ LLM_MODEL_COMPLEX = os.environ.get("LLM_MODEL_COMPLEX", "nvidia/nemotron-3-nano-
 #         but uses the full tool-aware prompt for complex tasks (default)
 LLM_MODE = int(os.environ.get("LLM_MODE", "3"))
 
+# Send all tools even at simple prompts
+SEND_TOOLS_IN_SIMPLE = os.environ.get("SEND_TOOLS_IN_SIMPLE", "false").strip().lower() in ("1", "true", "yes", "on")
+
+# Dual Endpoint Strategy Configuration
+ENDPOINT_STRATEGY = os.environ.get("ENDPOINT_STRATEGY", "single").strip().lower()  # "single" or "dual"
+LLM_SIMPLE_BACKEND = os.environ.get("LLM_SIMPLE_BACKEND", "lmstudio")
+LLM_SIMPLE_BASE_URL = os.environ.get("LLM_SIMPLE_BASE_URL", "http://127.0.0.1:1234")
+LLM_SIMPLE_API_KEY = os.environ.get("LLM_SIMPLE_API_KEY", "")
+LLM_SIMPLE_MODEL = os.environ.get("LLM_SIMPLE_MODEL", "")
+
 # Tool Operating Mode — "basic" (weak/local LLMs) vs "advanced" (frontier cloud LLMs with parallel multi-step execution)
 TOOL_MODE = os.environ.get("TOOL_MODE", "basic").strip().lower()
 

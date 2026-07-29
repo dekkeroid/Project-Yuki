@@ -186,6 +186,12 @@ const ControlDashboard = ({
     llm_backend: 'lmstudio',
     llm_base_url: '',
     llm_api_key: '',
+    send_tools_in_simple: false,
+    endpoint_strategy: 'single',
+    llm_simple_backend: 'lmstudio',
+    llm_simple_base_url: 'http://127.0.0.1:1234',
+    llm_simple_api_key: '',
+    llm_simple_model: '',
     tts_voice: 'af_bella',
     tts_rate: '1.0',
     tts_device: 'auto',
@@ -2457,6 +2463,24 @@ const ControlDashboard = ({
                           <span className="slider round"></span>
                         </label>
                       </div>
+
+                      {/* Send All Tools in Simple Prompts Toggle */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.06)' }}>
+                        <div>
+                          <span className="field-label" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600 }}>Send all tools even at simple prompts</span>
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
+                            Passes tool schemas to the LLM during simple casual conversation turns. (Default: OFF)
+                          </span>
+                        </div>
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={!!settings.send_tools_in_simple}
+                            onChange={(e) => handleUpdateSetting('send_tools_in_simple', e.target.checked)}
+                          />
+                          <span className="slider round"></span>
+                        </label>
+                      </div>
                     </div>
 
                     {/* Tool Operating Suite Segment */}
@@ -2521,6 +2545,138 @@ const ControlDashboard = ({
                       <Cpu className="w-4 h-4 text-violet-400" />
                       <span className="card-group-title">AI Brain & Language Model</span>
                     </div>
+
+                    {/* Endpoint Configuration Strategy */}
+                    <div className="identity-field" style={{ marginTop: '4px', marginBottom: '8px' }}>
+                      <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd' }}>Endpoint Strategy</span>
+                      <select
+                        value={settings.endpoint_strategy || 'single'}
+                        onChange={(e) => handleUpdateSetting('endpoint_strategy', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(18, 12, 33, 0.85)',
+                          border: '1px solid rgba(167, 139, 250, 0.4)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '4px'
+                        }}
+                      >
+                        <option value="single" style={{ background: '#120c21', color: 'white' }}>
+                          Use single endpoint for all prompts (Default)
+                        </option>
+                        <option value="dual" style={{ background: '#120c21', color: 'white' }}>
+                          Use separate endpoints for simple and complex prompts
+                        </option>
+                      </select>
+                    </div>
+
+                    {/* If DUAL Strategy Selected, render Simple Endpoint Sub-Card */}
+                    {settings.endpoint_strategy === 'dual' && (
+                      <div style={{ background: 'rgba(139, 92, 246, 0.08)', borderRadius: '10px', padding: '10px', marginBottom: '12px', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+                        <div style={{ fontWeight: '600', fontSize: '0.76rem', color: '#c4b5fd', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          💬 Simple Prompt Endpoint (Casual Chat / Fast Responses)
+                        </div>
+
+                        {/* Simple Backend Type */}
+                        <div className="identity-field" style={{ marginTop: '4px' }}>
+                          <span className="field-label">Simple LLM Backend</span>
+                          <select
+                            value={settings.llm_simple_backend || 'lmstudio'}
+                            onChange={(e) => handleUpdateSetting('llm_simple_backend', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              marginTop: '4px'
+                            }}
+                          >
+                            <option value="lmstudio">LM Studio (Local)</option>
+                            <option value="ollama">Ollama (Local)</option>
+                            <option value="vllm">vLLM (Local)</option>
+                            <option value="openai">Custom / Cloud API (OpenAI-Compatible)</option>
+                            <option value="custom">Custom Endpoint</option>
+                          </select>
+                        </div>
+
+                        {/* Simple Base URL */}
+                        <div className="identity-field" style={{ marginTop: '6px' }}>
+                          <span className="field-label">Simple Base URL</span>
+                          <input
+                            type="text"
+                            placeholder="http://127.0.0.1:1234"
+                            value={settings.llm_simple_base_url || ''}
+                            onChange={(e) => handleUpdateSetting('llm_simple_base_url', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              marginTop: '3px'
+                            }}
+                          />
+                        </div>
+
+                        {/* Simple API Key (if cloud) */}
+                        {(settings.llm_simple_backend === 'openai' || settings.llm_simple_backend === 'custom') && (
+                          <div className="identity-field" style={{ marginTop: '6px' }}>
+                            <span className="field-label">Simple API Key</span>
+                            <input
+                              type="password"
+                              placeholder="sk-..."
+                              value={settings.llm_simple_api_key || ''}
+                              onChange={(e) => handleUpdateSetting('llm_simple_api_key', e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '7px 10px',
+                                background: 'rgba(0,0,0,0.3)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                color: 'white',
+                                fontSize: '0.78rem',
+                                outline: 'none',
+                                marginTop: '3px'
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Simple Model Name */}
+                        <div className="identity-field" style={{ marginTop: '6px' }}>
+                          <span className="field-label">Simple Model Name</span>
+                          <input
+                            type="text"
+                            placeholder="e.g. llama-3.2-3b-instruct, gpt-4o-mini"
+                            value={settings.llm_simple_model || ''}
+                            onChange={(e) => handleUpdateSetting('llm_simple_model', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              marginTop: '3px'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {/* LLM Backend Type */}
                     <div className="identity-field" style={{ marginTop: '4px' }}>

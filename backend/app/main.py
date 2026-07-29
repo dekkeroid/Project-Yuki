@@ -689,6 +689,12 @@ class SettingsUpdateRequest(BaseModel):
     vad_threshold: Optional[float] = None
     silence_timeout_ms: Optional[int] = None
     tool_mode: Optional[str] = None
+    send_tools_in_simple: Optional[bool] = None
+    endpoint_strategy: Optional[str] = None
+    llm_simple_backend: Optional[str] = None
+    llm_simple_base_url: Optional[str] = None
+    llm_simple_api_key: Optional[str] = None
+    llm_simple_model: Optional[str] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -701,6 +707,38 @@ async def update_settings(req: SettingsUpdateRequest):
 
     backend_switched = False
     captured_old_backend = None
+    if req.send_tools_in_simple is not None:
+        config.SEND_TOOLS_IN_SIMPLE = bool(req.send_tools_in_simple)
+        memory_manager.update_setting("send_tools_in_simple", bool(req.send_tools_in_simple))
+    if req.endpoint_strategy is not None:
+        strat = req.endpoint_strategy.strip().lower()
+        if strat in ("single", "dual"):
+            config.ENDPOINT_STRATEGY = strat
+            memory_manager.update_setting("endpoint_strategy", strat)
+    if req.llm_simple_backend is not None:
+        config.LLM_SIMPLE_BACKEND = req.llm_simple_backend.strip()
+        memory_manager.update_setting("llm_simple_backend", req.llm_simple_backend.strip())
+    if req.llm_simple_base_url is not None:
+        config.LLM_SIMPLE_BASE_URL = req.llm_simple_base_url.strip()
+        memory_manager.update_setting("llm_simple_base_url", req.llm_simple_base_url.strip())
+    if req.llm_simple_model is not None:
+        config.LLM_SIMPLE_MODEL = req.llm_simple_model.strip()
+        memory_manager.update_setting("llm_simple_model", req.llm_simple_model.strip())
+    if req.llm_simple_api_key is not None:
+        from app.utils.security import encrypt_api_key, decrypt_api_key
+        key_val = req.llm_simple_api_key.strip()
+        if key_val:
+            if key_val.startswith("enc_v1:") or key_val.startswith("gAAAA"):
+                config.LLM_SIMPLE_API_KEY = decrypt_api_key(key_val)
+                memory_manager.update_setting("llm_simple_api_key", key_val)
+            elif "..." in key_val:
+                pass
+            else:
+                config.LLM_SIMPLE_API_KEY = key_val
+                memory_manager.update_setting("llm_simple_api_key", encrypt_api_key(key_val))
+        else:
+            config.LLM_SIMPLE_API_KEY = ""
+            memory_manager.update_setting("llm_simple_api_key", "")
     if req.tool_mode is not None:
         mode_val = req.tool_mode.strip().lower()
         if mode_val in ("basic", "advanced"):

@@ -60,7 +60,13 @@ class MemoryManager:
                 "vrm_fps": 40,
                 "chat_mode": False,
                 "keep_memory_saving": True,
-                "tool_mode": "basic"
+                "tool_mode": "basic",
+                "send_tools_in_simple": False,
+                "endpoint_strategy": "single",
+                "llm_simple_backend": "lmstudio",
+                "llm_simple_base_url": "http://127.0.0.1:1234",
+                "llm_simple_api_key": "",
+                "llm_simple_model": ""
             }
         }
         if not os.path.exists(self.profile_path):
@@ -93,6 +99,11 @@ class MemoryManager:
                 config.SILERO_VAD_THRESHOLD = float(data["settings"].get("vad_threshold", getattr(config, "SILERO_VAD_THRESHOLD", 0.015)))
                 config.SILENCE_TIMEOUT_MS = int(data["settings"].get("silence_timeout_ms", getattr(config, "SILENCE_TIMEOUT_MS", 450)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
+                config.SEND_TOOLS_IN_SIMPLE = bool(data["settings"].get("send_tools_in_simple", False))
+                config.ENDPOINT_STRATEGY = data["settings"].get("endpoint_strategy", "single").strip().lower()
+                config.LLM_SIMPLE_BACKEND = data["settings"].get("llm_simple_backend", getattr(config, "LLM_SIMPLE_BACKEND", "lmstudio"))
+                config.LLM_SIMPLE_BASE_URL = data["settings"].get("llm_simple_base_url", getattr(config, "LLM_SIMPLE_BASE_URL", "http://127.0.0.1:1234"))
+                config.LLM_SIMPLE_MODEL = data["settings"].get("llm_simple_model", getattr(config, "LLM_SIMPLE_MODEL", ""))
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
                 config.CHARACTER_PERSONA = data["settings"].get("character_persona", config.CHARACTER_PERSONA)
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
@@ -101,8 +112,10 @@ class MemoryManager:
                 config.LLM_BASE_URL = data["settings"].get("llm_base_url", config.LLM_BASE_URL)
                 config.LLM_MODE = int(data["settings"].get("llm_mode", config.LLM_MODE))
                 raw_key = data["settings"].get("llm_api_key", config.LLM_API_KEY)
+                simple_key = data["settings"].get("llm_simple_api_key", config.LLM_SIMPLE_API_KEY)
                 from app.utils.security import decrypt_api_key, encrypt_api_key
                 config.LLM_API_KEY = decrypt_api_key(raw_key) if raw_key else ""
+                config.LLM_SIMPLE_API_KEY = decrypt_api_key(simple_key) if simple_key else ""
                 
                 return data
         except Exception as e:
