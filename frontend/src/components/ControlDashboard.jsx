@@ -425,42 +425,41 @@ const ControlDashboard = ({
 
   const handleSelectCustomEndpoint = async (ep, targetType = 'complex') => {
     if (!ep) return;
-    const keyToUse = ep.api_key_masked || (ep.has_key ? '••••••••' : '');
-    if (targetType === 'simple') {
-      setSelectedSimpleEndpointId(ep.id || '');
-      setCustomSimpleLabel(ep.label || '');
-      try {
-        const targetBackend = ep.llm_backend || 'openai';
-        await handleUpdateSetting('llm_simple_backend', targetBackend);
-        await handleUpdateSetting('llm_simple_base_url', ep.base_url || '');
-        if (keyToUse) {
-          await handleUpdateSetting('llm_simple_api_key', keyToUse);
-        }
-        if (ep.model) {
-          await handleUpdateSetting('llm_simple_model', ep.model);
-        }
-      } catch (e) {
-        console.error("Failed to select simple custom endpoint:", e);
-      }
-    } else {
-      setSelectedEndpointId(ep.id || '');
-      setCustomLabel(ep.label || '');
-      try {
-        const targetBackend = ep.llm_backend || 'openai';
-        await handleUpdateSetting('llm_backend', targetBackend);
-        await handleUpdateSetting('llm_base_url', ep.base_url || '');
-        if (keyToUse) {
-          await handleUpdateSetting('llm_api_key', keyToUse);
-        }
-        if (ep.model) {
-          await handleUpdateSetting('llm_model', ep.model);
-        }
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/select`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: ep.id, label: ep.label, target_type: targetType })
+      });
+      const data = res.ok ? await res.json() : null;
+      const keyToUse = (data && data.masked_key) || ep.api_key_masked || (ep.has_key ? '••••••••' : '');
+      
+      if (targetType === 'simple') {
+        setSelectedSimpleEndpointId(ep.id || '');
+        setCustomSimpleLabel(ep.label || '');
+        setSettings(prev => ({
+          ...prev,
+          llm_simple_backend: ep.llm_backend || 'openai',
+          llm_simple_base_url: ep.base_url || '',
+          llm_simple_api_key: keyToUse,
+          llm_simple_model: ep.model || prev.llm_simple_model
+        }));
+      } else {
+        setSelectedEndpointId(ep.id || '');
+        setCustomLabel(ep.label || '');
+        setSettings(prev => ({
+          ...prev,
+          llm_backend: ep.llm_backend || 'openai',
+          llm_base_url: ep.base_url || '',
+          llm_api_key: keyToUse,
+          llm_model: ep.model || prev.llm_model
+        }));
         if (onRefreshLlmModels) {
           setTimeout(() => onRefreshLlmModels(), 400);
         }
-      } catch (e) {
-        console.error("Failed to select custom endpoint:", e);
       }
+    } catch (e) {
+      console.error("Failed to select custom endpoint:", e);
     }
   };
 
@@ -2652,7 +2651,7 @@ const ControlDashboard = ({
                     {settings.endpoint_strategy === 'dual' && settings.llm_mode !== 1 && settings.llm_mode !== 2 && (
                       <div style={{ background: 'rgba(139, 92, 246, 0.08)', borderRadius: '10px', padding: '12px', marginBottom: '14px', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
                         <div style={{ fontWeight: '600', fontSize: '0.78rem', color: '#c4b5fd', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          💬 Simple Prompt Endpoint (Casual Chat / Fast Responses)
+                          💬 Simple Prompt Endpoint
                         </div>
 
                         {/* Simple LLM Backend */}
@@ -2688,7 +2687,7 @@ const ControlDashboard = ({
                             <option value="lmstudio">LM Studio (Local)</option>
                             <option value="ollama">Ollama (Local)</option>
                             <option value="vllm">vLLM (Local)</option>
-                            <option value="openai">OpenAI / Cloud API (OpenAI-Compatible)</option>
+                            <option value="openai">Custom / Cloud API (OpenAI-Compatible)</option>
                             <option value="none">No LLM (Voice + File Search Only)</option>
                           </select>
                         </div>
@@ -2925,7 +2924,7 @@ const ControlDashboard = ({
                     {/* Section Header if Dual Mode is Active for Complex Endpoint */}
                     {settings.endpoint_strategy === 'dual' && settings.llm_mode !== 1 && settings.llm_mode !== 2 && (
                       <div style={{ fontWeight: '600', fontSize: '0.78rem', color: '#38bdf8', marginTop: '6px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        ⚡ Complex / Desktop Task Endpoint (Jarvis OS Tools / Code / Automation)
+                        ⚡ Complex Prompt Endpoint
                       </div>
                     )}
 
@@ -2968,7 +2967,7 @@ const ControlDashboard = ({
                         <option value="lmstudio">LM Studio (Local)</option>
                         <option value="ollama">Ollama (Local)</option>
                         <option value="vllm">vLLM (Local)</option>
-                        <option value="openai">OpenAI / Cloud API (OpenAI-Compatible)</option>
+                        <option value="openai">Custom / Cloud API (OpenAI-Compatible)</option>
                         <option value="none">No LLM (Voice + File Search Only)</option>
                       </select>
                     </div>

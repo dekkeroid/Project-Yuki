@@ -947,6 +947,7 @@ class CustomEndpointRequest(BaseModel):
 class DeleteCustomEndpointRequest(BaseModel):
     id: Optional[str] = None
     label: Optional[str] = None
+    target_type: Optional[str] = "complex"
 
 
 @app.get("/api/settings/custom-endpoints")
@@ -986,7 +987,7 @@ async def save_custom_endpoint(req: CustomEndpointRequest):
     api_key_enc = ""
     if req.api_key:
         k = req.api_key.strip()
-        if "..." in k: # Masked key passed back from UI
+        if "..." in k or "•••" in k: # Masked key passed back from UI
             existing = next((e for e in raw_endpoints if e.get("id") == ep_id or e.get("label") == label), None)
             api_key_enc = existing.get("api_key", "") if existing else ""
         else:
@@ -1059,7 +1060,7 @@ async def delete_custom_endpoint(req: DeleteCustomEndpointRequest):
 
 @app.post("/api/settings/custom-endpoints/select")
 async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
-    """Selects and activates a saved custom endpoint."""
+    """Selects and activates a saved custom endpoint for either simple or complex endpoint."""
     from app.utils.security import decrypt_api_key, mask_api_key
     from app.agent.llm_backend import reset_backend
 
@@ -1072,25 +1073,41 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
         raise HTTPException(status_code=404, detail="Saved endpoint not found.")
 
     decrypted_key = decrypt_api_key(ep.get("api_key", ""))
-    config.LLM_BACKEND = ep.get("llm_backend", "openai")
-    config.LLM_BASE_URL = ep.get("base_url", "")
-    config.LLM_API_KEY = decrypted_key
-    if ep.get("model"):
-        config.LLM_MODEL = ep.get("model")
-        memory_manager.update_setting("llm_model", ep.get("model"))
+    target_type = req.target_type or "complex"
 
-    memory_manager.update_setting("llm_backend", config.LLM_BACKEND)
-    memory_manager.update_setting("llm_base_url", config.LLM_BASE_URL)
-    memory_manager.update_setting("llm_api_key", ep.get("api_key", ""))
-    reset_backend()
+    if target_type == "simple":
+        config.LLM_SIMPLE_BACKEND = ep.get("llm_backend", "openai")
+        config.LLM_SIMPLE_BASE_URL = ep.get("base_url", "")
+        config.LLM_SIMPLE_API_KEY = decrypted_key
+        if ep.get("model"):
+            config.LLM_SIMPLE_MODEL = ep.get("model")
+            memory_manager.update_setting("llm_simple_model", ep.get("model"))
+
+        memory_manager.update_setting("llm_simple_backend", config.LLM_SIMPLE_BACKEND)
+        memory_manager.update_setting("llm_simple_base_url", config.LLM_SIMPLE_BASE_URL)
+        memory_manager.update_setting("llm_simple_api_key", ep.get("api_key", ""))
+    else:
+        config.LLM_BACKEND = ep.get("llm_backend", "openai")
+        config.LLM_BASE_URL = ep.get("base_url", "")
+        config.LLM_API_KEY = decrypted_key
+        if ep.get("model"):
+            config.LLM_MODEL = ep.get("model")
+            memory_manager.update_setting("llm_model", ep.get("model"))
+
+        memory_manager.update_setting("llm_backend", config.LLM_BACKEND)
+        memory_manager.update_setting("llm_base_url", config.LLM_BASE_URL)
+        memory_manager.update_setting("llm_api_key", ep.get("api_key", ""))
+        reset_backend()
 
     await broadcast_profile_update()
     return {
-        "message": f"Activated custom endpoint '{ep.get('label')}'",
+        "message": f"Activated custom endpoint '{ep.get('label')}' for {target_type}",
         "active_endpoint": ep,
-        "backend": config.LLM_BACKEND,
-        "base_url": config.LLM_BASE_URL,
-        "model": config.LLM_MODEL
+        "masked_key": mask_api_key(ep.get("api_key", "")),
+        "target_type": target_type,
+        "backend": ep.get("llm_backend", "openai"),
+        "base_url": ep.get("base_url", ""),
+        "model": ep.get("model", "")
     }
 
 @app.get("/api/tts")
