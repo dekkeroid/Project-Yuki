@@ -34,70 +34,104 @@ const SearchableModelSelect = ({ value, onChange, options = [], placeholder = "S
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', marginTop: '4px' }}>
+      {/* Trigger Box */}
       <div
         onClick={() => setIsOpen(!isOpen)}
         style={{
           width: '100%',
-          padding: '7px 10px',
-          background: 'rgba(0, 0, 0, 0.4)',
-          border: isOpen ? '1px solid #a78bfa' : '1px solid rgba(255, 255, 255, 0.12)',
-          borderRadius: '8px',
-          color: value ? 'white' : '#94a3b8',
+          padding: '8px 12px',
+          background: 'rgba(15, 23, 42, 0.75)',
+          border: isOpen ? '1.5px solid #a78bfa' : '1px solid rgba(255, 255, 255, 0.14)',
+          borderRadius: '9px',
+          color: value ? '#f8fafc' : '#94a3b8',
           fontSize: '0.78rem',
+          fontWeight: value ? '500' : '400',
           cursor: 'pointer',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           userSelect: 'none',
-          boxShadow: isOpen ? '0 0 12px rgba(167, 139, 250, 0.25)' : 'none',
-          transition: 'all 0.2s ease'
+          boxShadow: isOpen ? '0 0 14px rgba(167, 139, 250, 0.3)' : 'none',
+          transition: 'all 0.2s ease',
+          boxSizing: 'border-box'
         }}
       >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '88%', lineHeight: '1.4' }}>
           {value || placeholder}
         </span>
-        <span style={{ fontSize: '0.65rem', opacity: 0.6, color: '#c4b5fd' }}>{isOpen ? '▲' : '▼'}</span>
+        <span style={{ fontSize: '0.65rem', color: isOpen ? '#a78bfa' : 'rgba(255,255,255,0.4)', transition: 'transform 0.2s ease', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+          ▼
+        </span>
       </div>
 
+      {/* Dropdown Floating Panel */}
       {isOpen && (
         <div style={{
           position: 'absolute',
-          top: 'calc(100% + 4px)',
+          top: 'calc(100% + 6px)',
           left: 0,
           right: 0,
-          zIndex: 9999,
-          background: '#0f172a',
-          border: '1px solid rgba(167, 139, 250, 0.4)',
-          borderRadius: '8px',
-          padding: '6px',
-          boxShadow: '0 10px 28px rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(16px)'
+          zIndex: 99999,
+          background: '#0b0f19',
+          border: '1.5px solid rgba(167, 139, 250, 0.45)',
+          borderRadius: '10px',
+          padding: '8px',
+          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.85), 0 0 16px rgba(167, 139, 250, 0.15)',
+          backdropFilter: 'blur(20px)',
+          boxSizing: 'border-box'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', background: 'rgba(255, 255, 255, 0.06)', borderRadius: '6px', marginBottom: '6px' }}>
-            <Search style={{ width: '12px', height: '12px', color: '#a78bfa' }} />
+          {/* Search Box */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 10px',
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(167, 139, 250, 0.25)',
+            borderRadius: '7px',
+            marginBottom: '8px'
+          }}>
+            <Search style={{ width: '13px', height: '13px', color: '#c4b5fd', flexShrink: 0 }} />
             <input
               type="text"
               autoFocus
-              placeholder="Search model name..."
+              placeholder="Filter model name..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{
                 width: '100%',
                 background: 'transparent',
                 border: 'none',
-                color: 'white',
-                fontSize: '0.76rem',
-                outline: 'none'
+                color: '#ffffff',
+                fontSize: '0.78rem',
+                lineHeight: '1.4',
+                outline: 'none',
+                fontFamily: 'inherit'
               }}
             />
             {searchTerm && (
-              <span onClick={() => setSearchTerm('')} style={{ cursor: 'pointer', fontSize: '0.70rem', color: '#94a3b8' }}>✕</span>
+              <span
+                onClick={() => setSearchTerm('')}
+                style={{ cursor: 'pointer', fontSize: '0.75rem', color: '#94a3b8', padding: '0 2px' }}
+              >
+                ✕
+              </span>
             )}
           </div>
 
-          <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {/* Options Scroll Container */}
+          <div style={{
+            maxHeight: '210px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '3px',
+            paddingRight: '2px',
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'rgba(167, 139, 250, 0.4) transparent'
+          }}>
             {filteredOptions.length === 0 ? (
-              <div style={{ padding: '8px', fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
+              <div style={{ padding: '12px 8px', fontSize: '0.74rem', color: '#94a3b8', textAlign: 'center', lineHeight: '1.4' }}>
                 No model matches "{searchTerm}".
                 <button
                   type="button"
@@ -105,43 +139,68 @@ const SearchableModelSelect = ({ value, onChange, options = [], placeholder = "S
                     onChange(searchTerm);
                     setIsOpen(false);
                   }}
-                  style={{ display: 'block', margin: '6px auto 0 auto', padding: '4px 10px', fontSize: '0.70rem', borderRadius: '4px', background: 'rgba(167, 139, 250, 0.25)', border: '1px solid #a78bfa', color: '#fff', cursor: 'pointer' }}
+                  style={{
+                    display: 'block',
+                    margin: '8px auto 0 auto',
+                    padding: '5px 12px',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    background: 'rgba(167, 139, 250, 0.25)',
+                    border: '1px solid #a78bfa',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
                 >
                   Use "{searchTerm}" as custom model
                 </button>
               </div>
             ) : (
-              filteredOptions.map((mName) => (
-                <div
-                  key={mName}
-                  onClick={() => {
-                    onChange(mName);
-                    setIsOpen(false);
-                    setSearchTerm('');
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    fontSize: '0.76rem',
-                    cursor: 'pointer',
-                    background: value === mName ? 'rgba(167, 139, 250, 0.25)' : 'transparent',
-                    color: value === mName ? '#c4b5fd' : '#e2e8f0',
-                    fontWeight: value === mName ? '600' : '400',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    transition: 'background 0.15s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (value !== mName) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (value !== mName) e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  {mName}
-                </div>
-              ))
+              filteredOptions.map((mName) => {
+                const isSelected = value === mName;
+                return (
+                  <div
+                    key={mName}
+                    onClick={() => {
+                      onChange(mName);
+                      setIsOpen(false);
+                      setSearchTerm('');
+                    }}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '7px',
+                      fontSize: '0.78rem',
+                      lineHeight: '1.4',
+                      minHeight: '32px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      background: isSelected ? 'rgba(167, 139, 250, 0.28)' : 'transparent',
+                      border: isSelected ? '1px solid rgba(167, 139, 250, 0.5)' : '1px solid transparent',
+                      color: isSelected ? '#ffffff' : '#cbd5e1',
+                      fontWeight: isSelected ? '600' : '400',
+                      wordBreak: 'break-all',
+                      transition: 'all 0.15s ease',
+                      boxSizing: 'border-box'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                        e.currentTarget.style.color = '#ffffff';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.color = '#cbd5e1';
+                      }
+                    }}
+                  >
+                    {mName}
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
