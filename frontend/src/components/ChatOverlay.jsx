@@ -531,7 +531,7 @@ const ChatOverlay = ({
             <Terminal className="w-4.5 h-4.5 text-violet-400" />
             <h3 className="panel-title">Neural Conversation Log</h3>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
               onClick={() => {
                 if (window.electronAPI && window.electronAPI.openChatWindow) {
@@ -543,15 +543,15 @@ const ChatOverlay = ({
               }}
               className="panel-close-btn"
               title="Open in Standalone Agentic Workspace Window"
-              style={{ color: '#c4b5fd' }}
             >
-              <ExternalLink className="w-4 h-4" />
+              <ExternalLink className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => setIsPanelOpen(false)}
               className="panel-close-btn"
+              title="Close Panel"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
