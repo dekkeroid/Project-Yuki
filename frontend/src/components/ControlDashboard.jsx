@@ -2649,7 +2649,7 @@ const ControlDashboard = ({
 
                     {/* If DUAL Strategy Selected, render Simple Endpoint Sub-Card */}
                     {settings.endpoint_strategy === 'dual' && settings.llm_mode !== 1 && settings.llm_mode !== 2 && (
-                      <div style={{ background: 'rgba(139, 92, 246, 0.08)', borderRadius: '10px', padding: '10px', marginBottom: '14px', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
+                      <div style={{ background: 'rgba(139, 92, 246, 0.08)', borderRadius: '10px', padding: '12px', marginBottom: '14px', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
                         <div style={{ fontWeight: '600', fontSize: '0.78rem', color: '#c4b5fd', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           💬 Simple Prompt Endpoint (Casual Chat / Fast Responses)
                         </div>
@@ -2689,17 +2689,21 @@ const ControlDashboard = ({
                             <option value="vllm">vLLM (Local)</option>
                             <option value="openai">OpenAI / Cloud API (OpenAI-Compatible)</option>
                             <option value="custom">Custom Endpoint</option>
+                            <option value="none">No LLM (Voice + File Search Only)</option>
                           </select>
                         </div>
 
-                        {/* Simple Saved Key Vault & Presets */}
+                        {/* Simple Custom / Cloud API Key Vault & Presets */}
                         {(settings.llm_simple_backend === 'openai' || settings.llm_simple_backend === 'custom') && (
-                          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                             {savedCustomEndpoints.length > 0 && (
-                              <div className="identity-field" style={{ marginBottom: '8px' }}>
+                              <div className="identity-field" style={{ marginBottom: '10px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                                   <span className="field-label" style={{ color: '#c4b5fd', fontSize: '0.74rem', fontWeight: 600 }}>
                                     🔑 Saved API Key Vault ({savedCustomEndpoints.length})
+                                  </span>
+                                  <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)' }}>
+                                    Select to load preset
                                   </span>
                                 </div>
                                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -2712,12 +2716,13 @@ const ControlDashboard = ({
                                     }}
                                     style={{
                                       flex: 1,
-                                      padding: '6px 9px',
+                                      padding: '7px 10px',
                                       background: 'rgba(18, 12, 33, 0.95)',
                                       border: '1px solid rgba(167, 139, 250, 0.45)',
                                       borderRadius: '8px',
                                       color: '#ffffff',
-                                      fontSize: '0.75rem',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 500,
                                       outline: 'none',
                                       cursor: 'pointer'
                                     }}
@@ -2735,31 +2740,37 @@ const ControlDashboard = ({
                                     onClick={() => handleDeleteCustomEndpoint(selectedSimpleEndpointId)}
                                     className="glass-button"
                                     style={{
-                                      padding: '6px 9px',
+                                      padding: '7px 10px',
                                       borderRadius: '8px',
                                       border: '1px solid rgba(239, 68, 68, 0.4)',
                                       background: 'rgba(239, 68, 68, 0.18)',
                                       color: '#fca5a5',
-                                      cursor: 'pointer'
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      fontSize: '0.74rem'
                                     }}
                                   >
-                                    <Trash2 style={{ width: '12px', height: '12px' }} />
+                                    <Trash2 style={{ width: '13px', height: '13px' }} />
                                   </button>
                                 </div>
                               </div>
                             )}
 
                             {/* Quick Cloud Presets for Simple */}
-                            <div style={{ marginTop: '4px', marginBottom: '6px' }}>
-                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>
-                                Quick Presets:
+                            <div style={{ marginTop: '6px', marginBottom: '8px' }}>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                                Quick Cloud Provider Presets:
                               </span>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                 {[
                                   { name: 'Gemini', label: 'Google Gemini Cloud', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
                                   { name: 'OpenAI', label: 'OpenAI Cloud API', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
                                   { name: 'Grok', label: 'xAI Grok Cloud', url: 'https://api.x.ai/v1', model: 'grok-beta' },
+                                  { name: 'OpenRouter', label: 'OpenRouter Cloud API', url: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
                                   { name: 'Groq', label: 'Groq Cloud API', url: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
+                                  { name: 'Mistral', label: 'Mistral Cloud API', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
                                   { name: 'DeepSeek', label: 'DeepSeek Cloud', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }
                                 ].map((p) => (
                                   <button
@@ -2773,12 +2784,12 @@ const ControlDashboard = ({
                                     }}
                                     className="glass-button"
                                     style={{
-                                      padding: '2px 6px',
-                                      fontSize: '0.64rem',
-                                      borderRadius: '5px',
+                                      padding: '3px 8px',
+                                      fontSize: '0.66rem',
+                                      borderRadius: '6px',
                                       background: settings.llm_simple_base_url === p.url ? 'rgba(139, 92, 246, 0.35)' : 'rgba(255, 255, 255, 0.05)',
                                       border: settings.llm_simple_base_url === p.url ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
-                                      color: '#fff',
+                                      color: settings.llm_simple_base_url === p.url ? '#fff' : '#cbd5e1',
                                       cursor: 'pointer'
                                     }}
                                   >
@@ -2789,23 +2800,23 @@ const ControlDashboard = ({
                             </div>
 
                             {/* Preset Label Input */}
-                            <div className="identity-field" style={{ marginTop: '6px' }}>
-                              <span className="field-label">Preset Label</span>
+                            <div className="identity-field" style={{ marginTop: '8px' }}>
+                              <span className="field-label">Preset Name / Label</span>
                               <input
                                 type="text"
-                                placeholder="e.g. Local Fast Llama, Gemini Flash"
+                                placeholder="e.g. Google Gemini Cloud, Local Fast Llama"
                                 value={customSimpleLabel}
                                 onChange={(e) => setCustomSimpleLabel(e.target.value)}
                                 style={{
                                   width: '100%',
-                                  padding: '6px 9px',
+                                  padding: '7px 10px',
                                   background: 'rgba(0,0,0,0.3)',
-                                  border: '1px solid rgba(167,139,250,0.3)',
+                                  border: '1px solid rgba(167, 139, 250, 0.3)',
                                   borderRadius: '8px',
                                   color: 'white',
-                                  fontSize: '0.76rem',
+                                  fontSize: '0.78rem',
                                   outline: 'none',
-                                  marginTop: '2px'
+                                  marginTop: '3px'
                                 }}
                               />
                             </div>
@@ -2813,31 +2824,33 @@ const ControlDashboard = ({
                         )}
 
                         {/* Simple Base URL */}
-                        <div className="identity-field" style={{ marginTop: '6px' }}>
-                          <span className="field-label">Simple Base URL</span>
-                          <input
-                            type="text"
-                            placeholder="http://127.0.0.1:1234"
-                            value={settings.llm_simple_base_url || ''}
-                            onChange={(e) => handleUpdateSetting('llm_simple_base_url', e.target.value)}
-                            style={{
-                              width: '100%',
-                              padding: '6px 9px',
-                              background: 'rgba(0,0,0,0.3)',
-                              border: '1px solid rgba(255,255,255,0.1)',
-                              borderRadius: '8px',
-                              color: 'white',
-                              fontSize: '0.76rem',
-                              outline: 'none',
-                              marginTop: '2px'
-                            }}
-                          />
-                        </div>
+                        {settings.llm_simple_backend !== 'none' && (
+                          <div className="identity-field" style={{ marginTop: '8px' }}>
+                            <span className="field-label">Simple Base URL</span>
+                            <input
+                              type="text"
+                              placeholder="http://127.0.0.1:1234"
+                              value={settings.llm_simple_base_url || ''}
+                              onChange={(e) => handleUpdateSetting('llm_simple_base_url', e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '7px 10px',
+                                background: 'rgba(0,0,0,0.3)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                color: 'white',
+                                fontSize: '0.78rem',
+                                outline: 'none',
+                                marginTop: '4px'
+                              }}
+                            />
+                          </div>
+                        )}
 
                         {/* Simple API Key */}
                         {(settings.llm_simple_backend === 'openai' || settings.llm_simple_backend === 'custom') && (
-                          <div className="identity-field" style={{ marginTop: '6px' }}>
-                            <span className="field-label">Simple API Key</span>
+                          <div className="identity-field" style={{ marginTop: '8px' }}>
+                            <span className="field-label">Simple API Key (Encrypted in DB)</span>
                             <input
                               type="password"
                               placeholder="sk-..."
@@ -2845,14 +2858,14 @@ const ControlDashboard = ({
                               onChange={(e) => handleUpdateSetting('llm_simple_api_key', e.target.value)}
                               style={{
                                 width: '100%',
-                                padding: '6px 9px',
+                                padding: '7px 10px',
                                 background: 'rgba(0,0,0,0.3)',
                                 border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: '8px',
                                 color: 'white',
-                                fontSize: '0.76rem',
+                                fontSize: '0.78rem',
                                 outline: 'none',
-                                marginTop: '2px'
+                                marginTop: '4px'
                               }}
                             />
                           </div>
@@ -2860,16 +2873,16 @@ const ControlDashboard = ({
 
                         {/* Save Simple Preset Button */}
                         {(settings.llm_simple_backend === 'openai' || settings.llm_simple_backend === 'custom') && (
-                          <div style={{ marginTop: '8px' }}>
+                          <div style={{ marginTop: '10px' }}>
                             <button
                               type="button"
                               onClick={handleSaveSimpleCustomEndpoint}
                               className="glass-button"
                               style={{
                                 width: '100%',
-                                padding: '6px 10px',
-                                fontSize: '0.75rem',
-                                borderRadius: '7px',
+                                padding: '8px 12px',
+                                fontSize: '0.78rem',
+                                borderRadius: '8px',
                                 background: 'rgba(139, 92, 246, 0.25)',
                                 border: '1px solid #a78bfa',
                                 color: 'white',
@@ -2881,27 +2894,31 @@ const ControlDashboard = ({
                           </div>
                         )}
 
-                        {/* Simple Model Name */}
-                        <div className="identity-field" style={{ marginTop: '6px' }}>
-                          <span className="field-label">Simple Model Name</span>
-                          <input
-                            type="text"
-                            placeholder="e.g. llama-3.2-3b-instruct, gpt-4o-mini"
-                            value={settings.llm_simple_model || ''}
-                            onChange={(e) => handleUpdateSetting('llm_simple_model', e.target.value)}
-                            style={{
-                              width: '100%',
-                              padding: '6px 9px',
-                              background: 'rgba(0,0,0,0.3)',
-                              border: '1px solid rgba(255,255,255,0.1)',
-                              borderRadius: '8px',
-                              color: 'white',
-                              fontSize: '0.76rem',
-                              outline: 'none',
-                              marginTop: '2px'
-                            }}
-                          />
-                        </div>
+                        {/* Simple Model Selection */}
+                        {settings.llm_simple_backend !== 'none' && (
+                          <div className="identity-field" style={{ marginTop: '8px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span className="field-label">Simple Model Name</span>
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="e.g. llama-3.2-3b-instruct, gpt-4o-mini, gemini-1.5-flash"
+                              value={settings.llm_simple_model || ''}
+                              onChange={(e) => handleUpdateSetting('llm_simple_model', e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '7px 10px',
+                                background: 'rgba(0,0,0,0.3)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                color: 'white',
+                                fontSize: '0.78rem',
+                                outline: 'none',
+                                marginTop: '4px'
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -2912,9 +2929,11 @@ const ControlDashboard = ({
                       </div>
                     )}
 
-                    {/* LLM Backend Type */}
+                    {/* LLM Backend Type (Complex / Main) */}
                     <div className="identity-field" style={{ marginTop: '4px' }}>
-                      <span className="field-label">LLM Backend</span>
+                      <span className="field-label">
+                        {settings.endpoint_strategy === 'dual' && settings.llm_mode !== 1 && settings.llm_mode !== 2 ? 'Complex LLM Backend' : 'LLM Backend'}
+                      </span>
                       <select
                         value={settings.llm_backend || 'lmstudio'}
                         onChange={async (e) => {
@@ -2925,10 +2944,10 @@ const ControlDashboard = ({
                             lmstudio: 'http://127.0.0.1:1234',
                             ollama: 'http://127.0.0.1:11434',
                             vllm: 'http://127.0.0.1:8000/v1',
-                            openai: 'https://api.openai.com/v1',
-                            custom: '',
+                            openai: 'https://generativelanguage.googleapis.com/v1beta/openai',
+                            custom: 'http://127.0.0.1:8000/v1',
                           };
-                          await handleUpdateSetting('llm_base_url', defaults[newBackend] || '');
+                          if (defaults[newBackend]) await handleUpdateSetting('llm_base_url', defaults[newBackend]);
                           if (newBackend !== 'none' && onRefreshLlmModels) {
                             setTimeout(() => onRefreshLlmModels(), 500);
                           }
@@ -2949,7 +2968,8 @@ const ControlDashboard = ({
                         <option value="lmstudio">LM Studio (Local)</option>
                         <option value="ollama">Ollama (Local)</option>
                         <option value="vllm">vLLM (Local)</option>
-                        <option value="custom">Custom / Cloud API (OpenAI-Compatible)</option>
+                        <option value="openai">OpenAI / Cloud API (OpenAI-Compatible)</option>
+                        <option value="custom">Custom Endpoint</option>
                         <option value="none">No LLM (Voice + File Search Only)</option>
                       </select>
                     </div>
