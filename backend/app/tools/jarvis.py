@@ -35,10 +35,14 @@ def jarvis_query_file_db(
         path_hint: Optional folder or drive hint (e.g. "D:", "Downloads", "Anime", "Desktop").
         limit: Max results to return (default 15).
     """
-    if not query or not query.strip():
+    query_str = str(query).strip() if query is not None else ""
+    if not query_str:
         return "Error: Query string cannot be empty."
 
-    clean_query = query.strip()
+    clean_query = query_str
+    category_str = str(category).strip() if category is not None else ""
+    extension_str = str(extension).strip() if extension is not None else ""
+    path_hint_str = str(path_hint).strip() if path_hint is not None else ""
 
     try:
         from app.tools.files import parse_query_with_llm, query_database_union, _density_score, _is_unwanted_installer_or_uninstaller
@@ -46,12 +50,12 @@ def jarvis_query_file_db(
         parsed = parse_query_with_llm(clean_query)
 
         # Inject explicit path_hint if provided
-        if path_hint:
-            path_hint_clean = path_hint.strip().lower().rstrip("\\/")
+        if path_hint_str:
+            path_hint_clean = path_hint_str.lower().rstrip("\\/")
             if path_hint_clean and path_hint_clean not in parsed.get("path", []):
                 parsed.setdefault("path", []).append(path_hint_clean)
 
-        categories = [category.strip().lower()] if category and category.strip() else None
+        categories = [category_str.lower()] if category_str else None
 
         candidates = query_database_union(parsed, limit_raw=max(limit * 4, 60), categories=categories, silent=True)
 
@@ -59,8 +63,8 @@ def jarvis_query_file_db(
             return f"No indexed files found matching query '{clean_query}'."
 
         # Filter by extension if provided
-        if extension and extension.strip():
-            ext_clean = extension.strip().lower()
+        if extension_str:
+            ext_clean = extension_str.lower()
             if not ext_clean.startswith('.'):
                 ext_clean = '.' + ext_clean
             candidates = [c for c in candidates if (c.get("extension") or "").lower() == ext_clean or (c.get("file_path") or "").lower().endswith(ext_clean)]
