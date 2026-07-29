@@ -331,6 +331,15 @@ app.add_middleware(
 memory_manager = MemoryManager()
 agent_executor = None  # Initialized in lifespan to defer heavy imports
 
+import uuid
+def generate_new_session_id() -> str:
+    now_str = time.strftime("%Y%m%d_%H%M%S")
+    short_uid = str(uuid.uuid4())[:6]
+    return f"session_{now_str}_{short_uid}"
+
+active_session_id = generate_new_session_id()
+print(f"[Session] Initialized new app session: {active_session_id}")
+
 # Chat history helper functions
 def save_persistent_chat_history(history: list):
     try:
@@ -341,6 +350,12 @@ def save_persistent_chat_history(history: list):
                 json.dump(history, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"[History] Could not save chat_history.json: {e}")
+        
+    try:
+        from app.memory.db import save_chat_session_if_eligible
+        save_chat_session_if_eligible(active_session_id, history)
+    except Exception as e:
+        print(f"[History] Could not save SQLite chat session: {e}")
 
 def load_persistent_chat_history() -> list:
     try:
@@ -2495,6 +2510,48 @@ def _resolve_frontend_dir():
     return Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 _frontend_dir = _resolve_frontend_dir()
+
+# ---------------------------------------------------------------------------
+# Chat Session History REST APIs
+# ---------------------------------------------------------------------------
+@app.get("/api/chat/sessions")
+async def get_chat_sessions():
+    """Returns hierarchical tree of past chat sessions (Year -> Month -> Date)."""
+    try:
+        from app.memory.db import get_hierarchical_chat_sessions
+        data = get_hierarchical_chat_sessions()
+        return {"status": "success", "active_session_id": active_session_id, "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/chat/sessions/{session_id}")
+async def get_chat_session_history(session_id: str):
+    """Returns full message history for a specific past session."""
+    try:
+        from app.memory.db import get_session_messages
+        messages = get_session_messages(session_id)
+        return {"status": "success", "session_id": session_id, "messages": messages}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/chat/sessions/new")
+async def create_new_chat_session():
+    """Starts a new chat session."""
+    global active_session_id, chat_history
+    active_session_id = generate_new_session_id()
+    chat_history = []
+    print(f"[Session] Started new user session: {active_session_id}")
+    return {"status": "success", "session_id": active_session_id, "messages": []}
+
+@app.delete("/api/chat/sessions/{session_id}")
+async def delete_chat_session_by_id(session_id: str):
+    """Deletes a past session."""
+    try:
+        from app.memory.db import delete_chat_session
+        delete_chat_session(session_id)
+        return {"status": "success", "deleted": session_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/debug/threads")
 def debug_threads():

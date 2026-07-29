@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Cpu, Terminal, Sparkles, MessageSquare, Monitor, X, Maximize2, Minimize2, 
   Send, RefreshCw, Zap, HardDrive, Database, Eye, EyeOff, Wrench, Search,
-  Code, Activity, Brain, Volume2, Mic, MicOff, RefreshCw as RefreshIcon
+  Code, Activity, Brain, Volume2, Mic, MicOff, ChevronDown, ChevronRight,
+  Folder, Calendar, Plus, Trash2, History, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought } from './ChatOverlay';
 import MicLevelMeter from './MicLevelMeter';
@@ -32,36 +33,157 @@ export const AgenticWorkspaceWindow = ({
   systemStats = null
 }) => {
   const [activeTab, setActiveTab] = useState('inspector'); // 'inspector' | 'system' | 'memory'
-  const [inspectorFilter, setInspectorFilter] = useState('all'); // 'all' | 'code' | 'db' | 'terminal'
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [sessionTree, setSessionTree] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState('');
+  const [selectedPastSessionId, setSelectedPastSessionId] = useState(null);
+  const [viewMessages, setViewMessages] = useState(null); // Loaded messages when inspecting past session
+  const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
   const messagesEndRef = useRef(null);
+
+  // Fetch session hierarchy from backend
+  const fetchSessionTree = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/sessions`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.data && data.data.years) {
+          setSessionTree(data.data.years);
+          if (data.active_session_id) {
+            setActiveSessionId(data.active_session_id);
+          }
+
+          // Smart Auto-Collapse: expand ONLY active session's Year, Month, and Date
+          const activeId = data.active_session_id;
+          const initialExpanded = new Set();
+          
+          data.data.years.forEach((yrObj) => {
+            yrObj.months.forEach((mnObj) => {
+              mnObj.dates.forEach((dtObj) => {
+                const containsActive = dtObj.sessions.some((s) => s.session_id === activeId);
+                if (containsActive) {
+                  initialExpanded.add(`yr_${yrObj.year}`);
+                  initialExpanded.add(`mn_${mnObj.month}`);
+                  initialExpanded.add(`dt_${dtObj.date}`);
+                }
+              });
+            });
+          });
+
+          // Fallback if active session hasn't been saved yet (default to expanding most recent date)
+          if (initialExpanded.size === 0 && data.data.years.length > 0) {
+            const firstYr = data.data.years[0];
+            initialExpanded.add(`yr_${firstYr.year}`);
+            if (firstYr.months.length > 0) {
+              const firstMn = firstYr.months[0];
+              initialExpanded.add(`mn_${firstMn.month}`);
+              if (firstMn.dates.length > 0) {
+                initialExpanded.add(`dt_${firstMn.dates[0].date}`);
+              }
+            }
+          }
+
+          setExpandedNodes(initialExpanded);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch session tree:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchSessionTree();
+  }, [messages.length]);
+
+  const toggleNode = (nodeKey) => {
+    setExpandedNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeKey)) {
+        next.delete(nodeKey);
+      } else {
+        next.add(nodeKey);
+      }
+      return next;
+    });
+  };
+
+  // Inspect a past session
+  const handleSelectSession = async (sessionId) => {
+    setSelectedPastSessionId(sessionId);
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/sessions/${sessionId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.messages) {
+          setViewMessages(data.messages);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load past session messages:", err);
+    }
+  };
+
+  // Delete a session
+  const handleDeleteSession = async (e, sessionId) => {
+    e.stopPropagation();
+    try {
+      await fetch(`${API_BASE}/api/chat/sessions/${sessionId}`, { method: 'DELETE' });
+      if (selectedPastSessionId === sessionId) {
+        setSelectedPastSessionId(null);
+        setViewMessages(null);
+      }
+      fetchSessionTree();
+    } catch (err) {
+      console.error("Failed to delete session:", err);
+    }
+  };
+
+  // Trigger New Session
+  const handleStartNewSession = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/sessions/new`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveSessionId(data.session_id);
+        setSelectedPastSessionId(null);
+        setViewMessages(null);
+        fetchSessionTree();
+      }
+    } catch (err) {
+      console.error("Failed to start new session:", err);
+    }
+  };
+
+  // Displayed messages: either active turn messages or inspected past session messages
+  const displayMessages = selectedPastSessionId && viewMessages ? viewMessages : messages;
 
   // Auto-scroll to bottom of chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [displayMessages]);
 
-  // Extract all tool execution events from messages for the Inspector
+  // Extract all tool execution events for Inspector
   const toolLogs = React.useMemo(() => {
     const logs = [];
-    messages.forEach((msg, idx) => {
+    displayMessages.forEach((msg, idx) => {
       const text = msg.content || "";
       if (text.includes("⚙️ [Tool Start]") || text.includes("⚙️ [Tool Result]")) {
         logs.push({ id: idx, text, role: msg.role });
       }
     });
     return logs;
-  }, [messages]);
+  }, [displayMessages]);
 
-  // Extract last tool output or python execution result
+  // Extract last tool result
   const lastToolResult = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const text = messages[i].content || "";
+    for (let i = displayMessages.length - 1; i >= 0; i--) {
+      const text = displayMessages[i].content || "";
       if (text.includes("⚙️ [Tool Result]")) {
         return text.replace(/⚙️\s*\[Tool Result\]\s*/i, '').trim();
       }
     }
     return null;
-  }, [messages]);
+  }, [displayMessages]);
 
   return (
     <div style={{
@@ -87,6 +209,25 @@ export const AgenticWorkspaceWindow = ({
       }}>
         {/* Left Status & Brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            type="button"
+            onClick={() => setShowSidebar(!showSidebar)}
+            title={showSidebar ? "Hide Session History Sidebar" : "Show Session History Sidebar"}
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '7px',
+              padding: '5px 8px',
+              color: '#c4b5fd',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            {showSidebar ? <PanelLeftClose style={{ width: '16px', height: '16px' }} /> : <PanelLeftOpen style={{ width: '16px', height: '16px' }} />}
+          </button>
+
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -186,17 +327,270 @@ export const AgenticWorkspaceWindow = ({
         </div>
       </header>
 
-      {/* ── Main Dual-Pane Body ────────────────────────────────────────── */}
+      {/* ── Main Layout Body ────────────────────────────────────────────── */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+
+        {/* ── SIDEBAR: Hierarchical Chat Session History (Collapsible) ─── */}
+        {showSidebar && (
+          <aside style={{
+            width: '260px',
+            background: 'rgba(11, 15, 25, 0.98)',
+            borderRight: '1px solid rgba(167, 139, 250, 0.15)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            {/* Sidebar Top Action */}
+            <div style={{ padding: '12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <button
+                type="button"
+                onClick={handleStartNewSession}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(167, 139, 250, 0.4)',
+                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.25) 0%, rgba(56, 189, 248, 0.25) 100%)',
+                  color: '#ffffff',
+                  fontSize: '0.76rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <Plus style={{ width: '15px', height: '15px' }} />
+                Start New Session
+              </button>
+            </div>
+
+            {/* Hierarchical Tree Container */}
+            <div style={{
+              flex: 1,
+              padding: '10px 8px',
+              overflowY: 'auto',
+              scrollbarWidth: 'thin',
+              scrollbarColor: 'rgba(167, 139, 250, 0.3) transparent'
+            }}>
+              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '8px', paddingLeft: '6px' }}>
+                Chat History Archive
+              </div>
+
+              {sessionTree.length === 0 ? (
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic', padding: '10px 6px' }}>
+                  No saved sessions yet. Start chatting to archive session logs!
+                </div>
+              ) : (
+                sessionTree.map((yrObj) => {
+                  const yrKey = `yr_${yrObj.year}`;
+                  const isYrExpanded = expandedNodes.has(yrKey);
+
+                  return (
+                    <div key={yrKey} style={{ marginBottom: '6px' }}>
+                      {/* Year Node */}
+                      <div
+                        onClick={() => toggleNode(yrKey)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '5px 6px',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          fontSize: '0.76rem',
+                          fontWeight: 700,
+                          color: '#c4b5fd',
+                          background: 'rgba(255,255,255,0.03)',
+                          userSelect: 'none'
+                        }}
+                      >
+                        {isYrExpanded ? <ChevronDown style={{ width: '14px', height: '14px' }} /> : <ChevronRight style={{ width: '14px', height: '14px' }} />}
+                        <Folder style={{ width: '14px', height: '14px', color: '#8b5cf6' }} />
+                        <span>{yrObj.year}</span>
+                      </div>
+
+                      {/* Month Nodes */}
+                      {isYrExpanded && (
+                        <div style={{ paddingLeft: '12px', marginTop: '4px' }}>
+                          {yrObj.months.map((mnObj) => {
+                            const mnKey = `mn_${mnObj.month}`;
+                            const isMnExpanded = expandedNodes.has(mnKey);
+
+                            return (
+                              <div key={mnKey} style={{ marginBottom: '4px' }}>
+                                <div
+                                  onClick={() => toggleNode(mnKey)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '4px 6px',
+                                    borderRadius: '5px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.74rem',
+                                    fontWeight: 600,
+                                    color: '#cbd5e1',
+                                    userSelect: 'none'
+                                  }}
+                                >
+                                  {isMnExpanded ? <ChevronDown style={{ width: '13px', height: '13px' }} /> : <ChevronRight style={{ width: '13px', height: '13px' }} />}
+                                  <Calendar style={{ width: '13px', height: '13px', color: '#38bdf8' }} />
+                                  <span>{mnObj.month}</span>
+                                </div>
+
+                                {/* Date Nodes */}
+                                {isMnExpanded && (
+                                  <div style={{ paddingLeft: '12px', marginTop: '3px' }}>
+                                    {mnObj.dates.map((dtObj) => {
+                                      const dtKey = `dt_${dtObj.date}`;
+                                      const isDtExpanded = expandedNodes.has(dtKey);
+
+                                      return (
+                                        <div key={dtKey} style={{ marginBottom: '3px' }}>
+                                          <div
+                                            onClick={() => toggleNode(dtKey)}
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '5px',
+                                              padding: '3px 6px',
+                                              borderRadius: '4px',
+                                              cursor: 'pointer',
+                                              fontSize: '0.72rem',
+                                              color: '#94a3b8',
+                                              userSelect: 'none'
+                                            }}
+                                          >
+                                            {isDtExpanded ? <ChevronDown style={{ width: '12px', height: '12px' }} /> : <ChevronRight style={{ width: '12px', height: '12px' }} />}
+                                            <span>📅 {dtObj.date}</span>
+                                            <span style={{ fontSize: '0.62rem', opacity: 0.6 }}>({dtObj.sessions.length})</span>
+                                          </div>
+
+                                          {/* Session Items */}
+                                          {isDtExpanded && (
+                                            <div style={{ paddingLeft: '10px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                              {dtObj.sessions.map((sess) => {
+                                                const isActive = sess.session_id === activeSessionId;
+                                                const isSelected = sess.session_id === selectedPastSessionId;
+
+                                                return (
+                                                  <div
+                                                    key={sess.session_id}
+                                                    onClick={() => handleSelectSession(sess.session_id)}
+                                                    style={{
+                                                      display: 'flex',
+                                                      alignItems: 'center',
+                                                      justifyContent: 'space-between',
+                                                      padding: '5px 8px',
+                                                      borderRadius: '6px',
+                                                      fontSize: '0.70rem',
+                                                      cursor: 'pointer',
+                                                      background: isSelected
+                                                        ? 'rgba(56, 189, 248, 0.25)'
+                                                        : isActive
+                                                          ? 'rgba(167, 139, 250, 0.2)'
+                                                          : 'rgba(255,255,255,0.02)',
+                                                      border: isSelected
+                                                        ? '1px solid rgba(56, 189, 248, 0.4)'
+                                                        : isActive
+                                                          ? '1px solid rgba(167, 139, 250, 0.3)'
+                                                          : '1px solid transparent',
+                                                      color: isSelected ? '#38bdf8' : isActive ? '#c4b5fd' : '#e2e8f0',
+                                                      transition: 'all 0.15s ease'
+                                                    }}
+                                                  >
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                                      <MessageSquare style={{ width: '12px', height: '12px', flexShrink: 0 }} />
+                                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sess.title}</span>
+                                                    </div>
+
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => handleDeleteSession(e, sess.session_id)}
+                                                      title="Delete Session"
+                                                      style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        color: '#94a3b8',
+                                                        opacity: 0.6,
+                                                        cursor: 'pointer',
+                                                        padding: '2px',
+                                                        borderRadius: '3px'
+                                                      }}
+                                                      onMouseEnter={(e) => e.target.style.opacity = 1}
+                                                      onMouseLeave={(e) => e.target.style.opacity = 0.6}
+                                                    >
+                                                      <Trash2 style={{ width: '11px', height: '11px' }} />
+                                                    </button>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </aside>
+        )}
         
-        {/* ── LEFT PANE: Agentic Timeline & Chat (60% Width) ──────────── */}
+        {/* ── MIDDLE PANE: Agentic Timeline & Chat ────────────────────── */}
         <section style={{
-          width: '60%',
+          flex: 1,
           display: 'flex',
           flexDirection: 'column',
           borderRight: '1px solid rgba(167, 139, 250, 0.15)',
           background: 'rgba(11, 15, 25, 0.85)'
         }}>
+          {/* Inspected Past Session Banner */}
+          {selectedPastSessionId && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '6px 16px',
+              background: 'rgba(56, 189, 248, 0.15)',
+              borderBottom: '1px solid rgba(56, 189, 248, 0.3)',
+              fontSize: '0.74rem',
+              color: '#38bdf8'
+            }}>
+              <span>📜 Inspecting Archived Session Log ({selectedPastSessionId})</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPastSessionId(null);
+                  setViewMessages(null);
+                }}
+                style={{
+                  background: 'none',
+                  border: '1px solid rgba(56, 189, 248, 0.4)',
+                  color: '#ffffff',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.68rem',
+                  fontWeight: 600
+                }}
+              >
+                Return to Live Session
+              </button>
+            </div>
+          )}
+
           {/* Chat Messages Feed */}
           <div style={{
             flex: 1,
@@ -208,7 +602,7 @@ export const AgenticWorkspaceWindow = ({
             scrollbarWidth: 'thin',
             scrollbarColor: 'rgba(167, 139, 250, 0.3) transparent'
           }}>
-            {messages.length === 0 ? (
+            {displayMessages.length === 0 ? (
               <div style={{
                 margin: 'auto',
                 textAlign: 'center',
@@ -225,7 +619,7 @@ export const AgenticWorkspaceWindow = ({
                 </p>
               </div>
             ) : (
-              messages.map((msg, index) => {
+              displayMessages.map((msg, index) => {
                 const isUser = msg.role === 'user';
                 const isSystem = msg.role === 'system';
                 const isToolEvent = msg.content && (msg.content.includes("⚙️ [Tool Start]") || msg.content.includes("⚙️ [Tool Result]"));
@@ -391,9 +785,9 @@ export const AgenticWorkspaceWindow = ({
           </div>
         </section>
 
-        {/* ── RIGHT PANE: Live Inspector & Context Monitor (40% Width) ─── */}
+        {/* ── RIGHT PANE: Live Inspector & Context Monitor (35% Width) ─── */}
         <section style={{
-          width: '40%',
+          width: '35%',
           display: 'flex',
           flexDirection: 'column',
           background: 'rgba(7, 10, 18, 0.95)',

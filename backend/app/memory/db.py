@@ -370,6 +370,30 @@ def init_db():
     );
     """)
 
+    # 1e. Persistent Chat Sessions & Message History
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+        session_id TEXT PRIMARY KEY,
+        title TEXT,
+        created_at REAL,
+        updated_at REAL,
+        year INTEGER,
+        month_name TEXT,
+        date_str TEXT
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        role TEXT,
+        content TEXT,
+        timestamp REAL,
+        FOREIGN KEY (session_id) REFERENCES chat_sessions (session_id) ON DELETE CASCADE
+    );
+    """)
+
     # Migration: add os_task_name column if it doesn't exist yet
     existing_cols = [row[1] for row in cursor.execute("PRAGMA table_info(reminders)").fetchall()]
     if "os_task_name" not in existing_cols:
@@ -793,3 +817,171 @@ def get_search_candidates(keywords: List[str], limit: int = 100) -> List[Dict[st
         return []
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Chat Session History CRUD & Title Generator
+# ---------------------------------------------------------------------------
+
+GENERIC_GREETINGS = {
+    'hello', 'hi', 'hey', 'yo', 'sup', 'greetings', 'good morning', 
+    'good afternoon', 'good evening', 'how are you', 'hows it going',
+    'what is up', 'whats up', 'yuki', 'master'
+}
+
+def clean_prompt_for_title(text: str) -> str:
+    if not text:
+        return ""
+    clean = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', text, flags=re.IGNORECASE).strip()
+    clean = re.sub(r'[^\w\s-]', '', clean)
+    words = [w for w in clean.split() if w]
+    filtered = [w for w in words if w.lower() not in GENERIC_GREETINGS]
+    return " ".join(filtered)
+
+def generate_session_title(messages: List[Dict[str, str]]) -> str:
+    """
+    Combines meaningful non-greeting terms from the first 3 user prompts.
+    """
+    user_prompts = []
+    for msg in messages:
+        if msg.get("role") == "user":
+            c = clean_prompt_for_title(msg.get("content", ""))
+            if c:
+                user_prompts.append(c)
+            if len(user_prompts) >= 3:
+                break
+    
+    if not user_prompts:
+        return "Chat Session"
+    
+    combined = " • ".join(user_prompts)
+    if len(combined) > 60:
+        return combined[:57] + "..."
+    return combined.title()
+
+def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]]):
+    """
+    Saves or updates a chat session in SQLite ONLY IF len(messages) >= 2.
+    Discards empty or 1-message orphan turns.
+    """
+    if not session_id or not messages or len(messages) < 2:
+        return
+    
+    now = time.time()
+    t_struct = time.localtime(now)
+    year = t_struct.tm_year
+    month_name = time.strftime("%B %Y", t_struct)  # e.g. "July 2026"
+    date_str = time.strftime("%d %B %Y", t_struct)  # e.g. "30 July 2026"
+    
+    title = generate_session_title(messages)
+    
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO chat_sessions (session_id, title, created_at, updated_at, year, month_name, date_str)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(session_id) DO UPDATE SET
+            title = excluded.title,
+            updated_at = excluded.updated_at
+        """, (session_id, title, now, now, year, month_name, date_str))
+        
+        cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+        msg_rows = [
+            (session_id, m.get("role", "user"), str(m.get("content", "")), now)
+            for m in messages
+        ]
+        cursor.executemany("""
+        INSERT INTO chat_messages (session_id, role, content, timestamp)
+        VALUES (?, ?, ?, ?)
+        """, msg_rows)
+        
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Error saving chat session '{session_id}': {e}")
+    finally:
+        conn.close()
+
+def get_hierarchical_chat_sessions() -> Dict[str, Any]:
+    """
+    Returns sessions grouped hierarchically by Year -> Month -> Date.
+    """
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+        SELECT session_id, title, created_at, updated_at, year, month_name, date_str
+        FROM chat_sessions
+        ORDER BY updated_at DESC
+        """).fetchall()
+        
+        tree = {}
+        for r in rows:
+            yr = r["year"]
+            mn = r["month_name"]
+            ds = r["date_str"]
+            
+            if yr not in tree:
+                tree[yr] = {}
+            if mn not in tree[yr]:
+                tree[yr][mn] = {}
+            if ds not in tree[yr][mn]:
+                tree[yr][mn][ds] = []
+                
+            tree[yr][mn][ds].append({
+                "session_id": r["session_id"],
+                "title": r["title"] or "Chat Session",
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"]
+            })
+            
+        result_years = []
+        for yr in sorted(tree.keys(), reverse=True):
+            months = []
+            for mn in tree[yr]:
+                dates = []
+                for ds in tree[yr][mn]:
+                    dates.append({
+                        "date": ds,
+                        "sessions": tree[yr][mn][ds]
+                    })
+                months.append({
+                    "month": mn,
+                    "dates": dates
+                })
+            result_years.append({
+                "year": yr,
+                "months": months
+            })
+            
+        return {"years": result_years}
+    except Exception as e:
+        print(f"[DB] Error getting hierarchical chat sessions: {e}")
+        return {"years": []}
+    finally:
+        conn.close()
+
+def get_session_messages(session_id: str) -> List[Dict[str, str]]:
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+        SELECT role, content FROM chat_messages
+        WHERE session_id = ?
+        ORDER BY id ASC
+        """, (session_id,)).fetchall()
+        return [{"role": r["role"], "content": r["content"]} for r in rows]
+    except Exception as e:
+        print(f"[DB] Error fetching messages for session '{session_id}': {e}")
+        return []
+    finally:
+        conn.close()
+
+def delete_chat_session(session_id: str):
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM chat_sessions WHERE session_id = ?", (session_id,))
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Error deleting session '{session_id}': {e}")
+    finally:
+        conn.close()
+
