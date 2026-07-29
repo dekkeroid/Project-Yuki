@@ -748,7 +748,25 @@ async def update_settings(req: SettingsUpdateRequest):
         config.LLM_BASE_URL = req.llm_base_url.strip()
         memory_manager.update_setting("llm_base_url", req.llm_base_url.strip())
     if req.llm_api_key is not None:
-        memory_manager.update_setting("llm_api_key", req.llm_api_key.strip())
+        from app.utils.security import encrypt_api_key, decrypt_api_key
+        from app.agent.llm_backend import reset_backend
+        key_val = req.llm_api_key.strip()
+        if key_val:
+            if key_val.startswith("enc_v1:") or key_val.startswith("gAAAA"):
+                decrypted = decrypt_api_key(key_val)
+                config.LLM_API_KEY = decrypted
+                memory_manager.update_setting("llm_api_key", key_val)
+            elif "..." in key_val:
+                pass
+            else:
+                config.LLM_API_KEY = key_val
+                encrypted = encrypt_api_key(key_val)
+                memory_manager.update_setting("llm_api_key", encrypted)
+            reset_backend()
+        else:
+            config.LLM_API_KEY = ""
+            memory_manager.update_setting("llm_api_key", "")
+            reset_backend()
     if req.tts_voice is not None:
         config.TTS_VOICE = req.tts_voice.strip()
         memory_manager.update_setting("tts_voice", req.tts_voice.strip())
