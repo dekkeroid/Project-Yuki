@@ -2187,7 +2187,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 task = tts_tasks[idx]
                                 result = await task
                                 if result:
-                                    await websocket.send_json(result)
+                                    await broadcast_ws_event(result)
                                 idx += 1
                         
                         sender_task = asyncio.create_task(tts_sender())
@@ -2252,7 +2252,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     gen = no_llm_gen()
                                 else:
                                     if agent_executor is None:
-                                        await websocket.send_json({"type": "error", "content": "Agent is still initializing, please try again in a moment."})
+                                        await broadcast_ws_event({"type": "error", "content": "Agent is still initializing, please try again in a moment."})
                                         return
                                     gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history)
                                 try:
@@ -2267,7 +2267,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                             future = asyncio.Future()
                                             active_confirmations[conf_id] = future
                                             try:
-                                                await websocket.send_json({
+                                                await broadcast_ws_event({
                                                     "type": "confirm_request",
                                                     "conf_id": conf_id,
                                                     "name": value
@@ -2283,7 +2283,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                                     llm_start_time = time.time()
                                                     ttft_duration = llm_start_time - start_time
                                                 # Send token to frontend
-                                                await websocket.send_json({
+                                                await broadcast_ws_event({
                                                     "type": "text_stream",
                                                     "text": value,
                                                     "backend_used": backend_used
@@ -2314,7 +2314,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                                     parts = [f"{k}={repr(v)}" for k, v in tool_args.items() if k != "confirmation_grant_id"]
                                                     args_str = f" ({', '.join(parts)})" if parts else ""
 
-                                                await websocket.send_json({
+                                                await broadcast_ws_event({
                                                     "type": "status",
                                                     "status": "thinking",
                                                     "message": f"Running tool '{tool_name}'{args_str}...",
@@ -2326,17 +2326,22 @@ async def websocket_endpoint(websocket: WebSocket):
                                                     tool_duration += time.time() - tool_start_time
                                                     tool_start_time = None
                                                 # Notify frontend tool finished
-                                                await websocket.send_json({
+                                                await broadcast_ws_event({
                                                     "type": "tool_result",
                                                     "result": value
                                                 })
-                                                await websocket.send_json({
+                                                await broadcast_ws_event({
                                                     "type": "status",
                                                     "status": "thinking"
                                                 })
                                             elif event_type == "final_history":
                                                 global_chat_history = value
                                                 save_persistent_chat_history(global_chat_history)
+                                                await broadcast_ws_event({
+                                                    "type": "chat_update",
+                                                    "messages": global_chat_history,
+                                                    "session_id": active_session_id
+                                                })
                                                 
                                             event = await gen.__anext__()
                                 except StopAsyncIteration:
@@ -2550,31 +2555,33 @@ async def activate_chat_session_api(req: ActivateSessionRequest):
     Promotes a past session to be the Global Active Session in backend.
     Loads its message history into memory and broadcasts session_switched event over WebSockets.
     """
-    global active_session_id, chat_history
+    global active_session_id, global_chat_history
     if not req.session_id:
         raise HTTPException(status_code=400, detail="Missing session_id")
     
     from app.memory.db import get_session_messages
     msgs = get_session_messages(req.session_id)
     active_session_id = req.session_id
-    chat_history = msgs
+    global_chat_history = msgs
+    save_persistent_chat_history(global_chat_history)
     
-    # Broadcast session switch event to connected WebSocket clients
+    # Broadcast session switch event to all connected WebSocket clients
     await broadcast_ws_event({
         "type": "session_switched",
         "session_id": active_session_id,
-        "messages": chat_history
+        "messages": global_chat_history
     })
     
-    print(f"[Session] Activated session: {active_session_id} ({len(chat_history)} messages)")
-    return {"status": "success", "session_id": active_session_id, "messages": chat_history}
+    print(f"[Session] Activated session: {active_session_id} ({len(global_chat_history)} messages)")
+    return {"status": "success", "session_id": active_session_id, "messages": global_chat_history}
 
 @app.post("/api/chat/sessions/new")
 async def create_new_chat_session():
     """Starts a new chat session."""
-    global active_session_id, chat_history
+    global active_session_id, global_chat_history
     active_session_id = generate_new_session_id()
-    chat_history = []
+    global_chat_history = []
+    save_persistent_chat_history(global_chat_history)
     print(f"[Session] Started new user session: {active_session_id}")
     
     await broadcast_ws_event({

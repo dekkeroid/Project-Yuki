@@ -39,7 +39,7 @@ export function useBackendSocket(options = {}) {
       socketRef.current = null;
     }
 
-    const ws = new WebSocket(`${WS_BASE}/ws`);
+    const ws = new WebSocket(WS_BASE);
     socketRef.current = ws;
     setSocket(ws);
 

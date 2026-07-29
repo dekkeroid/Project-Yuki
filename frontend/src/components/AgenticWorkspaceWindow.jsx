@@ -205,6 +205,38 @@ export const AgenticWorkspaceWindow = ({
     return () => syncChannel?.close();
   }, []);
 
+  // Refresh Workspace (F5 Key & Top Header Button)
+  const handleRefreshWorkspace = async () => {
+    console.log('[ChatWindow] Refreshing session tree and workspace state...');
+    fetchSessionTree();
+    if (selectedPastSessionId) {
+      try {
+        const res = await fetch(`${API_BASE}/api/chat/sessions/activate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: selectedPastSessionId })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.messages) setViewMessages(data.messages);
+        }
+      } catch (e) {
+        console.warn('[ChatWindow] Session refresh error:', e);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'F5') {
+        e.preventDefault();
+        handleRefreshWorkspace();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedPastSessionId]);
+
   // Fetch session hierarchy from backend
   const fetchSessionTree = async () => {
     try {
@@ -468,6 +500,30 @@ export const AgenticWorkspaceWindow = ({
               🧠 Jarvis Mode
             </button>
           </div>
+
+          {/* Refresh Workspace Button (F5) */}
+          <button
+            type="button"
+            onClick={handleRefreshWorkspace}
+            title="Refresh Session Archive, Active Messages & Workspace State (F5)"
+            style={{
+              padding: '6px 10px',
+              borderRadius: '7px',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              background: 'rgba(255, 255, 255, 0.08)',
+              color: '#cbd5e1',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <RefreshCw style={{ width: '13px', height: '13px' }} />
+            Refresh (F5)
+          </button>
 
           {/* Standalone Preferences Button */}
           <button
