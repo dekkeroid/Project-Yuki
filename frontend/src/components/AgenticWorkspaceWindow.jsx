@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Cpu, Terminal, Sparkles, MessageSquare, Monitor, X, Maximize2, Minimize2, 
   Send, RefreshCw, Zap, HardDrive, Database, Eye, EyeOff, Wrench, Search,
@@ -327,7 +327,7 @@ export const AgenticWorkspaceWindow = ({
     // 2. Active Tool Schemas
     const basicTools = ['web_search', 'read_file_content', 'search_files', 'list_directory', 'launch_app', 'open_or_play_file', 'set_system_volume', 'manage_time', 'get_system_stats', 'update_user_fact', 'take_screenshot', 'run_terminal_command', 'run_python_script'];
     const jarvisTools = [...basicTools, 'jarvis_query_file_db', 'read_and_review_file', 'list_directory_tree', 'git_status_and_history', 'system_diagnostics_and_processes', 'scrape_web_page', 'jarvis_remember_user_fact'];
-    const codingTools = ['run_terminal_command', 'run_python_script', 'read_and_review_file', 'read_file_content', 'list_directory_tree', 'list_directory', 'git_status_and_history', 'search_files', 'jarvis_query_file_db', 'web_search', 'scrape_web_page'];
+    const codingTools = ['run_terminal_command', 'run_python_script', 'read_and_review_file', 'read_file_content', 'jarvis_create_or_edit_file', 'list_directory_tree', 'list_directory', 'git_status_and_history', 'search_files', 'jarvis_query_file_db', 'web_search', 'scrape_web_page', 'system_diagnostics_and_processes'];
     
     const activeToolList = isCodingMode ? codingTools : (chatWindowToolMode === 'advanced' ? jarvisTools : basicTools);
 

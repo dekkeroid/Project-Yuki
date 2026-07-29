@@ -1070,9 +1070,10 @@ class AgentExecutor:
         if overrides.get("coding_mode"):
             coding_allowed = {
                 "run_terminal_command", "run_python_script", "read_and_review_file",
-                "read_file_content", "list_directory_tree", "list_directory",
-                "git_status_and_history", "search_files", "jarvis_query_file_db",
-                "web_search", "scrape_web_page", "update_user_fact", "jarvis_remember_user_fact"
+                "read_file_content", "jarvis_create_or_edit_file", "list_directory_tree",
+                "list_directory", "git_status_and_history", "search_files",
+                "jarvis_query_file_db", "web_search", "scrape_web_page",
+                "system_diagnostics_and_processes", "update_user_fact", "jarvis_remember_user_fact"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in coding_allowed]
         elif effective_tool_mode == "basic":
