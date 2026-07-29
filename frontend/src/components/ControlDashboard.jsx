@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -12,6 +12,143 @@ const SKIN_PRESETS = [
   { name: 'Bronze', value: '#a3654a' },
   { name: 'Cocoa', value: '#593424' }
 ];
+
+const SearchableModelSelect = ({ value, onChange, options = [], placeholder = "Select or search a model..." }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredOptions = (options || []).filter(opt =>
+    !searchTerm || opt.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', marginTop: '4px' }}>
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          width: '100%',
+          padding: '7px 10px',
+          background: 'rgba(0, 0, 0, 0.4)',
+          border: isOpen ? '1px solid #a78bfa' : '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: '8px',
+          color: value ? 'white' : '#94a3b8',
+          fontSize: '0.78rem',
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          userSelect: 'none',
+          boxShadow: isOpen ? '0 0 12px rgba(167, 139, 250, 0.25)' : 'none',
+          transition: 'all 0.2s ease'
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>
+          {value || placeholder}
+        </span>
+        <span style={{ fontSize: '0.65rem', opacity: 0.6, color: '#c4b5fd' }}>{isOpen ? '▲' : '▼'}</span>
+      </div>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 4px)',
+          left: 0,
+          right: 0,
+          zIndex: 9999,
+          background: '#0f172a',
+          border: '1px solid rgba(167, 139, 250, 0.4)',
+          borderRadius: '8px',
+          padding: '6px',
+          boxShadow: '0 10px 28px rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(16px)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', background: 'rgba(255, 255, 255, 0.06)', borderRadius: '6px', marginBottom: '6px' }}>
+            <Search style={{ width: '12px', height: '12px', color: '#a78bfa' }} />
+            <input
+              type="text"
+              autoFocus
+              placeholder="Search model name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                color: 'white',
+                fontSize: '0.76rem',
+                outline: 'none'
+              }}
+            />
+            {searchTerm && (
+              <span onClick={() => setSearchTerm('')} style={{ cursor: 'pointer', fontSize: '0.70rem', color: '#94a3b8' }}>✕</span>
+            )}
+          </div>
+
+          <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {filteredOptions.length === 0 ? (
+              <div style={{ padding: '8px', fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
+                No model matches "{searchTerm}".
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(searchTerm);
+                    setIsOpen(false);
+                  }}
+                  style={{ display: 'block', margin: '6px auto 0 auto', padding: '4px 10px', fontSize: '0.70rem', borderRadius: '4px', background: 'rgba(167, 139, 250, 0.25)', border: '1px solid #a78bfa', color: '#fff', cursor: 'pointer' }}
+                >
+                  Use "{searchTerm}" as custom model
+                </button>
+              </div>
+            ) : (
+              filteredOptions.map((mName) => (
+                <div
+                  key={mName}
+                  onClick={() => {
+                    onChange(mName);
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    fontSize: '0.76rem',
+                    cursor: 'pointer',
+                    background: value === mName ? 'rgba(167, 139, 250, 0.25)' : 'transparent',
+                    color: value === mName ? '#c4b5fd' : '#e2e8f0',
+                    fontWeight: value === mName ? '600' : '400',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    transition: 'background 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (value !== mName) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (value !== mName) e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  {mName}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const ControlDashboard = ({
   profile,
@@ -3169,55 +3306,12 @@ const ControlDashboard = ({
                                   ...fetchedNames
                                 ]));
                                 return (
-                                  <>
-                                    <select
-                                      value={settings.llm_simple_model || ''}
-                                      onChange={(e) => handleUpdateSetting('llm_simple_model', e.target.value)}
-                                      style={{
-                                        width: '100%',
-                                        padding: '7px 10px',
-                                        background: 'rgba(0,0,0,0.3)',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: '8px',
-                                        color: 'white',
-                                        fontSize: '0.78rem',
-                                        outline: 'none',
-                                        cursor: 'pointer',
-                                        marginTop: '4px'
-                                      }}
-                                    >
-                                      {!settings.llm_simple_model && (
-                                        <option value="" style={{ background: '#0b0813', color: 'white', opacity: 0.5 }}>
-                                          Select a model...
-                                        </option>
-                                      )}
-                                      {allNames.map((mName) => (
-                                        <option key={mName} value={mName} style={{ background: '#0b0813', color: 'white' }}>
-                                          {mName}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    {allNames.length === 0 && (
-                                      <div style={{ marginTop: '4px' }}>
-                                        <input
-                                          type="text"
-                                          placeholder="Type model name (e.g. gemini-1.5-flash)..."
-                                          value={settings.llm_simple_model || ''}
-                                          onChange={(e) => handleUpdateSetting('llm_simple_model', e.target.value)}
-                                          style={{
-                                            width: '100%',
-                                            padding: '7px 10px',
-                                            background: 'rgba(0,0,0,0.3)',
-                                            border: '1px solid rgba(255,165,0,0.4)',
-                                            borderRadius: '8px',
-                                            color: 'white',
-                                            fontSize: '0.78rem',
-                                            outline: 'none'
-                                          }}
-                                        />
-                                      </div>
-                                    )}
-                                  </>
+                                  <SearchableModelSelect
+                                    value={settings.llm_simple_model || ''}
+                                    onChange={(val) => handleUpdateSetting('llm_simple_model', val)}
+                                    options={allNames}
+                                    placeholder="Search or select Simple model..."
+                                  />
                                 );
                               })()}
                           </div>
@@ -3568,40 +3662,21 @@ const ControlDashboard = ({
                             <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
                           </button>
                         </div>
-                        <select
-                          value={settings.llm_model || ''}
-                          onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '7px 10px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontSize: '0.78rem',
-                            outline: 'none',
-                            cursor: 'pointer',
-                            marginTop: '4px'
-                          }}
-                        >
-                          {!settings.llm_model && (
-                            <option value="" style={{ background: '#0b0813', color: 'white', opacity: 0.5 }}>
-                              Select a model...
-                            </option>
-                          )}
-                          {(() => {
-                            const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
-                            const allNames = Array.from(new Set([
-                              ...(settings.llm_model ? [settings.llm_model] : []),
-                              ...fetchedNames
-                            ]));
-                            return allNames.map((mName) => (
-                              <option key={mName} value={mName} style={{ background: '#0b0813', color: 'white' }}>
-                                {mName}
-                              </option>
-                            ));
-                          })()}
-                        </select>
+                        {(() => {
+                          const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
+                          const allNames = Array.from(new Set([
+                            ...(settings.llm_model ? [settings.llm_model] : []),
+                            ...fetchedNames
+                          ]));
+                          return (
+                            <SearchableModelSelect
+                              value={settings.llm_model || ''}
+                              onChange={(val) => handleUpdateSetting('llm_model', val)}
+                              options={allNames}
+                              placeholder="Search or select Complex model..."
+                            />
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
