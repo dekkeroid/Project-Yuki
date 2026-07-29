@@ -488,8 +488,8 @@ function findVitePort(ports, timeout = 500) {
   return new Promise((resolve) => {
     let checked = 0;
     for (const port of ports) {
-      const req = http.get(`http://127.0.0.1:${port}`, () => {
-        req.destroy();
+      const req = http.get(`http://127.0.0.1:${port}`, (res) => {
+        res.resume(); // Cleanly consume response stream so compressed gzip bytes are never dumped to stdout
         resolve(`http://127.0.0.1:${port}`);
       });
       req.setTimeout(timeout, () => {
