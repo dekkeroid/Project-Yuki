@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
-import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload } from 'lucide-react';
+import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Maximize2 } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 import { useBackendSocket } from './hooks/useBackendSocket';
@@ -4420,14 +4420,42 @@ const detectExpression = (text) => {
     }}>
       
       {/* Top Banner Status Bar */}
-      <header className="top-header glass-panel">
-        <div className="header-icon">
-          <Sparkles className="w-4 h-4 text-violet-400 breathing" />
+      <header className="top-header glass-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="header-icon">
+            <Sparkles className="w-4 h-4 text-violet-400 breathing" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <h1>Yuki Assistant</h1>
+            <span>Desktop Companion v1.0</span>
+          </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <h1>Yuki Assistant</h1>
-          <span>Desktop Companion v1.0</span>
-        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
+            window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+          }}
+          title="Open Standalone Agentic Workspace Window"
+          style={{
+            background: 'rgba(167, 139, 250, 0.2)',
+            border: '1px solid rgba(167, 139, 250, 0.4)',
+            borderRadius: '6px',
+            padding: '4px 8px',
+            color: '#c4b5fd',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            fontSize: '0.72rem',
+            fontWeight: 600,
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+          Pop-out Workspace
+        </button>
       </header>
 
       <main className="canvas-container">

@@ -493,6 +493,18 @@ const ChatOverlay = ({
         </button>
 
         <button
+          onClick={() => {
+            const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
+            window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+          }}
+          className="panel-trigger-button glass-panel"
+          title="Open Standalone Agentic Workspace Window"
+          style={{ color: '#c4b5fd' }}
+        >
+          <Maximize2 className="w-4.5 h-4.5" />
+        </button>
+
+        <button
           onClick={onReset}
           className="panel-trigger-button reset glass-panel"
           title="Clear History"
