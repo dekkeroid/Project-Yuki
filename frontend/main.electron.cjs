@@ -32,6 +32,12 @@ console.log(`[Electron] Platform: ${process.platform}, arch: ${process.arch}, pa
 // 1. Hard limit the Javascript V8 engine heap size to 256MB and expose V8 garbage collector
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256 --expose-gc');
 
+// Disable V8 Code Cache & HTTP Cache in development to prevent V8 bytecode hash mismatch leaks
+if (!app.isPackaged) {
+  app.commandLine.appendSwitch('disable-v8-code-cache');
+  app.commandLine.appendSwitch('disable-http-cache');
+}
+
 // 2. Prevent fallback to CPU software rasterization (SwiftShader) by ignoring GPU blocklists
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
@@ -1241,6 +1247,21 @@ app.whenReady().then(async () => {
     const allowed = ['media', 'autoplay', 'clipboard-sanitized-write'];
     callback(allowed.includes(permission));
   });
+
+  if (!app.isPackaged) {
+    try {
+      await session.defaultSession.clearCache();
+      await session.defaultSession.clearCodeCaches({});
+      console.log('[Electron] Purged V8 code cache and dev session cache.');
+    } catch (e) {
+      console.warn('[Electron] Cache purge warning:', e.message);
+    }
+
+    const codeCachePath = path.join(app.getPath('userData'), 'Code Cache');
+    if (fs.existsSync(codeCachePath)) {
+      try { fs.rmSync(codeCachePath, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
 
   const setupDone = isSetupComplete();
   console.log(`[Electron] Setup complete: ${setupDone}`);
