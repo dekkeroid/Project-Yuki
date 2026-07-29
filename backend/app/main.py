@@ -1135,13 +1135,23 @@ async def speech_status(req: dict):
 @app.get("/api/tools")
 async def get_tools_list():
     """
-    Returns all dynamically registered local and MCP tool definitions for Yuki,
+    Returns all registered tool definitions based on active TOOL_MODE ('basic' vs 'advanced'),
     including name, description, parameters schema, and category.
     """
-    if agent_executor is None:
-        return {"tools": [], "count": 0}
+    from app.tools.definitions import get_tools_definition
+    tools = get_tools_definition()
     
-    tools = await agent_executor.mcp_tools.get_tool_definitions("", dynamic=False)
+    # Also merge any active MCP tools if available
+    if agent_executor and hasattr(agent_executor, "mcp_tools"):
+        try:
+            mcp_defs = await agent_executor.mcp_tools.get_tool_definitions("", dynamic=False)
+            existing_names = {t.get("function", {}).get("name") for t in tools if isinstance(t, dict)}
+            for m_tool in mcp_defs:
+                m_name = m_tool.get("function", {}).get("name")
+                if m_name and m_name not in existing_names:
+                    tools.append(m_tool)
+        except Exception:
+            pass
     
     formatted = []
     for t in tools:
