@@ -2549,79 +2549,80 @@ const ControlDashboard = ({
                     {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
                       <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                         
-                        {/* Saved Key Vault Cards */}
+                        {/* Saved Key Vault Dropdown + Trash Delete Button */}
                         {savedCustomEndpoints.length > 0 && (
-                          <div style={{ marginBottom: '10px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                              <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd', fontSize: '0.74rem' }}>
+                          <div className="identity-field" style={{ marginBottom: '10px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <span className="field-label" style={{ color: '#c4b5fd', fontSize: '0.74rem', fontWeight: 600 }}>
                                 🔑 Saved API Key Vault ({savedCustomEndpoints.length})
                               </span>
                               <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)' }}>
-                                Click to load preset
+                                Select to load preset
                               </span>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(135px, 1fr))', gap: '6px' }}>
-                              {savedCustomEndpoints.map((ep) => {
-                                const isActive = settings.llm_base_url === ep.base_url;
-                                return (
-                                  <div
-                                    key={ep.id || ep.label}
-                                    onClick={() => handleSelectCustomEndpoint(ep)}
-                                    style={{
-                                      padding: '7px 9px',
-                                      borderRadius: '8px',
-                                      background: isActive ? 'rgba(167, 139, 250, 0.18)' : 'rgba(0, 0, 0, 0.28)',
-                                      border: isActive ? '1.5px solid #a78bfa' : '1px solid rgba(255, 255, 255, 0.08)',
-                                      cursor: 'pointer',
-                                      position: 'relative',
-                                      transition: 'all 0.2s ease'
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                      <div style={{ fontWeight: '600', fontSize: '0.74rem', color: isActive ? '#f472b6' : '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100px' }}>
-                                        {ep.label || 'Saved Endpoint'}
-                                      </div>
-                                      <button
-                                        type="button"
-                                        title="Delete preset"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteCustomEndpoint(ep.id, ep.label);
-                                        }}
-                                        style={{
-                                          background: 'none',
-                                          border: 'none',
-                                          color: 'rgba(255,255,255,0.3)',
-                                          cursor: 'pointer',
-                                          padding: 0,
-                                          fontSize: '0.75rem',
-                                          lineHeight: 1
-                                        }}
-                                        onMouseEnter={(e) => e.target.style.color = '#ef4444'}
-                                        onMouseLeave={(e) => e.target.style.color = 'rgba(255,255,255,0.3)'}
-                                      >
-                                        <Trash2 style={{ width: '11px', height: '11px' }} />
-                                      </button>
-                                    </div>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              <select
+                                value={savedCustomEndpoints.find(e => e.base_url === settings.llm_base_url || e.label === customLabel)?.id || ''}
+                                onChange={(e) => {
+                                  const selId = e.target.value;
+                                  if (!selId) return;
+                                  const ep = savedCustomEndpoints.find(item => item.id === selId || item.label === selId);
+                                  if (ep) {
+                                    handleSelectCustomEndpoint(ep);
+                                  }
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: '7px 10px',
+                                  background: 'rgba(18, 12, 33, 0.85)',
+                                  border: '1px solid rgba(167, 139, 250, 0.4)',
+                                  borderRadius: '8px',
+                                  color: '#e2e8f0',
+                                  fontSize: '0.78rem',
+                                  outline: 'none',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <option value="" disabled>-- Select Saved Key Preset --</option>
+                                {savedCustomEndpoints.map((ep) => {
+                                  const isActive = settings.llm_base_url === ep.base_url;
+                                  return (
+                                    <option key={ep.id} value={ep.id} style={{ background: '#0b0813', color: 'white' }}>
+                                      {isActive ? '● ' : ''}{ep.label || 'Saved Endpoint'} ({ep.has_key ? '🔑 Key Saved' : 'No Key'})
+                                    </option>
+                                  );
+                                })}
+                              </select>
 
-                                    <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                      {ep.base_url ? ep.base_url.replace('https://', '').replace('http://', '') : 'Custom URL'}
-                                    </div>
-
-                                    <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                      <span style={{ fontSize: '0.58rem', padding: '1px 5px', borderRadius: '4px', background: ep.has_key ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)', color: ep.has_key ? '#4ade80' : '#94a3b8' }}>
-                                        {ep.has_key ? '🔑 Key Saved' : 'No Key'}
-                                      </span>
-                                      {isActive && (
-                                        <span style={{ fontSize: '0.58rem', fontWeight: 600, color: '#38bdf8' }}>
-                                          ● Active
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                              {/* Delete button for currently active or selected preset */}
+                              <button
+                                type="button"
+                                title="Delete active preset from DB"
+                                onClick={() => {
+                                  const activeEp = savedCustomEndpoints.find(item => settings.llm_base_url === item.base_url || item.label === customLabel);
+                                  if (activeEp) {
+                                    handleDeleteCustomEndpoint(activeEp.id, activeEp.label);
+                                  } else {
+                                    alert("Please select a saved preset to delete.");
+                                  }
+                                }}
+                                className="glass-button"
+                                style={{
+                                  padding: '7px 10px',
+                                  borderRadius: '8px',
+                                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                                  background: 'rgba(239, 68, 68, 0.15)',
+                                  color: '#fca5a5',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '0.74rem'
+                                }}
+                              >
+                                <Trash2 style={{ width: '13px', height: '13px' }} />
+                              </button>
                             </div>
                           </div>
                         )}
