@@ -60,6 +60,10 @@ const App = () => {
     return <StopwatchOverlay initialLabel={initialLabel} />;
   }
 
+  if (isStandaloneChatMode) {
+    return <AgenticWorkspaceWindow />;
+  }
+
   // WebSockets & Backend State
   const internetStatusRef = useRef(true);
   const internetFailCountRef = useRef(0);
@@ -2186,21 +2190,6 @@ const detectExpression = (text) => {
             title="Chat"
           >
             <MessageSquare className="w-5 h-5" />
-          </button>
-          <button
-            className="desktop-menu-btn"
-            onClick={() => {
-              if (window.electronAPI && window.electronAPI.openChatWindow) {
-                window.electronAPI.openChatWindow();
-              } else {
-                const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
-                window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
-              }
-            }}
-            title="Pop-out Agentic Workspace Window"
-            style={{ color: '#c4b5fd' }}
-          >
-            <ExternalLink className="w-5 h-5" />
           </button>
           <button
             className={`desktop-menu-btn ${isSettingsOpen ? 'active' : ''}`}
@@ -4408,39 +4397,7 @@ const detectExpression = (text) => {
     );
   }
 
-  if (isStandaloneChatMode) {
-    return (
-      <AgenticWorkspaceWindow
-        messages={messages}
-        inputText={inputText}
-        onInputChange={setInputText}
-        onSendMessage={(txt) => handleSendMessage({ preventDefault: () => {} }, txt)}
-        isGenerating={isThinking || ttsStreamActive}
-        modelName={modelName}
-        llmBackend={llmBackend}
-        availableLlmModels={availableLlmModels}
-        onRefreshLlmModels={fetchLlmModels}
-        settings={profile.settings || {}}
-        onUpdateSetting={updateProfileSetting}
-        micDevices={micDevices}
-        selectedMic={selectedMicDeviceId}
-        onMicChange={(id) => {
-          setSelectedMicDeviceId(id);
-          localStorage.setItem('yuki-mic-device-id', id);
-        }}
-        isListening={isListening}
-        onToggleListening={toggleListening}
-        vadLevel={vadLevel}
-        voiceVolume={voiceVolume}
-        onVolumeChange={(val) => {
-          setVoiceVolume(val);
-          localStorage.setItem('yuki-voice-volume', val.toString());
-        }}
-        hostPlatform={hostPlatform}
-        systemStats={systemStats}
-      />
-    );
-  }
+
 
   return (
     <div className="app-viewport" style={{
