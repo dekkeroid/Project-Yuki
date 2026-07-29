@@ -44,6 +44,14 @@ export const AgenticWorkspaceWindow = ({
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // Local Input Text State (Fixes standalone typing when props are unpassed)
+  const [localInputText, setLocalInputText] = useState('');
+  const currentInputText = onInputChange ? inputText : localInputText;
+  const handleInputChange = (val) => {
+    if (onInputChange) onInputChange(val);
+    setLocalInputText(val);
+  };
+
   // Auto-expand textarea vertically up to 200px max height
   useEffect(() => {
     if (textareaRef.current) {
@@ -94,14 +102,6 @@ export const AgenticWorkspaceWindow = ({
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizingLeft, isResizingRight]);
-
-  // Local Input Text State (Fixes standalone typing when props are unpassed)
-  const [localInputText, setLocalInputText] = useState('');
-  const currentInputText = onInputChange ? inputText : localInputText;
-  const handleInputChange = (val) => {
-    if (onInputChange) onInputChange(val);
-    setLocalInputText(val);
-  };
 
   // Standalone WebSocket Connection for standalone Chat Window mode
   const wsRef = useRef(null);
