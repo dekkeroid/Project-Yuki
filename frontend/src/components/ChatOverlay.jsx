@@ -266,42 +266,6 @@ export const RenderMessageContent = ({ content, isSystem }) => {
   );
 };
 
-  return (
-    <div>
-      {thoughts.map((thought, idx) => (
-        <details
-          key={idx}
-          style={{
-            margin: '2px 0 6px 0',
-            background: 'rgba(139, 92, 246, 0.08)',
-            border: '1px solid rgba(139, 92, 246, 0.18)',
-            borderRadius: '6px',
-            padding: '2px 7px',
-            fontSize: '0.66rem',
-            color: '#a78bfa',
-            maxWidth: '100%'
-          }}
-        >
-          <summary style={{ cursor: 'pointer', fontWeight: '500', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px', outline: 'none' }}>
-            <span style={{ fontSize: '0.68rem' }}>🧠</span>
-            <span style={{ fontWeight: 600, color: '#c084fc' }}>Thought Process</span>
-            <span style={{ fontSize: '0.60rem', opacity: 0.5, marginLeft: 'auto' }}>(click to toggle)</span>
-          </summary>
-          <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid rgba(139, 92, 246, 0.12)', fontStyle: 'italic', fontSize: '0.72rem', color: '#cbd5e1', whiteSpace: 'pre-line', lineHeight: '1.35', maxHeight: '160px', overflowY: 'auto' }}>
-            {thought}
-          </div>
-        </details>
-      ))}
-      {cleanContent && (
-        <p style={{ margin: 0, whiteSpace: 'pre-line' }}>
-          {isSystem && !cleanContent.startsWith("⚙️") && <span style={{ color: 'var(--accent-teal)', fontWeight: 'bold', marginRight: '6px' }}>[SYSTEM]</span>}
-          {formatMessageText(cleanContent)}
-        </p>
-      )}
-    </div>
-  );
-};
-
 const ChatOverlay = ({
   messages,
   inputText,
