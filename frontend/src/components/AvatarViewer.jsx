@@ -14,6 +14,7 @@ const ELECTRON_WINDOW_HEIGHT = 605;
 const YUKI_SCALE_REDUCER = 0.9; // Reduce avatar size relative to window
 const windowWidthExtra = 0;
 
+  // Yuki was here - feeling sassy and ready for snacks
 const AvatarViewer = ({
   audioLevel,
   isThinking,

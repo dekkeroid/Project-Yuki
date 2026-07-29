@@ -298,6 +298,7 @@ const App = () => {
 
 
   const [availableLlmModels, setAvailableLlmModels] = useState([]);
+  const [availableSimpleLlmModels, setAvailableSimpleLlmModels] = useState([]);
   const [gpuMemData, setGpuMemData] = useState({ gpus: [], top5: {} });
 
   // Sync companion local states when profile changes
@@ -590,8 +591,8 @@ const App = () => {
     onOpen: () => {
       fetchProfileDetails();
       fetchHealthDetails();
+      fetchAvatar();
       fetchVrmModels();
-      fetchLlmModels();
     },
     onMessage: (event) => handleWebSocketMessageRef.current?.(event)
   });
@@ -706,6 +707,9 @@ const App = () => {
 
   const currentResponseTextRef = useRef('');
   const handleWebSocketMessageRef = useRef(null);
+  const lastFetchTime = useRef(0);
+  const FETCH_COOLDOWN_MS = 2000;
+  const lastSimpleFetchTime = useRef(0);
 
       const handleWebSocketMessage = (event) => {
       const msg = JSON.parse(event.data);
@@ -1985,6 +1989,9 @@ const detectExpression = (text) => {
 
 
   const fetchLlmModels = async () => {
+    const now = Date.now();
+    if (now - lastFetchTime.current < FETCH_COOLDOWN_MS) return;
+    lastFetchTime.current = now;
     try {
       setAvailableLlmModels([]);
       const response = await fetch(`${API_BASE}/api/models`);
@@ -1992,7 +1999,6 @@ const detectExpression = (text) => {
         const data = await response.json();
         if (data.models && data.models.length > 0) {
           setAvailableLlmModels(data.models);
-          // Clear stale model if current selection not in new list
           const currentModel = profile.settings?.llm_model;
           if (currentModel && !data.models.some(m => m.name === currentModel)) {
             handleUpdateSetting('llm_model', '');
@@ -2001,6 +2007,25 @@ const detectExpression = (text) => {
       }
     } catch (e) {
       console.warn("Could not load LLM models from backend:", e);
+    }
+  };
+
+  const fetchSimpleLlmModels = async () => {
+    try {
+      setAvailableSimpleLlmModels([]);
+      const response = await fetch(`${API_BASE}/api/models?target=simple`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.models && data.models.length > 0) {
+          setAvailableSimpleLlmModels(data.models);
+          const currentModel = profile.settings?.llm_simple_model;
+          if (currentModel && !data.models.some(m => m.name === currentModel)) {
+            handleUpdateSetting('llm_simple_model', '');
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load simple LLM models from backend:", e);
     }
   };
 
@@ -2065,6 +2090,7 @@ const detectExpression = (text) => {
     fetchHealthDetails();
     fetchVrmModels();
     fetchLlmModels();
+    fetchSimpleLlmModels();
   }, []);
 
   const handleTerminate = () => {
@@ -4447,7 +4473,9 @@ const detectExpression = (text) => {
           localStorage.setItem('yuki-voice-volume', val.toString());
         }}
         availableLlmModels={availableLlmModels}
+        availableSimpleLlmModels={availableSimpleLlmModels}
         onRefreshLlmModels={fetchLlmModels}
+        onRefreshSimpleLlmModels={fetchSimpleLlmModels}
         preferHeadsetMic={preferHeadsetMic}
         onPreferHeadsetMicChange={(val) => {
           setPreferHeadsetMic(val);

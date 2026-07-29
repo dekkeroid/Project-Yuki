@@ -639,40 +639,214 @@ def keyboard_mouse_input(action: str, text: str = None, keys: list = None, x: in
     except Exception as e:
         return f"Input simulation failed: {str(e)}"
 
-def media_playback_control(action: str) -> str:
+def _send_wm_appcommand(hwnd: int, cmd: int) -> None:
+    """Post a WM_APPCOMMAND message to a window handle."""
+    import ctypes
+    WM_APPCOMMAND = 0x0319
+    ctypes.windll.user32.PostMessageW(hwnd, WM_APPCOMMAND, 0, cmd << 16)
+
+
+def _focus_and_send_space(hwnd: int) -> None:
+    """Bring a window to foreground and send Space (pause/unpause in most players)."""
+    import ctypes
+    import time
+    user32 = ctypes.windll.user32
+    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    user32.SetForegroundWindow(hwnd)
+    time.sleep(0.05)
+    user32.keybd_event(0x20, 0, 0, 0)
+    user32.keybd_event(0x20, 0, 2, 0)
+
+
+def _find_window_containing(substring: str) -> list:
+    """Return list of (hwnd, title) for visible windows whose title contains substring (case-insensitive)."""
+    import ctypes
+    user32 = ctypes.windll.user32
+    EnumWindows = user32.EnumWindows
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
+    GetWindowText = user32.GetWindowTextW
+    GetWindowTextLength = user32.GetWindowTextLengthW
+    IsWindowVisible = user32.IsWindowVisible
+
+    sub_lower = substring.lower()
+    found = []
+
+    def foreach_window(hwnd, lParam):
+        if IsWindowVisible(hwnd):
+            length = GetWindowTextLength(hwnd)
+            if length > 0:
+                buff = ctypes.create_unicode_buffer(length + 1)
+                GetWindowText(hwnd, buff, length + 1)
+                title = buff.value.strip()
+                if title:
+                    title_lower = title.lower()
+                    if sub_lower in title_lower:
+                        found.append((hwnd, title))
+        return True
+
+    EnumWindows(EnumWindowsProc(foreach_window), 0)
+    return found
+
+
+def _all_visible_windows() -> list:
+    """Return list of (hwnd, title) for all visible windows with a title."""
+    import ctypes
+    user32 = ctypes.windll.user32
+    EnumWindows = user32.EnumWindows
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
+    GetWindowText = user32.GetWindowTextW
+    GetWindowTextLength = user32.GetWindowTextLengthW
+    IsWindowVisible = user32.IsWindowVisible
+
+    windows = []
+
+    def foreach_window(hwnd, lParam):
+        if IsWindowVisible(hwnd):
+            length = GetWindowTextLength(hwnd)
+            if length > 0:
+                buff = ctypes.create_unicode_buffer(length + 1)
+                GetWindowText(hwnd, buff, length + 1)
+                title = buff.value.strip()
+                if title:
+                    windows.append((hwnd, title))
+        return True
+
+    EnumWindows(EnumWindowsProc(foreach_window), 0)
+    return windows
+
+
+_MEDIA_PLAYER_KEYWORDS = [
+    "vlc", "spotify", "wmplayer", "windows media player", "mpc-hc",
+    "mpc-be", "mpv", "foobar2000", "aimp", "winamp", "music bee",
+    "strawberry", "groove music", "netflix", "youtube",
+]
+
+
+def media_playback_control(action: str, app_name: str = None, all: bool = False) -> str:
     """
-    Controls media playback keys.
+    Controls media playback across apps.  Uses three strategies:
+
+      1. WM_APPCOMMAND posted to the target window(s) — the native Windows
+         message that media apps handle (works even for background windows).
+      2. SMTC keybd_event as a backup for browser tabs / foreground apps
+         that don't process WM_APPCOMMAND on background windows.
+      3. Window focus + Space key for desktop media players that may need
+         focus to respond.
+
+    Parameters
+    ----------
+    action : "play", "pause", "next", "previous", "stop"
+    app_name : optional — target a specific app by window title substring
+    all : optional — pause all known media-player windows
     """
+    import ctypes
+    import time
+
+    action_clean = action.lower().strip()
+
+    if action_clean in ("play", "pause", "stop", "resume", "unpause"):
+        action_clean = "play_pause"
+    elif action_clean == "volume_up":
+        return "Use set_system_volume for volume control."
+    elif action_clean == "volume_down":
+        return "Use set_system_volume for volume control."
+    elif action_clean == "mute":
+        return "Use set_system_volume for volume control."
+
+    # APPCOMMAND constant (the raw int before shifting into HIWORD)
+    APPCMDS = {
+        "play_pause": 14,
+        "next": 11,
+        "previous": 12,
+        "stop": 13,
+    }
+
+    cmd = APPCMDS.get(action_clean)
+    if cmd is None:
+        return f"Error: Unknown media action '{action}'"
+
+    user32 = ctypes.windll.user32
+    targeted = []
+    skipped = []
+
     try:
-        import pyautogui
-        pyautogui.FAILSAFE = False
-        action_clean = action.lower().strip()
-        
-        # Map common action synonyms to valid pyautogui keys
-        if action_clean in ("play", "pause", "stop", "resume", "unpause"):
-            action_clean = "play_pause"
-        elif action_clean == "vol_up":
-            action_clean = "volume_up"
-        elif action_clean == "vol_down":
-            action_clean = "volume_down"
-        
-        mapping = {
-            "play_pause": "playpause",
-            "next": "nexttrack",
-            "previous": "prevtrack",
-            "volume_up": "volumeup",
-            "volume_down": "volumedown",
-            "mute": "volumemute"
-        }
-        
-        pykey = mapping.get(action_clean)
-        if not pykey:
-            return f"Error: Unknown media action '{action}'"
-            
-        pyautogui.press(pykey)
-        return f"Triggered media playback action: {action_clean}"
+        if all:
+            # Send WM_APPCOMMAND to every visible window whose title
+            # suggests a media player, then also focus+Space for them.
+            all_windows = _all_visible_windows()
+            # Further narrowed to only known players
+            media_windows = []
+            for hwnd, title in all_windows:
+                tl = title.lower()
+                if any(kw in tl for kw in _MEDIA_PLAYER_KEYWORDS):
+                    media_windows.append((hwnd, title))
+
+            if not media_windows:
+                return "No known media-player windows found."
+
+            for hwnd, title in media_windows:
+                _send_wm_appcommand(hwnd, cmd)
+                targeted.append(title)
+                try:
+                    _focus_and_send_space(hwnd)
+                    time.sleep(0.03)
+                except Exception:
+                    skipped.append(title)
+
+        elif app_name:
+            # Find window(s) matching the requested app name
+            matches = _find_window_containing(app_name)
+            if not matches:
+                return f"No window found matching '{app_name}'."
+
+            for hwnd, title in matches:
+                _send_wm_appcommand(hwnd, cmd)
+                targeted.append(title)
+                try:
+                    _focus_and_send_space(hwnd)
+                except Exception:
+                    skipped.append(title)
+
+        else:
+            # No target — send to foreground window and also broadcast
+            # SMTC key for browser tabs that register globally.
+            hwnd_fg = user32.GetForegroundWindow()
+            _send_wm_appcommand(hwnd_fg, cmd)
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(hwnd_fg, buf, 256)
+            fg_title = buf.value.strip() or "foreground window"
+            targeted.append(fg_title)
+
+            # SMTC fallback — may help with browser tabs
+            MEDIA_VK = {
+                "play_pause": 0xB3,
+                "next": 0xB0,
+                "previous": 0xB1,
+                "stop": 0xB2,
+            }
+            vk = MEDIA_VK.get(action_clean)
+            if vk:
+                KEYEVENTF_EXTENDEDKEY = 0x0001
+                KEYEVENTF_KEYUP = 0x0002
+                user32.keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY, 0)
+                user32.keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+
+            # Also try known media-player windows as a fallback
+            all_windows = _all_visible_windows()
+            known_players = [(h, t) for h, t in all_windows
+                             if any(kw in t.lower() for kw in _MEDIA_PLAYER_KEYWORDS)]
+            for hwnd, title in known_players:
+                _send_wm_appcommand(hwnd, cmd)
+                if title not in targeted:
+                    targeted.append(title)
+
+        parts = [f"Triggered {action_clean} on: {', '.join(targeted)}"]
+        if skipped:
+            parts.append(f"(focus+Space skipped for: {', '.join(skipped)})")
+        return "\n".join(parts)
+
     except Exception as e:
-        return f"Failed to send media key: {str(e)}"
+        return f"Failed to send media command: {str(e)}"
 
 def manage_process(action: str, name: str = None, pid: int = None) -> str:
     """

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, Wrench } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -37,7 +37,9 @@ const ControlDashboard = ({
   voiceVolume = 1.0,
   onVoiceVolumeChange,
   availableLlmModels = [],
+  availableSimpleLlmModels = [],
   onRefreshLlmModels,
+  onRefreshSimpleLlmModels,
   preferHeadsetMic = false,
   onPreferHeadsetMicChange,
   hostPlatform = 'Unknown',
@@ -265,8 +267,54 @@ const ControlDashboard = ({
   const [customSimpleLabel, setCustomSimpleLabel] = useState('');
   const [selectedSimpleEndpointId, setSelectedSimpleEndpointId] = useState('');
   const [savedCustomEndpoints, setSavedCustomEndpoints] = useState([]);
+  const [showComplexApiKey, setShowComplexApiKey] = useState(false);
+  const [showSimpleApiKey, setShowSimpleApiKey] = useState(false);
   const [saveEndpointBtnText, setSaveEndpointBtnText] = useState('Save Endpoint Preset');
   const [saveSimpleEndpointBtnText, setSaveSimpleEndpointBtnText] = useState('Save Preset');
+
+  const handleToggleSimpleApiKey = async () => {
+    const nextState = !showSimpleApiKey;
+    if (nextState && settings.llm_simple_api_key && typeof settings.llm_simple_api_key === 'string' && settings.llm_simple_api_key.startsWith('enc_v1:')) {
+      try {
+        const res = await fetch(`${API_BASE}/api/settings/decrypt-key`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: settings.llm_simple_api_key })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.decrypted) {
+            setSettings(prev => ({ ...prev, llm_simple_api_key: data.decrypted }));
+          }
+        }
+      } catch (e) {
+        console.error("Failed to decrypt simple key:", e);
+      }
+    }
+    setShowSimpleApiKey(nextState);
+  };
+
+  const handleToggleComplexApiKey = async () => {
+    const nextState = !showComplexApiKey;
+    if (nextState && settings.llm_api_key && typeof settings.llm_api_key === 'string' && settings.llm_api_key.startsWith('enc_v1:')) {
+      try {
+        const res = await fetch(`${API_BASE}/api/settings/decrypt-key`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: settings.llm_api_key })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.decrypted) {
+            setSettings(prev => ({ ...prev, llm_api_key: data.decrypted }));
+          }
+        }
+      } catch (e) {
+        console.error("Failed to decrypt complex key:", e);
+      }
+    }
+    setShowComplexApiKey(nextState);
+  };
 
   const fetchSavedEndpoints = async () => {
     try {
@@ -332,7 +380,6 @@ const ControlDashboard = ({
           base_url: baseUrlToSave,
           api_key: settings.llm_api_key || '',
           llm_backend: settings.llm_backend || 'openai',
-          model: settings.llm_model || ''
         })
       });
       if (res.ok) {
@@ -373,7 +420,6 @@ const ControlDashboard = ({
           base_url: baseUrlToSave,
           api_key: settings.llm_simple_api_key || '',
           llm_backend: settings.llm_simple_backend || 'openai',
-          model: settings.llm_simple_model || ''
         })
       });
       if (res.ok) {
@@ -432,24 +478,26 @@ const ControlDashboard = ({
         body: JSON.stringify({ id: ep.id, label: ep.label, target_type: targetType })
       });
       const data = res.ok ? await res.json() : null;
-      const keyToUse = (data && data.masked_key) || ep.api_key_masked || (ep.has_key ? '••••••••' : '');
+      const keyToUse = (data && data.active_endpoint && data.active_endpoint.api_key) || ep.api_key || '';
       
       if (targetType === 'simple') {
         setSelectedSimpleEndpointId(ep.id || '');
         setCustomSimpleLabel(ep.label || '');
         setSettings(prev => ({
           ...prev,
-          llm_simple_backend: ep.llm_backend || 'openai',
+          llm_simple_backend: ep.llm_backend === 'openai' ? 'custom' : (ep.llm_backend || 'custom'),
           llm_simple_base_url: ep.base_url || '',
           llm_simple_api_key: keyToUse,
-          llm_simple_model: ep.model || prev.llm_simple_model
         }));
+        if (onRefreshSimpleLlmModels) {
+          setTimeout(() => onRefreshSimpleLlmModels(), 400);
+        }
       } else {
         setSelectedEndpointId(ep.id || '');
         setCustomLabel(ep.label || '');
         setSettings(prev => ({
           ...prev,
-          llm_backend: ep.llm_backend || 'openai',
+          llm_backend: ep.llm_backend === 'openai' ? 'custom' : (ep.llm_backend || 'custom'),
           llm_base_url: ep.base_url || '',
           llm_api_key: keyToUse,
           llm_model: ep.model || prev.llm_model
@@ -787,6 +835,12 @@ const ControlDashboard = ({
         }
         if (key === 'tool_mode') {
           fetchToolsList();
+        }
+        if (['llm_simple_backend', 'llm_simple_base_url', 'llm_simple_api_key'].includes(key)) {
+          if (onRefreshSimpleLlmModels) setTimeout(() => onRefreshSimpleLlmModels(), 300);
+        }
+        if (['llm_backend', 'llm_base_url', 'llm_api_key'].includes(key)) {
+          if (onRefreshLlmModels) setTimeout(() => onRefreshLlmModels(), 300);
         }
       }
     } catch (e) {
@@ -2666,8 +2720,7 @@ const ControlDashboard = ({
                                 lmstudio: 'http://127.0.0.1:1234',
                                 ollama: 'http://127.0.0.1:11434',
                                 vllm: 'http://127.0.0.1:8000/v1',
-                                openai: 'https://generativelanguage.googleapis.com/v1beta/openai',
-                                custom: 'http://127.0.0.1:8000/v1',
+                                custom: 'https://generativelanguage.googleapis.com/v1beta/openai',
                               };
                               if (defaults[newBackend]) handleUpdateSetting('llm_simple_base_url', defaults[newBackend]);
                             }}
@@ -2687,13 +2740,13 @@ const ControlDashboard = ({
                             <option value="lmstudio">LM Studio (Local)</option>
                             <option value="ollama">Ollama (Local)</option>
                             <option value="vllm">vLLM (Local)</option>
-                            <option value="openai">Custom / Cloud API (OpenAI-Compatible)</option>
+                            <option value="custom">Custom / Cloud API (OpenAI-Compatible)</option>
                             <option value="none">No LLM (Voice + File Search Only)</option>
                           </select>
                         </div>
 
                         {/* Simple Custom / Cloud API Key Vault & Presets */}
-                        {(settings.llm_simple_backend === 'openai' || settings.llm_simple_backend === 'custom') && (
+                        {settings.llm_simple_backend === 'custom' && (
                           <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                             {savedCustomEndpoints.length > 0 && (
                               <div className="identity-field" style={{ marginBottom: '10px' }}>
@@ -2780,6 +2833,7 @@ const ControlDashboard = ({
                                       await handleUpdateSetting('llm_simple_backend', 'custom');
                                       await handleUpdateSetting('llm_simple_base_url', p.url);
                                       if (p.model) await handleUpdateSetting('llm_simple_model', p.model);
+                                      if (onRefreshSimpleLlmModels) setTimeout(() => onRefreshSimpleLlmModels(), 400);
                                     }}
                                     className="glass-button"
                                     style={{
@@ -2847,31 +2901,51 @@ const ControlDashboard = ({
                         )}
 
                         {/* Simple API Key */}
-                        {(settings.llm_simple_backend === 'openai' || settings.llm_simple_backend === 'custom') && (
+                        {settings.llm_simple_backend === 'custom' && (
                           <div className="identity-field" style={{ marginTop: '8px' }}>
                             <span className="field-label">Simple API Key (Encrypted in DB)</span>
-                            <input
-                              type="password"
-                              placeholder="sk-..."
-                              value={settings.llm_simple_api_key || ''}
-                              onChange={(e) => handleUpdateSetting('llm_simple_api_key', e.target.value)}
-                              style={{
-                                width: '100%',
-                                padding: '7px 10px',
-                                background: 'rgba(0,0,0,0.3)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '8px',
-                                color: 'white',
-                                fontSize: '0.78rem',
-                                outline: 'none',
-                                marginTop: '4px'
-                              }}
-                            />
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
+                              <input
+                                type={showSimpleApiKey ? "text" : "password"}
+                                placeholder="sk-..."
+                                value={settings.llm_simple_api_key || ''}
+                                onChange={(e) => handleUpdateSetting('llm_simple_api_key', e.target.value)}
+                                style={{
+                                  flex: 1,
+                                  padding: '7px 10px',
+                                  background: 'rgba(0,0,0,0.3)',
+                                  border: '1px solid rgba(255,255,255,0.1)',
+                                  borderRadius: '8px',
+                                  color: 'white',
+                                  fontSize: '0.78rem',
+                                  outline: 'none'
+                                }}
+                              />
+                              <button
+                                type="button"
+                                title={showSimpleApiKey ? "Hide API Key" : "Show API Key"}
+                                onClick={handleToggleSimpleApiKey}
+                                className="glass-button"
+                                style={{
+                                  padding: '7px 10px',
+                                  borderRadius: '8px',
+                                  border: '1px solid rgba(255,255,255,0.15)',
+                                  background: showSimpleApiKey ? 'rgba(167, 139, 250, 0.25)' : 'rgba(255,255,255,0.05)',
+                                  color: showSimpleApiKey ? '#c4b5fd' : '#cbd5e1',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                {showSimpleApiKey ? <EyeOff style={{ width: '14px', height: '14px' }} /> : <Eye style={{ width: '14px', height: '14px' }} />}
+                              </button>
+                            </div>
                           </div>
                         )}
 
                         {/* Save Simple Preset Button */}
-                        {(settings.llm_simple_backend === 'openai' || settings.llm_simple_backend === 'custom') && (
+                        {settings.llm_simple_backend === 'custom' && (
                           <div style={{ marginTop: '10px' }}>
                             <button
                               type="button"
@@ -2898,24 +2972,73 @@ const ControlDashboard = ({
                           <div className="identity-field" style={{ marginTop: '8px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span className="field-label">Simple Model Name</span>
+                              <button
+                                type="button"
+                                onClick={onRefreshSimpleLlmModels}
+                                title="Refresh model list from backend"
+                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                              >
+                                <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
+                              </button>
                             </div>
-                            <input
-                              type="text"
-                              placeholder="e.g. llama-3.2-3b-instruct, gpt-4o-mini, gemini-1.5-flash"
-                              value={settings.llm_simple_model || ''}
-                              onChange={(e) => handleUpdateSetting('llm_simple_model', e.target.value)}
-                              style={{
-                                width: '100%',
-                                padding: '7px 10px',
-                                background: 'rgba(0,0,0,0.3)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '8px',
-                                color: 'white',
-                                fontSize: '0.78rem',
-                                outline: 'none',
-                                marginTop: '4px'
-                              }}
-                            />
+                              {(() => {
+                                const fetchedNames = (availableSimpleLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
+                                const allNames = Array.from(new Set([
+                                  ...(settings.llm_simple_model ? [settings.llm_simple_model] : []),
+                                  ...fetchedNames
+                                ]));
+                                return (
+                                  <>
+                                    <select
+                                      value={settings.llm_simple_model || ''}
+                                      onChange={(e) => handleUpdateSetting('llm_simple_model', e.target.value)}
+                                      style={{
+                                        width: '100%',
+                                        padding: '7px 10px',
+                                        background: 'rgba(0,0,0,0.3)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: '8px',
+                                        color: 'white',
+                                        fontSize: '0.78rem',
+                                        outline: 'none',
+                                        cursor: 'pointer',
+                                        marginTop: '4px'
+                                      }}
+                                    >
+                                      {!settings.llm_simple_model && (
+                                        <option value="" style={{ background: '#0b0813', color: 'white', opacity: 0.5 }}>
+                                          Select a model...
+                                        </option>
+                                      )}
+                                      {allNames.map((mName) => (
+                                        <option key={mName} value={mName} style={{ background: '#0b0813', color: 'white' }}>
+                                          {mName}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {allNames.length === 0 && (
+                                      <div style={{ marginTop: '4px' }}>
+                                        <input
+                                          type="text"
+                                          placeholder="Type model name (e.g. gemini-1.5-flash)..."
+                                          value={settings.llm_simple_model || ''}
+                                          onChange={(e) => handleUpdateSetting('llm_simple_model', e.target.value)}
+                                          style={{
+                                            width: '100%',
+                                            padding: '7px 10px',
+                                            background: 'rgba(0,0,0,0.3)',
+                                            border: '1px solid rgba(255,165,0,0.4)',
+                                            borderRadius: '8px',
+                                            color: 'white',
+                                            fontSize: '0.78rem',
+                                            outline: 'none'
+                                          }}
+                                        />
+                                      </div>
+                                    )}
+                                  </>
+                                );
+                              })()}
                           </div>
                         )}
                       </div>
@@ -2943,8 +3066,7 @@ const ControlDashboard = ({
                             lmstudio: 'http://127.0.0.1:1234',
                             ollama: 'http://127.0.0.1:11434',
                             vllm: 'http://127.0.0.1:8000/v1',
-                            openai: 'https://generativelanguage.googleapis.com/v1beta/openai',
-                            custom: 'http://127.0.0.1:8000/v1',
+                            custom: 'https://generativelanguage.googleapis.com/v1beta/openai',
                           };
                           if (defaults[newBackend]) await handleUpdateSetting('llm_base_url', defaults[newBackend]);
                           if (newBackend !== 'none' && onRefreshLlmModels) {
@@ -2967,13 +3089,13 @@ const ControlDashboard = ({
                         <option value="lmstudio">LM Studio (Local)</option>
                         <option value="ollama">Ollama (Local)</option>
                         <option value="vllm">vLLM (Local)</option>
-                        <option value="openai">Custom / Cloud API (OpenAI-Compatible)</option>
+                        <option value="custom">Custom / Cloud API (OpenAI-Compatible)</option>
                         <option value="none">No LLM (Voice + File Search Only)</option>
                       </select>
                     </div>
 
                     {/* Custom / Cloud API Key Vault & Saved Presets */}
-                    {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                    {settings.llm_backend === 'custom' && (
                       <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                         
                         {/* Saved Key Vault Dropdown + Trash Delete Button */}
@@ -3140,7 +3262,7 @@ const ControlDashboard = ({
                             settings.llm_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
                             settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
                             settings.llm_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
-                            settings.llm_backend === 'openai' ? 'https://generativelanguage.googleapis.com/v1beta/openai' :
+                            settings.llm_backend === 'custom' ? 'https://generativelanguage.googleapis.com/v1beta/openai' :
                             'http://127.0.0.1:8000/v1'
                           }
                           value={settings.llm_base_url || ''}
@@ -3158,8 +3280,7 @@ const ControlDashboard = ({
                                 lmstudio: 'http://127.0.0.1:1234',
                                 ollama: 'http://127.0.0.1:11434',
                                 vllm: 'http://127.0.0.1:8000/v1',
-                                openai: 'https://generativelanguage.googleapis.com/v1beta/openai',
-                                custom: 'http://127.0.0.1:8000/v1',
+                                custom: 'https://generativelanguage.googleapis.com/v1beta/openai',
                               };
                               if (defaults[settings.llm_backend]) handleUpdateSetting('llm_base_url', defaults[settings.llm_backend]);
                             }
@@ -3180,31 +3301,51 @@ const ControlDashboard = ({
                     )}
 
                     {/* API Key (for OpenAI-compatible / Custom with auth) */}
-                    {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                    {(settings.llm_backend === 'custom') && (
                       <div className="identity-field" style={{ marginTop: '8px' }}>
                         <span className="field-label">API Key (Encrypted in DB)</span>
-                        <input
-                          type="password"
-                          placeholder="sk-..."
-                          value={settings.llm_api_key || ''}
-                          onChange={(e) => handleUpdateSetting('llm_api_key', e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '7px 10px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontSize: '0.78rem',
-                            outline: 'none',
-                            marginTop: '4px'
-                          }}
-                        />
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
+                          <input
+                            type={showComplexApiKey ? "text" : "password"}
+                            placeholder="sk-..."
+                            value={settings.llm_api_key || ''}
+                            onChange={(e) => handleUpdateSetting('llm_api_key', e.target.value)}
+                            style={{
+                              flex: 1,
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none'
+                            }}
+                          />
+                          <button
+                            type="button"
+                            title={showComplexApiKey ? "Hide API Key" : "Show API Key"}
+                            onClick={handleToggleComplexApiKey}
+                            className="glass-button"
+                            style={{
+                              padding: '7px 10px',
+                              borderRadius: '8px',
+                              border: '1px solid rgba(255,255,255,0.15)',
+                              background: showComplexApiKey ? 'rgba(167, 139, 250, 0.25)' : 'rgba(255,255,255,0.05)',
+                              color: showComplexApiKey ? '#c4b5fd' : '#cbd5e1',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            {showComplexApiKey ? <EyeOff style={{ width: '14px', height: '14px' }} /> : <Eye style={{ width: '14px', height: '14px' }} />}
+                          </button>
+                        </div>
                       </div>
                     )}
 
                     {/* Save Endpoint Preset Button */}
-                    {(settings.llm_backend === 'openai' || settings.llm_backend === 'custom') && (
+                    {(settings.llm_backend === 'custom') && (
                       <div style={{ marginTop: '10px' }}>
                         <button
                           type="button"
@@ -3268,14 +3409,18 @@ const ControlDashboard = ({
                               Select a model...
                             </option>
                           )}
-                          {availableLlmModels.map((model) => {
-                            const mName = typeof model === 'string' ? model : (model.name || model.id || '');
-                            return (
+                          {(() => {
+                            const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
+                            const allNames = Array.from(new Set([
+                              ...(settings.llm_model ? [settings.llm_model] : []),
+                              ...fetchedNames
+                            ]));
+                            return allNames.map((mName) => (
                               <option key={mName} value={mName} style={{ background: '#0b0813', color: 'white' }}>
                                 {mName}
                               </option>
-                            );
-                          })}
+                            ));
+                          })()}
                         </select>
                       </div>
                     )}

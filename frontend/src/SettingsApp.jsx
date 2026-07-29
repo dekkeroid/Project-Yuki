@@ -38,6 +38,7 @@ export default function SettingsApp() {
     try { return parseFloat(localStorage.getItem('yuki-voice-volume') || '1.0'); } catch { return 1.0; }
   });
   const [availableLlmModels, setAvailableLlmModels] = useState([]);
+  const [availableSimpleLlmModels, setAvailableSimpleLlmModels] = useState([]);
   const [preferHeadsetMic, setPreferHeadsetMic] = useState(() => {
     return localStorage.getItem('yuki-prefer-headset') !== 'false';
   });
@@ -96,6 +97,18 @@ export default function SettingsApp() {
     }
   };
 
+  const fetchSimpleLlmModels = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/models?target=simple`);
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableSimpleLlmModels(data.models || []);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch simple LLM models:", e);
+    }
+  };
+
   const refreshMicDevices = async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -110,6 +123,7 @@ export default function SettingsApp() {
     document.title = 'Settings';
     fetchProfile();
     fetchLlmModels();
+    fetchSimpleLlmModels();
     refreshMicDevices();
 
     const onDeviceChange = async () => {
@@ -207,7 +221,9 @@ export default function SettingsApp() {
           localStorage.setItem('yuki-voice-volume', vol.toString());
         }}
         availableLlmModels={availableLlmModels}
+        availableSimpleLlmModels={availableSimpleLlmModels}
         onRefreshLlmModels={fetchLlmModels}
+        onRefreshSimpleLlmModels={fetchSimpleLlmModels}
         preferHeadsetMic={preferHeadsetMic}
         onPreferHeadsetMicChange={(val) => {
           setPreferHeadsetMic(val);

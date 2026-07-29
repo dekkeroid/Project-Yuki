@@ -189,7 +189,9 @@ class AgentExecutor:
                 amount=kwargs.get("amount")
             ),
             "media_playback_control": lambda **kwargs: media_playback_control(
-                kwargs.get("action") or ""
+                kwargs.get("action") or "",
+                app_name=kwargs.get("app_name"),
+                all=bool(kwargs.get("all", False))
             ),
             "manage_process": lambda **kwargs: manage_process(
                 kwargs.get("action") or "",
@@ -278,7 +280,9 @@ class AgentExecutor:
                 amount=kwargs.get("amount")
             ),
             "jarvis_media_playback_control": lambda **kwargs: media_playback_control(
-                kwargs.get("action") or ""
+                kwargs.get("action") or "",
+                app_name=kwargs.get("app_name"),
+                all=bool(kwargs.get("all", False))
             ),
         }
         from app.mcp_client import StdioMCPToolBridge
@@ -542,7 +546,7 @@ class AgentExecutor:
         memory_summary = self.memory.get_profile_summary()
         mood = self.memory.get_mood_spectrum()
 
-        if backend == "simple":
+        if backend == "simple" and not getattr(config, "SEND_TOOLS_IN_SIMPLE", False):
             system_content = get_simple_system_prompt(memory_summary, mood)
         else:
             if getattr(config, "TOOL_MODE", "basic") == "advanced":
@@ -786,12 +790,34 @@ class AgentExecutor:
             return "Ministral"
         return "local"
 
-    def _query_lmstudio_model(self, messages: List[Dict[str, str]], model_name: str, temperature: float = 0.7, use_tools: bool = False) -> Tuple[str, List[Dict[str, Any]], str]:
+    def _get_backend_and_model_for_task(self, task: str):
+        """Returns (backend, model_name) based on task type and endpoint strategy."""
+        if task == "simple" and getattr(config, "ENDPOINT_STRATEGY", "single") == "dual":
+            backend_type = getattr(config, "LLM_SIMPLE_BACKEND", "lmstudio").lower()
+            if backend_type == "none":
+                print(f"[Router] Dual strategy but simple backend is 'none', falling back to complex")
+                return get_backend(), config.LLM_MODEL
+            base_url = getattr(config, "LLM_SIMPLE_BASE_URL", "")
+            api_key = getattr(config, "LLM_SIMPLE_API_KEY", "")
+            model = getattr(config, "LLM_SIMPLE_MODEL", "") or config.LLM_MODEL
+            from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
+            if backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
+                backend = OpenAICompatibleBackend(base_url_override=base_url, api_key_override=api_key)
+            elif backend_type == "ollama":
+                backend = OllamaBackend(base_url_override=base_url)
+            else:
+                backend = LMStudioBackend(base_url_override=base_url)
+            print(f"[Router] Dual strategy: simple task -> {backend.name} @ {model}")
+            return backend, model
+        return get_backend(), config.LLM_MODEL
+
+    def _query_lmstudio_model(self, messages: List[Dict[str, str]], model_name: str, temperature: float = 0.7, use_tools: bool = False, backend=None) -> Tuple[str, List[Dict[str, Any]], str]:
         """
         Sends a request to the active LLM backend for the specified model.
         Returns (response_text, tool_calls, model_label).
         """
-        backend = get_backend()
+        if backend is None:
+            backend = get_backend()
         url = backend.get_chat_url()
         tools = None
         if use_tools:
@@ -851,14 +877,15 @@ class AgentExecutor:
             try:
                 label = "complex" if backend == "complex" else "simple"
                 temp = 0.2 if label == "complex" else 0.7
-                print(f"[Router][Mode 3] Task={label} -> using {config.LLM_MODEL} with {'full' if label == 'complex' else 'lean'} prompt (temp={temp})")
-                return self._query_lmstudio_model(messages, config.LLM_MODEL, temperature=temp, use_tools=use_tools)
+                tb, tm = self._get_backend_and_model_for_task(label)
+                print(f"[Router][Mode 3] Task={label} -> using {tm} via {tb.name} with {'full' if label == 'complex' else 'lean'} prompt (temp={temp})")
+                return self._query_lmstudio_model(messages, tm, temperature=temp, use_tools=use_tools, backend=tb)
             except Exception as e:
-                llm_backend = get_backend()
+                tb_e, tm_e = self._get_backend_and_model_for_task(label)
                 return (
-                    llm_backend.get_error_message(e),
+                    tb_e.get_error_message(e),
                     None,
-                    self._get_model_label(config.LLM_MODEL)
+                    self._get_model_label(tm_e)
                 )
         elif backend == "complex":
             try:
@@ -873,14 +900,15 @@ class AgentExecutor:
                 )
         else:
             try:
-                print(f"[Router][Mode 1] Task=simple -> using {config.LLM_MODEL} with simple prompt (temp=0.7)")
-                return self._query_lmstudio_model(messages, config.LLM_MODEL, temperature=0.7, use_tools=use_tools)
+                tb, tm = self._get_backend_and_model_for_task("simple")
+                print(f"[Router][Mode 1] Task=simple -> using {tm} via {tb.name} with simple prompt (temp=0.7)")
+                return self._query_lmstudio_model(messages, tm, temperature=0.7, use_tools=use_tools, backend=tb)
             except Exception as e:
-                llm_backend = get_backend()
+                tb_e, tm_e = self._get_backend_and_model_for_task("simple")
                 return (
-                    llm_backend.get_error_message(e),
+                    tb_e.get_error_message(e),
                     None,
-                    self._get_model_label(config.LLM_MODEL)
+                    self._get_model_label(tm_e)
                 )
 
     def execute_chat_turn(self, user_message: str, chat_history: List[Dict[str, str]]) -> Tuple[str, List[Dict[str, str]], str]:
@@ -910,7 +938,7 @@ class AgentExecutor:
         while iteration < max_iterations:
             iteration += 1
             
-            use_tools = (resolved_backend != "simple")
+            use_tools = (resolved_backend != "simple") or (resolved_backend == "simple" and getattr(config, "SEND_TOOLS_IN_SIMPLE", False))
             llm_response, tool_calls, backend_used = self._query_llm(current_messages, user_message=user_message, use_tools=use_tools)
             print(f"\n[LLM Response (Iteration {iteration}, Backend: {backend_used})]:\n{llm_response}\n")
             
@@ -1056,8 +1084,11 @@ class AgentExecutor:
                         pass
 
 
-    async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = ""):
-        llm_backend = get_backend()
+    async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", backend=None):
+        if backend is None:
+            llm_backend = get_backend()
+        else:
+            llm_backend = backend
         url = llm_backend.get_chat_url()
         headers = llm_backend.build_headers()
         async for chunk in self._stream_request(session, url, model_name, messages, headers=headers, temperature=temperature, use_tools=use_tools, intent_tool_hint=intent_tool_hint):
@@ -1096,13 +1127,14 @@ class AgentExecutor:
                     task = self._classify_task(user_message) if user_message else "simple"
                     source = "regex"
                 temp = 0.2 if task == "complex" else 0.7
-                print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {config.LLM_MODEL} with {'full' if task == 'complex' else 'lean'} prompt (temp={temp})")
-                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint):
+                tb, tm = self._get_backend_and_model_for_task(task)
+                print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {tm} via {tb.name} with {'full' if task == 'complex' else 'lean'} prompt (temp={temp})")
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb):
                     yield chunk, label
             except Exception as e:
-                llm_backend = get_backend()
-                err_msg = {"content": llm_backend.get_error_message(e)}
-                yield err_msg, self._get_model_label(config.LLM_MODEL)
+                tb_e, tm_e = self._get_backend_and_model_for_task(task)
+                err_msg = {"content": tb_e.get_error_message(e)}
+                yield err_msg, self._get_model_label(tm_e)
         elif backend == "complex":
             try:
                 print(f"[Router][Mode 2] Task=complex -> streaming {config.LLM_MODEL} with full prompt (temp=0.2)")
@@ -1114,13 +1146,14 @@ class AgentExecutor:
                 yield err_msg, self._get_model_label(config.LLM_MODEL)
         else:
             try:
-                print(f"[Router] Task=simple -> streaming {config.LLM_MODEL} (temp=0.7)")
-                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=0.7, use_tools=use_tools):
+                tb, tm = self._get_backend_and_model_for_task("simple")
+                print(f"[Router] Task=simple -> streaming {tm} via {tb.name} (temp=0.7)")
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.7, use_tools=use_tools, backend=tb):
                     yield chunk, label
             except Exception as e:
-                llm_backend = get_backend()
-                err_msg = {"content": llm_backend.get_error_message(e)}
-                yield err_msg, self._get_model_label(config.LLM_MODEL)
+                tb_e, tm_e = self._get_backend_and_model_for_task("simple")
+                err_msg = {"content": tb_e.get_error_message(e)}
+                yield err_msg, self._get_model_label(tm_e)
 
     def _try_parse_json_tool_call(self, text: str) -> list:
         cleaned = text.strip()
@@ -1377,7 +1410,8 @@ class AgentExecutor:
         from app.tools.safety import strip_internal_auth_fields, issue_confirmation_grant, describe_tool_target
 
         # ── Layer 1: Zero-LLM Instant Resolver ───────────────────────────────
-        resolved = resolve_command(user_message)
+        # Skip in advanced/autonomous Jarvis mode — the LLM should decide tool calls
+        resolved = resolve_command(user_message) if getattr(config, "TOOL_MODE", "basic") == "basic" else None
         if resolved:
             tool_name, tool_args = resolved
             print(f"[Resolver] '{user_message}' -> {tool_name}({tool_args}) - LLM skipped")
@@ -1515,7 +1549,7 @@ class AgentExecutor:
             while iteration < max_iterations:
                 iteration += 1
                 
-                use_tools = (resolved_backend != "simple")
+                use_tools = (resolved_backend != "simple") or (resolved_backend == "simple" and getattr(config, "SEND_TOOLS_IN_SIMPLE", False))
                 
                 # Debug: Show what's being sent to LLM
                 msg_roles = [m.get('role') for m in current_messages]

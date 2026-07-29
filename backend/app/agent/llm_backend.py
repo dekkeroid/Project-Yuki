@@ -65,11 +65,21 @@ class LLMBackend(ABC):
 
     def get_chat_url(self) -> str:
         """Get the chat completions endpoint URL."""
-        return f"{self.base_url}/v1/chat/completions"
+        url = self.base_url.rstrip("/")
+        if url.endswith("/chat/completions"):
+            return url
+        if url.endswith("/v1") or "/v1/" in url or url.endswith("/v1beta/openai"):
+            return f"{url}/chat/completions"
+        return f"{url}/v1/chat/completions"
 
     def get_models_url(self) -> str:
         """Get the models listing endpoint URL."""
-        return f"{self.base_url}/v1/models"
+        url = self.base_url.rstrip("/")
+        if url.endswith("/models"):
+            return url
+        if url.endswith("/v1") or "/v1/" in url or url.endswith("/v1beta/openai"):
+            return f"{url}/models"
+        return f"{url}/v1/models"
 
     async def unload_model(self, model_name: str) -> bool:
         """Unload a model from memory. Default: no-op. Override in backends that support it."""
@@ -133,15 +143,21 @@ class LMStudioBackend(LLMBackend):
             return False
 
     async def list_models(self) -> List[Dict[str, Any]]:
+        url = self.get_models_url()
+        print(f"[LMStudio][list_models] Fetching {url}")
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    print(f"[LMStudio][list_models] HTTP {resp.status}")
                     if resp.status != 200:
+                        body_preview = (await resp.text())[:300]
+                        print(f"[LMStudio][list_models] Non-200 body: {body_preview}")
                         return []
                     data = await resp.json()
                     models = data.get("data", [])
                     if isinstance(data, dict) and not models:
                         models = data.get("models", [])
+                    print(f"[LMStudio][list_models] Response keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}, models count: {len(models)}")
                     result = []
                     for m in models:
                         model_id = m.get("id") or m.get("key") or m.get("path") or ""
@@ -153,9 +169,10 @@ class LMStudioBackend(LLMBackend):
                             bool(m.get("loaded_instances"))
                         )
                         result.append({"id": model_id, "name": model_id, "loaded": is_loaded})
+                    print(f"[LMStudio][list_models] Returning {len(result)} models: {[m['id'] for m in result]}")
                     return result
         except Exception as e:
-            print(f"[LMStudio] Error listing models: {e}")
+            print(f"[LMStudio] Could not list models — {e}")
             return []
 
     async def ensure_model_loaded(self, model_name: str) -> bool:
@@ -311,16 +328,24 @@ class OllamaBackend(LLMBackend):
             return False
 
     async def list_models(self) -> List[Dict[str, Any]]:
+        url = self.get_models_url()
+        print(f"[Ollama][list_models] Fetching {url}")
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    print(f"[Ollama][list_models] HTTP {resp.status}")
                     if resp.status != 200:
+                        body_preview = (await resp.text())[:300]
+                        print(f"[Ollama][list_models] Non-200 response body: {body_preview}")
                         return []
                     data = await resp.json()
-                    models = data.get("data", [])
-                    return [{"id": m.get("id", ""), "name": m.get("id", ""), "loaded": True} for m in models if m.get("id")]
+                    models_raw = data.get("data", [])
+                    print(f"[Ollama][list_models] 'data' key has {len(models_raw)} entries, full response keys: {list(data.keys())}")
+                    models = [{"id": m.get("id", ""), "name": m.get("id", ""), "loaded": True} for m in models_raw if m.get("id")]
+                    print(f"[Ollama][list_models] Returning {len(models)} models: {[m['id'] for m in models]}")
+                    return models
         except Exception as e:
-            print(f"[Ollama] Error listing models: {e}")
+            print(f"[Ollama] Could not list models — {e}")
             return []
 
     async def unload_model(self, model_name: str) -> bool:
@@ -448,14 +473,22 @@ class OpenAICompatibleBackend(LLMBackend):
             return False
 
     async def list_models(self) -> List[Dict[str, Any]]:
+        url = self.get_models_url()
+        print(f"[OpenAI][list_models] Fetching {url}")
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(self.get_models_url(), headers=self.build_headers(), timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                async with session.get(url, headers=self.build_headers(), timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    print(f"[OpenAI][list_models] HTTP {resp.status}")
                     if resp.status != 200:
+                        body_preview = (await resp.text())[:300]
+                        print(f"[OpenAI][list_models] Non-200 body: {body_preview}")
                         return []
                     data = await resp.json()
                     models = data.get("data", [])
-                    return [{"id": m.get("id", ""), "name": m.get("id", ""), "loaded": True} for m in models if m.get("id")]
+                    print(f"[OpenAI][list_models] Response keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}, 'data' count: {len(models)}")
+                    result = [{"id": m.get("id", ""), "name": m.get("id", ""), "loaded": True} for m in models if m.get("id")]
+                    print(f"[OpenAI][list_models] Returning {len(result)} models: {[m['id'] for m in result]}")
+                    return result
         except Exception as e:
             print(f"[OpenAI-compatible] Error listing models: {e}")
             return []

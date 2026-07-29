@@ -438,13 +438,21 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_media_playback_control",
-                "description": "Control media playback: play, pause, next track, previous track, or stop.",
+                "description": "Control media playback: play, pause, next track, previous track, or stop across any app. Can target a specific app (e.g. 'VLC', 'Spotify') or pause all known media-player windows.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
                             "enum": ["play", "pause", "next", "previous", "stop"]
+                        },
+                        "app_name": {
+                            "type": "string",
+                            "description": "Optional: Target a specific app by window title substring e.g. 'VLC', 'Spotify', 'YouTube'."
+                        },
+                        "all": {
+                            "type": "boolean",
+                            "description": "If true, pause all known media-player windows (VLC, Spotify, etc.)."
                         }
                     },
                     "required": ["action"]

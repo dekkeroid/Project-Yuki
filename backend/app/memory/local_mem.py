@@ -88,7 +88,13 @@ class MemoryManager:
                     for sk, sv in default_profile["settings"].items():
                         if sk not in data["settings"]:
                             data["settings"][sk] = sv
-                
+
+                # Migrate legacy 'openai' backend string to unified 'custom'
+                if data["settings"].get("llm_backend") == "openai":
+                    data["settings"]["llm_backend"] = "custom"
+                if data["settings"].get("llm_simple_backend") == "openai":
+                    data["settings"]["llm_simple_backend"] = "custom"
+
                 # Apply settings to runtime config
                 config.TTS_VOICE = data["settings"].get("tts_voice", config.TTS_VOICE)
                 config.TTS_RATE = data["settings"].get("tts_rate", config.TTS_RATE)

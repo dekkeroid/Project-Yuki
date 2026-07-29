@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 import requests as http_requests
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from typing import List, Dict, Optional, Any
@@ -428,24 +428,61 @@ def health_check():
     }
 
 @app.get("/api/models")
-async def get_available_models():
+async def get_available_models(target: str = "complex"):
     """
     Returns the dynamically loaded list of models from the active LLM backend.
     """
     from app.agent.llm_backend import get_backend
-    backend = get_backend()
+    from app.utils.security import decrypt_api_key
+    
+    print(f"\n[ModelFetch] === /api/models called with target='{target}' ===")
+
+    # If target is simple, instantiate backend with simple config
+    if target == "simple":
+        simple_backend_type = getattr(config, "LLM_SIMPLE_BACKEND", "lmstudio")
+        simple_base_url = getattr(config, "LLM_SIMPLE_BASE_URL", "")
+        simple_api_key = getattr(config, "LLM_SIMPLE_API_KEY", "")
+        masked_key = (simple_api_key[:4] + "...") if simple_api_key and len(simple_api_key) > 8 else ("(set)" if simple_api_key else "(empty)")
+        print(f"[ModelFetch][Simple] backend_type='{simple_backend_type}', base_url='{simple_base_url}', api_key={masked_key}")
+        if simple_api_key and (simple_api_key.startswith("enc_v1:") or simple_api_key.startswith("gAAAA")):
+            simple_api_key = decrypt_api_key(simple_api_key)
+            print(f"[ModelFetch][Simple] api_key was encrypted, decrypted (len={len(simple_api_key)})")
+        
+        # We need a temporary override to config to trick get_backend, or we can just construct it
+        from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
+        if simple_backend_type == "ollama":
+            backend = OllamaBackend(base_url_override=simple_base_url)
+            print(f"[ModelFetch][Simple] Created OllamaBackend, base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
+        elif simple_backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
+            backend = OpenAICompatibleBackend(base_url_override=simple_base_url, api_key_override=simple_api_key)
+            print(f"[ModelFetch][Simple] Created OpenAICompatibleBackend, base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
+        elif simple_backend_type == "none":
+            print(f"[ModelFetch][Simple] Backend type is 'none', returning empty")
+            return {"models": [], "active": getattr(config, "LLM_SIMPLE_MODEL", "")}
+        else:
+            backend = LMStudioBackend(base_url_override=simple_base_url)
+            print(f"[ModelFetch][Simple] Created LMStudioBackend, base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
+    else:
+        if config.LLM_API_KEY and (config.LLM_API_KEY.startswith("enc_v1:") or config.LLM_API_KEY.startswith("gAAAA")):
+            config.LLM_API_KEY = decrypt_api_key(config.LLM_API_KEY)
+        backend = get_backend()
+        print(f"[ModelFetch][Complex] backend '{backend.name}', base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
     try:
+        print(f"[ModelFetch] Calling backend.list_models() ...")
         models = await backend.list_models()
-        result = [{"name": m["id"], "type": config.get_backend_type()} for m in models]
-        active_model = config.LLM_MODEL
-        if active_model and not any(m["name"] == active_model for m in result):
-            result.insert(0, {"name": active_model, "type": config.get_backend_type()})
+        print(f"[ModelFetch] list_models() returned {len(models)} models: {[m.get('id', '?') for m in models]}")
+        b_type = simple_backend_type if target == "simple" else config.get_backend_type()
+        result = [{"name": m["id"], "type": b_type} for m in models]
+        active_model = getattr(config, "LLM_SIMPLE_MODEL", "") if target == "simple" else config.LLM_MODEL
+        print(f"[ModelFetch] Retrieved {len(result)} models from {backend.name}, active_model='{active_model}'")
         return {"models": result, "active": active_model}
     except Exception as e:
-        print(f"[Backend] Failed to fetch models from {backend.name}: {e}. Falling back to default list.")
+        print(f"[ModelFetch][{target}] Could not reach {backend.name} — {e}. Using fallback model.")
 
+    active_model = getattr(config, "LLM_SIMPLE_MODEL", "") if target == "simple" else config.LLM_MODEL
+    b_type = simple_backend_type if target == "simple" else config.get_backend_type()
     fallback_models = [
-        {"name": config.LLM_MODEL, "type": config.get_backend_type()},
+        {"name": active_model, "type": b_type},
     ]
     seen = set()
     models = []
@@ -454,7 +491,7 @@ async def get_available_models():
             seen.add(m["name"])
             models.append(m)
 
-    return {"models": models, "active": config.LLM_MODEL}
+    return {"models": models, "active": active_model}
 
 @app.get("/api/models/vrm")
 def get_vrm_models():
@@ -639,6 +676,11 @@ def get_settings():
     import copy
     from app.memory.crawler import is_crawler_paused, is_tagger_paused
     settings_dict = copy.deepcopy(memory_manager.profile.get("settings", {}))
+    from app.utils.security import mask_api_key
+    if "llm_api_key" in settings_dict and settings_dict["llm_api_key"]:
+        settings_dict["llm_api_key"] = mask_api_key(settings_dict["llm_api_key"])
+    if "llm_simple_api_key" in settings_dict and settings_dict["llm_simple_api_key"]:
+        settings_dict["llm_simple_api_key"] = mask_api_key(settings_dict["llm_simple_api_key"])
     settings_dict.update({
         "llm_model": config.LLM_MODEL,
         "character_name": config.CHARACTER_NAME,
@@ -647,6 +689,14 @@ def get_settings():
         "tagger_paused": is_tagger_paused(),
     })
     return settings_dict
+
+@app.post("/api/settings/decrypt-key")
+def decrypt_key_endpoint(payload: dict = Body(...)):
+    key = payload.get("key", "")
+    from app.utils.security import decrypt_api_key
+    if key and isinstance(key, str) and key.startswith("enc_v1:"):
+        return {"decrypted": decrypt_api_key(key)}
+    return {"decrypted": key}
 
 class SettingsUpdateRequest(BaseModel):
     llm_model: Optional[str] = None
@@ -941,7 +991,6 @@ class CustomEndpointRequest(BaseModel):
     base_url: str
     api_key: Optional[str] = ""
     llm_backend: Optional[str] = "openai"
-    model: Optional[str] = ""
 
 
 class DeleteCustomEndpointRequest(BaseModel):
@@ -999,7 +1048,6 @@ async def save_custom_endpoint(req: CustomEndpointRequest):
         "base_url": base_url,
         "api_key": api_key_enc,
         "llm_backend": req.llm_backend or "openai",
-        "model": req.model.strip() if req.model else ""
     }
 
     updated_endpoints = []
@@ -1025,7 +1073,6 @@ async def save_custom_endpoint(req: CustomEndpointRequest):
             "api_key_masked": mask_api_key(ep.get("api_key", "")),
             "has_key": bool(ep.get("api_key")),
             "llm_backend": ep.get("llm_backend", "openai"),
-            "model": ep.get("model", "")
         })
 
     return {"message": f"Saved endpoint '{label}' successfully.", "endpoints": masked_list, "saved": new_ep}
@@ -1079,9 +1126,6 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
         config.LLM_SIMPLE_BACKEND = ep.get("llm_backend", "openai")
         config.LLM_SIMPLE_BASE_URL = ep.get("base_url", "")
         config.LLM_SIMPLE_API_KEY = decrypted_key
-        if ep.get("model"):
-            config.LLM_SIMPLE_MODEL = ep.get("model")
-            memory_manager.update_setting("llm_simple_model", ep.get("model"))
 
         memory_manager.update_setting("llm_simple_backend", config.LLM_SIMPLE_BACKEND)
         memory_manager.update_setting("llm_simple_base_url", config.LLM_SIMPLE_BASE_URL)
