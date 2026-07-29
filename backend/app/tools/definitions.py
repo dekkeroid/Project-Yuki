@@ -129,13 +129,10 @@ def get_advanced_jarvis_tools_definition() -> list:
                             "type": "string",
                             "description": "Search query keywords (e.g. 'fate stay night ep 1', 'elden ring save file', 'python script'). Searches file names AND parent folder paths."
                         },
-                        "category": {
-                            "type": "string",
-                            "description": "Optional category filter: 'video', 'audio', 'image', 'document', 'executable', 'archive', or 'code'."
-                        },
+
                         "extension": {
                             "type": "string",
-                            "description": "Optional exact file extension filter (e.g. '.mp4', '.mkv', '.pdf', '.zip', '.exe')."
+                            "description": "Only use when you are certain of the exact extension the user wants (e.g. '.pdf', '.zip', '.exe'). Do NOT use for music, videos, or images — those are better found by query keywords alone."
                         },
                         "path_hint": {
                             "type": "string",

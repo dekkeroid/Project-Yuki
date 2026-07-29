@@ -345,17 +345,15 @@ def _density_score(candidate: Dict, parsed: Dict) -> tuple:
     Returns (score: float, title_file_hits: int, tie_breaker: int).
     """
     file_name_lower   = (candidate.get("file_name", "") or "").lower()
-    # Strip extension for exact 1:1 name matching
     file_name_no_ext, _ = os.path.splitext(file_name_lower)
-    
+
     parent_lower      = (candidate.get("parent_folder", "") or "").lower()
     file_path_lower   = (candidate.get("file_path", "") or "").lower()
-    # Extract the full directory path to catch grand-parent folders like "game folder"
     dir_path_lower    = os.path.dirname(file_path_lower)
-    
+
     trans_name_lower   = (candidate.get("transliterated_name", "") or "").lower()
     trans_parent_lower = (candidate.get("transliterated_parent_folder", "") or "").lower()
-    
+
     meta_combined     = " ".join([
         candidate.get("title", "") or "",
         candidate.get("alternate_titles", "") or "",
@@ -365,30 +363,29 @@ def _density_score(candidate: Dict, parsed: Dict) -> tuple:
     score = 0.0
     title_file_hits = 0
     matched_title_words = 0
-    
+
     title_words = parsed.get("title", [])
     exact_phrase = " ".join(title_words).strip()
-    
+
     # 1. THE EXACT MATCH NUKE
     if exact_phrase:
         if exact_phrase == file_name_no_ext or exact_phrase == trans_name_lower:
-            score += 500.0  # Undisputed king
+            score += 500.0
             title_file_hits += len(title_words)
         elif exact_phrase in file_name_lower or exact_phrase in trans_name_lower:
-            score += 150.0  # Contains the phrase
+            score += 150.0
             title_file_hits += len(title_words)
         elif exact_phrase in parent_lower or exact_phrase in trans_parent_lower:
-            score += 100.0  # The immediate folder is exactly the phrase
-        elif exact_phrase in dir_path_lower or exact_phrase in trans_parent_lower:
-            score += 50.0   # The phrase is somewhere in the path
-            
+            score += 100.0
+        elif exact_phrase in dir_path_lower:
+            score += 50.0
+
     # 2. INDIVIDUAL WORD SCORING (Additive)
     for w in title_words:
         word_matched = False
         filename_matched = False
         w_pattern = rf'\b{re.escape(w)}\b'
-        
-        # File name match (Highest priority)
+
         if re.search(w_pattern, file_name_lower) or re.search(w_pattern, trans_name_lower):
             score += 75.0
             word_matched = True
@@ -397,42 +394,37 @@ def _density_score(candidate: Dict, parsed: Dict) -> tuple:
             score += 30.0
             word_matched = True
             filename_matched = True
-            
-        # Immediate Parent Folder match (Secondary priority)
+
         if re.search(w_pattern, parent_lower) or re.search(w_pattern, trans_parent_lower):
             score += 25.0
             word_matched = True
         elif w in parent_lower or w in trans_parent_lower:
             score += 10.0
             word_matched = True
-        # Ancestor Directory Path match (Lower priority fallback)
         elif re.search(w_pattern, dir_path_lower):
             score += 12.0
             word_matched = True
         elif w in dir_path_lower:
             score += 5.0
             word_matched = True
-            
-        # Metadata match
+
         if w in meta_combined:
             score += 5.0
-            
+
         if word_matched:
             matched_title_words += 1
         if filename_matched:
             title_file_hits += 1
 
     # 3. SYNERGY MULTIPLIER
-    # Heavily reward files where query words are found, with full 2.5x boost if found in the actual filename
     if len(title_words) > 1 and matched_title_words > 0:
         match_ratio = matched_title_words / len(title_words)
         filename_ratio = title_file_hits / len(title_words)
-        
         if match_ratio == 1.0:
             if filename_ratio == 1.0:
-                score *= 2.5  # 2.5x boost if every query word exists in the filename
+                score *= 2.5
             else:
-                score *= (1.5 + 0.5 * filename_ratio)  # Scaled boost if some words only match in path
+                score *= (1.5 + 0.5 * filename_ratio)
         else:
             score *= (1.0 + 0.8 * match_ratio)
 
@@ -461,11 +453,14 @@ def _density_score(candidate: Dict, parsed: Dict) -> tuple:
             score += 45.0
         elif ep_num and ep_num in re.findall(r'\d+', file_name_lower):
             score += 25.0
+        if ep_str in trans_name_lower:
+            score += 25.0
+        elif ep_num and re.search(rf'(?:ep|episode|e|s\d{{2}}e|part|pt|vol|_|\s|-|\.)0*{ep_num}(?:\D|$)', trans_name_lower):
+            score += 20.0
+        elif ep_num and ep_num in re.findall(r'\d+', trans_name_lower):
+            score += 10.0
 
-    # TIE BREAKER: Negative path length favors shorter, more direct paths
     tie_breaker = -len(file_path_lower)
-    
-    # print(f"[Density-Score] file='{file_name_lower}' score={score:.1f} matched_words={matched_title_words}/{len(title_words)}")
 
     return score, title_file_hits, tie_breaker
 

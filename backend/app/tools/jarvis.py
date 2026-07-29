@@ -60,7 +60,7 @@ def jarvis_query_file_db(
 
         categories = [category_str.lower()] if category_str else None
 
-        candidates = query_database_union(parsed, limit_raw=max(limit * 4, 60), categories=categories, silent=True)
+        candidates = query_database_union(parsed, limit_raw=max(limit * 4, 500), categories=categories, silent=True)
 
         if not candidates:
             return f"No indexed files found matching query '{clean_query}'."
