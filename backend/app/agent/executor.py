@@ -30,8 +30,6 @@ _SHORT_CIRCUIT_TOOLS = {
     "run_terminal_command",
     "take_screenshot",
     "jarvis_close_app",
-    "jarvis_run_terminal",
-    "jarvis_run_python",
     "jarvis_take_screenshot",
     "jarvis_keyboard_mouse_input",
     "jarvis_media_playback_control",
@@ -117,6 +115,7 @@ class AgentExecutor:
             keyboard_mouse_input, media_playback_control, manage_process,
             system_power_control
         )
+        from app.tools.files import list_directory, search_files, open_or_play_file, create_file, edit_file, delete_file, read_file_content
         from app.tools.jarvis import (
             jarvis_query_file_db, jarvis_read_file, jarvis_create_or_edit_file,
             jarvis_list_dir_tree, jarvis_git_status, jarvis_system_diagnostics,
@@ -554,14 +553,17 @@ class AgentExecutor:
         system_msg = {"role": "system", "content": system_content}
 
         # Token-approximate history capping.
-        # With an 8 192-token context window the budget splits roughly as:
-        #   ~500 system prompt  +  ~900 tool schemas  +  ~200 user msg  +  ~1 000 generation
-        #   → ~5 592 tokens available for history.  We cap conservatively at 1 000 tokens
-        #   (~3 500 chars) and prune down to 500 tokens (~1 750 chars) when exceeded.
-        #   Approximation: 1 token ≈ 3.5 chars (English average).
+        # Frontier models (Gemini, GPT-4o, etc.) have 100K–1M+ context windows
+        # so we use much looser limits in advanced mode.
+        # Local models (8–32K context) keep the original tight budget.
         APPROX_CHARS_PER_TOKEN = 3.5
-        history_limit  = int(1000 * APPROX_CHARS_PER_TOKEN)   # ~3 500 chars
-        pruned_target  = int(500 * APPROX_CHARS_PER_TOKEN)    # ~1 750 chars
+        is_advanced = getattr(config, "TOOL_MODE", "basic") == "advanced"
+        if is_advanced:
+            history_limit = int(100000 * APPROX_CHARS_PER_TOKEN)   # ~350 000 chars
+            pruned_target = int(50000 * APPROX_CHARS_PER_TOKEN)    # ~175 000 chars
+        else:
+            history_limit = int(1000 * APPROX_CHARS_PER_TOKEN)     # ~3 500 chars
+            pruned_target = int(500 * APPROX_CHARS_PER_TOKEN)      # ~1 750 chars
 
         pruned_history = list(chat_history)
         total_chars = sum(len(m.get("content") or "") for m in pruned_history)
@@ -573,6 +575,11 @@ class AgentExecutor:
                 removed_1 = pruned_history.pop(0)
                 removed_2 = pruned_history.pop(0)
                 total_chars -= (len(removed_1.get("content") or "") + len(removed_2.get("content") or ""))
+                # Never orphan a tool result — if the next message is a tool response
+                # whose matching assistant(tool_calls) was just removed, toss it too.
+                if pruned_history and pruned_history[0].get("role") == "tool":
+                    orphan = pruned_history.pop(0)
+                    total_chars -= len(orphan.get("content") or "")
             print(f"[History] Pruned to {total_chars} chars (~{int(total_chars / APPROX_CHARS_PER_TOKEN)} tokens, {len(pruned_history)} messages).")
 
         return [system_msg] + pruned_history + [{"role": "user", "content": user_message}]
@@ -1686,7 +1693,7 @@ class AgentExecutor:
                     # ─────────────────────────────────────────────────────────────────────────
                     if not tool_failed:
                         _INFO_TOOLS   = {"web_search", "read_file_content"}
-                        _DATA_TOOLS   = {"search_files", "list_directory", "get_system_stats"}
+                        _DATA_TOOLS   = {"search_files", "list_directory", "get_system_stats", "jarvis_query_file_db", "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics", "jarvis_network_status", "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_run_terminal", "jarvis_run_python"}
                         _MEMORY_TOOLS = {"update_user_fact"}
                         # Everything else is treated as an action/terminal tool.
 

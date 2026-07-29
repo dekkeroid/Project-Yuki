@@ -248,41 +248,29 @@ def parse_query_with_llm(query: str) -> Dict:
 
 def query_database_union(parsed: Dict, limit_raw: int = 100, categories: List[str] = None, silent: bool = False) -> List[Dict]:
     """
-    Builds a SQL UNION-like query (actually a single SELECT with OR clauses)
-    that returns files matching any element from:
-      - title words  → file_name  OR parent_folder  (each word is its own LIKE clause)
-      - path  words  → file_path  OR parent_folder
-      - genre words  → genre_or_tags
+    Builds a SQL UNION-like query (single SELECT with OR clauses)
+    where every keyword word searches ALL columns:
+      file_path, file_name, parent_folder, transliterated_name,
+      transliterated_parent_folder, genre_or_tags
     Returns up to `limit_raw` raw candidates.
     """
     title_words = parsed.get("title", [])
     path_words  = parsed.get("path",  [])
     genre_words = parsed.get("genre", [])
 
-    if not title_words and not path_words and not genre_words:
+    all_words = title_words + path_words + genre_words
+
+    if not all_words:
         return []
 
     clauses: List[str] = []
     params:  List[str] = []
 
-    # Title words → search file_name, parent_folder, and their transliterated versions
-    for w in title_words:
+    # Every word searches ALL columns regardless of its parsed category
+    for w in all_words:
         like = f"%{w}%"
-        clauses.append("(f.file_name LIKE ? OR f.parent_folder LIKE ? OR f.transliterated_name LIKE ? OR f.transliterated_parent_folder LIKE ?)")
-        params.extend([like, like, like, like])
-
-    # Path words → search full file_path, parent_folder, and their transliterated versions
-    for w in path_words:
-        like = f"%{w}%"
-        clauses.append("(f.file_path LIKE ? OR f.parent_folder LIKE ? OR f.transliterated_name LIKE ? OR f.transliterated_parent_folder LIKE ?)")
-        params.extend([like, like, like, like])
-
-    # Genre words → search genre_or_tags AND file_name/parent_folder/transliterated versions.
-    # A file named "Romantic Night.mp4" and a file tagged "romantic" are both valid hits.
-    for w in genre_words:
-        like = f"%{w}%"
-        clauses.append("(m.genre_or_tags LIKE ? OR f.file_name LIKE ? OR f.parent_folder LIKE ? OR f.transliterated_name LIKE ? OR f.transliterated_parent_folder LIKE ?)")
-        params.extend([like, like, like, like, like])
+        clauses.append("(f.file_path LIKE ? OR f.file_name LIKE ? OR f.parent_folder LIKE ? OR f.transliterated_name LIKE ? OR f.transliterated_parent_folder LIKE ? OR m.genre_or_tags LIKE ?)")
+        params.extend([like, like, like, like, like, like])
 
     where = " OR ".join(clauses)
     category_filter = ""
@@ -292,23 +280,23 @@ def query_database_union(parsed: Dict, limit_raw: int = 100, categories: List[st
 
     order_params: List[str] = []
     score_expr_parts = []
-    for w in title_words:
+    for w in all_words:
         w_like = f"%{w}%"
-        score_expr_parts.append("(CASE WHEN f.file_name LIKE ? OR f.transliterated_name LIKE ? THEN 1 ELSE 0 END)")
-        order_params.extend([w_like, w_like])
-        
+        score_expr_parts.append("(CASE WHEN f.file_name LIKE ? OR f.transliterated_name LIKE ? OR f.file_path LIKE ? OR m.genre_or_tags LIKE ? THEN 1 ELSE 0 END)")
+        order_params.extend([w_like, w_like, w_like, w_like])
+
     kw_score_sql = " + ".join(score_expr_parts) if score_expr_parts else "0"
 
-    exact_phrase = " ".join(title_words).strip()
+    exact_phrase = " ".join(all_words).strip()
     if exact_phrase:
         exact_like = f"%{exact_phrase}%"
-        order_by_clause = f"ORDER BY CASE WHEN f.file_name LIKE ? OR f.transliterated_name LIKE ? THEN 1 ELSE 0 END DESC, ({kw_score_sql}) DESC, LENGTH(f.file_name) ASC"
-        order_params = [exact_like, exact_like] + order_params
+        order_by_clause = f"ORDER BY CASE WHEN f.file_name LIKE ? OR f.transliterated_name LIKE ? OR f.file_path LIKE ? THEN 1 ELSE 0 END DESC, ({kw_score_sql}) DESC, LENGTH(f.file_name) ASC"
+        order_params = [exact_like, exact_like, exact_like] + order_params
     else:
         order_by_clause = f"ORDER BY ({kw_score_sql}) DESC, LENGTH(f.file_name) ASC"
 
     sql = f"""
-    SELECT f.id, f.file_path, f.file_name, f.parent_folder, f.category,
+    SELECT f.id, f.file_path, f.file_name, f.parent_folder, f.category, f.extension,
            f.size, f.last_modified, f.transliterated_name, f.transliterated_parent_folder,
            m.title, m.artist_or_creator, m.genre_or_tags,
            m.release_year, m.alternate_titles

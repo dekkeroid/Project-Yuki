@@ -391,7 +391,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_run_python",
-                "description": "Execute a block of Python code and return the output.",
+                "description": "Execute Python code for calculations, math, stats, data processing (CSV/JSON/XML), file operations (batch rename, find duplicates, hash), text processing, format conversion, system interrogation, web API calls, encryption/hashing, code analysis/lint, and any custom logic. Full Python stdlib + numpy/pandas available. Returns stdout output.",
                 "parameters": {
                     "type": "object",
                     "properties": {

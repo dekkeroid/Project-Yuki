@@ -7,7 +7,6 @@ web page scraping, git status, file management, app launcher, and PC desktop aut
 
 import os
 import sys
-import sqlite3
 import subprocess
 import time
 import json
@@ -19,53 +18,54 @@ import app.config as config
 
 def jarvis_query_file_db(query: str, limit: int = 15) -> str:
     """
-    Queries the backend SQLite database (yuki_files.db) using FTS5 full-text search 
-    and path matching to locate files instantly across indexed drives.
+    Searches indexed files using multi-column matching including transliterated
+    names (Japanese/Chinese→Romaji/Pinyin), metadata (title, artist, genre),
+    and density-ranked results.
     """
     if not query or not query.strip():
         return "Error: Query string cannot be empty."
 
-    db_path = getattr(config, "DB_PATH", os.path.join(config.BASE_DIR, "yuki_files.db"))
-    if not os.path.exists(db_path):
-        return f"Database error: SQLite file database '{db_path}' does not exist yet."
-
     clean_query = query.strip()
-    
-    try:
-        conn = sqlite3.connect(db_path, timeout=5)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('files', 'file_index');")
-        tables = [row[0] for row in cursor.fetchall()]
-        
-        target_table = "files" if "files" in tables else ("file_index" if "file_index" in tables else None)
-        if not target_table:
-            conn.close()
-            return "Database notice: File index table has not been initialized yet."
 
-        sql = f"""
-            SELECT file_path, size, extension, last_modified 
-            FROM {target_table} 
-            WHERE file_path LIKE ? OR file_name LIKE ? 
-            ORDER BY last_modified DESC 
-            LIMIT ?
-        """
-        like_pattern = f"%{clean_query}%"
-        cursor.execute(sql, (like_pattern, like_pattern, max(1, min(limit, 50))))
-        rows = cursor.fetchall()
-        conn.close()
-        
-        if not rows:
+    try:
+        from app.tools.files import parse_query_with_llm, query_database_union
+
+        parsed = parse_query_with_llm(clean_query)
+        candidates = query_database_union(parsed, limit_raw=limit + 10, silent=True)
+
+        if not candidates:
             return f"No indexed files found matching query '{clean_query}'."
 
-        output_lines = [f"Found {len(rows)} indexed files for '{clean_query}':"]
-        for r in rows:
-            path_str, size_bytes, ext, mod_time = r[0], r[1], r[2], r[3]
-            size_mb = (size_bytes or 0) / (1024 * 1024)
-            output_lines.append(f"• [{path_str}] ({size_mb:.2f} MB, ext: {ext or 'none'})")
+        seen = set()
+        unique = []
+        for c in candidates:
+            p = c.get("file_path", "")
+            if p not in seen:
+                seen.add(p)
+                unique.append(c)
+                if len(unique) >= limit:
+                    break
+
+        output_lines = [f"Found {len(unique)} indexed files for '{clean_query}':"]
+        for r in unique:
+            path_str = r.get("file_path", "")
+            size_bytes = r.get("size", 0) or 0
+            ext = r.get("extension", "") or ""
+            size_mb = size_bytes / (1024 * 1024)
+
+            meta_parts = []
+            if r.get("title") and r["title"].lower() != r.get("file_name", "").lower():
+                meta_parts.append(f"Title: {r['title']}")
+            if r.get("artist_or_creator"):
+                meta_parts.append(f"Creator: {r['artist_or_creator']}")
+            if r.get("genre_or_tags"):
+                meta_parts.append(f"Tags: {r['genre_or_tags']}")
+            meta_str = f" ({', '.join(meta_parts)})" if meta_parts else ""
+
+            output_lines.append(f"• [{path_str}]{meta_str} ({size_mb:.2f} MB, ext: {ext or 'none'})")
 
         return "\n".join(output_lines)
-        
+
     except Exception as e:
         return f"File Database Query Exception: {str(e)}"
 
