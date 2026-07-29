@@ -285,6 +285,7 @@ let chatWorkspaceWindow = null;
 function createChatWorkspaceWindow() {
   if (chatWorkspaceWindow && !chatWorkspaceWindow.isDestroyed()) {
     if (chatWorkspaceWindow.isMinimized()) chatWorkspaceWindow.restore();
+    chatWorkspaceWindow.maximize();
     chatWorkspaceWindow.show();
     chatWorkspaceWindow.focus();
     return;
@@ -310,6 +311,7 @@ function createChatWorkspaceWindow() {
 
   chatWorkspaceWindow.once('ready-to-show', () => {
     if (chatWorkspaceWindow && !chatWorkspaceWindow.isDestroyed()) {
+      chatWorkspaceWindow.maximize();
       chatWorkspaceWindow.show();
       chatWorkspaceWindow.focus();
     }
