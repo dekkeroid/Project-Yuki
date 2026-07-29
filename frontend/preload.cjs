@@ -111,6 +111,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openSettingsWindow: () => {
     ipcRenderer.send('open-settings-window');
   },
+  openChatWindow: () => {
+    ipcRenderer.send('open-chat-window');
+  },
   openAlarmWindow: (alarmData) => {
     ipcRenderer.send('open-alarm-window', alarmData);
   },

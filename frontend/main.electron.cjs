@@ -274,6 +274,53 @@ function createSettingsWindow() {
   });
 }
 
+let chatWorkspaceWindow = null;
+
+function createChatWorkspaceWindow() {
+  if (chatWorkspaceWindow && !chatWorkspaceWindow.isDestroyed()) {
+    if (chatWorkspaceWindow.isMinimized()) chatWorkspaceWindow.restore();
+    chatWorkspaceWindow.show();
+    chatWorkspaceWindow.focus();
+    return;
+  }
+
+  const iconPath = path.join(__dirname, 'public', 'icon.png');
+  chatWorkspaceWindow = new BrowserWindow({
+    width: 1100,
+    height: 820,
+    minWidth: 800,
+    minHeight: 600,
+    title: 'Yuki Agentic Workspace',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    autoHideMenuBar: true,
+    backgroundColor: '#090d16',
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+  });
+
+  chatWorkspaceWindow.once('ready-to-show', () => {
+    if (chatWorkspaceWindow && !chatWorkspaceWindow.isDestroyed()) {
+      chatWorkspaceWindow.show();
+      chatWorkspaceWindow.focus();
+    }
+  });
+
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    chatWorkspaceWindow.loadURL('http://localhost:5173/?mode=chat');
+  } else {
+    chatWorkspaceWindow.loadFile(path.join(__dirname, 'dist', 'index.html'), { query: { mode: 'chat' } });
+  }
+
+  chatWorkspaceWindow.on('closed', () => {
+    chatWorkspaceWindow = null;
+  });
+}
+
 // ---------- Backend lifecycle ----------
 let backendProcess = null;
 let backendRetryCount = 0;
@@ -738,6 +785,11 @@ function createWindow() {
   // Settings Window
   ipcMain.on('open-settings-window', () => {
     createSettingsWindow();
+  });
+
+  // Dedicated Chat Workspace Window
+  ipcMain.on('open-chat-window', () => {
+    createChatWorkspaceWindow();
   });
 
   // Dedicated Alarm Window

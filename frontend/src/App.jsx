@@ -4434,8 +4434,12 @@ const detectExpression = (text) => {
         <button
           type="button"
           onClick={() => {
-            const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
-            window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+            if (window.electronAPI && window.electronAPI.openChatWindow) {
+              window.electronAPI.openChatWindow();
+            } else {
+              const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
+              window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+            }
           }}
           title="Open Standalone Agentic Workspace Window"
           style={{

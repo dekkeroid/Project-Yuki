@@ -494,8 +494,12 @@ const ChatOverlay = ({
 
         <button
           onClick={() => {
-            const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
-            window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+            if (window.electronAPI && window.electronAPI.openChatWindow) {
+              window.electronAPI.openChatWindow();
+            } else {
+              const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
+              window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+            }
           }}
           className="panel-trigger-button glass-panel"
           title="Open Standalone Agentic Workspace Window"
@@ -530,8 +534,12 @@ const ChatOverlay = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <button
               onClick={() => {
-                const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
-                window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+                if (window.electronAPI && window.electronAPI.openChatWindow) {
+                  window.electronAPI.openChatWindow();
+                } else {
+                  const targetUrl = window.location.origin + window.location.pathname + '?mode=chat';
+                  window.open(targetUrl, 'YukiAgenticWorkspace', 'width=1100,height=820,resizable=yes');
+                }
               }}
               className="panel-close-btn"
               title="Open in Standalone Agentic Workspace Window"
