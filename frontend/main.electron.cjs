@@ -309,12 +309,7 @@ function createChatWorkspaceWindow() {
     }
   });
 
-  const isDev = !app.isPackaged;
-  if (isDev) {
-    chatWorkspaceWindow.loadURL('http://localhost:5173/?mode=chat');
-  } else {
-    chatWorkspaceWindow.loadFile(path.join(__dirname, 'dist', 'index.html'), { query: { mode: 'chat' } });
-  }
+  loadWithRetry(chatWorkspaceWindow, [5173, 5174], 60, 500, 'chat');
 
   chatWorkspaceWindow.on('closed', () => {
     chatWorkspaceWindow = null;
@@ -510,25 +505,34 @@ function findVitePort(ports, timeout = 500) {
   });
 }
 
-async function loadWithRetry(win, ports, maxAttempts = 120, intervalMs = 800) {
+async function loadWithRetry(win, ports, maxAttempts = 120, intervalMs = 800, mode = null) {
   // In packaged mode, skip Vite detection — load the bundled dist directly
   if (app.isPackaged) {
     console.log('[Electron] Packaged mode — loading bundled dist/index.html');
-    win.loadFile(path.join(__dirname, 'dist', 'index.html'));
+    if (mode) {
+      win.loadFile(path.join(__dirname, 'dist', 'index.html'), { query: { mode } });
+    } else {
+      win.loadFile(path.join(__dirname, 'dist', 'index.html'));
+    }
     return;
   }
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const url = await findVitePort(ports);
     if (url) {
-      console.log(`[Electron] Vite found at ${url} (attempt ${attempt})`);
-      await win.loadURL(url);
+      const targetUrl = mode ? `${url}/?mode=${mode}` : url;
+      console.log(`[Electron] Vite found at ${targetUrl} (attempt ${attempt})`);
+      await win.loadURL(targetUrl);
       return;
     }
     console.log(`[Electron] Vite not ready, retrying... (${attempt}/${maxAttempts})`);
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   console.warn('[Electron] Falling back to dist/index.html');
-  win.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  if (mode) {
+    win.loadFile(path.join(__dirname, 'dist', 'index.html'), { query: { mode } });
+  } else {
+    win.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  }
 }
 
 // ---------- Visibility helpers ----------
