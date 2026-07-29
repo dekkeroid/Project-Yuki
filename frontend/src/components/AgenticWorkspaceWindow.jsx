@@ -510,51 +510,6 @@ export const AgenticWorkspaceWindow = ({
 
         {/* Right Header Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Local Chat Window Tool Suite Override Toggle */}
-          <div style={{ display: 'flex', background: 'rgba(0,0,0,0.4)', padding: '2px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <button
-              type="button"
-              onClick={() => {
-                setChatWindowToolMode('basic');
-                localStorage.setItem('yuki-chatwindow-tool-mode', 'basic');
-              }}
-              title="Override Chat Window mode to Basic Tools (Does not affect main desktop app)"
-              style={{
-                padding: '4px 10px',
-                borderRadius: '6px',
-                fontSize: '0.70rem',
-                fontWeight: 600,
-                border: 'none',
-                background: chatWindowToolMode === 'basic' ? 'rgba(167, 139, 250, 0.3)' : 'transparent',
-                color: chatWindowToolMode === 'basic' ? '#ffffff' : '#94a3b8',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              ⚡ Basic
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setChatWindowToolMode('advanced');
-                localStorage.setItem('yuki-chatwindow-tool-mode', 'advanced');
-              }}
-              title="Override Chat Window mode to Autonomous Jarvis (Does not affect main desktop app)"
-              style={{
-                padding: '4px 10px',
-                borderRadius: '6px',
-                fontSize: '0.70rem',
-                fontWeight: 600,
-                border: 'none',
-                background: chatWindowToolMode === 'advanced' ? 'rgba(56, 189, 248, 0.3)' : 'transparent',
-                color: chatWindowToolMode === 'advanced' ? '#ffffff' : '#94a3b8',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              🧠 Jarvis Mode
-            </button>
-          </div>
 
           {/* Refresh Workspace Button (F5) */}
           <button
