@@ -425,15 +425,16 @@ const ControlDashboard = ({
 
   const handleSelectCustomEndpoint = async (ep, targetType = 'complex') => {
     if (!ep) return;
+    const keyToUse = ep.api_key_masked || (ep.has_key ? '••••••••' : '');
     if (targetType === 'simple') {
       setSelectedSimpleEndpointId(ep.id || '');
       setCustomSimpleLabel(ep.label || '');
       try {
-        const targetBackend = settings.llm_simple_backend === 'custom' || settings.llm_simple_backend === 'openai' ? settings.llm_simple_backend : (ep.llm_backend || 'custom');
+        const targetBackend = ep.llm_backend || 'openai';
         await handleUpdateSetting('llm_simple_backend', targetBackend);
         await handleUpdateSetting('llm_simple_base_url', ep.base_url || '');
-        if (ep.api_key_masked && ep.api_key_masked !== '****') {
-          await handleUpdateSetting('llm_simple_api_key', ep.api_key_masked);
+        if (keyToUse) {
+          await handleUpdateSetting('llm_simple_api_key', keyToUse);
         }
         if (ep.model) {
           await handleUpdateSetting('llm_simple_model', ep.model);
@@ -445,11 +446,11 @@ const ControlDashboard = ({
       setSelectedEndpointId(ep.id || '');
       setCustomLabel(ep.label || '');
       try {
-        const targetBackend = settings.llm_backend === 'custom' || settings.llm_backend === 'openai' ? settings.llm_backend : (ep.llm_backend || 'custom');
+        const targetBackend = ep.llm_backend || 'openai';
         await handleUpdateSetting('llm_backend', targetBackend);
         await handleUpdateSetting('llm_base_url', ep.base_url || '');
-        if (ep.api_key_masked && ep.api_key_masked !== '****') {
-          await handleUpdateSetting('llm_api_key', ep.api_key_masked);
+        if (keyToUse) {
+          await handleUpdateSetting('llm_api_key', keyToUse);
         }
         if (ep.model) {
           await handleUpdateSetting('llm_model', ep.model);
@@ -2688,7 +2689,6 @@ const ControlDashboard = ({
                             <option value="ollama">Ollama (Local)</option>
                             <option value="vllm">vLLM (Local)</option>
                             <option value="openai">OpenAI / Cloud API (OpenAI-Compatible)</option>
-                            <option value="custom">Custom Endpoint</option>
                             <option value="none">No LLM (Voice + File Search Only)</option>
                           </select>
                         </div>
@@ -2969,7 +2969,6 @@ const ControlDashboard = ({
                         <option value="ollama">Ollama (Local)</option>
                         <option value="vllm">vLLM (Local)</option>
                         <option value="openai">OpenAI / Cloud API (OpenAI-Compatible)</option>
-                        <option value="custom">Custom Endpoint</option>
                         <option value="none">No LLM (Voice + File Search Only)</option>
                       </select>
                     </div>
