@@ -262,8 +262,11 @@ const ControlDashboard = ({
   // Custom LLM Endpoints & Presets State
   const [customLabel, setCustomLabel] = useState('');
   const [selectedEndpointId, setSelectedEndpointId] = useState('');
+  const [customSimpleLabel, setCustomSimpleLabel] = useState('');
+  const [selectedSimpleEndpointId, setSelectedSimpleEndpointId] = useState('');
   const [savedCustomEndpoints, setSavedCustomEndpoints] = useState([]);
   const [saveEndpointBtnText, setSaveEndpointBtnText] = useState('Save Endpoint Preset');
+  const [saveSimpleEndpointBtnText, setSaveSimpleEndpointBtnText] = useState('Save Preset');
 
   const fetchSavedEndpoints = async () => {
     try {
@@ -277,6 +280,11 @@ const ControlDashboard = ({
           if (active) {
             setSelectedEndpointId(active.id);
             if (!customLabel) setCustomLabel(active.label);
+          }
+          const activeSimple = data.endpoints.find(e => e.base_url && settings.llm_simple_base_url && e.base_url.replace(/\/$/, '') === settings.llm_simple_base_url.replace(/\/$/, ''));
+          if (activeSimple) {
+            setSelectedSimpleEndpointId(activeSimple.id);
+            if (!customSimpleLabel) setCustomSimpleLabel(activeSimple.label);
           }
         }
       }
@@ -347,9 +355,50 @@ const ControlDashboard = ({
     }
   };
 
+  const handleSaveSimpleCustomEndpoint = async () => {
+    const labelToSave = customSimpleLabel.trim() || autoSuggestLabel(settings.llm_simple_base_url) || 'Simple Custom Endpoint';
+    const baseUrlToSave = settings.llm_simple_base_url || '';
+    if (!baseUrlToSave) {
+      alert("Please enter a valid Simple Endpoint Base URL before saving.");
+      return;
+    }
+    setSaveSimpleEndpointBtnText("Saving...");
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedSimpleEndpointId || '',
+          label: labelToSave,
+          base_url: baseUrlToSave,
+          api_key: settings.llm_simple_api_key || '',
+          llm_backend: settings.llm_simple_backend || 'openai',
+          model: settings.llm_simple_model || ''
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSavedCustomEndpoints(data.endpoints || []);
+        setCustomSimpleLabel(labelToSave);
+        if (data.saved && data.saved.id) {
+          setSelectedSimpleEndpointId(data.saved.id);
+        }
+        setSaveSimpleEndpointBtnText("✓ Saved to DB");
+        setTimeout(() => setSaveSimpleEndpointBtnText('Save Preset'), 2500);
+      } else {
+        setSaveSimpleEndpointBtnText("Save Failed");
+        setTimeout(() => setSaveSimpleEndpointBtnText('Save Preset'), 2000);
+      }
+    } catch (e) {
+      console.error("Failed to save simple custom endpoint:", e);
+      setSaveSimpleEndpointBtnText("Error Saving");
+      setTimeout(() => setSaveSimpleEndpointBtnText('Save Preset'), 2000);
+    }
+  };
+
   const handleDeleteCustomEndpoint = async (epId) => {
     const targetId = epId || selectedEndpointId;
-    const targetEp = savedCustomEndpoints.find(e => e.id === targetId || e.label === customLabel);
+    const targetEp = savedCustomEndpoints.find(e => e.id === targetId || e.label === customLabel || e.label === customSimpleLabel);
     if (!targetEp) {
       alert("Please select a saved preset to delete.");
       return;
@@ -364,33 +413,53 @@ const ControlDashboard = ({
       if (res.ok) {
         const data = await res.json();
         setSavedCustomEndpoints(data.endpoints || []);
-        setSelectedEndpointId('');
+        if (selectedEndpointId === targetEp.id) setSelectedEndpointId('');
+        if (selectedSimpleEndpointId === targetEp.id) setSelectedSimpleEndpointId('');
         if (customLabel === targetEp.label) setCustomLabel('');
+        if (customSimpleLabel === targetEp.label) setCustomSimpleLabel('');
       }
     } catch (e) {
       console.error("Failed to delete custom endpoint:", e);
     }
   };
 
-  const handleSelectCustomEndpoint = async (ep) => {
+  const handleSelectCustomEndpoint = async (ep, targetType = 'complex') => {
     if (!ep) return;
-    setSelectedEndpointId(ep.id || '');
-    setCustomLabel(ep.label || '');
-    try {
-      const targetBackend = settings.llm_backend === 'custom' || settings.llm_backend === 'openai' ? settings.llm_backend : (ep.llm_backend || 'custom');
-      await handleUpdateSetting('llm_backend', targetBackend);
-      await handleUpdateSetting('llm_base_url', ep.base_url || '');
-      if (ep.api_key_masked && ep.api_key_masked !== '****') {
-        await handleUpdateSetting('llm_api_key', ep.api_key_masked);
+    if (targetType === 'simple') {
+      setSelectedSimpleEndpointId(ep.id || '');
+      setCustomSimpleLabel(ep.label || '');
+      try {
+        const targetBackend = settings.llm_simple_backend === 'custom' || settings.llm_simple_backend === 'openai' ? settings.llm_simple_backend : (ep.llm_backend || 'custom');
+        await handleUpdateSetting('llm_simple_backend', targetBackend);
+        await handleUpdateSetting('llm_simple_base_url', ep.base_url || '');
+        if (ep.api_key_masked && ep.api_key_masked !== '****') {
+          await handleUpdateSetting('llm_simple_api_key', ep.api_key_masked);
+        }
+        if (ep.model) {
+          await handleUpdateSetting('llm_simple_model', ep.model);
+        }
+      } catch (e) {
+        console.error("Failed to select simple custom endpoint:", e);
       }
-      if (ep.model) {
-        await handleUpdateSetting('llm_model', ep.model);
+    } else {
+      setSelectedEndpointId(ep.id || '');
+      setCustomLabel(ep.label || '');
+      try {
+        const targetBackend = settings.llm_backend === 'custom' || settings.llm_backend === 'openai' ? settings.llm_backend : (ep.llm_backend || 'custom');
+        await handleUpdateSetting('llm_backend', targetBackend);
+        await handleUpdateSetting('llm_base_url', ep.base_url || '');
+        if (ep.api_key_masked && ep.api_key_masked !== '****') {
+          await handleUpdateSetting('llm_api_key', ep.api_key_masked);
+        }
+        if (ep.model) {
+          await handleUpdateSetting('llm_model', ep.model);
+        }
+        if (onRefreshLlmModels) {
+          setTimeout(() => onRefreshLlmModels(), 400);
+        }
+      } catch (e) {
+        console.error("Failed to select custom endpoint:", e);
       }
-      if (onRefreshLlmModels) {
-        setTimeout(() => onRefreshLlmModels(), 400);
-      }
-    } catch (e) {
-      console.error("Failed to select custom endpoint:", e);
     }
   };
 
@@ -2548,47 +2617,60 @@ const ControlDashboard = ({
                       <span className="card-group-title">AI Brain & Language Model</span>
                     </div>
 
-                    {/* Endpoint Configuration Strategy */}
-                    <div className="identity-field" style={{ marginTop: '4px', marginBottom: '8px' }}>
-                      <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd' }}>Endpoint Strategy</span>
-                      <select
-                        value={settings.endpoint_strategy || 'single'}
-                        onChange={(e) => handleUpdateSetting('endpoint_strategy', e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(18, 12, 33, 0.85)',
-                          border: '1px solid rgba(167, 139, 250, 0.4)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                          marginTop: '4px'
-                        }}
-                      >
-                        <option value="single" style={{ background: '#120c21', color: 'white' }}>
-                          Use single endpoint for all prompts (Default)
-                        </option>
-                        <option value="dual" style={{ background: '#120c21', color: 'white' }}>
-                          Use separate endpoints for simple and complex prompts
-                        </option>
-                      </select>
-                    </div>
+                    {/* Endpoint Configuration Strategy (Only visible when Prompt Strategy is Dynamic Mixed mode) */}
+                    {(settings.llm_mode === 3 || settings.llm_mode === 0 || !settings.llm_mode) && (
+                      <div className="identity-field" style={{ marginTop: '4px', marginBottom: '8px' }}>
+                        <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd' }}>Endpoint Strategy</span>
+                        <select
+                          value={settings.endpoint_strategy || 'single'}
+                          onChange={(e) => handleUpdateSetting('endpoint_strategy', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(18, 12, 33, 0.85)',
+                            border: '1px solid rgba(167, 139, 250, 0.4)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            marginTop: '4px'
+                          }}
+                        >
+                          <option value="single" style={{ background: '#120c21', color: 'white' }}>
+                            Use single endpoint for all prompts (Default)
+                          </option>
+                          <option value="dual" style={{ background: '#120c21', color: 'white' }}>
+                            Use separate endpoints for simple and complex prompts
+                          </option>
+                        </select>
+                      </div>
+                    )}
 
                     {/* If DUAL Strategy Selected, render Simple Endpoint Sub-Card */}
-                    {settings.endpoint_strategy === 'dual' && (
-                      <div style={{ background: 'rgba(139, 92, 246, 0.08)', borderRadius: '10px', padding: '10px', marginBottom: '12px', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
-                        <div style={{ fontWeight: '600', fontSize: '0.76rem', color: '#c4b5fd', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {settings.endpoint_strategy === 'dual' && settings.llm_mode !== 1 && settings.llm_mode !== 2 && (
+                      <div style={{ background: 'rgba(139, 92, 246, 0.08)', borderRadius: '10px', padding: '10px', marginBottom: '14px', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
+                        <div style={{ fontWeight: '600', fontSize: '0.78rem', color: '#c4b5fd', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           💬 Simple Prompt Endpoint (Casual Chat / Fast Responses)
                         </div>
 
-                        {/* Simple Backend Type */}
+                        {/* Simple LLM Backend */}
                         <div className="identity-field" style={{ marginTop: '4px' }}>
                           <span className="field-label">Simple LLM Backend</span>
                           <select
                             value={settings.llm_simple_backend || 'lmstudio'}
-                            onChange={(e) => handleUpdateSetting('llm_simple_backend', e.target.value)}
+                            onChange={async (e) => {
+                              const newBackend = e.target.value;
+                              await handleUpdateSetting('llm_simple_backend', newBackend);
+                              const defaults = {
+                                lmstudio: 'http://127.0.0.1:1234',
+                                ollama: 'http://127.0.0.1:11434',
+                                vllm: 'http://127.0.0.1:8000/v1',
+                                openai: 'https://generativelanguage.googleapis.com/v1beta/openai',
+                                custom: 'http://127.0.0.1:8000/v1',
+                              };
+                              if (defaults[newBackend]) handleUpdateSetting('llm_simple_base_url', defaults[newBackend]);
+                            }}
                             style={{
                               width: '100%',
                               padding: '7px 10px',
@@ -2605,10 +2687,130 @@ const ControlDashboard = ({
                             <option value="lmstudio">LM Studio (Local)</option>
                             <option value="ollama">Ollama (Local)</option>
                             <option value="vllm">vLLM (Local)</option>
-                            <option value="openai">Custom / Cloud API (OpenAI-Compatible)</option>
+                            <option value="openai">OpenAI / Cloud API (OpenAI-Compatible)</option>
                             <option value="custom">Custom Endpoint</option>
                           </select>
                         </div>
+
+                        {/* Simple Saved Key Vault & Presets */}
+                        {(settings.llm_simple_backend === 'openai' || settings.llm_simple_backend === 'custom') && (
+                          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                            {savedCustomEndpoints.length > 0 && (
+                              <div className="identity-field" style={{ marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                  <span className="field-label" style={{ color: '#c4b5fd', fontSize: '0.74rem', fontWeight: 600 }}>
+                                    🔑 Saved API Key Vault ({savedCustomEndpoints.length})
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                  <select
+                                    value={selectedSimpleEndpointId}
+                                    onChange={(e) => {
+                                      const selId = e.target.value;
+                                      const ep = savedCustomEndpoints.find(item => item.id === selId);
+                                      if (ep) handleSelectCustomEndpoint(ep, 'simple');
+                                    }}
+                                    style={{
+                                      flex: 1,
+                                      padding: '6px 9px',
+                                      background: 'rgba(18, 12, 33, 0.95)',
+                                      border: '1px solid rgba(167, 139, 250, 0.45)',
+                                      borderRadius: '8px',
+                                      color: '#ffffff',
+                                      fontSize: '0.75rem',
+                                      outline: 'none',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    <option value="" style={{ background: '#120c21', color: '#94a3b8' }}>-- Select Saved Simple Preset --</option>
+                                    {savedCustomEndpoints.map((ep) => (
+                                      <option key={ep.id} value={ep.id} style={{ background: '#120c21', color: '#ffffff' }}>
+                                        {ep.label || 'Saved Endpoint'} ({ep.has_key ? '🔑 Key Saved' : 'No Key'})
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    title="Delete selected preset"
+                                    onClick={() => handleDeleteCustomEndpoint(selectedSimpleEndpointId)}
+                                    className="glass-button"
+                                    style={{
+                                      padding: '6px 9px',
+                                      borderRadius: '8px',
+                                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                                      background: 'rgba(239, 68, 68, 0.18)',
+                                      color: '#fca5a5',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    <Trash2 style={{ width: '12px', height: '12px' }} />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Quick Cloud Presets for Simple */}
+                            <div style={{ marginTop: '4px', marginBottom: '6px' }}>
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>
+                                Quick Presets:
+                              </span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                {[
+                                  { name: 'Gemini', label: 'Google Gemini Cloud', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
+                                  { name: 'OpenAI', label: 'OpenAI Cloud API', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+                                  { name: 'Grok', label: 'xAI Grok Cloud', url: 'https://api.x.ai/v1', model: 'grok-beta' },
+                                  { name: 'Groq', label: 'Groq Cloud API', url: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
+                                  { name: 'DeepSeek', label: 'DeepSeek Cloud', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }
+                                ].map((p) => (
+                                  <button
+                                    key={p.name}
+                                    type="button"
+                                    onClick={async () => {
+                                      setCustomSimpleLabel(p.label);
+                                      await handleUpdateSetting('llm_simple_backend', 'custom');
+                                      await handleUpdateSetting('llm_simple_base_url', p.url);
+                                      if (p.model) await handleUpdateSetting('llm_simple_model', p.model);
+                                    }}
+                                    className="glass-button"
+                                    style={{
+                                      padding: '2px 6px',
+                                      fontSize: '0.64rem',
+                                      borderRadius: '5px',
+                                      background: settings.llm_simple_base_url === p.url ? 'rgba(139, 92, 246, 0.35)' : 'rgba(255, 255, 255, 0.05)',
+                                      border: settings.llm_simple_base_url === p.url ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
+                                      color: '#fff',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    ⚡ {p.name}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Preset Label Input */}
+                            <div className="identity-field" style={{ marginTop: '6px' }}>
+                              <span className="field-label">Preset Label</span>
+                              <input
+                                type="text"
+                                placeholder="e.g. Local Fast Llama, Gemini Flash"
+                                value={customSimpleLabel}
+                                onChange={(e) => setCustomSimpleLabel(e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '6px 9px',
+                                  background: 'rgba(0,0,0,0.3)',
+                                  border: '1px solid rgba(167,139,250,0.3)',
+                                  borderRadius: '8px',
+                                  color: 'white',
+                                  fontSize: '0.76rem',
+                                  outline: 'none',
+                                  marginTop: '2px'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
 
                         {/* Simple Base URL */}
                         <div className="identity-field" style={{ marginTop: '6px' }}>
@@ -2620,19 +2822,19 @@ const ControlDashboard = ({
                             onChange={(e) => handleUpdateSetting('llm_simple_base_url', e.target.value)}
                             style={{
                               width: '100%',
-                              padding: '7px 10px',
+                              padding: '6px 9px',
                               background: 'rgba(0,0,0,0.3)',
                               border: '1px solid rgba(255,255,255,0.1)',
                               borderRadius: '8px',
                               color: 'white',
-                              fontSize: '0.78rem',
+                              fontSize: '0.76rem',
                               outline: 'none',
-                              marginTop: '3px'
+                              marginTop: '2px'
                             }}
                           />
                         </div>
 
-                        {/* Simple API Key (if cloud) */}
+                        {/* Simple API Key */}
                         {(settings.llm_simple_backend === 'openai' || settings.llm_simple_backend === 'custom') && (
                           <div className="identity-field" style={{ marginTop: '6px' }}>
                             <span className="field-label">Simple API Key</span>
@@ -2643,16 +2845,39 @@ const ControlDashboard = ({
                               onChange={(e) => handleUpdateSetting('llm_simple_api_key', e.target.value)}
                               style={{
                                 width: '100%',
-                                padding: '7px 10px',
+                                padding: '6px 9px',
                                 background: 'rgba(0,0,0,0.3)',
                                 border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: '8px',
                                 color: 'white',
-                                fontSize: '0.78rem',
+                                fontSize: '0.76rem',
                                 outline: 'none',
-                                marginTop: '3px'
+                                marginTop: '2px'
                               }}
                             />
+                          </div>
+                        )}
+
+                        {/* Save Simple Preset Button */}
+                        {(settings.llm_simple_backend === 'openai' || settings.llm_simple_backend === 'custom') && (
+                          <div style={{ marginTop: '8px' }}>
+                            <button
+                              type="button"
+                              onClick={handleSaveSimpleCustomEndpoint}
+                              className="glass-button"
+                              style={{
+                                width: '100%',
+                                padding: '6px 10px',
+                                fontSize: '0.75rem',
+                                borderRadius: '7px',
+                                background: 'rgba(139, 92, 246, 0.25)',
+                                border: '1px solid #a78bfa',
+                                color: 'white',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              💾 {saveSimpleEndpointBtnText}
+                            </button>
                           </div>
                         )}
 
@@ -2666,17 +2891,24 @@ const ControlDashboard = ({
                             onChange={(e) => handleUpdateSetting('llm_simple_model', e.target.value)}
                             style={{
                               width: '100%',
-                              padding: '7px 10px',
+                              padding: '6px 9px',
                               background: 'rgba(0,0,0,0.3)',
                               border: '1px solid rgba(255,255,255,0.1)',
                               borderRadius: '8px',
                               color: 'white',
-                              fontSize: '0.78rem',
+                              fontSize: '0.76rem',
                               outline: 'none',
-                              marginTop: '3px'
+                              marginTop: '2px'
                             }}
                           />
                         </div>
+                      </div>
+                    )}
+
+                    {/* Section Header if Dual Mode is Active for Complex Endpoint */}
+                    {settings.endpoint_strategy === 'dual' && settings.llm_mode !== 1 && settings.llm_mode !== 2 && (
+                      <div style={{ fontWeight: '600', fontSize: '0.78rem', color: '#38bdf8', marginTop: '6px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        ⚡ Complex / Desktop Task Endpoint (Jarvis OS Tools / Code / Automation)
                       </div>
                     )}
 
