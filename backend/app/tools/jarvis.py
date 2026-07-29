@@ -22,7 +22,7 @@ def jarvis_query_file_db(
     extension: str = None,
     path_hint: str = None,
     search_scope: str = "all",
-    limit: int = 15
+    limit: int = 25
 ) -> str:
     """
     Searches indexed files across all PC drives using density ranking (/o algorithm).
@@ -35,7 +35,7 @@ def jarvis_query_file_db(
         extension: Optional file extension filter (e.g. ".mp4", ".mkv", ".pdf", ".zip").
         path_hint: Optional folder or drive hint (e.g. "D:", "Downloads", "Anime", "Desktop").
         search_scope: Optional target scope ("all", "folder_only", "file_only", "metadata_only").
-        limit: Max results to return (default 15).
+        limit: Max results to return (default 25).
     """
     query_str = str(query).strip() if query is not None else ""
     if not query_str:

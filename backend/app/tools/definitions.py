@@ -144,7 +144,7 @@ def get_advanced_jarvis_tools_definition() -> list:
                         },
                         "limit": {
                             "type": "integer",
-                            "description": "Max results to return (default 15)."
+                            "description": "Max results to return (default 25)."
                         }
                     },
                     "required": ["query"]
