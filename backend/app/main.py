@@ -1592,7 +1592,7 @@ def get_profile():
     """
     Returns the current user profile state (API key redacted).
     """
-    import copy
+    import copy, platform
     profile = copy.deepcopy(memory_manager.profile)
     if "settings" in profile and "llm_api_key" in profile["settings"]:
         key = profile["settings"]["llm_api_key"]
@@ -1600,6 +1600,7 @@ def get_profile():
             profile["settings"]["llm_api_key"] = key[:4] + "..." + key[-4:] if len(key) > 8 else "****"
         else:
             profile["settings"]["llm_api_key"] = ""
+    profile["platform"] = f"{platform.system()} {platform.release()}"
     return profile
 
 class ProfileUpdateRequest(BaseModel):

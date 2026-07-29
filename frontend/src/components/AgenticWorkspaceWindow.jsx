@@ -196,6 +196,25 @@ export const AgenticWorkspaceWindow = ({
     return localStorage.getItem('yuki-prompt-planning') !== 'false';
   });
 
+  // Profile & System Details State
+  const [profileData, setProfileData] = useState(null);
+
+  const fetchProfileInfo = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/profile`);
+      if (res.ok) {
+        const data = await res.json();
+        setProfileData(data);
+      }
+    } catch (e) {
+      console.warn('[ChatWindow] Profile fetch error:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchProfileInfo();
+  }, []);
+
   // Cross-Window BroadcastChannel Sync
   useEffect(() => {
     let syncChannel;
@@ -1430,14 +1449,25 @@ export const AgenticWorkspaceWindow = ({
                 Real-Time Host System Diagnostics
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
                 <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
                   <div style={{ fontSize: '0.66rem', color: '#94a3b8' }}>Platform</div>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#ffffff', marginTop: '2px' }}>{hostPlatform}</div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#ffffff', marginTop: '2px' }}>
+                    {profileData?.platform || (navigator.userAgent.includes('Win') ? 'Windows 11' : 'Windows')}
+                  </div>
                 </div>
                 <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <div style={{ fontSize: '0.66rem', color: '#94a3b8' }}>LLM Backend</div>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#38bdf8', marginTop: '2px' }}>{llmBackend}</div>
+                  <div style={{ fontSize: '0.66rem', color: '#94a3b8' }}>Active LLM Engine</div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#38bdf8', marginTop: '2px', textTransform: 'capitalize' }}>
+                    {profileData?.settings?.llm_backend || 'groq'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '12px' }}>
+                <div style={{ fontSize: '0.66rem', color: '#94a3b8' }}>Active AI Model</div>
+                <div style={{ fontSize: '0.80rem', fontWeight: 600, color: '#c4b5fd', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                  {profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
                 </div>
               </div>
 
