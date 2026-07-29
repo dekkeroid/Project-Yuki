@@ -118,8 +118,9 @@ class AgentExecutor:
         from app.tools.files import list_directory, search_files, open_or_play_file, create_file, edit_file, delete_file, read_file_content
         from app.tools.jarvis import (
             jarvis_query_file_db, jarvis_read_file, jarvis_create_or_edit_file,
-            jarvis_list_dir_tree, jarvis_git_status, jarvis_system_diagnostics,
-            jarvis_network_status, jarvis_web_scrape, jarvis_window_control
+            jarvis_replace_file_content, jarvis_list_dir_tree, jarvis_git_status,
+            jarvis_system_diagnostics, jarvis_network_status, jarvis_web_scrape,
+            jarvis_window_control
         )
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
@@ -223,6 +224,11 @@ class AgentExecutor:
                 kwargs.get("file_path") or kwargs.get("path") or "",
                 kwargs.get("content") or "",
                 kwargs.get("mode", "write")
+            ),
+            "jarvis_replace_file_content": lambda **kwargs: jarvis_replace_file_content(
+                kwargs.get("file_path") or kwargs.get("path") or "",
+                kwargs.get("target_content") or kwargs.get("target") or "",
+                kwargs.get("replacement_content") or kwargs.get("replacement") or ""
             ),
             "jarvis_list_dir_tree": lambda **kwargs: jarvis_list_dir_tree(
                 kwargs.get("dir_path") or kwargs.get("path") or "",
