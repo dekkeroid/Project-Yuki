@@ -235,9 +235,6 @@ class AgentExecutor:
                 kwargs.get("filter_name"),
                 int(kwargs.get("top_n", 10))
             ),
-            "jarvis_network_status": lambda **kwargs: jarvis_network_status(
-                kwargs.get("host", "8.8.8.8")
-            ),
             "jarvis_web_search": _async_web_search,
             "jarvis_web_scrape": lambda **kwargs: jarvis_web_scrape(
                 kwargs.get("url") or "",
@@ -274,14 +271,15 @@ class AgentExecutor:
             "jarvis_run_python": lambda **kwargs: run_python_script(
                 kwargs.get("code") or ""
             ),
-            "jarvis_take_screenshot": take_screenshot,
+            "jarvis_keyboard_input": lambda **kwargs: keyboard_mouse_input(
+                kwargs.get("action") or "",
+                text=kwargs.get("text"),
+                keys=kwargs.get("keys")
+            ),
             "jarvis_keyboard_mouse_input": lambda **kwargs: keyboard_mouse_input(
                 kwargs.get("action") or "",
                 text=kwargs.get("text"),
-                keys=kwargs.get("keys"),
-                x=kwargs.get("x"),
-                y=kwargs.get("y"),
-                amount=kwargs.get("amount")
+                keys=kwargs.get("keys")
             ),
             "jarvis_media_playback_control": lambda **kwargs: media_playback_control(
                 kwargs.get("action") or "",

@@ -241,19 +241,35 @@ def jarvis_git_status(repo_path: str = None) -> str:
 
 def jarvis_system_diagnostics(filter_name: str = None, top_n: int = 10) -> str:
     """
-    Retrieves system CPU, RAM, disk usage, and top resource-heavy active processes.
+    Retrieves system CPU, RAM, disk usage, local IP, ping status, and top resource-heavy active processes.
     """
     try:
         import psutil
+        import socket
+        import subprocess
+        import sys
+
         cpu_percent = psutil.cpu_percent(interval=0.2)
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage('/')
 
+        # Network check
+        try:
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+            param = '-n' if sys.platform.lower() == 'win32' else '-c'
+            ping_res = subprocess.run(['ping', param, '1', '8.8.8.8'], capture_output=True, text=True, timeout=2)
+            net_status = "ONLINE" if ping_res.returncode == 0 else "OFFLINE"
+        except Exception:
+            local_ip = "Unknown"
+            net_status = "Unknown"
+
         diag = [
-            "=== System Diagnostics ===",
+            "=== System & Network Diagnostics ===",
             f"• CPU Usage: {cpu_percent}%",
             f"• RAM Usage: {mem.percent}% ({mem.used / 1024**3:.1f} GB / {mem.total / 1024**3:.1f} GB)",
             f"• Disk Usage: {disk.percent}% ({disk.free / 1024**3:.1f} GB free of {disk.total / 1024**3:.1f} GB)",
+            f"• Network: IP {local_ip} | Status: {net_status}",
             "",
             "=== Top Active Processes ==="
         ]

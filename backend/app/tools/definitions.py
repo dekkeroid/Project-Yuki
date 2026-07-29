@@ -218,25 +218,12 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_system_diagnostics",
-                "description": "Retrieve CPU %, RAM %, disk usage, and top resource-heavy active processes.",
+                "description": "Retrieve CPU %, RAM %, disk usage, top resource-heavy processes, local IP, and ping internet status.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "filter_name": {"type": "string", "description": "Optional process name filter (e.g. 'chrome', 'python')."},
                         "top_n": {"type": "integer", "description": "Number of top processes to return (default 10)."}
-                    }
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "jarvis_network_status",
-                "description": "Check local IP, network interfaces, and ping test web connectivity.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "host": {"type": "string", "description": "Host/IP to ping test (default 8.8.8.8)."}
                     }
                 }
             }
@@ -426,31 +413,17 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "jarvis_take_screenshot",
-                "description": "Open the Windows Snipping Tool overlay (Win+Shift+S) so the user can select an area to capture.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {}
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "jarvis_keyboard_mouse_input",
-                "description": "Simulate keyboard keystrokes, key combinations, mouse clicks, movements, or scrolls.",
+                "name": "jarvis_keyboard_input",
+                "description": "Simulate keyboard typing or key combinations (e.g. ['ctrl', 'c'], ['alt', 'tab'], ['win', 'd']).",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["type", "press_keys", "click", "double_click", "move_to", "scroll"]
+                            "enum": ["type", "press_keys"]
                         },
-                        "text": {"type": "string", "description": "Text to type (for 'type' action)."},
-                        "keys": {"type": "array", "items": {"type": "string"}, "description": "List of keys to press (for 'press_keys' action)."},
-                        "x": {"type": "integer", "description": "X coordinate for click/move."},
-                        "y": {"type": "integer", "description": "Y coordinate for click/move."},
-                        "amount": {"type": "integer", "description": "Scroll amount (for 'scroll' action)."}
+                        "text": {"type": "string", "description": "Text string to type (for 'type' action)."},
+                        "keys": {"type": "array", "items": {"type": "string"}, "description": "List of key strings to press simultaneously (for 'press_keys' action)."}
                     },
                     "required": ["action"]
                 }

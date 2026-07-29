@@ -2767,13 +2767,13 @@ const ControlDashboard = ({
                         </label>
                       </div>
 
-                      {/* Send All Tools in Simple Prompts Toggle (Only applicable when simple/mixed prompts exist, hidden in Complex Only mode) */}
+                      {/* Send Tools in Simple Prompts Toggle */}
                       {settings.llm_mode !== 2 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.06)' }}>
                           <div>
-                            <span className="field-label" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600 }}>Send all tools even at simple prompts</span>
+                            <span className="field-label" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600 }}>Enable tools during simple prompts</span>
                             <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
-                              Passes tool schemas to the LLM during simple casual conversation turns. (Default: OFF)
+                              Passes tool schemas to the LLM during simple prompts. Respects intent checking and dynamic tool filtering.
                             </span>
                           </div>
                           <label className="switch">
