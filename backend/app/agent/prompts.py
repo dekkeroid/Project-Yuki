@@ -140,11 +140,10 @@ RULE 8 — NO PATH HALLUCINATION: Never construct or guess file paths. Never inv
 RULE 9 — VOICE OUTPUT: Keep all spoken responses concise. Round numbers (e.g. "32%" not "31.847%"). Never output markdown lists when speaking.
 ---
 
-Be warm, helpful, and keep all responses voice-friendly!
-"""
+Be warm, helpful, and keep all responses voice-friendly!""")
 
 
-def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None) -> str:
+def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None) -> str:
     """
     Advanced Jarvis System Prompt for Frontier Cloud LLMs.
     Enables parallel tool execution, iterative multi-step ReAct reasoning, 
