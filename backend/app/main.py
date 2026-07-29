@@ -2534,6 +2534,34 @@ async def get_chat_session_history(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class ActivateSessionRequest(BaseModel):
+    session_id: str
+
+@app.post("/api/chat/sessions/activate")
+async def activate_chat_session_api(req: ActivateSessionRequest):
+    """
+    Promotes a past session to be the Global Active Session in backend.
+    Loads its message history into memory and broadcasts session_switched event over WebSockets.
+    """
+    global active_session_id, chat_history
+    if not req.session_id:
+        raise HTTPException(status_code=400, detail="Missing session_id")
+    
+    from app.memory.db import get_session_messages
+    msgs = get_session_messages(req.session_id)
+    active_session_id = req.session_id
+    chat_history = msgs
+    
+    # Broadcast session switch event to connected WebSocket clients
+    await manager.broadcast({
+        "type": "session_switched",
+        "session_id": active_session_id,
+        "messages": chat_history
+    })
+    
+    print(f"[Session] Activated session: {active_session_id} ({len(chat_history)} messages)")
+    return {"status": "success", "session_id": active_session_id, "messages": chat_history}
+
 @app.post("/api/chat/sessions/new")
 async def create_new_chat_session():
     """Starts a new chat session."""
@@ -2541,6 +2569,12 @@ async def create_new_chat_session():
     active_session_id = generate_new_session_id()
     chat_history = []
     print(f"[Session] Started new user session: {active_session_id}")
+    
+    await manager.broadcast({
+        "type": "session_switched",
+        "session_id": active_session_id,
+        "messages": []
+    })
     return {"status": "success", "session_id": active_session_id, "messages": []}
 
 @app.delete("/api/chat/sessions/{session_id}")

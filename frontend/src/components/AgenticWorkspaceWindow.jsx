@@ -3,11 +3,13 @@ import {
   Cpu, Terminal, Sparkles, MessageSquare, Monitor, X, Maximize2, Minimize2, 
   Send, RefreshCw, Zap, HardDrive, Database, Eye, EyeOff, Wrench, Search,
   Code, Activity, Brain, Volume2, Mic, MicOff, ChevronDown, ChevronRight,
-  Folder, Calendar, Plus, Trash2, History, PanelLeftClose, PanelLeftOpen
+  Folder, Calendar, Plus, Trash2, History, PanelLeftClose, PanelLeftOpen,
+  Settings, Globe, Sliders, Check, ShieldAlert
 } from 'lucide-react';
 import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought } from './ChatOverlay';
+import { SearchableModelSelect } from './ControlDashboard';
 import MicLevelMeter from './MicLevelMeter';
-import { API_BASE } from '../api';
+import { API_BASE, WS_BASE } from '../api';
 
 export const AgenticWorkspaceWindow = ({
   messages = [],
@@ -40,6 +42,35 @@ export const AgenticWorkspaceWindow = ({
   const [viewMessages, setViewMessages] = useState(null); // Loaded messages when inspecting past session
   const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
   const messagesEndRef = useRef(null);
+
+  // Standalone Settings Modal State
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  // Per-Message Prompt Overrides
+  const [overrideJarvis, setOverrideJarvis] = useState(true);
+  const [overrideIntentCheck, setOverrideIntentCheck] = useState(true);
+  const [overrideDynamicTools, setOverrideDynamicTools] = useState(true);
+  const [overrideWebSearch, setOverrideWebSearch] = useState(true);
+  const [overrideTts, setOverrideTts] = useState(true);
+
+  // Cross-Window BroadcastChannel Sync
+  useEffect(() => {
+    let syncChannel;
+    try {
+      syncChannel = new BroadcastChannel('yuki_chat_sync');
+      syncChannel.onmessage = (event) => {
+        if (event.data?.type === 'session_tree_update' || event.data?.type === 'session_switched') {
+          fetchSessionTree();
+          if (event.data?.messages) {
+            setViewMessages(event.data.messages);
+          }
+        }
+      };
+    } catch (e) {
+      console.warn("BroadcastChannel not supported:", e);
+    }
+    return () => syncChannel?.close();
+  }, []);
 
   // Fetch session hierarchy from backend
   const fetchSessionTree = async () => {
@@ -107,19 +138,32 @@ export const AgenticWorkspaceWindow = ({
     });
   };
 
-  // Inspect a past session
+  // Inspect and Promote a session to Global Active Session
   const handleSelectSession = async (sessionId) => {
     setSelectedPastSessionId(sessionId);
     try {
-      const res = await fetch(`${API_BASE}/api/chat/sessions/${sessionId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.messages) {
-          setViewMessages(data.messages);
+      const actRes = await fetch(`${API_BASE}/api/chat/sessions/activate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId })
+      });
+      if (actRes.ok) {
+        const actData = await actRes.json();
+        setActiveSessionId(sessionId);
+        if (actData.messages) {
+          setViewMessages(actData.messages);
+        }
+      } else {
+        const res = await fetch(`${API_BASE}/api/chat/sessions/${sessionId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.messages) {
+            setViewMessages(data.messages);
+          }
         }
       }
     } catch (err) {
-      console.error("Failed to load past session messages:", err);
+      console.error("Failed to load/activate session:", err);
     }
   };
 
@@ -300,6 +344,30 @@ export const AgenticWorkspaceWindow = ({
               🧠 Jarvis Mode
             </button>
           </div>
+
+          {/* Standalone Settings Button */}
+          <button
+            type="button"
+            onClick={() => setIsSettingsModalOpen(true)}
+            title="Open Workspace Settings"
+            style={{
+              padding: '6px 10px',
+              borderRadius: '7px',
+              border: '1px solid rgba(167, 139, 250, 0.3)',
+              background: 'rgba(167, 139, 250, 0.15)',
+              color: '#c4b5fd',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Settings style={{ width: '13px', height: '13px' }} />
+            Settings
+          </button>
 
           {/* Close Window / Dock Back Button */}
           <button
@@ -702,10 +770,115 @@ export const AgenticWorkspaceWindow = ({
 
           {/* Prompt Input Box & Controls */}
           <div style={{
-            padding: '12px 16px',
+            padding: '10px 16px 12px',
             background: 'rgba(15, 23, 42, 0.95)',
             borderTop: '1px solid rgba(167, 139, 250, 0.2)'
           }}>
+            {/* Per-Message Prompt Execution Toggles */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '8px',
+              fontSize: '0.68rem',
+              color: '#94a3b8',
+              userSelect: 'none',
+              flexWrap: 'wrap'
+            }}>
+              <span style={{ fontWeight: 600, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <Sliders style={{ width: '11px', height: '11px' }} /> Prompt Flags:
+              </span>
+              
+              <button
+                type="button"
+                onClick={() => setOverrideJarvis(!overrideJarvis)}
+                title="Toggle Autonomous Jarvis Mode vs Basic Tools for this prompt"
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  border: overrideJarvis ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                  background: overrideJarvis ? 'rgba(56, 189, 248, 0.2)' : 'rgba(0,0,0,0.3)',
+                  color: overrideJarvis ? '#38bdf8' : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: '0.66rem',
+                  fontWeight: 600
+                }}
+              >
+                🧠 Jarvis {overrideJarvis ? 'ON' : 'OFF'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOverrideIntentCheck(!overrideIntentCheck)}
+                title="Toggle Router Intent Checking for this prompt"
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  border: overrideIntentCheck ? '1px solid rgba(167, 139, 250, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                  background: overrideIntentCheck ? 'rgba(167, 139, 250, 0.2)' : 'rgba(0,0,0,0.3)',
+                  color: overrideIntentCheck ? '#c4b5fd' : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: '0.66rem',
+                  fontWeight: 600
+                }}
+              >
+                🎯 Intent Router {overrideIntentCheck ? 'ON' : 'OFF'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOverrideDynamicTools(!overrideDynamicTools)}
+                title="Toggle Dynamic Tool Schema Filtering for this prompt"
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  border: overrideDynamicTools ? '1px solid rgba(52, 211, 153, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                  background: overrideDynamicTools ? 'rgba(52, 211, 153, 0.2)' : 'rgba(0,0,0,0.3)',
+                  color: overrideDynamicTools ? '#34d399' : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: '0.66rem',
+                  fontWeight: 600
+                }}
+              >
+                ⚡ Dynamic Schema {overrideDynamicTools ? 'ON' : 'OFF'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOverrideWebSearch(!overrideWebSearch)}
+                title="Allow Web Search / Web Scraping for this prompt"
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  border: overrideWebSearch ? '1px solid rgba(251, 146, 60, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                  background: overrideWebSearch ? 'rgba(251, 146, 60, 0.2)' : 'rgba(0,0,0,0.3)',
+                  color: overrideWebSearch ? '#fb923c' : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: '0.66rem',
+                  fontWeight: 600
+                }}
+              >
+                🌐 Web Search {overrideWebSearch ? 'ON' : 'OFF'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOverrideTts(!overrideTts)}
+                title="Enable or Mute Voice Output (TTS) for this response"
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  border: overrideTts ? '1px solid rgba(244, 114, 182, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                  background: overrideTts ? 'rgba(244, 114, 182, 0.2)' : 'rgba(0,0,0,0.3)',
+                  color: overrideTts ? '#f472b6' : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: '0.66rem',
+                  fontWeight: 600
+                }}
+              >
+                🔊 Voice {overrideTts ? 'ON' : 'OFF'}
+              </button>
+            </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -782,6 +955,34 @@ export const AgenticWorkspaceWindow = ({
                 Send
               </button>
             </form>
+          </div>
+
+          {/* Bottom Status Footer Bar (Props Input Box Above Taskbar) */}
+          <div style={{
+            height: '32px',
+            background: 'rgba(9, 13, 22, 0.98)',
+            borderTop: '1px solid rgba(167, 139, 250, 0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 14px',
+            fontSize: '0.68rem',
+            color: '#94a3b8',
+            userSelect: 'none'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#34d399', fontWeight: 600 }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#34d399', boxShadow: '0 0 6px #34d399' }}></span>
+                Core Online
+              </span>
+              <span>Session: <code style={{ color: '#c4b5fd', fontFamily: 'monospace' }}>{activeSessionId || 'session_active'}</code></span>
+              <span>Budget: ~40k tokens</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span>Type <code style={{ color: '#38bdf8' }}>/goal</code> for autonomous mode</span>
+              <span style={{ opacity: 0.5 }}>|</span>
+              <span style={{ color: '#c4b5fd' }}>WS Synced</span>
+            </div>
           </div>
         </section>
 
@@ -958,6 +1159,166 @@ export const AgenticWorkspaceWindow = ({
 
         </section>
       </div>
+
+      {/* ── Standalone Workspace Settings Modal ─── */}
+      {isSettingsModalOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(5, 8, 15, 0.82)',
+          backdropFilter: 'blur(16px)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '520px',
+            background: 'rgba(15, 23, 42, 0.98)',
+            border: '1px solid rgba(167, 139, 250, 0.35)',
+            borderRadius: '16px',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(139, 92, 246, 0.2)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '14px 18px',
+              borderBottom: '1px solid rgba(167, 139, 250, 0.2)',
+              background: 'linear-gradient(135deg, rgba(167, 139, 250, 0.15) 0%, rgba(56, 189, 248, 0.1) 100%)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Settings style={{ width: '18px', height: '18px', color: '#c4b5fd' }} />
+                <h3 style={{ margin: 0, fontSize: '0.94rem', fontWeight: 700, color: '#ffffff' }}>
+                  Workspace Settings & LLM Config
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X style={{ width: '16px', height: '16px' }} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+              {/* LLM Model Selection */}
+              <div>
+                <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '6px' }}>
+                  🧠 Frontier AI Model Selection:
+                </label>
+                <SearchableModelSelect
+                  value={settings.llm_model || modelName}
+                  onChange={(val) => onUpdateSetting && onUpdateSetting('llm_model', val)}
+                  options={availableLlmModels}
+                  placeholder="Select AI model..."
+                />
+              </div>
+
+              {/* Default Tool Mode */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#ffffff' }}>Autonomous Jarvis Mode</div>
+                  <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>Enables full multi-tool execution budget (40k tokens)</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUpdateSetting && onUpdateSetting('tool_mode', settings.tool_mode === 'advanced' ? 'basic' : 'advanced')}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '8px',
+                    border: settings.tool_mode === 'advanced' ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.2)',
+                    background: settings.tool_mode === 'advanced' ? 'rgba(56, 189, 248, 0.25)' : 'transparent',
+                    color: settings.tool_mode === 'advanced' ? '#38bdf8' : '#94a3b8',
+                    fontWeight: 600,
+                    fontSize: '0.72rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {settings.tool_mode === 'advanced' ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              {/* Simple Prompt Tools */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#ffffff' }}>Enable Tools for Simple Prompts</div>
+                  <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>Executes tools even on general conversational queries</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUpdateSetting && onUpdateSetting('send_tools_in_simple', !settings.send_tools_in_simple)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '8px',
+                    border: settings.send_tools_in_simple ? '1px solid #34d399' : '1px solid rgba(255,255,255,0.2)',
+                    background: settings.send_tools_in_simple ? 'rgba(52, 211, 153, 0.25)' : 'transparent',
+                    color: settings.send_tools_in_simple ? '#34d399' : '#94a3b8',
+                    fontWeight: 600,
+                    fontSize: '0.72rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {settings.send_tools_in_simple ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              {/* Voice Volume Control */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Volume2 style={{ width: '13px', height: '13px' }} /> Voice Speech Volume (TTS):
+                  </label>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#ffffff' }}>{Math.round(voiceVolume * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={voiceVolume}
+                  onChange={(e) => onVolumeChange && onVolumeChange(parseFloat(e.target.value))}
+                  style={{ width: '100%', accentColor: '#8b5cf6' }}
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '12px 18px',
+              borderTop: '1px solid rgba(167, 139, 250, 0.2)',
+              background: 'rgba(9, 13, 22, 0.95)',
+              display: 'flex',
+              justify: 'flex-end'
+            }}>
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(false)}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  fontSize: '0.76rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

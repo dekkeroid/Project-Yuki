@@ -13,7 +13,7 @@ const SKIN_PRESETS = [
   { name: 'Cocoa', value: '#593424' }
 ];
 
-const SearchableModelSelect = ({ value, onChange, options = [], placeholder = "Select or search a model..." }) => {
+export const SearchableModelSelect = ({ value, onChange, options = [], placeholder = "Select or search a model..." }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const containerRef = useRef(null);

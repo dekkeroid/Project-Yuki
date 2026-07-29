@@ -379,9 +379,16 @@ def init_db():
         updated_at REAL,
         year INTEGER,
         month_name TEXT,
-        date_str TEXT
+        date_str TEXT,
+        pruned_context TEXT
     );
     """)
+
+    # Migration check for pruned_context column if table already exists
+    cursor.execute("PRAGMA table_info(chat_sessions);")
+    cols = [col[1] for col in cursor.fetchall()]
+    if 'pruned_context' not in cols:
+        cursor.execute("ALTER TABLE chat_sessions ADD COLUMN pruned_context TEXT;")
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS chat_messages (
@@ -859,10 +866,10 @@ def generate_session_title(messages: List[Dict[str, str]]) -> str:
         return combined[:57] + "..."
     return combined.title()
 
-def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]]):
+def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]], pruned_context: Optional[List[Dict[str, str]]] = None):
     """
     Saves or updates a chat session in SQLite ONLY IF len(messages) >= 2.
-    Discards empty or 1-message orphan turns.
+    Discards empty or 1-message orphan turns. Stores optional pruned_context JSON for LLM budget state.
     """
     if not session_id or not messages or len(messages) < 2:
         return
@@ -874,17 +881,19 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
     date_str = time.strftime("%d %B %Y", t_struct)  # e.g. "30 July 2026"
     
     title = generate_session_title(messages)
+    pruned_json = json.dumps(pruned_context) if pruned_context else None
     
     conn = get_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("""
-        INSERT INTO chat_sessions (session_id, title, created_at, updated_at, year, month_name, date_str)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO chat_sessions (session_id, title, created_at, updated_at, year, month_name, date_str, pruned_context)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(session_id) DO UPDATE SET
             title = excluded.title,
-            updated_at = excluded.updated_at
-        """, (session_id, title, now, now, year, month_name, date_str))
+            updated_at = excluded.updated_at,
+            pruned_context = COALESCE(excluded.pruned_context, chat_sessions.pruned_context)
+        """, (session_id, title, now, now, year, month_name, date_str, pruned_json))
         
         cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
         msg_rows = [
@@ -901,6 +910,25 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
         print(f"[DB] Error saving chat session '{session_id}': {e}")
     finally:
         conn.close()
+
+def get_session_pruned_context(session_id: str) -> Optional[List[Dict[str, str]]]:
+    """
+    Retrieves the serialized pruned LLM context JSON for a session if available.
+    """
+    if not session_id:
+        return None
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT pruned_context FROM chat_sessions WHERE session_id = ?", (session_id,))
+        row = cursor.fetchone()
+        if row and row[0]:
+            return json.loads(row[0])
+    except Exception as e:
+        print(f"[DB] Error reading pruned context for session '{session_id}': {e}")
+    finally:
+        conn.close()
+    return None
 
 def get_hierarchical_chat_sessions() -> Dict[str, Any]:
     """
