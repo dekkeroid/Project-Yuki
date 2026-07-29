@@ -280,8 +280,9 @@ ${promptParts.length > 0 ? promptParts.join('\n\n') : '⚠️ All prompt modules
 ═════════════════════════════════════════════════════════
 4. LLM BACKEND & EXECUTION PARAMETERS
 ═════════════════════════════════════════════════════════
-• LLM Backend Provider: ${profileData?.settings?.llm_backend || 'groq'}
-• Prompt Router Mode: Mode ${llmModeOverride} (${llmModeOverride === 3 ? 'Dynamic Mixed Prompts' : llmModeOverride === 1 ? 'Fast/Simple' : 'Full Agentic'})
+• Endpoint Strategy: ${profileData?.settings?.endpoint_strategy === 'separate' ? 'Separate Endpoints (Simple vs Complex)' : 'Single Unified Endpoint'}
+• Simple Query Model: [${profileData?.settings?.llm_backend || 'groq'}] ${profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
+${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic Model: [${profileData?.settings?.llm_complex_backend || profileData?.settings?.llm_backend || 'groq'}] ${profileData?.settings?.llm_complex_model || profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}\n` : ''}• Prompt Router Mode: Mode ${llmModeOverride} (${llmModeOverride === 3 ? 'Dynamic Mixed Prompts' : llmModeOverride === 1 ? 'Fast/Simple' : 'Full Agentic'})
 • LLM Intent Check: ${enableIntentCheckOverride ? 'ENABLED (double-checks intent before tool call)' : 'DISABLED'}
 • Tools in Simple Chatter: ${sendToolsInSimpleOverride ? 'ENABLED' : 'DISABLED'}
 • Temperature: ${llmModeOverride === 2 ? '0.2 (Deterministic)' : '0.7 (Creative)'}
@@ -1519,68 +1520,11 @@ ${promptParts.length > 0 ? promptParts.join('\n\n') : '⚠️ All prompt modules
                 Real-Time Host System Diagnostics
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <div style={{ fontSize: '0.66rem', color: '#94a3b8' }}>Platform</div>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#ffffff', marginTop: '2px' }}>
-                    {profileData?.platform || (navigator.userAgent.includes('Win') ? 'Windows 11' : 'Windows')}
-                  </div>
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '12px' }}>
+                <div style={{ fontSize: '0.66rem', color: '#94a3b8' }}>Platform</div>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#ffffff', marginTop: '2px' }}>
+                  {profileData?.platform || (navigator.userAgent.includes('Win') ? 'Windows 11' : 'Windows')}
                 </div>
-                <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <div style={{ fontSize: '0.66rem', color: '#94a3b8' }}>Active LLM Engine</div>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#38bdf8', marginTop: '2px', textTransform: 'capitalize' }}>
-                    {profileData?.settings?.llm_backend || 'groq'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Strategy Pill & Active Model Breakdown */}
-              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '0.66rem', color: '#94a3b8' }}>Endpoint Strategy</span>
-                  <span style={{
-                    fontSize: '0.64rem',
-                    fontWeight: 700,
-                    padding: '2px 8px',
-                    borderRadius: '10px',
-                    background: profileData?.settings?.endpoint_strategy === 'separate' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(167, 139, 250, 0.2)',
-                    color: profileData?.settings?.endpoint_strategy === 'separate' ? '#38bdf8' : '#c4b5fd',
-                    border: profileData?.settings?.endpoint_strategy === 'separate' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(167, 139, 250, 0.4)'
-                  }}>
-                    {profileData?.settings?.endpoint_strategy === 'separate' ? '⚡ Separate Endpoints' : '🎯 Single Endpoint'}
-                  </span>
-                </div>
-
-                {profileData?.settings?.endpoint_strategy === 'separate' ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div style={{ fontSize: '0.62rem', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        ⚡ Fast/Simple Queries Model
-                      </div>
-                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                        <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
-                      </div>
-                    </div>
-
-                    <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(167, 139, 250, 0.2)' }}>
-                      <div style={{ fontSize: '0.62rem', color: '#c4b5fd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        🧠 Complex & Agentic Tasks Model
-                      </div>
-                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                        <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_complex_backend || profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_complex_model || profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '0.62rem', color: '#c4b5fd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Unified Model
-                    </div>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                      <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(56,189,248,0.2)', fontSize: '0.74rem', color: '#94a3b8' }}>
@@ -1610,6 +1554,58 @@ ${promptParts.length > 0 ? promptParts.join('\n\n') : '⚠️ All prompt modules
               <div style={{ fontWeight: '600', fontSize: '0.76rem', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Cpu style={{ width: '14px', height: '14px' }} />
                 Per-Turn AI Brain & Execution Overrides
+              </div>
+
+              {/* Section 0: Live AI Brain & Language Model Strategy Card */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(167, 139, 250, 0.3)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '0.68rem', color: '#c4b5fd', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Sparkles style={{ width: '13px', height: '13px' }} />
+                    AI Brain & Language Model Pipeline
+                  </div>
+                  <span style={{
+                    fontSize: '0.62rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    background: profileData?.settings?.endpoint_strategy === 'separate' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(167, 139, 250, 0.2)',
+                    color: profileData?.settings?.endpoint_strategy === 'separate' ? '#38bdf8' : '#c4b5fd',
+                    border: profileData?.settings?.endpoint_strategy === 'separate' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(167, 139, 250, 0.4)'
+                  }}>
+                    {profileData?.settings?.endpoint_strategy === 'separate' ? '⚡ Separate Endpoints' : '🎯 Single Endpoint'}
+                  </span>
+                </div>
+
+                {profileData?.settings?.endpoint_strategy === 'separate' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(56,189,248,0.2)' }}>
+                      <div style={{ fontSize: '0.62rem', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        ⚡ Fast/Simple Queries Model
+                      </div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(167, 139, 250, 0.2)' }}>
+                      <div style={{ fontSize: '0.62rem', color: '#c4b5fd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        🧠 Complex & Agentic Tasks Model
+                      </div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_complex_backend || profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_complex_model || profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: '0.62rem', color: '#c4b5fd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Unified Language Model
+                    </div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Section 1: Tool Operating Suite */}
