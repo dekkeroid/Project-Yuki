@@ -8,7 +8,7 @@ import inspect
 import os
 from typing import Dict, Any, List, Tuple, Optional
 from app import config
-from app.agent.prompts import get_system_prompt, get_simple_system_prompt, get_advanced_jarvis_system_prompt
+from app.agent.prompts import get_system_prompt, get_simple_system_prompt, get_advanced_jarvis_system_prompt, get_coding_agent_system_prompt
 from app.agent.llm_backend import get_backend, reset_backend
 from app.memory.local_mem import MemoryManager
 from app.tools.definitions import get_tools_definition, get_filtered_tools
@@ -552,7 +552,9 @@ class AgentExecutor:
 
         effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
 
-        if backend == "simple" and not getattr(config, "SEND_TOOLS_IN_SIMPLE", False):
+        if overrides.get("coding_mode"):
+            system_content = get_coding_agent_system_prompt(memory_summary, mood, overrides=overrides)
+        elif backend == "simple" and not getattr(config, "SEND_TOOLS_IN_SIMPLE", False):
             system_content = get_simple_system_prompt(memory_summary, mood)
         else:
             if effective_tool_mode == "advanced":
@@ -1064,8 +1066,16 @@ class AgentExecutor:
 
         filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic)
 
-        # Filter tool definition list based on per-turn effective_tool_mode override
-        if effective_tool_mode == "basic":
+        # Filter tool definition list based on per-turn coding_mode or effective_tool_mode override
+        if overrides.get("coding_mode"):
+            coding_allowed = {
+                "run_terminal_command", "run_python_script", "read_and_review_file",
+                "read_file_content", "list_directory_tree", "list_directory",
+                "git_status_and_history", "search_files", "jarvis_query_file_db",
+                "web_search", "scrape_web_page", "update_user_fact", "jarvis_remember_user_fact"
+            }
+            filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in coding_allowed]
+        elif effective_tool_mode == "basic":
             basic_allowed = {
                 "web_search", "read_file_content", "search_files", "list_directory",
                 "launch_app", "open_or_play_file", "set_system_volume", "manage_time",

@@ -149,6 +149,9 @@ export const AgenticWorkspaceWindow = ({
     return saved !== null ? saved === 'true' : false;
   });
 
+  // Dedicated Coding Mode State (OFF by default on open — zero persistence as requested)
+  const [isCodingMode, setIsCodingMode] = useState(false);
+
   const handleSendPrompt = (textToSend) => {
     if (!textToSend.trim()) return;
 
@@ -167,6 +170,7 @@ export const AgenticWorkspaceWindow = ({
         type: 'chat',
         message: textToSend,
         overrides: {
+          coding_mode: isCodingMode,
           tool_mode: chatWindowToolMode,
           llm_mode: llmModeOverride,
           enable_intent_check: enableIntentCheckOverride,
@@ -220,31 +224,37 @@ export const AgenticWorkspaceWindow = ({
   const generateDynamicPayloadPreview = () => {
     // 1. System Prompt Block
     const promptParts = [];
-    if (promptPersona) {
-      promptParts.push(`[1. CHARACTER PERSONA & MOOD SPECTRUM]\nYou are Yuki, a cute, playful, intelligent anime-style companion and AI assistant.\n[Mood Spectrum: Joy: 85%, Playfulness: 90%, Affection: 80%]`);
-    }
-    if (promptExpressions) {
-      promptParts.push(`[2. 3D AVATAR EXPRESSION TAGS]\nYou can trigger 3D Avatar Animations using tags like <anim:happy>, <anim:thinking>, <anim:wave>, <anim:nod>.`);
-    }
-    if (promptMemory) {
-      const summaryText = settings?.user_name ? `• User Name: ${settings.user_name}` : `(No personal facts stored in memory card)`;
-      promptParts.push(`[3. USER MEMORY CARD]\n--- USER MEMORY CARD ---\n${summaryText}\n------------------------`);
-    }
-    if (promptDirectives) {
-      if (chatWindowToolMode === 'advanced') {
-        promptParts.push(`[4. AUTONOMOUS JARVIS OPERATING DIRECTIVES]\nYou are operating in ADVANCED JARVIS MODE powered by Frontier LLM.\n- Parallel multi-step reasoning\n- SQLite file database search (yuki_files.db)\n- Full terminal execution & Python auto-installation\n- Code review & git inspection`);
-      } else {
-        promptParts.push(`[4. CORE TOOL RULES & TRIGGER CONDITIONS]\n- RULE 1: Conversational intent -> No tool calls\n- RULE 2: Specific tool triggers (web_search, launch_app, open_or_play_file...)\n- RULE 3: One tool per turn\n- RULE 4: Summarize tool outputs in < 3 sentences\n- RULE 5: Confirmation required for destructive actions`);
+    if (isCodingMode) {
+      promptParts.push(`[SPECIALIZED AGENTIC CODER PROMPT (Coding Mode ACTIVE)]\nYou are an Elite Agentic AI Coding Assistant and Senior Software Architect.\n- Zero persona/roleplay fluff or casual chatter\n- Direct, analytical pair programming & code execution\n- Inspect files & logs before diagnosing\n- Execute builds/tests to verify clean completion`);
+    } else {
+      if (promptPersona) {
+        promptParts.push(`[1. CHARACTER PERSONA & MOOD SPECTRUM]\nYou are Yuki, a cute, playful, intelligent anime-style companion and AI assistant.\n[Mood Spectrum: Joy: 85%, Playfulness: 90%, Affection: 80%]`);
       }
-    }
-    if (promptPlanning) {
-      promptParts.push(`[5. SECTION 5 IMPLEMENTATION PLANNING ETIQUETTE]\nFor complex requests, create implementation_plan.md and present a structured plan before taking code actions.`);
+      if (promptExpressions) {
+        promptParts.push(`[2. 3D AVATAR EXPRESSION TAGS]\nYou can trigger 3D Avatar Animations using tags like <anim:happy>, <anim:thinking>, <anim:wave>, <anim:nod>.`);
+      }
+      if (promptMemory) {
+        const summaryText = settings?.user_name ? `• User Name: ${settings.user_name}` : `(No personal facts stored in memory card)`;
+        promptParts.push(`[3. USER MEMORY CARD]\n--- USER MEMORY CARD ---\n${summaryText}\n------------------------`);
+      }
+      if (promptDirectives) {
+        if (chatWindowToolMode === 'advanced') {
+          promptParts.push(`[4. AUTONOMOUS JARVIS OPERATING DIRECTIVES]\nYou are operating in ADVANCED JARVIS MODE powered by Frontier LLM.\n- Parallel multi-step reasoning\n- SQLite file database search (yuki_files.db)\n- Full terminal execution & Python auto-installation\n- Code review & git inspection`);
+        } else {
+          promptParts.push(`[4. CORE TOOL RULES & TRIGGER CONDITIONS]\n- RULE 1: Conversational intent -> No tool calls\n- RULE 2: Specific tool triggers (web_search, launch_app, open_or_play_file...)\n- RULE 3: One tool per turn\n- RULE 4: Summarize tool outputs in < 3 sentences\n- RULE 5: Confirmation required for destructive actions`);
+        }
+      }
+      if (promptPlanning) {
+        promptParts.push(`[5. SECTION 5 IMPLEMENTATION PLANNING ETIQUETTE]\nFor complex requests, create implementation_plan.md and present a structured plan before taking code actions.`);
+      }
     }
 
     // 2. Active Tool Schemas
     const basicTools = ['web_search', 'read_file_content', 'search_files', 'list_directory', 'launch_app', 'open_or_play_file', 'set_system_volume', 'manage_time', 'get_system_stats', 'update_user_fact', 'take_screenshot', 'run_terminal_command', 'run_python_script'];
     const jarvisTools = [...basicTools, 'jarvis_query_file_db', 'read_and_review_file', 'list_directory_tree', 'git_status_and_history', 'system_diagnostics_and_processes', 'scrape_web_page', 'jarvis_remember_user_fact'];
-    const activeToolList = chatWindowToolMode === 'advanced' ? jarvisTools : basicTools;
+    const codingTools = ['run_terminal_command', 'run_python_script', 'read_and_review_file', 'read_file_content', 'list_directory_tree', 'list_directory', 'git_status_and_history', 'search_files', 'jarvis_query_file_db', 'web_search', 'scrape_web_page'];
+    
+    const activeToolList = isCodingMode ? codingTools : (chatWindowToolMode === 'advanced' ? jarvisTools : basicTools);
 
     // 3. Conversational Message Context
     const historyMsgs = viewMessages || messages || [];
@@ -270,7 +280,7 @@ ${promptParts.length > 0 ? promptParts.join('\n\n') : '⚠️ All prompt modules
 ═════════════════════════════════════════════════════════
 3. ACTIVE TOOL DEFINITIONS ARRAY (tools: [...])
 ═════════════════════════════════════════════════════════
-• Tool Operating Mode: ${chatWindowToolMode === 'advanced' ? '🤖 Autonomous Jarvis (20 tools)' : '⚡ Basic ReAct (13 tools)'}
+• Tool Operating Mode: ${isCodingMode ? '💻 Specialized Coding Agent (11 coding tools)' : (chatWindowToolMode === 'advanced' ? '🤖 Autonomous Jarvis (20 tools)' : '⚡ Basic ReAct (13 tools)')}
 • Dynamic Relevance Filter: ${dynamicToolCallingOverride ? 'ENABLED (selects schemas by query intent)' : 'DISABLED (sends all active schemas)'}
 • Tool Schemas Active for LLM:
   [
@@ -280,12 +290,13 @@ ${promptParts.length > 0 ? promptParts.join('\n\n') : '⚠️ All prompt modules
 ═════════════════════════════════════════════════════════
 4. LLM BACKEND & EXECUTION PARAMETERS
 ═════════════════════════════════════════════════════════
+• Coding Mode: ${isCodingMode ? 'ACTIVE (Zero persona/chatter, strict coding agent directives)' : 'INACTIVE'}
 • Endpoint Strategy: ${profileData?.settings?.endpoint_strategy === 'separate' ? 'Separate Endpoints (Simple vs Complex)' : 'Single Unified Endpoint'}
 • Simple Query Model: [${profileData?.settings?.llm_backend || 'groq'}] ${profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
 ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic Model: [${profileData?.settings?.llm_complex_backend || profileData?.settings?.llm_backend || 'groq'}] ${profileData?.settings?.llm_complex_model || profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}\n` : ''}• Prompt Router Mode: Mode ${llmModeOverride} (${llmModeOverride === 3 ? 'Dynamic Mixed Prompts' : llmModeOverride === 1 ? 'Fast/Simple' : 'Full Agentic'})
-• LLM Intent Check: ${enableIntentCheckOverride ? 'ENABLED (double-checks intent before tool call)' : 'DISABLED'}
+• LLM Intent Check: ${enableIntentCheckOverride ? 'ENABLED' : 'DISABLED'}
 • Tools in Simple Chatter: ${sendToolsInSimpleOverride ? 'ENABLED' : 'DISABLED'}
-• Temperature: ${llmModeOverride === 2 ? '0.2 (Deterministic)' : '0.7 (Creative)'}
+• Temperature: ${isCodingMode ? '0.1 (Low Entropy Coder)' : (llmModeOverride === 2 ? '0.2 (Deterministic)' : '0.7 (Creative)')}
 `;
   };
 
@@ -582,6 +593,30 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 
         {/* Right Header Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+
+          {/* Coding Mode Toggle Button (OFF by default on open) */}
+          <button
+            type="button"
+            onClick={() => setIsCodingMode(prev => !prev)}
+            title="Toggle Coding Mode (Zero persona/chatter, technical coding agent directives & coding-only toolset)"
+            style={{
+              padding: '6px 12px',
+              borderRadius: '7px',
+              border: isCodingMode ? '1px solid #10b981' : '1px solid rgba(255, 255, 255, 0.15)',
+              background: isCodingMode ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+              color: isCodingMode ? '#6ee7b7' : '#cbd5e1',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Code style={{ width: '13px', height: '13px', color: isCodingMode ? '#6ee7b7' : '#cbd5e1' }} />
+            {isCodingMode ? '⚡ Coding Mode ACTIVE' : '💻 Coding Mode'}
+          </button>
 
           {/* Refresh Workspace Button (F5) */}
           <button
