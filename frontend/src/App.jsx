@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
-import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Maximize2 } from 'lucide-react';
+import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, ExternalLink } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 import { useBackendSocket } from './hooks/useBackendSocket';
@@ -2200,7 +2200,7 @@ const detectExpression = (text) => {
             title="Pop-out Agentic Workspace Window"
             style={{ color: '#c4b5fd' }}
           >
-            <Maximize2 className="w-5 h-5" />
+            <ExternalLink className="w-5 h-5" />
           </button>
           <button
             className={`desktop-menu-btn ${isSettingsOpen ? 'active' : ''}`}
@@ -2349,7 +2349,7 @@ const detectExpression = (text) => {
                       title="Pop-out into Standalone Workspace Window"
                       style={{ background: 'none', border: 'none', color: '#c4b5fd', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
                     >
-                      <Maximize2 className="w-3.5 h-3.5" />
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </button>
                     <button
                       type="button"
@@ -4489,7 +4489,7 @@ const detectExpression = (text) => {
             transition: 'all 0.2s ease'
           }}
         >
-          <Maximize2 className="w-3.5 h-3.5" />
+          <ExternalLink className="w-3.5 h-3.5" />
           Pop-out Workspace
         </button>
       </header>

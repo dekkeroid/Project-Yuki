@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, Maximize2 } from 'lucide-react';
+import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, ExternalLink } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
 import { SLASH_COMMANDS } from '../constants';
@@ -505,7 +505,7 @@ const ChatOverlay = ({
           title="Open Standalone Agentic Workspace Window"
           style={{ color: '#c4b5fd' }}
         >
-          <Maximize2 className="w-4.5 h-4.5" />
+          <ExternalLink className="w-4.5 h-4.5" />
         </button>
 
         <button
@@ -545,7 +545,7 @@ const ChatOverlay = ({
               title="Open in Standalone Agentic Workspace Window"
               style={{ color: '#c4b5fd' }}
             >
-              <Maximize2 className="w-4 h-4" />
+              <ExternalLink className="w-4 h-4" />
             </button>
             <button
               onClick={() => setIsPanelOpen(false)}
