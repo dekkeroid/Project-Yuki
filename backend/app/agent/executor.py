@@ -847,6 +847,22 @@ class AgentExecutor:
 
     def _get_backend_and_model_for_task(self, task: str):
         """Returns (backend, model_name) based on task type and endpoint strategy."""
+        if task in ("coder", "complex_coder") or (isinstance(task, str) and "coder" in task.lower()):
+            coder_backend_type = getattr(config, "LLM_CODER_BACKEND", "").strip().lower()
+            if coder_backend_type and coder_backend_type != "none":
+                base_url = getattr(config, "LLM_CODER_BASE_URL", "")
+                api_key = getattr(config, "LLM_CODER_API_KEY", "")
+                model = getattr(config, "LLM_CODER_MODEL", "") or config.LLM_MODEL
+                from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
+                if coder_backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
+                    backend = OpenAICompatibleBackend(base_url_override=base_url, api_key_override=api_key)
+                elif coder_backend_type == "ollama":
+                    backend = OllamaBackend(base_url_override=base_url)
+                else:
+                    backend = LMStudioBackend(base_url_override=base_url)
+                print(f"[Router] Dedicated Coder Mode Engine -> {backend.name} @ {model}")
+                return backend, model
+
         if task == "simple" and getattr(config, "ENDPOINT_STRATEGY", "single") == "dual":
             backend_type = getattr(config, "LLM_SIMPLE_BACKEND", "lmstudio").lower()
             if backend_type == "none":
@@ -1584,10 +1600,10 @@ class AgentExecutor:
                 print("[ChatMode] Pure chat mode active — all tools disabled")
         else:
             if overrides.get("coding_mode"):
-                resolved_backend = "complex"
+                resolved_backend = "coder"
                 intent_tool_hint = ""
                 intent_source = "coding_mode"
-                print("[CodingMode] Autonomous Coder Mode active — forcing complex agentic backend with full ReAct loop")
+                print("[CodingMode] Autonomous Coder Mode active — forcing dedicated Coder Mode engine with full ReAct loop")
             else:
                 effective_llm_mode = overrides.get("llm_mode") if overrides.get("llm_mode") is not None else getattr(config, "LLM_MODE", 3)
                 effective_enable_intent = overrides.get("enable_intent_check") if overrides.get("enable_intent_check") is not None else settings.get("enable_intent_check", True)

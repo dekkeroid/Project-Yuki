@@ -3378,6 +3378,76 @@ const ControlDashboard = ({
                       </div>
                     )}
 
+                    {/* Dedicated Coder Mode Endpoint Sub-Card */}
+                    <div style={{ background: 'rgba(16, 185, 129, 0.08)', borderRadius: '10px', padding: '12px', marginBottom: '14px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                      <div style={{ fontWeight: '600', fontSize: '0.78rem', color: '#6ee7b7', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        💻 Dedicated Coder Mode Engine & Endpoint
+                      </div>
+                      <div style={{ fontSize: '0.70rem', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>
+                        When Coder Mode is turned ON, Yuki will route coding turns to this dedicated LLM backend with full ReAct tools, bypassing voice TTS and avatar animations for maximum speed.
+                      </div>
+
+                      {/* Coder LLM Backend */}
+                      <div className="identity-field" style={{ marginTop: '4px' }}>
+                        <span className="field-label">Coder Mode LLM Backend</span>
+                        <select
+                          value={settings.llm_coder_backend || 'custom'}
+                          onChange={async (e) => {
+                            const newBackend = e.target.value;
+                            const defaults = {
+                              lmstudio: 'http://127.0.0.1:1234',
+                              ollama: 'http://127.0.0.1:11434',
+                              vllm: 'http://127.0.0.1:8000/v1',
+                              custom: 'https://api.groq.com/openai/v1',
+                            };
+                            const updates = { llm_coder_backend: newBackend };
+                            if (defaults[newBackend]) updates.llm_coder_base_url = defaults[newBackend];
+                            await handleUpdateSetting(updates);
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            marginTop: '4px'
+                          }}
+                        >
+                          <option value="custom">Cloud API / Custom (Groq, OpenAI, Together, DeepSeek, Google)</option>
+                          <option value="lmstudio">LM Studio (Local)</option>
+                          <option value="ollama">Ollama (Local)</option>
+                          <option value="vllm">vLLM (Local)</option>
+                          <option value="">Same as Main/Complex Endpoint (Default)</option>
+                        </select>
+                      </div>
+
+                      {/* Coder Model Name Input */}
+                      <div className="identity-field" style={{ marginTop: '8px' }}>
+                        <span className="field-label">Coder Model Name (e.g. qwen2.5-coder-32b-instruct, claude-3-5-sonnet, llama-3.3-70b-versatile)</span>
+                        <input
+                          type="text"
+                          value={settings.llm_coder_model || ''}
+                          onChange={(e) => handleUpdateSetting('llm_coder_model', e.target.value)}
+                          placeholder="e.g. qwen2.5-coder-32b-instruct or leave empty to use main model"
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            marginTop: '4px'
+                          }}
+                        />
+                      </div>
+                    </div>
+
                     {/* Section Header if Dual Mode is Active for Complex Endpoint */}
                     {settings.endpoint_strategy === 'dual' && settings.llm_mode !== 1 && settings.llm_mode !== 2 && (
                       <div style={{ fontWeight: '600', fontSize: '0.78rem', color: '#38bdf8', marginTop: '6px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>

@@ -115,6 +115,9 @@ class MemoryManager:
                 config.LLM_SIMPLE_BACKEND = data["settings"].get("llm_simple_backend", getattr(config, "LLM_SIMPLE_BACKEND", "lmstudio"))
                 config.LLM_SIMPLE_BASE_URL = data["settings"].get("llm_simple_base_url", getattr(config, "LLM_SIMPLE_BASE_URL", "http://127.0.0.1:1234"))
                 config.LLM_SIMPLE_MODEL = data["settings"].get("llm_simple_model", getattr(config, "LLM_SIMPLE_MODEL", ""))
+                config.LLM_CODER_BACKEND = data["settings"].get("llm_coder_backend", getattr(config, "LLM_CODER_BACKEND", ""))
+                config.LLM_CODER_BASE_URL = data["settings"].get("llm_coder_base_url", getattr(config, "LLM_CODER_BASE_URL", ""))
+                config.LLM_CODER_MODEL = data["settings"].get("llm_coder_model", getattr(config, "LLM_CODER_MODEL", ""))
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
                 config.CHARACTER_PERSONA = data["settings"].get("character_persona", config.CHARACTER_PERSONA)
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
@@ -124,9 +127,11 @@ class MemoryManager:
                 config.LLM_MODE = int(data["settings"].get("llm_mode", config.LLM_MODE))
                 raw_key = data["settings"].get("llm_api_key", config.LLM_API_KEY)
                 simple_key = data["settings"].get("llm_simple_api_key", config.LLM_SIMPLE_API_KEY)
+                coder_key = data["settings"].get("llm_coder_api_key", getattr(config, "LLM_CODER_API_KEY", ""))
                 from app.utils.security import decrypt_api_key, encrypt_api_key
                 config.LLM_API_KEY = decrypt_api_key(raw_key) if raw_key else ""
                 config.LLM_SIMPLE_API_KEY = decrypt_api_key(simple_key) if simple_key else ""
+                config.LLM_CODER_API_KEY = decrypt_api_key(coder_key) if coder_key else ""
                 
                 return data
         except Exception as e:

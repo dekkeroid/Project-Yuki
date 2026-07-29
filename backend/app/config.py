@@ -55,6 +55,12 @@ LLM_SIMPLE_BASE_URL = os.environ.get("LLM_SIMPLE_BASE_URL", "http://127.0.0.1:12
 LLM_SIMPLE_API_KEY = os.environ.get("LLM_SIMPLE_API_KEY", "")
 LLM_SIMPLE_MODEL = os.environ.get("LLM_SIMPLE_MODEL", "")
 
+# Dedicated Coder Mode Endpoint Configuration
+LLM_CODER_BACKEND = os.environ.get("LLM_CODER_BACKEND", "")
+LLM_CODER_BASE_URL = os.environ.get("LLM_CODER_BASE_URL", "")
+LLM_CODER_API_KEY = os.environ.get("LLM_CODER_API_KEY", "")
+LLM_CODER_MODEL = os.environ.get("LLM_CODER_MODEL", "")
+
 # Tool Operating Mode — "basic" (weak/local LLMs) vs "advanced" (frontier cloud LLMs with parallel multi-step execution)
 TOOL_MODE = os.environ.get("TOOL_MODE", "basic").strip().lower()
 

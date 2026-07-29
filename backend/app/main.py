@@ -828,6 +828,10 @@ class SettingsUpdateRequest(BaseModel):
     llm_simple_base_url: Optional[str] = None
     llm_simple_api_key: Optional[str] = None
     llm_simple_model: Optional[str] = None
+    llm_coder_backend: Optional[str] = None
+    llm_coder_base_url: Optional[str] = None
+    llm_coder_api_key: Optional[str] = None
+    llm_coder_model: Optional[str] = None
     persistent_chat_history: Optional[bool] = None
     basic_history_token_limit: Optional[int] = None
     basic_history_keep_turns: Optional[int] = None
@@ -890,6 +894,30 @@ async def update_settings(req: SettingsUpdateRequest):
         else:
             config.LLM_SIMPLE_API_KEY = ""
             memory_manager.update_setting("llm_simple_api_key", "")
+    if req.llm_coder_backend is not None:
+        config.LLM_CODER_BACKEND = req.llm_coder_backend.strip()
+        memory_manager.update_setting("llm_coder_backend", req.llm_coder_backend.strip())
+    if req.llm_coder_base_url is not None:
+        config.LLM_CODER_BASE_URL = req.llm_coder_base_url.strip()
+        memory_manager.update_setting("llm_coder_base_url", req.llm_coder_base_url.strip())
+    if req.llm_coder_model is not None:
+        config.LLM_CODER_MODEL = req.llm_coder_model.strip()
+        memory_manager.update_setting("llm_coder_model", req.llm_coder_model.strip())
+    if req.llm_coder_api_key is not None:
+        from app.utils.security import encrypt_api_key, decrypt_api_key
+        key_val = req.llm_coder_api_key.strip()
+        if key_val:
+            if key_val.startswith("enc_v1:") or key_val.startswith("gAAAA"):
+                config.LLM_CODER_API_KEY = decrypt_api_key(key_val)
+                memory_manager.update_setting("llm_coder_api_key", key_val)
+            elif "..." in key_val:
+                pass
+            else:
+                config.LLM_CODER_API_KEY = key_val
+                memory_manager.update_setting("llm_coder_api_key", encrypt_api_key(key_val))
+        else:
+            config.LLM_CODER_API_KEY = ""
+            memory_manager.update_setting("llm_coder_api_key", "")
     if req.tool_mode is not None:
         mode_val = req.tool_mode.strip().lower()
         if mode_val in ("basic", "advanced"):
@@ -2135,9 +2163,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         stream_done_flag = False
                         tts_semaphore = asyncio.Semaphore(1)
                         
+                        is_coding_mode = bool(payload_data.get("overrides", {}).get("coding_mode", False))
+                        
                         def queue_sentence(sentence_text, idx):
                             nonlocal tts_tasks_event, stream_done_flag
-                            if not tts_online_status:
+                            if not tts_online_status or is_coding_mode:
                                 return
                                 
                             async def synth():
