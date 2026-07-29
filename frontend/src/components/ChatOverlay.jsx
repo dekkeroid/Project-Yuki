@@ -93,7 +93,7 @@ export const formatToolName = (toolRaw) => {
   const name = toolRaw.replace(/['"\s]/g, '').toLowerCase();
 
   if (name.includes('open_or_play') || name.includes('play_file')) return "🎬 Open Or Play File";
-  if (name.includes('query_file') || name.includes('search_files') || name.includes('queryfile')) return "📁 File Search";
+  if (name.includes('query_file') || name.includes('search_files') || name.includes('queryfile') || name.includes('file_db')) return "🗄️ DB File Search";
   if (name.includes('read_file') || name.includes('read_and_review')) return "📄 Read File";
   if (name.includes('create_or_edit') || name.includes('write_file')) return "✏️ Write File";
   if (name.includes('web_search')) return "🌐 Web Search";
