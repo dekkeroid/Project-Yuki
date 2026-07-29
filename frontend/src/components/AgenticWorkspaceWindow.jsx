@@ -783,212 +783,228 @@ export const AgenticWorkspaceWindow = ({
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Prompt Input Box & Controls */}
+          {/* Prompt Input Container (Modern Unified Card Layout) */}
           <div style={{
-            padding: '10px 16px 12px',
+            padding: '12px 16px 14px',
             background: 'rgba(15, 23, 42, 0.95)',
             borderTop: '1px solid rgba(167, 139, 250, 0.2)'
           }}>
-            {/* Per-Message System Prompt Component Toggles */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              marginBottom: '8px',
-              fontSize: '0.68rem',
-              color: '#94a3b8',
-              userSelect: 'none',
-              flexWrap: 'wrap'
-            }}>
-              <span style={{ fontWeight: 600, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                <Sliders style={{ width: '11px', height: '11px' }} /> Prompt Modules:
-              </span>
-              
-              <button
-                type="button"
-                onClick={() => {
-                  const val = !promptPersona;
-                  setPromptPersona(val);
-                  localStorage.setItem('yuki-prompt-persona', String(val));
-                }}
-                title="Include/Exclude Yuki Persona & Mood guidelines in system prompt for this turn"
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  border: promptPersona ? '1px solid rgba(167, 139, 250, 0.6)' : '1px solid rgba(255,255,255,0.1)',
-                  background: promptPersona ? 'rgba(167, 139, 250, 0.2)' : 'rgba(0,0,0,0.3)',
-                  color: promptPersona ? '#c4b5fd' : '#64748b',
-                  cursor: 'pointer',
-                  fontSize: '0.66rem',
-                  fontWeight: 600
-                }}
-              >
-                🎭 Persona {promptPersona ? 'ON' : 'OFF'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const val = !promptExpressions;
-                  setPromptExpressions(val);
-                  localStorage.setItem('yuki-prompt-expressions', String(val));
-                }}
-                title="Include/Exclude 3D Avatar Animation & Emotion expression tags in system prompt"
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  border: promptExpressions ? '1px solid rgba(244, 114, 182, 0.6)' : '1px solid rgba(255,255,255,0.1)',
-                  background: promptExpressions ? 'rgba(244, 114, 182, 0.2)' : 'rgba(0,0,0,0.3)',
-                  color: promptExpressions ? '#f472b6' : '#64748b',
-                  cursor: 'pointer',
-                  fontSize: '0.66rem',
-                  fontWeight: 600
-                }}
-              >
-                🎬 Expressions {promptExpressions ? 'ON' : 'OFF'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const val = !promptMemory;
-                  setPromptMemory(val);
-                  localStorage.setItem('yuki-prompt-memory', String(val));
-                }}
-                title="Include/Exclude User Memory Card facts in system prompt"
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  border: promptMemory ? '1px solid rgba(52, 211, 153, 0.6)' : '1px solid rgba(255,255,255,0.1)',
-                  background: promptMemory ? 'rgba(52, 211, 153, 0.2)' : 'rgba(0,0,0,0.3)',
-                  color: promptMemory ? '#34d399' : '#64748b',
-                  cursor: 'pointer',
-                  fontSize: '0.66rem',
-                  fontWeight: 600
-                }}
-              >
-                🧠 Memory {promptMemory ? 'ON' : 'OFF'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const val = !promptDirectives;
-                  setPromptDirectives(val);
-                  localStorage.setItem('yuki-prompt-directives', String(val));
-                }}
-                title="Include/Exclude Jarvis Tool Guidelines & Safety rules in system prompt"
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  border: promptDirectives ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255,255,255,0.1)',
-                  background: promptDirectives ? 'rgba(56, 189, 248, 0.2)' : 'rgba(0,0,0,0.3)',
-                  color: promptDirectives ? '#38bdf8' : '#64748b',
-                  cursor: 'pointer',
-                  fontSize: '0.66rem',
-                  fontWeight: 600
-                }}
-              >
-                ⚙️ Directives {promptDirectives ? 'ON' : 'OFF'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const val = !promptPlanning;
-                  setPromptPlanning(val);
-                  localStorage.setItem('yuki-prompt-planning', String(val));
-                }}
-                title="Include/Exclude Section 5 Complex Coding Implementation Planning directives"
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  border: promptPlanning ? '1px solid rgba(251, 146, 60, 0.6)' : '1px solid rgba(255,255,255,0.1)',
-                  background: promptPlanning ? 'rgba(251, 146, 60, 0.2)' : 'rgba(0,0,0,0.3)',
-                  color: promptPlanning ? '#fb923c' : '#64748b',
-                  cursor: 'pointer',
-                  fontSize: '0.66rem',
-                  fontWeight: 600
-                }}
-              >
-                📋 Planning {promptPlanning ? 'ON' : 'OFF'}
-              </button>
-            </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 if (inputText.trim() && onSendMessage) {
                   onSendMessage(inputText);
+                  setInputText('');
                 }
               }}
-              style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
+              style={{
+                background: 'rgba(24, 24, 32, 0.95)',
+                border: `1px solid ${themeAccent}35`,
+                borderRadius: '18px',
+                padding: '12px 14px 10px',
+                boxShadow: `0 8px 32px rgba(0, 0, 0, 0.4), 0 0 15px ${themeAccent}15`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}
             >
-              {/* Mic Voice Toggle */}
-              {onToggleListening && (
-                <button
-                  type="button"
-                  onClick={onToggleListening}
-                  title={isListening ? "Stop Voice Listening" : "Start Voice Listening"}
-                  style={{
-                    padding: '9px 11px',
-                    borderRadius: '8px',
-                    border: isListening ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.15)',
-                    background: isListening ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255,255,255,0.06)',
-                    color: isListening ? '#fca5a5' : '#cbd5e1',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  {isListening ? <MicOff style={{ width: '16px', height: '16px' }} /> : <Mic style={{ width: '16px', height: '16px' }} />}
-                </button>
-              )}
-
-              {/* Text Area Input */}
-              <input
-                type="text"
-                placeholder="Type a message, slash command (/goal), or request python code..."
+              {/* Top Textarea Input Area */}
+              <textarea
                 value={inputText}
-                onChange={(e) => onInputChange && onInputChange(e.target.value)}
-                disabled={isGenerating}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (inputText.trim() && onSendMessage) {
+                      onSendMessage(inputText);
+                      setInputText('');
+                    }
+                  }
+                }}
+                placeholder="Ask Yuki anything, run code, or search session history (Shift+Enter for line break)..."
+                rows={2}
                 style={{
-                  flex: 1,
-                  padding: '9px 14px',
-                  background: 'rgba(0, 0, 0, 0.4)',
-                  border: '1px solid rgba(167, 139, 250, 0.35)',
-                  borderRadius: '9px',
-                  color: '#ffffff',
-                  fontSize: '0.82rem',
+                  width: '100%',
+                  background: 'transparent',
+                  border: 'none',
                   outline: 'none',
-                  boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3)'
+                  color: '#f8fafc',
+                  fontSize: chatFontSize || '0.84rem',
+                  lineHeight: '1.5',
                 }}
               />
 
-              {/* Send Button */}
-              <button
-                type="submit"
-                disabled={isGenerating || !inputText.trim()}
-                style={{
-                  padding: '9px 16px',
-                  borderRadius: '9px',
-                  border: 'none',
-                  background: isGenerating || !inputText.trim()
-                    ? 'rgba(255,255,255,0.1)'
-                    : 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-                  color: '#ffffff',
-                  fontWeight: 600,
-                  fontSize: '0.80rem',
-                  cursor: isGenerating || !inputText.trim() ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 4px 12px rgba(109,40,217,0.35)'
-                }}
-              >
-                {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                Send
-              </button>
+              {/* Bottom Action Bar Inside Container */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justify: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px',
+                paddingTop: '6px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.06)'
+              }}>
+                {/* Left Side: Prompt Module Toggles */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = !promptPersona;
+                      setPromptPersona(val);
+                      localStorage.setItem('yuki-prompt-persona', String(val));
+                    }}
+                    title="Persona & Mood module"
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      border: promptPersona ? `1px solid ${themeAccent}` : '1px solid rgba(255,255,255,0.1)',
+                      background: promptPersona ? `${themeAccent}30` : 'rgba(0,0,0,0.3)',
+                      color: promptPersona ? '#ffffff' : '#64748b',
+                      cursor: 'pointer',
+                      fontSize: '0.66rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    🎭 Persona {promptPersona ? 'ON' : 'OFF'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = !promptExpressions;
+                      setPromptExpressions(val);
+                      localStorage.setItem('yuki-prompt-expressions', String(val));
+                    }}
+                    title="Avatar Expressions module"
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      border: promptExpressions ? '1px solid #f472b6' : '1px solid rgba(255,255,255,0.1)',
+                      background: promptExpressions ? 'rgba(244, 114, 182, 0.25)' : 'rgba(0,0,0,0.3)',
+                      color: promptExpressions ? '#ffffff' : '#64748b',
+                      cursor: 'pointer',
+                      fontSize: '0.66rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    🎬 Expressions {promptExpressions ? 'ON' : 'OFF'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = !promptMemory;
+                      setPromptMemory(val);
+                      localStorage.setItem('yuki-prompt-memory', String(val));
+                    }}
+                    title="User Memory Card module"
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      border: promptMemory ? '1px solid #34d399' : '1px solid rgba(255,255,255,0.1)',
+                      background: promptMemory ? 'rgba(52, 211, 153, 0.25)' : 'rgba(0,0,0,0.3)',
+                      color: promptMemory ? '#ffffff' : '#64748b',
+                      cursor: 'pointer',
+                      fontSize: '0.66rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    🧠 Memory {promptMemory ? 'ON' : 'OFF'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = !promptDirectives;
+                      setPromptDirectives(val);
+                      localStorage.setItem('yuki-prompt-directives', String(val));
+                    }}
+                    title="Tool Directives module"
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      border: promptDirectives ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                      background: promptDirectives ? 'rgba(56, 189, 248, 0.25)' : 'rgba(0,0,0,0.3)',
+                      color: promptDirectives ? '#ffffff' : '#64748b',
+                      cursor: 'pointer',
+                      fontSize: '0.66rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    ⚙️ Directives {promptDirectives ? 'ON' : 'OFF'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = !promptPlanning;
+                      setPromptPlanning(val);
+                      localStorage.setItem('yuki-prompt-planning', String(val));
+                    }}
+                    title="Section 5 Implementation Plan Etiquette module"
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      border: promptPlanning ? '1px solid #fb923c' : '1px solid rgba(255,255,255,0.1)',
+                      background: promptPlanning ? 'rgba(251, 146, 60, 0.25)' : 'rgba(0,0,0,0.3)',
+                      color: promptPlanning ? '#ffffff' : '#64748b',
+                      cursor: 'pointer',
+                      fontSize: '0.66rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    📋 Planning {promptPlanning ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                {/* Right Side: Mic + Circular Send Button */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {onToggleListening && (
+                    <button
+                      type="button"
+                      onClick={onToggleListening}
+                      title={isListening ? "Stop Voice Listening" : "Start Voice Listening"}
+                      style={{
+                        padding: '6px',
+                        borderRadius: '50%',
+                        border: 'none',
+                        background: isListening ? 'rgba(239, 68, 68, 0.25)' : 'transparent',
+                        color: isListening ? '#fca5a5' : '#94a3b8',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      {isListening ? <MicOff style={{ width: '18px', height: '18px' }} /> : <Mic style={{ width: '18px', height: '18px' }} />}
+                    </button>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={!inputText.trim()}
+                    title="Send Prompt (Enter)"
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '50%',
+                      border: 'none',
+                      background: inputText.trim()
+                        ? `linear-gradient(135deg, ${themeAccent} 0%, #0284c7 100%)`
+                        : 'rgba(255, 255, 255, 0.1)',
+                      color: inputText.trim() ? '#ffffff' : '#64748b',
+                      cursor: inputText.trim() ? 'pointer' : 'default',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s ease',
+                      boxShadow: inputText.trim() ? `0 4px 14px ${themeAccent}60` : 'none'
+                    }}
+                  >
+                    <Send style={{ width: '15px', height: '15px' }} />
+                  </button>
+                </div>
+              </div>
             </form>
           </div>
 
@@ -1305,25 +1321,6 @@ export const AgenticWorkspaceWindow = ({
                 }}
               >
                 🎭 Prompts
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPrefTab('audio')}
-                style={{
-                  flex: 1,
-                  padding: '8px 10px',
-                  fontSize: '0.74rem',
-                  fontWeight: 600,
-                  border: 'none',
-                  borderRadius: '6px',
-                  background: prefTab === 'audio' ? `${themeAccent}30` : 'transparent',
-                  color: prefTab === 'audio' ? '#ffffff' : '#94a3b8',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                🔊 Audio
               </button>
             </div>
 
