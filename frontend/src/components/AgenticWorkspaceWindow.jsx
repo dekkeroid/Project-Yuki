@@ -41,7 +41,62 @@ export const AgenticWorkspaceWindow = ({
   const [selectedPastSessionId, setSelectedPastSessionId] = useState(null);
   const [viewMessages, setViewMessages] = useState(null); // Loaded messages when inspecting past session
   const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
-  const messagesEndRef = useRef(null);
+  // Local Input Text State (Fixes standalone typing when props are unpassed)
+  const [localInputText, setLocalInputText] = useState('');
+  const currentInputText = onInputChange ? inputText : localInputText;
+  const handleInputChange = (val) => {
+    if (onInputChange) onInputChange(val);
+    setLocalInputText(val);
+  };
+
+  // Standalone WebSocket Connection for standalone Chat Window mode
+  const wsRef = useRef(null);
+  useEffect(() => {
+    if (onSendMessage) return; // Main app prop provided, use parent socket
+    
+    let ws;
+    try {
+      ws = new WebSocket(WS_BASE);
+      wsRef.current = ws;
+      
+      ws.onopen = () => console.log('[ChatWindow] WebSocket connected directly.');
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'chat_update' && data.messages) {
+            setViewMessages(data.messages);
+          }
+        } catch (_) {}
+      };
+    } catch (e) {
+      console.warn('[ChatWindow] WebSocket init error:', e);
+    }
+
+    return () => {
+      if (ws) ws.close();
+    };
+  }, [onSendMessage]);
+
+  const handleSendPrompt = (textToSend) => {
+    if (!textToSend.trim()) return;
+    if (onSendMessage) {
+      onSendMessage(textToSend);
+    } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'chat',
+        message: textToSend,
+        overrides: {
+          tool_mode: chatWindowToolMode,
+          prompt_persona: promptPersona,
+          prompt_expressions: promptExpressions,
+          prompt_memory: promptMemory,
+          prompt_directives: promptDirectives,
+          prompt_planning: promptPlanning
+        }
+      }));
+    }
+    handleInputChange('');
+  };
 
   // Standalone Preferences Modal & Active Tab State
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
@@ -792,10 +847,7 @@ export const AgenticWorkspaceWindow = ({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (inputText.trim() && onSendMessage) {
-                  onSendMessage(inputText);
-                  setInputText('');
-                }
+                handleSendPrompt(currentInputText);
               }}
               style={{
                 background: 'rgba(24, 24, 32, 0.95)',
@@ -810,15 +862,12 @@ export const AgenticWorkspaceWindow = ({
             >
               {/* Top Textarea Input Area */}
               <textarea
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                value={currentInputText}
+                onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    if (inputText.trim() && onSendMessage) {
-                      onSendMessage(inputText);
-                      setInputText('');
-                    }
+                    handleSendPrompt(currentInputText);
                   }
                 }}
                 placeholder="Ask Yuki anything, run code, or search session history (Shift+Enter for line break)..."
@@ -831,6 +880,8 @@ export const AgenticWorkspaceWindow = ({
                   color: '#f8fafc',
                   fontSize: chatFontSize || '0.84rem',
                   lineHeight: '1.5',
+                  resize: 'none',
+                  fontFamily: 'inherit'
                 }}
               />
 
@@ -982,23 +1033,23 @@ export const AgenticWorkspaceWindow = ({
 
                   <button
                     type="submit"
-                    disabled={!inputText.trim()}
+                    disabled={!currentInputText.trim()}
                     title="Send Prompt (Enter)"
                     style={{
                       width: '34px',
                       height: '34px',
                       borderRadius: '50%',
                       border: 'none',
-                      background: inputText.trim()
+                      background: currentInputText.trim()
                         ? `linear-gradient(135deg, ${themeAccent} 0%, #0284c7 100%)`
                         : 'rgba(255, 255, 255, 0.1)',
-                      color: inputText.trim() ? '#ffffff' : '#64748b',
-                      cursor: inputText.trim() ? 'pointer' : 'default',
+                      color: currentInputText.trim() ? '#ffffff' : '#64748b',
+                      cursor: currentInputText.trim() ? 'pointer' : 'default',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       transition: 'all 0.2s ease',
-                      boxShadow: inputText.trim() ? `0 4px 14px ${themeAccent}60` : 'none'
+                      boxShadow: currentInputText.trim() ? `0 4px 14px ${themeAccent}60` : 'none'
                     }}
                   >
                     <Send style={{ width: '15px', height: '15px' }} />
@@ -1008,31 +1059,29 @@ export const AgenticWorkspaceWindow = ({
             </form>
           </div>
 
-          {/* Bottom Status Footer Bar (Props Input Box Above Taskbar) */}
+          {/* Bottom Status Footer Bar (Minimalist Clean Status Bar) */}
           <div style={{
-            height: '32px',
+            height: '26px',
             background: 'rgba(9, 13, 22, 0.98)',
-            borderTop: '1px solid rgba(167, 139, 250, 0.15)',
+            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '0 14px',
-            fontSize: '0.68rem',
-            color: '#94a3b8',
+            padding: '0 16px',
+            fontSize: '0.66rem',
+            color: '#64748b',
             userSelect: 'none'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#34d399', fontWeight: 600 }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#34d399', boxShadow: '0 0 6px #34d399' }}></span>
-                Core Online
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#10b981', fontWeight: 600 }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981' }}></span>
+                Core Connected
               </span>
-              <span>Session: <code style={{ color: '#c4b5fd', fontFamily: 'monospace' }}>{activeSessionId || 'session_active'}</code></span>
-              <span>Budget: ~40k tokens</span>
+              <span style={{ opacity: 0.4 }}>•</span>
+              <span>Session: <code style={{ color: themeAccent, fontFamily: 'monospace' }}>{(activeSessionId || '').slice(-12) || 'active'}</code></span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span>Type <code style={{ color: '#38bdf8' }}>/goal</code> for autonomous mode</span>
-              <span style={{ opacity: 0.5 }}>|</span>
-              <span style={{ color: '#c4b5fd' }}>WS Synced</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>Shift+Enter (Line Break) • Enter (Send)</span>
             </div>
           </div>
         </section>
