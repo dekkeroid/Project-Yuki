@@ -2394,15 +2394,15 @@ async def websocket_endpoint(websocket: WebSocket):
                         print(f"  - Tool Executions:            {tool_str}")
                         print(f"============================================================\n")
                         
-                        # Send final stream done message containing total time
-                        await websocket.send_json({
+                        # Send final stream done message containing total time to all connected clients
+                        await broadcast_ws_event({
                             "type": "stream_done",
                             "backend_used": backend_used,
                             "response_time": round(elapsed_time, 2)
                         })
                         
-                        # Push profile update
-                        await websocket.send_json({
+                        # Push profile update to all connected clients
+                        await broadcast_ws_event({
                             "type": "profile_update",
                             "profile": memory_manager.profile
                         })
@@ -2410,7 +2410,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         print("[WebSocket] Chat turn was cancelled/interrupted.")
                         # Send status to frontend that we are idle now
                         try:
-                            await websocket.send_json({"type": "status", "status": "idle"})
+                            await broadcast_ws_event({"type": "status", "status": "idle"})
                         except:
                             pass
                         raise

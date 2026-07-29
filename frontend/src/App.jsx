@@ -813,6 +813,10 @@ const App = () => {
         } else {
           updateListeningState();
         }
+      } else if (msg.type === 'session_switched' || msg.type === 'chat_update') {
+        if (msg.messages && Array.isArray(msg.messages)) {
+          setMessages(msg.messages);
+        }
       } else if (msg.type === 'tool_result') {
         try {
           if (msg.result && typeof msg.result === 'string' && msg.result.includes('window_control')) {
