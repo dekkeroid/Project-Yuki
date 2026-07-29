@@ -1578,26 +1578,32 @@ class AgentExecutor:
                 intent_tool_hint = ""
                 print("[ChatMode] Pure chat mode active — all tools disabled")
         else:
-            effective_llm_mode = overrides.get("llm_mode") if overrides.get("llm_mode") is not None else getattr(config, "LLM_MODE", 3)
-            effective_enable_intent = overrides.get("enable_intent_check") if overrides.get("enable_intent_check") is not None else settings.get("enable_intent_check", True)
-
-            if effective_llm_mode == 1:
-                resolved_backend = "simple"
-            elif effective_llm_mode == 2:
+            if overrides.get("coding_mode"):
                 resolved_backend = "complex"
-            elif effective_llm_mode == 3:
-                resolved_backend = self._classify_task(user_message) if user_message else "simple"
+                intent_tool_hint = ""
+                intent_source = "coding_mode"
+                print("[CodingMode] Autonomous Coder Mode active — forcing complex agentic backend with full ReAct loop")
             else:
-                resolved_backend = self._classify_task(user_message) if user_message else "simple"
+                effective_llm_mode = overrides.get("llm_mode") if overrides.get("llm_mode") is not None else getattr(config, "LLM_MODE", 3)
+                effective_enable_intent = overrides.get("enable_intent_check") if overrides.get("enable_intent_check") is not None else settings.get("enable_intent_check", True)
 
-            intent_source = "regex"
-            if effective_llm_mode != 1 and effective_enable_intent and resolved_backend == "complex" and user_message:
-                intent, intent_tool_hint, intent_source = await self._check_tool_intent(user_message, chat_history)
-                if intent == "chat":
+                if effective_llm_mode == 1:
                     resolved_backend = "simple"
-                    print(f"[IntentCheck] Downgraded to CHAT ({intent_source}): '{user_message[:70]}'")
+                elif effective_llm_mode == 2:
+                    resolved_backend = "complex"
+                elif effective_llm_mode == 3:
+                    resolved_backend = self._classify_task(user_message) if user_message else "simple"
                 else:
-                    print(f"[IntentCheck] Confirmed TOOL:{intent_tool_hint or '?'} ({intent_source}) — proceeding as complex")
+                    resolved_backend = self._classify_task(user_message) if user_message else "simple"
+
+                intent_source = "regex"
+                if effective_llm_mode != 1 and effective_enable_intent and resolved_backend == "complex" and user_message:
+                    intent, intent_tool_hint, intent_source = await self._check_tool_intent(user_message, chat_history)
+                    if intent == "chat":
+                        resolved_backend = "simple"
+                        print(f"[IntentCheck] Downgraded to CHAT ({intent_source}): '{user_message[:70]}'")
+                    else:
+                        print(f"[IntentCheck] Confirmed TOOL:{intent_tool_hint or '?'} ({intent_source}) — proceeding as complex")
         # Process passive mood drift & intimacy keyword detection
         self._process_mood_drift(user_message)
 
