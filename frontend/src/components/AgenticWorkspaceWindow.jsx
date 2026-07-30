@@ -12,6 +12,147 @@ import { SearchableModelSelect } from './ControlDashboard';
 import MicLevelMeter from './MicLevelMeter';
 import { API_BASE, WS_BASE } from '../api';
 
+const InteractiveDirectoryNode = ({ item, onSelectFile }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [children, setChildren] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggleFolder = async (e) => {
+    e.stopPropagation();
+    if (!item.is_dir) return;
+
+    if (!isOpen && children === null) {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/api/system/file_content?path=${encodeURIComponent(item.path)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setChildren(data.items || []);
+        }
+      } catch (err) {
+        console.error('Failed to load subfolder:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    setIsOpen(prev => !prev);
+  };
+
+  if (item.is_dir) {
+    return (
+      <div style={{ marginLeft: '10px', marginTop: '3px', marginBottom: '3px' }}>
+        <div
+          onClick={toggleFolder}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '3px 8px',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            background: isOpen ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid rgba(245, 158, 11, 0.25)',
+            color: '#fbbf24',
+            fontSize: '0.74rem',
+            fontWeight: 600,
+            userSelect: 'none',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <span style={{ fontSize: '0.66rem', color: '#f59e0b', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease', width: '10px', display: 'inline-block' }}>
+            ▶
+          </span>
+          <Folder style={{ width: '13px', height: '13px', color: '#f59e0b', flexShrink: 0 }} />
+          <span>{item.name}</span>
+          {loading && <RefreshCw style={{ width: '10px', height: '10px', animation: 'spin 1s linear infinite', color: '#f59e0b', marginLeft: 'auto' }} />}
+        </div>
+        {isOpen && (
+          <div style={{ paddingLeft: '6px', borderLeft: '1px solid rgba(245, 158, 11, 0.25)', marginLeft: '12px', marginTop: '2px' }}>
+            {children && children.length > 0 ? (
+              children.map(child => (
+                <InteractiveDirectoryNode key={child.path} item={child} onSelectFile={onSelectFile} />
+              ))
+            ) : !loading ? (
+              <div style={{ fontSize: '0.68rem', color: '#64748b', fontStyle: 'italic', padding: '3px 12px' }}>
+                (empty folder)
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // File item — full name including extension
+  const ext = item.name.split('.').pop().toLowerCase();
+  let icon = "📄";
+  if (["js", "ts", "jsx", "tsx", "py", "html", "css", "json"].includes(ext)) icon = "⚡";
+  if (["png", "jpg", "jpeg", "svg", "webp", "gif"].includes(ext)) icon = "🖼️";
+  if (ext === "md") icon = "📋";
+
+  return (
+    <div
+      onClick={() => onSelectFile(item.path)}
+      style={{
+        marginLeft: '10px',
+        marginTop: '2px',
+        marginBottom: '2px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '3px 8px',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        color: '#cbd5e1',
+        fontSize: '0.74rem',
+        userSelect: 'none',
+        transition: 'background 0.15s ease'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)'}
+      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+    >
+      <span style={{ fontSize: '0.72rem' }}>{icon}</span>
+      <span style={{ fontFamily: 'Consolas, Monaco, monospace', color: '#e2e8f0' }}>{item.name}</span>
+      {item.size > 0 && (
+        <span style={{ fontSize: '0.62rem', color: '#64748b', marginLeft: 'auto' }}>
+          {(item.size / 1024).toFixed(1)} KB
+        </span>
+      )}
+    </div>
+  );
+};
+
+const InteractiveDirectoryViewer = ({ rootData, onSelectFile }) => {
+  if (!rootData || !rootData.items) return null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+      <div style={{
+        background: '#090d16',
+        border: '1px solid rgba(245, 158, 11, 0.3)',
+        borderRadius: '8px',
+        padding: '10px 12px',
+        maxHeight: '260px',
+        overflowY: 'auto',
+        overflowX: 'auto',
+        fontFamily: 'sans-serif'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.76rem', fontWeight: 700, color: '#fbbf24', marginBottom: '8px', borderBottom: '1px solid rgba(245, 158, 11, 0.2)', paddingBottom: '6px' }}>
+          <FolderOpen style={{ width: '15px', height: '15px', color: '#f59e0b', flexShrink: 0 }} />
+          <span style={{ fontFamily: 'Consolas, Monaco, monospace', wordBreak: 'break-all' }}>{rootData.path}</span>
+          <span style={{ fontSize: '0.64rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.2)', color: '#fef08a', marginLeft: 'auto', flexShrink: 0 }}>
+            {rootData.items.length} items
+          </span>
+        </div>
+
+        {rootData.items.map(item => (
+          <InteractiveDirectoryNode key={item.path} item={item} onSelectFile={onSelectFile} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const AgenticWorkspaceWindow = ({
   messages = [],
   inputText = '',
@@ -291,7 +432,20 @@ export const AgenticWorkspaceWindow = ({
 
   // File Viewer (Readonly Inspector) State
   const [fileInspectorData, setFileInspectorData] = useState(null);
+  const [treeSelectedFileData, setTreeSelectedFileData] = useState(null);
   const [loadingFileInspector, setLoadingFileInspector] = useState(false);
+
+  const handleSelectTreeFile = async (filePath) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/system/file_content?path=${encodeURIComponent(filePath)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setTreeSelectedFileData(data);
+      }
+    } catch (err) {
+      console.error('Failed to load file content from tree:', err);
+    }
+  };
 
   useEffect(() => {
     const handleOpenFileEvent = async (e) => {
@@ -315,8 +469,33 @@ export const AgenticWorkspaceWindow = ({
       }
     };
 
+    const handleOpenFolderEvent = async (e) => {
+      if (e && e.detail && e.detail.path) {
+        const targetPath = e.detail.path;
+        setActiveTab('file_viewer');
+        setLoadingFileInspector(true);
+        try {
+          const res = await fetch(`${API_BASE}/api/system/file_content?path=${encodeURIComponent(targetPath)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setFileInspectorData(data);
+          } else {
+            setFileInspectorData({ path: targetPath, name: targetPath.split('\\').pop() || targetPath, content: `Failed to load folder: HTTP ${res.status}` });
+          }
+        } catch (err) {
+          setFileInspectorData({ path: targetPath, name: targetPath.split('\\').pop() || targetPath, content: `Error opening folder: ${err}` });
+        } finally {
+          setLoadingFileInspector(false);
+        }
+      }
+    };
+
     window.addEventListener('yuki:open-file', handleOpenFileEvent);
-    return () => window.removeEventListener('yuki:open-file', handleOpenFileEvent);
+    window.addEventListener('yuki:open-folder', handleOpenFolderEvent);
+    return () => {
+      window.removeEventListener('yuki:open-file', handleOpenFileEvent);
+      window.removeEventListener('yuki:open-folder', handleOpenFolderEvent);
+    };
   }, []);
   // Internal Settings Sync (for standalone Chat Window mode)
   const [internalSettings, setInternalSettings] = useState({});
@@ -2275,7 +2454,37 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     {fileInspectorData.path}
                   </div>
 
-                  {fileInspectorData.is_image ? (
+                  {fileInspectorData.is_directory ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+                      <InteractiveDirectoryViewer rootData={fileInspectorData} onSelectFile={handleSelectTreeFile} />
+                      {treeSelectedFileData && (
+                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(56, 189, 248, 0.2)', paddingTop: '8px' }}>
+                            <div style={{ color: '#38bdf8', fontSize: '0.74rem', fontWeight: 700, fontFamily: 'Consolas, Monaco, monospace' }}>
+                              📄 {treeSelectedFileData.name}
+                            </div>
+                            <span style={{ fontSize: '0.62rem', color: '#64748b', fontFamily: 'monospace' }}>
+                              {treeSelectedFileData.path}
+                            </span>
+                          </div>
+
+                          {treeSelectedFileData.is_image ? (
+                            <div style={{ padding: '12px', background: 'rgba(15, 23, 42, 0.9)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
+                              <img src={treeSelectedFileData.data_url} alt={treeSelectedFileData.name} style={{ maxWidth: '100%', maxHeight: '350px', objectFit: 'contain', borderRadius: '4px' }} />
+                            </div>
+                          ) : treeSelectedFileData.ext === '.md' ? (
+                            <div style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '8px', padding: '12px', fontSize: '0.78rem', color: '#cbd5e1', overflowY: 'auto', maxHeight: '350px' }}>
+                              <RenderMessageContent content={treeSelectedFileData.content} disableFileLinks={true} />
+                            </div>
+                          ) : (
+                            <div style={{ background: '#020617', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px', fontSize: '0.74rem', fontFamily: 'Consolas, Monaco, monospace', color: '#38bdf8', overflowY: 'auto', overflowX: 'auto', maxHeight: '350px', whiteSpace: 'pre', wordBreak: 'normal' }}>
+                              {treeSelectedFileData.content}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : fileInspectorData.is_image ? (
                     <div style={{ padding: '12px', background: 'rgba(15, 23, 42, 0.9)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
                       <img src={fileInspectorData.data_url} alt={fileInspectorData.name} style={{ maxWidth: '100%', maxHeight: '380px', objectFit: 'contain', borderRadius: '4px' }} />
                     </div>

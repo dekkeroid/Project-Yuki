@@ -47,6 +47,12 @@ const handleOpenFileInSidebar = (filePath) => {
   }
 };
 
+const handleOpenFolderInSidebar = (folderPath) => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('yuki:open-folder', { detail: { path: folderPath } }));
+  }
+};
+
 export const formatMessageText = (text, disableFileLinks = false) => {
   if (!text || typeof text !== 'string') return text || '';
 
@@ -83,37 +89,128 @@ export const formatMessageText = (text, disableFileLinks = false) => {
   }
   
   // Regex matches:
-  // 1. Markdown Links: [label](file:///path) or [label](D:\path)
-  // 2. Windows Absolute Paths: D:\path\to\file.ext or D:/path/to/file.ext
-  // 3. file:/// URIs
-  const fileRegex = /\[([^\]]+)\]\((file:\/\/\/?[^\)]+|[A-Za-z]:[\\\/][^\)]+)\)|([A-Za-z]:[\\\/][^:\*\?"<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java))|(file:\/\/\/[^:\*\?"<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java))|`([^`]+)`|\*\*([^*]+)\*\*/gi;
+  // 1. Markdown Links: [label](url_or_path)
+  // 2. HTTP/HTTPS URLs: https://... or http://... or www....
+  // 3. Windows File Paths (with ext): D:\path\to\file.ext
+  // 4. file:/// URIs
+  // 5. Windows Folder Paths (no ext): D:\path\to\folder
+  // 6. Code block `code` & Bold **bold**
+  const linkOrPathRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+|www\.[^\)]+|file:\/\/\/?[^\)]+|[A-Za-z]:[\\\/][^\)]+)\)|(https?:\/\/[^\s\(\)<>"'\n]+|www\.[^\s\(\)<>"'\n]+)|([A-Za-z]:[\\\/][^:\*\?"<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|(file:\/\/\/[^:\*\?"<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|([A-Za-z]:[\\\/][^:\*\?"<>\|\s\n\(\)\[\]{}]+)|`([^`]+)`|\*\*([^*]+)\*\*/gi;
 
   const parts = [];
   let lastIndex = 0;
   let match;
 
-  while ((match = fileRegex.exec(text)) !== null) {
+  while ((match = linkOrPathRegex.exec(text)) !== null) {
     const matchIndex = match.index;
     if (matchIndex > lastIndex) {
       parts.push(text.substring(lastIndex, matchIndex));
     }
 
     if (match[1] && match[2]) {
-      // Markdown file link: [label](path)
+      // Markdown link: [label](target)
       const label = match[1];
-      const rawPath = match[2].replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
-      const ext = label.split('.').pop().toLowerCase();
-      let icon = "📄";
-      if (["js", "ts", "jsx", "tsx", "py", "html", "css", "json"].includes(ext)) icon = "⚡";
-      if (["png", "jpg", "jpeg", "svg", "webp", "gif"].includes(ext)) icon = "🖼️";
-      if (ext === "md") icon = "📋";
+      const target = match[2];
+      const isUrl = /^https?:\/\//i.test(target) || /^www\./i.test(target);
+      const isFile = !isUrl && (/\.[a-zA-Z0-9]{1,8}$/.test(label) || /\.[a-zA-Z0-9]{1,8}$/.test(target));
 
+      if (isUrl) {
+        parts.push(
+          <button
+            key={matchIndex}
+            type="button"
+            onClick={() => window.open(target.startsWith('www.') ? `https://${target}` : target, '_blank', 'noopener,noreferrer')}
+            title={`Click to open ${target} in web browser`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: 'rgba(56, 189, 248, 0.15)',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              color: '#38bdf8',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              margin: '0 3px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+            }}
+          >
+            <span>🌐</span>
+            <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{label}</span>
+            <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
+          </button>
+        );
+      } else if (isFile) {
+        const rawPath = target.replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
+        parts.push(
+          <button
+            key={matchIndex}
+            type="button"
+            onClick={() => handleOpenFileInSidebar(rawPath)}
+            title={`Click to open ${rawPath} in File Inspector`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: 'rgba(167, 139, 250, 0.15)',
+              border: '1px solid rgba(167, 139, 250, 0.35)',
+              color: '#c4b5fd',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              margin: '0 3px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+            }}
+          >
+            <span>📄</span>
+            <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{label}</span>
+            <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
+          </button>
+        );
+      } else {
+        // Folder path markdown link
+        const rawPath = target.replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
+        parts.push(
+          <button
+            key={matchIndex}
+            type="button"
+            onClick={() => handleOpenFolderInSidebar(rawPath)}
+            title={`Click to open directory ${rawPath} in File Viewer`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: 'rgba(245, 158, 11, 0.15)',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              color: '#fbbf24',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              margin: '0 3px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+            }}
+          >
+            <span>📁</span>
+            <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{label}</span>
+            <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
+          </button>
+        );
+      }
+    } else if (match[3]) {
+      // Raw Web URL
+      const rawUrl = match[3];
       parts.push(
         <button
           key={matchIndex}
           type="button"
-          onClick={() => handleOpenFileInSidebar(rawPath)}
-          title={`Click to open ${rawPath} in Right Sidebar File Inspector`}
+          onClick={() => window.open(rawUrl.startsWith('www.') ? `https://${rawUrl}` : rawUrl, '_blank', 'noopener,noreferrer')}
+          title={`Click to open ${rawUrl} in external web browser`}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -130,14 +227,14 @@ export const formatMessageText = (text, disableFileLinks = false) => {
             boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
           }}
         >
-          <span>{icon}</span>
-          <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{label}</span>
+          <span>🌐</span>
+          <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{rawUrl}</span>
           <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
         </button>
       );
-    } else if (match[3] || match[4]) {
-      // Raw Windows or file:/// path string
-      const rawPath = (match[3] || match[4]).replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
+    } else if (match[4] || match[5]) {
+      // Raw Windows or file:/// File path string
+      const rawPath = (match[4] || match[5]).replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
       const fileName = rawPath.split('\\').pop() || rawPath;
       const ext = fileName.split('.').pop().toLowerCase();
       let icon = "📄";
@@ -150,7 +247,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           key={matchIndex}
           type="button"
           onClick={() => handleOpenFileInSidebar(rawPath)}
-          title={`Click to open ${rawPath} in Right Sidebar File Inspector`}
+          title={`Click to open ${rawPath} in File Inspector`}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -172,25 +269,53 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
         </button>
       );
-    } else if (match[5]) {
-      // Code block `code` — check if it contains a file path!
-      const codeContent = match[5].trim();
-      const pathMatch = codeContent.match(/^([A-Za-z]:[\\\/][^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java)|file:\/\/\/[^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java))$/i);
-      if (pathMatch) {
-        const rawPath = pathMatch[1].replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
-        const fileName = rawPath.split('\\').pop() || rawPath;
-        const ext = fileName.split('.').pop().toLowerCase();
-        let icon = "📄";
-        if (["js", "ts", "jsx", "tsx", "py", "html", "css", "json"].includes(ext)) icon = "⚡";
-        if (["png", "jpg", "jpeg", "svg", "webp", "gif"].includes(ext)) icon = "🖼️";
-        if (ext === "md") icon = "📋";
+    } else if (match[6]) {
+      // Raw Windows Folder path string (no file extension)
+      const rawPath = match[6].replace(/\//g, '\\');
+      const folderName = rawPath.split('\\').pop() || rawPath;
 
+      parts.push(
+        <button
+          key={matchIndex}
+          type="button"
+          onClick={() => handleOpenFolderInSidebar(rawPath)}
+          title={`Click to open directory ${rawPath} in File Viewer`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '2px 8px',
+            borderRadius: '6px',
+            background: 'rgba(245, 158, 11, 0.15)',
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            color: '#fbbf24',
+            fontSize: '0.76rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            margin: '0 3px',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+          }}
+        >
+          <span>📁</span>
+          <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{folderName}</span>
+          <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
+        </button>
+      );
+    } else if (match[7]) {
+      // Code block `code`
+      const codeContent = match[7].trim();
+      const fileMatch = codeContent.match(/^([A-Za-z]:[\\\/][^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc)|file:\/\/\/[^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))$/i);
+      const folderMatch = !fileMatch && codeContent.match(/^([A-Za-z]:[\\\/][^\s\:\*\?"<>\|\n\(\)\[\]{}]+)$/i);
+      const urlMatch = codeContent.match(/^(https?:\/\/[^\s\(\)<>"'\n]+|www\.[^\s\(\)<>"'\n]+)$/i);
+
+      if (urlMatch) {
+        const rawUrl = urlMatch[1];
         parts.push(
           <button
             key={matchIndex}
             type="button"
-            onClick={() => handleOpenFileInSidebar(rawPath)}
-            title={`Click to open ${rawPath} in Right Sidebar File Inspector`}
+            onClick={() => window.open(rawUrl.startsWith('www.') ? `https://${rawUrl}` : rawUrl, '_blank', 'noopener,noreferrer')}
+            title={`Click to open ${rawUrl} in browser`}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -207,8 +332,68 @@ export const formatMessageText = (text, disableFileLinks = false) => {
               boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
             }}
           >
-            <span>{icon}</span>
+            <span>🌐</span>
+            <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{rawUrl}</span>
+            <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
+          </button>
+        );
+      } else if (fileMatch) {
+        const rawPath = fileMatch[1].replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
+        const fileName = rawPath.split('\\').pop() || rawPath;
+        parts.push(
+          <button
+            key={matchIndex}
+            type="button"
+            onClick={() => handleOpenFileInSidebar(rawPath)}
+            title={`Click to open ${rawPath} in File Inspector`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: 'rgba(167, 139, 250, 0.15)',
+              border: '1px solid rgba(167, 139, 250, 0.35)',
+              color: '#c4b5fd',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              margin: '0 3px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+            }}
+          >
+            <span>📄</span>
             <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{fileName}</span>
+            <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
+          </button>
+        );
+      } else if (folderMatch) {
+        const rawPath = folderMatch[1].replace(/\//g, '\\');
+        const folderName = rawPath.split('\\').pop() || rawPath;
+        parts.push(
+          <button
+            key={matchIndex}
+            type="button"
+            onClick={() => handleOpenFolderInSidebar(rawPath)}
+            title={`Click to open directory ${rawPath} in File Viewer`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: 'rgba(245, 158, 11, 0.15)',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              color: '#fbbf24',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              margin: '0 3px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+            }}
+          >
+            <span>📁</span>
+            <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{folderName}</span>
             <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
           </button>
         );
@@ -231,7 +416,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           </code>
         );
       }
-    } else if (match[6]) {
+    } else if (match[8]) {
       // Bold **bold**
       parts.push(
         <strong
@@ -241,12 +426,12 @@ export const formatMessageText = (text, disableFileLinks = false) => {
             color: '#e2e8f0'
           }}
         >
-          {match[6]}
+          {match[8]}
         </strong>
       );
     }
 
-    lastIndex = fileRegex.lastIndex;
+    lastIndex = linkOrPathRegex.lastIndex;
   }
 
   if (lastIndex < text.length) {

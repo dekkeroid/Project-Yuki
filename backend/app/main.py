@@ -748,8 +748,28 @@ def get_file_content(path: str):
         
     clean_path = urllib.parse.unquote(path.strip().replace("file:///", "").replace("file://", ""))
     p = Path(clean_path)
-    if not p.exists() or not p.is_file():
-        return Response(status_code=404, content=f"File not found: {clean_path}")
+    if not p.exists():
+        return Response(status_code=404, content=f"Path not found: {clean_path}")
+        
+    if p.is_dir():
+        items = []
+        try:
+            for child in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+                items.append({
+                    "name": child.name,
+                    "path": str(child),
+                    "is_dir": child.is_dir(),
+                    "size": child.stat().st_size if child.is_file() else 0
+                })
+        except Exception as e:
+            print(f"[FileInspector] Directory list error: {e}")
+        return {
+            "path": str(p),
+            "name": p.name or str(p),
+            "is_directory": True,
+            "items": items,
+            "content": f"📁 Directory: {p}\nTotal items: {len(items)}\n\n" + "\n".join(f"{'📁' if item['is_dir'] else '📄'} {item['name']}" for item in items)
+        }
         
     ext = p.suffix.lower()
     image_exts = {".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", ".ico", ".bmp"}
