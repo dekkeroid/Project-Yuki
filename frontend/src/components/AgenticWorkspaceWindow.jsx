@@ -1767,46 +1767,52 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
+                    disabled={isCodingMode}
                     onClick={() => {
+                      if (isCodingMode) return;
                       const val = !promptPersona;
                       setPromptPersona(val);
                       localStorage.setItem('yuki-prompt-persona', String(val));
                     }}
-                    title="Persona & Mood module"
+                    title={isCodingMode ? "Persona automatically stripped in Coder Mode for zero-fluff engineering" : "Persona & Roleplay module"}
                     style={{
                       padding: '2px 8px',
                       borderRadius: '12px',
-                      border: promptPersona ? `1px solid ${themeAccent}` : '1px solid rgba(255,255,255,0.1)',
-                      background: promptPersona ? `${themeAccent}30` : 'rgba(0,0,0,0.3)',
-                      color: promptPersona ? '#ffffff' : '#64748b',
-                      cursor: 'pointer',
+                      border: (!isCodingMode && promptPersona) ? `1px solid ${themeAccent}` : '1px solid rgba(255,255,255,0.1)',
+                      background: (!isCodingMode && promptPersona) ? `${themeAccent}30` : 'rgba(0,0,0,0.3)',
+                      color: (!isCodingMode && promptPersona) ? '#ffffff' : '#64748b',
+                      cursor: isCodingMode ? 'not-allowed' : 'pointer',
                       fontSize: '0.66rem',
-                      fontWeight: 600
+                      fontWeight: 600,
+                      opacity: isCodingMode ? 0.7 : 1
                     }}
                   >
-                    🎭 Persona {promptPersona ? 'ON' : 'OFF'}
+                    🎭 Persona {isCodingMode ? 'OFF (Coder)' : (promptPersona ? 'ON' : 'OFF')}
                   </button>
 
                   <button
                     type="button"
+                    disabled={isCodingMode}
                     onClick={() => {
+                      if (isCodingMode) return;
                       const val = !promptExpressions;
                       setPromptExpressions(val);
                       localStorage.setItem('yuki-prompt-expressions', String(val));
                     }}
-                    title="Avatar Expressions module"
+                    title={isCodingMode ? "Expressions disabled in Coder Mode for technical focus" : "Avatar Expressions module"}
                     style={{
                       padding: '2px 8px',
                       borderRadius: '12px',
-                      border: promptExpressions ? '1px solid #f472b6' : '1px solid rgba(255,255,255,0.1)',
-                      background: promptExpressions ? 'rgba(244, 114, 182, 0.25)' : 'rgba(0,0,0,0.3)',
-                      color: promptExpressions ? '#ffffff' : '#64748b',
-                      cursor: 'pointer',
+                      border: (!isCodingMode && promptExpressions) ? '1px solid #f472b6' : '1px solid rgba(255,255,255,0.1)',
+                      background: (!isCodingMode && promptExpressions) ? 'rgba(244, 114, 182, 0.25)' : 'rgba(0,0,0,0.3)',
+                      color: (!isCodingMode && promptExpressions) ? '#ffffff' : '#64748b',
+                      cursor: isCodingMode ? 'not-allowed' : 'pointer',
                       fontSize: '0.66rem',
-                      fontWeight: 600
+                      fontWeight: 600,
+                      opacity: isCodingMode ? 0.7 : 1
                     }}
                   >
-                    🎬 Expressions {promptExpressions ? 'ON' : 'OFF'}
+                    🎬 Expressions {isCodingMode ? 'OFF (Coder)' : (promptExpressions ? 'ON' : 'OFF')}
                   </button>
 
                   <button
@@ -2256,22 +2262,50 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     fontWeight: 700,
                     padding: '2px 8px',
                     borderRadius: '10px',
-                    background: profileData?.settings?.endpoint_strategy === 'separate' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(167, 139, 250, 0.2)',
-                    color: profileData?.settings?.endpoint_strategy === 'separate' ? '#38bdf8' : '#c4b5fd',
-                    border: profileData?.settings?.endpoint_strategy === 'separate' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(167, 139, 250, 0.4)'
+                    background: isCodingMode
+                      ? 'rgba(251, 146, 60, 0.25)'
+                      : (profileData?.settings?.endpoint_strategy === 'dual' || profileData?.settings?.endpoint_strategy === 'separate')
+                        ? 'rgba(56, 189, 248, 0.2)'
+                        : 'rgba(167, 139, 250, 0.2)',
+                    color: isCodingMode
+                      ? '#fb923c'
+                      : (profileData?.settings?.endpoint_strategy === 'dual' || profileData?.settings?.endpoint_strategy === 'separate')
+                        ? '#38bdf8'
+                        : '#c4b5fd',
+                    border: isCodingMode
+                      ? '1px solid rgba(251, 146, 60, 0.4)'
+                      : (profileData?.settings?.endpoint_strategy === 'dual' || profileData?.settings?.endpoint_strategy === 'separate')
+                        ? '1px solid rgba(56, 189, 248, 0.4)'
+                        : '1px solid rgba(167, 139, 250, 0.4)'
                   }}>
-                    {profileData?.settings?.endpoint_strategy === 'separate' ? '⚡ Separate Endpoints' : '🎯 Single Endpoint'}
+                    {isCodingMode
+                      ? '🛠️ Coder Mode Active'
+                      : (profileData?.settings?.endpoint_strategy === 'dual' || profileData?.settings?.endpoint_strategy === 'separate')
+                        ? '⚡ Dual Endpoints'
+                        : '🎯 Single Endpoint'}
                   </span>
                 </div>
 
-                {profileData?.settings?.endpoint_strategy === 'separate' ? (
+                {isCodingMode ? (
+                  <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(251, 146, 60, 0.12)', border: '1px solid rgba(251, 146, 60, 0.3)' }}>
+                    <div style={{ fontSize: '0.62rem', color: '#fb923c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      ⚡ Dedicated Coder Mode Engine
+                    </div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>
+                        [{profileData?.settings?.llm_coder_backend && profileData?.settings?.llm_coder_backend !== 'none' ? profileData?.settings?.llm_coder_backend : (profileData?.settings?.llm_backend || 'groq')}]
+                      </span>{' '}
+                      {profileData?.settings?.llm_coder_model || profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
+                    </div>
+                  </div>
+                ) : (profileData?.settings?.endpoint_strategy === 'dual' || profileData?.settings?.endpoint_strategy === 'separate') ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(56,189,248,0.2)' }}>
                       <div style={{ fontSize: '0.62rem', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         ⚡ Fast/Simple Queries Model
                       </div>
                       <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                        <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
+                        <span style={{ color: '#94a3b8', textTransform: 'capitalize' }}>[{profileData?.settings?.llm_simple_backend || profileData?.settings?.llm_backend || 'groq'}]</span> {profileData?.settings?.llm_simple_model || profileData?.settings?.llm_model || 'llama-3.3-70b-versatile'}
                       </div>
                     </div>
 
