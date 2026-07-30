@@ -487,9 +487,6 @@ def control_window(action: str, window_title: str = None, x: int = None, y: int 
         "focus": "Focused",
         "close": "Closed",
         "move": "Moved"
-    }.get(action, "Processed")
-
-    if len(results) == 1:
         return f"{action_past_tense} window: '{results[0]}'"
     else:
         quoted_results = ", ".join(f'"{r}"' for r in results)
@@ -497,21 +494,33 @@ def control_window(action: str, window_title: str = None, x: int = None, y: int 
 
 def run_terminal_command(command: str, use_powershell: bool = True, max_timeout: int = 300, heartbeat_interval: int = 30, cwd: str = None) -> str:
     """
-    Runs a shell command asynchronously with real-time output capture and dynamic 30-second heartbeat monitoring (up to 300s max).
+    Runs a shell command asynchronously with real-time output capture, non-interactive environment variables,
+    ExecutionPolicy Bypass, and dynamic AI status reporting without force-killing.
     """
-    import time
-    shell_exe = "powershell.exe" if use_powershell else "cmd.exe"
-    shell_arg = "-Command" if use_powershell else "/c"
+    import time, os
     
+    # Industry Standard Non-Interactive Environment
+    env = os.environ.copy()
+    env["CI"] = "true"
+    env["DEBIAN_FRONTEND"] = "noninteractive"
+    env["PYTHONUNBUFFERED"] = "1"
+    env["PIP_NO_INPUT"] = "1"
+
+    if use_powershell:
+        cmd_list = ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command]
+    else:
+        cmd_list = ["cmd.exe", "/c", command]
+
     start_time = time.time()
     try:
         proc = subprocess.Popen(
-            [shell_exe, shell_arg, command],
+            cmd_list,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             shell=True,
-            cwd=cwd
+            cwd=cwd,
+            env=env
         )
         
         stdout_chunks = []
@@ -533,11 +542,10 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
                 
                 elapsed = int(time.time() - start_time)
                 if elapsed >= max_timeout:
-                    proc.kill()
-                    proc.wait()
+                    # Do NOT force-kill. Return current status & output so AI can decide whether to wait or terminate!
                     stdout_str = "\n".join(filter(None, stdout_chunks))
                     stderr_str = "\n".join(filter(None, stderr_chunks))
-                    return f"Command execution timed out after reaching maximum ceiling of {max_timeout}s (PID {proc.pid}).\nOutput so far:\n{stdout_str}\n{stderr_str}".strip()
+                    return f"[STATUS: RUNNING IN BACKGROUND] Command '{command}' (PID {proc.pid}) is still actively running ({elapsed}s elapsed, hit {max_timeout}s checkpoint).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: The process is still running. Decide whether to monitor, wait, or terminate PID {proc.pid} based on output progress.".strip()
                 
                 print(f"[ProcessSupervisor] Command '{command[:40]}...' active (PID {proc.pid}, {elapsed}s elapsed)...")
 
@@ -559,14 +567,18 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
 
 def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int = 30, cwd: str = None) -> str:
     """
-    Executes a block of Python code asynchronously with dynamic 30-second heartbeat monitoring (up to 300s max).
+    Executes a block of Python code asynchronously with dynamic 30-second heartbeat monitoring without force-killing.
     """
-    import tempfile, time
+    import tempfile, time, os
     
     with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w", encoding="utf-8") as f:
         f.write(code)
         temp_file = f.name
         
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    env["CI"] = "true"
+
     start_time = time.time()
     try:
         proc = subprocess.Popen(
@@ -574,7 +586,8 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            cwd=cwd
+            cwd=cwd,
+            env=env
         )
         
         stdout_chunks = []
@@ -596,11 +609,10 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
                 
                 elapsed = int(time.time() - start_time)
                 if elapsed >= max_timeout:
-                    proc.kill()
-                    proc.wait()
+                    # Do NOT force-kill. Return current status & output to AI
                     stdout_str = "\n".join(filter(None, stdout_chunks))
                     stderr_str = "\n".join(filter(None, stderr_chunks))
-                    return f"Python script execution timed out after reaching maximum ceiling of {max_timeout}s (PID {proc.pid}).\nOutput so far:\n{stdout_str}\n{stderr_str}".strip()
+                    return f"[STATUS: RUNNING IN BACKGROUND] Python script (PID {proc.pid}) is still running ({elapsed}s elapsed, hit {max_timeout}s checkpoint).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: Script is still active. Decide whether to wait or terminate PID {proc.pid} based on progress.".strip()
                 
                 print(f"[ProcessSupervisor] Python script active (PID {proc.pid}, {elapsed}s elapsed)...")
 
