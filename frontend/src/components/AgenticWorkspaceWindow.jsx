@@ -293,6 +293,10 @@ export const AgenticWorkspaceWindow = ({
     window.addEventListener('yuki:open-file', handleOpenFileEvent);
     return () => window.removeEventListener('yuki:open-file', handleOpenFileEvent);
   }, []);
+  // Internal Settings Sync (for standalone Chat Window mode)
+  const [internalSettings, setInternalSettings] = useState({});
+  const [savedCustomEndpoints, setSavedCustomEndpoints] = useState([]);
+  const [selectedCoderEndpointId, setSelectedCoderEndpointId] = useState('');
   const [coderCustomLabel, setCoderCustomLabel] = useState('');
   const [saveCoderEndpointBtnText, setSaveCoderEndpointBtnText] = useState('Save Preset');
 
