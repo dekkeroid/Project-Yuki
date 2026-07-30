@@ -806,7 +806,7 @@ const App = () => {
           return newMessages;
         });
 
-        if (!hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice) {
+        if (!hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice && !msg.is_coding_mode) {
           console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0, 80)}"`);
           speakTextNatively(currentResponseTextRef.current);
         } else {
@@ -839,11 +839,6 @@ const App = () => {
         } catch (e) {
           console.warn("Failed to check tool result for window_control JSON:", e);
         }
-
-        setMessages((prev) => [...prev, {
-          role: 'system',
-          content: `⚙️ [Tool Result] ${msg.result}`
-        }]);
       } else if (msg.type === 'speech') {
         setTtsStreamActive(true);
         setIsThinking(false);

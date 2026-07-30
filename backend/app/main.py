@@ -2452,7 +2452,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         await broadcast_ws_event({
                             "type": "stream_done",
                             "backend_used": backend_used,
-                            "response_time": round(elapsed_time, 2)
+                            "response_time": round(elapsed_time, 2),
+                            "is_coding_mode": is_coding_mode
                         })
                         
                         # Push profile update to all connected clients
