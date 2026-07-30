@@ -1431,6 +1431,55 @@ class AgentExecutor:
                 }]
             except Exception:
                 pass
+
+        # Robust Markdown Tool Call Extractor for text-simulated tool calls
+        # Pattern 1: 🛠️ **[tool_name ...]** followed by ```tool_args ... ```
+        md_matches = list(re.finditer(r'🛠️\s*\*\*\s*\[(\w+)[^\]]*\]\s*\*\*\s*```(?:tool_args|json)?\s*(\{.*?\})\s*```', text, re.DOTALL))
+        if md_matches:
+            calls = []
+            for m in md_matches:
+                tname = m.group(1)
+                jstr = m.group(2)
+                try:
+                    adict = json.loads(jstr)
+                    calls.append({
+                        "id": f"call_markdown_{tname}",
+                        "type": "function",
+                        "function": {"name": tname, "arguments": json.dumps(adict)}
+                    })
+                except Exception:
+                    pass
+            if calls:
+                return calls
+
+        # Pattern 2: standalone ```tool_args { ... } ``` code blocks
+        tool_args_blocks = list(re.finditer(r'```(?:tool_args|json)\s*(\{.*?\})\s*```', text, re.DOTALL))
+        if tool_args_blocks:
+            calls = []
+            for m in tool_args_blocks:
+                jstr = m.group(1)
+                try:
+                    adict = json.loads(jstr)
+                    inferred_name = None
+                    if "command" in adict:
+                        inferred_name = "jarvis_run_terminal"
+                    elif "file_path" in adict or "content" in adict:
+                        inferred_name = "jarvis_create_or_edit_file"
+                    elif "code" in adict:
+                        inferred_name = "jarvis_run_python"
+                    elif "input_text" in adict:
+                        inferred_name = "jarvis_send_stdin"
+
+                    if inferred_name:
+                        calls.append({
+                            "id": f"call_inferred_{inferred_name}",
+                            "type": "function",
+                            "function": {"name": inferred_name, "arguments": json.dumps(adict)}
+                        })
+                except Exception:
+                    pass
+            if calls:
+                return calls
         
         return None
 
@@ -1479,7 +1528,7 @@ class AgentExecutor:
         """
         Accumulates tool calls from delta chunks and yields normal tokens.
         At the end of the stream, yields "tool_calls" events.
-        Supports fallback parsing of text-based JSON tool calls.
+        Supports fallback parsing of text-based JSON tool calls and markdown tool blocks.
         """
         accumulated_tool_calls = {}
         last_label = "local"
@@ -1508,15 +1557,13 @@ class AgentExecutor:
                 elif is_json_candidate:
                     text_buffer += content
                 else:
+                    text_buffer += content
                     yield "token", content, label
                     
             # 2. Accumulate tool calls
             tool_calls = delta.get("tool_calls")
             if tool_calls:
                 is_json_candidate = False
-                if text_buffer:
-                    yield "token", text_buffer, label
-                    text_buffer = ""
                 for tc_delta in tool_calls:
                     index = tc_delta.get("index", 0)
                     if index not in accumulated_tool_calls:
@@ -1540,6 +1587,12 @@ class AgentExecutor:
             else:
                 # Not a valid tool call JSON, flush the buffer to the user
                 yield "token", text_buffer, last_label
+        elif not accumulated_tool_calls and text_buffer:
+            # Check for hallucinated markdown tool call blocks inside full text buffer
+            fallback_calls = self._try_parse_json_tool_call(text_buffer)
+            if fallback_calls:
+                print(f"[Fallback Parser] Intercepted markdown simulated tool call in text: {fallback_calls}")
+                yield "tool_calls", fallback_calls, last_label
                 
         # Stream complete, yield any accumulated tool calls
         if accumulated_tool_calls:
