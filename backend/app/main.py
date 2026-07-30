@@ -2194,8 +2194,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if msg_type == "interrupt":
+                print("[WebSocket] Interrupt request received. Killing active supervisor subprocesses & cancelling chat task.")
+                try:
+                    from app.tools.system import kill_active_supervisor_processes
+                    killed_count = kill_active_supervisor_processes()
+                    print(f"[WebSocket] Terminated {killed_count} active supervisor subprocess(es).")
+                except Exception as e:
+                    print(f"[WebSocket] Error killing active supervisor processes: {e}")
+
                 if chat_task and not chat_task.done():
-                    print("[WebSocket] Interrupt request received. Cancelling active chat task.")
                     chat_task.cancel()
                     try:
                         await chat_task

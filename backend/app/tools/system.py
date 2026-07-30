@@ -495,12 +495,32 @@ def control_window(action: str, window_title: str = None, x: int = None, y: int 
         quoted_results = ", ".join(f'"{r}"' for r in results)
         return f"{action_past_tense} {len(results)} windows: {quoted_results}"
 
+_ACTIVE_PROCESSES = set()
+
+def kill_active_supervisor_processes() -> int:
+    """
+    Forcefully terminates all active subprocesses spawned by system supervisor tools.
+    """
+    global _ACTIVE_PROCESSES
+    killed_count = 0
+    for proc in list(_ACTIVE_PROCESSES):
+        try:
+            if proc.poll() is None:
+                print(f"[ProcessSupervisor] Terminating process PID {proc.pid} on user interrupt...")
+                proc.kill()
+                killed_count += 1
+        except Exception as e:
+            print(f"[ProcessSupervisor] Error killing PID {proc.pid}: {e}")
+    _ACTIVE_PROCESSES.clear()
+    return killed_count
+
 def run_terminal_command(command: str, use_powershell: bool = True, max_timeout: int = 300, heartbeat_interval: int = 30, cwd: str = None) -> str:
     """
     Runs a shell command asynchronously with real-time output capture, non-interactive environment variables,
     ExecutionPolicy Bypass, and dynamic AI status reporting without force-killing.
     """
     import time, os
+    global _ACTIVE_PROCESSES
     
     # Industry Standard Non-Interactive Environment
     env = os.environ.copy()
@@ -525,32 +545,36 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
             cwd=cwd,
             env=env
         )
+        _ACTIVE_PROCESSES.add(proc)
         
         stdout_chunks = []
         stderr_chunks = []
         
-        while True:
-            try:
-                stdout_data, stderr_data = proc.communicate(timeout=heartbeat_interval)
-                if stdout_data:
-                    stdout_chunks.append(stdout_data.strip())
-                if stderr_data:
-                    stderr_chunks.append(stderr_data.strip())
-                break
-            except subprocess.TimeoutExpired as te:
-                if te.stdout:
-                    stdout_chunks.append(te.stdout.decode('utf-8', errors='replace').strip() if isinstance(te.stdout, bytes) else te.stdout.strip())
-                if te.stderr:
-                    stderr_chunks.append(te.stderr.decode('utf-8', errors='replace').strip() if isinstance(te.stderr, bytes) else te.stderr.strip())
-                
-                elapsed = int(time.time() - start_time)
-                if elapsed >= max_timeout:
-                    # Do NOT force-kill. Return current status & output so AI can decide whether to wait or terminate!
-                    stdout_str = "\n".join(filter(None, stdout_chunks))
-                    stderr_str = "\n".join(filter(None, stderr_chunks))
-                    return f"[STATUS: RUNNING IN BACKGROUND] Command '{command}' (PID {proc.pid}) is still actively running ({elapsed}s elapsed, hit {max_timeout}s checkpoint).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: The process is still running. Decide whether to monitor, wait, or terminate PID {proc.pid} based on output progress.".strip()
-                
-                print(f"[ProcessSupervisor] Command '{command[:40]}...' active (PID {proc.pid}, {elapsed}s elapsed)...")
+        try:
+            while True:
+                try:
+                    stdout_data, stderr_data = proc.communicate(timeout=heartbeat_interval)
+                    if stdout_data:
+                        stdout_chunks.append(stdout_data.strip())
+                    if stderr_data:
+                        stderr_chunks.append(stderr_data.strip())
+                    break
+                except subprocess.TimeoutExpired as te:
+                    if te.stdout:
+                        stdout_chunks.append(te.stdout.decode('utf-8', errors='replace').strip() if isinstance(te.stdout, bytes) else te.stdout.strip())
+                    if te.stderr:
+                        stderr_chunks.append(te.stderr.decode('utf-8', errors='replace').strip() if isinstance(te.stderr, bytes) else te.stderr.strip())
+                    
+                    elapsed = int(time.time() - start_time)
+                    if elapsed >= max_timeout:
+                        # Do NOT force-kill. Return current status & output so AI can decide whether to wait or terminate!
+                        stdout_str = "\n".join(filter(None, stdout_chunks))
+                        stderr_str = "\n".join(filter(None, stderr_chunks))
+                        return f"[STATUS: RUNNING IN BACKGROUND] Command '{command}' (PID {proc.pid}) is still actively running ({elapsed}s elapsed, hit {max_timeout}s checkpoint).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: The process is still running. Decide whether to monitor, wait, or terminate PID {proc.pid} based on output progress.".strip()
+                    
+                    print(f"[ProcessSupervisor] Command '{command[:40]}...' active (PID {proc.pid}, {elapsed}s elapsed)...")
+        finally:
+            _ACTIVE_PROCESSES.discard(proc)
 
         stdout_str = "\n".join(filter(None, stdout_chunks))
         stderr_str = "\n".join(filter(None, stderr_chunks))
@@ -592,32 +616,36 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
             cwd=cwd,
             env=env
         )
+        _ACTIVE_PROCESSES.add(proc)
         
         stdout_chunks = []
         stderr_chunks = []
         
-        while True:
-            try:
-                stdout_data, stderr_data = proc.communicate(timeout=heartbeat_interval)
-                if stdout_data:
-                    stdout_chunks.append(stdout_data.strip())
-                if stderr_data:
-                    stderr_chunks.append(stderr_data.strip())
-                break
-            except subprocess.TimeoutExpired as te:
-                if te.stdout:
-                    stdout_chunks.append(te.stdout.decode('utf-8', errors='replace').strip() if isinstance(te.stdout, bytes) else te.stdout.strip())
-                if te.stderr:
-                    stderr_chunks.append(te.stderr.decode('utf-8', errors='replace').strip() if isinstance(te.stderr, bytes) else te.stderr.strip())
-                
-                elapsed = int(time.time() - start_time)
-                if elapsed >= max_timeout:
-                    # Do NOT force-kill. Return current status & output to AI
-                    stdout_str = "\n".join(filter(None, stdout_chunks))
-                    stderr_str = "\n".join(filter(None, stderr_chunks))
-                    return f"[STATUS: RUNNING IN BACKGROUND] Python script (PID {proc.pid}) is still running ({elapsed}s elapsed, hit {max_timeout}s checkpoint).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: Script is still active. Decide whether to wait or terminate PID {proc.pid} based on progress.".strip()
-                
-                print(f"[ProcessSupervisor] Python script active (PID {proc.pid}, {elapsed}s elapsed)...")
+        try:
+            while True:
+                try:
+                    stdout_data, stderr_data = proc.communicate(timeout=heartbeat_interval)
+                    if stdout_data:
+                        stdout_chunks.append(stdout_data.strip())
+                    if stderr_data:
+                        stderr_chunks.append(stderr_data.strip())
+                    break
+                except subprocess.TimeoutExpired as te:
+                    if te.stdout:
+                        stdout_chunks.append(te.stdout.decode('utf-8', errors='replace').strip() if isinstance(te.stdout, bytes) else te.stdout.strip())
+                    if te.stderr:
+                        stderr_chunks.append(te.stderr.decode('utf-8', errors='replace').strip() if isinstance(te.stderr, bytes) else te.stderr.strip())
+                    
+                    elapsed = int(time.time() - start_time)
+                    if elapsed >= max_timeout:
+                        # Do NOT force-kill. Return current status & output to AI
+                        stdout_str = "\n".join(filter(None, stdout_chunks))
+                        stderr_str = "\n".join(filter(None, stderr_chunks))
+                        return f"[STATUS: RUNNING IN BACKGROUND] Python script (PID {proc.pid}) is still running ({elapsed}s elapsed, hit {max_timeout}s checkpoint).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: Script is still active. Decide whether to wait or terminate PID {proc.pid} based on progress.".strip()
+                    
+                    print(f"[ProcessSupervisor] Python script active (PID {proc.pid}, {elapsed}s elapsed)...")
+        finally:
+            _ACTIVE_PROCESSES.discard(proc)
 
         stdout_str = "\n".join(filter(None, stdout_chunks))
         stderr_str = "\n".join(filter(None, stderr_chunks))
