@@ -2451,12 +2451,12 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#6ee7b7', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Code style={{ width: '15px', height: '15px' }} /> Dedicated Coder Mode Engine & Endpoint
                   </div>
-                  <div style={{ fontSize: '0.70rem', color: 'rgba(255,255,255,0.65)', lineHeight: '1.4' }}>
-                    Configure the custom LLM Provider, Model Name, Base URL, and API Key specifically used when Coder Mode is ON. Bypasses TTS voice audio and avatar animations for raw coding throughput.
+                  <div style={{ fontSize: '0.70rem', color: 'rgba(255,255,255,0.65)', lineHeight: '1.4', marginBottom: '12px' }}>
+                    Configure the custom LLM Provider, Base URL, API Key, and Model specifically used when Coder Mode is ON. Bypasses TTS voice audio and avatar animations for raw coding throughput.
                   </div>
 
-                  {/* Backend Selection */}
-                  <div style={{ marginTop: '12px' }}>
+                  {/* 1. Coder Mode LLM Backend Dropdown */}
+                  <div>
                     <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
                       Coder Mode LLM Backend:
                     </label>
@@ -2470,7 +2470,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                           vllm: 'http://127.0.0.1:8000/v1',
                           custom: 'https://api.groq.com/openai/v1',
                         };
-                        const updates = { llm_coder_backend: newBackend };
+                        const updates = { llm_coder_backend: newBackend, llm_coder_model: '' };
                         if (defaults[newBackend]) updates.llm_coder_base_url = defaults[newBackend];
                         if (onUpdateSetting) onUpdateSetting(updates);
                       }}
@@ -2486,7 +2486,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                         cursor: 'pointer'
                       }}
                     >
-                      <option value="custom">Cloud API / Custom (Groq, OpenAI, Together, DeepSeek, Google Gemini)</option>
+                      <option value="custom">Custom / Cloud API (OpenAI-Compatible)</option>
                       <option value="lmstudio">LM Studio (Local)</option>
                       <option value="ollama">Ollama (Local)</option>
                       <option value="vllm">vLLM (Local)</option>
@@ -2494,81 +2494,71 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     </select>
                   </div>
 
-                  {/* Coder Model Name Input */}
-                  <div style={{ marginTop: '10px' }}>
-                    <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
-                      Coder Model Name:
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.llm_coder_model || ''}
-                      onChange={(e) => onUpdateSetting && onUpdateSetting({ llm_coder_model: e.target.value })}
-                      placeholder="e.g. qwen2.5-coder-32b-instruct, claude-3-5-sonnet-20241022, llama-3.3-70b-versatile"
-                      style={{
-                        width: '100%',
-                        padding: '8px 10px',
-                        background: 'rgba(9, 13, 22, 0.95)',
-                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                        borderRadius: '8px',
-                        color: 'white',
-                        fontSize: '0.78rem',
-                        outline: 'none'
-                      }}
-                    />
-                  </div>
-
-                  {/* Quick Preset Buttons for Coder Models */}
-                  <div style={{ marginTop: '8px' }}>
-                    <span style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.45)', display: 'block', marginBottom: '4px' }}>
-                      Quick Model Presets:
-                    </span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {[
-                        { label: 'Qwen2.5 Coder (Groq)', model: 'qwen2.5-coder-32b-instruct', backend: 'custom', url: 'https://api.groq.com/openai/v1' },
-                        { label: 'Llama 3.3 70B (Groq)', model: 'llama-3.3-70b-versatile', backend: 'custom', url: 'https://api.groq.com/openai/v1' },
-                        { label: 'Gemini Flash 2.0', model: 'gemini-2.0-flash-exp', backend: 'custom', url: 'https://generativelanguage.googleapis.com/v1beta/openai' },
-                        { label: 'DeepSeek Coder', model: 'deepseek-coder', backend: 'custom', url: 'https://api.deepseek.com/v1' },
-                        { label: 'LM Studio (Local)', model: '', backend: 'lmstudio', url: 'http://127.0.0.1:1234' },
-                      ].map((preset, pIdx) => (
-                        <button
-                          key={pIdx}
-                          type="button"
-                          onClick={() => {
-                            if (onUpdateSetting) {
-                              onUpdateSetting({
-                                llm_coder_backend: preset.backend,
-                                llm_coder_model: preset.model,
-                                llm_coder_base_url: preset.url
-                              });
-                            }
-                          }}
-                          style={{
-                            padding: '3px 7px',
-                            borderRadius: '5px',
-                            background: 'rgba(255, 255, 255, 0.08)',
-                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                            color: '#cbd5e1',
-                            fontSize: '0.64rem',
-                            fontWeight: 500,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
+                  {/* 2. Quick Cloud Presets (Rendered ONLY if Custom / Cloud API chosen) */}
+                  {(settings.llm_coder_backend === 'custom' || settings.llm_coder_backend === 'openai') && (
+                    <div style={{ marginTop: '10px' }}>
+                      <span style={{ fontSize: '0.68rem', color: '#c4b5fd', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                        Quick Cloud Provider Presets:
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {[
+                          { name: 'Groq', label: 'Groq Cloud API', url: 'https://api.groq.com/openai/v1', model: 'qwen2.5-coder-32b-instruct' },
+                          { name: 'Gemini', label: 'Google Gemini Cloud', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
+                          { name: 'OpenAI', label: 'OpenAI Cloud API', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+                          { name: 'Grok', label: 'xAI Grok Cloud', url: 'https://api.x.ai/v1', model: 'grok-beta' },
+                          { name: 'OpenRouter', label: 'OpenRouter Cloud API', url: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
+                          { name: 'Mistral', label: 'Mistral Cloud API', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
+                          { name: 'DeepSeek', label: 'DeepSeek Cloud', url: 'https://api.deepseek.com/v1', model: 'deepseek-coder' }
+                        ].map((p) => (
+                          <button
+                            key={p.name}
+                            type="button"
+                            onClick={async () => {
+                              const updates = {
+                                llm_coder_backend: 'custom',
+                                llm_coder_base_url: p.url
+                              };
+                              if (p.model && !settings.llm_coder_model) {
+                                updates.llm_coder_model = p.model;
+                              }
+                              if (onUpdateSetting) onUpdateSetting(updates);
+                            }}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '0.66rem',
+                              borderRadius: '6px',
+                              background: settings.llm_coder_base_url === p.url ? 'rgba(16, 185, 129, 0.35)' : 'rgba(255, 255, 255, 0.05)',
+                              border: settings.llm_coder_base_url === p.url ? '1px solid #6ee7b7' : '1px solid rgba(255,255,255,0.1)',
+                              color: settings.llm_coder_base_url === p.url ? '#ffffff' : '#cbd5e1',
+                              cursor: 'pointer',
+                              fontWeight: 500
+                            }}
+                          >
+                            ⚡ {p.name}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Base URL */}
+                  {/* 3. LLM Backend URL Input */}
                   <div style={{ marginTop: '10px' }}>
                     <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
-                      Coder Base URL:
+                      {settings.llm_coder_backend === 'lmstudio' ? 'LM Studio Coder URL' :
+                       settings.llm_coder_backend === 'ollama' ? 'Ollama Coder URL' :
+                       settings.llm_coder_backend === 'vllm' ? 'vLLM Coder URL' :
+                       'Coder Base URL'}
                     </label>
                     <input
                       type="text"
                       value={settings.llm_coder_base_url || ''}
                       onChange={(e) => onUpdateSetting && onUpdateSetting({ llm_coder_base_url: e.target.value })}
-                      placeholder="e.g. https://api.groq.com/openai/v1 or http://127.0.0.1:11434"
+                      placeholder={
+                        settings.llm_coder_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
+                        settings.llm_coder_backend === 'ollama' ? 'http://127.0.0.1:11434' :
+                        settings.llm_coder_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
+                        'https://api.groq.com/openai/v1'
+                      }
                       style={{
                         width: '100%',
                         padding: '8px 10px',
@@ -2582,43 +2572,99 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     />
                   </div>
 
-                  {/* API Key Vault */}
-                  <div style={{ marginTop: '10px' }}>
-                    <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
-                      Coder API Key (Cloud/Groq/OpenAI):
-                    </label>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <input
-                        type={showCoderKey ? 'text' : 'password'}
-                        value={settings.llm_coder_api_key || ''}
-                        onChange={(e) => onUpdateSetting && onUpdateSetting({ llm_coder_api_key: e.target.value })}
-                        placeholder="Paste Coder Endpoint API Key..."
-                        style={{
-                          flex: 1,
-                          padding: '8px 10px',
-                          background: 'rgba(9, 13, 22, 0.95)',
-                          border: '1px solid rgba(255, 255, 255, 0.15)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none'
-                        }}
-                      />
+                  {/* 4. Coder API Key Vault (Rendered if Custom chosen) */}
+                  {(settings.llm_coder_backend === 'custom' || settings.llm_coder_backend === 'openai') && (
+                    <div style={{ marginTop: '10px' }}>
+                      <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
+                        Coder API Key (Encrypted in DB)
+                      </label>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input
+                          type={showCoderKey ? 'text' : 'password'}
+                          value={settings.llm_coder_api_key || ''}
+                          onChange={(e) => onUpdateSetting && onUpdateSetting({ llm_coder_api_key: e.target.value })}
+                          placeholder="sk-..."
+                          style={{
+                            flex: 1,
+                            padding: '8px 10px',
+                            background: 'rgba(9, 13, 22, 0.95)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCoderKey(prev => !prev)}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            color: '#fff',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {showCoderKey ? <EyeOff style={{ width: '14px', height: '14px' }} /> : <Eye style={{ width: '14px', height: '14px' }} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 5. Coder Model Choice Dropdown + Refresh Button */}
+                  <div style={{ marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd' }}>
+                        Coder LLM Model Selection
+                      </label>
                       <button
                         type="button"
-                        onClick={() => setShowCoderKey(prev => !prev)}
+                        onClick={onRefreshLlmModels}
+                        title="Refresh model list from backend endpoint"
                         style={{
-                          padding: '8px 10px',
-                          borderRadius: '8px',
-                          background: 'rgba(255, 255, 255, 0.1)',
-                          border: '1px solid rgba(255, 255, 255, 0.15)',
-                          color: '#fff',
-                          cursor: 'pointer'
+                          background: 'none',
+                          border: 'none',
+                          color: '#6ee7b7',
+                          cursor: 'pointer',
+                          padding: '2px 4px',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          fontWeight: 600
                         }}
                       >
-                        {showCoderKey ? <EyeOff style={{ width: '14px', height: '14px' }} /> : <Eye style={{ width: '14px', height: '14px' }} />}
+                        <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
                       </button>
                     </div>
+
+                    {(() => {
+                      const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
+                      const allNames = Array.from(new Set([
+                        ...(settings.llm_coder_model ? [settings.llm_coder_model] : []),
+                        'qwen2.5-coder-32b-instruct',
+                        'llama-3.3-70b-versatile',
+                        'claude-3-5-sonnet-20241022',
+                        'deepseek-coder',
+                        'gemini-1.5-flash',
+                        ...fetchedNames
+                      ]));
+
+                      return (
+                        <SearchableModelSelect
+                          value={settings.llm_coder_model || ''}
+                          onChange={(val) => onUpdateSetting && onUpdateSetting({ llm_coder_model: val })}
+                          options={allNames}
+                          placeholder="Search or type Coder model name..."
+                        />
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
