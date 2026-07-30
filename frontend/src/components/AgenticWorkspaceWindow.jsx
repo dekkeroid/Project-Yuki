@@ -4,7 +4,7 @@ import {
   Send, RefreshCw, Zap, HardDrive, Database, Eye, EyeOff, Wrench, Search,
   Code, Activity, Brain, Volume2, Mic, MicOff, ChevronDown, ChevronRight,
   Folder, Calendar, Plus, Trash2, History, PanelLeftClose, PanelLeftOpen,
-  Settings, Globe, Sliders, Check, ShieldAlert
+  Settings, Globe, Sliders, Check, ShieldAlert, Tag, FolderPlus, FolderOpen
 } from 'lucide-react';
 import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought } from './ChatOverlay';
 import { SearchableModelSelect } from './ControlDashboard';
@@ -1061,7 +1061,171 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
             </div>
           )}
 
-          {/* Chat Messages Feed (Instant Bottom-Up Scroll) */}
+          {/* Active Session Context & Workspace Directories Toolbar */}
+          <div style={{
+            padding: '8px 16px',
+            background: 'rgba(15, 23, 42, 0.85)',
+            borderBottom: '1px solid rgba(167, 139, 250, 0.15)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Tag style={{ width: '12px', height: '12px' }} /> Custom Facts ({sessionFacts.length})
+                </span>
+                {isCodingMode && (
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6ee7b7', display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+                    <Folder style={{ width: '12px', height: '12px' }} /> Workspace Directories ({sessionDirectories.length})
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowFactForm(prev => !prev); setShowDirForm(false); }}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '5px',
+                    background: showFactForm ? 'rgba(167, 139, 250, 0.3)' : 'rgba(167, 139, 250, 0.15)',
+                    border: '1px solid rgba(167, 139, 250, 0.3)',
+                    color: '#c4b5fd',
+                    fontSize: '0.68rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Plus style={{ width: '11px', height: '11px' }} /> Add Custom Fact
+                </button>
+
+                {isCodingMode && (
+                  <button
+                    type="button"
+                    onClick={() => { setShowDirForm(prev => !prev); setShowFactForm(false); }}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: '5px',
+                      background: showDirForm ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.15)',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      color: '#6ee7b7',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <FolderPlus style={{ width: '11px', height: '11px' }} /> Add Directory
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Inline Fact Creation Form */}
+            {showFactForm && (
+              <div style={{ display: 'flex', gap: '6px', padding: '6px 8px', borderRadius: '6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(167, 139, 250, 0.3)', marginTop: '4px' }}>
+                <input
+                  type="text"
+                  placeholder="Fact Label (e.g. Target DB, Framework)"
+                  value={factKeyInput}
+                  onChange={(e) => setFactKeyInput(e.target.value)}
+                  style={{ width: '160px', padding: '4px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.15)', background: '#090d16', color: '#fff', fontSize: '0.70rem' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Fact Value (e.g. PostgreSQL, Next.js 14)"
+                  value={factValInput}
+                  onChange={(e) => setFactValInput(e.target.value)}
+                  style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.15)', background: '#090d16', color: '#fff', fontSize: '0.70rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSaveSessionMeta('fact', factKeyInput, factValInput)}
+                  style={{ padding: '4px 10px', borderRadius: '4px', background: '#8b5cf6', color: '#fff', fontSize: '0.70rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+                >
+                  Save Fact
+                </button>
+              </div>
+            )}
+
+            {/* Inline Directory Creation Form (Coder Mode) */}
+            {showDirForm && isCodingMode && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '6px 8px', borderRadius: '6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(16, 185, 129, 0.3)', marginTop: '4px' }}>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    type="text"
+                    placeholder="Directory Label (e.g. Project Root, Backend)"
+                    value={dirKeyInput}
+                    onChange={(e) => setDirKeyInput(e.target.value)}
+                    style={{ width: '180px', padding: '4px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.15)', background: '#090d16', color: '#fff', fontSize: '0.70rem' }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Absolute Directory Path (e.g. D:/Projects/Yuki)"
+                    value={dirValInput}
+                    onChange={(e) => setDirValInput(e.target.value)}
+                    style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.15)', background: '#090d16', color: '#fff', fontSize: '0.70rem' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePickFolder}
+                    title="Browse System Folders via Native Dialog"
+                    style={{ padding: '4px 8px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.4)', fontSize: '0.70rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <FolderOpen style={{ width: '12px', height: '12px' }} />
+                    Browse
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSaveSessionMeta('directory', dirKeyInput, dirValInput)}
+                  style={{ padding: '4px', borderRadius: '4px', background: '#10b981', color: '#fff', fontSize: '0.70rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+                >
+                  Save Workspace Directory
+                </button>
+              </div>
+            )}
+
+            {/* Active Chips List */}
+            {(sessionFacts.length > 0 || (isCodingMode && sessionDirectories.length > 0)) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                {sessionFacts.map((fact, idx) => (
+                  <div key={`f_${idx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 8px', borderRadius: '12px', background: 'rgba(167, 139, 250, 0.15)', border: '1px solid rgba(167, 139, 250, 0.3)', fontSize: '0.68rem', color: '#c4b5fd' }}>
+                    <strong>{fact.key}:</strong> {fact.value}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSessionMeta('fact', fact.key)}
+                      title="Delete Fact"
+                      style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.75rem', padding: '0 2px', display: 'flex', alignItems: 'center' }}
+                    >
+                      <Trash2 style={{ width: '10px', height: '10px' }} />
+                    </button>
+                  </div>
+                ))}
+
+                {isCodingMode && sessionDirectories.map((dir, idx) => (
+                  <div key={`d_${idx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 8px', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '0.68rem', color: '#6ee7b7' }}>
+                    <Folder style={{ width: '10px', height: '10px' }} />
+                    <strong>{dir.key}:</strong> <code style={{ color: '#e2e8f0' }}>{dir.value}</code>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSessionMeta('directory', dir.key)}
+                      title="Delete Directory"
+                      style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.75rem', padding: '0 2px', display: 'flex', alignItems: 'center' }}
+                    >
+                      <Trash2 style={{ width: '10px', height: '10px' }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div
             ref={chatContainerRef}
             style={{
