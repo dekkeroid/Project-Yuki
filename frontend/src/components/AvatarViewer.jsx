@@ -2607,6 +2607,10 @@ const AvatarViewer = ({
               targetHappy = 0.5 * easeVal;
               targetRelaxed = 0.85 * easeVal;
               targetBrowUp = 0.4 * easeVal;
+            } else if (idleAnimState === 'yawning') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetRelaxed = 0.7 * easeVal;
             } else if (idleAnimState === 'napping') {
               const t = idleAnimProgress / idleAnimDuration;
               if (t < 0.7) {

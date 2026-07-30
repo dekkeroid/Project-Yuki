@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
-import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, ExternalLink } from 'lucide-react';
+import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 import { useBackendSocket } from './hooks/useBackendSocket';
@@ -760,6 +760,7 @@ const App = () => {
         const { cleanText, animations, emotions } = parseResponseTags(currentResponseTextRef.current, {
           onAnimation: (animName) => {
             setCustomAnimation(animName);
+            setTimeout(() => setCustomAnimation(''), 100);
           },
           onEmotion: (emotionName) => {
             setAvatarExpression(emotionName);
@@ -1437,6 +1438,40 @@ const App = () => {
     } catch (e) {
       console.error('Failed to update profile:', e);
     }
+  };
+
+  const personaFileInputRef = useRef(null);
+
+  const handleExportPersona = () => {
+    window.location.href = `${API_BASE}/api/persona/export`;
+  };
+
+  const handleImportPersonaFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const jsonPayload = JSON.parse(text);
+      const res = await fetch(`${API_BASE}/api/persona/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jsonPayload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('✓ Persona imported successfully!');
+        if (data.profile) {
+          setProfile(data.profile);
+          if (data.profile.settings?.character_name) setLocalCharName(data.profile.settings.character_name);
+          if (data.profile.settings?.character_persona) setLocalCharPersona(data.profile.settings.character_persona);
+        }
+      } else {
+        alert(`Import failed: ${data.detail || 'Invalid persona format'}`);
+      }
+    } catch (err) {
+      alert(`Error importing persona: ${err.message}`);
+    }
+    e.target.value = '';
   };
 
   useEffect(() => {
@@ -3270,39 +3305,91 @@ const detectExpression = (text) => {
                         />
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={async (e) => {
-                          const btn = e.currentTarget;
-                          const originalText = btn.innerText;
-                          const originalBg = btn.style.background;
-                          btn.innerText = "Saving...";
-                          await handleUpdateSetting('character_name', localCharName);
-                          await handleUpdateSetting('character_persona', localCharPersona);
-                          btn.innerText = "✓ Saved";
-                          btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
-                          setTimeout(() => {
-                            btn.innerText = originalText;
-                            btn.style.background = originalBg;
-                          }, 2000);
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '6px 12px',
-                          fontSize: '0.72rem',
-                          borderRadius: '8px',
-                          fontWeight: 600,
-                          background: 'linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)',
-                          border: 'none',
-                          color: '#0b0813',
-                          cursor: 'pointer',
-                          boxShadow: '0 2px 6px rgba(45, 212, 191, 0.25)',
-                          transition: 'all 0.2s',
-                          marginTop: '2px'
-                        }}
-                      >
-                        Save Character Specs
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            const btn = e.currentTarget;
+                            const originalText = btn.innerText;
+                            const originalBg = btn.style.background;
+                            btn.innerText = "Saving...";
+                            await handleUpdateSetting('character_name', localCharName);
+                            await handleUpdateSetting('character_persona', localCharPersona);
+                            btn.innerText = "✓ Saved";
+                            btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+                            setTimeout(() => {
+                              btn.innerText = originalText;
+                              btn.style.background = originalBg;
+                            }, 2000);
+                          }}
+                          style={{
+                            flex: 1,
+                            minWidth: '100px',
+                            padding: '6px 10px',
+                            fontSize: '0.72rem',
+                            borderRadius: '8px',
+                            fontWeight: 600,
+                            background: 'linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)',
+                            border: 'none',
+                            color: '#0b0813',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 6px rgba(45, 212, 191, 0.25)',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          Save Specs
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleExportPersona}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: '0.72rem',
+                            borderRadius: '8px',
+                            fontWeight: 600,
+                            background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                            border: 'none',
+                            color: '#fff',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <Download className="w-3 h-3" />
+                          Export
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => personaFileInputRef.current?.click()}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: '0.72rem',
+                            borderRadius: '8px',
+                            fontWeight: 600,
+                            background: 'linear-gradient(135deg, #ec4899 0%, #be185d 100%)',
+                            border: 'none',
+                            color: '#fff',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <Upload className="w-3 h-3" />
+                          Import
+                        </button>
+
+                        <input
+                          type="file"
+                          ref={personaFileInputRef}
+                          accept=".json"
+                          onChange={handleImportPersonaFile}
+                          style={{ display: 'none' }}
+                        />
+                      </div>
                     </div>
                   </>
                 )}
