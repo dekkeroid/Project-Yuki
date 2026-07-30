@@ -122,7 +122,7 @@ class AgentExecutor:
             jarvis_system_diagnostics, jarvis_network_status, jarvis_web_scrape,
             jarvis_window_control, jarvis_run_terminal
         )
-        from app.tools.system import send_process_stdin
+        from app.tools.system import send_process_stdin, find_files_by_glob
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
 
@@ -280,6 +280,10 @@ class AgentExecutor:
             "jarvis_send_stdin": lambda **kwargs: send_process_stdin(
                 input_text=kwargs.get("input_text") or "",
                 pid=kwargs.get("pid")
+            ),
+            "find_files_by_glob": lambda **kwargs: find_files_by_glob(
+                kwargs.get("pattern") or "*",
+                root_dir=self._get_active_session_dir(kwargs)
             ),
             "jarvis_run_python": lambda **kwargs: run_python_script(
                 kwargs.get("code") or "",
@@ -1143,7 +1147,7 @@ class AgentExecutor:
             coding_allowed = {
                 "jarvis_run_terminal", "jarvis_run_python", "jarvis_read_file",
                 "jarvis_create_or_edit_file", "jarvis_replace_file_content",
-                "jarvis_list_dir_tree", "jarvis_git_status",
+                "jarvis_list_dir_tree", "jarvis_git_status", "find_files_by_glob",
                 "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
                 "jarvis_remember_user_fact", "read_and_review_file", "search_files",
                 "read_file_content", "run_terminal_command", "run_python_script"

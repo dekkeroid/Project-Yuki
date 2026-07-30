@@ -512,6 +512,83 @@ def kill_active_supervisor_processes() -> int:
         except Exception as e:
             print(f"[ProcessSupervisor] Error killing PID {proc.pid}: {e}")
     _ACTIVE_PROCESSES.clear()
+
+def smart_truncate_output(lines: list, max_lines: int = 65, head_count: int = 15, tail_count: int = 40) -> str:
+    """
+    Intelligently truncates long terminal output lines.
+    Keeps head_count top lines and tail_count bottom lines.
+    Scans omitted middle lines for error keywords and preserves extracted error lines.
+    """
+    clean_lines = [line for line in lines if line and str(line).strip()]
+    if not clean_lines:
+        return ""
+    if len(clean_lines) <= max_lines:
+        return "\n".join(clean_lines)
+
+    head_lines = clean_lines[:head_count]
+    tail_lines = clean_lines[-tail_count:]
+    middle_lines = clean_lines[head_count:-tail_count]
+
+    # Scan middle lines for critical error indicators
+    error_keywords = ["error", "exception", "failed", "fatal", "traceback", "uncaught", "syntaxerror", "typeerror"]
+    extracted_errors = [
+        line for line in middle_lines
+        if any(kw in line.lower() for kw in error_keywords)
+    ]
+
+    omitted_count = len(middle_lines)
+    parts = ["\n".join(head_lines)]
+    
+    if extracted_errors:
+        parts.append(f"\n... [omitted {omitted_count} lines — extracted {len(extracted_errors)} error lines below] ...")
+        parts.append("\n".join(extracted_errors[:15]))
+    else:
+        parts.append(f"\n... [omitted {omitted_count} intermediate output lines] ...")
+
+    parts.append("\n".join(tail_lines))
+    return "\n".join(parts)
+
+def find_files_by_glob(pattern: str, root_dir: str = None, max_results: int = 150) -> str:
+    """
+    Finds files matching a glob pattern (e.g. 'src/**/*.jsx', '**/*.py') starting from root_dir.
+    Automatically excludes node_modules, .git, dist, build, venv directories.
+    """
+    import os, glob, pathlib
+    
+    clean_pattern = str(pattern).strip()
+    if not clean_pattern:
+        return "Error: Glob pattern cannot be empty."
+
+    search_dir = os.path.abspath(str(root_dir).strip('"\'')) if root_dir else os.getcwd()
+    if not os.path.exists(search_dir):
+        return f"Error: Search directory '{search_dir}' does not exist."
+
+    ignored = {"node_modules", ".git", "dist", "build", "venv", ".venv", "__pycache__", ".next", ".cache", "coverage"}
+
+    matches = []
+    try:
+        path_obj = pathlib.Path(search_dir)
+        glob_pat = clean_pattern.lstrip('/\\')
+        
+        for p in path_obj.glob(glob_pat):
+            parts = set(p.parts)
+            if parts.intersection(ignored):
+                continue
+            if p.is_file():
+                rel_path = os.path.relpath(str(p), search_dir)
+                matches.append(rel_path.replace('\\', '/'))
+                if len(matches) >= max_results:
+                    break
+
+        if not matches:
+            return f"No files matching pattern '{clean_pattern}' found in {search_dir}."
+
+        result_str = "\n".join(f"- {m}" for m in matches)
+        count_suffix = f" (showing first {max_results})" if len(matches) >= max_results else ""
+        return f"=== Glob Search Results for '{clean_pattern}' in {search_dir} ({len(matches)} files found{count_suffix}) ===\n{result_str}"
+    except Exception as e:
+        return f"Glob Search Error: {str(e)}"
+
 _TERMINAL_STREAM_LISTENERS = []
 
 def register_terminal_stream_listener(listener):
@@ -704,8 +781,8 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
 
         _ACTIVE_PROCESSES.discard(proc)
 
-        stdout_str = "\n".join(filter(None, stdout_chunks))
-        stderr_str = "\n".join(filter(None, stderr_chunks))
+        stdout_str = smart_truncate_output(stdout_chunks)
+        stderr_str = smart_truncate_output(stderr_chunks)
         
         output = []
         if stdout_str:
