@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  Cpu, Terminal, Sparkles, MessageSquare, Monitor, X, Maximize2, Minimize2, 
+import {
+  Cpu, Terminal, Sparkles, MessageSquare, Monitor, X, Maximize2, Minimize2,
   Send, RefreshCw, Zap, HardDrive, Database, Eye, EyeOff, Wrench, Search,
   Code, Activity, Brain, Volume2, Mic, MicOff, ChevronDown, ChevronRight,
   Folder, Calendar, Plus, Trash2, History, PanelLeftClose, PanelLeftOpen,
   Settings, Globe, Sliders, Check, ShieldAlert, Tag, FolderPlus, FolderOpen, Layers,
-  FileText, ExternalLink
+  FileText, ExternalLink, Square
 } from 'lucide-react';
 import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought } from './ChatOverlay';
 import { SearchableModelSelect } from './ControlDashboard';
@@ -130,12 +130,12 @@ export const AgenticWorkspaceWindow = ({
   const wsRef = useRef(null);
   useEffect(() => {
     if (onSendMessage) return; // Main app prop provided, use parent socket
-    
+
     let ws;
     try {
       ws = new WebSocket(WS_BASE);
       wsRef.current = ws;
-      
+
       ws.onopen = () => console.log('[ChatWindow] WebSocket connected directly.');
       ws.onmessage = (event) => {
         try {
@@ -182,7 +182,7 @@ export const AgenticWorkspaceWindow = ({
           } else if (data.type === 'tool_result') {
             const resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result || '');
             const snippet = resultStr.length > 800 ? resultStr.slice(0, 800) + '\n... [truncated]' : resultStr;
-            
+
             setViewMessages(prev => {
               if (!prev || prev.length === 0) return prev;
               const newMsgs = [...prev];
@@ -223,7 +223,7 @@ export const AgenticWorkspaceWindow = ({
           } else if (data.type === 'stream_done') {
             fetchSessionTree();
           }
-        } catch (_) {}
+        } catch (_) { }
       };
     } catch (e) {
       console.warn('[ChatWindow] WebSocket init error:', e);
@@ -513,6 +513,13 @@ export const AgenticWorkspaceWindow = ({
     handleInputChange('');
   };
 
+  const handleInterruptProcess = () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'interrupt' }));
+      console.log('[ChatWindow] Sent interrupt signal to backend.');
+    }
+  };
+
   // Standalone Preferences Modal & Active Tab State
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
   const [prefTab, setPrefTab] = useState('coder'); // 'coder' | 'appearance' | 'engine' | 'prompts' | 'audio'
@@ -580,7 +587,7 @@ export const AgenticWorkspaceWindow = ({
     const basicTools = ['web_search', 'read_file_content', 'search_files', 'list_directory', 'launch_app', 'open_or_play_file', 'set_system_volume', 'manage_time', 'get_system_stats', 'update_user_fact', 'take_screenshot', 'run_terminal_command', 'run_python_script'];
     const jarvisTools = [...basicTools, 'jarvis_query_file_db', 'read_and_review_file', 'list_directory_tree', 'git_status_and_history', 'system_diagnostics_and_processes', 'scrape_web_page', 'jarvis_remember_user_fact'];
     const codingTools = ['run_terminal_command', 'run_python_script', 'read_and_review_file', 'read_file_content', 'jarvis_create_or_edit_file', 'list_directory_tree', 'list_directory', 'git_status_and_history', 'search_files', 'jarvis_query_file_db', 'web_search', 'scrape_web_page', 'system_diagnostics_and_processes'];
-    
+
     const activeToolList = isCodingMode ? codingTools : (chatWindowToolMode === 'advanced' ? jarvisTools : basicTools);
 
     // 3. Conversational Message Context
@@ -720,7 +727,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
           // Smart Auto-Collapse: expand ONLY active session's Year, Month, and Date
           const activeId = data.active_session_id;
           const initialExpanded = new Set();
-          
+
           data.data.years.forEach((yrObj) => {
             yrObj.months.forEach((mnObj) => {
               mnObj.dates.forEach((dtObj) => {
@@ -1270,7 +1277,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
             }}
           />
         )}
-        
+
         {/* ── MIDDLE PANE: Agentic Timeline & Chat ────────────────────── */}
         <section style={{
           flex: 1,
@@ -1655,17 +1662,47 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                 🛠️ Tool Run: <strong>{tb.toolName}</strong>
                               </span>
                             </div>
-                            <span style={{
-                              fontSize: '0.68rem',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              background: statusBadgeBg,
-                              color: statusBadgeColor,
-                              border: `1px solid ${statusBadgeBorder}`,
-                              flexShrink: 0
-                            }}>
-                              {statusLabel}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                              {isRunning && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleInterruptProcess();
+                                  }}
+                                  title="Force terminate running process and stop turn"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: 'rgba(239, 68, 68, 0.2)',
+                                    border: '1px solid rgba(239, 68, 68, 0.5)',
+                                    borderRadius: '4px',
+                                    padding: '2px 8px',
+                                    color: '#f87171',
+                                    fontSize: '0.66rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                >
+                                  <Square style={{ width: '9px', height: '9px', fill: '#f87171' }} />
+                                  <span>Terminate Process</span>
+                                </button>
+                              )}
+                              <span style={{
+                                fontSize: '0.68rem',
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                background: statusBadgeBg,
+                                color: statusBadgeColor,
+                                border: `1px solid ${statusBadgeBorder}`,
+                                flexShrink: 0
+                              }}>
+                                {statusLabel}
+                              </span>
+                            </div>
                           </summary>
                           <div style={{ padding: '10px 12px', fontSize: '0.74rem', background: '#090d16', color: '#cbd5e1', fontFamily: 'monospace', maxWidth: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
                             {/* Terminal Prompt Line Header for Terminal/Python runs */}
@@ -2216,7 +2253,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       <img src={fileInspectorData.data_url} alt={fileInspectorData.name} style={{ maxWidth: '100%', maxHeight: '380px', objectFit: 'contain', borderRadius: '4px' }} />
                     </div>
                   ) : fileInspectorData.ext === '.md' ? (
-                    <div style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '8px', padding: '12px', fontSize: '0.78rem', color: '#cbd5e1', overflowY: 'auto', maxHeight: '450px' }}>
+                    <div style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '8px', padding: '12px', fontSize: '0.78rem', color: '#cbd5e1', overflowY: 'auto' }}>
                       <RenderMessageContent content={fileInspectorData.content} disableFileLinks={true} />
                     </div>
                   ) : (
@@ -3012,7 +3049,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   {/* 2. Custom / Cloud API Vault & Presets Section */}
                   {(activeSettings.llm_coder_backend === 'custom' || activeSettings.llm_coder_backend === 'openai') && (
                     <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                      
+
                       {/* Saved Key Vault Dropdown + Trash Delete Button */}
                       {savedCustomEndpoints.length > 0 && (
                         <div style={{ marginBottom: '10px' }}>
@@ -3165,9 +3202,9 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   <div style={{ marginTop: '10px' }}>
                     <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
                       {activeSettings.llm_coder_backend === 'lmstudio' ? 'LM Studio Coder URL' :
-                       activeSettings.llm_coder_backend === 'ollama' ? 'Ollama Coder URL' :
-                       activeSettings.llm_coder_backend === 'vllm' ? 'vLLM Coder URL' :
-                       'Coder Base URL'}
+                        activeSettings.llm_coder_backend === 'ollama' ? 'Ollama Coder URL' :
+                          activeSettings.llm_coder_backend === 'vllm' ? 'vLLM Coder URL' :
+                            'Coder Base URL'}
                     </label>
                     <input
                       type="text"
@@ -3175,9 +3212,9 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       onChange={(e) => handleUpdateSetting({ llm_coder_base_url: e.target.value })}
                       placeholder={
                         activeSettings.llm_coder_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
-                        activeSettings.llm_coder_backend === 'ollama' ? 'http://127.0.0.1:11434' :
-                        activeSettings.llm_coder_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
-                        'https://api.groq.com/openai/v1'
+                          activeSettings.llm_coder_backend === 'ollama' ? 'http://127.0.0.1:11434' :
+                            activeSettings.llm_coder_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
+                              'https://api.groq.com/openai/v1'
                       }
                       style={{
                         width: '100%',
