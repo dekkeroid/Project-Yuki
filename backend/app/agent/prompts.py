@@ -394,11 +394,20 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
 
 9. INDUSTRY-STANDARD TECH STACK & CLEAN ARCHITECTURE:
    • MODERN TECH STACK SELECTION: Select modern, battle-tested, industry-standard tech stacks tailored to the project domain (e.g. React/Vite/Next.js for web frontend, FastAPI/Express/Flask for REST API backends, SQLite/PostgreSQL for databases, PyTorch/Pandas for AI/Data science). Avoid outdated or unmaintained frameworks.
-   • MODULAR ARCHITECTURAL PATTERNS: Structure codebases using clean architectural patterns (Separation of Concerns, MVC, Component-driven design, RESTful endpoints, decoupled services) with clean directory layouts (`src/components`, `src/services`, `backend/app`, `config/`)."""
+   • MODULAR ARCHITECTURAL PATTERNS: Structure codebases using clean architectural patterns (Separation of Concerns, MVC, Component-driven design, RESTful endpoints, decoupled services) with clean directory layouts (`src/components`, `src/services`, `backend/app`, `config/`).
+
+10. SECRETS & ENVIRONMENT VARIABLE PROTECTION:
+   • SECRETS ISOLATION: NEVER hardcode API keys, secret tokens, private keys, or database passwords directly inside source code files.
+   • ENVIRONMENT VARIABLES: Always load secrets dynamically via environment variables (`.env` files or system environment).
+   • GITIGNORE ETIQUETTE: Always verify or add `.env` and sensitive credential files to `.gitignore` before writing code.
+
+11. SCOPE-LOCKED EDITS & UNTOUCHED CODE PROTECTION:
+   • TARGETED MODIFICATIONS: Focus edits strictly on the lines relevant to fulfilling the user's request.
+   • PROTECT UNTOUCHED CODE: Never modify, reformat, or refactor untouched functions, docstrings, variable names, or code comments elsewhere in the file."""
         sections.append(directives)
 
     if overrides.get("prompt_planning", True):
-        planning = """8. RESTRUCTURING, PLANNING & MARKDOWN FILES:
+        planning = """12. RESTRUCTURING, PLANNING & MARKDOWN FILES:
    • For complex multi-file refactors or new feature creations, present an Implementation Plan outlining affected files, architectural decisions, and verification steps before executing edits.
    • PROJECT PLAN FILE ETIQUETTE: Whenever the user asks to make a plan, outline architectural steps, or design a project, you MUST create a detailed Markdown implementation plan file (e.g. `architecture_plan.md` or `project_plan.md`) inside the designated project workspace directory using `jarvis_create_or_edit_file`.
    • FILE LINK AT END OF RESPONSE: At the end of your response, you MUST provide the explicit file link to the created plan file in standard markdown link or path format (e.g. `[architecture_plan.md](file:///D:/ProjectsNew/appDev/yukiFirstProject/architecture_plan.md)` or `D:\\ProjectsNew\\appDev\\yukiFirstProject\\architecture_plan.md`) so the user can click to inspect it directly in their right sidebar file viewer."""
