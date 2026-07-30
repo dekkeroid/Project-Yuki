@@ -1851,7 +1851,13 @@ class AgentExecutor:
                     if len(output_snippet) > 800:
                         output_snippet = output_snippet[:800] + "\n... [truncated]"
 
-                    tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**\n```tool_output\n{output_snippet}\n```"
+                    try:
+                        args_json = json.dumps(tool_args, indent=2, ensure_ascii=False) if tool_args else ""
+                    except Exception:
+                        args_json = str(tool_args)
+                    args_block = f"\n```tool_args\n{args_json}\n```" if args_json else ""
+
+                    tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**{args_block}\n```tool_output\n{output_snippet}\n```"
 
                     if accumulated_response.strip() and accumulated_response.strip() != "Running tool...":
                         accumulated_response_total.append(accumulated_response.strip())

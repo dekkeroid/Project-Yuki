@@ -1604,15 +1604,24 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 
                     {/* Dedicated Collapsible Tool Accordion Cards (Modern Cursor/Windsurf Style) */}
                     {toolBadges && toolBadges.map((tb, bIdx) => {
-                      const isSuccess = tb.status.includes('Done') || tb.status.includes('Success');
+                      const isRunning = tb.status.includes('Running') || tb.status.includes('Processing');
+                      const isSuccess = tb.status.includes('Done') || tb.status.includes('Success') || tb.status.includes('Completed');
+                      const isFailed = !isRunning && !isSuccess;
+
+                      const statusBadgeBg = isRunning ? 'rgba(56, 189, 248, 0.15)' : isSuccess ? 'rgba(74, 222, 128, 0.15)' : 'rgba(248, 113, 113, 0.15)';
+                      const statusBadgeColor = isRunning ? '#38bdf8' : isSuccess ? '#4ade80' : '#f87171';
+                      const statusBadgeBorder = isRunning ? 'rgba(56, 189, 248, 0.4)' : isSuccess ? 'rgba(74, 222, 128, 0.3)' : 'rgba(248, 113, 113, 0.3)';
+                      const statusLabel = isRunning ? '⏳ Processing...' : isSuccess ? '✓ Completed' : '❌ Failed';
+
                       return (
                         <details
                           key={bIdx}
+                          open={isRunning}
                           style={{
                             width: '100%',
                             marginBottom: '6px',
                             background: 'rgba(15, 23, 42, 0.85)',
-                            border: `1px solid ${isSuccess ? 'rgba(56, 189, 248, 0.3)' : 'rgba(248, 113, 113, 0.4)'}`,
+                            border: `1px solid ${statusBadgeBorder}`,
                             borderRadius: '8px',
                             overflow: 'hidden',
                             boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
@@ -1638,11 +1647,11 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                               fontSize: '0.68rem',
                               padding: '2px 8px',
                               borderRadius: '4px',
-                              background: isSuccess ? 'rgba(74, 222, 128, 0.15)' : 'rgba(248, 113, 113, 0.15)',
-                              color: isSuccess ? '#4ade80' : '#f87171',
-                              border: `1px solid ${isSuccess ? 'rgba(74, 222, 128, 0.3)' : 'rgba(248, 113, 113, 0.3)'}`
+                              background: statusBadgeBg,
+                              color: statusBadgeColor,
+                              border: `1px solid ${statusBadgeBorder}`
                             }}>
-                              {isSuccess ? '✓ Completed' : '❌ Failed'}
+                              {statusLabel}
                             </span>
                           </summary>
                           <div style={{ padding: '10px 12px', fontSize: '0.74rem', background: '#090d16', color: '#cbd5e1', fontFamily: 'monospace' }}>
@@ -1651,10 +1660,31 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                 <strong style={{ color: '#a78bfa' }}>Target / Command:</strong> {tb.target}
                               </div>
                             )}
+
+                            {tb.args && (
+                              <div style={{ marginTop: '6px', marginBottom: '8px' }}>
+                                <div style={{ color: '#38bdf8', fontSize: '0.68rem', fontWeight: 700, marginBottom: '4px' }}>
+                                  📥 INPUT / ARGUMENTS:
+                                </div>
+                                <div style={{
+                                  background: '#020617',
+                                  padding: '8px 10px',
+                                  borderRadius: '6px',
+                                  border: '1px solid rgba(56, 189, 248, 0.2)',
+                                  maxHeight: '160px',
+                                  overflowY: 'auto',
+                                  fontSize: '0.72rem',
+                                  color: '#cbd5e1'
+                                }}>
+                                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{tb.args}</pre>
+                                </div>
+                              </div>
+                            )}
+
                             {tb.output && (
                               <div style={{ marginTop: '6px', marginBottom: '6px' }}>
                                 <div style={{ color: '#64748b', fontSize: '0.68rem', fontWeight: 600, marginBottom: '4px' }}>
-                                  RESULT / OUTPUT:
+                                  📤 RESULT / OUTPUT:
                                 </div>
                                 <div style={{
                                   background: '#020617',
@@ -1664,7 +1694,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                   maxHeight: '180px',
                                   overflowY: 'auto',
                                   fontSize: '0.72rem',
-                                  color: '#4ade80'
+                                  color: isFailed ? '#f87171' : '#4ade80'
                                 }}>
                                   <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{tb.output}</pre>
                                 </div>
