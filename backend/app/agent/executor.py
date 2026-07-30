@@ -665,10 +665,11 @@ class AgentExecutor:
                     "content": f"[Previous Tool Result ({tool_name})]: {content}"
                 })
             elif role == "assistant":
-                # Ensure assistant messages have valid non-empty content if tool_calls is missing
-                if not content and not m.get("tool_calls"):
-                    content = "Task step executed."
-                msg_obj = {"role": "assistant", "content": content}
+                # Strip visual UI tool badges from LLM prompt context to prevent prompt pollution
+                clean_content = re.sub(r'🛠️\s*\*\*\s*\[.*?\]\s*\*\*(?:\n```tool_args[\s\S]*?```)?(?:\n```tool_output[\s\S]*?```)?', '', content).strip()
+                if not clean_content and not m.get("tool_calls"):
+                    clean_content = "Task step executed."
+                msg_obj = {"role": "assistant", "content": clean_content}
                 if m.get("tool_calls"):
                     msg_obj["tool_calls"] = m["tool_calls"]
                 sanitized_history.append(msg_obj)
@@ -1931,6 +1932,7 @@ class AgentExecutor:
 
                     if accumulated_response.strip() and accumulated_response.strip() != "Running tool...":
                         accumulated_response_total.append(accumulated_response.strip())
+                    accumulated_response_total.append(tool_badge)
                     
                     current_messages.append({
                         "role": "assistant",
