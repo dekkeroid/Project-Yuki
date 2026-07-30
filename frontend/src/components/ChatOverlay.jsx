@@ -40,33 +40,111 @@ export const parseMessageThought = (rawContent) => {
   return { thoughts, toolBadges, cleanContent };
 };
 
-const formatMessageText = (text) => {
-  if (!text) return '';
-  if (typeof text !== 'string') return text;
+const handleOpenFileInSidebar = (filePath) => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('yuki:open-file', { detail: { path: filePath } }));
+  }
+};
+
+export const formatMessageText = (text) => {
+  if (!text || typeof text !== 'string') return text || '';
   
-  // Match delimiters: **, __, *, _, `
-  const regex = /(\*\*|__|\*|_|`)([\s\S]*?)\1/g;
-  
+  // Regex matches:
+  // 1. Markdown Links: [label](file:///path) or [label](D:\path)
+  // 2. Windows Absolute Paths: D:\path\to\file.ext
+  // 3. file:/// URIs
+  const fileRegex = /\[([^\]]+)\]\((file:\/\/\/?[^\)]+|[A-Za-z]:\\[^\)]+|[A-Za-z]:\/[^\)]+)\)|\b([A-Za-z]:\\[^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java))\b|\b(file:\/\/\/[^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java))\b|`([^`]+)`|\*\*([^*]+)\*\*/gi;
+
   const parts = [];
   let lastIndex = 0;
   let match;
-  
-  while ((match = regex.exec(text)) !== null) {
+
+  while ((match = fileRegex.exec(text)) !== null) {
     const matchIndex = match.index;
-    const delimiter = match[1];
-    const innerText = match[2];
-    
-    // Add text preceding the match
     if (matchIndex > lastIndex) {
       parts.push(text.substring(lastIndex, matchIndex));
     }
-    
-    // Format based on delimiter
-    if (delimiter === '`') {
+
+    if (match[1] && match[2]) {
+      // Markdown file link: [label](path)
+      const label = match[1];
+      const rawPath = match[2].replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
+      const ext = label.split('.').pop().toLowerCase();
+      let icon = "📄";
+      if (["js", "ts", "jsx", "tsx", "py", "html", "css", "json"].includes(ext)) icon = "⚡";
+      if (["png", "jpg", "jpeg", "svg", "webp", "gif"].includes(ext)) icon = "🖼️";
+      if (ext === "md") icon = "📋";
+
       parts.push(
-        <code 
-          key={matchIndex} 
-          style={{ 
+        <button
+          key={matchIndex}
+          type="button"
+          onClick={() => handleOpenFileInSidebar(rawPath)}
+          title={`Click to open ${rawPath} in Right Sidebar File Inspector`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '2px 8px',
+            borderRadius: '6px',
+            background: 'rgba(56, 189, 248, 0.15)',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+            color: '#38bdf8',
+            fontSize: '0.76rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            margin: '0 3px',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+          }}
+        >
+          <span>{icon}</span>
+          <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{label}</span>
+          <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
+        </button>
+      );
+    } else if (match[3] || match[4]) {
+      // Raw Windows or file:/// path string
+      const rawPath = (match[3] || match[4]).replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
+      const fileName = rawPath.split('\\').pop() || rawPath;
+      const ext = fileName.split('.').pop().toLowerCase();
+      let icon = "📄";
+      if (["js", "ts", "jsx", "tsx", "py", "html", "css", "json"].includes(ext)) icon = "⚡";
+      if (["png", "jpg", "jpeg", "svg", "webp", "gif"].includes(ext)) icon = "🖼️";
+      if (ext === "md") icon = "📋";
+
+      parts.push(
+        <button
+          key={matchIndex}
+          type="button"
+          onClick={() => handleOpenFileInSidebar(rawPath)}
+          title={`Click to open ${rawPath} in Right Sidebar File Inspector`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '2px 8px',
+            borderRadius: '6px',
+            background: 'rgba(167, 139, 250, 0.15)',
+            border: '1px solid rgba(167, 139, 250, 0.35)',
+            color: '#c4b5fd',
+            fontSize: '0.76rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            margin: '0 3px',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+          }}
+        >
+          <span>{icon}</span>
+          <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{fileName}</span>
+          <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
+        </button>
+      );
+    } else if (match[5]) {
+      // Code block `code`
+      parts.push(
+        <code
+          key={matchIndex}
+          style={{
             fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
             fontSize: '0.85em',
             background: 'rgba(255, 255, 255, 0.12)',
@@ -77,31 +155,32 @@ const formatMessageText = (text) => {
             margin: '0 2px'
           }}
         >
-          {innerText}
+          {match[5]}
         </code>
       );
-    } else {
+    } else if (match[6]) {
+      // Bold **bold**
       parts.push(
-        <strong 
-          key={matchIndex} 
-          style={{ 
-            fontWeight: '800', 
+        <strong
+          key={matchIndex}
+          style={{
+            fontWeight: '800',
             color: '#ffffff',
             textShadow: '0 0 8px rgba(255, 255, 255, 0.2)'
           }}
         >
-          {innerText}
+          {match[6]}
         </strong>
       );
     }
-    
-    lastIndex = regex.lastIndex;
+
+    lastIndex = fileRegex.lastIndex;
   }
-  
+
   if (lastIndex < text.length) {
     parts.push(text.substring(lastIndex));
   }
-  
+
   return parts.length > 0 ? parts : text;
 };
 
@@ -248,9 +327,13 @@ export const AgenticToolTimelineItem = ({ content }) => {
 export const RenderMessageContent = ({ content, isSystem }) => {
   const { thoughts, cleanContent } = parseMessageThought(content || "");
 
+  if (!cleanContent) return null;
+
+  const lines = cleanContent.split('\n');
+
   return (
     <div>
-      {thoughts.map((thought, idx) => (
+      {thoughts && thoughts.map((thought, idx) => (
         <details
           key={idx}
           style={{
@@ -274,12 +357,53 @@ export const RenderMessageContent = ({ content, isSystem }) => {
           </div>
         </details>
       ))}
-      {cleanContent && (
-        <p style={{ margin: 0, whiteSpace: 'pre-line' }}>
-          {isSystem && !cleanContent.startsWith("⚙️") && <span style={{ color: 'var(--accent-teal)', fontWeight: 'bold', marginRight: '6px' }}>[SYSTEM]</span>}
-          {formatMessageText(cleanContent)}
-        </p>
-      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+        {lines.map((line, lIdx) => {
+          const trimmed = line.trim();
+
+          // Markdown Headers (#, ##, ###)
+          if (trimmed.startsWith('### ')) {
+            return (
+              <h3 key={lIdx} style={{ color: '#38bdf8', margin: '8px 0 3px', fontSize: '0.86rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '3px', height: '11px', background: '#38bdf8', borderRadius: '2px' }}></span>
+                {formatMessageText(trimmed.replace(/^###\s+/, ''))}
+              </h3>
+            );
+          }
+          if (trimmed.startsWith('## ')) {
+            return (
+              <h2 key={lIdx} style={{ color: '#c4b5fd', borderBottom: '1px solid rgba(196, 181, 253, 0.2)', paddingBottom: '3px', margin: '10px 0 5px', fontSize: '0.94rem', fontWeight: 700 }}>
+                {formatMessageText(trimmed.replace(/^##\s+/, ''))}
+              </h2>
+            );
+          }
+          if (trimmed.startsWith('# ')) {
+            return (
+              <h1 key={lIdx} style={{ color: '#38bdf8', borderBottom: '1px solid rgba(56, 189, 248, 0.25)', paddingBottom: '4px', margin: '12px 0 6px', fontSize: '1.05rem', fontWeight: 800 }}>
+                {formatMessageText(trimmed.replace(/^#\s+/, ''))}
+              </h1>
+            );
+          }
+
+          // Bullet lists
+          if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+            return (
+              <div key={lIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', paddingLeft: '4px', fontSize: '0.80rem' }}>
+                <span style={{ color: '#a78bfa', fontWeight: 700 }}>•</span>
+                <div>{formatMessageText(trimmed.replace(/^[•\-\*]\s+/, ''))}</div>
+              </div>
+            );
+          }
+
+          return (
+            <div key={lIdx} style={{ margin: '1px 0', lineHeight: '1.45' }}>
+              {isSystem && lIdx === 0 && !cleanContent.startsWith("⚙️") && <span style={{ color: 'var(--accent-teal)', fontWeight: 'bold', marginRight: '6px' }}>[SYSTEM]</span>}
+              {formatMessageText(line)}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };

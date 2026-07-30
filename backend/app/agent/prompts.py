@@ -385,8 +385,10 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
         sections.append(directives)
 
     if overrides.get("prompt_planning", True):
-        planning = """8. RESTRUCTURING & PLANNING:
-   • For complex multi-file refactors or new feature creations, present an Implementation Plan outlining affected files, architectural decisions, and verification steps before executing edits."""
+        planning = """8. RESTRUCTURING, PLANNING & MARKDOWN FILES:
+   • For complex multi-file refactors or new feature creations, present an Implementation Plan outlining affected files, architectural decisions, and verification steps before executing edits.
+   • PROJECT PLAN FILE ETIQUETTE: Whenever the user asks to make a plan, outline architectural steps, or design a project, you MUST create a detailed Markdown implementation plan file (e.g. `architecture_plan.md` or `project_plan.md`) inside the designated project workspace directory using `jarvis_create_or_edit_file`.
+   • FILE LINK AT END OF RESPONSE: At the end of your response, you MUST provide the explicit file link to the created plan file in standard markdown link or path format (e.g. `[architecture_plan.md](file:///D:/ProjectsNew/appDev/yukiFirstProject/architecture_plan.md)` or `D:\\ProjectsNew\\appDev\\yukiFirstProject\\architecture_plan.md`) so the user can click to inspect it directly in their right sidebar file viewer."""
         sections.append(planning)
 
     base_prompt = "\n\n".join(sections)

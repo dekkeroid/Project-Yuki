@@ -4,7 +4,8 @@ import {
   Send, RefreshCw, Zap, HardDrive, Database, Eye, EyeOff, Wrench, Search,
   Code, Activity, Brain, Volume2, Mic, MicOff, ChevronDown, ChevronRight,
   Folder, Calendar, Plus, Trash2, History, PanelLeftClose, PanelLeftOpen,
-  Settings, Globe, Sliders, Check, ShieldAlert, Tag, FolderPlus, FolderOpen, Layers
+  Settings, Globe, Sliders, Check, ShieldAlert, Tag, FolderPlus, FolderOpen, Layers,
+  FileText, ExternalLink
 } from 'lucide-react';
 import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought } from './ChatOverlay';
 import { SearchableModelSelect } from './ControlDashboard';
@@ -263,10 +264,35 @@ export const AgenticWorkspaceWindow = ({
   const [dirKeyInput, setDirKeyInput] = useState('');
   const [dirValInput, setDirValInput] = useState('');
 
-  // Internal Settings Sync (for standalone Chat Window mode)
-  const [internalSettings, setInternalSettings] = useState({});
-  const [savedCustomEndpoints, setSavedCustomEndpoints] = useState([]);
-  const [selectedCoderEndpointId, setSelectedCoderEndpointId] = useState('');
+  // File Viewer (Readonly Inspector) State
+  const [fileInspectorData, setFileInspectorData] = useState(null);
+  const [loadingFileInspector, setLoadingFileInspector] = useState(false);
+
+  useEffect(() => {
+    const handleOpenFileEvent = async (e) => {
+      if (e && e.detail && e.detail.path) {
+        const targetPath = e.detail.path;
+        setActiveTab('file_viewer');
+        setLoadingFileInspector(true);
+        try {
+          const res = await fetch(`${API_BASE}/api/system/file_content?path=${encodeURIComponent(targetPath)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setFileInspectorData(data);
+          } else {
+            setFileInspectorData({ path: targetPath, name: targetPath.split('\\').pop() || targetPath, content: `Failed to load file content: HTTP ${res.status}` });
+          }
+        } catch (err) {
+          setFileInspectorData({ path: targetPath, name: targetPath.split('\\').pop() || targetPath, content: `Error opening file: ${err}` });
+        } finally {
+          setLoadingFileInspector(false);
+        }
+      }
+    };
+
+    window.addEventListener('yuki:open-file', handleOpenFileEvent);
+    return () => window.removeEventListener('yuki:open-file', handleOpenFileEvent);
+  }, []);
   const [coderCustomLabel, setCoderCustomLabel] = useState('');
   const [saveCoderEndpointBtnText, setSaveCoderEndpointBtnText] = useState('Save Preset');
 
@@ -2022,6 +2048,28 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
             </button>
             <button
               type="button"
+              onClick={() => setActiveTab('file_viewer')}
+              style={{
+                flex: 1,
+                padding: '7px 8px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                border: 'none',
+                borderRadius: '6px',
+                background: activeTab === 'file_viewer' ? 'rgba(56, 189, 248, 0.25)' : 'transparent',
+                color: activeTab === 'file_viewer' ? '#38bdf8' : '#94a3b8',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <FileText style={{ width: '13px', height: '13px' }} /> File Viewer
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveTab('brain')}
               style={{
                 flex: 1,
@@ -2043,6 +2091,62 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
               <Cpu style={{ width: '13px', height: '13px' }} /> AI Brain
             </button>
           </div>
+
+          {/* Tab: Universal File Viewer (Readonly Mode) */}
+          {activeTab === 'file_viewer' && (
+            <div style={{ flex: 1, padding: '14px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(167, 139, 250, 0.2)', paddingBottom: '8px' }}>
+                <div style={{ fontWeight: '700', fontSize: '0.78rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FileText style={{ width: '14px', height: '14px', color: '#38bdf8' }} />
+                  <span>{fileInspectorData ? fileInspectorData.name : 'File Viewer'}</span>
+                  <span style={{ fontSize: '0.64rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(167, 139, 250, 0.2)', color: '#c4b5fd', border: '1px solid rgba(167, 139, 250, 0.3)' }}>Readonly</span>
+                </div>
+                {fileInspectorData && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(fileInspectorData.path);
+                    }}
+                    title="Copy File Path"
+                    style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(0,0,0,0.3)', color: '#94a3b8', fontSize: '0.66rem', cursor: 'pointer' }}
+                  >
+                    Copy Path
+                  </button>
+                )}
+              </div>
+
+              {loadingFileInspector ? (
+                <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '0.76rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <RefreshCw style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} />
+                  <span>Loading file content...</span>
+                </div>
+              ) : fileInspectorData ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '0.66rem', color: '#64748b', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    {fileInspectorData.path}
+                  </div>
+
+                  {fileInspectorData.is_image ? (
+                    <div style={{ padding: '12px', background: 'rgba(15, 23, 42, 0.9)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
+                      <img src={fileInspectorData.data_url} alt={fileInspectorData.name} style={{ maxWidth: '100%', maxHeight: '380px', objectFit: 'contain', borderRadius: '4px' }} />
+                    </div>
+                  ) : fileInspectorData.ext === '.md' ? (
+                    <div style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '8px', padding: '12px', fontSize: '0.78rem', color: '#f8fafc', overflowY: 'auto', maxHeight: '450px' }}>
+                      <RenderMessageContent content={fileInspectorData.content} />
+                    </div>
+                  ) : (
+                    <div style={{ background: '#020617', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px', fontSize: '0.74rem', fontFamily: 'Consolas, Monaco, monospace', color: '#38bdf8', overflowY: 'auto', maxHeight: '450px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                      {fileInspectorData.content}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '30px 16px', color: '#64748b', fontSize: '0.76rem', fontStyle: 'italic' }}>
+                  No file opened yet. Click on any file link or markdown document in the chat to open it in Readonly Mode here.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Tab 1: Live Output & Code Inspector */}
           {activeTab === 'inspector' && (

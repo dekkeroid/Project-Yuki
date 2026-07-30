@@ -734,6 +734,52 @@ def get_alarm_tone_file(filename: str):
     return FileResponse(target)
 
 
+@app.get("/api/system/file_content")
+def get_file_content(path: str):
+    """
+    Returns file contents for UI File Inspector (supports text/code, markdown, and base64 images).
+    """
+    import base64
+    from pathlib import Path
+    import urllib.parse
+    
+    if not path:
+        return Response(status_code=400, content="Missing path parameter")
+        
+    clean_path = urllib.parse.unquote(path.strip().replace("file:///", "").replace("file://", ""))
+    p = Path(clean_path)
+    if not p.exists() or not p.is_file():
+        return Response(status_code=404, content=f"File not found: {clean_path}")
+        
+    ext = p.suffix.lower()
+    image_exts = {".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", ".ico", ".bmp"}
+    
+    try:
+        if ext in image_exts:
+            content_bytes = p.read_bytes()
+            b64 = base64.b64encode(content_bytes).decode("utf-8")
+            mime = f"image/{ext.replace('.', '')}" if ext != ".svg" else "image/svg+xml"
+            data_url = f"data:{mime};base64,{b64}"
+            return {
+                "path": str(p),
+                "name": p.name,
+                "ext": ext,
+                "is_image": True,
+                "data_url": data_url
+            }
+        else:
+            text_content = p.read_text(encoding="utf-8", errors="replace")
+            return {
+                "path": str(p),
+                "name": p.name,
+                "ext": ext,
+                "is_image": False,
+                "content": text_content
+            }
+    except Exception as e:
+        return Response(status_code=500, content=f"Failed to read file: {e}")
+
+
 
 @app.delete("/api/models/vrm/{name}")
 def delete_vrm_model(name: str):
