@@ -1479,7 +1479,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   );
                 }
 
-                const { thoughts, cleanContent } = parseMessageThought(msg.content);
+                const { thoughts, toolBadges, cleanContent } = parseMessageThought(msg.content);
 
                 return (
                   <div
@@ -1527,6 +1527,63 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                         </div>
                       </details>
                     ))}
+
+                    {/* Dedicated Collapsible Tool Accordion Cards (Modern Cursor/Windsurf Style) */}
+                    {toolBadges && toolBadges.map((tb, bIdx) => {
+                      const isSuccess = tb.status.includes('Done') || tb.status.includes('Success');
+                      return (
+                        <details
+                          key={bIdx}
+                          style={{
+                            width: '100%',
+                            marginBottom: '6px',
+                            background: 'rgba(15, 23, 42, 0.85)',
+                            border: `1px solid ${isSuccess ? 'rgba(56, 189, 248, 0.3)' : 'rgba(248, 113, 113, 0.4)'}`,
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                          }}
+                        >
+                          <summary style={{
+                            cursor: 'pointer',
+                            padding: '7px 12px',
+                            background: 'rgba(30, 41, 59, 0.8)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            fontSize: '0.76rem',
+                            fontWeight: 600,
+                            color: '#38bdf8',
+                            userSelect: 'none'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Terminal style={{ width: '13px', height: '13px', color: '#38bdf8' }} />
+                              <span>🛠️ Tool Run: <strong>{tb.toolName}</strong></span>
+                            </div>
+                            <span style={{
+                              fontSize: '0.68rem',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              background: isSuccess ? 'rgba(74, 222, 128, 0.15)' : 'rgba(248, 113, 113, 0.15)',
+                              color: isSuccess ? '#4ade80' : '#f87171',
+                              border: `1px solid ${isSuccess ? 'rgba(74, 222, 128, 0.3)' : 'rgba(248, 113, 113, 0.3)'}`
+                            }}>
+                              {isSuccess ? '✓ Completed' : '❌ Failed'}
+                            </span>
+                          </summary>
+                          <div style={{ padding: '10px 12px', fontSize: '0.74rem', background: '#090d16', color: '#cbd5e1', fontFamily: 'monospace' }}>
+                            {tb.target && (
+                              <div style={{ color: '#94a3b8', marginBottom: '4px', fontSize: '0.72rem' }}>
+                                <strong style={{ color: '#a78bfa' }}>Target / Command:</strong> {tb.target}
+                              </div>
+                            )}
+                            <div style={{ color: '#64748b', fontSize: '0.68rem', fontStyle: 'italic' }}>
+                              Executed via Yuki ReAct Engine in workspace directory.
+                            </div>
+                          </div>
+                        </details>
+                      );
+                    })}
 
                     {/* Message Bubble */}
                     <div style={{
