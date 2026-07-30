@@ -514,12 +514,12 @@ def kill_active_supervisor_processes() -> int:
     _ACTIVE_PROCESSES.clear()
     return killed_count
 
-def run_terminal_command(command: str, use_powershell: bool = True, max_timeout: int = 300, heartbeat_interval: int = 30, cwd: str = None) -> str:
+def run_terminal_command(command: str, use_powershell: bool = True, max_timeout: int = 300, heartbeat_interval: int = 30, cwd: str = None, stdin_input: str = None) -> str:
     """
-    Runs a shell command asynchronously with real-time output capture, non-interactive environment variables,
-    ExecutionPolicy Bypass, and dynamic AI status reporting without force-killing.
+    Runs a shell command asynchronously with real-time output capture, line-by-line streaming,
+    stdin input support, non-interactive environment variables, and ExecutionPolicy Bypass.
     """
-    import time, os
+    import time, os, threading, queue
     global _ACTIVE_PROCESSES
     
     # Industry Standard Non-Interactive Environment
@@ -528,6 +528,7 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
     env["DEBIAN_FRONTEND"] = "noninteractive"
     env["PYTHONUNBUFFERED"] = "1"
     env["PIP_NO_INPUT"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
 
     if use_powershell:
         cmd_list = ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command]
@@ -536,47 +537,80 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
 
     start_time = time.time()
     try:
-        env["PYTHONIOENCODING"] = "utf-8"
         proc = subprocess.Popen(
             cmd_list,
+            stdin=subprocess.PIPE if stdin_input else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             encoding="utf-8",
             errors="replace",
             shell=True,
             cwd=cwd,
-            env=env
+            env=env,
+            bufsize=1
         )
         _ACTIVE_PROCESSES.add(proc)
-        
+
+        if stdin_input and proc.stdin:
+            try:
+                proc.stdin.write(stdin_input if stdin_input.endswith('\n') else stdin_input + '\n')
+                proc.stdin.flush()
+            except Exception as e:
+                print(f"[ProcessSupervisor] Error writing to stdin: {e}")
+
+        output_queue = queue.Queue()
+
+        def stream_reader(stream, stream_type):
+            for line in iter(stream.readline, ''):
+                if line:
+                    output_queue.put((stream_type, line))
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+        t_out = threading.Thread(target=stream_reader, args=(proc.stdout, 'stdout'), daemon=True)
+        t_err = threading.Thread(target=stream_reader, args=(proc.stderr, 'stderr'), daemon=True)
+        t_out.start()
+        t_err.start()
+
         stdout_chunks = []
         stderr_chunks = []
-        
-        try:
-            while True:
-                try:
-                    stdout_data, stderr_data = proc.communicate(timeout=heartbeat_interval)
-                    if stdout_data:
-                        stdout_chunks.append(stdout_data.strip())
-                    if stderr_data:
-                        stderr_chunks.append(stderr_data.strip())
-                    break
-                except subprocess.TimeoutExpired as te:
-                    if te.stdout:
-                        stdout_chunks.append(te.stdout.decode('utf-8', errors='replace').strip() if isinstance(te.stdout, bytes) else te.stdout.strip())
-                    if te.stderr:
-                        stderr_chunks.append(te.stderr.decode('utf-8', errors='replace').strip() if isinstance(te.stderr, bytes) else te.stderr.strip())
-                    
-                    elapsed = int(time.time() - start_time)
-                    if elapsed >= max_timeout:
-                        # Do NOT force-kill. Return current status & output so AI can decide whether to wait or terminate!
-                        stdout_str = "\n".join(filter(None, stdout_chunks))
-                        stderr_str = "\n".join(filter(None, stderr_chunks))
-                        return f"[STATUS: RUNNING IN BACKGROUND] Command '{command}' (PID {proc.pid}) is still actively running ({elapsed}s elapsed, hit {max_timeout}s checkpoint).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: The process is still running. Decide whether to monitor, wait, or terminate PID {proc.pid} based on output progress.".strip()
-                    
-                    print(f"[ProcessSupervisor] Command '{command[:40]}...' active (PID {proc.pid}, {elapsed}s elapsed)...")
-        finally:
-            _ACTIVE_PROCESSES.discard(proc)
+
+        while True:
+            # Drain queue items immediately
+            try:
+                while True:
+                    stype, line = output_queue.get_nowait()
+                    line_clean = line.rstrip('\r\n')
+                    if stype == 'stdout':
+                        stdout_chunks.append(line_clean)
+                    else:
+                        stderr_chunks.append(line_clean)
+            except queue.Empty:
+                pass
+
+            if proc.poll() is not None:
+                t_out.join(timeout=1)
+                t_err.join(timeout=1)
+                while not output_queue.empty():
+                    stype, line = output_queue.get_nowait()
+                    line_clean = line.rstrip('\r\n')
+                    if stype == 'stdout':
+                        stdout_chunks.append(line_clean)
+                    else:
+                        stderr_chunks.append(line_clean)
+                break
+
+            elapsed = int(time.time() - start_time)
+            if elapsed >= max_timeout:
+                stdout_str = "\n".join(filter(None, stdout_chunks))
+                stderr_str = "\n".join(filter(None, stderr_chunks))
+                return f"[STATUS: RUNNING IN BACKGROUND] Command '{command}' (PID {proc.pid}) is still actively running ({elapsed}s elapsed, hit {max_timeout}s checkpoint).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: The process is still running. Decide whether to monitor, wait, or terminate PID {proc.pid} based on output progress.".strip()
+
+            time.sleep(0.15)
+
+        _ACTIVE_PROCESSES.discard(proc)
 
         stdout_str = "\n".join(filter(None, stdout_chunks))
         stderr_str = "\n".join(filter(None, stderr_chunks))

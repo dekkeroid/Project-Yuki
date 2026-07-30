@@ -391,9 +391,10 @@ def jarvis_window_control(action: str = "list", title_query: str = None) -> str:
     return f"Window action '{action}' executed for query '{title_query or ''}'."
 
 
-def jarvis_run_terminal(command: str, use_powershell: bool = True, cwd: str = None) -> str:
+def jarvis_run_terminal(command: str, use_powershell: bool = True, cwd: str = None, stdin_input: str = None) -> str:
     """
-    Runs a shell command in Cmd or PowerShell with optional working directory (cwd) support.
+    Runs a shell command via the system process supervisor with real-time output capture,
+    working directory (cwd) support, and non-interactive environment variables.
     """
     clean_command = str(command).strip()
     if not clean_command:
@@ -405,32 +406,10 @@ def jarvis_run_terminal(command: str, use_powershell: bool = True, cwd: str = No
         if os.path.exists(candidate_cwd) and os.path.isdir(candidate_cwd):
             clean_cwd = candidate_cwd
 
-    try:
-        shell_exe = "powershell.exe" if use_powershell else "cmd.exe"
-        shell_arg = "-Command" if use_powershell else "/c"
-        
-        result = subprocess.run(
-            [shell_exe, shell_arg, clean_command],
-            capture_output=True,
-            text=True,
-            shell=True,
-            cwd=clean_cwd,
-            timeout=45
-        )
-        stdout = (result.stdout or "").strip()
-        stderr = (result.stderr or "").strip()
-        
-        output = [f"=== Terminal Output (cwd: {clean_cwd or os.getcwd()}) ==="]
-        if stdout:
-            output.append(stdout)
-        if stderr:
-            output.append(f"[STDERR]\n{stderr}")
-            
-        if len(output) == 1:
-            return f"Command executed successfully (exit code: {result.returncode}), but returned no output."
-            
-        return "\n\n".join(output)
-    except subprocess.TimeoutExpired:
-        return f"Terminal Execution Timeout: Command '{clean_command}' exceeded 45-second execution limit."
-    except Exception as e:
-        return f"Terminal Execution Error: {str(e)}"
+    from app.tools.system import run_terminal_command
+    return run_terminal_command(
+        command=clean_command,
+        use_powershell=use_powershell,
+        cwd=clean_cwd,
+        stdin_input=stdin_input
+    )

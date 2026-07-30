@@ -278,7 +278,8 @@ class AgentExecutor:
             "jarvis_run_terminal": lambda **kwargs: run_terminal_command(
                 kwargs.get("command") or "",
                 use_powershell=bool(kwargs.get("use_powershell", True)),
-                cwd=kwargs.get("cwd") or kwargs.get("dir") or (overrides.get("session_directories", [{}])[0].get("value") if overrides.get("session_directories") and isinstance(overrides.get("session_directories"), list) and len(overrides.get("session_directories")) > 0 and isinstance(overrides.get("session_directories")[0], dict) else None)
+                cwd=kwargs.get("cwd") or kwargs.get("dir") or (overrides.get("session_directories", [{}])[0].get("value") if overrides.get("session_directories") and isinstance(overrides.get("session_directories"), list) and len(overrides.get("session_directories")) > 0 and isinstance(overrides.get("session_directories")[0], dict) else None),
+                stdin_input=kwargs.get("stdin_input")
             ),
             "jarvis_run_python": lambda **kwargs: run_python_script(
                 kwargs.get("code") or "",
