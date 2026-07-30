@@ -56,6 +56,8 @@ manual_datas = [
     (os.path.join(SITE, '_soundfile_data'), '_soundfile_data'),
     # av: FFmpeg DLLs for audio decoding (faster-whisper dependency)
     (os.path.join(SITE, 'av.libs'), 'av.libs'),
+    # Portable LSP standalone language servers (pyright, typescript-language-server)
+    (os.path.join(BACKEND_DIR, 'app', 'bin', 'lsp'), os.path.join('app', 'bin', 'lsp')),
     # pywin32: COM support DLLs (pycaw, comtypes)
     (os.path.join(SITE, 'pywin32_system32'), 'pywin32_system32'),
 ]

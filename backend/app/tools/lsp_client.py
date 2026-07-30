@@ -50,28 +50,47 @@ class LSPClient:
             return False
 
         try:
-            # Check if command exists in PATH (or npx fallback)
-            executable = cmd[0]
-            if sys.platform == 'win32':
-                executable_check = f"where {executable}"
-            else:
-                executable_check = f"which {executable}"
+            # 1. Check for PyInstaller / Inno Setup bundled LSP binaries first
+            meipass = getattr(sys, '_MEIPASS', None)
+            base_dir = meipass if meipass else os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            bundled_lsp = os.path.join(base_dir, 'app', 'bin', 'lsp', 'node_modules')
 
-            proc_check = await asyncio.create_subprocess_shell(
-                executable_check,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await proc_check.communicate()
-            if proc_check.returncode != 0 or not stdout.strip():
-                # Try npx fallbacks for typescript and python
+            use_bundled = False
+            if os.path.exists(bundled_lsp):
                 if self.server_type == 'typescript':
-                    cmd = ['npx', '-y', 'typescript-language-server', '--stdio']
+                    ts_bin = os.path.join(bundled_lsp, 'typescript-language-server', 'lib', 'cli.mjs')
+                    if os.path.exists(ts_bin):
+                        cmd = ['node', ts_bin, '--stdio']
+                        use_bundled = True
                 elif self.server_type == 'python':
-                    cmd = ['npx', '-y', 'pyright', '--stdio']
+                    py_bin = os.path.join(bundled_lsp, 'pyright', 'index.js')
+                    if os.path.exists(py_bin):
+                        cmd = ['node', py_bin, '--stdio']
+                        use_bundled = True
+
+            if not use_bundled:
+                # 2. Check if command exists in system PATH (or npx fallback)
+                executable = cmd[0]
+                if sys.platform == 'win32':
+                    executable_check = f"where {executable}"
                 else:
-                    print(f"[LSP] {executable} not found in PATH. LSP diagnostics disabled for {ext}.")
-                    return False
+                    executable_check = f"which {executable}"
+
+                proc_check = await asyncio.create_subprocess_shell(
+                    executable_check,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, _ = await proc_check.communicate()
+                if proc_check.returncode != 0 or not stdout.strip():
+                    # Try npx fallbacks for typescript and python
+                    if self.server_type == 'typescript':
+                        cmd = ['npx', '-y', 'typescript-language-server', '--stdio']
+                    elif self.server_type == 'python':
+                        cmd = ['npx', '-y', 'pyright', '--stdio']
+                    else:
+                        print(f"[LSP] {executable} not found in PATH. LSP diagnostics disabled for {ext}.")
+                        return False
 
             print(f"[LSP] Starting {self.server_type} server: {' '.join(cmd)} in {self.workspace_dir}")
             self.process = await asyncio.create_subprocess_exec(
