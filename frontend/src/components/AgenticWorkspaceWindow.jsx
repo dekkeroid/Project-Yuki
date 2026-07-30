@@ -3124,16 +3124,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <input
                           type={showCoderKey ? 'text' : 'password'}
-                          value={
-                            showCoderKey && (activeSettings.llm_coder_api_key?.includes('ENCRYPTED_VAULT_KEY') || activeSettings.llm_coder_api_key?.startsWith('🔑'))
-                              ? '🔑 Encrypted in System Vault (Saved)'
-                              : (activeSettings.llm_coder_api_key || '')
-                          }
-                          onFocus={() => {
-                            if (activeSettings.llm_coder_api_key?.includes('ENCRYPTED_VAULT_KEY') || activeSettings.llm_coder_api_key?.startsWith('🔑')) {
-                              handleUpdateSetting({ llm_coder_api_key: '' });
-                            }
-                          }}
+                          value={activeSettings.llm_coder_api_key || ''}
                           onChange={(e) => handleUpdateSetting({ llm_coder_api_key: e.target.value })}
                           placeholder="Enter API key (e.g. sk-...)"
                           style={{
@@ -3142,15 +3133,31 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                             background: 'rgba(9, 13, 22, 0.95)',
                             border: '1px solid rgba(255, 255, 255, 0.15)',
                             borderRadius: '8px',
-                            color: (activeSettings.llm_coder_api_key?.includes('ENCRYPTED_VAULT_KEY') || activeSettings.llm_coder_api_key?.startsWith('🔑')) ? '#38bdf8' : 'white',
+                            color: 'white',
                             fontSize: '0.78rem',
                             outline: 'none'
                           }}
                         />
                         <button
                           type="button"
-                          onClick={() => setShowCoderKey(prev => !prev)}
-                          title={showCoderKey ? "Hide API Key" : "Show Vault Key Status"}
+                          onClick={async () => {
+                            const nextState = !showCoderKey;
+                            setShowCoderKey(nextState);
+                            if (nextState) {
+                              try {
+                                const res = await fetch(`${API_BASE}/api/profile?decrypt_keys=true`);
+                                if (res.ok) {
+                                  const data = await res.json();
+                                  if (data.settings && data.settings.llm_coder_api_key) {
+                                    handleUpdateSetting({ llm_coder_api_key: data.settings.llm_coder_api_key });
+                                  }
+                                }
+                              } catch (err) {
+                                console.warn('Failed to fetch decrypted key:', err);
+                              }
+                            }
+                          }}
+                          title={showCoderKey ? "Hide API Key" : "Decrypt & Reveal API Key"}
                           style={{
                             padding: '8px 10px',
                             borderRadius: '8px',

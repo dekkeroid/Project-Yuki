@@ -1684,18 +1684,29 @@ def reset_mood_spectrum():
     return {"status": "ok", "mood": reset_vals}
 
 @app.get("/api/profile")
-def get_profile():
+def get_profile(decrypt_keys: bool = False):
     """
-    Returns the current user profile state (API key redacted).
+    Returns the current user profile state.
+    If decrypt_keys is True, returns decrypted API keys so the UI eye toggle can reveal the actual key.
+    Otherwise returns masked keys (e.g. sk-p...7890).
     """
     import copy, platform
+    from app.utils.security import decrypt_api_key, mask_api_key
+
     profile = copy.deepcopy(memory_manager.profile)
-    if "settings" in profile and "llm_api_key" in profile["settings"]:
-        key = profile["settings"]["llm_api_key"]
-        if key:
-            profile["settings"]["llm_api_key"] = key[:4] + "..." + key[-4:] if len(key) > 8 else "****"
+    settings = profile.get("settings", {})
+
+    for key_name in ["llm_api_key", "llm_coder_api_key", "llm_simple_api_key", "llm_complex_api_key"]:
+        raw = settings.get(key_name, "")
+        if raw:
+            decrypted = decrypt_api_key(raw)
+            if decrypt_keys:
+                settings[key_name] = decrypted
+            else:
+                settings[key_name] = mask_api_key(decrypted)
         else:
-            profile["settings"]["llm_api_key"] = ""
+            settings[key_name] = ""
+
     profile["platform"] = f"{platform.system()} {platform.release()}"
     return profile
 
