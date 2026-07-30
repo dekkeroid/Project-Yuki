@@ -2369,6 +2369,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                                     args_str = f" ({', '.join(parts)})" if parts else ""
 
                                                 await broadcast_ws_event({
+                                                    "type": "tool_start",
+                                                    "tool_name": tool_name,
+                                                    "tool_args": tool_args
+                                                })
+                                                await broadcast_ws_event({
                                                     "type": "status",
                                                     "status": "thinking",
                                                     "message": f"Running tool '{tool_name}'{args_str}...",

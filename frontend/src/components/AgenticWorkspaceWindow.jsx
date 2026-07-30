@@ -156,6 +156,50 @@ export const AgenticWorkspaceWindow = ({
               }
               return newMsgs;
             });
+          } else if (data.type === 'tool_start') {
+            const toolName = data.tool_name || 'tool';
+            const toolArgs = data.tool_args || {};
+            const toolTarget = toolArgs.file_path || toolArgs.path || toolArgs.command || toolArgs.url || '';
+            const targetInfo = toolTarget ? ` (\`${toolTarget.length > 50 ? '...' + toolTarget.slice(-47) : toolTarget}\`)` : '';
+            const badgeText = `\n🛠️ **[${toolName}${targetInfo} — ⏳ Running...]**\n`;
+
+            setViewMessages(prev => {
+              if (!prev || prev.length === 0) return prev;
+              const newMsgs = [...prev];
+              const lastIdx = newMsgs.length - 1;
+              const lastMsg = newMsgs[lastIdx];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                const currentContent = lastMsg.isThinking ? '' : (lastMsg.content || '');
+                newMsgs[lastIdx] = {
+                  ...lastMsg,
+                  content: currentContent + badgeText,
+                  isThinking: false
+                };
+              }
+              return newMsgs;
+            });
+          } else if (data.type === 'tool_result') {
+            const resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result || '');
+            const snippet = resultStr.length > 800 ? resultStr.slice(0, 800) + '\n... [truncated]' : resultStr;
+            
+            setViewMessages(prev => {
+              if (!prev || prev.length === 0) return prev;
+              const newMsgs = [...prev];
+              const lastIdx = newMsgs.length - 1;
+              const lastMsg = newMsgs[lastIdx];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                let content = lastMsg.content || '';
+                if (content.includes('⏳ Running...')) {
+                  content = content.replace('⏳ Running...', '✓ Done');
+                  content += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
+                }
+                newMsgs[lastIdx] = {
+                  ...lastMsg,
+                  content: content
+                };
+              }
+              return newMsgs;
+            });
           } else if (data.type === 'status') {
             if (data.message) {
               setViewMessages(prev => {
