@@ -161,7 +161,7 @@ export const AgenticWorkspaceWindow = ({
             const toolName = data.tool_name || 'tool';
             const toolArgs = data.tool_args || {};
             const toolTarget = toolArgs.file_path || toolArgs.path || toolArgs.command || toolArgs.url || '';
-            const targetInfo = toolTarget ? ` (\`${toolTarget.length > 50 ? '...' + toolTarget.slice(-47) : toolTarget}\`)` : '';
+            const targetInfo = toolTarget ? ` (\`${toolTarget}\`)` : '';
             const badgeText = `\n🛠️ **[${toolName}${targetInfo} — ⏳ Running...]**\n`;
 
             setViewMessages(prev => {
@@ -1717,15 +1717,17 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                 alignItems: 'center',
                                 gap: '6px',
                                 fontSize: '0.74rem',
-                                maxWidth: '100%',
+                                maxWidth: '700px',
+                                width: '100%',
                                 overflowX: 'auto',
+                                whiteSpace: 'nowrap',
                                 boxSizing: 'border-box'
                               }}>
                                 <span style={{ color: '#a78bfa', fontWeight: 700, flexShrink: 0 }}>
                                   {(sessionDirectories && sessionDirectories.length > 0 && sessionDirectories[0].value) ? sessionDirectories[0].value : 'd:\\workspace'}
                                 </span>
                                 <span style={{ color: '#4ade80', fontWeight: 700, flexShrink: 0 }}>$</span>
-                                <span style={{ color: '#f8fafc', fontWeight: 600, wordBreak: 'break-all' }}>
+                                <span style={{ color: '#f8fafc', fontWeight: 600, whiteSpace: 'nowrap', fontFamily: 'Consolas, Monaco, monospace' }}>
                                   {tb.target ? tb.target : tb.toolName}
                                 </span>
                               </div>
@@ -1738,7 +1740,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                             )}
 
                             {tb.args && (
-                              <div style={{ marginTop: '6px', marginBottom: '8px', maxWidth: '800px', width: '100%', boxSizing: 'border-box' }}>
+                              <div style={{ marginTop: '6px', marginBottom: '8px', maxWidth: '700px', width: '100%', boxSizing: 'border-box' }}>
                                 <div style={{ color: '#38bdf8', fontSize: '0.68rem', fontWeight: 700, marginBottom: '4px' }}>
                                   📥 INPUT / ARGUMENTS:
                                 </div>
@@ -1747,8 +1749,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                   padding: '8px 10px',
                                   borderRadius: '6px',
                                   border: '1px solid rgba(56, 189, 248, 0.2)',
-                                  maxHeight: '160px',
-                                  maxWidth: '800px',
+                                  maxHeight: '400px',
+                                  maxWidth: '700px',
                                   width: '100%',
                                   overflowY: 'auto',
                                   overflowX: 'auto',
@@ -1756,13 +1758,13 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                   fontSize: '0.72rem',
                                   color: '#cbd5e1'
                                 }}>
-                                  <pre style={{ margin: 0, whiteSpace: 'pre', wordBreak: 'normal', display: 'block', width: 'max-content', minWidth: '100%' }}>{tb.args}</pre>
+                                  <pre style={{ margin: 0, whiteSpace: 'pre', wordBreak: 'normal', display: 'block', width: 'max-content', minWidth: '100%', fontFamily: 'Consolas, Monaco, monospace' }}>{tb.args}</pre>
                                 </div>
                               </div>
                             )}
 
                             {tb.output && (
-                              <div style={{ marginTop: '6px', marginBottom: '6px', maxWidth: '800px', width: '100%', boxSizing: 'border-box' }}>
+                              <div style={{ marginTop: '6px', marginBottom: '6px', maxWidth: '700px', width: '100%', boxSizing: 'border-box' }}>
                                 <div style={{ color: '#64748b', fontSize: '0.68rem', fontWeight: 600, marginBottom: '4px' }}>
                                   📤 RESULT / OUTPUT:
                                 </div>
@@ -1771,8 +1773,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                   padding: '8px 10px',
                                   borderRadius: '6px',
                                   border: '1px solid #1e293b',
-                                  maxHeight: '200px',
-                                  maxWidth: '800px',
+                                  maxHeight: '400px',
+                                  maxWidth: '700px',
                                   width: '100%',
                                   overflowY: 'auto',
                                   overflowX: 'auto',
