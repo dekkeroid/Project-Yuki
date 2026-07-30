@@ -437,7 +437,7 @@ export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFi
                   Copy
                 </button>
               </div>
-              <pre style={{ margin: 0, padding: '10px 12px', fontSize: '0.76rem', fontFamily: 'Consolas, Monaco, monospace', color: '#cbd5e1', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              <pre style={{ margin: 0, padding: '10px 12px', fontSize: '0.76rem', fontFamily: 'Consolas, Monaco, monospace', color: '#cbd5e1', overflowX: 'auto', whiteSpace: 'pre', wordBreak: 'normal' }}>
                 {block.code}
               </pre>
             </div>

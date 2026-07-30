@@ -2139,7 +2139,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       <RenderMessageContent content={fileInspectorData.content} disableFileLinks={true} />
                     </div>
                   ) : (
-                    <div style={{ background: '#020617', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px', fontSize: '0.74rem', fontFamily: 'Consolas, Monaco, monospace', color: '#38bdf8', overflowY: 'auto', maxHeight: '450px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                    <div style={{ background: '#020617', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px', fontSize: '0.74rem', fontFamily: 'Consolas, Monaco, monospace', color: '#38bdf8', overflowY: 'auto', overflowX: 'auto', maxHeight: '450px', whiteSpace: 'pre', wordBreak: 'normal' }}>
                       {fileInspectorData.content}
                     </div>
                   )}
