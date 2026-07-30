@@ -174,7 +174,7 @@ def jarvis_read_file(file_path: str, max_lines: int = 250, start_line: int = 1) 
 def _run_auto_lsp_check(clean_path: str) -> str:
     """Helper to run non-blocking LSP check for python and typescript files."""
     ext = os.path.splitext(clean_path)[1].lower()
-    if ext not in ('.py', '.pyi', '.js', '.jsx', '.ts', '.tsx', '.json'):
+    if ext not in ('.py', '.pyi', '.js', '.jsx', '.ts', '.tsx', '.json', '.rs', '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.go', '.html', '.htm', '.css', '.scss'):
         return ""
 
     try:

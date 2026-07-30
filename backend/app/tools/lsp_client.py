@@ -31,6 +31,21 @@ class LSPClient:
         elif ext in ('.js', '.jsx', '.ts', '.tsx', '.json'):
             cmd = ['typescript-language-server', '--stdio']
             self.server_type = 'typescript'
+        elif ext == '.rs':
+            cmd = ['rust-analyzer']
+            self.server_type = 'rust'
+        elif ext in ('.c', '.cpp', '.cc', '.cxx', '.h', '.hpp'):
+            cmd = ['clangd']
+            self.server_type = 'cpp'
+        elif ext == '.go':
+            cmd = ['gopls']
+            self.server_type = 'go'
+        elif ext in ('.html', '.htm'):
+            cmd = ['vscode-html-language-server', '--stdio']
+            self.server_type = 'html'
+        elif ext in ('.css', '.scss'):
+            cmd = ['vscode-css-language-server', '--stdio']
+            self.server_type = 'css'
         else:
             return False
 
