@@ -171,6 +171,39 @@ def jarvis_read_file(file_path: str, max_lines: int = 250, start_line: int = 1) 
         return f"Read File Error: {str(e)}"
 
 
+def _run_auto_lsp_check(clean_path: str) -> str:
+    """Helper to run non-blocking LSP check for python and typescript files."""
+    ext = os.path.splitext(clean_path)[1].lower()
+    if ext not in ('.py', '.pyi', '.js', '.jsx', '.ts', '.tsx', '.json'):
+        return ""
+
+    try:
+        from app.tools.lsp_client import get_lsp_client
+        workspace_dir = os.path.dirname(clean_path)
+        client = get_lsp_client(workspace_dir)
+
+        import asyncio
+        loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(client.check_diagnostics(clean_path, timeout=1.2), loop)
+            diags = future.result(timeout=1.5)
+        else:
+            diags = asyncio.run(client.check_diagnostics(clean_path, timeout=1.2))
+
+        if not diags:
+            return "\n[LSP DIAGNOSTICS: VERIFIED CLEAN (0 Errors)]"
+        else:
+            diag_str = "\n".join([f"  • {d}" for d in diags[:6]])
+            return f"\n[⚠️ LSP DIAGNOSTICS DETECTED {len(diags)} ERRORS - PLEASE FIX IN NEXT TURN]:\n{diag_str}"
+    except Exception as e:
+        return ""
+
+
 def jarvis_create_or_edit_file(file_path: str, content: str, mode: str = "write") -> str:
     """
     Creates or edits a file on disk. Mode: 'write' (overwrite/create) or 'append'.
@@ -181,7 +214,8 @@ def jarvis_create_or_edit_file(file_path: str, content: str, mode: str = "write"
         file_mode = "a" if mode == "append" else "w"
         with open(clean_path, file_mode, encoding="utf-8") as f:
             f.write(content)
-        return f"Success: File '{clean_path}' written successfully ({len(content)} characters)."
+        lsp_msg = _run_auto_lsp_check(clean_path)
+        return f"Success: File '{clean_path}' written successfully ({len(content)} characters).{lsp_msg}"
     except Exception as e:
         return f"File Write Error: {str(e)}"
 
@@ -206,7 +240,8 @@ def jarvis_replace_file_content(file_path: str, target_content: str, replacement
         with open(clean_path, "w", encoding="utf-8") as f:
             f.write(updated_text)
 
-        return f"Success: Replaced target block in '{clean_path}' successfully."
+        lsp_msg = _run_auto_lsp_check(clean_path)
+        return f"Success: Replaced target block in '{clean_path}' successfully.{lsp_msg}"
     except Exception as e:
         return f"File Edit Error: {str(e)}"
 
