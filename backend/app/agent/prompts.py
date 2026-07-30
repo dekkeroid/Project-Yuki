@@ -390,7 +390,11 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
      - For Node.js/Web Projects: Create and update `package.json` with all `dependencies` and `devDependencies`.
    • README SETUP GUIDE: Include a clean `README.md` file in the project directory detailing setup instructions (e.g. creating local `venv`, running `pip install -r requirements.txt` or `npm install`, and running dev servers).
    • VIRTUAL ENVIRONMENT ISOLATION: NEVER install packages globally or into system Python environments. Always isolate project dependencies inside the project workspace directory (e.g. `venv`, `.venv`, or `node_modules`).
-   • TERMINAL PACKAGE INSTALLATION: NEVER run `pip install` inside inline `jarvis_run_python` scripts. Always execute package installations via `jarvis_run_terminal` targeting the project's local virtual environment (e.g. `.\\venv\\Scripts\\pip.exe install -r requirements.txt`)."""
+   • TERMINAL PACKAGE INSTALLATION: NEVER run `pip install` inside inline `jarvis_run_python` scripts. Always execute package installations via `jarvis_run_terminal` targeting the project's local virtual environment (e.g. `.\\venv\\Scripts\\pip.exe install -r requirements.txt`).
+
+9. INDUSTRY-STANDARD TECH STACK & CLEAN ARCHITECTURE:
+   • MODERN TECH STACK SELECTION: Select modern, battle-tested, industry-standard tech stacks tailored to the project domain (e.g. React/Vite/Next.js for web frontend, FastAPI/Express/Flask for REST API backends, SQLite/PostgreSQL for databases, PyTorch/Pandas for AI/Data science). Avoid outdated or unmaintained frameworks.
+   • MODULAR ARCHITECTURAL PATTERNS: Structure codebases using clean architectural patterns (Separation of Concerns, MVC, Component-driven design, RESTful endpoints, decoupled services) with clean directory layouts (`src/components`, `src/services`, `backend/app`, `config/`)."""
         sections.append(directives)
 
     if overrides.get("prompt_planning", True):
