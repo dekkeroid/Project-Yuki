@@ -139,8 +139,44 @@ export const AgenticWorkspaceWindow = ({
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'chat_update' && data.messages) {
+          if (data.type === 'text_stream') {
+            setViewMessages(prev => {
+              if (!prev || prev.length === 0) return prev;
+              const newMsgs = [...prev];
+              const lastIdx = newMsgs.length - 1;
+              const lastMsg = newMsgs[lastIdx];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                const currentContent = lastMsg.isThinking ? '' : (lastMsg.content || '');
+                newMsgs[lastIdx] = {
+                  ...lastMsg,
+                  content: currentContent + (data.text || ''),
+                  isThinking: false,
+                  backend: data.backend_used || lastMsg.backend
+                };
+              }
+              return newMsgs;
+            });
+          } else if (data.type === 'status') {
+            if (data.message) {
+              setViewMessages(prev => {
+                if (!prev || prev.length === 0) return prev;
+                const newMsgs = [...prev];
+                const lastIdx = newMsgs.length - 1;
+                const lastMsg = newMsgs[lastIdx];
+                if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isThinking) {
+                  newMsgs[lastIdx] = {
+                    ...lastMsg,
+                    thinkingStatus: data.message
+                  };
+                }
+                return newMsgs;
+              });
+            }
+          } else if (data.type === 'chat_update' && data.messages) {
             setViewMessages(data.messages);
+            fetchSessionTree();
+          } else if (data.type === 'stream_done') {
+            fetchSessionTree();
           }
         } catch (_) {}
       };
@@ -373,7 +409,7 @@ export const AgenticWorkspaceWindow = ({
     const userMsg = { role: 'user', content: textToSend };
     const pendingAiMsg = { role: 'assistant', content: '...', isThinking: true };
 
-    if (selectedPastSessionId && viewMessages) {
+    if (selectedPastSessionId || viewMessages !== null) {
       setViewMessages(prev => [...(prev || []), userMsg, pendingAiMsg]);
     }
 
@@ -714,8 +750,9 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
       if (res.ok) {
         const data = await res.json();
         setActiveSessionId(data.session_id);
-        setSelectedPastSessionId(null);
-        setViewMessages(null);
+        setSelectedPastSessionId(data.session_id);
+        setViewMessages([]);
+        fetchSessionMeta(data.session_id);
         fetchSessionTree();
       }
     } catch (err) {
