@@ -1,4 +1,5 @@
 import base64
+import json
 import time
 import urllib.parse
 import asyncio
@@ -427,6 +428,20 @@ async def broadcast_ws(payload: dict):
         except Exception:
             if ws in active_websockets:
                 active_websockets.remove(ws)
+
+def _handle_terminal_stream_event(payload: dict):
+    try:
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            loop.create_task(broadcast_ws(payload))
+    except Exception:
+        pass
+
+try:
+    from app.tools.system import register_terminal_stream_listener
+    register_terminal_stream_listener(_handle_terminal_stream_event)
+except Exception as e:
+    print(f"[Startup] Error registering terminal stream listener: {e}")
 
 async def test_and_announce_voice_change(new_voice: str, new_rate: str = None):
     global tts_online_status
@@ -1729,6 +1744,87 @@ def get_profile(decrypt_keys: bool = False):
 
     profile["platform"] = f"{platform.system()} {platform.release()}"
     return profile
+
+# ── Export & Import Endpoints (Persona, App Settings & Crawler Data) ─
+
+@app.get("/api/persona/export")
+def export_persona():
+    """
+    Exports persona specifications and profile facts as a downloadable JSON file.
+    """
+    data = memory_manager.export_persona_data()
+    char_name = data.get("persona", {}).get("character_name", "Yuki")
+    filename = f"{char_name}_persona.json"
+    return Response(
+        content=json.dumps(data, indent=2, ensure_ascii=False),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.post("/api/persona/import")
+async def import_persona(payload: dict = Body(...)):
+    """
+    Imports persona specifications, facts, and mood spectrum.
+    """
+    try:
+        updated_profile = memory_manager.import_persona_data(payload)
+        await broadcast_profile_update()
+        return {"status": "ok", "message": "Persona imported successfully.", "profile": updated_profile}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/settings/export")
+def export_settings():
+    """
+    Exports all application settings (with decrypted keys for portability) as JSON.
+    """
+    data = memory_manager.export_settings_data()
+    return Response(
+        content=json.dumps(data, indent=2, ensure_ascii=False),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="yuki_settings.json"'}
+    )
+
+@app.post("/api/settings/import")
+async def import_settings(payload: dict = Body(...)):
+    """
+    Imports application settings JSON and updates system configuration.
+    """
+    try:
+        updated_settings = memory_manager.import_settings_data(payload)
+        await broadcast_profile_update()
+        return {"status": "ok", "message": "Settings imported successfully.", "settings": updated_settings}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/crawler/export")
+def export_crawler_data():
+    """
+    Exports indexed file database records, metadata tags, and crawler state as JSON.
+    """
+    from app.memory.db import export_crawler_database_json
+    try:
+        data = export_crawler_database_json()
+        return Response(
+            content=json.dumps(data, indent=2, ensure_ascii=False),
+            media_type="application/json",
+            headers={"Content-Disposition": 'attachment; filename="yuki_crawler_data.json"'}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/crawler/import")
+async def import_crawler_data(payload: dict = Body(...)):
+    """
+    Imports crawler file index and metadata JSON into SQLite database.
+    """
+    from app.memory.db import import_crawler_database_json
+    try:
+        result = import_crawler_database_json(payload)
+        return {"status": "ok", "message": "Crawler database imported successfully.", "stats": result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 class ProfileUpdateRequest(BaseModel):
     user_name: Optional[str] = None

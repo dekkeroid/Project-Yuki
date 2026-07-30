@@ -512,6 +512,21 @@ def kill_active_supervisor_processes() -> int:
         except Exception as e:
             print(f"[ProcessSupervisor] Error killing PID {proc.pid}: {e}")
     _ACTIVE_PROCESSES.clear()
+_TERMINAL_STREAM_LISTENERS = []
+
+def register_terminal_stream_listener(listener):
+    global _TERMINAL_STREAM_LISTENERS
+    if listener not in _TERMINAL_STREAM_LISTENERS:
+        _TERMINAL_STREAM_LISTENERS.append(listener)
+
+def emit_terminal_stream_event(payload: dict):
+    global _TERMINAL_STREAM_LISTENERS
+    for listener in list(_TERMINAL_STREAM_LISTENERS):
+        try:
+            listener(payload)
+        except Exception as e:
+            print(f"[TerminalStream] Listener error: {e}")
+
 def send_process_stdin(input_text: str, pid: int = None) -> str:
     """
     Sends input_text (text or newline) directly to the stdin pipe of an actively running background process.
@@ -539,6 +554,14 @@ def send_process_stdin(input_text: str, pid: int = None) -> str:
         clean_input = input_text if input_text.endswith('\n') else input_text + '\n'
         target_proc.stdin.write(clean_input)
         target_proc.stdin.flush()
+        
+        # Log to terminal stream listeners
+        emit_terminal_stream_event({
+            "type": "terminal_stream",
+            "line": f"> [STDIN INPUT SENT TO PID {target_proc.pid}]: {input_text.strip()}",
+            "stype": "stdin",
+            "pid": target_proc.pid
+        })
         return f"Successfully sent stdin input '{input_text.strip()}' to active process PID {target_proc.pid}."
     except Exception as e:
         return f"Error sending stdin input to PID {target_proc.pid}: {str(e)}"
@@ -584,6 +607,12 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
             try:
                 proc.stdin.write(stdin_input if stdin_input.endswith('\n') else stdin_input + '\n')
                 proc.stdin.flush()
+                emit_terminal_stream_event({
+                    "type": "terminal_stream",
+                    "line": f"> [STDIN INITIAL INPUT]: {stdin_input.strip()}",
+                    "stype": "stdin",
+                    "pid": proc.pid
+                })
             except Exception as e:
                 print(f"[ProcessSupervisor] Error writing to stdin: {e}")
 
@@ -605,6 +634,7 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
 
         stdout_chunks = []
         stderr_chunks = []
+        PROMPT_KEYWORDS = ["?", "choose", "proceed", "confirm", "select", "y/n", "enter:", "cancel operation", "please choose"]
 
         while True:
             # Drain queue items immediately
@@ -616,6 +646,13 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
                         stdout_chunks.append(line_clean)
                     else:
                         stderr_chunks.append(line_clean)
+                    
+                    emit_terminal_stream_event({
+                        "type": "terminal_stream",
+                        "line": line_clean,
+                        "stype": stype,
+                        "pid": proc.pid
+                    })
             except queue.Empty:
                 pass
 
@@ -629,9 +666,27 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
                         stdout_chunks.append(line_clean)
                     else:
                         stderr_chunks.append(line_clean)
+                    emit_terminal_stream_event({
+                        "type": "terminal_stream",
+                        "line": line_clean,
+                        "stype": stype,
+                        "pid": proc.pid
+                    })
                 break
 
             elapsed = int(time.time() - start_time)
+
+            # Check for interactive prompt early exit (3s)
+            recent_output = stdout_chunks[-15:]
+            has_interactive_prompt = any(
+                any(kw in line.lower() for kw in PROMPT_KEYWORDS)
+                for line in recent_output
+            )
+            if has_interactive_prompt and elapsed >= 3:
+                stdout_str = "\n".join(filter(None, stdout_chunks))
+                stderr_str = "\n".join(filter(None, stderr_chunks))
+                return f"[STATUS: RUNNING IN BACKGROUND - INTERACTIVE PROMPT DETECTED] Command '{command}' (PID {proc.pid}) is actively waiting for user selection ({elapsed}s elapsed).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: The process PID {proc.pid} is currently paused on an interactive prompt question. Call 'jarvis_send_stdin(input_text=\"1\", pid={proc.pid})' or 'jarvis_send_stdin(input_text=\"\\n\", pid={proc.pid})' immediately to send your choice!".strip()
+
             if elapsed >= max_timeout:
                 stdout_str = "\n".join(filter(None, stdout_chunks))
                 stderr_str = "\n".join(filter(None, stderr_chunks))
