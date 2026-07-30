@@ -64,9 +64,11 @@ class LSPClient:
             )
             stdout, _ = await proc_check.communicate()
             if proc_check.returncode != 0 or not stdout.strip():
-                # Try npx fallback for typescript-language-server
+                # Try npx fallbacks for typescript and python
                 if self.server_type == 'typescript':
                     cmd = ['npx', '-y', 'typescript-language-server', '--stdio']
+                elif self.server_type == 'python':
+                    cmd = ['npx', '-y', 'pyright', '--stdio']
                 else:
                     print(f"[LSP] {executable} not found in PATH. LSP diagnostics disabled for {ext}.")
                     return False
