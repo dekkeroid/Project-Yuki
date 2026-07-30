@@ -1215,7 +1215,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Tag style={{ width: '12px', height: '12px' }} /> Custom Facts ({sessionFacts.length})
+                  <Tag style={{ width: '12px', height: '12px' }} /> Temp Custom Facts ({sessionFacts.length})
                 </span>
                 {isCodingMode && (
                   <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6ee7b7', display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
@@ -1242,7 +1242,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     gap: '4px'
                   }}
                 >
-                  <Plus style={{ width: '11px', height: '11px' }} /> Add Custom Fact
+                  <Plus style={{ width: '11px', height: '11px' }} /> Add Temp Custom Fact
                 </button>
 
                 {isCodingMode && (
@@ -1274,7 +1274,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
               <div style={{ display: 'flex', gap: '6px', padding: '6px 8px', borderRadius: '6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(167, 139, 250, 0.3)', marginTop: '4px' }}>
                 <input
                   type="text"
-                  placeholder="Fact Label (e.g. Target DB, Framework)"
+                  placeholder="Temp Fact Label (e.g. Target DB, Framework)"
                   value={factKeyInput}
                   onChange={(e) => setFactKeyInput(e.target.value)}
                   style={{ width: '160px', padding: '4px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.15)', background: '#090d16', color: '#fff', fontSize: '0.70rem' }}
@@ -1291,7 +1291,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   onClick={() => handleSaveSessionMeta('fact', factKeyInput, factValInput)}
                   style={{ padding: '4px 10px', borderRadius: '4px', background: '#8b5cf6', color: '#fff', fontSize: '0.70rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
                 >
-                  Save Fact
+                  Save Temp Fact
                 </button>
               </div>
             )}
@@ -2046,13 +2046,13 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                 {/* Session Facts List */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '0.66rem', color: '#cbd5e1', fontWeight: 600 }}>📌 Custom Session Facts ({sessionFacts.length})</span>
+                    <span style={{ fontSize: '0.66rem', color: '#cbd5e1', fontWeight: 600 }}>📌 Temp Custom Facts ({sessionFacts.length})</span>
                     <button
                       type="button"
                       onClick={() => setShowFactForm(prev => !prev)}
                       style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.62rem', background: 'rgba(167, 139, 250, 0.2)', color: '#c4b5fd', border: '1px solid rgba(167, 139, 250, 0.4)', cursor: 'pointer' }}
                     >
-                      {showFactForm ? 'Cancel' : '+ Add Fact'}
+                      {showFactForm ? 'Cancel' : '+ Add Temp Fact'}
                     </button>
                   </div>
 
@@ -2077,7 +2077,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                         onClick={() => handleSaveSessionMeta('fact', factKeyInput, factValInput)}
                         style={{ padding: '5px', borderRadius: '4px', background: '#8b5cf6', color: '#fff', fontSize: '0.70rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
                       >
-                        Save Custom Fact
+                        Save Temp Custom Fact
                       </button>
                     </div>
                   )}

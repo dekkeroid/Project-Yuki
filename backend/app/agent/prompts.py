@@ -401,7 +401,7 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
     if session_facts:
         fact_lines = [f"• {f.get('key')}: {f.get('value')}" for f in session_facts if isinstance(f, dict) and f.get('key') and f.get('value')]
         if fact_lines:
-            parts.append("--- SESSION CUSTOM FACTS ---\n" + "\n".join(fact_lines) + "\n---------------------------")
+            parts.append("--- TEMP CUSTOM FACTS (SESSION SCOPED) ---\n" + "\n".join(fact_lines) + "\n----------------------------------------")
 
     if session_directories:
         dir_lines = [f"• {d.get('key')}: {d.get('value')}" for d in session_directories if isinstance(d, dict) and d.get('key') and d.get('value')]
