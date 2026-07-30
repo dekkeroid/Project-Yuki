@@ -1669,7 +1669,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                 fontSize: '0.74rem'
                               }}>
                                 <span style={{ color: '#a78bfa', fontWeight: 700 }}>
-                                  {activeWorkspaceDir ? activeWorkspaceDir : 'd:\\workspace'}
+                                  {(sessionDirectories && sessionDirectories.length > 0 && sessionDirectories[0].value) ? sessionDirectories[0].value : 'd:\\workspace'}
                                 </span>
                                 <span style={{ color: '#4ade80', fontWeight: 700 }}>$</span>
                                 <span style={{ color: '#f8fafc', fontWeight: 600, wordBreak: 'break-all' }}>
