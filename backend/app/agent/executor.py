@@ -635,10 +635,37 @@ class AgentExecutor:
                 recap_text = "[EARLIER CONVERSATION RECAP]\nKey details from archived earlier context:\n" + "\n".join(recap_snippets[-12:])
                 recap_msg = {"role": "system", "content": recap_text}
 
+        sanitized_history = []
+        for m in pruned_history:
+            role = m.get("role")
+            content = str(m.get("content") or "").strip()
+            
+            if role == "tool":
+                # Convert orphaned tool messages (loaded from DB) to clean text context so API schema validates
+                tool_name = m.get("name", "Tool")
+                sanitized_history.append({
+                    "role": "user",
+                    "content": f"[Previous Tool Result ({tool_name})]: {content}"
+                })
+            elif role == "assistant":
+                # Ensure assistant messages have valid non-empty content if tool_calls is missing
+                if not content and not m.get("tool_calls"):
+                    content = "Task step executed."
+                msg_obj = {"role": "assistant", "content": content}
+                if m.get("tool_calls"):
+                    msg_obj["tool_calls"] = m["tool_calls"]
+                sanitized_history.append(msg_obj)
+            elif role in ("user", "system"):
+                if content:
+                    sanitized_history.append({
+                        "role": role,
+                        "content": content
+                    })
+
         final_messages = [system_msg]
         if recap_msg:
             final_messages.append(recap_msg)
-        final_messages.extend(pruned_history)
+        final_messages.extend(sanitized_history)
         final_messages.append({"role": "user", "content": user_message})
 
         return final_messages

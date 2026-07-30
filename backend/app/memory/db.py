@@ -908,10 +908,17 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
         """, (session_id, title, now, now, year, month_name, date_str, pruned_json))
         
         cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
-        msg_rows = [
-            (session_id, m.get("role", "user"), str(m.get("content", "")), now)
-            for m in messages
-        ]
+        msg_rows = []
+        for m in messages:
+            r = m.get("role", "user")
+            c = str(m.get("content") or "").strip()
+            if r == "tool":
+                r = "user"
+                tool_name = m.get("name", "Tool")
+                c = f"[Previous Tool Result ({tool_name})]: {c}"
+            if c:
+                msg_rows.append((session_id, r, c, now))
+
         cursor.executemany("""
         INSERT INTO chat_messages (session_id, role, content, timestamp)
         VALUES (?, ?, ?, ?)
