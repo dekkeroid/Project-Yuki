@@ -536,11 +536,13 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
 
     start_time = time.time()
     try:
+        env["PYTHONIOENCODING"] = "utf-8"
         proc = subprocess.Popen(
             cmd_list,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             shell=True,
             cwd=cwd,
             env=env
@@ -612,7 +614,8 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
             [sys.executable, temp_file],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             cwd=cwd,
             env=env
         )
