@@ -1,8 +1,29 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, ExternalLink, Copy, Check } from 'lucide-react';
+import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, ExternalLink, Copy, Check, Globe, Code, Sliders, Database, Eye, FileText, Folder, Brain, Wrench } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
 import { SLASH_COMMANDS } from '../constants';
+
+const getFileIcon = (fileNameOrPath) => {
+  if (!fileNameOrPath) return <FileText style={{ width: '12px', height: '12px', color: '#94a3b8' }} />;
+  const ext = fileNameOrPath.split('.').pop().toLowerCase();
+  if (["js", "ts", "jsx", "tsx", "py", "c", "cpp", "java", "cs", "rb", "go", "rs"].includes(ext)) {
+    return <Code style={{ width: '12px', height: '12px', color: '#a78bfa' }} />;
+  }
+  if (["css", "scss", "sass", "less"].includes(ext)) {
+    return <Sliders style={{ width: '12px', height: '12px', color: '#38bdf8' }} />;
+  }
+  if (["html", "htm"].includes(ext)) {
+    return <Globe style={{ width: '12px', height: '12px', color: '#38bdf8' }} />;
+  }
+  if (["json", "yaml", "yml", "toml", "db", "sqlite", "env"].includes(ext)) {
+    return <Database style={{ width: '12px', height: '12px', color: '#f59e0b' }} />;
+  }
+  if (["png", "jpg", "jpeg", "svg", "webp", "gif", "ico", "bmp"].includes(ext)) {
+    return <Eye style={{ width: '12px', height: '12px', color: '#4ade80' }} />;
+  }
+  return <FileText style={{ width: '12px', height: '12px', color: '#94a3b8' }} />;
+};
 
 export const parseMessageThought = (rawContent) => {
   if (!rawContent || typeof rawContent !== 'string') {
@@ -137,7 +158,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
               boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
             }}
           >
-            <span>🌐</span>
+            <Globe style={{ width: '12px', height: '12px', color: '#38bdf8' }} />
             <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{label}</span>
             <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
           </button>
@@ -166,7 +187,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
               boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
             }}
           >
-            <span>📄</span>
+            {getFileIcon(label || target)}
             <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{label}</span>
             <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
           </button>
@@ -196,7 +217,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
               boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
             }}
           >
-            <span>📁</span>
+            <Folder style={{ width: '12px', height: '12px', color: '#f59e0b' }} />
             <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{label}</span>
             <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
           </button>
@@ -227,7 +248,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
             boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
           }}
         >
-          <span>🌐</span>
+          <Globe style={{ width: '12px', height: '12px', color: '#38bdf8' }} />
           <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{rawUrl}</span>
           <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
         </button>
@@ -236,11 +257,6 @@ export const formatMessageText = (text, disableFileLinks = false) => {
       // Raw Windows or file:/// File path string
       const rawPath = (match[4] || match[5]).replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
       const fileName = rawPath.split('\\').pop() || rawPath;
-      const ext = fileName.split('.').pop().toLowerCase();
-      let icon = "📄";
-      if (["js", "ts", "jsx", "tsx", "py", "html", "css", "json"].includes(ext)) icon = "⚡";
-      if (["png", "jpg", "jpeg", "svg", "webp", "gif"].includes(ext)) icon = "🖼️";
-      if (ext === "md") icon = "📋";
 
       parts.push(
         <button
@@ -264,7 +280,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
             boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
           }}
         >
-          <span>{icon}</span>
+          {getFileIcon(fileName)}
           <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{fileName}</span>
           <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
         </button>
@@ -296,7 +312,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
             boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
           }}
         >
-          <span>📁</span>
+          <Folder style={{ width: '12px', height: '12px', color: '#f59e0b' }} />
           <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{folderName}</span>
           <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
         </button>
@@ -332,7 +348,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
               boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
             }}
           >
-            <span>🌐</span>
+            <Globe style={{ width: '12px', height: '12px', color: '#38bdf8' }} />
             <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{rawUrl}</span>
             <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
           </button>
@@ -362,7 +378,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
               boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
             }}
           >
-            <span>📄</span>
+            {getFileIcon(fileName)}
             <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{fileName}</span>
             <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
           </button>
@@ -392,7 +408,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
               boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
             }}
           >
-            <span>📁</span>
+            <Folder style={{ width: '12px', height: '12px', color: '#f59e0b' }} />
             <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{folderName}</span>
             <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
           </button>

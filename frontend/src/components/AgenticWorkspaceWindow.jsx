@@ -12,6 +12,83 @@ import { SearchableModelSelect } from './ControlDashboard';
 import MicLevelMeter from './MicLevelMeter';
 import { API_BASE, WS_BASE } from '../api';
 
+const renderTreeFileIcon = (fileName) => {
+  const ext = fileName.split('.').pop().toLowerCase();
+  if (["js", "ts", "jsx", "tsx", "py", "c", "cpp", "java", "cs", "rb", "go", "rs"].includes(ext)) {
+    return <Code style={{ width: '13px', height: '13px', color: '#a78bfa', flexShrink: 0 }} />;
+  }
+  if (["css", "scss", "sass", "less"].includes(ext)) {
+    return <Sliders style={{ width: '13px', height: '13px', color: '#38bdf8', flexShrink: 0 }} />;
+  }
+  if (["html", "htm"].includes(ext)) {
+    return <Globe style={{ width: '13px', height: '13px', color: '#38bdf8', flexShrink: 0 }} />;
+  }
+  if (["json", "yaml", "yml", "toml", "db", "sqlite", "env"].includes(ext)) {
+    return <Database style={{ width: '13px', height: '13px', color: '#f59e0b', flexShrink: 0 }} />;
+  }
+  if (["png", "jpg", "jpeg", "svg", "webp", "gif", "ico", "bmp"].includes(ext)) {
+    return <Eye style={{ width: '13px', height: '13px', color: '#4ade80', flexShrink: 0 }} />;
+  }
+  return <FileText style={{ width: '13px', height: '13px', color: '#94a3b8', flexShrink: 0 }} />;
+};
+
+const CodeViewerWithLineNumbers = ({ content, maxHeight = '450px' }) => {
+  if (!content && content !== '') return null;
+  const lines = content.split('\n');
+  const padLength = Math.max(2, String(lines.length).length);
+
+  return (
+    <div style={{
+      background: '#020617',
+      border: '1px solid rgba(255, 255, 255, 0.1)',
+      borderRadius: '8px',
+      fontSize: '0.74rem',
+      fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
+      overflowX: 'auto',
+      overflowY: 'auto',
+      maxHeight: maxHeight,
+      display: 'flex',
+      lineHeight: '1.5'
+    }}>
+      {/* Sticky Line Number Gutter */}
+      <div style={{
+        padding: '10px 8px 10px 10px',
+        background: '#090d16',
+        borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+        color: '#475569',
+        textAlign: 'right',
+        userSelect: 'none',
+        flexShrink: 0,
+        position: 'sticky',
+        left: 0,
+        zIndex: 2
+      }}>
+        {lines.map((_, i) => (
+          <div key={i} style={{ height: '1.5em' }}>
+            {String(i + 1).padStart(padLength, ' ')}
+          </div>
+        ))}
+      </div>
+
+      {/* Code Text Content */}
+      <div style={{
+        padding: '10px 14px',
+        color: '#38bdf8',
+        whiteSpace: 'pre',
+        wordBreak: 'normal',
+        minWidth: '100%',
+        flex: 1
+      }}>
+        {lines.map((line, i) => (
+          <div key={i} style={{ height: '1.5em' }}>
+            {line || ' '}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const InteractiveDirectoryNode = ({ item, onSelectFile }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [children, setChildren] = useState(null);
@@ -62,7 +139,7 @@ const InteractiveDirectoryNode = ({ item, onSelectFile }) => {
           <span style={{ fontSize: '0.66rem', color: '#f59e0b', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease', width: '10px', display: 'inline-block' }}>
             ▶
           </span>
-          <Folder style={{ width: '13px', height: '13px', color: '#f59e0b', flexShrink: 0 }} />
+          {isOpen ? <FolderOpen style={{ width: '13px', height: '13px', color: '#fbbf24', flexShrink: 0 }} /> : <Folder style={{ width: '13px', height: '13px', color: '#f59e0b', flexShrink: 0 }} />}
           <span>{item.name}</span>
           {loading && <RefreshCw style={{ width: '10px', height: '10px', animation: 'spin 1s linear infinite', color: '#f59e0b', marginLeft: 'auto' }} />}
         </div>
@@ -82,13 +159,6 @@ const InteractiveDirectoryNode = ({ item, onSelectFile }) => {
       </div>
     );
   }
-
-  // File item — full name including extension
-  const ext = item.name.split('.').pop().toLowerCase();
-  let icon = "📄";
-  if (["js", "ts", "jsx", "tsx", "py", "html", "css", "json"].includes(ext)) icon = "⚡";
-  if (["png", "jpg", "jpeg", "svg", "webp", "gif"].includes(ext)) icon = "🖼️";
-  if (ext === "md") icon = "📋";
 
   return (
     <div
@@ -111,7 +181,7 @@ const InteractiveDirectoryNode = ({ item, onSelectFile }) => {
       onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)'}
       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
     >
-      <span style={{ fontSize: '0.72rem' }}>{icon}</span>
+      {renderTreeFileIcon(item.name)}
       <span style={{ fontFamily: 'Consolas, Monaco, monospace', color: '#e2e8f0' }}>{item.name}</span>
       {item.size > 0 && (
         <span style={{ fontSize: '0.62rem', color: '#64748b', marginLeft: 'auto' }}>
@@ -2460,8 +2530,9 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       {treeSelectedFileData && (
                         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(56, 189, 248, 0.2)', paddingTop: '8px' }}>
-                            <div style={{ color: '#38bdf8', fontSize: '0.74rem', fontWeight: 700, fontFamily: 'Consolas, Monaco, monospace' }}>
-                              📄 {treeSelectedFileData.name}
+                            <div style={{ color: '#38bdf8', fontSize: '0.74rem', fontWeight: 700, fontFamily: 'Consolas, Monaco, monospace', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {renderTreeFileIcon(treeSelectedFileData.name)}
+                              <span>{treeSelectedFileData.name}</span>
                             </div>
                             <span style={{ fontSize: '0.62rem', color: '#64748b', fontFamily: 'monospace' }}>
                               {treeSelectedFileData.path}
@@ -2477,9 +2548,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                               <RenderMessageContent content={treeSelectedFileData.content} disableFileLinks={true} />
                             </div>
                           ) : (
-                            <div style={{ background: '#020617', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px', fontSize: '0.74rem', fontFamily: 'Consolas, Monaco, monospace', color: '#38bdf8', overflowY: 'auto', overflowX: 'auto', maxHeight: '350px', whiteSpace: 'pre', wordBreak: 'normal' }}>
-                              {treeSelectedFileData.content}
-                            </div>
+                            <CodeViewerWithLineNumbers content={treeSelectedFileData.content} maxHeight="350px" />
                           )}
                         </div>
                       )}
@@ -2493,9 +2562,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       <RenderMessageContent content={fileInspectorData.content} disableFileLinks={true} />
                     </div>
                   ) : (
-                    <div style={{ background: '#020617', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px', fontSize: '0.74rem', fontFamily: 'Consolas, Monaco, monospace', color: '#38bdf8', overflowY: 'auto', overflowX: 'auto', maxHeight: '450px', whiteSpace: 'pre', wordBreak: 'normal' }}>
-                      {fileInspectorData.content}
-                    </div>
+                    <CodeViewerWithLineNumbers content={fileInspectorData.content} maxHeight="450px" />
                   )}
                 </div>
               ) : (
