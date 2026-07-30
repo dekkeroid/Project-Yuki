@@ -2135,8 +2135,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       <img src={fileInspectorData.data_url} alt={fileInspectorData.name} style={{ maxWidth: '100%', maxHeight: '380px', objectFit: 'contain', borderRadius: '4px' }} />
                     </div>
                   ) : fileInspectorData.ext === '.md' ? (
-                    <div style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '8px', padding: '12px', fontSize: '0.78rem', color: '#f8fafc', overflowY: 'auto', maxHeight: '450px' }}>
-                      <RenderMessageContent content={fileInspectorData.content} />
+                    <div style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '8px', padding: '12px', fontSize: '0.78rem', color: '#cbd5e1', overflowY: 'auto', maxHeight: '450px' }}>
+                      <RenderMessageContent content={fileInspectorData.content} disableFileLinks={true} />
                     </div>
                   ) : (
                     <div style={{ background: '#020617', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px', fontSize: '0.74rem', fontFamily: 'Consolas, Monaco, monospace', color: '#38bdf8', overflowY: 'auto', maxHeight: '450px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
