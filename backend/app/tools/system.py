@@ -659,10 +659,12 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
     env["PIP_NO_INPUT"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
 
-    if use_powershell:
-        cmd_list = ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command]
-    else:
-        cmd_list = ["cmd.exe", "/c", command]
+    # Dynamic Command Timeout Scaling
+    if max_timeout == 300 or max_timeout is None:
+        cmd_low = command.lower().strip()
+        quick_cmds = ("dir", "ls", "pwd", "cd ", "mkdir ", "echo ", "git status", "git branch", "git diff", "cat ", "type ", "whoami")
+        if any(cmd_low.startswith(q) for q in quick_cmds):
+            max_timeout = 20
 
     start_time = time.time()
     try:

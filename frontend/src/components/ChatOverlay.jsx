@@ -45,7 +45,7 @@ export const parseMessageThought = (rawContent) => {
   cleanContent = cleanContent.replace(/<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)/gi, '').trim();
 
   // 2. Parse tool badges e.g.: 🛠️ **[jarvis_run_terminal (`dir...`) — ✓ Done]**\n```tool_args\n...\n```\n```tool_output\nOutput text...\n```
-  const toolRegex = /🛠️\s*\*{0,2}\[([a-zA-Z0-9_]+)(?:\s*\((.*?)\))?\s*—\s*(⏳ Running\.\.\.|✓ Done|❌ Error|[\w\.\s]+)\]\*{0,2}(?:\s*```tool_args\n([\s\S]*?)\n```)?(?:\s*```tool_output\n([\s\S]*?)\n```)?/g;
+  const toolRegex = /🛠️\s*\*{0,2}\[([a-zA-Z0-9_]+)(?:\s*\((.*?)\))?\s*—\s*([^\]]+)\]\*{0,2}(?:\s*```tool_args\n([\s\S]*?)\n```)?(?:\s*```(?:tool_output|terminal_stream)\n([\s\S]*?)\n```)?/g;
   while ((match = toolRegex.exec(cleanContent)) !== null) {
     toolBadges.push({
       toolName: match[1],
@@ -57,7 +57,7 @@ export const parseMessageThought = (rawContent) => {
   }
 
   // Strip raw tool badge lines, args blocks, & output blocks from clean text content
-  cleanContent = cleanContent.replace(/🛠️\s*\*{0,2}\[[^\]]+\]\*{0,2}(?:\s*```tool_args\n[\s\S]*?\n```)?(?:\s*```tool_output\n[\s\S]*?\n```)?\n?/g, '').trim();
+  cleanContent = cleanContent.replace(/🛠️\s*\*{0,2}\[[^\]]+\]\*{0,2}(?:\s*```tool_args\n[\s\S]*?\n```)?(?:\s*```(?:tool_output|terminal_stream)\n[\s\S]*?\n```)?\n?/g, '').trim();
 
   return { thoughts, toolBadges, cleanContent };
 };
