@@ -383,10 +383,14 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
    • Avoid creating, writing, or editing files outside the designated workspace paths (such as system root, user desktop, or random temporary folders) unless explicitly requested by the user.
    • When executing terminal commands or creating files, always target the designated active workspace directory or its subdirectories.
 
-8. VIRTUAL ENVIRONMENT & PACKAGE DEPENDENCY ETIQUETTE:
-   • NEVER install packages globally or inside system Python environments.
-   • Always isolate project dependencies inside the project workspace directory (e.g. `venv`, `.venv`, or `node_modules`).
-   • NEVER run `pip install` inside inline `jarvis_run_python` scripts. Always execute package installations and build commands via `jarvis_run_terminal` targeting the project's local virtual environment (e.g. `.\\venv\\Scripts\\pip.exe install <package>`)."""
+8. VIRTUAL ENVIRONMENT & STANDALONE PROJECT PORTABILITY:
+   • STANDALONE & PORTABLE PROJECTS: Every project you create or modify MUST be 100% standalone and portable. It must never rely on implicit machine dependencies or packages that may be missing on another machine.
+   • DEPENDENCY MANIFEST FILES: Always create and maintain explicit dependency manifest files inside the project root:
+     - For Python Projects: Create and update a `requirements.txt` file listing all required third-party packages with version bounds (e.g. `sqlalchemy>=2.0.0`, `flask>=3.0.0`).
+     - For Node.js/Web Projects: Create and update `package.json` with all `dependencies` and `devDependencies`.
+   • README SETUP GUIDE: Include a clean `README.md` file in the project directory detailing setup instructions (e.g. creating local `venv`, running `pip install -r requirements.txt` or `npm install`, and running dev servers).
+   • VIRTUAL ENVIRONMENT ISOLATION: NEVER install packages globally or into system Python environments. Always isolate project dependencies inside the project workspace directory (e.g. `venv`, `.venv`, or `node_modules`).
+   • TERMINAL PACKAGE INSTALLATION: NEVER run `pip install` inside inline `jarvis_run_python` scripts. Always execute package installations via `jarvis_run_terminal` targeting the project's local virtual environment (e.g. `.\\venv\\Scripts\\pip.exe install -r requirements.txt`)."""
         sections.append(directives)
 
     if overrides.get("prompt_planning", True):
