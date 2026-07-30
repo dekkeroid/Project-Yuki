@@ -1814,7 +1814,7 @@ class AgentExecutor:
                     if not tool_failed and tool_name in _SHORT_CIRCUIT_TOOLS:
                         short_circuit_msg = _format_short_circuit_result(tool_name, tool_result, tool_args)
                         yield "token", short_circuit_msg, backend_used
-                        if accumulated_response.strip():
+                        if accumulated_response.strip() and accumulated_response.strip() != "Running tool...":
                             accumulated_response_total.append(accumulated_response.strip())
                         accumulated_response_total.append(short_circuit_msg)
                         
@@ -1822,13 +1822,22 @@ class AgentExecutor:
                         final_history.append({"role": "assistant", "content": assistant_final_speech})
                         yield "final_history", final_history, backend_used
                         return
-                    
-                    if accumulated_response.strip():
+
+                    # Format clean, rich tool execution badge for prompt history and UI
+                    tool_target = tool_args.get("file_path") or tool_args.get("path") or tool_args.get("command") or tool_args.get("url") or ""
+                    if tool_target and len(str(tool_target)) > 60:
+                        tool_target = "..." + str(tool_target)[-57:]
+                    target_info = f" (`{tool_target}`)" if tool_target else ""
+                    status_symbol = "❌ Error" if tool_failed else "✓ Done"
+                    tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**"
+
+                    if accumulated_response.strip() and accumulated_response.strip() != "Running tool...":
                         accumulated_response_total.append(accumulated_response.strip())
+                    accumulated_response_total.append(tool_badge)
                     
                     current_messages.append({
                         "role": "assistant",
-                        "content": accumulated_response if accumulated_response.strip() else "Running tool...",
+                        "content": accumulated_response if accumulated_response.strip() else f"Running tool {tool_name}...",
                         "tool_calls": tool_calls_to_execute
                     })
                     
