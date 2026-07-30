@@ -201,33 +201,33 @@ export const AgenticWorkspaceWindow = ({
               }
               return newMsgs;
             });
-          } else if (data.type === 'status') {
-            if (data.status === 'idle' || data.message === 'Turn terminated!') {
-              setViewMessages(prev => {
-                if (!prev || prev.length === 0) return prev;
-                const newMsgs = [...prev];
-                const lastIdx = newMsgs.length - 1;
-                const lastMsg = newMsgs[lastIdx];
-                if (lastMsg && lastMsg.role === 'assistant') {
-                  let content = lastMsg.content || '';
-                  if (content.includes('⏳ Running...')) {
-                    content = content.replace(/⏳ Running\.\.\./g, '🛑 Terminated');
-                    if (!content.includes('[PROCESS TERMINATED BY USER]')) {
-                      content += `\`\`\`tool_output\n[PROCESS TERMINATED BY USER]\n\`\`\`\n`;
-                    }
-                  } else if (lastMsg.isThinking) {
-                    content = '🛑 *Process execution was terminated by user.*';
+          } else if (data.type === 'turn_interrupted') {
+            setViewMessages(prev => {
+              if (!prev || prev.length === 0) return prev;
+              const newMsgs = [...prev];
+              const lastIdx = newMsgs.length - 1;
+              const lastMsg = newMsgs[lastIdx];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                let content = lastMsg.content || '';
+                if (content.includes('⏳ Running...')) {
+                  content = content.replace(/⏳ Running\.\.\./g, '🛑 Terminated');
+                  if (!content.includes('[PROCESS TERMINATED BY USER]')) {
+                    content += `\`\`\`tool_output\n[PROCESS TERMINATED BY USER]\n\`\`\`\n`;
                   }
-                  newMsgs[lastIdx] = {
-                    ...lastMsg,
-                    content: content,
-                    isThinking: false,
-                    thinkingStatus: null
-                  };
+                } else if (lastMsg.isThinking) {
+                  content = '🛑 *Process execution was terminated by user.*';
                 }
-                return newMsgs;
-              });
-            } else if (data.message) {
+                newMsgs[lastIdx] = {
+                  ...lastMsg,
+                  content: content,
+                  isThinking: false,
+                  thinkingStatus: null
+                };
+              }
+              return newMsgs;
+            });
+          } else if (data.type === 'status') {
+            if (data.message && data.status !== 'idle') {
               setViewMessages(prev => {
                 if (!prev || prev.length === 0) return prev;
                 const newMsgs = [...prev];

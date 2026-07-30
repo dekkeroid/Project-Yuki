@@ -2210,9 +2210,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         pass
                     chat_task = None
                 await websocket.send_json({
-                    "type": "status",
+                    "type": "turn_interrupted",
                     "status": "idle",
-                    "message": "Turn terminated!"
+                    "message": "Turn terminated by user!"
                 })
                 continue
             
