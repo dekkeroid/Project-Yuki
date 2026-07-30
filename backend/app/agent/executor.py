@@ -242,11 +242,6 @@ class AgentExecutor:
                 kwargs.get("filter_name"),
                 int(kwargs.get("top_n", 10))
             ),
-            "jarvis_run_terminal": lambda **kwargs: jarvis_run_terminal(
-                kwargs.get("command") or "",
-                use_powershell=bool(kwargs.get("use_powershell", True)),
-                cwd=kwargs.get("cwd") or kwargs.get("dir") or (overrides.get("session_directories", [{}])[0].get("value") if overrides.get("session_directories") and isinstance(overrides.get("session_directories"), list) and len(overrides.get("session_directories")) > 0 and isinstance(overrides.get("session_directories")[0], dict) else None)
-            ),
             "jarvis_web_search": _async_web_search,
             "jarvis_web_scrape": lambda **kwargs: jarvis_web_scrape(
                 kwargs.get("url") or "",
@@ -279,7 +274,7 @@ class AgentExecutor:
             "jarvis_run_terminal": lambda **kwargs: run_terminal_command(
                 kwargs.get("command") or "",
                 use_powershell=bool(kwargs.get("use_powershell", True)),
-                cwd=kwargs.get("cwd") or kwargs.get("dir") or (overrides.get("session_directories", [{}])[0].get("value") if overrides.get("session_directories") and isinstance(overrides.get("session_directories"), list) and len(overrides.get("session_directories")) > 0 and isinstance(overrides.get("session_directories")[0], dict) else None),
+                cwd=self._get_active_session_dir(kwargs),
                 stdin_input=kwargs.get("stdin_input")
             ),
             "jarvis_send_stdin": lambda **kwargs: send_process_stdin(
@@ -288,7 +283,7 @@ class AgentExecutor:
             ),
             "jarvis_run_python": lambda **kwargs: run_python_script(
                 kwargs.get("code") or "",
-                cwd=kwargs.get("cwd") or kwargs.get("dir") or (overrides.get("session_directories", [{}])[0].get("value") if overrides.get("session_directories") and isinstance(overrides.get("session_directories"), list) and len(overrides.get("session_directories")) > 0 and isinstance(overrides.get("session_directories")[0], dict) else None)
+                cwd=self._get_active_session_dir(kwargs)
             ),
             "jarvis_keyboard_input": lambda **kwargs: keyboard_mouse_input(
                 kwargs.get("action") or "",
@@ -354,6 +349,20 @@ class AgentExecutor:
                 return await (asyncio.to_thread(tool_func, **execution_args) if execution_args else asyncio.to_thread(tool_func))
         except Exception as e:
             return f"Error executing tool: {str(e)}"
+
+    def _get_active_session_dir(self, kwargs: dict) -> Optional[str]:
+        raw = kwargs.get("cwd") or kwargs.get("dir")
+        if raw:
+            return raw
+        try:
+            profile_dirs = self.memory.profile.get("settings", {}).get("session_directories", [])
+            if profile_dirs and isinstance(profile_dirs, list) and len(profile_dirs) > 0 and isinstance(profile_dirs[0], dict):
+                val = profile_dirs[0].get("value")
+                if val:
+                    return val
+        except Exception:
+            pass
+        return None
 
     def _execute_update_user_fact(self, **kwargs) -> str:
         key = (kwargs.get("key") or "").strip().lower()
