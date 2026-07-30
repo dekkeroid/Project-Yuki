@@ -1573,11 +1573,30 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                           </summary>
                           <div style={{ padding: '10px 12px', fontSize: '0.74rem', background: '#090d16', color: '#cbd5e1', fontFamily: 'monospace' }}>
                             {tb.target && (
-                              <div style={{ color: '#94a3b8', marginBottom: '4px', fontSize: '0.72rem' }}>
+                              <div style={{ color: '#94a3b8', marginBottom: '6px', fontSize: '0.72rem' }}>
                                 <strong style={{ color: '#a78bfa' }}>Target / Command:</strong> {tb.target}
                               </div>
                             )}
-                            <div style={{ color: '#64748b', fontSize: '0.68rem', fontStyle: 'italic' }}>
+                            {tb.output && (
+                              <div style={{ marginTop: '6px', marginBottom: '6px' }}>
+                                <div style={{ color: '#64748b', fontSize: '0.68rem', fontWeight: 600, marginBottom: '4px' }}>
+                                  RESULT / OUTPUT:
+                                </div>
+                                <div style={{
+                                  background: '#020617',
+                                  padding: '8px 10px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #1e293b',
+                                  maxHeight: '180px',
+                                  overflowY: 'auto',
+                                  fontSize: '0.72rem',
+                                  color: '#4ade80'
+                                }}>
+                                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{tb.output}</pre>
+                                </div>
+                              </div>
+                            )}
+                            <div style={{ color: '#64748b', fontSize: '0.68rem', fontStyle: 'italic', marginTop: '4px' }}>
                               Executed via Yuki ReAct Engine in workspace directory.
                             </div>
                           </div>

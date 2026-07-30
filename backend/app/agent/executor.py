@@ -1829,7 +1829,12 @@ class AgentExecutor:
                         tool_target = "..." + str(tool_target)[-57:]
                     target_info = f" (`{tool_target}`)" if tool_target else ""
                     status_symbol = "❌ Error" if tool_failed else "✓ Done"
-                    tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**"
+
+                    output_snippet = str(tool_result).strip()
+                    if len(output_snippet) > 800:
+                        output_snippet = output_snippet[:800] + "\n... [truncated]"
+
+                    tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**\n```tool_output\n{output_snippet}\n```"
 
                     if accumulated_response.strip() and accumulated_response.strip() != "Running tool...":
                         accumulated_response_total.append(accumulated_response.strip())
