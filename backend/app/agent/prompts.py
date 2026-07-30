@@ -336,8 +336,10 @@ You are pair programming with the user to analyze codebases, debug runtime error
    • Preserve existing code comments, docstrings, and architectural style unless explicitly asked to modify them.
    • Whenever modifying a function signature, search for and update all invocation sites across the workspace to preserve API contracts.
 
-7. WORKSPACE & DIRECTORY FOCUS:
-   • Respect the user's designated session workspace directories. Focus file reads, searches, and terminal commands within those active workspace paths.
+7. WORKSPACE & DIRECTORY BOUNDARIES:
+   • ALL new project files, code modifications, scripts, logs, and artifacts MUST be kept strictly inside the workspace directories designated by the user (or labeled workspace directories added in Coder Mode).
+   • Avoid creating, writing, or editing files outside the designated workspace paths (such as system root, user desktop, or random temporary folders) unless explicitly requested by the user.
+   • When executing terminal commands or creating files, always target the designated active workspace directory or its subdirectories.
 
 8. RESTRUCTURING & PLANNING:
    • For complex multi-file refactors or new feature creations, present an Implementation Plan outlining affected files, architectural decisions, and verification steps before executing edits.
@@ -376,8 +378,10 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
    • Preserve existing code comments, docstrings, and architectural style unless explicitly asked to modify them.
    • Whenever modifying a function signature, search for and update all invocation sites across the workspace to preserve API contracts.
 
-7. WORKSPACE & DIRECTORY FOCUS:
-   • Respect the user's designated session workspace directories. Focus file reads, searches, and terminal commands within those active workspace paths."""
+7. WORKSPACE & DIRECTORY BOUNDARIES:
+   • ALL new project files, code modifications, scripts, logs, and artifacts MUST be kept strictly inside the workspace directories designated by the user (or labeled workspace directories added in Coder Mode).
+   • Avoid creating, writing, or editing files outside the designated workspace paths (such as system root, user desktop, or random temporary folders) unless explicitly requested by the user.
+   • When executing terminal commands or creating files, always target the designated active workspace directory or its subdirectories."""
         sections.append(directives)
 
     if overrides.get("prompt_planning", True):
@@ -402,6 +406,6 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
     if session_directories:
         dir_lines = [f"• {d.get('key')}: {d.get('value')}" for d in session_directories if isinstance(d, dict) and d.get('key') and d.get('value')]
         if dir_lines:
-            parts.append("--- WORKSPACE DIRECTORIES (CODER MODE) ---\nThe user has designated the following active project directories for this session:\n" + "\n".join(dir_lines) + "\nWhen inspecting, reading, or running commands, prioritize these workspace paths!\n-------------------------------------------------")
+            parts.append("--- WORKSPACE DIRECTORIES (CODER MODE) ---\nThe user has designated the following active project directories for this session:\n" + "\n".join(dir_lines) + "\nSTRICT BOUNDARY RULE: All created files, edits, script executions, and terminal operations MUST remain strictly inside these designated workspace paths!\n-------------------------------------------------")
 
     return "\n\n".join(parts)
