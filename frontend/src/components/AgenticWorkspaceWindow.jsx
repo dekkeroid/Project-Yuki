@@ -162,6 +162,118 @@ export const AgenticWorkspaceWindow = ({
   const [dirKeyInput, setDirKeyInput] = useState('');
   const [dirValInput, setDirValInput] = useState('');
 
+  // Internal Settings Sync (for standalone Chat Window mode)
+  const [internalSettings, setInternalSettings] = useState({});
+  const [savedCustomEndpoints, setSavedCustomEndpoints] = useState([]);
+  const [selectedCoderEndpointId, setSelectedCoderEndpointId] = useState('');
+  const [coderCustomLabel, setCoderCustomLabel] = useState('');
+  const [saveCoderEndpointBtnText, setSaveCoderEndpointBtnText] = useState('Save Preset');
+
+  const activeSettings = { ...internalSettings, ...settings };
+
+  const handleUpdateSetting = async (keyOrUpdates, value) => {
+    const updates = typeof keyOrUpdates === 'object' ? keyOrUpdates : { [keyOrUpdates]: value };
+    setInternalSettings(prev => ({ ...prev, ...updates }));
+    if (onUpdateSetting) {
+      onUpdateSetting(updates);
+    }
+    try {
+      await fetch(`${API_BASE}/api/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+    } catch (err) {
+      console.error("[Settings] Error updating settings:", err);
+    }
+  };
+
+  const fetchSettingsAndEndpoints = useCallback(async () => {
+    try {
+      const sRes = await fetch(`${API_BASE}/api/settings`);
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        setInternalSettings(sData || {});
+      }
+      const eRes = await fetch(`${API_BASE}/api/settings/custom-endpoints`);
+      if (eRes.ok) {
+        const eData = await eRes.json();
+        setSavedCustomEndpoints(eData.endpoints || []);
+      }
+    } catch (err) {
+      console.error("[Settings] Error fetching settings/endpoints:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSettingsAndEndpoints();
+  }, [fetchSettingsAndEndpoints]);
+
+  const handleSaveCoderEndpoint = async () => {
+    const labelToSave = coderCustomLabel.trim() || 'Coder Endpoint';
+    const baseUrlToSave = activeSettings.llm_coder_base_url || '';
+    if (!baseUrlToSave) {
+      alert("Please enter a valid Base URL before saving preset.");
+      return;
+    }
+    setSaveCoderEndpointBtnText("Saving...");
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedCoderEndpointId || '',
+          label: labelToSave,
+          base_url: baseUrlToSave,
+          api_key: activeSettings.llm_coder_api_key || '',
+          llm_backend: activeSettings.llm_coder_backend || 'custom'
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSavedCustomEndpoints(data.endpoints || []);
+        setCoderCustomLabel(labelToSave);
+        if (data.saved && data.saved.id) {
+          setSelectedCoderEndpointId(data.saved.id);
+        }
+        setSaveCoderEndpointBtnText("✓ Saved to DB");
+        setTimeout(() => setSaveCoderEndpointBtnText('Save Preset'), 2500);
+      } else {
+        setSaveCoderEndpointBtnText("Save Failed");
+        setTimeout(() => setSaveCoderEndpointBtnText('Save Preset'), 2000);
+      }
+    } catch (err) {
+      console.error("Failed to save coder custom endpoint:", err);
+      setSaveCoderEndpointBtnText("Error Saving");
+      setTimeout(() => setSaveCoderEndpointBtnText('Save Preset'), 2000);
+    }
+  };
+
+  const handleDeleteCoderEndpoint = async (epId) => {
+    const targetId = epId || selectedCoderEndpointId;
+    const targetEp = savedCustomEndpoints.find(e => e.id === targetId || e.label === coderCustomLabel);
+    if (!targetEp) {
+      alert("Please select a saved preset to delete.");
+      return;
+    }
+    if (!confirm(`Delete saved endpoint "${targetEp.label}"?`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: targetEp.id, label: targetEp.label })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSavedCustomEndpoints(data.endpoints || []);
+        if (selectedCoderEndpointId === targetEp.id) setSelectedCoderEndpointId('');
+        if (coderCustomLabel === targetEp.label) setCoderCustomLabel('');
+      }
+    } catch (err) {
+      console.error("Failed to delete custom endpoint:", err);
+    }
+  };
+
   const fetchSessionMeta = useCallback(async (sid) => {
     if (!sid) return;
     try {
@@ -2461,7 +2573,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       Coder Mode LLM Backend:
                     </label>
                     <select
-                      value={settings.llm_coder_backend || 'custom'}
+                      value={activeSettings.llm_coder_backend ?? ''}
                       onChange={async (e) => {
                         const newBackend = e.target.value;
                         const defaults = {
@@ -2472,7 +2584,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                         };
                         const updates = { llm_coder_backend: newBackend, llm_coder_model: '' };
                         if (defaults[newBackend]) updates.llm_coder_base_url = defaults[newBackend];
-                        if (onUpdateSetting) onUpdateSetting(updates);
+                        await handleUpdateSetting(updates);
                       }}
                       style={{
                         width: '100%',
@@ -2486,57 +2598,162 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                         cursor: 'pointer'
                       }}
                     >
+                      <option value="">Same as Main/Complex Endpoint (Default)</option>
                       <option value="custom">Custom / Cloud API (OpenAI-Compatible)</option>
                       <option value="lmstudio">LM Studio (Local)</option>
                       <option value="ollama">Ollama (Local)</option>
                       <option value="vllm">vLLM (Local)</option>
-                      <option value="">Same as Main/Complex Endpoint (Default)</option>
                     </select>
                   </div>
 
-                  {/* 2. Quick Cloud Presets (Rendered ONLY if Custom / Cloud API chosen) */}
-                  {(settings.llm_coder_backend === 'custom' || settings.llm_coder_backend === 'openai') && (
-                    <div style={{ marginTop: '10px' }}>
-                      <span style={{ fontSize: '0.68rem', color: '#c4b5fd', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                        Quick Cloud Provider Presets:
-                      </span>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {[
-                          { name: 'Groq', label: 'Groq Cloud API', url: 'https://api.groq.com/openai/v1', model: 'qwen2.5-coder-32b-instruct' },
-                          { name: 'Gemini', label: 'Google Gemini Cloud', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
-                          { name: 'OpenAI', label: 'OpenAI Cloud API', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-                          { name: 'Grok', label: 'xAI Grok Cloud', url: 'https://api.x.ai/v1', model: 'grok-beta' },
-                          { name: 'OpenRouter', label: 'OpenRouter Cloud API', url: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
-                          { name: 'Mistral', label: 'Mistral Cloud API', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
-                          { name: 'DeepSeek', label: 'DeepSeek Cloud', url: 'https://api.deepseek.com/v1', model: 'deepseek-coder' }
-                        ].map((p) => (
-                          <button
-                            key={p.name}
-                            type="button"
-                            onClick={async () => {
-                              const updates = {
-                                llm_coder_backend: 'custom',
-                                llm_coder_base_url: p.url
-                              };
-                              if (p.model && !settings.llm_coder_model) {
-                                updates.llm_coder_model = p.model;
-                              }
-                              if (onUpdateSetting) onUpdateSetting(updates);
-                            }}
-                            style={{
-                              padding: '4px 8px',
-                              fontSize: '0.66rem',
-                              borderRadius: '6px',
-                              background: settings.llm_coder_base_url === p.url ? 'rgba(16, 185, 129, 0.35)' : 'rgba(255, 255, 255, 0.05)',
-                              border: settings.llm_coder_base_url === p.url ? '1px solid #6ee7b7' : '1px solid rgba(255,255,255,0.1)',
-                              color: settings.llm_coder_base_url === p.url ? '#ffffff' : '#cbd5e1',
-                              cursor: 'pointer',
-                              fontWeight: 500
-                            }}
-                          >
-                            ⚡ {p.name}
-                          </button>
-                        ))}
+                  {/* 2. Custom / Cloud API Vault & Presets Section */}
+                  {(activeSettings.llm_coder_backend === 'custom' || activeSettings.llm_coder_backend === 'openai') && (
+                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                      
+                      {/* Saved Key Vault Dropdown + Trash Delete Button */}
+                      {savedCustomEndpoints.length > 0 && (
+                        <div style={{ marginBottom: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <span style={{ color: '#c4b5fd', fontSize: '0.74rem', fontWeight: 600 }}>
+                              🔑 Saved API Key Vault ({savedCustomEndpoints.length})
+                            </span>
+                            <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)' }}>
+                              Select to load preset
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <select
+                              value={selectedCoderEndpointId}
+                              onChange={async (e) => {
+                                const selId = e.target.value;
+                                setSelectedCoderEndpointId(selId);
+                                const ep = savedCustomEndpoints.find(item => item.id === selId);
+                                if (ep) {
+                                  setCoderCustomLabel(ep.label || '');
+                                  await handleUpdateSetting({
+                                    llm_coder_backend: ep.llm_backend || 'custom',
+                                    llm_coder_base_url: ep.base_url || '',
+                                    ...(ep.api_key ? { llm_coder_api_key: ep.api_key } : {})
+                                  });
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: '7px 10px',
+                                background: 'rgba(18, 12, 33, 0.95)',
+                                border: '1px solid rgba(167, 139, 250, 0.45)',
+                                borderRadius: '8px',
+                                color: '#ffffff',
+                                fontSize: '0.78rem',
+                                fontWeight: 500,
+                                outline: 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value="" style={{ background: '#120c21', color: '#94a3b8' }}>
+                                -- Select Saved API Key Preset --
+                              </option>
+                              {savedCustomEndpoints.map((ep) => {
+                                const isActive = activeSettings.llm_coder_base_url === ep.base_url;
+                                return (
+                                  <option key={ep.id} value={ep.id} style={{ background: '#120c21', color: '#ffffff' }}>
+                                    {isActive ? '● ' : ''}{ep.label || 'Saved Endpoint'} ({ep.has_key ? '🔑 Key Saved' : 'No Key'})
+                                  </option>
+                                );
+                              })}
+                            </select>
+
+                            <button
+                              type="button"
+                              title="Delete active preset from DB"
+                              onClick={() => handleDeleteCoderEndpoint()}
+                              style={{
+                                padding: '7px 10px',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(239, 68, 68, 0.4)',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                color: '#fca5a5',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.74rem'
+                              }}
+                            >
+                              <Trash2 style={{ width: '13px', height: '13px' }} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Quick Cloud Provider Presets */}
+                      <div style={{ marginTop: '6px', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.68rem', color: '#c4b5fd', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                          Quick Cloud Provider Presets:
+                        </span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                          {[
+                            { name: 'Groq', label: 'Groq Cloud API', url: 'https://api.groq.com/openai/v1', model: 'qwen2.5-coder-32b-instruct' },
+                            { name: 'Gemini', label: 'Google Gemini Cloud', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
+                            { name: 'OpenAI', label: 'OpenAI Cloud API', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+                            { name: 'Grok', label: 'xAI Grok Cloud', url: 'https://api.x.ai/v1', model: 'grok-beta' },
+                            { name: 'OpenRouter', label: 'OpenRouter Cloud API', url: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct' },
+                            { name: 'Mistral', label: 'Mistral Cloud API', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
+                            { name: 'DeepSeek', label: 'DeepSeek Cloud', url: 'https://api.deepseek.com/v1', model: 'deepseek-coder' }
+                          ].map((p) => (
+                            <button
+                              key={p.name}
+                              type="button"
+                              onClick={async () => {
+                                setCoderCustomLabel(p.label);
+                                const updates = {
+                                  llm_coder_backend: 'custom',
+                                  llm_coder_base_url: p.url
+                                };
+                                if (p.model && !activeSettings.llm_coder_model) {
+                                  updates.llm_coder_model = p.model;
+                                }
+                                await handleUpdateSetting(updates);
+                              }}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.66rem',
+                                borderRadius: '6px',
+                                background: activeSettings.llm_coder_base_url === p.url ? 'rgba(16, 185, 129, 0.35)' : 'rgba(255, 255, 255, 0.05)',
+                                border: activeSettings.llm_coder_base_url === p.url ? '1px solid #6ee7b7' : '1px solid rgba(255,255,255,0.1)',
+                                color: activeSettings.llm_coder_base_url === p.url ? '#ffffff' : '#cbd5e1',
+                                cursor: 'pointer',
+                                fontWeight: 500
+                              }}
+                            >
+                              ⚡ {p.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Preset Name / Label Input */}
+                      <div style={{ marginTop: '8px' }}>
+                        <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '3px' }}>
+                          Preset Name / Label
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Groq Qwen Coder, Google Gemini Cloud, DeepSeek Coder"
+                          value={coderCustomLabel}
+                          onChange={(e) => setCoderCustomLabel(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(9, 13, 22, 0.95)',
+                            border: '1px solid rgba(167, 139, 250, 0.3)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none'
+                          }}
+                        />
                       </div>
                     </div>
                   )}
@@ -2544,19 +2761,19 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   {/* 3. LLM Backend URL Input */}
                   <div style={{ marginTop: '10px' }}>
                     <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
-                      {settings.llm_coder_backend === 'lmstudio' ? 'LM Studio Coder URL' :
-                       settings.llm_coder_backend === 'ollama' ? 'Ollama Coder URL' :
-                       settings.llm_coder_backend === 'vllm' ? 'vLLM Coder URL' :
+                      {activeSettings.llm_coder_backend === 'lmstudio' ? 'LM Studio Coder URL' :
+                       activeSettings.llm_coder_backend === 'ollama' ? 'Ollama Coder URL' :
+                       activeSettings.llm_coder_backend === 'vllm' ? 'vLLM Coder URL' :
                        'Coder Base URL'}
                     </label>
                     <input
                       type="text"
-                      value={settings.llm_coder_base_url || ''}
-                      onChange={(e) => onUpdateSetting && onUpdateSetting({ llm_coder_base_url: e.target.value })}
+                      value={activeSettings.llm_coder_base_url || ''}
+                      onChange={(e) => handleUpdateSetting({ llm_coder_base_url: e.target.value })}
                       placeholder={
-                        settings.llm_coder_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
-                        settings.llm_coder_backend === 'ollama' ? 'http://127.0.0.1:11434' :
-                        settings.llm_coder_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
+                        activeSettings.llm_coder_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
+                        activeSettings.llm_coder_backend === 'ollama' ? 'http://127.0.0.1:11434' :
+                        activeSettings.llm_coder_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
                         'https://api.groq.com/openai/v1'
                       }
                       style={{
@@ -2573,7 +2790,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   </div>
 
                   {/* 4. Coder API Key Vault (Rendered if Custom chosen) */}
-                  {(settings.llm_coder_backend === 'custom' || settings.llm_coder_backend === 'openai') && (
+                  {(activeSettings.llm_coder_backend === 'custom' || activeSettings.llm_coder_backend === 'openai') && (
                     <div style={{ marginTop: '10px' }}>
                       <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
                         Coder API Key (Encrypted in DB)
@@ -2581,8 +2798,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <input
                           type={showCoderKey ? 'text' : 'password'}
-                          value={settings.llm_coder_api_key || ''}
-                          onChange={(e) => onUpdateSetting && onUpdateSetting({ llm_coder_api_key: e.target.value })}
+                          value={activeSettings.llm_coder_api_key || ''}
+                          onChange={(e) => handleUpdateSetting({ llm_coder_api_key: e.target.value })}
                           placeholder="sk-..."
                           style={{
                             flex: 1,
@@ -2613,6 +2830,35 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                           {showCoderKey ? <EyeOff style={{ width: '14px', height: '14px' }} /> : <Eye style={{ width: '14px', height: '14px' }} />}
                         </button>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Save Preset Button (Rendered if Custom chosen) */}
+                  {(activeSettings.llm_coder_backend === 'custom' || activeSettings.llm_coder_backend === 'openai') && (
+                    <div style={{ marginTop: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={handleSaveCoderEndpoint}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          fontSize: '0.78rem',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                          color: 'white',
+                          fontWeight: '600',
+                          border: 'none',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <Sparkles style={{ width: '14px', height: '14px' }} />
+                        {saveCoderEndpointBtnText}
+                      </button>
                     </div>
                   )}
 
@@ -2647,7 +2893,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     {(() => {
                       const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
                       const allNames = Array.from(new Set([
-                        ...(settings.llm_coder_model ? [settings.llm_coder_model] : []),
+                        ...(activeSettings.llm_coder_model ? [activeSettings.llm_coder_model] : []),
                         'qwen2.5-coder-32b-instruct',
                         'llama-3.3-70b-versatile',
                         'claude-3-5-sonnet-20241022',
@@ -2658,8 +2904,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 
                       return (
                         <SearchableModelSelect
-                          value={settings.llm_coder_model || ''}
-                          onChange={(val) => onUpdateSetting && onUpdateSetting({ llm_coder_model: val })}
+                          value={activeSettings.llm_coder_model || ''}
+                          onChange={(val) => handleUpdateSetting({ llm_coder_model: val })}
                           options={allNames}
                           placeholder="Search or type Coder model name..."
                         />
