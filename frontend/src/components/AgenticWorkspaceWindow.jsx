@@ -1765,55 +1765,53 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
               }}>
                 {/* Left Side: Prompt Module Toggles */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    disabled={isCodingMode}
-                    onClick={() => {
-                      if (isCodingMode) return;
-                      const val = !promptPersona;
-                      setPromptPersona(val);
-                      localStorage.setItem('yuki-prompt-persona', String(val));
-                    }}
-                    title={isCodingMode ? "Persona automatically stripped in Coder Mode for zero-fluff engineering" : "Persona & Roleplay module"}
-                    style={{
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      border: (!isCodingMode && promptPersona) ? `1px solid ${themeAccent}` : '1px solid rgba(255,255,255,0.1)',
-                      background: (!isCodingMode && promptPersona) ? `${themeAccent}30` : 'rgba(0,0,0,0.3)',
-                      color: (!isCodingMode && promptPersona) ? '#ffffff' : '#64748b',
-                      cursor: isCodingMode ? 'not-allowed' : 'pointer',
-                      fontSize: '0.66rem',
-                      fontWeight: 600,
-                      opacity: isCodingMode ? 0.7 : 1
-                    }}
-                  >
-                    🎭 Persona {isCodingMode ? 'OFF (Coder)' : (promptPersona ? 'ON' : 'OFF')}
-                  </button>
+                  {!isCodingMode && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = !promptPersona;
+                          setPromptPersona(val);
+                          localStorage.setItem('yuki-prompt-persona', String(val));
+                        }}
+                        title="Persona & Roleplay module"
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          border: promptPersona ? `1px solid ${themeAccent}` : '1px solid rgba(255,255,255,0.1)',
+                          background: promptPersona ? `${themeAccent}30` : 'rgba(0,0,0,0.3)',
+                          color: promptPersona ? '#ffffff' : '#64748b',
+                          cursor: 'pointer',
+                          fontSize: '0.66rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        🎭 Persona {promptPersona ? 'ON' : 'OFF'}
+                      </button>
 
-                  <button
-                    type="button"
-                    disabled={isCodingMode}
-                    onClick={() => {
-                      if (isCodingMode) return;
-                      const val = !promptExpressions;
-                      setPromptExpressions(val);
-                      localStorage.setItem('yuki-prompt-expressions', String(val));
-                    }}
-                    title={isCodingMode ? "Expressions disabled in Coder Mode for technical focus" : "Avatar Expressions module"}
-                    style={{
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      border: (!isCodingMode && promptExpressions) ? '1px solid #f472b6' : '1px solid rgba(255,255,255,0.1)',
-                      background: (!isCodingMode && promptExpressions) ? 'rgba(244, 114, 182, 0.25)' : 'rgba(0,0,0,0.3)',
-                      color: (!isCodingMode && promptExpressions) ? '#ffffff' : '#64748b',
-                      cursor: isCodingMode ? 'not-allowed' : 'pointer',
-                      fontSize: '0.66rem',
-                      fontWeight: 600,
-                      opacity: isCodingMode ? 0.7 : 1
-                    }}
-                  >
-                    🎬 Expressions {isCodingMode ? 'OFF (Coder)' : (promptExpressions ? 'ON' : 'OFF')}
-                  </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = !promptExpressions;
+                          setPromptExpressions(val);
+                          localStorage.setItem('yuki-prompt-expressions', String(val));
+                        }}
+                        title="Avatar Expressions module"
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          border: promptExpressions ? '1px solid #f472b6' : '1px solid rgba(255,255,255,0.1)',
+                          background: promptExpressions ? 'rgba(244, 114, 182, 0.25)' : 'rgba(0,0,0,0.3)',
+                          color: promptExpressions ? '#ffffff' : '#64748b',
+                          cursor: 'pointer',
+                          fontSize: '0.66rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        🎬 Expressions {promptExpressions ? 'ON' : 'OFF'}
+                      </button>
+                    </>
+                  )}
 
                   <button
                     type="button"
