@@ -50,7 +50,7 @@ const CodeViewerWithLineNumbers = ({ content, maxHeight = '450px' }) => {
       display: 'flex',
       lineHeight: '1.5'
     }}>
-      {/* Sticky Line Number Gutter */}
+      {/* Line Number Gutter */}
       <div style={{
         padding: '10px 8px 10px 10px',
         background: '#090d16',
@@ -58,10 +58,7 @@ const CodeViewerWithLineNumbers = ({ content, maxHeight = '450px' }) => {
         color: '#475569',
         textAlign: 'right',
         userSelect: 'none',
-        flexShrink: 0,
-        position: 'sticky',
-        left: 0,
-        zIndex: 2
+        flexShrink: 0
       }}>
         {lines.map((_, i) => (
           <div key={i} style={{ height: '1.5em' }}>
