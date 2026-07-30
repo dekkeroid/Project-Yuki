@@ -1213,15 +1213,15 @@ class AgentExecutor:
         if backend == "mode3":
             try:
                 # Use the intent-check/regex result if provided; only re-classify as last resort
-                if resolved_backend in ("simple", "complex"):
+                if resolved_backend in ("simple", "complex", "coder", "complex_coder"):
                     task = resolved_backend
-                    source = intent_source or "regex"
+                    source = intent_source or "coding_mode"
                 else:
                     task = self._classify_task(user_message) if user_message else "simple"
                     source = "regex"
-                temp = 0.2 if task == "complex" else 0.7
+                temp = 0.2 if task in ("complex", "coder", "complex_coder") else 0.7
                 tb, tm = self._get_backend_and_model_for_task(task)
-                print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {tm} via {tb.name} with {'full' if task == 'complex' else 'lean'} prompt (temp={temp})")
+                print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {tm} via {tb.name} with {'full' if task in ('complex', 'coder', 'complex_coder') else 'lean'} prompt (temp={temp})")
                 async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides):
                     yield chunk, label
             except Exception as e:

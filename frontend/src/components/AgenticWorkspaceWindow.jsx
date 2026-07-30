@@ -54,7 +54,7 @@ export const AgenticWorkspaceWindow = ({
     coderModelsFetchRef.current = now;
     setCoderLlmModels([]);
     try {
-      const res = await fetch(`${API_BASE}/api/models`);
+      const res = await fetch(`${API_BASE}/api/models?target=coder`);
       if (res.ok) {
         const data = await res.json();
         if (data.models && data.models.length > 0) {
@@ -1499,7 +1499,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                         ? 'linear-gradient(135deg, rgba(139, 92, 246, 0.35) 0%, rgba(109, 40, 217, 0.35) 100%)'
                         : 'rgba(15, 23, 42, 0.75)',
                       border: isUser ? '1px solid rgba(167, 139, 250, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
-                      color: '#f5f5f5',
+                      color: '#f8fafc',
                       fontSize: '0.82rem',
                       lineHeight: '1.5',
                       boxShadow: '0 4px 12px rgba(0,0,0,0.3)',

@@ -500,6 +500,16 @@ async def get_available_models(target: str = "complex"):
         b_url = simple_base_url
         b_key = simple_api_key
         active_model = getattr(config, "LLM_SIMPLE_MODEL", "")
+    elif target == "coder":
+        coder_backend_type = getattr(config, "LLM_CODER_BACKEND", "").strip().lower()
+        coder_base_url = getattr(config, "LLM_CODER_BASE_URL", "")
+        coder_api_key = getattr(config, "LLM_CODER_API_KEY", "")
+        if coder_api_key and (coder_api_key.startswith("enc_v1:") or coder_api_key.startswith("gAAAA")):
+            coder_api_key = decrypt_api_key(coder_api_key)
+        b_type = coder_backend_type or config.get_backend_type()
+        b_url = coder_base_url or config.get_effective_base_url()
+        b_key = coder_api_key or config.LLM_API_KEY
+        active_model = getattr(config, "LLM_CODER_MODEL", "") or config.LLM_MODEL
     else:
         if config.LLM_API_KEY and (config.LLM_API_KEY.startswith("enc_v1:") or config.LLM_API_KEY.startswith("gAAAA")):
             config.LLM_API_KEY = decrypt_api_key(config.LLM_API_KEY)
@@ -547,6 +557,19 @@ async def get_available_models(target: str = "complex"):
                 return {"models": [], "active": active_model}
             else:
                 backend = LMStudioBackend(base_url_override=simple_base_url)
+        elif target == "coder":
+            masked_key = (coder_api_key[:4] + "...") if coder_api_key and len(coder_api_key) > 8 else ("(set)" if coder_api_key else "(empty)")
+            print(f"[ModelFetch][Coder] backend_type='{coder_backend_type}', base_url='{coder_base_url}', api_key={masked_key}")
+            from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
+            if coder_backend_type and coder_backend_type != "none":
+                if coder_backend_type == "ollama":
+                    backend = OllamaBackend(base_url_override=coder_base_url)
+                elif coder_backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
+                    backend = OpenAICompatibleBackend(base_url_override=coder_base_url, api_key_override=coder_api_key)
+                else:
+                    backend = LMStudioBackend(base_url_override=coder_base_url)
+            else:
+                backend = get_backend()
         else:
             backend = get_backend()
             print(f"[ModelFetch][Complex] backend '{backend.name}', base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
