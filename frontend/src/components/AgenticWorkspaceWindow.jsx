@@ -4,7 +4,7 @@ import {
   Send, RefreshCw, Zap, HardDrive, Database, Eye, EyeOff, Wrench, Search,
   Code, Activity, Brain, Volume2, Mic, MicOff, ChevronDown, ChevronRight,
   Folder, Calendar, Plus, Trash2, History, PanelLeftClose, PanelLeftOpen,
-  Settings, Globe, Sliders, Check, ShieldAlert, Tag, FolderPlus, FolderOpen
+  Settings, Globe, Sliders, Check, ShieldAlert, Tag, FolderPlus, FolderOpen, Layers
 } from 'lucide-react';
 import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought } from './ChatOverlay';
 import { SearchableModelSelect } from './ControlDashboard';
@@ -264,7 +264,8 @@ export const AgenticWorkspaceWindow = ({
 
   // Standalone Preferences Modal & Active Tab State
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
-  const [prefTab, setPrefTab] = useState('appearance'); // 'appearance' | 'engine' | 'prompts' | 'audio'
+  const [prefTab, setPrefTab] = useState('coder'); // 'coder' | 'appearance' | 'engine' | 'prompts' | 'audio'
+  const [showCoderKey, setShowCoderKey] = useState(false);
 
   // Appearance Preferences (Saved in localStorage)
   const [themeAccent, setThemeAccent] = useState(() => {
@@ -2359,8 +2360,32 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
               display: 'flex',
               background: 'rgba(0, 0, 0, 0.3)',
               borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              padding: '4px 12px'
+              padding: '4px 8px',
+              gap: '4px'
             }}>
+              <button
+                type="button"
+                onClick={() => setPrefTab('coder')}
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  border: 'none',
+                  borderRadius: '6px',
+                  background: prefTab === 'coder' ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
+                  color: prefTab === 'coder' ? '#6ee7b7' : '#94a3b8',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px'
+                }}
+              >
+                <Code style={{ width: '13px', height: '13px' }} /> Coder Engine
+              </button>
+
               <button
                 type="button"
                 onClick={() => setPrefTab('appearance')}
@@ -2396,7 +2421,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   transition: 'all 0.15s ease'
                 }}
               >
-                ⚙️ Engine
+                ⚙️ Overrides
               </button>
 
               <button
@@ -2418,6 +2443,186 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                 🎭 Prompts
               </button>
             </div>
+
+            {/* Tab 0: Dedicated Coder Engine Configuration */}
+            {prefTab === 'coder' && (
+              <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '65vh', overflowY: 'auto' }}>
+                <div style={{ background: 'rgba(16, 185, 129, 0.08)', borderRadius: '12px', padding: '14px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#6ee7b7', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Code style={{ width: '15px', height: '15px' }} /> Dedicated Coder Mode Engine & Endpoint
+                  </div>
+                  <div style={{ fontSize: '0.70rem', color: 'rgba(255,255,255,0.65)', lineHeight: '1.4' }}>
+                    Configure the custom LLM Provider, Model Name, Base URL, and API Key specifically used when Coder Mode is ON. Bypasses TTS voice audio and avatar animations for raw coding throughput.
+                  </div>
+
+                  {/* Backend Selection */}
+                  <div style={{ marginTop: '12px' }}>
+                    <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
+                      Coder Mode LLM Backend:
+                    </label>
+                    <select
+                      value={settings.llm_coder_backend || 'custom'}
+                      onChange={async (e) => {
+                        const newBackend = e.target.value;
+                        const defaults = {
+                          lmstudio: 'http://127.0.0.1:1234',
+                          ollama: 'http://127.0.0.1:11434',
+                          vllm: 'http://127.0.0.1:8000/v1',
+                          custom: 'https://api.groq.com/openai/v1',
+                        };
+                        const updates = { llm_coder_backend: newBackend };
+                        if (defaults[newBackend]) updates.llm_coder_base_url = defaults[newBackend];
+                        if (onUpdateSetting) onUpdateSetting(updates);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        background: 'rgba(9, 13, 22, 0.95)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="custom">Cloud API / Custom (Groq, OpenAI, Together, DeepSeek, Google Gemini)</option>
+                      <option value="lmstudio">LM Studio (Local)</option>
+                      <option value="ollama">Ollama (Local)</option>
+                      <option value="vllm">vLLM (Local)</option>
+                      <option value="">Same as Main/Complex Endpoint (Default)</option>
+                    </select>
+                  </div>
+
+                  {/* Coder Model Name Input */}
+                  <div style={{ marginTop: '10px' }}>
+                    <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
+                      Coder Model Name:
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.llm_coder_model || ''}
+                      onChange={(e) => onUpdateSetting && onUpdateSetting({ llm_coder_model: e.target.value })}
+                      placeholder="e.g. qwen2.5-coder-32b-instruct, claude-3-5-sonnet-20241022, llama-3.3-70b-versatile"
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        background: 'rgba(9, 13, 22, 0.95)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  {/* Quick Preset Buttons for Coder Models */}
+                  <div style={{ marginTop: '8px' }}>
+                    <span style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.45)', display: 'block', marginBottom: '4px' }}>
+                      Quick Model Presets:
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                      {[
+                        { label: 'Qwen2.5 Coder (Groq)', model: 'qwen2.5-coder-32b-instruct', backend: 'custom', url: 'https://api.groq.com/openai/v1' },
+                        { label: 'Llama 3.3 70B (Groq)', model: 'llama-3.3-70b-versatile', backend: 'custom', url: 'https://api.groq.com/openai/v1' },
+                        { label: 'Gemini Flash 2.0', model: 'gemini-2.0-flash-exp', backend: 'custom', url: 'https://generativelanguage.googleapis.com/v1beta/openai' },
+                        { label: 'DeepSeek Coder', model: 'deepseek-coder', backend: 'custom', url: 'https://api.deepseek.com/v1' },
+                        { label: 'LM Studio (Local)', model: '', backend: 'lmstudio', url: 'http://127.0.0.1:1234' },
+                      ].map((preset, pIdx) => (
+                        <button
+                          key={pIdx}
+                          type="button"
+                          onClick={() => {
+                            if (onUpdateSetting) {
+                              onUpdateSetting({
+                                llm_coder_backend: preset.backend,
+                                llm_coder_model: preset.model,
+                                llm_coder_base_url: preset.url
+                              });
+                            }
+                          }}
+                          style={{
+                            padding: '3px 7px',
+                            borderRadius: '5px',
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            color: '#cbd5e1',
+                            fontSize: '0.64rem',
+                            fontWeight: 500,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Base URL */}
+                  <div style={{ marginTop: '10px' }}>
+                    <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
+                      Coder Base URL:
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.llm_coder_base_url || ''}
+                      onChange={(e) => onUpdateSetting && onUpdateSetting({ llm_coder_base_url: e.target.value })}
+                      placeholder="e.g. https://api.groq.com/openai/v1 or http://127.0.0.1:11434"
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        background: 'rgba(9, 13, 22, 0.95)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.78rem',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  {/* API Key Vault */}
+                  <div style={{ marginTop: '10px' }}>
+                    <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
+                      Coder API Key (Cloud/Groq/OpenAI):
+                    </label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type={showCoderKey ? 'text' : 'password'}
+                        value={settings.llm_coder_api_key || ''}
+                        onChange={(e) => onUpdateSetting && onUpdateSetting({ llm_coder_api_key: e.target.value })}
+                        placeholder="Paste Coder Endpoint API Key..."
+                        style={{
+                          flex: 1,
+                          padding: '8px 10px',
+                          background: 'rgba(9, 13, 22, 0.95)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCoderKey(prev => !prev)}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          color: '#fff',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {showCoderKey ? <EyeOff style={{ width: '14px', height: '14px' }} /> : <Eye style={{ width: '14px', height: '14px' }} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Tab 1: Appearance */}
             {prefTab === 'appearance' && (
