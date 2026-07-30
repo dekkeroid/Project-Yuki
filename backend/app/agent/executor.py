@@ -1434,7 +1434,7 @@ class AgentExecutor:
 
         # Robust Markdown Tool Call Extractor for text-simulated tool calls
         # Pattern 1: 🛠️ **[tool_name ...]** followed by ```tool_args ... ```
-        md_matches = list(re.finditer(r'🛠️\s*\*\*\s*\[(\w+)[^\]]*\]\s*\*\*\s*```(?:tool_args|json)?\s*(\{.*?\})\s*```', text, re.DOTALL))
+        md_matches = list(re.finditer(r'(?:🛠️\s*\*\*)?\[(\w+)[^\]]*\](?:\*\*)?[\s\S]*?```(?:tool_args|json)?\s*(\{[\s\S]*?\})\s*```', text, re.IGNORECASE))
         if md_matches:
             calls = []
             for m in md_matches:
@@ -1931,7 +1931,6 @@ class AgentExecutor:
 
                     if accumulated_response.strip() and accumulated_response.strip() != "Running tool...":
                         accumulated_response_total.append(accumulated_response.strip())
-                    accumulated_response_total.append(tool_badge)
                     
                     current_messages.append({
                         "role": "assistant",
