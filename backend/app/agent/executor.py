@@ -894,23 +894,43 @@ class AgentExecutor:
             return "Ministral"
         return "local"
 
-    def _get_backend_and_model_for_task(self, task: str):
-        """Returns (backend, model_name) based on task type and endpoint strategy."""
+    def _get_backend_and_model_for_task(self, task: str, overrides: Optional[Dict[str, Any]] = None):
+        """Returns (backend, model_name) based on task type, overrides, and endpoint strategy."""
+        overrides = overrides or {}
+
         if task in ("coder", "complex_coder") or (isinstance(task, str) and "coder" in task.lower()):
-            coder_backend_type = getattr(config, "LLM_CODER_BACKEND", "").strip().lower()
-            if coder_backend_type and coder_backend_type != "none":
-                base_url = getattr(config, "LLM_CODER_BASE_URL", "")
-                api_key = getattr(config, "LLM_CODER_API_KEY", "")
-                model = getattr(config, "LLM_CODER_MODEL", "") or config.LLM_MODEL
-                from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
-                if coder_backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
-                    backend = OpenAICompatibleBackend(base_url_override=base_url, api_key_override=api_key)
-                elif coder_backend_type == "ollama":
-                    backend = OllamaBackend(base_url_override=base_url)
-                else:
-                    backend = LMStudioBackend(base_url_override=base_url)
-                print(f"[Router] Dedicated Coder Mode Engine -> {backend.name} @ {model}")
-                return backend, model
+            coder_model = overrides.get("llm_coder_model") or getattr(config, "LLM_CODER_MODEL", "") or config.LLM_MODEL
+            coder_key = overrides.get("llm_coder_api_key") or getattr(config, "LLM_CODER_API_KEY", "") or config.LLM_API_KEY
+            coder_base_url = overrides.get("llm_coder_base_url") or getattr(config, "LLM_CODER_BASE_URL", "")
+            coder_backend_type = overrides.get("llm_coder_backend") or getattr(config, "LLM_CODER_BACKEND", "").strip().lower() or "custom"
+
+            from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
+            if coder_backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
+                backend = OpenAICompatibleBackend(base_url_override=coder_base_url, api_key_override=coder_key)
+            elif coder_backend_type == "ollama":
+                backend = OllamaBackend(base_url_override=coder_base_url)
+            else:
+                backend = LMStudioBackend(base_url_override=coder_base_url)
+            print(f"[Router] Dedicated Coder Mode Engine -> {backend.name} @ {coder_model}")
+            return backend, coder_model
+
+        if task == "reviewer":
+            reviewer_model = overrides.get("llm_reviewer_model") or overrides.get("llm_coder_model") or config.LLM_MODEL
+            api_key = overrides.get("llm_coder_api_key") or config.LLM_API_KEY
+            coder_base_url = overrides.get("llm_coder_base_url") or getattr(config, "LLM_CODER_BASE_URL", "")
+            from app.agent.llm_backend import OpenAICompatibleBackend
+            backend = OpenAICompatibleBackend(base_url_override=coder_base_url, api_key_override=api_key)
+            print(f"[Router] Specialized Code Reviewer Engine -> {backend.name} @ {reviewer_model}")
+            return backend, reviewer_model
+
+        if task == "synthesizer":
+            summary_model = overrides.get("llm_summary_model") or overrides.get("llm_coder_model") or config.LLM_MODEL
+            api_key = overrides.get("llm_coder_api_key") or config.LLM_API_KEY
+            coder_base_url = overrides.get("llm_coder_base_url") or getattr(config, "LLM_CODER_BASE_URL", "")
+            from app.agent.llm_backend import OpenAICompatibleBackend
+            backend = OpenAICompatibleBackend(base_url_override=coder_base_url, api_key_override=api_key)
+            print(f"[Router] Specialized Response Synthesizer Engine -> {backend.name} @ {summary_model}")
+            return backend, summary_model
 
         if task == "simple" and getattr(config, "ENDPOINT_STRATEGY", "single") == "dual":
             backend_type = getattr(config, "LLM_SIMPLE_BACKEND", "lmstudio").lower()
@@ -1256,13 +1276,13 @@ class AgentExecutor:
         if is_coder:
             try:
                 task = "coder"
-                tb, tm = self._get_backend_and_model_for_task("coder")
+                tb, tm = self._get_backend_and_model_for_task("coder", overrides=overrides)
                 print(f"[Router][Coder Mode] Task=coder -> streaming {tm} via {tb.name} (temp=0.2)")
                 async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides):
                     yield chunk, label
                 return
             except Exception as e:
-                tb_e, tm_e = self._get_backend_and_model_for_task("coder")
+                tb_e, tm_e = self._get_backend_and_model_for_task("coder", overrides=overrides)
                 err_msg = {"content": tb_e.get_error_message(e)}
                 yield err_msg, self._get_model_label(tm_e)
                 return

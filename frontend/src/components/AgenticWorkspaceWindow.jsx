@@ -801,6 +801,13 @@ export const AgenticWorkspaceWindow = ({
           enable_intent_check: enableIntentCheckOverride,
           dynamic_tool_calling: dynamicToolCallingOverride,
           send_tools_in_simple: sendToolsInSimpleOverride,
+          llm_coder_model: activeSettings.llm_coder_model,
+          llm_coder_api_key: activeSettings.llm_coder_api_key,
+          llm_coder_backend: activeSettings.llm_coder_backend,
+          llm_coder_base_url: activeSettings.llm_coder_base_url,
+          llm_reviewer_enabled: activeSettings.llm_reviewer_enabled !== undefined ? activeSettings.llm_reviewer_enabled : true,
+          llm_reviewer_model: activeSettings.llm_reviewer_model,
+          llm_summary_model: activeSettings.llm_summary_model,
           prompt_persona: promptPersona,
           prompt_expressions: promptExpressions,
           prompt_memory: promptMemory,
@@ -3725,16 +3732,17 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     </div>
                   )}
 
-                  {/* 5. Coder Model Choice Dropdown + Refresh Button */}
-                  <div style={{ marginTop: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd' }}>
-                        Coder LLM Model Selection
+                  {/* 5. Dynamic Task-Specialized Roles (Primary Coder, Reviewer, Synthesizer) */}
+                  <div style={{ marginTop: '14px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6ee7b7', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Sparkles style={{ width: '13px', height: '13px', color: '#34d399' }} />
+                        Task-Specialized AI Model Routing
                       </label>
                       <button
                         type="button"
                         onClick={() => fetchCoderLlmModels()}
-                        title="Refresh model list from backend endpoint"
+                        title="Refresh dynamic model list from backend endpoint"
                         style={{
                           background: 'none',
                           border: 'none',
@@ -3749,7 +3757,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                           fontWeight: 600
                         }}
                       >
-                        <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
+                        <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh Models
                       </button>
                     </div>
 
@@ -3757,16 +3765,62 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       const fetchedNames = (coderLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
                       const allNames = Array.from(new Set([
                         ...(activeSettings.llm_coder_model ? [activeSettings.llm_coder_model] : []),
+                        ...(activeSettings.llm_reviewer_model ? [activeSettings.llm_reviewer_model] : []),
+                        ...(activeSettings.llm_summary_model ? [activeSettings.llm_summary_model] : []),
                         ...fetchedNames
                       ]));
 
                       return (
-                        <SearchableModelSelect
-                          value={activeSettings.llm_coder_model || ''}
-                          onChange={(val) => handleUpdateSetting({ llm_coder_model: val })}
-                          options={allNames}
-                          placeholder="Search or type Coder model name..."
-                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {/* Role 1: Primary Coder Model */}
+                          <div style={{ background: 'rgba(9, 13, 22, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(52, 211, 153, 0.25)' }}>
+                            <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#34d399', display: 'block', marginBottom: '4px' }}>
+                              🛠️ 1. Primary Coder Model (Tool Calling & File Writing)
+                            </label>
+                            <SearchableModelSelect
+                              value={activeSettings.llm_coder_model || ''}
+                              onChange={(val) => handleUpdateSetting({ llm_coder_model: val })}
+                              options={allNames}
+                              placeholder="Search or select Coder model (e.g. gemini-3.5-flash-lite)..."
+                            />
+                          </div>
+
+                          {/* Role 2: Code Reviewer & Bug Finder */}
+                          <div style={{ background: 'rgba(9, 13, 22, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(167, 139, 250, 0.25)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                🧠 2. Code Reviewer & Bug Finder Model
+                              </label>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.68rem', color: '#cbd5e1', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={activeSettings.llm_reviewer_enabled !== undefined ? activeSettings.llm_reviewer_enabled : true}
+                                  onChange={(e) => handleUpdateSetting({ llm_reviewer_enabled: e.target.checked })}
+                                />
+                                Enable Review
+                              </label>
+                            </div>
+                            <SearchableModelSelect
+                              value={activeSettings.llm_reviewer_model || ''}
+                              onChange={(val) => handleUpdateSetting({ llm_reviewer_model: val })}
+                              options={allNames}
+                              placeholder="Search or select Reviewer model (e.g. gemma-31b-thinking)..."
+                            />
+                          </div>
+
+                          {/* Role 3: Response Synthesizer */}
+                          <div style={{ background: 'rgba(9, 13, 22, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+                            <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#38bdf8', display: 'block', marginBottom: '4px' }}>
+                              💬 3. Response Walkthrough Synthesizer
+                            </label>
+                            <SearchableModelSelect
+                              value={activeSettings.llm_summary_model || ''}
+                              onChange={(val) => handleUpdateSetting({ llm_summary_model: val })}
+                              options={allNames}
+                              placeholder="Search or select Synthesizer model (e.g. gemini-3.5-flash-lite)..."
+                            />
+                          </div>
+                        </div>
                       );
                     })()}
                   </div>
