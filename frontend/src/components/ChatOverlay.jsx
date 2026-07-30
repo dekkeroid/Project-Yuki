@@ -51,9 +51,9 @@ export const formatMessageText = (text) => {
   
   // Regex matches:
   // 1. Markdown Links: [label](file:///path) or [label](D:\path)
-  // 2. Windows Absolute Paths: D:\path\to\file.ext
+  // 2. Windows Absolute Paths: D:\path\to\file.ext or D:/path/to/file.ext
   // 3. file:/// URIs
-  const fileRegex = /\[([^\]]+)\]\((file:\/\/\/?[^\)]+|[A-Za-z]:\\[^\)]+|[A-Za-z]:\/[^\)]+)\)|\b([A-Za-z]:\\[^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java))\b|\b(file:\/\/\/[^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java))\b|`([^`]+)`|\*\*([^*]+)\*\*/gi;
+  const fileRegex = /\[([^\]]+)\]\((file:\/\/\/?[^\)]+|[A-Za-z]:[\\\/][^\)]+)\)|([A-Za-z]:[\\\/][^:\*\?"<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java))|(file:\/\/\/[^:\*\?"<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java))|`([^`]+)`|\*\*([^*]+)\*\*/gi;
 
   const parts = [];
   let lastIndex = 0;
