@@ -487,73 +487,131 @@ def control_window(action: str, window_title: str = None, x: int = None, y: int 
         "focus": "Focused",
         "close": "Closed",
         "move": "Moved"
-    }.get(action, "Processed")
-    
-    if len(results) == 1:
         return f"{action_past_tense} window: '{results[0]}'"
     else:
         quoted_results = ", ".join(f'"{r}"' for r in results)
         return f"{action_past_tense} {len(results)} windows: {quoted_results}"
 
-def run_terminal_command(command: str, use_powershell: bool = True) -> str:
+def run_terminal_command(command: str, use_powershell: bool = True, max_timeout: int = 300, heartbeat_interval: int = 30, cwd: str = None) -> str:
     """
-    Runs a shell command in Cmd or PowerShell and returns the output.
+    Runs a shell command asynchronously with real-time output capture and dynamic 30-second heartbeat monitoring (up to 300s max).
     """
+    import time
+    shell_exe = "powershell.exe" if use_powershell else "cmd.exe"
+    shell_arg = "-Command" if use_powershell else "/c"
+    
+    start_time = time.time()
     try:
-        shell_exe = "powershell.exe" if use_powershell else "cmd.exe"
-        shell_arg = "-Command" if use_powershell else "/c"
-        
-        result = subprocess.run(
+        proc = subprocess.Popen(
             [shell_exe, shell_arg, command],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             shell=True,
-            timeout=30
+            cwd=cwd
         )
-        stdout = result.stdout.strip()
-        stderr = result.stderr.strip()
+        
+        stdout_chunks = []
+        stderr_chunks = []
+        
+        while True:
+            try:
+                stdout_data, stderr_data = proc.communicate(timeout=heartbeat_interval)
+                if stdout_data:
+                    stdout_chunks.append(stdout_data.strip())
+                if stderr_data:
+                    stderr_chunks.append(stderr_data.strip())
+                break
+            except subprocess.TimeoutExpired as te:
+                if te.stdout:
+                    stdout_chunks.append(te.stdout.decode('utf-8', errors='replace').strip() if isinstance(te.stdout, bytes) else te.stdout.strip())
+                if te.stderr:
+                    stderr_chunks.append(te.stderr.decode('utf-8', errors='replace').strip() if isinstance(te.stderr, bytes) else te.stderr.strip())
+                
+                elapsed = int(time.time() - start_time)
+                if elapsed >= max_timeout:
+                    proc.kill()
+                    proc.wait()
+                    stdout_str = "\n".join(filter(None, stdout_chunks))
+                    stderr_str = "\n".join(filter(None, stderr_chunks))
+                    return f"Command execution timed out after reaching maximum ceiling of {max_timeout}s (PID {proc.pid}).\nOutput so far:\n{stdout_str}\n{stderr_str}".strip()
+                
+                print(f"[ProcessSupervisor] Command '{command[:40]}...' active (PID {proc.pid}, {elapsed}s elapsed)...")
+
+        stdout_str = "\n".join(filter(None, stdout_chunks))
+        stderr_str = "\n".join(filter(None, stderr_chunks))
         
         output = []
-        if stdout:
-            output.append(stdout)
-        if stderr:
-            output.append(f"Error output:\n{stderr}")
+        if stdout_str:
+            output.append(stdout_str)
+        if stderr_str:
+            output.append(f"Error output:\n{stderr_str}")
             
         if not output:
-            return f"Command executed successfully (exit code: {result.returncode}), but returned no output."
+            return f"Command executed successfully (exit code: {proc.returncode}), but returned no output."
             
         return "\n".join(output)
     except Exception as e:
         return f"Failed to execute command: {str(e)}"
 
-def run_python_script(code: str) -> str:
+def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int = 30, cwd: str = None) -> str:
     """
-    Executes a block of Python code and returns the output.
+    Executes a block of Python code asynchronously with dynamic 30-second heartbeat monitoring (up to 300s max).
     """
-    import tempfile
+    import tempfile, time
     
     with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w", encoding="utf-8") as f:
         f.write(code)
         temp_file = f.name
         
+    start_time = time.time()
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             [sys.executable, temp_file],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=30
+            cwd=cwd
         )
-        stdout = result.stdout.strip()
-        stderr = result.stderr.strip()
+        
+        stdout_chunks = []
+        stderr_chunks = []
+        
+        while True:
+            try:
+                stdout_data, stderr_data = proc.communicate(timeout=heartbeat_interval)
+                if stdout_data:
+                    stdout_chunks.append(stdout_data.strip())
+                if stderr_data:
+                    stderr_chunks.append(stderr_data.strip())
+                break
+            except subprocess.TimeoutExpired as te:
+                if te.stdout:
+                    stdout_chunks.append(te.stdout.decode('utf-8', errors='replace').strip() if isinstance(te.stdout, bytes) else te.stdout.strip())
+                if te.stderr:
+                    stderr_chunks.append(te.stderr.decode('utf-8', errors='replace').strip() if isinstance(te.stderr, bytes) else te.stderr.strip())
+                
+                elapsed = int(time.time() - start_time)
+                if elapsed >= max_timeout:
+                    proc.kill()
+                    proc.wait()
+                    stdout_str = "\n".join(filter(None, stdout_chunks))
+                    stderr_str = "\n".join(filter(None, stderr_chunks))
+                    return f"Python script execution timed out after reaching maximum ceiling of {max_timeout}s (PID {proc.pid}).\nOutput so far:\n{stdout_str}\n{stderr_str}".strip()
+                
+                print(f"[ProcessSupervisor] Python script active (PID {proc.pid}, {elapsed}s elapsed)...")
+
+        stdout_str = "\n".join(filter(None, stdout_chunks))
+        stderr_str = "\n".join(filter(None, stderr_chunks))
         
         output = []
-        if stdout:
-            output.append(stdout)
-        if stderr:
-            output.append(f"Error output:\n{stderr}")
+        if stdout_str:
+            output.append(stdout_str)
+        if stderr_str:
+            output.append(f"Error output:\n{stderr_str}")
             
         if not output:
-            return f"Python script finished (exit code: {result.returncode}) with no output."
+            return f"Script executed successfully (exit code: {proc.returncode}), but returned no output."
             
         return "\n".join(output)
     except Exception as e:
@@ -562,7 +620,7 @@ def run_python_script(code: str) -> str:
         if os.path.exists(temp_file):
             try:
                 os.remove(temp_file)
-            except:
+            except Exception:
                 pass
 
 def take_screenshot() -> str:

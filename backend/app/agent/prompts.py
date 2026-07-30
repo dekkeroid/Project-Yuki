@@ -381,7 +381,12 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
 7. WORKSPACE & DIRECTORY BOUNDARIES:
    • ALL new project files, code modifications, scripts, logs, and artifacts MUST be kept strictly inside the workspace directories designated by the user (or labeled workspace directories added in Coder Mode).
    • Avoid creating, writing, or editing files outside the designated workspace paths (such as system root, user desktop, or random temporary folders) unless explicitly requested by the user.
-   • When executing terminal commands or creating files, always target the designated active workspace directory or its subdirectories."""
+   • When executing terminal commands or creating files, always target the designated active workspace directory or its subdirectories.
+
+8. VIRTUAL ENVIRONMENT & PACKAGE DEPENDENCY ETIQUETTE:
+   • NEVER install packages globally or inside system Python environments.
+   • Always isolate project dependencies inside the project workspace directory (e.g. `venv`, `.venv`, or `node_modules`).
+   • NEVER run `pip install` inside inline `jarvis_run_python` scripts. Always execute package installations and build commands via `jarvis_run_terminal` targeting the project's local virtual environment (e.g. `.\\venv\\Scripts\\pip.exe install <package>`)."""
         sections.append(directives)
 
     if overrides.get("prompt_planning", True):
