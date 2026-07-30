@@ -442,6 +442,8 @@ class OpenAICompatibleBackend(LLMBackend):
     def supports_context_length(self) -> bool:
         return False
 
+    _global_key_index: int = 0
+
     def get_api_key_pool(self) -> List[str]:
         raw_key = self._api_key_override or getattr(config, "LLM_CODER_API_KEY", None) or config.LLM_API_KEY or ""
         if not raw_key:
@@ -449,12 +451,18 @@ class OpenAICompatibleBackend(LLMBackend):
         keys = [k.strip() for k in re.split(r'[,;\s]+', str(raw_key)) if k.strip()]
         return keys
 
-    def build_headers(self, key_index: int = 0) -> Dict[str, str]:
+    def build_headers(self, key_index: Optional[int] = None) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
         keys = self.get_api_key_pool()
         if keys:
-            selected_key = keys[key_index % len(keys)]
+            if key_index is None:
+                idx = OpenAICompatibleBackend._global_key_index
+                OpenAICompatibleBackend._global_key_index += 1
+            else:
+                idx = key_index
+            selected_key = keys[idx % len(keys)]
             headers["Authorization"] = f"Bearer {selected_key}"
+            print(f"[KeyPool] Request using rotated key {idx % len(keys) + 1}/{len(keys)} (...{selected_key[-6:]})")
         return headers
 
     def build_payload(self, model: str, messages: List[Dict], temperature: float,
