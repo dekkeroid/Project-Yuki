@@ -387,6 +387,30 @@ export const AgenticWorkspaceWindow = ({
               }
               return newMsgs;
             });
+          } else if (data.type === 'terminal_stream') {
+            const streamLine = data.line || '';
+            if (streamLine) {
+              setViewMessages(prev => {
+                if (!prev || prev.length === 0) return prev;
+                const newMsgs = [...prev];
+                const lastIdx = newMsgs.length - 1;
+                const lastMsg = newMsgs[lastIdx];
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  let content = lastMsg.content || '';
+                  if (content.includes('⏳ Running...')) {
+                    if (!content.includes('```terminal_stream\n')) {
+                      content += '\n```terminal_stream\n';
+                    }
+                    content += streamLine + '\n';
+                  }
+                  newMsgs[lastIdx] = {
+                    ...lastMsg,
+                    content: content
+                  };
+                }
+                return newMsgs;
+              });
+            }
           } else if (data.type === 'tool_result') {
             const resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result || '');
             const snippet = resultStr.length > 800 ? resultStr.slice(0, 800) + '\n... [truncated]' : resultStr;
@@ -400,7 +424,11 @@ export const AgenticWorkspaceWindow = ({
                 let content = lastMsg.content || '';
                 if (content.includes('⏳ Running...')) {
                   content = content.replace('⏳ Running...', '✓ Done');
-                  content += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
+                  if (content.includes('```terminal_stream\n')) {
+                    content += '```\n';
+                  } else {
+                    content += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
+                  }
                 }
                 newMsgs[lastIdx] = {
                   ...lastMsg,
