@@ -3557,66 +3557,144 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     />
                   </div>
 
-                  {/* 4. Coder API Key Vault (Rendered if Custom chosen) */}
-                  {(activeSettings.llm_coder_backend === 'custom' || activeSettings.llm_coder_backend === 'openai') && (
-                    <div style={{ marginTop: '10px' }}>
-                      <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'block', marginBottom: '4px' }}>
-                        Coder API Key (Encrypted in DB)
-                      </label>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <input
-                          type={showCoderKey ? 'text' : 'password'}
-                          value={activeSettings.llm_coder_api_key || ''}
-                          onChange={(e) => handleUpdateSetting({ llm_coder_api_key: e.target.value })}
-                          placeholder="Enter API key (e.g. sk-...)"
-                          style={{
-                            flex: 1,
-                            padding: '8px 10px',
-                            background: 'rgba(9, 13, 22, 0.95)',
-                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontSize: '0.78rem',
-                            outline: 'none'
-                          }}
-                        />
+                  {/* 4. Multi-API Key Vault Pool (Scalable Key A, Key B, Key C...) */}
+                  {(activeSettings.llm_coder_backend === 'custom' || activeSettings.llm_coder_backend === 'openai') && (() => {
+                    const rawKeys = activeSettings.llm_coder_api_key || '';
+                    const keyArray = rawKeys.split(',').map(k => k.trim());
+                    if (keyArray.length === 0) keyArray.push('');
+
+                    const updateKeyAtIndex = (idx, val) => {
+                      const updated = [...keyArray];
+                      updated[idx] = val;
+                      handleUpdateSetting({ llm_coder_api_key: updated.join(', ') });
+                    };
+
+                    const addKeySlot = () => {
+                      handleUpdateSetting({ llm_coder_api_key: [...keyArray, ''].join(', ') });
+                    };
+
+                    const removeKeySlot = (idx) => {
+                      const updated = keyArray.filter((_, i) => i !== idx);
+                      handleUpdateSetting({ llm_coder_api_key: updated.join(', ') });
+                    };
+
+                    return (
+                      <div style={{ marginTop: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Key style={{ width: '12px', height: '12px', color: '#a78bfa' }} />
+                            Coder API Key Pool ({keyArray.length} {keyArray.length === 1 ? 'Key' : 'Keys'} - Auto Rotated)
+                          </label>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const nextState = !showCoderKey;
+                              setShowCoderKey(nextState);
+                              if (nextState) {
+                                try {
+                                  const res = await fetch(`${API_BASE}/api/profile?decrypt_keys=true`);
+                                  if (res.ok) {
+                                    const data = await res.json();
+                                    if (data.settings && data.settings.llm_coder_api_key) {
+                                      handleUpdateSetting({ llm_coder_api_key: data.settings.llm_coder_api_key });
+                                    }
+                                  }
+                                } catch (err) {
+                                  console.warn('Failed to fetch decrypted key:', err);
+                                }
+                              }
+                            }}
+                            title={showCoderKey ? "Hide API Keys" : "Decrypt & Reveal Keys"}
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              background: showCoderKey ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                              border: showCoderKey ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.12)',
+                              color: showCoderKey ? '#38bdf8' : '#cbd5e1',
+                              fontSize: '0.68rem',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            {showCoderKey ? <EyeOff style={{ width: '11px', height: '11px' }} /> : <Eye style={{ width: '11px', height: '11px' }} />}
+                            {showCoderKey ? 'Hide' : 'Reveal'}
+                          </button>
+                        </div>
+
+                        {keyArray.map((kVal, kIdx) => {
+                          const keyLabel = kIdx === 0 ? "Key A (Primary API Key)" : `Key ${String.fromCharCode(65 + kIdx)} (Optional Backup Key)`;
+                          return (
+                            <div key={kIdx} style={{ marginBottom: '8px' }}>
+                              <span style={{ fontSize: '0.66rem', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>
+                                {keyLabel}
+                              </span>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <input
+                                  type={showCoderKey ? 'text' : 'password'}
+                                  value={kVal}
+                                  onChange={(e) => updateKeyAtIndex(kIdx, e.target.value)}
+                                  placeholder={kIdx === 0 ? "Enter Primary API Key (e.g. AIzaSy...)" : `Enter Backup API Key ${String.fromCharCode(65 + kIdx)} (e.g. AIzaSy...)`}
+                                  style={{
+                                    flex: 1,
+                                    padding: '7px 10px',
+                                    background: 'rgba(9, 13, 22, 0.95)',
+                                    border: '1px solid rgba(139, 92, 246, 0.25)',
+                                    borderRadius: '8px',
+                                    color: 'white',
+                                    fontSize: '0.78rem',
+                                    outline: 'none'
+                                  }}
+                                />
+                                {kIdx > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeKeySlot(kIdx)}
+                                    title="Remove this API Key from Pool"
+                                    style={{
+                                      padding: '7px 10px',
+                                      borderRadius: '8px',
+                                      background: 'rgba(239, 68, 68, 0.15)',
+                                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                                      color: '#f87171',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center'
+                                    }}
+                                  >
+                                    <Trash2 style={{ width: '13px', height: '13px' }} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+
                         <button
                           type="button"
-                          onClick={async () => {
-                            const nextState = !showCoderKey;
-                            setShowCoderKey(nextState);
-                            if (nextState) {
-                              try {
-                                const res = await fetch(`${API_BASE}/api/profile?decrypt_keys=true`);
-                                if (res.ok) {
-                                  const data = await res.json();
-                                  if (data.settings && data.settings.llm_coder_api_key) {
-                                    handleUpdateSetting({ llm_coder_api_key: data.settings.llm_coder_api_key });
-                                  }
-                                }
-                              } catch (err) {
-                                console.warn('Failed to fetch decrypted key:', err);
-                              }
-                            }
-                          }}
-                          title={showCoderKey ? "Hide API Key" : "Decrypt & Reveal API Key"}
+                          onClick={addKeySlot}
                           style={{
-                            padding: '8px 10px',
-                            borderRadius: '8px',
-                            background: showCoderKey ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-                            border: showCoderKey ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.15)',
-                            color: showCoderKey ? '#38bdf8' : '#fff',
+                            marginTop: '4px',
+                            padding: '5px 10px',
+                            borderRadius: '6px',
+                            background: 'rgba(139, 92, 246, 0.15)',
+                            border: '1px border-dashed rgba(139, 92, 246, 0.4)',
+                            color: '#c4b5fd',
+                            fontSize: '0.70rem',
+                            fontWeight: 600,
                             cursor: 'pointer',
-                            display: 'flex',
+                            display: 'inline-flex',
                             alignItems: 'center',
-                            justifyContent: 'center'
+                            gap: '5px'
                           }}
                         >
-                          {showCoderKey ? <EyeOff style={{ width: '14px', height: '14px' }} /> : <Eye style={{ width: '14px', height: '14px' }} />}
+                          <Plus style={{ width: '12px', height: '12px' }} /> Add API Key to Rotation Pool
                         </button>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Save Preset Button (Rendered if Custom chosen) */}
                   {(activeSettings.llm_coder_backend === 'custom' || activeSettings.llm_coder_backend === 'openai') && (
