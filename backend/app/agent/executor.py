@@ -1143,7 +1143,7 @@ class AgentExecutor:
             coding_allowed = {
                 "jarvis_run_terminal", "jarvis_run_python", "jarvis_read_file",
                 "jarvis_create_or_edit_file", "jarvis_replace_file_content",
-                "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_query_file_db",
+                "jarvis_list_dir_tree", "jarvis_git_status",
                 "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
                 "jarvis_remember_user_fact", "read_and_review_file", "search_files",
                 "read_file_content", "run_terminal_command", "run_python_script"
