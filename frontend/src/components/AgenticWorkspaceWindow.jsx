@@ -1563,6 +1563,9 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       flexDirection: 'column',
                       alignItems: isUser ? 'flex-end' : 'flex-start',
                       maxWidth: '88%',
+                      width: '100%',
+                      minWidth: 0,
+                      boxSizing: 'border-box',
                       alignSelf: isUser ? 'flex-end' : 'flex-start'
                     }}
                   >
@@ -1584,13 +1587,16 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                         key={tIdx}
                         style={{
                           width: '100%',
+                          maxWidth: '100%',
+                          boxSizing: 'border-box',
                           marginBottom: '6px',
                           background: 'rgba(15, 23, 42, 0.6)',
                           border: '1px solid rgba(167, 139, 250, 0.25)',
                           borderRadius: '8px',
                           padding: '6px 10px',
                           fontSize: '0.72rem',
-                          color: '#c4b5fd'
+                          color: '#c4b5fd',
+                          overflow: 'hidden'
                         }}
                       >
                         <summary style={{ cursor: 'pointer', fontWeight: 600, userSelect: 'none', display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -1619,6 +1625,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                           open={isRunning}
                           style={{
                             width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box',
                             marginBottom: '6px',
                             background: 'rgba(15, 23, 42, 0.85)',
                             border: `1px solid ${statusBadgeBorder}`,
@@ -1637,11 +1645,15 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                             fontSize: '0.76rem',
                             fontWeight: 600,
                             color: '#38bdf8',
-                            userSelect: 'none'
+                            userSelect: 'none',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box'
                           }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Terminal style={{ width: '13px', height: '13px', color: '#38bdf8' }} />
-                              <span>🛠️ Tool Run: <strong>{tb.toolName}</strong></span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                              <Terminal style={{ width: '13px', height: '13px', color: '#38bdf8', flexShrink: 0 }} />
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                🛠️ Tool Run: <strong>{tb.toolName}</strong>
+                              </span>
                             </div>
                             <span style={{
                               fontSize: '0.68rem',
@@ -1649,12 +1661,13 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                               borderRadius: '4px',
                               background: statusBadgeBg,
                               color: statusBadgeColor,
-                              border: `1px solid ${statusBadgeBorder}`
+                              border: `1px solid ${statusBadgeBorder}`,
+                              flexShrink: 0
                             }}>
                               {statusLabel}
                             </span>
                           </summary>
-                          <div style={{ padding: '10px 12px', fontSize: '0.74rem', background: '#090d16', color: '#cbd5e1', fontFamily: 'monospace' }}>
+                          <div style={{ padding: '10px 12px', fontSize: '0.74rem', background: '#090d16', color: '#cbd5e1', fontFamily: 'monospace', maxWidth: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
                             {/* Terminal Prompt Line Header for Terminal/Python runs */}
                             {(tb.toolName.includes('terminal') || tb.toolName.includes('python')) && (
                               <div style={{
@@ -1666,12 +1679,15 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '6px',
-                                fontSize: '0.74rem'
+                                fontSize: '0.74rem',
+                                maxWidth: '100%',
+                                overflowX: 'auto',
+                                boxSizing: 'border-box'
                               }}>
-                                <span style={{ color: '#a78bfa', fontWeight: 700 }}>
+                                <span style={{ color: '#a78bfa', fontWeight: 700, flexShrink: 0 }}>
                                   {(sessionDirectories && sessionDirectories.length > 0 && sessionDirectories[0].value) ? sessionDirectories[0].value : 'd:\\workspace'}
                                 </span>
-                                <span style={{ color: '#4ade80', fontWeight: 700 }}>$</span>
+                                <span style={{ color: '#4ade80', fontWeight: 700, flexShrink: 0 }}>$</span>
                                 <span style={{ color: '#f8fafc', fontWeight: 600, wordBreak: 'break-all' }}>
                                   {tb.target ? tb.target : tb.toolName}
                                 </span>
@@ -1679,13 +1695,13 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                             )}
 
                             {tb.target && !tb.toolName.includes('terminal') && !tb.toolName.includes('python') && (
-                              <div style={{ color: '#94a3b8', marginBottom: '6px', fontSize: '0.72rem' }}>
+                              <div style={{ color: '#94a3b8', marginBottom: '6px', fontSize: '0.72rem', wordBreak: 'break-all' }}>
                                 <strong style={{ color: '#a78bfa' }}>Target / Command:</strong> {tb.target}
                               </div>
                             )}
 
                             {tb.args && (
-                              <div style={{ marginTop: '6px', marginBottom: '8px' }}>
+                              <div style={{ marginTop: '6px', marginBottom: '8px', maxWidth: '800px', width: '100%', boxSizing: 'border-box' }}>
                                 <div style={{ color: '#38bdf8', fontSize: '0.68rem', fontWeight: 700, marginBottom: '4px' }}>
                                   📥 INPUT / ARGUMENTS:
                                 </div>
@@ -1695,18 +1711,21 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                   borderRadius: '6px',
                                   border: '1px solid rgba(56, 189, 248, 0.2)',
                                   maxHeight: '160px',
+                                  maxWidth: '800px',
+                                  width: '100%',
                                   overflowY: 'auto',
                                   overflowX: 'auto',
+                                  boxSizing: 'border-box',
                                   fontSize: '0.72rem',
                                   color: '#cbd5e1'
                                 }}>
-                                  <pre style={{ margin: 0, whiteSpace: 'pre', wordBreak: 'normal' }}>{tb.args}</pre>
+                                  <pre style={{ margin: 0, whiteSpace: 'pre', wordBreak: 'normal', display: 'block', width: 'max-content', minWidth: '100%' }}>{tb.args}</pre>
                                 </div>
                               </div>
                             )}
 
                             {tb.output && (
-                              <div style={{ marginTop: '6px', marginBottom: '6px' }}>
+                              <div style={{ marginTop: '6px', marginBottom: '6px', maxWidth: '800px', width: '100%', boxSizing: 'border-box' }}>
                                 <div style={{ color: '#64748b', fontSize: '0.68rem', fontWeight: 600, marginBottom: '4px' }}>
                                   📤 RESULT / OUTPUT:
                                 </div>
@@ -1716,12 +1735,15 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                   borderRadius: '6px',
                                   border: '1px solid #1e293b',
                                   maxHeight: '200px',
+                                  maxWidth: '800px',
+                                  width: '100%',
                                   overflowY: 'auto',
                                   overflowX: 'auto',
+                                  boxSizing: 'border-box',
                                   fontSize: '0.72rem',
                                   color: isFailed ? '#f87171' : '#4ade80'
                                 }}>
-                                  <pre style={{ margin: 0, whiteSpace: 'pre', wordBreak: 'normal', fontFamily: 'Consolas, Monaco, monospace' }}>{tb.output}</pre>
+                                  <pre style={{ margin: 0, whiteSpace: 'pre', wordBreak: 'normal', display: 'block', width: 'max-content', minWidth: '100%', fontFamily: 'Consolas, Monaco, monospace' }}>{tb.output}</pre>
                                 </div>
                               </div>
                             )}
