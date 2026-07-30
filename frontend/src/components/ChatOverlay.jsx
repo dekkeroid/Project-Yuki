@@ -496,12 +496,29 @@ export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFi
                 );
               }
 
-              // Bullet lists
+              // Calculate leading space indentation level for nested sub-points
+              const nonSpaceIndex = line.search(/\S/);
+              const leadingSpaces = nonSpaceIndex === -1 ? 0 : nonSpaceIndex;
+              const indentLevel = Math.min(Math.floor(leadingSpaces / 2), 4);
+              const paddingLeft = 4 + (indentLevel * 18);
+
+              // Bullet lists (•, -, *)
               if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+                const bulletSymbol = indentLevel === 0 ? '•' : indentLevel === 1 ? '◦' : '▪';
+                const bulletColor = indentLevel === 0 ? '#38bdf8' : indentLevel === 1 ? '#c4b5fd' : '#94a3b8';
+                const fontSize = indentLevel === 0 ? '0.80rem' : indentLevel === 1 ? '0.78rem' : '0.76rem';
+
                 return (
-                  <div key={lIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', paddingLeft: '4px', fontSize: '0.80rem' }}>
-                    <span style={{ color: '#a78bfa', fontWeight: 700 }}>•</span>
-                    <div>{formatMessageText(trimmed.replace(/^[•\-\*]\s+/, ''), disableFileLinks)}</div>
+                  <div key={lIdx} style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '6px',
+                    paddingLeft: `${paddingLeft}px`,
+                    fontSize: fontSize,
+                    margin: '1px 0'
+                  }}>
+                    <span style={{ color: bulletColor, fontWeight: 700, flexShrink: 0 }}>{bulletSymbol}</span>
+                    <div style={{ wordBreak: 'break-word' }}>{formatMessageText(trimmed.replace(/^[•\-\*]\s+/, ''), disableFileLinks)}</div>
                   </div>
                 );
               }
@@ -509,10 +526,20 @@ export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFi
               // Numbered lists (1. , 2. )
               const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
               if (numMatch) {
+                const numColor = indentLevel === 0 ? '#38bdf8' : indentLevel === 1 ? '#a78bfa' : '#94a3b8';
+                const fontSize = indentLevel === 0 ? '0.80rem' : indentLevel === 1 ? '0.78rem' : '0.76rem';
+
                 return (
-                  <div key={lIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', paddingLeft: '4px', fontSize: '0.80rem' }}>
-                    <span style={{ color: '#38bdf8', fontWeight: 700, fontSize: '0.76rem' }}>{numMatch[1]}.</span>
-                    <div>{formatMessageText(numMatch[2], disableFileLinks)}</div>
+                  <div key={lIdx} style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '6px',
+                    paddingLeft: `${paddingLeft}px`,
+                    fontSize: fontSize,
+                    margin: '1px 0'
+                  }}>
+                    <span style={{ color: numColor, fontWeight: 700, fontSize: '0.76rem', flexShrink: 0 }}>{numMatch[1]}.</span>
+                    <div style={{ wordBreak: 'break-word' }}>{formatMessageText(numMatch[2], disableFileLinks)}</div>
                   </div>
                 );
               }
