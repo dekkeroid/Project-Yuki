@@ -687,6 +687,14 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
                 stderr_str = "\n".join(filter(None, stderr_chunks))
                 return f"[STATUS: RUNNING IN BACKGROUND - INTERACTIVE PROMPT DETECTED] Command '{command}' (PID {proc.pid}) is actively waiting for user selection ({elapsed}s elapsed).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: The process PID {proc.pid} is currently paused on an interactive prompt question. Call 'jarvis_send_stdin(input_text=\"1\", pid={proc.pid})' or 'jarvis_send_stdin(input_text=\"\\n\", pid={proc.pid})' immediately to send your choice!".strip()
 
+            # Periodic 30-second status update checkpoint
+            last_check = getattr(proc, '_last_checkpoint', 0)
+            if elapsed >= heartbeat_interval and (elapsed - last_check) >= heartbeat_interval:
+                setattr(proc, '_last_checkpoint', elapsed)
+                stdout_str = "\n".join(filter(None, stdout_chunks))
+                stderr_str = "\n".join(filter(None, stderr_chunks))
+                return f"[STATUS: RUNNING IN BACKGROUND - {elapsed}S CHECKPOINT] Command '{command}' (PID {proc.pid}) is still actively processing ({elapsed}s elapsed).\nCaptured Output So Far:\n{stdout_str}\n{stderr_str}\n\nDIAGNOSTIC NOTICE FOR AI: The process is actively running in the background. You may monitor progress or proceed.".strip()
+
             if elapsed >= max_timeout:
                 stdout_str = "\n".join(filter(None, stdout_chunks))
                 stderr_str = "\n".join(filter(None, stderr_chunks))
