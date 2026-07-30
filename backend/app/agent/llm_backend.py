@@ -442,11 +442,19 @@ class OpenAICompatibleBackend(LLMBackend):
     def supports_context_length(self) -> bool:
         return False
 
-    def build_headers(self) -> Dict[str, str]:
+    def get_api_key_pool(self) -> List[str]:
+        raw_key = self._api_key_override or getattr(config, "LLM_CODER_API_KEY", None) or config.LLM_API_KEY or ""
+        if not raw_key:
+            return []
+        keys = [k.strip() for k in re.split(r'[,;\s]+', str(raw_key)) if k.strip()]
+        return keys
+
+    def build_headers(self, key_index: int = 0) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
-        api_key = self._api_key_override or config.LLM_API_KEY
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        keys = self.get_api_key_pool()
+        if keys:
+            selected_key = keys[key_index % len(keys)]
+            headers["Authorization"] = f"Bearer {selected_key}"
         return headers
 
     def build_payload(self, model: str, messages: List[Dict], temperature: float,
