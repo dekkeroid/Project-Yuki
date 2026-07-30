@@ -487,6 +487,9 @@ def control_window(action: str, window_title: str = None, x: int = None, y: int 
         "focus": "Focused",
         "close": "Closed",
         "move": "Moved"
+    }.get(action, "Processed")
+
+    if len(results) == 1:
         return f"{action_past_tense} window: '{results[0]}'"
     else:
         quoted_results = ", ".join(f'"{r}"' for r in results)
