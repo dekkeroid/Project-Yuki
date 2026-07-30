@@ -1830,14 +1830,24 @@ class AgentExecutor:
                     # ─────────────────────────────────────────────────────────────────────────
                     if not tool_failed:
                         _INFO_TOOLS   = {"web_search", "read_file_content"}
-                        _DATA_TOOLS   = {"search_files", "list_directory", "get_system_stats", "jarvis_query_file_db", "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics", "jarvis_network_status", "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_run_terminal", "jarvis_run_python"}
+                        _DATA_TOOLS   = {"search_files", "list_directory", "get_system_stats", "jarvis_query_file_db", "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics", "jarvis_network_status", "jarvis_list_dir_tree", "jarvis_git_status"}
                         _MEMORY_TOOLS = {"update_user_fact", "jarvis_remember_user_fact"}
-                        # Everything else is treated as an action/terminal tool.
 
                         _orig = user_message.strip()
                         _iter_note = f"(tool call {iteration} of {max_iterations} allowed this turn)"
 
-                        if tool_name in _INFO_TOOLS:
+                        is_coder_mode = bool(overrides.get("coding_mode")) or resolved_backend in ("coder", "complex_coder")
+
+                        if is_coder_mode:
+                            # Autonomous Coder Mode: Keep coder backend active & encourage continuous tool execution until goal is complete!
+                            resolved_backend = "coder"
+                            reminder = (
+                                f"[SYSTEM] {_iter_note} Tool '{tool_name}' completed with result above. "
+                                f"User's overall goal: \"{_orig}\". "
+                                "You are in Autonomous Coder Mode. If additional steps, file creations, refactors, or terminal/python commands are needed to fully build and verify the user's goal, execute the next tool call immediately. "
+                                "Only write your final summary when the entire task is fully built and verified."
+                            )
+                        elif tool_name in _INFO_TOOLS:
                             # Hard-stop: full content returned, model must summarize now without tools.
                             resolved_backend = "simple"
                             reminder = (
@@ -1882,18 +1892,6 @@ class AgentExecutor:
                             "role": "user",
                             "content": reminder
                         })
-
-                    final_history.append({
-                        "role": "assistant",
-                        "content": accumulated_response if accumulated_response.strip() else "Running tool...",
-                        "tool_calls": tool_calls_to_execute
-                    })
-                    final_history.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "name": tool_name,
-                        "content": str(tool_result)
-                    })
                     
                     # Debug: Show what's being added to context
                     print(f"[Executor] Tool '{tool_name}' result added to context. Messages count: {len(current_messages)}")
