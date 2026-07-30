@@ -140,33 +140,72 @@ export const formatMessageText = (text) => {
         </button>
       );
     } else if (match[5]) {
-      // Code block `code`
-      parts.push(
-        <code
-          key={matchIndex}
-          style={{
-            fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
-            fontSize: '0.85em',
-            background: 'rgba(255, 255, 255, 0.12)',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            color: '#2dd4bf',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            margin: '0 2px'
-          }}
-        >
-          {match[5]}
-        </code>
-      );
+      // Code block `code` — check if it contains a file path!
+      const codeContent = match[5].trim();
+      const pathMatch = codeContent.match(/^([A-Za-z]:[\\\/][^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java)|file:\/\/\/[^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java))$/i);
+      if (pathMatch) {
+        const rawPath = pathMatch[1].replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
+        const fileName = rawPath.split('\\').pop() || rawPath;
+        const ext = fileName.split('.').pop().toLowerCase();
+        let icon = "📄";
+        if (["js", "ts", "jsx", "tsx", "py", "html", "css", "json"].includes(ext)) icon = "⚡";
+        if (["png", "jpg", "jpeg", "svg", "webp", "gif"].includes(ext)) icon = "🖼️";
+        if (ext === "md") icon = "📋";
+
+        parts.push(
+          <button
+            key={matchIndex}
+            type="button"
+            onClick={() => handleOpenFileInSidebar(rawPath)}
+            title={`Click to open ${rawPath} in Right Sidebar File Inspector`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: 'rgba(56, 189, 248, 0.15)',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              color: '#38bdf8',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              margin: '0 3px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+            }}
+          >
+            <span>{icon}</span>
+            <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{fileName}</span>
+            <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
+          </button>
+        );
+      } else {
+        parts.push(
+          <code
+            key={matchIndex}
+            style={{
+              fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
+              fontSize: '0.85em',
+              background: 'rgba(255, 255, 255, 0.12)',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              color: '#2dd4bf',
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              margin: '0 2px'
+            }}
+          >
+            {codeContent}
+          </code>
+        );
+      }
     } else if (match[6]) {
       // Bold **bold**
       parts.push(
         <strong
           key={matchIndex}
           style={{
-            fontWeight: '800',
-            color: '#ffffff',
-            textShadow: '0 0 8px rgba(255, 255, 255, 0.2)'
+            fontWeight: '700',
+            color: '#e2e8f0'
           }}
         >
           {match[6]}

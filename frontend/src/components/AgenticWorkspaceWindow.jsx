@@ -3092,16 +3092,25 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <input
                           type={showCoderKey ? 'text' : 'password'}
-                          value={activeSettings.llm_coder_api_key || ''}
+                          value={
+                            showCoderKey && (activeSettings.llm_coder_api_key?.includes('ENCRYPTED_VAULT_KEY') || activeSettings.llm_coder_api_key?.startsWith('🔑'))
+                              ? '🔑 Encrypted in System Vault (Saved)'
+                              : (activeSettings.llm_coder_api_key || '')
+                          }
+                          onFocus={() => {
+                            if (activeSettings.llm_coder_api_key?.includes('ENCRYPTED_VAULT_KEY') || activeSettings.llm_coder_api_key?.startsWith('🔑')) {
+                              handleUpdateSetting({ llm_coder_api_key: '' });
+                            }
+                          }}
                           onChange={(e) => handleUpdateSetting({ llm_coder_api_key: e.target.value })}
-                          placeholder="sk-..."
+                          placeholder="Enter API key (e.g. sk-...)"
                           style={{
                             flex: 1,
                             padding: '8px 10px',
                             background: 'rgba(9, 13, 22, 0.95)',
                             border: '1px solid rgba(255, 255, 255, 0.15)',
                             borderRadius: '8px',
-                            color: 'white',
+                            color: (activeSettings.llm_coder_api_key?.includes('ENCRYPTED_VAULT_KEY') || activeSettings.llm_coder_api_key?.startsWith('🔑')) ? '#38bdf8' : 'white',
                             fontSize: '0.78rem',
                             outline: 'none'
                           }}
@@ -3109,12 +3118,13 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                         <button
                           type="button"
                           onClick={() => setShowCoderKey(prev => !prev)}
+                          title={showCoderKey ? "Hide API Key" : "Show Vault Key Status"}
                           style={{
                             padding: '8px 10px',
                             borderRadius: '8px',
-                            background: 'rgba(255, 255, 255, 0.1)',
-                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                            color: '#fff',
+                            background: showCoderKey ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                            border: showCoderKey ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.15)',
+                            color: showCoderKey ? '#38bdf8' : '#fff',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',

@@ -1228,6 +1228,23 @@ class AgentExecutor:
         resolved_backend: 'simple' or 'complex' — determined by _classify_task + intent check.
         If not provided, falls back to re-classifying (legacy behaviour).
         """
+        # Coder Mode Override: if Coder Mode is active, enforce dedicated Coder engine regardless of LLM_MODE setting
+        is_coder = bool(overrides and overrides.get("coding_mode")) or resolved_backend in ("coder", "complex_coder")
+        
+        if is_coder:
+            try:
+                task = "coder"
+                tb, tm = self._get_backend_and_model_for_task("coder")
+                print(f"[Router][Coder Mode] Task=coder -> streaming {tm} via {tb.name} (temp=0.2)")
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides):
+                    yield chunk, label
+                return
+            except Exception as e:
+                tb_e, tm_e = self._get_backend_and_model_for_task("coder")
+                err_msg = {"content": tb_e.get_error_message(e)}
+                yield err_msg, self._get_model_label(tm_e)
+                return
+
         if config.LLM_MODE == 1:
             backend = "simple"
         elif config.LLM_MODE == 2:
