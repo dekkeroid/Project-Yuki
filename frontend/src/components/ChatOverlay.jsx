@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, ExternalLink } from 'lucide-react';
+import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, ExternalLink, Copy, Check } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
 import { SLASH_COMMANDS } from '../constants';
@@ -396,6 +396,41 @@ export const AgenticToolTimelineItem = ({ content }) => {
   );
 };
 
+export const CodeBlockCopyButton = ({ code }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(code || '');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        background: copied ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+        border: `1px solid ${copied ? 'rgba(74, 222, 128, 0.4)' : 'rgba(255, 255, 255, 0.15)'}`,
+        borderRadius: '4px',
+        padding: '2px 8px',
+        color: copied ? '#4ade80' : '#94a3b8',
+        fontSize: '0.66rem',
+        fontWeight: 600,
+        cursor: 'pointer',
+        transition: 'all 0.15s ease'
+      }}
+    >
+      {copied ? <Check style={{ width: '11px', height: '11px', color: '#4ade80' }} /> : <Copy style={{ width: '11px', height: '11px' }} />}
+      <span>{copied ? 'Copied!' : 'Copy'}</span>
+    </button>
+  );
+};
+
 export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFileLinks = false } = {}) => {
   if (!cleanContent) return null;
 
@@ -430,13 +465,7 @@ export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFi
             <div key={`code-block-${bIdx}`} style={{ margin: '6px 0', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)', background: '#020617' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px', background: 'rgba(15, 23, 42, 0.9)', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: '0.68rem', fontFamily: 'monospace' }}>
                 <span style={{ fontWeight: 600, color: '#38bdf8', textTransform: 'uppercase' }}>{block.lang || 'code'}</span>
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard.writeText(block.code)}
-                  style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.66rem', cursor: 'pointer' }}
-                >
-                  Copy
-                </button>
+                <CodeBlockCopyButton code={block.code} />
               </div>
               <pre style={{ margin: 0, padding: '10px 12px', fontSize: '0.76rem', fontFamily: 'Consolas, Monaco, monospace', color: '#cbd5e1', overflowX: 'auto', whiteSpace: 'pre', wordBreak: 'normal' }}>
                 {block.code}
