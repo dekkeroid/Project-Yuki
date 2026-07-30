@@ -122,6 +122,7 @@ class AgentExecutor:
             jarvis_system_diagnostics, jarvis_network_status, jarvis_web_scrape,
             jarvis_window_control, jarvis_run_terminal
         )
+        from app.tools.system import send_process_stdin
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
 
@@ -280,6 +281,10 @@ class AgentExecutor:
                 use_powershell=bool(kwargs.get("use_powershell", True)),
                 cwd=kwargs.get("cwd") or kwargs.get("dir") or (overrides.get("session_directories", [{}])[0].get("value") if overrides.get("session_directories") and isinstance(overrides.get("session_directories"), list) and len(overrides.get("session_directories")) > 0 and isinstance(overrides.get("session_directories")[0], dict) else None),
                 stdin_input=kwargs.get("stdin_input")
+            ),
+            "jarvis_send_stdin": lambda **kwargs: send_process_stdin(
+                input_text=kwargs.get("input_text") or "",
+                pid=kwargs.get("pid")
             ),
             "jarvis_run_python": lambda **kwargs: run_python_script(
                 kwargs.get("code") or "",

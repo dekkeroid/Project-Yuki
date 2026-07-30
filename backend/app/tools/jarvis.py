@@ -413,3 +413,11 @@ def jarvis_run_terminal(command: str, use_powershell: bool = True, cwd: str = No
         cwd=clean_cwd,
         stdin_input=stdin_input
     )
+
+
+def jarvis_send_stdin(input_text: str, pid: int = None) -> str:
+    """
+    Sends text or newline to standard input (stdin) of an active background terminal process.
+    """
+    from app.tools.system import send_process_stdin
+    return send_process_stdin(input_text=input_text, pid=pid)

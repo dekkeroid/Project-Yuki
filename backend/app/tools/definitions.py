@@ -415,6 +415,21 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
+                "name": "jarvis_send_stdin",
+                "description": "Send keyboard text or newline input directly to standard input (stdin) of an actively running background terminal process.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "input_text": {"type": "string", "description": "Text, number, or newline character to write to the active process's stdin."},
+                        "pid": {"type": "integer", "description": "Optional PID of target process. Defaults to the latest active background process."}
+                    },
+                    "required": ["input_text"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "jarvis_run_python",
                 "description": "Execute Python code for calculations, math, stats, data processing (CSV/JSON/XML), file operations (batch rename, find duplicates, hash), text processing, format conversion, system interrogation, web API calls, encryption/hashing, code analysis/lint, and any custom logic. Full Python stdlib + numpy/pandas available. Returns stdout output.",
                 "parameters": {

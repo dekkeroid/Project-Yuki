@@ -512,7 +512,36 @@ def kill_active_supervisor_processes() -> int:
         except Exception as e:
             print(f"[ProcessSupervisor] Error killing PID {proc.pid}: {e}")
     _ACTIVE_PROCESSES.clear()
-    return killed_count
+def send_process_stdin(input_text: str, pid: int = None) -> str:
+    """
+    Sends input_text (text or newline) directly to the stdin pipe of an actively running background process.
+    """
+    global _ACTIVE_PROCESSES
+    if not _ACTIVE_PROCESSES:
+        return "No active background processes are currently running to receive stdin input."
+
+    target_proc = None
+    if pid:
+        for proc in _ACTIVE_PROCESSES:
+            if proc.pid == pid and proc.poll() is None:
+                target_proc = proc
+                break
+    else:
+        # Use latest active process
+        active_list = [p for p in _ACTIVE_PROCESSES if p.poll() is None]
+        if active_list:
+            target_proc = active_list[-1]
+
+    if not target_proc or not target_proc.stdin:
+        return f"Process (PID {pid or 'latest'}) is either not running or stdin pipe is unavailable."
+
+    try:
+        clean_input = input_text if input_text.endswith('\n') else input_text + '\n'
+        target_proc.stdin.write(clean_input)
+        target_proc.stdin.flush()
+        return f"Successfully sent stdin input '{input_text.strip()}' to active process PID {target_proc.pid}."
+    except Exception as e:
+        return f"Error sending stdin input to PID {target_proc.pid}: {str(e)}"
 
 def run_terminal_command(command: str, use_powershell: bool = True, max_timeout: int = 300, heartbeat_interval: int = 30, cwd: str = None, stdin_input: str = None) -> str:
     """
