@@ -22,69 +22,181 @@ export const parseMessageThought = (rawContent) => {
   return { thoughts, cleanContent };
 };
 
+const INLINE_CODE_STYLE = {
+  fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
+  fontSize: '0.85em',
+  background: 'rgba(255, 255, 255, 0.12)',
+  padding: '2px 6px',
+  borderRadius: '4px',
+  color: '#2dd4bf',
+  border: '1px solid rgba(255, 255, 255, 0.05)',
+  margin: '0 2px'
+};
+
+const formatInline = (text, keyPrefix = '') => {
+  if (!text) return text;
+  const patterns = [
+    { regex: /`([^`]+)`/g, render: (m, i) => <code key={i} style={INLINE_CODE_STYLE}>{m[1]}</code> },
+    { regex: /\*\*([^*]+)\*\*/g, render: (m, i) => <strong key={i} style={{ fontWeight: '800', color: '#ffffff', textShadow: '0 0 8px rgba(255,255,255,0.2)' }}>{m[1]}</strong> },
+    { regex: /__([^_]+)__/g, render: (m, i) => <strong key={i} style={{ fontWeight: '800', color: '#ffffff', textShadow: '0 0 8px rgba(255,255,255,0.2)' }}>{m[1]}</strong> },
+    { regex: /\*([^*]+)\*/g, render: (m, i) => <em key={i} style={{ fontStyle: 'italic', color: '#e2e8f0' }}>{m[1]}</em> },
+    { regex: /_([^_]+)_/g, render: (m, i) => <em key={i} style={{ fontStyle: 'italic', color: '#e2e8f0' }}>{m[1]}</em> },
+    { regex: /~~([^~]+)~~/g, render: (m, i) => <del key={i} style={{ textDecoration: 'line-through', opacity: 0.6 }}>{m[1]}</del> },
+    { regex: /\[([^\]]+)\]\(([^)]+)\)/g, render: (m, i) => <a key={i} href={m[2]} target="_blank" rel="noopener noreferrer" style={{ color: '#67e8f9', textDecoration: 'underline' }}>{m[1]}</a> },
+  ];
+
+  let result = [text];
+  for (const { regex, render } of patterns) {
+    const next = [];
+    for (const part of result) {
+      if (typeof part !== 'string') { next.push(part); continue; }
+      const matches = [...part.matchAll(regex)];
+      if (matches.length === 0) { next.push(part); continue; }
+      let lastIdx = 0;
+      for (const m of matches) {
+        if (m.index > lastIdx) next.push(part.slice(lastIdx, m.index));
+        next.push(render(m, `${keyPrefix}${m.index}`));
+        lastIdx = m.index + m[0].length;
+      }
+      if (lastIdx < part.length) next.push(part.slice(lastIdx));
+    }
+    result = next;
+  }
+  return result.length === 1 ? result[0] : result;
+};
+
+const BTN = (text) => text;
+const PRE_STYLE = { background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px 14px', overflow: 'auto', fontSize: '0.78rem', fontFamily: 'Consolas, Monaco, "Andale Mono", monospace', lineHeight: '1.4', color: '#e2e8f0', margin: '6px 0' };
+const HR_STYLE = { border: 'none', borderTop: '1px solid rgba(255,255,255,0.1)', margin: '8px 0' };
+const H_STYLE = (level) => ({ fontSize: `${1.6 - level * 0.15}rem`, fontWeight: level <= 2 ? '700' : '600', color: '#f1f5f9', margin: '8px 0 4px 0', lineHeight: '1.3' });
+const BLOCKQUOTE_STYLE = { borderLeft: '3px solid #a78bfa', margin: '6px 0', padding: '4px 12px', color: '#cbd5e1', fontStyle: 'italic', background: 'rgba(167,139,250,0.06)', borderRadius: '0 6px 6px 0' };
+const UL_STYLE = { margin: '4px 0', paddingLeft: '20px', listStyle: 'disc' };
+const OL_STYLE = { margin: '4px 0', paddingLeft: '20px', listStyle: 'decimal' };
+const LI_STYLE = { margin: '2px 0', lineHeight: '1.4', color: '#e2e8f0' };
+const PARA_STYLE = { margin: '4px 0', lineHeight: '1.5', whiteSpace: 'pre-wrap' };
+
+const flushBlock = (buf, type, key, elements) => {
+  if (!buf.length) return;
+  if (type === 'p') {
+    elements.push(<div key={key} style={PARA_STYLE}>{formatInline(buf.join('\n'), `${key}p`)}</div>);
+  } else if (type === 'quote') {
+    elements.push(<blockquote key={key} style={BLOCKQUOTE_STYLE}>{formatInline(buf.join('\n'), `${key}q`)}</blockquote>);
+  } else if (type === 'ul') {
+    elements.push(<ul key={key} style={UL_STYLE}>{buf.map((item, i) => <li key={i} style={LI_STYLE}>{formatInline(item, `${key}l${i}`)}</li>)}</ul>);
+  } else if (type === 'ol') {
+    elements.push(<ol key={key} style={OL_STYLE}>{buf.map((item, i) => <li key={i} style={LI_STYLE}>{formatInline(item, `${key}o${i}`)}</li>)}</ol>);
+  }
+};
+
 const formatMessageText = (text) => {
   if (!text) return '';
   if (typeof text !== 'string') return text;
-  
-  // Match delimiters: **, __, *, _, `
-  const regex = /(\*\*|__|\*|_|`)([\s\S]*?)\1/g;
-  
-  const parts = [];
-  let lastIndex = 0;
-  let match;
-  
-  while ((match = regex.exec(text)) !== null) {
-    const matchIndex = match.index;
-    const delimiter = match[1];
-    const innerText = match[2];
-    
-    // Add text preceding the match
-    if (matchIndex > lastIndex) {
-      parts.push(text.substring(lastIndex, matchIndex));
+
+  const lines = text.split('\n');
+  const elements = [];
+  let codeBlock = null;
+  let blockType = null;
+  let blockBuf = [];
+  let blockKey = 0;
+  let inCodeFence = false;
+
+  const nextKey = () => blockKey++;
+
+  for (let li = 0; li < lines.length; li++) {
+    const raw = lines[li];
+    const trimmed = raw.trim();
+
+    // ── Code fence handling ──
+    if (trimmed.startsWith('```')) {
+      if (inCodeFence) {
+        flushBlock(blockBuf, blockType, nextKey(), elements);
+        blockBuf = []; blockType = null;
+        elements.push(<pre key={nextKey()} style={PRE_STYLE}><code>{codeBlock.join('\n')}</code></pre>);
+        codeBlock = null;
+        inCodeFence = false;
+      } else {
+        flushBlock(blockBuf, blockType, nextKey(), elements);
+        blockBuf = []; blockType = null;
+        codeBlock = [];
+        inCodeFence = true;
+      }
+      continue;
     }
-    
-    // Format based on delimiter
-    if (delimiter === '`') {
-      parts.push(
-        <code 
-          key={matchIndex} 
-          style={{ 
-            fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
-            fontSize: '0.85em',
-            background: 'rgba(255, 255, 255, 0.12)',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            color: '#2dd4bf',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            margin: '0 2px'
-          }}
-        >
-          {innerText}
-        </code>
-      );
-    } else {
-      parts.push(
-        <strong 
-          key={matchIndex} 
-          style={{ 
-            fontWeight: '800', 
-            color: '#ffffff',
-            textShadow: '0 0 8px rgba(255, 255, 255, 0.2)'
-          }}
-        >
-          {innerText}
-        </strong>
-      );
+    if (inCodeFence) { codeBlock.push(raw); continue; }
+
+    // ── Blank line ──
+    if (!trimmed) {
+      flushBlock(blockBuf, blockType, nextKey(), elements);
+      blockBuf = []; blockType = null;
+      continue;
     }
-    
-    lastIndex = regex.lastIndex;
+
+    // ── Horizontal rule ──
+    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(trimmed)) {
+      flushBlock(blockBuf, blockType, nextKey(), elements);
+      blockBuf = []; blockType = null;
+      elements.push(<hr key={nextKey()} style={HR_STYLE} />);
+      continue;
+    }
+
+    // ── Heading ──
+    const hMatch = raw.match(/^(#{1,6})\s+(.+)/);
+    if (hMatch) {
+      flushBlock(blockBuf, blockType, nextKey(), elements);
+      blockBuf = []; blockType = null;
+      elements.push(<div key={nextKey()} style={H_STYLE(hMatch[1].length)}>{formatInline(hMatch[2], `${li}h`)}</div>);
+      continue;
+    }
+
+    // ── Blockquote ──
+    const qMatch = raw.match(/^>\s?(.*)/);
+    if (qMatch) {
+      if (blockType !== 'quote') {
+        flushBlock(blockBuf, blockType, nextKey(), elements);
+        blockBuf = []; blockType = 'quote';
+      }
+      blockBuf.push(qMatch[1]);
+      continue;
+    }
+
+    // ── Unordered list ──
+    const ulMatch = raw.match(/^[-*]\s+(.*)/);
+    if (ulMatch) {
+      if (blockType !== 'ul') {
+        flushBlock(blockBuf, blockType, nextKey(), elements);
+        blockBuf = []; blockType = 'ul';
+      }
+      blockBuf.push(ulMatch[1]);
+      continue;
+    }
+
+    // ── Ordered list ──
+    const olMatch = raw.match(/^\d+\.\s+(.*)/);
+    if (olMatch) {
+      if (blockType !== 'ol') {
+        flushBlock(blockBuf, blockType, nextKey(), elements);
+        blockBuf = []; blockType = 'ol';
+      }
+      blockBuf.push(olMatch[1]);
+      continue;
+    }
+
+    // ── Paragraph (default) ──
+    if (blockType !== 'p') {
+      flushBlock(blockBuf, blockType, nextKey(), elements);
+      blockBuf = []; blockType = 'p';
+    }
+    blockBuf.push(raw);
   }
-  
-  if (lastIndex < text.length) {
-    parts.push(text.substring(lastIndex));
+
+  // Flush remaining
+  if (inCodeFence && codeBlock !== null) {
+    elements.push(<pre key={nextKey()} style={PRE_STYLE}><code>{codeBlock.join('\n')}</code></pre>);
+  } else {
+    flushBlock(blockBuf, blockType, nextKey(), elements);
   }
-  
-  return parts.length > 0 ? parts : text;
+
+  return elements.length > 0 ? elements : text;
 };
 
 // Helper to format tool names cleanly
@@ -257,10 +369,10 @@ export const RenderMessageContent = ({ content, isSystem }) => {
         </details>
       ))}
       {cleanContent && (
-        <p style={{ margin: 0, whiteSpace: 'pre-line' }}>
+        <div style={{ margin: 0 }}>
           {isSystem && !cleanContent.startsWith("⚙️") && <span style={{ color: 'var(--accent-teal)', fontWeight: 'bold', marginRight: '6px' }}>[SYSTEM]</span>}
           {formatMessageText(cleanContent)}
-        </p>
+        </div>
       )}
     </div>
   );
@@ -470,7 +582,7 @@ const ChatOverlay = ({
           <div className="bubble-arrow"></div>
           
           <span className="bubble-tag">Yuki</span>
-          <p className="bubble-text">{formatMessageText(currentSpeechText)}</p>
+          <div className="bubble-text">{formatMessageText(currentSpeechText)}</div>
         </div>
       )}
 

@@ -562,10 +562,9 @@ async def get_available_models(target: str = "complex"):
         return {"models": result_models, "active": active_model}
 
     except Exception as e:
-        print(f"[ModelFetch][{target}] Could not reach backend — {e}. Using fallback model.")
-        fallback_models = [{"name": active_model, "type": b_type}] if active_model else []
-        fut.set_result(fallback_models)
-        return {"models": fallback_models, "active": active_model}
+        print(f"[ModelFetch][{target}] Could not reach backend — {e}. Returning empty.")
+        fut.set_result([])
+        return {"models": [], "active": active_model}
     finally:
         _models_in_flight.pop(cache_key, None)
 

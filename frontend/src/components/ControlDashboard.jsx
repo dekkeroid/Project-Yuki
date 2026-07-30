@@ -247,6 +247,8 @@ const ControlDashboard = ({
   const [isOpen, setIsOpen] = useState(isStandalone ? true : false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [settingsSubTab, setSettingsSubTab] = useState('general'); // 'general' | 'avatar' | 'voice' | 'brain'
+  const refreshTimerRef = useRef(null);
+  const refreshSimpleTimerRef = useRef(null);
 
   const [isDevEnv, setIsDevEnv] = useState(false);
   // Alarm Tone Preview & Custom Audio State
@@ -1035,10 +1037,16 @@ const ControlDashboard = ({
           fetchToolsList();
         }
         if (['llm_simple_backend', 'llm_simple_base_url', 'llm_simple_api_key'].some(k => k in updates)) {
-          if (onRefreshSimpleLlmModels) setTimeout(() => onRefreshSimpleLlmModels(), 300);
+          if (onRefreshSimpleLlmModels) {
+            if (refreshSimpleTimerRef.current) clearTimeout(refreshSimpleTimerRef.current);
+            refreshSimpleTimerRef.current = setTimeout(() => onRefreshSimpleLlmModels(), 600);
+          }
         }
         if (['llm_backend', 'llm_base_url', 'llm_api_key'].some(k => k in updates)) {
-          if (onRefreshLlmModels) setTimeout(() => onRefreshLlmModels(), 300);
+          if (onRefreshLlmModels) {
+            if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+            refreshTimerRef.current = setTimeout(() => onRefreshLlmModels(), 600);
+          }
         }
       }
     } catch (e) {

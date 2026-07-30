@@ -93,11 +93,14 @@ export default function SettingsApp() {
     const now = Date.now();
     if (!force && now - lastFetchTime.current < FETCH_COOLDOWN_MS) return;
     lastFetchTime.current = now;
+    setAvailableLlmModels([]);
     try {
       const res = await fetch(`${API_BASE}/api/models`);
       if (res.ok) {
         const data = await res.json();
-        setAvailableLlmModels(data.models || []);
+        if (data.models && data.models.length > 0) {
+          setAvailableLlmModels(data.models);
+        }
       }
     } catch (e) {
       console.warn("Failed to fetch LLM models:", e);
@@ -108,11 +111,14 @@ export default function SettingsApp() {
     const now = Date.now();
     if (!force && now - lastSimpleFetchTime.current < FETCH_COOLDOWN_MS) return;
     lastSimpleFetchTime.current = now;
+    setAvailableSimpleLlmModels([]);
     try {
       const res = await fetch(`${API_BASE}/api/models?target=simple`);
       if (res.ok) {
         const data = await res.json();
-        setAvailableSimpleLlmModels(data.models || []);
+        if (data.models && data.models.length > 0) {
+          setAvailableSimpleLlmModels(data.models);
+        }
       }
     } catch (e) {
       console.warn("Failed to fetch simple LLM models:", e);
@@ -232,8 +238,8 @@ export default function SettingsApp() {
         }}
         availableLlmModels={availableLlmModels}
         availableSimpleLlmModels={availableSimpleLlmModels}
-        onRefreshLlmModels={fetchLlmModels}
-        onRefreshSimpleLlmModels={fetchSimpleLlmModels}
+        onRefreshLlmModels={() => fetchLlmModels(true)}
+        onRefreshSimpleLlmModels={() => fetchSimpleLlmModels(true)}
         preferHeadsetMic={preferHeadsetMic}
         onPreferHeadsetMicChange={(val) => {
           setPreferHeadsetMic(val);

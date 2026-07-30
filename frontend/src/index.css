@@ -372,7 +372,7 @@ body {
   font-size: 0.95rem;
   line-height: 1.5;
   font-weight: 500;
-  color: white;
+  color: #f5f5f5;
 }
 
 .thinking-floating {
@@ -561,14 +561,14 @@ body {
 .bubble-content-block.user {
   background: rgba(124, 58, 237, 0.25);
   border: 1px solid rgba(192, 132, 252, 0.2);
-  color: white;
+  color: #f5f5f5;
   border-bottom-right-radius: 0;
 }
 
 .bubble-content-block.assistant {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--glass-border);
-  color: white;
+  color: #f5f5f5;
   border-bottom-left-radius: 0;
 }
 

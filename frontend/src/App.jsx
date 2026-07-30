@@ -22,7 +22,6 @@ let stream_end_exception = false;
 
 import {
   SKIN_PRESETS,
-  LLM_MODELS,
   TTS_VOICES,
   TTS_RATES,
   INTERNET_RECOVERY_RESPONSES,
@@ -4558,8 +4557,8 @@ const detectExpression = (text) => {
         }}
         availableLlmModels={availableLlmModels}
         availableSimpleLlmModels={availableSimpleLlmModels}
-        onRefreshLlmModels={fetchLlmModels}
-        onRefreshSimpleLlmModels={fetchSimpleLlmModels}
+        onRefreshLlmModels={() => fetchLlmModels(true)}
+        onRefreshSimpleLlmModels={() => fetchSimpleLlmModels(true)}
         preferHeadsetMic={preferHeadsetMic}
         onPreferHeadsetMicChange={(val) => {
           setPreferHeadsetMic(val);

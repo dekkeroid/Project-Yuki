@@ -44,6 +44,27 @@ export const AgenticWorkspaceWindow = ({
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const chatContainerRef = useRef(null);
+  const [coderLlmModels, setCoderLlmModels] = useState([]);
+  const coderModelsFetchRef = useRef(0);
+  const CODER_FETCH_COOLDOWN = 2000;
+
+  const fetchCoderLlmModels = async () => {
+    const now = Date.now();
+    if (now - coderModelsFetchRef.current < CODER_FETCH_COOLDOWN) return;
+    coderModelsFetchRef.current = now;
+    setCoderLlmModels([]);
+    try {
+      const res = await fetch(`${API_BASE}/api/models`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.models && data.models.length > 0) {
+          setCoderLlmModels(data.models);
+        }
+      }
+    } catch (e) {
+      console.warn("[CoderModels] Failed to fetch:", e);
+    }
+  };
 
   // Local Input Text State (Fixes standalone typing when props are unpassed)
   const [localInputText, setLocalInputText] = useState('');
@@ -178,11 +199,18 @@ export const AgenticWorkspaceWindow = ({
       onUpdateSetting(updates);
     }
     try {
-      await fetch(`${API_BASE}/api/settings`, {
-        method: 'PUT',
+      const res = await fetch(`${API_BASE}/api/settings/update`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
       });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`[Settings] Update failed (${res.status}): ${errText}`);
+      }
+      if (['llm_coder_backend', 'llm_coder_base_url', 'llm_coder_api_key'].some(k => k in updates)) {
+        setTimeout(() => fetchCoderLlmModels(), 400);
+      }
     } catch (err) {
       console.error("[Settings] Error updating settings:", err);
     }
@@ -207,6 +235,7 @@ export const AgenticWorkspaceWindow = ({
 
   useEffect(() => {
     fetchSettingsAndEndpoints();
+    fetchCoderLlmModels();
   }, [fetchSettingsAndEndpoints]);
 
   const handleSaveCoderEndpoint = async () => {
@@ -1470,7 +1499,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                         ? 'linear-gradient(135deg, rgba(139, 92, 246, 0.35) 0%, rgba(109, 40, 217, 0.35) 100%)'
                         : 'rgba(15, 23, 42, 0.75)',
                       border: isUser ? '1px solid rgba(167, 139, 250, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
-                      color: '#f8fafc',
+                      color: '#f5f5f5',
                       fontSize: '0.82rem',
                       lineHeight: '1.5',
                       boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
@@ -2870,7 +2899,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       </label>
                       <button
                         type="button"
-                        onClick={onRefreshLlmModels}
+                        onClick={() => fetchCoderLlmModels()}
                         title="Refresh model list from backend endpoint"
                         style={{
                           background: 'none',
@@ -2891,14 +2920,9 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     </div>
 
                     {(() => {
-                      const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
+                      const fetchedNames = (coderLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
                       const allNames = Array.from(new Set([
                         ...(activeSettings.llm_coder_model ? [activeSettings.llm_coder_model] : []),
-                        'qwen2.5-coder-32b-instruct',
-                        'llama-3.3-70b-versatile',
-                        'claude-3-5-sonnet-20241022',
-                        'deepseek-coder',
-                        'gemini-1.5-flash',
                         ...fetchedNames
                       ]));
 
