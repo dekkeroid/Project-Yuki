@@ -38,7 +38,47 @@ _QUERY_EXPANSIONS = {
     "web": ("internet", "search", "browse"),
 }
 
+_ALWAYS_INCLUDED_JARVIS_TOOLS = {
+    "jarvis_run_python",
+    "jarvis_remember_user_fact",
+    "jarvis_web_search",
+    "jarvis_web_scrape",
+}
+
+_ALWAYS_INCLUDED_BASIC_TOOLS = {
+    "run_python_script",
+    "update_user_fact",
+    "web_search",
+}
+
 _TOOL_HINTS = {
+    # Jarvis Autonomous Mode Tools
+    "jarvis_run_python": ("python", "script", "code", "run", "execute", "math", "pandas", "numpy", "calc", "data", "processing"),
+    "jarvis_remember_user_fact": ("remember", "memory", "preference", "name", "fact", "user", "like", "dislike", "save"),
+    "jarvis_web_search": ("web", "internet", "search", "google", "lookup", "browse", "find", "online"),
+    "jarvis_web_scrape": ("scrape", "extract", "fetch", "url", "page", "site", "webpage", "article", "html", "download", "link"),
+    "jarvis_query_file_db": ("find", "search", "file", "db", "query", "database", "index", "folder", "locate"),
+    "jarvis_read_file": ("read", "view", "open", "file", "cat", "lines", "source", "code", "content"),
+    "jarvis_create_or_edit_file": ("create", "write", "new", "file", "edit", "modify", "save"),
+    "jarvis_replace_file_content": ("replace", "edit", "change", "file", "modify", "patch"),
+    "jarvis_list_dir_tree": ("dir", "directory", "tree", "list", "folder", "files", "ls"),
+    "jarvis_git_status": ("git", "repo", "commit", "status", "branch", "diff", "vcs"),
+    "jarvis_system_diagnostics": ("cpu", "ram", "memory", "disk", "stats", "system", "health", "battery", "performance"),
+    "jarvis_launch_app": ("open", "launch", "start", "app", "application", "program", "browser", "exec"),
+    "jarvis_open_or_play_file": ("open", "play", "media", "video", "audio", "file", "folder", "watch", "music"),
+    "jarvis_window_control": ("window", "minimize", "maximize", "focus", "move", "close"),
+    "jarvis_system_volume": ("volume", "sound", "audio", "mute", "unmute", "loud"),
+    "jarvis_system_power": ("shutdown", "restart", "reboot", "sleep", "lock", "power"),
+    "jarvis_manage_time": ("timer", "reminder", "alarm", "stopwatch", "schedule", "clock", "remind"),
+    "jarvis_close_app": ("close", "kill", "terminate", "stop", "app", "window"),
+    "jarvis_run_terminal": ("terminal", "command", "shell", "powershell", "cmd", "run", "execute", "cli"),
+    "jarvis_send_stdin": ("stdin", "input", "press", "enter", "key", "interactive"),
+    "jarvis_keyboard_input": ("keyboard", "type", "press", "key", "shortcut"),
+    "jarvis_media_playback_control": ("pause", "next", "previous", "media", "music", "playback", "stop"),
+    "jarvis_analyze_image": ("screenshot", "image", "vision", "picture", "photo", "scan", "analyze"),
+    "find_files_by_glob": ("glob", "find", "search", "pattern", "files", "match"),
+
+    # Legacy Basic Mode Tools
     "open_or_play_file": ("open", "play", "media", "video", "audio", "file", "folder", "watch", "anime"),
     "search_files": ("search", "find", "file", "folder", "directory", "locate", "anime"),
     "list_directory": ("list", "directory", "folder", "files"),
@@ -72,23 +112,26 @@ def select_relevant_tools(
     max_tools: int = DEFAULT_MAX_TOOLS,
     fallback_threshold: float = DEFAULT_FALLBACK_THRESHOLD,
 ) -> list[dict[str, Any]]:
-    """Return a compact, ranked tool list or all tools when confidence is low.
-
-    This is a local analogue to tool search: it scores the user's words against
-    tool names, descriptions, JSON-schema field names, and curated synonyms. If
-    the best score is weak, it returns the full list rather than hiding the tool
-    the model might need.
-    """
+    """Return a compact, ranked tool list containing always-included core tools + query-matched tools."""
     if not tools:
         return []
 
+    # Detect if we are in Jarvis mode (contains jarvis_* tool definitions)
+    is_jarvis = any(_tool_name(t).startswith("jarvis_") for t in tools)
+    always_names = _ALWAYS_INCLUDED_JARVIS_TOOLS if is_jarvis else _ALWAYS_INCLUDED_BASIC_TOOLS
+
+    always_tools = [t for t in tools if _tool_name(t) in always_names]
+    always_tool_names = {_tool_name(t) for t in always_tools}
+
     query_terms = _expand_query_terms(_tokens(user_message))
     if not query_terms:
-        return list(tools)
+        return always_tools or list(tools)[:max_tools]
 
     scored = []
     for index, tool in enumerate(tools):
         name = _tool_name(tool)
+        if name in always_tool_names:
+            continue
         tool_terms = _tool_terms(tool)
         hint_terms = set(_TOOL_HINTS.get(name, ()))
         overlap = query_terms & (tool_terms | hint_terms)
@@ -101,11 +144,14 @@ def select_relevant_tools(
         scored.append((score, -index, tool))
 
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    if scored[0][0] < fallback_threshold:
-        return list(tools)
+    
+    # If confidence is low (e.g. casual chitchat), return ONLY the always-included core tools!
+    if not scored or scored[0][0] < fallback_threshold:
+        return always_tools or list(tools)[:max_tools]
 
-    selected = [tool for score, _, tool in scored if score > 0][:max(1, max_tools)]
-    return selected or list(tools)
+    # Otherwise, return always-included tools + top query-matched action tools
+    matched_tools = [tool for score, _, tool in scored if score > 0][:max(1, max_tools - len(always_tools))]
+    return always_tools + matched_tools
 
 
 def _tokens(text: str) -> set[str]:
