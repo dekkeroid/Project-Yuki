@@ -38,10 +38,14 @@ _SHORT_CIRCUIT_TOOLS = {
 
 
 
-def _extract_confirmation_target(tool_result: str) -> str | None:
-    if isinstance(tool_result, str) and tool_result.startswith("CONFIRM_REQUIRED: "):
-        return tool_result[len("CONFIRM_REQUIRED: "):].strip()
-    return None
+def is_vision_model(model_name: str) -> bool:
+    """Helper function to dynamically detect if a resolved model supports native vision API payloads."""
+    if not model_name:
+        return False
+    name_low = str(model_name).lower().strip()
+    vision_keywords = ("gemini", "gpt-4o", "gpt-4-turbo", "claude-3", "qwen-vl", "llava", "vision")
+    return any(kw in name_low for kw in vision_keywords)
+
 
 def _format_short_circuit_result(tool_name: str, tool_result: str, tool_args: dict) -> str:
     if not isinstance(tool_result, str):
@@ -567,15 +571,6 @@ class AgentExecutor:
             
         if updates:
             self.memory.update_mood_spectrum(updates)
-
-def is_vision_model(model_name: str) -> bool:
-    """Helper function to dynamically detect if a resolved model supports native vision API payloads."""
-    if not model_name:
-        return False
-    name_low = str(model_name).lower().strip()
-    vision_keywords = ("gemini", "gpt-4o", "gpt-4-turbo", "claude-3", "qwen-vl", "llava", "vision")
-    return any(kw in name_low for kw in vision_keywords)
-
 
     def _build_messages(
         self,
