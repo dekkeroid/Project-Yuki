@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -130,6 +130,32 @@ export const SearchableModelSelect = ({ value, onChange, options = [], placehold
             scrollbarWidth: 'thin',
             scrollbarColor: 'rgba(167, 139, 250, 0.4) transparent'
           }}>
+            {searchTerm.trim() && !options.includes(searchTerm.trim()) && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(searchTerm.trim());
+                  setIsOpen(false);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 10px',
+                  fontSize: '0.73rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  background: 'rgba(167, 139, 250, 0.2)',
+                  border: '1px dashed #a78bfa',
+                  color: '#e2e8f0',
+                  cursor: 'pointer',
+                  marginBottom: '4px',
+                  textAlign: 'left'
+                }}
+              >
+                ✨ Use custom model: "{searchTerm.trim()}"
+              </button>
+            )}
             {filteredOptions.length === 0 ? (
               <div style={{ padding: '12px 8px', fontSize: '0.74rem', color: '#94a3b8', textAlign: 'center', lineHeight: '1.4' }}>
                 No model matches "{searchTerm}".
@@ -469,6 +495,95 @@ const ControlDashboard = ({
   const [showSimpleApiKey, setShowSimpleApiKey] = useState(false);
   const [saveEndpointBtnText, setSaveEndpointBtnText] = useState('Save Endpoint Preset');
   const [saveSimpleEndpointBtnText, setSaveSimpleEndpointBtnText] = useState('Save Preset');
+
+  // Export & Import File Input Refs & Handlers
+  const personaFileInputRef = useRef(null);
+  const settingsFileInputRef = useRef(null);
+  const crawlerFileInputRef = useRef(null);
+
+  const handleExportPersona = () => {
+    window.location.href = `${API_BASE}/api/persona/export`;
+  };
+
+  const handleImportPersonaFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const jsonPayload = JSON.parse(text);
+      const res = await fetch(`${API_BASE}/api/persona/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jsonPayload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('✓ Persona imported successfully!');
+        if (fetchProfile) fetchProfile();
+      } else {
+        alert(`Import failed: ${data.detail || 'Invalid persona format'}`);
+      }
+    } catch (err) {
+      alert(`Error importing persona: ${err.message}`);
+    }
+    e.target.value = '';
+  };
+
+  const handleExportSettings = () => {
+    window.location.href = `${API_BASE}/api/settings/export`;
+  };
+
+  const handleImportSettingsFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const jsonPayload = JSON.parse(text);
+      const res = await fetch(`${API_BASE}/api/settings/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jsonPayload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('✓ Application settings imported successfully!');
+        if (fetchProfile) fetchProfile();
+      } else {
+        alert(`Import failed: ${data.detail || 'Invalid settings format'}`);
+      }
+    } catch (err) {
+      alert(`Error importing settings: ${err.message}`);
+    }
+    e.target.value = '';
+  };
+
+  const handleExportCrawlerData = () => {
+    window.location.href = `${API_BASE}/api/crawler/export`;
+  };
+
+  const handleImportCrawlerFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const jsonPayload = JSON.parse(text);
+      const res = await fetch(`${API_BASE}/api/crawler/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jsonPayload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✓ Crawler database imported successfully!\n(${data.stats?.files_imported || 0} files, ${data.stats?.metadata_imported || 0} metadata records)`);
+        if (fetchCrawlerStatus) fetchCrawlerStatus();
+      } else {
+        alert(`Import failed: ${data.detail || 'Invalid crawler data format'}`);
+      }
+    } catch (err) {
+      alert(`Error importing crawler data: ${err.message}`);
+    }
+    e.target.value = '';
+  };
 
   const handleToggleSimpleApiKey = async () => {
     const nextState = !showSimpleApiKey;
@@ -2006,33 +2121,83 @@ const ControlDashboard = ({
                   />
                 </div>
 
-                <button
-                  onClick={async (e) => {
-                    const btn = e.currentTarget;
-                    const originalText = btn.innerText;
-                    const originalBg = btn.style.background;
-                    btn.innerText = "Saving...";
-                    await handleUpdateSetting('character_name', charName);
-                    await handleUpdateSetting('character_persona', charPersona);
-                    btn.innerText = "✓ Saved";
-                    btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
-                    setTimeout(() => {
-                      btn.innerText = originalText;
-                      btn.style.background = originalBg;
-                    }, 2000);
-                  }}
-                  className="glass-button"
-                  style={{
-                    padding: '8px 14px',
-                    fontSize: '0.75rem',
-                    borderRadius: '10px',
-                    marginTop: '4px',
-                    background: 'linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)',
-                    boxShadow: '0 4px 12px rgba(13,148,136,0.3)',
-                  }}
-                >
-                  Save Character Specs
-                </button>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={async (e) => {
+                      const btn = e.currentTarget;
+                      const originalText = btn.innerText;
+                      const originalBg = btn.style.background;
+                      btn.innerText = "Saving...";
+                      await handleUpdateSetting('character_name', charName);
+                      await handleUpdateSetting('character_persona', charPersona);
+                      btn.innerText = "✓ Saved";
+                      btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+                      setTimeout(() => {
+                        btn.innerText = originalText;
+                        btn.style.background = originalBg;
+                      }, 2000);
+                    }}
+                    className="glass-button"
+                    style={{
+                      flex: 1,
+                      minWidth: '120px',
+                      padding: '8px 12px',
+                      fontSize: '0.75rem',
+                      borderRadius: '10px',
+                      background: 'linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)',
+                      boxShadow: '0 4px 12px rgba(13,148,136,0.3)',
+                      fontWeight: 600
+                    }}
+                  >
+                    Save Specs
+                  </button>
+
+                  <button
+                    onClick={handleExportPersona}
+                    className="glass-button"
+                    style={{
+                      padding: '8px 12px',
+                      fontSize: '0.75rem',
+                      borderRadius: '10px',
+                      background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                      boxShadow: '0 4px 12px rgba(139,92,246,0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontWeight: 600
+                    }}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Export Persona JSON
+                  </button>
+
+                  <button
+                    onClick={() => personaFileInputRef.current?.click()}
+                    className="glass-button"
+                    style={{
+                      padding: '8px 12px',
+                      fontSize: '0.75rem',
+                      borderRadius: '10px',
+                      background: 'linear-gradient(135deg, #ec4899 0%, #be185d 100%)',
+                      boxShadow: '0 4px 12px rgba(236,72,153,0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontWeight: 600
+                    }}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    Import Persona JSON
+                  </button>
+
+                  <input
+                    type="file"
+                    ref={personaFileInputRef}
+                    accept=".json"
+                    onChange={handleImportPersonaFile}
+                    style={{ display: 'none' }}
+                  />
+                </div>
               </div>
             </>
           ) : activeTab === 'tasks' ? (
@@ -2877,6 +3042,71 @@ const ControlDashboard = ({
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  {/* Backup & Restore Application Settings Card Group */}
+                  <div className="card-group" style={{ marginBottom: '12px' }}>
+                    <div className="card-group-header">
+                      <Sliders className="w-4 h-4 text-purple-400" />
+                      <span className="card-group-title">Backup & Restore Application Settings</span>
+                    </div>
+                    <p style={{ fontSize: '0.73rem', color: '#94a3b8', margin: '4px 0 10px 0' }}>
+                      Export or import your full Yuki application configuration, model selections, custom endpoints, audio choices, and API keys.
+                    </p>
+
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={handleExportSettings}
+                        className="glass-button"
+                        style={{
+                          flex: 1,
+                          minWidth: '160px',
+                          padding: '8px 12px',
+                          fontSize: '0.75rem',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                          boxShadow: '0 4px 12px rgba(139,92,246,0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          fontWeight: 600
+                        }}
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Export Settings JSON
+                      </button>
+
+                      <button
+                        onClick={() => settingsFileInputRef.current?.click()}
+                        className="glass-button"
+                        style={{
+                          flex: 1,
+                          minWidth: '160px',
+                          padding: '8px 12px',
+                          fontSize: '0.75rem',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #d946ef 0%, #a21caf 100%)',
+                          boxShadow: '0 4px 12px rgba(217,70,239,0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          fontWeight: 600
+                        }}
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        Import Settings JSON
+                      </button>
+
+                      <input
+                        type="file"
+                        ref={settingsFileInputRef}
+                        accept=".json"
+                        onChange={handleImportSettingsFile}
+                        style={{ display: 'none' }}
+                      />
+                    </div>
                   </div>
                 </>
               )}
@@ -4654,6 +4884,69 @@ const ControlDashboard = ({
                     <RefreshCw className="w-3.5 h-3.5" />
                     <span>Force Full Recrawl</span>
                   </button>
+
+                  {/* Crawler Database Export & Import Buttons */}
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={handleExportCrawlerData}
+                      className="glass-button"
+                      style={{
+                        flex: 1,
+                        minWidth: '150px',
+                        padding: '8px 12px',
+                        fontSize: '0.78rem',
+                        borderRadius: '8px',
+                        fontWeight: 600,
+                        background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                        color: 'white',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export Crawler Data JSON</span>
+                    </button>
+
+                    <button
+                      onClick={() => crawlerFileInputRef.current?.click()}
+                      className="glass-button"
+                      style={{
+                        flex: 1,
+                        minWidth: '150px',
+                        padding: '8px 12px',
+                        fontSize: '0.78rem',
+                        borderRadius: '8px',
+                        fontWeight: 600,
+                        background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+                        color: 'white',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: '0 4px 12px rgba(13, 148, 136, 0.3)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Import Crawler Data JSON</span>
+                    </button>
+
+                    <input
+                      type="file"
+                      ref={crawlerFileInputRef}
+                      accept=".json"
+                      onChange={handleImportCrawlerFile}
+                      style={{ display: 'none' }}
+                    />
+                  </div>
                 </div>
               </div>
 
