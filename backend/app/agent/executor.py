@@ -1080,7 +1080,8 @@ class AgentExecutor:
 
         current_messages = self._build_messages(user_message, chat_history, resolved_backend)
 
-        max_iterations = 10
+        is_coder_mode = resolved_backend in ("coder", "complex_coder")
+        max_iterations = 30 if is_coder_mode else 10
         iteration = 0
         troubleshoot_attempts = 0
         accumulated_response_total = []
@@ -1768,7 +1769,8 @@ class AgentExecutor:
             current_messages = [{"role": "user", "content": user_message}]
 
         async with aiohttp.ClientSession() as session:
-            max_iterations = 10
+            is_coder_mode = bool(overrides.get("coding_mode")) or resolved_backend in ("coder", "complex_coder")
+            max_iterations = 30 if is_coder_mode else 10
             iteration = 0
             troubleshoot_attempts = 0
 
