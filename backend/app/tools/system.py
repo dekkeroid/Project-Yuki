@@ -548,10 +548,21 @@ def smart_truncate_output(lines: list, max_lines: int = 65, head_count: int = 15
     parts.append("\n".join(tail_lines))
     return "\n".join(parts)
 
+_ACTIVE_WORKSPACE_DIR: str = None
+
+def set_active_workspace_directory(dir_path: str):
+    global _ACTIVE_WORKSPACE_DIR
+    if dir_path:
+        _ACTIVE_WORKSPACE_DIR = os.path.abspath(str(dir_path).strip('"\''))
+
+def get_active_workspace_directory() -> str:
+    return _ACTIVE_WORKSPACE_DIR
+
 def find_files_by_glob(pattern: str, root_dir: str = None, max_results: int = 150) -> str:
     """
     Finds files matching a glob pattern (e.g. 'src/**/*.jsx', '**/*.py') starting from root_dir.
     Automatically excludes node_modules, .git, dist, build, venv directories.
+    Defaults to the active project workspace directory if root_dir is omitted.
     """
     import os, glob, pathlib
     
@@ -559,7 +570,13 @@ def find_files_by_glob(pattern: str, root_dir: str = None, max_results: int = 15
     if not clean_pattern:
         return "Error: Glob pattern cannot be empty."
 
-    search_dir = os.path.abspath(str(root_dir).strip('"\'')) if root_dir else os.getcwd()
+    raw_dir = str(root_dir).strip('"\'') if root_dir else None
+    if raw_dir and raw_dir != "None":
+        search_dir = os.path.abspath(raw_dir)
+    else:
+        active_ws = get_active_workspace_directory()
+        search_dir = active_ws if active_ws else os.getcwd()
+
     if not os.path.exists(search_dir):
         return f"Error: Search directory '{search_dir}' does not exist."
 
@@ -669,7 +686,7 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
     start_time = time.time()
     try:
         proc = subprocess.Popen(
-            cmd_list,
+            command,
             stdin=subprocess.PIPE if stdin_input else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

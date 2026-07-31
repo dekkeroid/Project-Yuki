@@ -420,8 +420,8 @@ def get_advanced_jarvis_tools_definition() -> list:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "pattern": {"type": "string", "description": "Glob pattern string (e.g. 'src/**/*.jsx', '**/*.py')."},
-                        "root_dir": {"type": "string", "description": "Optional root directory path to start glob search in."}
+                        "pattern": {"type": "string", "description": "Glob pattern string (e.g. 'src/**/*.jsx', '**/*.py', 'package*.json')."},
+                        "root_dir": {"type": "string", "description": "Optional root directory path to search in. Defaults automatically to the active project workspace directory."}
                     },
                     "required": ["pattern"]
                 }

@@ -1765,7 +1765,10 @@ class AgentExecutor:
                     else:
                         print(f"[IntentCheck] Confirmed TOOL:{intent_tool_hint or '?'} ({intent_source}) — proceeding as complex")
         # Process passive mood drift & intimacy keyword detection
-        self._process_mood_drift(user_message)
+        active_ws_dir = self._get_active_workspace_directory(overrides)
+        if active_ws_dir:
+            from app.tools.system import set_active_workspace_directory
+            set_active_workspace_directory(active_ws_dir)
 
         try:
             current_messages = self._build_messages(user_message, chat_history, resolved_backend, overrides=overrides)
