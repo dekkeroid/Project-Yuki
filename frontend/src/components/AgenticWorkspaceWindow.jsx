@@ -825,6 +825,18 @@ export const AgenticWorkspaceWindow = ({
     }
   };
 
+  const toggleAddDirectoryForm = () => {
+    setShowDirForm(prev => {
+      const nextState = !prev;
+      if (nextState && !dirKeyInput) {
+        const nextNum = (sessionDirectories || []).length + 1;
+        setDirKeyInput(`Project Folder ${nextNum}`);
+      }
+      return nextState;
+    });
+    setShowFactForm(false);
+  };
+
   const handleSendPrompt = (textToSend) => {
     if (!textToSend.trim()) return;
 
@@ -1722,7 +1734,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                 {isCodingMode && (
                   <button
                     type="button"
-                    onClick={() => { setShowDirForm(prev => !prev); setShowFactForm(false); }}
+                    onClick={toggleAddDirectoryForm}
                     style={{
                       padding: '3px 8px',
                       borderRadius: '5px',
@@ -2907,7 +2919,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     <span style={{ fontSize: '0.66rem', color: '#cbd5e1', fontWeight: 600 }}>📁 Workspace Directories ({sessionDirectories.length})</span>
                     <button
                       type="button"
-                      onClick={() => setShowDirForm(prev => !prev)}
+                      onClick={toggleAddDirectoryForm}
                       style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.62rem', background: 'rgba(16, 185, 129, 0.2)', color: '#6ee7b7', border: '1px solid rgba(16, 185, 129, 0.4)', cursor: 'pointer' }}
                     >
                       {showDirForm ? 'Cancel' : '+ Add Directory'}
