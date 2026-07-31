@@ -282,8 +282,8 @@ class AgentExecutor:
                 pid=kwargs.get("pid")
             ),
             "find_files_by_glob": lambda **kwargs: find_files_by_glob(
-                kwargs.get("pattern") or "*",
-                root_dir=self._get_active_session_dir(kwargs)
+                pattern=kwargs.get("pattern") or "*",
+                search_dir=kwargs.get("search_dir") or kwargs.get("root_dir") or self._get_active_session_dir(kwargs)
             ),
             "jarvis_run_python": lambda **kwargs: run_python_script(
                 kwargs.get("code") or "",
