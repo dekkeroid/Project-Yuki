@@ -632,8 +632,12 @@ export const AgenticWorkspaceWindow = ({
       if (sRes.ok) {
         const sData = await sRes.json();
         setInternalSettings(sData || {});
-        if (sData && sData.llm_coder_api_key) {
-          const arr = sData.llm_coder_api_key.split(',').map(k => k.trim());
+      }
+      const pRes = await fetch(`${API_BASE}/api/profile?decrypt_keys=true`);
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        if (pData.settings && pData.settings.llm_coder_api_key) {
+          const arr = pData.settings.llm_coder_api_key.split(',').map(k => k.trim());
           setDraftCoderKeys(arr.length > 0 ? arr : ['']);
         }
       }
@@ -3639,7 +3643,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                   if (res.ok) {
                                     const data = await res.json();
                                     if (data.settings && data.settings.llm_coder_api_key) {
-                                      handleUpdateSetting({ llm_coder_api_key: data.settings.llm_coder_api_key });
+                                      const arr = data.settings.llm_coder_api_key.split(',').map(k => k.trim());
+                                      setDraftCoderKeys(arr.length > 0 ? arr : ['']);
                                     }
                                   }
                                 } catch (err) {

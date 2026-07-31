@@ -862,11 +862,10 @@ def get_settings():
     import copy
     from app.memory.crawler import is_crawler_paused, is_tagger_paused
     settings_dict = copy.deepcopy(memory_manager.profile.get("settings", {}))
-    from app.utils.security import mask_api_key
-    if "llm_api_key" in settings_dict and settings_dict["llm_api_key"]:
-        settings_dict["llm_api_key"] = mask_api_key(settings_dict["llm_api_key"])
-    if "llm_simple_api_key" in settings_dict and settings_dict["llm_simple_api_key"]:
-        settings_dict["llm_simple_api_key"] = mask_api_key(settings_dict["llm_simple_api_key"])
+    from app.utils.security import mask_api_key, decrypt_api_key
+    for k_name in ["llm_api_key", "llm_simple_api_key", "llm_coder_api_key"]:
+        if k_name in settings_dict and settings_dict[k_name]:
+            settings_dict[k_name] = mask_api_key(decrypt_api_key(settings_dict[k_name]))
     settings_dict.update({
         "llm_model": config.LLM_MODEL,
         "character_name": config.CHARACTER_NAME,
