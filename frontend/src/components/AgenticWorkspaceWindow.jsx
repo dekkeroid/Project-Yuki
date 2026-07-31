@@ -4070,6 +4070,22 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                               placeholder="Search or select Synthesizer model (e.g. gemini-3.5-flash-lite)..."
                             />
                           </div>
+
+                          {/* Role 4: Vision Scan & Analysis Model */}
+                          <div style={{ background: 'rgba(9, 13, 22, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+                            <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#38bdf8', display: 'block', marginBottom: '2px' }}>
+                              🔍 4. Vision Scan & Analysis Model (Tool Model)
+                            </label>
+                            <div style={{ fontSize: '0.66rem', color: '#94a3b8', marginBottom: '6px' }}>
+                              Target model used by <code style={{ color: '#38bdf8' }}>jarvis_analyze_image</code> tool when non-vision models analyze screenshots & image files.
+                            </div>
+                            <SearchableModelSelect
+                              value={activeSettings.llm_vision_model || 'gemini-3.6-flash'}
+                              onChange={(val) => handleUpdateSetting({ llm_vision_model: val })}
+                              options={Array.from(new Set([...allNames, 'gemini-3.6-flash', 'gemini-2.5-flash', 'gpt-4o']))}
+                              placeholder="Search or select Vision Scan model (e.g. gemini-3.6-flash)..."
+                            />
+                          </div>
                         </div>
                       );
                     })()}

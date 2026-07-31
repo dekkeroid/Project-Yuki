@@ -418,6 +418,7 @@ const ControlDashboard = ({
     llm_simple_base_url: 'http://127.0.0.1:1234',
     llm_simple_api_key: '',
     llm_simple_model: '',
+    llm_vision_model: 'gemini-3.6-flash',
     tts_voice: 'af_bella',
     tts_rate: '1.0',
     tts_device: 'auto',
@@ -3976,6 +3977,39 @@ const ControlDashboard = ({
                         })()}
                       </div>
                     )}
+
+                    {/* Vision Scan & Analysis Model Selection */}
+                    <div className="identity-field" style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                        <span className="field-label" style={{ color: '#38bdf8' }}>🔍 Vision Scan & Analysis Model (Tool Model)</span>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '6px' }}>
+                        Model used by <code style={{ color: '#38bdf8' }}>jarvis_analyze_image</code> tool when non-vision models analyze screenshots & image files.
+                      </div>
+                      {(() => {
+                        const defaultVisionModels = [
+                          'gemini-3.6-flash',
+                          'gemini-2.5-flash',
+                          'gemini-2.5-pro',
+                          'gpt-4o',
+                          'gpt-4o-mini'
+                        ];
+                        const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
+                        const allNames = Array.from(new Set([
+                          ...(settings.llm_vision_model ? [settings.llm_vision_model] : []),
+                          ...defaultVisionModels,
+                          ...fetchedNames
+                        ]));
+                        return (
+                          <SearchableModelSelect
+                            value={settings.llm_vision_model || 'gemini-3.6-flash'}
+                            onChange={(val) => handleUpdateSetting('llm_vision_model', val)}
+                            options={allNames}
+                            placeholder="Search or select Vision Scan model..."
+                          />
+                        );
+                      })()}
+                    </div>
                   </div>
                 </>
               )}
