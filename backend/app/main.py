@@ -1010,14 +1010,12 @@ async def update_settings(req: SettingsUpdateRequest):
         from app.utils.security import encrypt_api_key, decrypt_api_key
         key_val = req.llm_coder_api_key.strip()
         if key_val:
-            if key_val.startswith("enc_v1:") or key_val.startswith("gAAAA"):
-                config.LLM_CODER_API_KEY = decrypt_api_key(key_val)
-                memory_manager.update_setting("llm_coder_api_key", key_val)
-            elif "..." in key_val:
+            if "..." in key_val and not ("enc_v1:" in key_val or "gAAAA" in key_val):
                 pass
             else:
-                config.LLM_CODER_API_KEY = key_val
-                memory_manager.update_setting("llm_coder_api_key", encrypt_api_key(key_val))
+                decrypted = decrypt_api_key(key_val) if ("enc_v1:" in key_val or "gAAAA" in key_val) else key_val
+                config.LLM_CODER_API_KEY = decrypted
+                memory_manager.update_setting("llm_coder_api_key", encrypt_api_key(decrypted))
         else:
             config.LLM_CODER_API_KEY = ""
             memory_manager.update_setting("llm_coder_api_key", "")
