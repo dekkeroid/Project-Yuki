@@ -642,6 +642,199 @@ export const CodeBlockCopyButton = ({ code }) => {
   );
 };
 
+const isTableSeparatorLine = (line) => {
+  const text = line.trim();
+  if (!text) return false;
+  return /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(text);
+};
+
+const splitTableRowCells = (line) => {
+  const text = line.trim();
+  const protectedText = text.replace(/\\\|/g, '\u0000');
+  let cells = protectedText.split('|');
+  if (cells.length && cells[0].trim() === '') cells.shift();
+  if (cells.length && cells[cells.length - 1].trim() === '') cells.pop();
+  return cells.map((cell) => cell.split('\u0000').join('|').trim());
+};
+
+const parseTableAlignments = (separatorLine) => {
+  return splitTableRowCells(separatorLine).map((cell) => {
+    if (cell.startsWith(':') && cell.endsWith(':')) return 'center';
+    if (cell.endsWith(':')) return 'right';
+    return 'left';
+  });
+};
+
+const renderMarkdownTable = (headerCells, aligns, rows, disableFileLinks, key) => {
+  const alignStyle = (cIdx) => ({ textAlign: aligns[cIdx] || 'left' });
+  return (
+    <div key={key} style={{ overflowX: 'auto', margin: '6px 0', borderRadius: '8px', border: '1px solid rgba(56,189,248,0.2)' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.74rem', color: '#cbd5e1' }}>
+        <thead>
+          <tr style={{ background: 'rgba(56,189,248,0.12)' }}>
+            {headerCells.map((cell, cIdx) => (
+              <th key={cIdx} style={{ padding: '6px 10px', ...alignStyle(cIdx), borderBottom: '1px solid rgba(56,189,248,0.35)', color: '#38bdf8', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                {formatMessageText(cell, disableFileLinks)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rIdx) => (
+            <tr key={rIdx} style={{ background: rIdx % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)' }}>
+              {row.map((cell, cIdx) => (
+                <td key={cIdx} style={{ padding: '5px 10px', ...alignStyle(cIdx), borderBottom: '1px solid rgba(255,255,255,0.06)', verticalAlign: 'top' }}>
+                  {formatMessageText(cell, disableFileLinks)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const renderMarkdownTextLines = (lines, { isSystem = false, disableFileLinks = false, cleanContent = '' } = {}) => {
+  const rendered = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed && i > 0 && i < lines.length - 1) {
+      rendered.push(<div key={i} style={{ height: '3px' }} />);
+      i++;
+      continue;
+    }
+
+    // Markdown Table: current line has pipes and the next line is a separator row
+    const nextTrimmed = i + 1 < lines.length ? lines[i + 1].trim() : '';
+    if (line.includes('|') && isTableSeparatorLine(nextTrimmed)) {
+      const headerCells = splitTableRowCells(line);
+      const aligns = parseTableAlignments(lines[i + 1]);
+      const rows = [];
+      let r = i + 2;
+      while (r < lines.length && lines[r].includes('|')) {
+        rows.push(splitTableRowCells(lines[r]));
+        r++;
+      }
+      rendered.push(renderMarkdownTable(headerCells, aligns, rows, disableFileLinks, `table-${i}`));
+      i = r;
+      continue;
+    }
+
+    // Horizontal Rule (---, ***, ___)
+    if (/^(---|\*\*\*|___)$/.test(trimmed)) {
+      rendered.push(<hr key={i} style={{ border: 'none', borderTop: '1px solid rgba(167, 139, 250, 0.25)', margin: '10px 0' }} />);
+      i++;
+      continue;
+    }
+
+    // Markdown Headers (#, ##, ###)
+    if (trimmed.startsWith('### ')) {
+      rendered.push(
+        <h3 key={i} style={{ color: '#38bdf8', margin: '8px 0 3px', fontSize: '0.86rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ width: '3px', height: '11px', background: '#38bdf8', borderRadius: '2px' }}></span>
+          {formatMessageText(trimmed.replace(/^###\s+/, ''), disableFileLinks)}
+        </h3>
+      );
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith('## ')) {
+      rendered.push(
+        <h2 key={i} style={{ color: '#c4b5fd', borderBottom: '1px solid rgba(196, 181, 253, 0.2)', paddingBottom: '3px', margin: '10px 0 5px', fontSize: '0.94rem', fontWeight: 700 }}>
+          {formatMessageText(trimmed.replace(/^##\s+/, ''), disableFileLinks)}
+        </h2>
+      );
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith('# ')) {
+      rendered.push(
+        <h1 key={i} style={{ color: '#38bdf8', borderBottom: '1px solid rgba(56, 189, 248, 0.25)', paddingBottom: '4px', margin: '12px 0 6px', fontSize: '1.05rem', fontWeight: 800 }}>
+          {formatMessageText(trimmed.replace(/^#\s+/, ''), disableFileLinks)}
+        </h1>
+      );
+      i++;
+      continue;
+    }
+
+    // Blockquotes (> text)
+    if (trimmed.startsWith('> ')) {
+      rendered.push(
+        <div key={i} style={{ borderLeft: '3px solid #a78bfa', background: 'rgba(139, 92, 246, 0.08)', padding: '4px 10px', margin: '4px 0', borderRadius: '0 6px 6px 0', color: '#c4b5fd', fontSize: '0.78rem', fontStyle: 'italic' }}>
+          {formatMessageText(trimmed.replace(/^>\s+/, ''), disableFileLinks)}
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Calculate leading space indentation level for nested sub-points
+    const nonSpaceIndex = line.search(/\S/);
+    const leadingSpaces = nonSpaceIndex === -1 ? 0 : nonSpaceIndex;
+    const indentLevel = Math.min(Math.floor(leadingSpaces / 2), 4);
+    const paddingLeft = 4 + (indentLevel * 18);
+
+    // Bullet lists (•, -, *)
+    if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      const bulletSymbol = indentLevel === 0 ? '•' : indentLevel === 1 ? '◦' : '▪';
+      const bulletColor = indentLevel === 0 ? '#38bdf8' : indentLevel === 1 ? '#c4b5fd' : '#94a3b8';
+      const fontSize = indentLevel === 0 ? '0.80rem' : indentLevel === 1 ? '0.78rem' : '0.76rem';
+
+      rendered.push(
+        <div key={i} style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '6px',
+          paddingLeft: `${paddingLeft}px`,
+          fontSize: fontSize,
+          margin: '1px 0'
+        }}>
+          <span style={{ color: bulletColor, fontWeight: 700, flexShrink: 0 }}>{bulletSymbol}</span>
+          <div style={{ wordBreak: 'break-word' }}>{formatMessageText(trimmed.replace(/^[•\-\*]\s+/, ''), disableFileLinks)}</div>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Numbered lists (1. , 2. )
+    const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+    if (numMatch) {
+      const numColor = indentLevel === 0 ? '#38bdf8' : indentLevel === 1 ? '#a78bfa' : '#94a3b8';
+      const fontSize = indentLevel === 0 ? '0.80rem' : indentLevel === 1 ? '0.78rem' : '0.76rem';
+
+      rendered.push(
+        <div key={i} style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '6px',
+          paddingLeft: `${paddingLeft}px`,
+          fontSize: fontSize,
+          margin: '1px 0'
+        }}>
+          <span style={{ color: numColor, fontWeight: 700, fontSize: '0.76rem', flexShrink: 0 }}>{numMatch[1]}.</span>
+          <div style={{ wordBreak: 'break-word' }}>{formatMessageText(numMatch[2], disableFileLinks)}</div>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    rendered.push(
+      <div key={i} style={{ margin: '1px 0', lineHeight: '1.45' }}>
+        {isSystem && i === 0 && !cleanContent.startsWith("⚙️") && <span style={{ color: 'var(--accent-teal)', fontWeight: 'bold', marginRight: '6px' }}>[SYSTEM]</span>}
+        {formatMessageText(line, disableFileLinks)}
+      </div>
+    );
+    i++;
+  }
+  return rendered;
+};
+
 export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFileLinks = false } = {}) => {
   if (!cleanContent) return null;
 
@@ -685,112 +878,11 @@ export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFi
           );
         }
 
-        // Text block: parse line by line for headers, rules, blockquotes, lists
+        // Text block: parse line by line for headers, rules, blockquotes, lists, tables
         const lines = block.content.split('\n');
         return (
           <div key={`text-block-${bIdx}`} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-            {lines.map((line, lIdx) => {
-              const trimmed = line.trim();
-
-              if (!trimmed && lIdx > 0 && lIdx < lines.length - 1) {
-                return <div key={lIdx} style={{ height: '3px' }} />;
-              }
-
-              // Horizontal Rule (---, ***, ___)
-              if (/^(---|\*\*\*|___)$/.test(trimmed)) {
-                return (
-                  <hr key={lIdx} style={{ border: 'none', borderTop: '1px solid rgba(167, 139, 250, 0.25)', margin: '10px 0' }} />
-                );
-              }
-
-              // Markdown Headers (#, ##, ###)
-              if (trimmed.startsWith('### ')) {
-                return (
-                  <h3 key={lIdx} style={{ color: '#38bdf8', margin: '8px 0 3px', fontSize: '0.86rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '3px', height: '11px', background: '#38bdf8', borderRadius: '2px' }}></span>
-                    {formatMessageText(trimmed.replace(/^###\s+/, ''), disableFileLinks)}
-                  </h3>
-                );
-              }
-              if (trimmed.startsWith('## ')) {
-                return (
-                  <h2 key={lIdx} style={{ color: '#c4b5fd', borderBottom: '1px solid rgba(196, 181, 253, 0.2)', paddingBottom: '3px', margin: '10px 0 5px', fontSize: '0.94rem', fontWeight: 700 }}>
-                    {formatMessageText(trimmed.replace(/^##\s+/, ''), disableFileLinks)}
-                  </h2>
-                );
-              }
-              if (trimmed.startsWith('# ')) {
-                return (
-                  <h1 key={lIdx} style={{ color: '#38bdf8', borderBottom: '1px solid rgba(56, 189, 248, 0.25)', paddingBottom: '4px', margin: '12px 0 6px', fontSize: '1.05rem', fontWeight: 800 }}>
-                    {formatMessageText(trimmed.replace(/^#\s+/, ''), disableFileLinks)}
-                  </h1>
-                );
-              }
-
-              // Blockquotes (> text)
-              if (trimmed.startsWith('> ')) {
-                return (
-                  <div key={lIdx} style={{ borderLeft: '3px solid #a78bfa', background: 'rgba(139, 92, 246, 0.08)', padding: '4px 10px', margin: '4px 0', borderRadius: '0 6px 6px 0', color: '#c4b5fd', fontSize: '0.78rem', fontStyle: 'italic' }}>
-                    {formatMessageText(trimmed.replace(/^>\s+/, ''), disableFileLinks)}
-                  </div>
-                );
-              }
-
-              // Calculate leading space indentation level for nested sub-points
-              const nonSpaceIndex = line.search(/\S/);
-              const leadingSpaces = nonSpaceIndex === -1 ? 0 : nonSpaceIndex;
-              const indentLevel = Math.min(Math.floor(leadingSpaces / 2), 4);
-              const paddingLeft = 4 + (indentLevel * 18);
-
-              // Bullet lists (•, -, *)
-              if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-                const bulletSymbol = indentLevel === 0 ? '•' : indentLevel === 1 ? '◦' : '▪';
-                const bulletColor = indentLevel === 0 ? '#38bdf8' : indentLevel === 1 ? '#c4b5fd' : '#94a3b8';
-                const fontSize = indentLevel === 0 ? '0.80rem' : indentLevel === 1 ? '0.78rem' : '0.76rem';
-
-                return (
-                  <div key={lIdx} style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '6px',
-                    paddingLeft: `${paddingLeft}px`,
-                    fontSize: fontSize,
-                    margin: '1px 0'
-                  }}>
-                    <span style={{ color: bulletColor, fontWeight: 700, flexShrink: 0 }}>{bulletSymbol}</span>
-                    <div style={{ wordBreak: 'break-word' }}>{formatMessageText(trimmed.replace(/^[•\-\*]\s+/, ''), disableFileLinks)}</div>
-                  </div>
-                );
-              }
-
-              // Numbered lists (1. , 2. )
-              const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
-              if (numMatch) {
-                const numColor = indentLevel === 0 ? '#38bdf8' : indentLevel === 1 ? '#a78bfa' : '#94a3b8';
-                const fontSize = indentLevel === 0 ? '0.80rem' : indentLevel === 1 ? '0.78rem' : '0.76rem';
-
-                return (
-                  <div key={lIdx} style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '6px',
-                    paddingLeft: `${paddingLeft}px`,
-                    fontSize: fontSize,
-                    margin: '1px 0'
-                  }}>
-                    <span style={{ color: numColor, fontWeight: 700, fontSize: '0.76rem', flexShrink: 0 }}>{numMatch[1]}.</span>
-                    <div style={{ wordBreak: 'break-word' }}>{formatMessageText(numMatch[2], disableFileLinks)}</div>
-                  </div>
-                );
-              }
-
-              return (
-                <div key={lIdx} style={{ margin: '1px 0', lineHeight: '1.45' }}>
-                  {isSystem && lIdx === 0 && !cleanContent.startsWith("⚙️") && <span style={{ color: 'var(--accent-teal)', fontWeight: 'bold', marginRight: '6px' }}>[SYSTEM]</span>}
-                  {formatMessageText(line, disableFileLinks)}
-                </div>
-              );
-            })}
+            {renderMarkdownTextLines(lines, { isSystem, disableFileLinks, cleanContent })}
           </div>
         );
       })}

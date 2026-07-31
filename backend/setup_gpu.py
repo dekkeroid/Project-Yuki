@@ -133,12 +133,11 @@ def main():
     current = current_ort_package()
     print(f"[Setup] Currently installed: {current or 'none'}")
 
-    if current == target:
-        print(f"[Setup] Already on the correct package. Nothing to do.")
-    else:
-        if current:
-            uninstall(current)
-        install(target)
+    # Remove all variant onnxruntime packages to prevent namespace conflicts
+    for pkg in ["onnxruntime", "onnxruntime-gpu", "onnxruntime-directml"]:
+        uninstall(pkg)
+
+    install(target)
 
     # Verify
     print("\n[Setup] Verifying ONNX Runtime providers...")

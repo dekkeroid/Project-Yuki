@@ -1109,3 +1109,126 @@ def delete_session_meta(session_id: str, meta_type: str, meta_key: str):
         conn.close()
 
 
+# ── Crawler Database Export & Import Helpers ──────────────────────────
+
+def export_crawler_database_json() -> dict:
+    import datetime
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        dirs = [dict(r) for r in conn.execute("SELECT * FROM directories").fetchall()]
+        files = [dict(r) for r in conn.execute("SELECT * FROM files").fetchall()]
+        meta = [dict(r) for r in conn.execute("SELECT * FROM file_metadata").fetchall()]
+        state = [dict(r) for r in conn.execute("SELECT * FROM crawler_state").fetchall()]
+        
+        return {
+            "export_type": "crawler_data",
+            "version": "1.0",
+            "exported_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "app": "Project Yuki",
+            "stats": {
+                "total_directories": len(dirs),
+                "total_files": len(files),
+                "total_metadata_records": len(meta)
+            },
+            "directories": dirs,
+            "files": files,
+            "file_metadata": meta,
+            "crawler_state": state
+        }
+    except Exception as e:
+        print(f"[DB] Error exporting crawler database: {e}")
+        raise e
+    finally:
+        conn.close()
+
+def import_crawler_database_json(data: dict) -> dict:
+    if not isinstance(data, dict):
+        raise ValueError("Invalid crawler data JSON payload")
+
+    dirs = data.get("directories", [])
+    files = data.get("files", [])
+    meta = data.get("file_metadata", [])
+    state = data.get("crawler_state", [])
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("BEGIN TRANSACTION;")
+
+        # 1. Directories
+        for d in dirs:
+            if isinstance(d, dict) and "path" in d:
+                cursor.execute("""
+                INSERT OR REPLACE INTO directories (path, last_modified, change_count)
+                VALUES (?, ?, ?)
+                """, (d.get("path"), d.get("last_modified", time.time()), d.get("change_count", 0)))
+
+        # 2. Files
+        for f in files:
+            if isinstance(f, dict) and "file_path" in f:
+                cursor.execute("""
+                INSERT OR REPLACE INTO files (id, file_path, file_name, parent_folder, extension, size, last_modified, category, indexed_at, transliterated_name, transliterated_parent_folder)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    f.get("id"),
+                    f.get("file_path"),
+                    f.get("file_name"),
+                    f.get("parent_folder"),
+                    f.get("extension"),
+                    f.get("size", 0),
+                    f.get("last_modified", time.time()),
+                    f.get("category", "other"),
+                    f.get("indexed_at", time.time()),
+                    f.get("transliterated_name"),
+                    f.get("transliterated_parent_folder")
+                ))
+
+        # 3. File Metadata
+        for m in meta:
+            if isinstance(m, dict) and "file_id" in m:
+                cursor.execute("""
+                INSERT OR REPLACE INTO file_metadata (file_id, title, artist_or_creator, genre_or_tags, release_year, alternate_titles, enriched)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    m.get("file_id"),
+                    m.get("title"),
+                    m.get("artist_or_creator"),
+                    m.get("genre_or_tags"),
+                    m.get("release_year"),
+                    m.get("alternate_titles"),
+                    m.get("enriched", 0)
+                ))
+
+        # 4. Crawler state
+        for s in state:
+            if isinstance(s, dict) and "key" in s:
+                cursor.execute("""
+                INSERT OR REPLACE INTO crawler_state (key, val)
+                VALUES (?, ?)
+                """, (s.get("key"), s.get("val")))
+
+        conn.commit()
+
+        # Rebuild FTS index
+        try:
+            _rebuild_fts_index(cursor)
+            conn.commit()
+        except Exception as fts_err:
+            print(f"[DB] Warning: Rebuilding FTS index after import encountered error: {fts_err}")
+
+        return {
+            "directories_imported": len(dirs),
+            "files_imported": len(files),
+            "metadata_imported": len(meta),
+            "state_imported": len(state)
+        }
+    except Exception as e:
+        conn.rollback()
+        print(f"[DB] Error importing crawler database: {e}")
+        raise e
+    finally:
+        conn.close()
+
+
+

@@ -28,7 +28,7 @@ function createWindow() {
   });
 
   // Load from Vite dev server during development, or fall back to dist index.html
-  const startUrl = process.env.ELECTRON_DEV_URL || 'http://localhost:5173';
+  const startUrl = process.env.ELECTRON_DEV_URL || 'http://localhost:5178';
 
   if (startUrl.startsWith('http')) {
     mainWindow.loadURL(startUrl).catch((err) => {

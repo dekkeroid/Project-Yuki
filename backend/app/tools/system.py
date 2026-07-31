@@ -1,10 +1,107 @@
 import os
+import re
+import base64
 import subprocess
 import sys
 import platform
 import socket
 import psutil
 import time
+
+_DEV_SERVER_ERROR_MESSAGE = "Security / Execution Error: Executing development servers by AI is strictly prohibited by security policy. Project files and builds were updated. Please start dev servers manually in your terminal if needed."
+
+_DEV_SERVER_BANNED_SUBSTRINGS = (
+    "npm run dev", "npm dev", "yarn dev", "pnpm dev", "bun dev",
+    "npm run start", "yarn run start", "pnpm run start", "bun run start",
+    "npm start", "yarn start", "pnpm start", "bun start",
+)
+
+_DEV_SERVER_LAUNCHER_PREFIXES = (
+    "npx -y", "npx", "bunx", "yarn dlx", "pnpm dlx",
+    "cmd /c", "call", "powershell -command", "pwsh -command",
+)
+
+_DEV_SERVER_LEADING_TOKENS = (
+    "next dev", "next start", "nuxt dev", "nuxt start",
+    "ng serve", "nodemon", "webpack serve", "webpack-dev-server",
+    "svelte-kit dev", "astro dev",
+)
+
+def _normalize_command_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text).lower()).strip()
+
+
+def _decode_encoded_command_variants(text: str) -> list:
+    """Decode PowerShell -EncodedCommand / -Enc base64 payloads for recursive inspection."""
+    variants = []
+    for match in re.finditer(r"(?i)(?:-encodedcommand|-enc)\s+([a-z0-9+/=]+)", text):
+        token = match.group(1)
+        for encoding in ("utf-16-le", "utf-8"):
+            try:
+                decoded = base64.b64decode(token).decode(encoding, errors="ignore")
+                if decoded.strip():
+                    variants.append(decoded)
+            except Exception:
+                continue
+    return variants
+
+
+def _segment_starts_banned_dev_server(segment: str) -> bool:
+    s = segment.strip().lower()
+    for prefix in _DEV_SERVER_LAUNCHER_PREFIXES:
+        if s == prefix or s.startswith(prefix + " "):
+            s = s[len(prefix):].strip()
+            break
+    if s.startswith("vite build"):
+        return False
+    if s == "vite" or s.startswith("vite ") or s.startswith("vite@"):
+        return True
+    for token in _DEV_SERVER_LEADING_TOKENS:
+        if s == token or s.startswith(token + " "):
+            return True
+    return False
+
+
+def _contains_banned_dev_server(text: str) -> bool:
+    probe = _normalize_command_whitespace(text)
+    if not probe:
+        return False
+    for banned in _DEV_SERVER_BANNED_SUBSTRINGS:
+        if banned in probe:
+            return True
+    for segment in re.split(r"\s*(?:&&|\|\||;|\||&)\s*", probe):
+        if _segment_starts_banned_dev_server(segment):
+            return True
+    for variant in _decode_encoded_command_variants(text):
+        if _contains_banned_dev_server(variant):
+            return True
+    return False
+
+
+def _banned_dev_server_check(text: str):
+    """Returns the security error message if the input contains a banned dev-server command, else None."""
+    if _contains_banned_dev_server(text):
+        return _DEV_SERVER_ERROR_MESSAGE
+    return None
+
+
+def _extract_python_string_literals(code: str) -> list:
+    """Collect all string literals from Python source to catch subprocess list-args like ['npm', 'run', 'dev']."""
+    literals = []
+    try:
+        import ast
+        tree = ast.parse(code)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                literals.append(node.value)
+            elif isinstance(node, ast.JoinedStr):
+                for value in node.values:
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                        literals.append(value.value)
+    except (SyntaxError, ValueError):
+        pass
+    return literals
+
 
 def get_system_stats() -> str:
     """
@@ -665,10 +762,9 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
     Runs a shell command asynchronously with real-time output capture, line-by-line streaming,
     stdin input support, non-interactive environment variables, and ExecutionPolicy Bypass.
     """
-    cmd_lower = command.lower().strip()
-    banned_cmds = ("npm run dev", "npm dev", "yarn dev", "pnpm dev", "bun dev")
-    if any(banned in cmd_lower for banned in banned_cmds):
-        return "Security / Execution Error: Executing development servers ('npm run dev') by AI is strictly prohibited by security policy. Project files and builds were updated. Please start dev servers manually in your terminal if needed."
+    banned_error = _banned_dev_server_check(command)
+    if banned_error:
+        return banned_error
 
     import time, os, threading, queue
     global _ACTIVE_PROCESSES
@@ -825,6 +921,14 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
     """
     Executes a block of Python code asynchronously with dynamic 30-second heartbeat monitoring without force-killing.
     """
+    banned_error = _banned_dev_server_check(code)
+    if not banned_error:
+        literals = _extract_python_string_literals(code)
+        if literals and _banned_dev_server_check(" ".join(literals)):
+            banned_error = _DEV_SERVER_ERROR_MESSAGE
+    if banned_error:
+        return banned_error
+
     import tempfile, time, os
     
     with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w", encoding="utf-8") as f:

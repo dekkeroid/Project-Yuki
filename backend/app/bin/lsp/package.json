@@ -1,0 +1,10 @@
+{
+  "name": "yuki-portable-lsp",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "pyright": "^1.1.411",
+    "typescript": "^5.3.3",
+    "typescript-language-server": "^4.3.3"
+  }
+}

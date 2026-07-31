@@ -10,6 +10,7 @@ export default defineConfig({
     pure: ['console.log', 'console.info', 'console.debug'],
   },
   server: {
+    port: 5178,
     host: '0.0.0.0',
     allowedHosts: ['.ngrok-free.app', 'harsh-pc.local'],
     proxy: {
