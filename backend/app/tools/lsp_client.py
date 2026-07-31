@@ -52,7 +52,7 @@ class LSPClient:
         try:
             # 1. Check for PyInstaller / Inno Setup bundled LSP binaries first
             meipass = getattr(sys, '_MEIPASS', None)
-            base_dir = meipass if meipass else os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            base_dir = meipass if meipass else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
             bundled_lsp = os.path.join(base_dir, 'app', 'bin', 'lsp', 'node_modules')
 
             use_bundled = False
@@ -91,6 +91,26 @@ class LSPClient:
                     else:
                         print(f"[LSP] {executable} not found in PATH. LSP diagnostics disabled for {ext}.")
                         return False
+
+            if sys.platform == 'win32':
+                if cmd[0] in ('npx', 'npm') or cmd[0].endswith('.cmd') or cmd[0].endswith('.bat'):
+                    cmd = ['cmd.exe', '/c'] + cmd
+                elif not cmd[0].endswith('.exe'):
+                    try:
+                        which_check = await asyncio.create_subprocess_shell(
+                            f"where {cmd[0]}",
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        w_out, _ = await which_check.communicate()
+                        if which_check.returncode == 0 and w_out.strip():
+                            found_line = w_out.decode('utf-8', errors='ignore').strip().splitlines()[0]
+                            if found_line.endswith('.cmd') or found_line.endswith('.bat'):
+                                cmd = ['cmd.exe', '/c', found_line] + cmd[1:]
+                            else:
+                                cmd[0] = found_line
+                    except Exception:
+                        pass
 
             print(f"[LSP] Starting {self.server_type} server: {' '.join(cmd)} in {self.workspace_dir}")
             self.process = await asyncio.create_subprocess_exec(
@@ -134,10 +154,15 @@ class LSPClient:
         return self.msg_id
 
     async def _initialize(self):
-        root_uri = f"file:///{self.workspace_dir.replace('\\', '/')}"
+        from pathlib import Path
+        root_uri = Path(self.workspace_dir).as_uri()
         init_params = {
             "processId": os.getpid(),
+            "rootPath": self.workspace_dir,
             "rootUri": root_uri,
+            "workspaceFolders": [
+                {"name": os.path.basename(self.workspace_dir), "uri": root_uri}
+            ],
             "capabilities": {
                 "textDocument": {
                     "publishDiagnostics": {"relatedInformation": True}
@@ -175,8 +200,11 @@ class LSPClient:
                         params = data.get('params', {})
                         uri = params.get('uri', '')
                         diags = params.get('diagnostics', [])
-                        # Standardize URI key
-                        norm_uri = os.path.abspath(uri.replace('file:///', '').replace('/', os.sep))
+                        from urllib.parse import urlparse, unquote
+                        parsed_path = unquote(urlparse(uri).path)
+                        if sys.platform == 'win32' and parsed_path.startswith('/'):
+                            parsed_path = parsed_path[1:]
+                        norm_uri = os.path.abspath(parsed_path).lower()
                         self.diagnostics_cache[norm_uri] = diags
             except asyncio.IncompleteReadError:
                 break
@@ -186,18 +214,32 @@ class LSPClient:
 
     async def check_diagnostics(self, file_path: str, timeout: float = 1.5) -> List[str]:
         abs_path = os.path.abspath(file_path)
+        abs_path_lower = abs_path.lower()
         if not await self.start_server(abs_path):
             return []
 
-        file_uri = f"file:///{abs_path.replace('\\', '/')}"
+        from pathlib import Path
+        file_uri = Path(abs_path).as_uri()
         try:
             with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
 
+            ext = os.path.splitext(abs_path)[1].lower()
+            lang_map = {
+                '.py': 'python', '.pyi': 'python',
+                '.ts': 'typescript', '.tsx': 'typescriptreact',
+                '.js': 'javascript', '.jsx': 'javascriptreact',
+                '.json': 'json', '.rs': 'rust',
+                '.c': 'c', '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.h': 'c', '.hpp': 'cpp',
+                '.go': 'go', '.html': 'html', '.htm': 'html',
+                '.css': 'css', '.scss': 'scss'
+            }
+            lang_id = lang_map.get(ext, 'typescriptreact')
+
             open_params = {
                 "textDocument": {
                     "uri": file_uri,
-                    "languageId": "python" if self.server_type == "python" else "typescript",
+                    "languageId": lang_id,
                     "version": 1,
                     "text": content
                 }
@@ -207,11 +249,11 @@ class LSPClient:
             # Wait briefly for LSP server to publish diagnostics
             start_time = asyncio.get_event_loop().time()
             while (asyncio.get_event_loop().time() - start_time) < timeout:
-                if abs_path in self.diagnostics_cache:
+                if abs_path_lower in self.diagnostics_cache:
                     break
                 await asyncio.sleep(0.1)
 
-            raw_diags = self.diagnostics_cache.get(abs_path, [])
+            raw_diags = self.diagnostics_cache.get(abs_path_lower, [])
             formatted = []
             for d in raw_diags:
                 severity = d.get('severity', 1)
