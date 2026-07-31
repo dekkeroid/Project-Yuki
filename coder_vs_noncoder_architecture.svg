@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" width="100%" height="100%" style="background-color: #090d16; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="100%" stop-color="#111827" />
+    </linearGradient>
+    <linearGradient id="purple-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#6d28d9" />
+    </linearGradient>
+    <linearGradient id="green-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="500" y="45" text-anchor="middle" fill="#f8fafc" font-size="22" font-weight="700" letter-spacing="0.5">
+    Project Yuki: Coder Mode vs Non-Coder Mode Architecture
+  </text>
+  <text x="500" y="70" text-anchor="middle" fill="#94a3b8" font-size="13">
+    LLM Endpoint, Prompt System, and API Key Pool Resolution Flow (FIXED)
+  </text>
+
+  <!-- Top Input Node -->
+  <g transform="translate(375, 95)">
+    <rect x="0" y="0" width="250" height="45" rx="10" fill="url(#purple-grad)" filter="url(#glow)" />
+    <text x="125" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="600">📩 Chat Message Received</text>
+  </g>
+
+  <!-- Decision Branch -->
+  <line x1="500" y1="140" x2="500" y2="175" stroke="#475569" stroke-width="2" />
+  <polygon points="500,175 610,210 500,245 390,210" fill="#1e293b" stroke="#38bdf8" stroke-width="2" />
+  <text x="500" y="214" text-anchor="middle" fill="#38bdf8" font-size="12" font-weight="700">Coding Mode?</text>
+
+  <!-- LEFT BRANCH: Coder Mode -->
+  <path d="M 390,210 L 220,210 L 220,270" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="4,4" />
+  <text x="300" y="200" text-anchor="middle" fill="#10b981" font-size="12" font-weight="700">YES (Coder Mode)</text>
+
+  <g transform="translate(90, 270)">
+    <rect x="0" y="0" width="260" height="150" rx="12" fill="#0f172a" stroke="#10b981" stroke-width="2" />
+    <text x="130" y="28" text-anchor="middle" fill="#10b981" font-size="14" font-weight="700">🖥️ CODER MODE OVERRIDES</text>
+    <line x1="15" y1="38" x2="245" y2="38" stroke="#1e293b" stroke-width="1" />
+    <text x="25" y="58" fill="#e2e8f0" font-size="12">• System Prompt: Pair Programmer</text>
+    <text x="25" y="78" fill="#e2e8f0" font-size="12">• Backend: llm_coder_backend</text>
+    <text x="25" y="98" fill="#e2e8f0" font-size="12">• Model: llm_coder_model</text>
+    <text x="25" y="118" fill="#e2e8f0" font-size="12">• Keys: LLM_CODER_API_KEY (5 Keys)</text>
+    <text x="25" y="138" fill="#10b981" font-size="11" font-weight="600">✓ Rotates 5 Coder Keys via KeyPool</text>
+  </g>
+
+  <!-- RIGHT BRANCH: Non-Coder Mode -->
+  <path d="M 610,210 L 780,210 L 780,270" fill="none" stroke="#a78bfa" stroke-width="2" />
+  <text x="700" y="200" text-anchor="middle" fill="#a78bfa" font-size="12" font-weight="700">NO (Non-Coder / Chat)</text>
+
+  <g transform="translate(650, 270)">
+    <rect x="0" y="0" width="260" height="150" rx="12" fill="#0f172a" stroke="#a78bfa" stroke-width="2" />
+    <text x="130" y="28" text-anchor="middle" fill="#a78bfa" font-size="14" font-weight="700">🌸 YUKI NON-CODER ENGINE</text>
+    <line x1="15" y1="38" x2="245" y2="38" stroke="#1e293b" stroke-width="1" />
+    <text x="25" y="58" fill="#e2e8f0" font-size="12">• Prompt: Yuki Companion Persona</text>
+    <text x="25" y="78" fill="#e2e8f0" font-size="12">• Mood Spectrum: Happiness/Energy</text>
+    <text x="25" y="98" fill="#e2e8f0" font-size="12">• 3D Expressions: wave/happy tags</text>
+    <text x="25" y="118" fill="#e2e8f0" font-size="12">• User Memory Card Active</text>
+    <text x="25" y="138" fill="#38bdf8" font-size="11" font-weight="600">✓ Endpoint Strategy (Dual / Single)</text>
+  </g>
+
+  <!-- Convergence to Key Resolution -->
+  <path d="M 220,420 L 220,470 L 400,470" fill="none" stroke="#10b981" stroke-width="2" />
+  <path d="M 780,420 L 780,470 L 600,470" fill="none" stroke="#a78bfa" stroke-width="2" />
+
+  <!-- KEYPOOL RESOLUTION BOX (FIXED) -->
+  <g transform="translate(250, 490)">
+    <rect x="0" y="0" width="500" height="160" rx="14" fill="#0f172a" stroke="#10b981" stroke-width="2.5" filter="url(#glow)" />
+    <text x="250" y="32" text-anchor="middle" fill="#34d399" font-size="15" font-weight="700">✅ KEY RESOLUTION RESOLVED (Clean Isolation)</text>
+    <line x1="20" y1="45" x2="480" y2="45" stroke="#334155" stroke-width="1" />
+
+    <text x="35" y="70" fill="#cbd5e1" font-size="12.5" font-weight="600">Fixed Priority Logic in llm_backend.py:</text>
+    <text x="45" y="92" fill="#34d399" font-size="12" font-family="Consolas, monospace">raw_key = self._api_key_override or config.LLM_API_KEY or getattr(config, "LLM_CODER_API_KEY", None)</text>
+
+    <text x="35" y="120" fill="#34d399" font-size="12" font-weight="700">✓ NON-CODER ISOLATION CONFIRMED:</text>
+    <text x="35" y="140" fill="#94a3b8" font-size="11.5">Non-Coder mode now uses Main App AI Brain Key (config.LLM_API_KEY). Coder Keys isolated to Coder Mode!</text>
+  </g>
+</svg>

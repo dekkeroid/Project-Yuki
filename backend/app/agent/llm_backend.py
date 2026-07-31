@@ -445,7 +445,7 @@ class OpenAICompatibleBackend(LLMBackend):
     _active_key_index: int = 0
 
     def get_api_key_pool(self) -> List[str]:
-        raw_key = self._api_key_override or getattr(config, "LLM_CODER_API_KEY", None) or config.LLM_API_KEY or ""
+        raw_key = self._api_key_override or config.LLM_API_KEY or getattr(config, "LLM_CODER_API_KEY", None) or ""
         if not raw_key:
             return []
         
@@ -458,7 +458,7 @@ class OpenAICompatibleBackend(LLMBackend):
 
         # 2. If key is a masked preview (contains ... or •••), ignore masked override and fallback to config
         if ("..." in raw_str or "•••" in raw_str) and not ("enc_v1:" in raw_str or "gAAAA" in raw_str):
-            fallback = getattr(config, "LLM_CODER_API_KEY", "") or config.LLM_API_KEY or ""
+            fallback = config.LLM_API_KEY or getattr(config, "LLM_CODER_API_KEY", "") or ""
             fallback_str = str(fallback).strip()
             if "enc_v1:" in fallback_str or "gAAAA" in fallback_str:
                 raw_str = decrypt_api_key(fallback_str)
