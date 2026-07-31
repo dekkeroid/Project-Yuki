@@ -935,6 +935,9 @@ class SettingsUpdateRequest(BaseModel):
     llm_coder_base_url: Optional[str] = None
     llm_coder_api_key: Optional[str] = None
     llm_coder_model: Optional[str] = None
+    llm_reviewer_enabled: Optional[bool] = None
+    llm_reviewer_model: Optional[str] = None
+    llm_summary_model: Optional[str] = None
     persistent_chat_history: Optional[bool] = None
     basic_history_token_limit: Optional[int] = None
     basic_history_keep_turns: Optional[int] = None
@@ -1019,6 +1022,12 @@ async def update_settings(req: SettingsUpdateRequest):
         else:
             config.LLM_CODER_API_KEY = ""
             memory_manager.update_setting("llm_coder_api_key", "")
+    if req.llm_reviewer_enabled is not None:
+        memory_manager.update_setting("llm_reviewer_enabled", req.llm_reviewer_enabled)
+    if req.llm_reviewer_model is not None:
+        memory_manager.update_setting("llm_reviewer_model", req.llm_reviewer_model.strip())
+    if req.llm_summary_model is not None:
+        memory_manager.update_setting("llm_summary_model", req.llm_summary_model.strip())
     if req.tool_mode is not None:
         mode_val = req.tool_mode.strip().lower()
         if mode_val in ("basic", "advanced"):
