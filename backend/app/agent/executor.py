@@ -981,16 +981,28 @@ class AgentExecutor:
             use_tools=use_tools,
             tools=tools,
         )
-        response = requests.post(
-            url,
-            headers=backend.build_headers(),
-            json=payload,
-            timeout=120,
-        )
+        max_attempts = len(backend.get_api_key_pool()) if hasattr(backend, "get_api_key_pool") and backend.get_api_key_pool() else 1
+        for attempt in range(max(1, max_attempts)):
+            response = requests.post(
+                url,
+                headers=backend.build_headers(),
+                json=payload,
+                timeout=120,
+            )
+            if response.status_code == 429 or "RESOURCE_EXHAUSTED" in response.text or "quota" in response.text.lower():
+                if hasattr(backend, "rotate_on_rate_limit"):
+                    backend.rotate_on_rate_limit()
+                    print(f"[KeyPool] Retrying request with backup key (attempt {attempt+2}/{max_attempts})...")
+                    continue
+            break
+
         response.raise_for_status()
         res_json = response.json()
         if "error" in res_json:
-            return f"Error from brain server: {res_json['error'].get('message')}", None, self._get_model_label(model_name)
+            err_msg = str(res_json.get("error", {}).get("message", ""))
+            if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg) and hasattr(backend, "rotate_on_rate_limit"):
+                backend.rotate_on_rate_limit()
+            return f"Error from brain server: {err_msg}", None, self._get_model_label(model_name)
 
         choices = res_json.get("choices", [])
         if not choices:

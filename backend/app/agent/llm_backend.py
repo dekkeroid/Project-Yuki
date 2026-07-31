@@ -442,7 +442,7 @@ class OpenAICompatibleBackend(LLMBackend):
     def supports_context_length(self) -> bool:
         return False
 
-    _global_key_index: int = 0
+    _active_key_index: int = 0
 
     def get_api_key_pool(self) -> List[str]:
         raw_key = self._api_key_override or getattr(config, "LLM_CODER_API_KEY", None) or config.LLM_API_KEY or ""
@@ -451,18 +451,20 @@ class OpenAICompatibleBackend(LLMBackend):
         keys = [k.strip() for k in re.split(r'[,;\s]+', str(raw_key)) if k.strip()]
         return keys
 
+    @classmethod
+    def rotate_on_rate_limit(cls):
+        """Switches to the next backup API key in the pool when a 429 rate limit is encountered."""
+        cls._active_key_index += 1
+        print(f"[KeyPool] ⚠️ 429 Rate Limit encountered! Rotated active key index to #{cls._active_key_index + 1}")
+
     def build_headers(self, key_index: Optional[int] = None) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
         keys = self.get_api_key_pool()
         if keys:
-            if key_index is None:
-                idx = OpenAICompatibleBackend._global_key_index
-                OpenAICompatibleBackend._global_key_index += 1
-            else:
-                idx = key_index
+            idx = key_index if key_index is not None else OpenAICompatibleBackend._active_key_index
             selected_key = keys[idx % len(keys)]
             headers["Authorization"] = f"Bearer {selected_key}"
-            print(f"[KeyPool] Request using rotated key {idx % len(keys) + 1}/{len(keys)} (...{selected_key[-6:]})")
+            print(f"[KeyPool] Using active key {idx % len(keys) + 1}/{len(keys)} (...{selected_key[-6:]})")
         return headers
 
     def build_payload(self, model: str, messages: List[Dict], temperature: float,
