@@ -222,10 +222,9 @@ class AgentExecutor:
                 int(kwargs.get("start_line", 1))
             ),
             "jarvis_create_or_edit_file": lambda **kwargs: jarvis_create_or_edit_file(
-                kwargs.get("file_path") or kwargs.get("path") or "",
-                kwargs.get("content") if kwargs.get("content") is not None else (kwargs.get("file_content") or kwargs.get("code") or kwargs.get("text") or kwargs.get("body") or ""),
-                kwargs.get("mode", "write"),
-                **kwargs
+                file_path=kwargs.get("file_path") or kwargs.get("path") or "",
+                content=kwargs.get("content") if kwargs.get("content") is not None else (kwargs.get("file_content") or kwargs.get("code") or kwargs.get("text") or kwargs.get("body") or ""),
+                mode=kwargs.get("mode", "write")
             ),
             "jarvis_replace_file_content": lambda **kwargs: jarvis_replace_file_content(
                 kwargs.get("file_path") or kwargs.get("path") or "",
