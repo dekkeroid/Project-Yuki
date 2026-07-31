@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
-import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink } from 'lucide-react';
+import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 import { useBackendSocket } from './hooks/useBackendSocket';
@@ -83,6 +83,7 @@ const App = () => {
 
   // Slash-command autocomplete for desktop input
   const desktopInputRef = useRef(null);
+  const mainAppFileInputRef = useRef(null);
   const desktopDropdownRef = useRef(null);
   const settingsOverlayRef = useRef(null);
   const settingsCardRef = useRef(null);
@@ -2691,7 +2692,64 @@ const detectExpression = (text) => {
               </div>
             )}
 
-            <form onSubmit={handleSendMessage} className="desktop-chat-input-form">
+            {/* Main App Desktop Attachment Chips */}
+            {mainAppAttachments && mainAppAttachments.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '6px 12px', background: 'rgba(15,23,42,0.95)', borderTop: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px 12px 0 0' }}>
+                {mainAppAttachments.map((att, aIdx) => (
+                  <div
+                    key={`desktop_att_${aIdx}`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '3px 8px',
+                      borderRadius: '8px',
+                      background: att.is_image ? 'rgba(56, 189, 248, 0.18)' : 'rgba(167, 139, 250, 0.18)',
+                      border: att.is_image ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(167, 139, 250, 0.4)',
+                      fontSize: '0.70rem',
+                      color: att.is_image ? '#38bdf8' : '#c4b5fd'
+                    }}
+                  >
+                    {att.is_image ? (
+                      <img src={att.data_url} alt={att.filename} style={{ width: '18px', height: '18px', objectFit: 'cover', borderRadius: '3px' }} />
+                    ) : (
+                      <FileText style={{ width: '12px', height: '12px', flexShrink: 0 }} />
+                    )}
+                    <span style={{ fontWeight: 600, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {att.filename}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMainAppAttachment(aIdx)}
+                      title="Remove attachment"
+                      style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0 2px' }}
+                    >
+                      <X style={{ width: '12px', height: '12px' }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <form
+              onSubmit={handleSendMessage}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  handleUploadMainAppAttachments(e.dataTransfer.files);
+                }
+              }}
+              className="desktop-chat-input-form"
+            >
+              <input
+                type="file"
+                ref={mainAppFileInputRef}
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => handleUploadMainAppAttachments(e.target.files)}
+              />
+
               <input
                 ref={desktopInputRef}
                 type="text"
@@ -2699,6 +2757,12 @@ const detectExpression = (text) => {
                 placeholder="Talk to Yuki or type / for commands..."
                 value={inputText}
                 onChange={(e) => { setInputText(e.target.value); setActiveCmdIdx(-1); }}
+                onPaste={(e) => {
+                  if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+                    e.preventDefault();
+                    handleUploadMainAppAttachments(e.clipboardData.files);
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (!showDesktopDropdown || activeDesktopSuggestions.length === 0) return;
                   if (e.key === 'ArrowDown') {
@@ -2721,6 +2785,15 @@ const detectExpression = (text) => {
                 }}
                 autoFocus
               />
+              <button
+                type="button"
+                className="desktop-chat-history-btn"
+                onClick={() => mainAppFileInputRef.current?.click()}
+                disabled={isUploadingMainAppAttachment}
+                title="Attach files or images"
+              >
+                <Paperclip className="w-4 h-4" style={{ color: '#94a3b8' }} />
+              </button>
               <button
                 type="button"
                 className={`desktop-chat-history-btn ${isPanelOpen ? 'active' : ''}`}

@@ -1629,11 +1629,11 @@ const ChatOverlay = ({
               disabled={isUploadingAttachment}
               title="Attach files or images"
               style={{
-                background: isUploadingAttachment ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255,255,255,0.06)',
+                background: isUploadingAttachment ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255,255,255,0.06)',
                 border: '1px solid rgba(255,255,255,0.12)',
                 borderRadius: '8px',
                 padding: '6px 10px',
-                color: '#38bdf8',
+                color: isUploadingAttachment ? '#a78bfa' : '#94a3b8',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',

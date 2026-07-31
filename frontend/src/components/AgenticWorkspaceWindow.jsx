@@ -2413,31 +2413,6 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
               }}>
                 {/* Left Side: Prompt Module Toggles */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  {/* Paperclip File / Image Upload Button */}
-                  <button
-                    type="button"
-                    onClick={() => attachmentInputRef.current?.click()}
-                    disabled={isUploadingAttachment}
-                    title="Attach files or images (or drag & drop / Ctrl+V paste)"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      padding: '3px 9px',
-                      borderRadius: '12px',
-                      border: '1px solid rgba(56, 189, 248, 0.4)',
-                      background: isUploadingAttachment ? 'rgba(56, 189, 248, 0.25)' : 'rgba(56, 189, 248, 0.12)',
-                      color: '#38bdf8',
-                      cursor: 'pointer',
-                      fontSize: '0.70rem',
-                      fontWeight: 600,
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <Paperclip style={{ width: '12px', height: '12px' }} />
-                    <span>{isUploadingAttachment ? 'Uploading...' : 'Attach'}</span>
-                  </button>
-
                   {!isCodingMode && (
                     <>
                       <button
@@ -2576,25 +2551,49 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     </button>
                   )}
 
+                  {/* Paperclip Attach Button right next to Send */}
+                  <button
+                    type="button"
+                    onClick={() => attachmentInputRef.current?.click()}
+                    disabled={isUploadingAttachment}
+                    title="Attach files or images (or drag & drop / Ctrl+V paste)"
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '50%',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: isUploadingAttachment ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                      color: isUploadingAttachment ? '#a78bfa' : '#94a3b8',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.15s ease',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                    }}
+                  >
+                    <Paperclip style={{ width: '15px', height: '15px' }} />
+                  </button>
+
                   <button
                     type="submit"
-                    disabled={!currentInputText.trim()}
+                    disabled={!currentInputText.trim() && attachments.length === 0}
                     title="Send Prompt (Enter)"
                     style={{
                       width: '34px',
                       height: '34px',
                       borderRadius: '50%',
                       border: 'none',
-                      background: currentInputText.trim()
+                      background: (currentInputText.trim() || attachments.length > 0)
                         ? `linear-gradient(135deg, ${themeAccent} 0%, #0284c7 100%)`
                         : 'rgba(255, 255, 255, 0.1)',
-                      color: currentInputText.trim() ? '#ffffff' : '#64748b',
-                      cursor: currentInputText.trim() ? 'pointer' : 'default',
+                      color: (currentInputText.trim() || attachments.length > 0) ? '#ffffff' : '#64748b',
+                      cursor: (currentInputText.trim() || attachments.length > 0) ? 'pointer' : 'default',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       transition: 'all 0.2s ease',
-                      boxShadow: currentInputText.trim() ? `0 4px 14px ${themeAccent}60` : 'none'
+                      boxShadow: (currentInputText.trim() || attachments.length > 0) ? `0 4px 14px ${themeAccent}60` : 'none'
                     }}
                   >
                     <Send style={{ width: '15px', height: '15px' }} />
