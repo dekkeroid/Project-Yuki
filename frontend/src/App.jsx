@@ -1541,7 +1541,7 @@ const App = () => {
     }
   }, [isPanelOpen, messages]);
 
-  const sendMessageText = (text, sttTimeMs = null, fromSuggestion = false) => {
+  const sendMessageText = (text, sttTimeMs = null, fromSuggestion = false, attachmentsList = []) => {
     if (!text.trim()) return;
 
     console.log(`sendMessageText: "${text}" (sttTimeMs: ${sttTimeMs})`);
