@@ -1847,6 +1847,12 @@ class AgentExecutor:
                         tool_result = await self._run_tool_async(tool_name, tool_args)
                         last_tool_result = tool_result
 
+                        tool_failed = False
+                        if isinstance(tool_result, str):
+                            lower_res = tool_result.lower().strip()
+                            if lower_res.startswith("error") or lower_res.startswith("failed") or lower_res.startswith("access denied") or "exception" in lower_res:
+                                tool_failed = True
+
                         output_snippet = str(tool_result).strip()
                         if len(output_snippet) > 800:
                             output_snippet = output_snippet[:800] + "\n... [truncated]"
@@ -1857,7 +1863,13 @@ class AgentExecutor:
                             args_json = str(tool_args)
                         args_block = f"\n```tool_args\n{args_json}\n```" if args_json else ""
 
-                        tool_badge = f"🛠️ **[{tool_name} — ✓ Done]**{args_block}\n```tool_output\n{output_snippet}\n```"
+                        tool_target = tool_args.get("file_path") or tool_args.get("path") or tool_args.get("command") or tool_args.get("url") or ""
+                        if tool_target and len(str(tool_target)) > 60:
+                            tool_target = "..." + str(tool_target)[-57:]
+                        target_info = f" (`{tool_target}`)" if tool_target else ""
+                        status_symbol = "❌ Error" if tool_failed else "✓ Done"
+
+                        tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**{args_block}\n```tool_output\n{output_snippet}\n```"
                         accumulated_response_total.append(tool_badge)
 
                         tc_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:8]}"
