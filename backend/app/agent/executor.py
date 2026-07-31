@@ -6,6 +6,7 @@ import asyncio
 import concurrent.futures
 import inspect
 import os
+import uuid
 from typing import Dict, Any, List, Tuple, Optional
 from app import config
 from app.agent.prompts import get_system_prompt, get_simple_system_prompt, get_advanced_jarvis_system_prompt, get_coding_agent_system_prompt
@@ -125,6 +126,7 @@ class AgentExecutor:
         from app.tools.system import send_process_stdin, find_files_by_glob
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
+        self._fallback_call_counter = 0
 
         # Map tool names to python functions
         self.tools = {
@@ -671,11 +673,15 @@ class AgentExecutor:
             elif role == "assistant":
                 # Strip visual UI tool badges from LLM prompt context to prevent prompt pollution
                 clean_content = re.sub(r'🛠️\s*\*\*\s*\[.*?\]\s*\*\*(?:\n```tool_args[\s\S]*?```)?(?:\n```tool_output[\s\S]*?```)?', '', content).strip()
-                if not clean_content and not m.get("tool_calls"):
+                if not clean_content:
                     clean_content = "Task step executed."
                 msg_obj = {"role": "assistant", "content": clean_content}
                 if m.get("tool_calls"):
-                    msg_obj["tool_calls"] = m["tool_calls"]
+                    # DB-loaded history stores tool responses as plain text (converted
+                    # to 'user' above), so carrying raw tool_calls here would orphan them
+                    # and invalidate the assistant/tool message-order protocol.
+                    # Strip them; the tool results are still preserved as text context.
+                    print("[Executor] Stripping orphaned tool_calls from loaded-history assistant message.")
                 sanitized_history.append(msg_obj)
             elif role in ("user", "system"):
                 if content:
@@ -1092,10 +1098,16 @@ class AgentExecutor:
             iteration += 1
             
             use_tools = (resolved_backend != "simple") or (resolved_backend == "simple" and getattr(config, "SEND_TOOLS_IN_SIMPLE", False))
+            current_messages = self._repair_transcript(current_messages)
             llm_response, tool_calls, backend_used = self._query_llm(current_messages, user_message=user_message, use_tools=use_tools)
             print(f"\n[LLM Response (Iteration {iteration}, Backend: {backend_used})]:\n{llm_response}\n")
             
             if tool_calls:
+                # Normalize missing tool_call ids BEFORE appending the assistant message
+                # so every assistant tool_call matches its subsequent tool response.
+                for tc in tool_calls:
+                    if not tc.get("id"):
+                        tc["id"] = f"call_{uuid.uuid4().hex[:8]}"
                 current_messages.append({
                     "role": "assistant",
                     "content": llm_response or None,
@@ -1117,7 +1129,7 @@ class AgentExecutor:
                     tool_result = loop.run_until_complete(self._run_tool_async(tool_name, tool_args))
                     print(f"Tool execution result: {tool_result}")
 
-                    tc_id = tc.get("id") or f"call_{uuid.uuid4().hex[:8]}"
+                    tc_id = tc["id"]
                     current_messages.append({
                         "role": "tool",
                         "tool_call_id": tc_id,
@@ -1160,7 +1172,7 @@ class AgentExecutor:
                 "jarvis_create_or_edit_file", "jarvis_replace_file_content",
                 "jarvis_list_dir_tree", "jarvis_git_status", "find_files_by_glob",
                 "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
-                "jarvis_remember_user_fact", "read_and_review_file", "search_files",
+                "jarvis_send_stdin", "read_and_review_file", "search_files",
                 "read_file_content", "run_terminal_command", "run_python_script"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in coding_allowed]
@@ -1199,40 +1211,50 @@ class AgentExecutor:
             stream=True,
         )
             
-        async with session.post(url, json=payload, headers=headers, timeout=120) as resp:
-            if resp.status != 200:
-                try:
-                    err_text = await resp.text()
-                    err_json = json.loads(err_text)
-                    err_msg = err_json.get("error", {}).get("message", err_text)
-                except Exception:
-                    err_text_preview = err_text[:500] if err_text else "(empty body)"
-                    err_msg = f"HTTP {resp.status}: {err_text_preview}"
-                print(f"[Stream] Error from {url}: {err_msg}")
-                yield {"content": f"Error from brain server: {err_msg}"}
-                return
-
-            async for line_bytes in resp.content:
-                line = line_bytes.decode("utf-8").strip()
-                if not line:
-                    continue
-                if line.startswith("event: error"):
-                    continue
-                if line.startswith("data: "):
-                    data_str = line[6:]
-                    if data_str == "[DONE]":
-                        break
+        max_attempts = len(llm_backend.get_api_key_pool()) if hasattr(llm_backend, "get_api_key_pool") and llm_backend.get_api_key_pool() else 1
+        for attempt in range(max(1, max_attempts)):
+            headers = llm_backend.build_headers()
+            async with session.post(url, json=payload, headers=headers, timeout=120) as resp:
+                if resp.status != 200:
                     try:
-                        data = json.loads(data_str)
-                        if "error" in data:
-                            yield {"content": f"Error from brain server: {data['error'].get('message')}"}
-                            break
-                        choices = data.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            yield delta
+                        err_text = await resp.text()
+                        err_json = json.loads(err_text)
+                        err_msg = err_json.get("error", {}).get("message", err_text)
                     except Exception:
-                        pass
+                        err_text_preview = err_text[:500] if err_text else "(empty body)"
+                        err_msg = f"HTTP {resp.status}: {err_text_preview}"
+                    
+                    if (resp.status == 429 or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower()) and hasattr(llm_backend, "rotate_on_rate_limit") and attempt < max_attempts - 1:
+                        llm_backend.rotate_on_rate_limit()
+                        print(f"[KeyPool][Stream] ⚠️ 429 Rate Limit/Quota Exceeded! Rotating key and retrying (attempt {attempt+2}/{max_attempts})...")
+                        continue
+
+                    print(f"[Stream] Error from {url}: {err_msg}")
+                    yield {"content": f"Error from brain server: {err_msg}"}
+                    return
+
+                async for line_bytes in resp.content:
+                    line = line_bytes.decode("utf-8").strip()
+                    if not line:
+                        continue
+                    if line.startswith("event: error"):
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            if "error" in data:
+                                yield {"content": f"Error from brain server: {data['error'].get('message')}"}
+                                break
+                            choices = data.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                yield delta
+                        except Exception:
+                            pass
+                break
 
 
     async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", backend=None, overrides: Optional[Dict[str, Any]] = None):
@@ -1438,7 +1460,7 @@ class AgentExecutor:
                             except ValueError:
                                 args_dict[key] = value
                 return [{
-                    "id": f"call_fallback_{tool_name}",
+                    "id": self._unique_tool_call_id(f"fallback_{tool_name}"),
                     "type": "function",
                     "function": {
                         "name": tool_name,
@@ -1459,7 +1481,7 @@ class AgentExecutor:
                 try:
                     adict = json.loads(jstr)
                     calls.append({
-                        "id": f"call_markdown_{tname}",
+                        "id": self._unique_tool_call_id(f"markdown_{tname}"),
                         "type": "function",
                         "function": {"name": tname, "arguments": json.dumps(adict)}
                     })
@@ -1488,7 +1510,7 @@ class AgentExecutor:
 
                     if inferred_name:
                         calls.append({
-                            "id": f"call_inferred_{inferred_name}",
+                            "id": self._unique_tool_call_id(f"inferred_{inferred_name}"),
                             "type": "function",
                             "function": {"name": inferred_name, "arguments": json.dumps(adict)}
                         })
@@ -1531,7 +1553,7 @@ class AgentExecutor:
             if not isinstance(arguments, str):
                 arguments = json.dumps(arguments)
             return {
-                "id": f"call_fallback_{name}",
+                "id": self._unique_tool_call_id(f"fallback_{name}"),
                 "type": "function",
                 "function": {
                     "name": name,
@@ -1539,6 +1561,72 @@ class AgentExecutor:
                 }
             }
         return None
+
+    def _unique_tool_call_id(self, prefix: str) -> str:
+        """Generate a turn-unique tool_call id for text-fallback parsed calls."""
+        self._fallback_call_counter += 1
+        return f"call_{prefix}_{self._fallback_call_counter}"
+
+    def _repair_transcript(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Self-heal an invalid assistant/tool transcript before sending it to the API.
+
+        The OpenAI-compatible protocol requires every assistant message carrying
+        tool_calls to be immediately followed by exactly one role:'tool' message per
+        call before any other message type. If a mismatch slipped in (e.g. a
+        loop-detected duplicate call that never produced a tool response), the server
+        rejects the whole request with HTTP 400 code 3230. This strips unmatched
+        tool_calls and converts orphaned tool messages to text context so the request
+        always validates.
+        """
+        repaired = []
+        i = 0
+        n = len(messages)
+        changed = False
+        while i < n:
+            msg = messages[i]
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                calls = list(msg["tool_calls"])
+                j = i + 1
+                tool_msgs = []
+                while j < n and messages[j].get("role") == "tool":
+                    tool_msgs.append(messages[j])
+                    j += 1
+                if len(tool_msgs) != len(calls):
+                    changed = True
+                    keep_count = min(len(calls), len(tool_msgs))
+                    print(f"[Executor] Repaired transcript: assistant tool_calls {len(calls)} with {len(tool_msgs)} tool responses.")
+                    msg = dict(msg)
+                    msg["tool_calls"] = calls[:keep_count]
+                    if not msg["tool_calls"]:
+                        msg.pop("tool_calls", None)
+                        if not msg.get("content"):
+                            msg["content"] = "Task step executed."
+                    repaired.append(msg)
+                    repaired.extend(tool_msgs[:keep_count])
+                    for extra in tool_msgs[keep_count:]:
+                        repaired.append({
+                            "role": "user",
+                            "content": f"[Previous Tool Result ({extra.get('name', 'Tool')})]: {str(extra.get('content') or '').strip()}"
+                        })
+                    i = j
+                    continue
+                repaired.append(msg)
+                repaired.extend(tool_msgs)
+                i = j
+            elif msg.get("role") == "tool":
+                changed = True
+                print(f"[Executor] Repairing orphaned tool response for '{msg.get('name', 'Tool')}' -> text context.")
+                repaired.append({
+                    "role": "user",
+                    "content": f"[Previous Tool Result ({msg.get('name', 'Tool')})]: {str(msg.get('content') or '').strip()}"
+                })
+                i += 1
+            else:
+                repaired.append(msg)
+                i += 1
+        if changed:
+            print("[Executor] Transcript repair applied before LLM request.")
+        return repaired
 
     async def _parse_native_stream(self, token_stream):
         """
@@ -1785,6 +1873,10 @@ class AgentExecutor:
             while iteration < max_iterations:
                 iteration += 1
                 
+                # Self-heal any invalid assistant/tool pairing from the previous iteration
+                # before it reaches the API (prevents HTTP 400 code 3230).
+                current_messages = self._repair_transcript(current_messages)
+
                 effective_send_tools = overrides.get("send_tools_in_simple") if overrides.get("send_tools_in_simple") is not None else getattr(config, "SEND_TOOLS_IN_SIMPLE", False)
                 use_tools = (resolved_backend != "simple") or (resolved_backend == "simple" and effective_send_tools)
                 
@@ -1818,12 +1910,11 @@ class AgentExecutor:
                 full_llm_response = accumulated_response.strip()
                 
                 if tool_calls_to_execute:
-                    current_messages.append({
-                        "role": "assistant",
-                        "content": accumulated_response if accumulated_response.strip() else f"Running tool...",
-                        "tool_calls": tool_calls_to_execute
-                    })
-
+                    # Pre-filter already-executed duplicate calls and normalize missing
+                    # tool_call ids BEFORE appending the assistant message, so every
+                    # assistant tool_call has exactly one matching 'tool' response and
+                    # the transcript stays valid for the API (prevents code 3230).
+                    pending_calls = []
                     for tool_call in tool_calls_to_execute:
                         tool_name = tool_call["function"]["name"]
                         try:
@@ -1834,14 +1925,31 @@ class AgentExecutor:
                                     tool_args = inner
                         except Exception:
                             tool_args = {}
-                            
+
                         tool_args_str = tool_call["function"]["arguments"]
                         call_signature = (tool_name, tool_args_str)
                         if call_signature in executed_calls:
                             print(f"[Executor] Loop detected for tool '{tool_name}'. Skipping duplicate call.")
                             continue
-                            
+
                         executed_calls.add(call_signature)
+                        if not tool_call.get("id"):
+                            tool_call["id"] = f"call_{uuid.uuid4().hex[:8]}"
+                        pending_calls.append((tool_call, tool_name, tool_args))
+
+                    if pending_calls:
+                        current_messages.append({
+                            "role": "assistant",
+                            "content": accumulated_response if accumulated_response.strip() else f"Running tool...",
+                            "tool_calls": [pc[0] for pc in pending_calls]
+                        })
+                    elif accumulated_response.strip():
+                        current_messages.append({
+                            "role": "assistant",
+                            "content": accumulated_response.strip()
+                        })
+
+                    for tool_call, tool_name, tool_args in pending_calls:
                         print(f"Agent triggered tool '{tool_name}' with args {tool_args} (iteration {iteration})")
                         yield "tool_start", {"name": tool_name, "args": tool_args}, backend_used
 
@@ -1873,7 +1981,7 @@ class AgentExecutor:
                         tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**{args_block}\n```tool_output\n{output_snippet}\n```"
                         accumulated_response_total.append(tool_badge)
 
-                        tc_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:8]}"
+                        tc_id = tool_call["id"]
                         current_messages.append({
                             "role": "tool",
                             "tool_call_id": tc_id,

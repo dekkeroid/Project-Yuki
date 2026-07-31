@@ -10,7 +10,8 @@ import {
 import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought } from './ChatOverlay';
 import { SearchableModelSelect } from './ControlDashboard';
 import MicLevelMeter from './MicLevelMeter';
-import { API_BASE, WS_BASE } from '../api';
+import { API_BASE } from '../api';
+import { useBackendSocket } from '../hooks/useBackendSocket';
 
 const renderTreeFileIcon = (fileName) => {
   const ext = fileName.split('.').pop().toLowerCase();
@@ -334,166 +335,193 @@ export const AgenticWorkspaceWindow = ({
     };
   }, [isResizingLeft, isResizingRight]);
 
-  // Standalone WebSocket Connection for standalone Chat Window mode
-  const wsRef = useRef(null);
-  useEffect(() => {
-    if (onSendMessage) return; // Main app prop provided, use parent socket
-
-    let ws;
-    try {
-      ws = new WebSocket(WS_BASE);
-      wsRef.current = ws;
-
-      ws.onopen = () => console.log('[ChatWindow] WebSocket connected directly.');
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'text_stream') {
-            setViewMessages(prev => {
-              if (!prev || prev.length === 0) return prev;
-              const newMsgs = [...prev];
-              const lastIdx = newMsgs.length - 1;
-              const lastMsg = newMsgs[lastIdx];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                const currentContent = lastMsg.isThinking ? '' : (lastMsg.content || '');
-                newMsgs[lastIdx] = {
-                  ...lastMsg,
-                  content: currentContent + (data.text || ''),
-                  isThinking: false,
-                  backend: data.backend_used || lastMsg.backend
-                };
-              }
-              return newMsgs;
-            });
-          } else if (data.type === 'tool_start') {
-            const toolName = data.tool_name || 'tool';
-            const toolArgs = data.tool_args || {};
-            const toolTarget = toolArgs.file_path || toolArgs.path || toolArgs.command || toolArgs.url || '';
-            const targetInfo = toolTarget ? ` (\`${toolTarget}\`)` : '';
-            const badgeText = `\n🛠️ **[${toolName}${targetInfo} — ⏳ Running...]**\n`;
-
-            setViewMessages(prev => {
-              if (!prev || prev.length === 0) return prev;
-              const newMsgs = [...prev];
-              const lastIdx = newMsgs.length - 1;
-              const lastMsg = newMsgs[lastIdx];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                const currentContent = lastMsg.isThinking ? '' : (lastMsg.content || '');
-                newMsgs[lastIdx] = {
-                  ...lastMsg,
-                  content: currentContent + badgeText,
-                  isThinking: false
-                };
-              }
-              return newMsgs;
-            });
-          } else if (data.type === 'terminal_stream') {
-            const streamLine = data.line || '';
-            if (streamLine) {
-              setViewMessages(prev => {
-                if (!prev || prev.length === 0) return prev;
-                const newMsgs = [...prev];
-                const lastIdx = newMsgs.length - 1;
-                const lastMsg = newMsgs[lastIdx];
-                if (lastMsg && lastMsg.role === 'assistant') {
-                  let content = lastMsg.content || '';
-                  if (content.includes('⏳ Running...')) {
-                    if (!content.includes('```terminal_stream\n')) {
-                      content += '\n```terminal_stream\n';
-                    }
-                    content += streamLine + '\n';
-                  }
-                  newMsgs[lastIdx] = {
-                    ...lastMsg,
-                    content: content
-                  };
-                }
-                return newMsgs;
-              });
-            }
-          } else if (data.type === 'tool_result') {
-            const resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result || '');
-            const snippet = resultStr.length > 800 ? resultStr.slice(0, 800) + '\n... [truncated]' : resultStr;
-
-            setViewMessages(prev => {
-              if (!prev || prev.length === 0) return prev;
-              const newMsgs = [...prev];
-              const lastIdx = newMsgs.length - 1;
-              const lastMsg = newMsgs[lastIdx];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                let content = lastMsg.content || '';
-                if (content.includes('⏳ Running...')) {
-                  content = content.replace('⏳ Running...', '✓ Done');
-                  if (content.includes('```terminal_stream\n')) {
-                    content += '```\n';
-                  } else {
-                    content += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
-                  }
-                }
-                newMsgs[lastIdx] = {
-                  ...lastMsg,
-                  content: content
-                };
-              }
-              return newMsgs;
-            });
-          } else if (data.type === 'turn_interrupted') {
-            setViewMessages(prev => {
-              if (!prev || prev.length === 0) return prev;
-              const newMsgs = [...prev];
-              const lastIdx = newMsgs.length - 1;
-              const lastMsg = newMsgs[lastIdx];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                let content = lastMsg.content || '';
-                if (content.includes('⏳ Running...')) {
-                  content = content.replace(/⏳ Running\.\.\./g, '🛑 Terminated');
-                  if (!content.includes('[PROCESS TERMINATED BY USER]')) {
-                    content += `\`\`\`tool_output\n[PROCESS TERMINATED BY USER]\n\`\`\`\n`;
-                  }
-                } else if (lastMsg.isThinking) {
-                  content = '🛑 *Process execution was terminated by user.*';
-                }
-                newMsgs[lastIdx] = {
-                  ...lastMsg,
-                  content: content,
-                  isThinking: false,
-                  thinkingStatus: null
-                };
-              }
-              return newMsgs;
-            });
-          } else if (data.type === 'status') {
-            if (data.message && data.status !== 'idle') {
-              setViewMessages(prev => {
-                if (!prev || prev.length === 0) return prev;
-                const newMsgs = [...prev];
-                const lastIdx = newMsgs.length - 1;
-                const lastMsg = newMsgs[lastIdx];
-                if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isThinking) {
-                  newMsgs[lastIdx] = {
-                    ...lastMsg,
-                    thinkingStatus: data.message
-                  };
-                }
-                return newMsgs;
-              });
-            }
-          } else if (data.type === 'chat_update' && data.messages) {
-            setViewMessages(data.messages);
-            fetchSessionTree();
-          } else if (data.type === 'stream_done') {
-            fetchSessionTree();
-          }
-        } catch (_) { }
-      };
-    } catch (e) {
-      console.warn('[ChatWindow] WebSocket init error:', e);
+  // WebSocket Connection (shared useBackendSocket hook — auto-reconnects on backend restarts)
+  const handleSocketOpen = () => {
+    console.log('[ChatWindow] WebSocket connected.');
+    fetchSessionTree();
+    if (selectedPastSessionId) {
+      fetch(`${API_BASE}/api/chat/sessions/activate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: selectedPastSessionId })
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((actData) => {
+          if (actData && actData.messages) setViewMessages(actData.messages);
+        })
+        .catch(() => {});
     }
+  };
 
-    return () => {
-      if (ws) ws.close();
-    };
-  }, [onSendMessage]);
+  const handleSocketMessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'text_stream') {
+        setViewMessages(prev => {
+          if (!prev || prev.length === 0) return prev;
+          const newMsgs = [...prev];
+          const lastIdx = newMsgs.length - 1;
+          const lastMsg = newMsgs[lastIdx];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            const currentContent = lastMsg.isThinking ? '' : (lastMsg.content || '');
+            newMsgs[lastIdx] = {
+              ...lastMsg,
+              content: currentContent + (data.text || ''),
+              isThinking: false,
+              backend: data.backend_used || lastMsg.backend
+            };
+          }
+          return newMsgs;
+        });
+      } else if (data.type === 'tool_start') {
+        const toolName = data.tool_name || 'tool';
+        const toolArgs = data.tool_args || {};
+        const toolTarget = toolArgs.file_path || toolArgs.path || toolArgs.command || toolArgs.url || '';
+        const targetInfo = toolTarget ? ` (\`${toolTarget}\`)` : '';
+        const badgeText = `\n🛠️ **[${toolName}${targetInfo} — ⏳ Running...]**\n`;
+
+        setViewMessages(prev => {
+          if (!prev || prev.length === 0) return prev;
+          const newMsgs = [...prev];
+          const lastIdx = newMsgs.length - 1;
+          const lastMsg = newMsgs[lastIdx];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            const currentContent = lastMsg.isThinking ? '' : (lastMsg.content || '');
+            newMsgs[lastIdx] = {
+              ...lastMsg,
+              content: currentContent + badgeText,
+              isThinking: false
+            };
+          }
+          return newMsgs;
+        });
+      } else if (data.type === 'terminal_stream') {
+        const streamLine = data.line || '';
+        if (streamLine) {
+          setViewMessages(prev => {
+            if (!prev || prev.length === 0) return prev;
+            const newMsgs = [...prev];
+            const lastIdx = newMsgs.length - 1;
+            const lastMsg = newMsgs[lastIdx];
+            if (lastMsg && lastMsg.role === 'assistant') {
+              let content = lastMsg.content || '';
+              if (content.includes('⏳ Running...')) {
+                if (!content.includes('```terminal_stream\n')) {
+                  content += '\n```terminal_stream\n';
+                }
+                content += streamLine + '\n';
+              }
+              newMsgs[lastIdx] = {
+                ...lastMsg,
+                content: content
+              };
+            }
+            return newMsgs;
+          });
+        }
+      } else if (data.type === 'tool_result') {
+        const resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result || '');
+        const snippet = resultStr.length > 800 ? resultStr.slice(0, 800) + '\n... [truncated]' : resultStr;
+
+        setViewMessages(prev => {
+          if (!prev || prev.length === 0) return prev;
+          const newMsgs = [...prev];
+          const lastIdx = newMsgs.length - 1;
+          const lastMsg = newMsgs[lastIdx];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            let content = lastMsg.content || '';
+            if (content.includes('⏳ Running...')) {
+              content = content.replace('⏳ Running...', '✓ Done');
+              if (content.includes('```terminal_stream\n')) {
+                content += '```\n';
+              } else {
+                content += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
+              }
+            }
+            newMsgs[lastIdx] = {
+              ...lastMsg,
+              content: content
+            };
+          }
+          return newMsgs;
+        });
+      } else if (data.type === 'turn_interrupted') {
+        setViewMessages(prev => {
+          if (!prev || prev.length === 0) return prev;
+          const newMsgs = [...prev];
+          const lastIdx = newMsgs.length - 1;
+          const lastMsg = newMsgs[lastIdx];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            let content = lastMsg.content || '';
+            if (content.includes('⏳ Running...')) {
+              content = content.replace(/⏳ Running\.\.\./g, '🛑 Terminated');
+              if (!content.includes('[PROCESS TERMINATED BY USER]')) {
+                content += `\`\`\`tool_output\n[PROCESS TERMINATED BY USER]\n\`\`\`\n`;
+              }
+            } else if (lastMsg.isThinking) {
+              content = '🛑 *Process execution was terminated by user.*';
+            }
+            newMsgs[lastIdx] = {
+              ...lastMsg,
+              content: content,
+              isThinking: false,
+              thinkingStatus: null
+            };
+          }
+          return newMsgs;
+        });
+      } else if (data.type === 'status') {
+        if (data.message && data.status !== 'idle') {
+          setViewMessages(prev => {
+            if (!prev || prev.length === 0) return prev;
+            const newMsgs = [...prev];
+            const lastIdx = newMsgs.length - 1;
+            const lastMsg = newMsgs[lastIdx];
+            if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isThinking) {
+              newMsgs[lastIdx] = {
+                ...lastMsg,
+                thinkingStatus: data.message
+              };
+            }
+            return newMsgs;
+          });
+        }
+      } else if (data.type === 'chat_update' && data.messages) {
+        setViewMessages(data.messages);
+        fetchSessionTree();
+      } else if (data.type === 'stream_done') {
+        fetchSessionTree();
+      }
+    } catch (_) { }
+  };
+
+  const { socketRef, backendStatus, connectWebSocket } = useBackendSocket({
+    onMessage: handleSocketMessage,
+    onOpen: handleSocketOpen
+  });
+
+  // Standalone mode connects its own auto-reconnecting socket; when a parent
+  // onSendMessage prop is provided, the parent app owns the connection instead.
+  useEffect(() => {
+    if (!onSendMessage) connectWebSocket();
+  }, [onSendMessage, connectWebSocket]);
+
+  // Backend connection offline notice (shown when a send is attempted while the
+  // standalone socket is still reconnecting after a backend restart)
+  const [offlineSendNotice, setOfflineSendNotice] = useState(false);
+
+  // Clear the offline-send notice once the connection is restored or after a delay.
+  useEffect(() => {
+    if (backendStatus === 'online' && offlineSendNotice) {
+      setOfflineSendNotice(false);
+    }
+  }, [backendStatus, offlineSendNotice]);
+
+  useEffect(() => {
+    if (!offlineSendNotice) return;
+    const t = setTimeout(() => setOfflineSendNotice(false), 6000);
+    return () => clearTimeout(t);
+  }, [offlineSendNotice]);
 
   const [llmModeOverride, setLlmModeOverride] = useState(() => {
     const saved = localStorage.getItem('yuki-override-llm-mode');
@@ -840,6 +868,15 @@ export const AgenticWorkspaceWindow = ({
   const handleSendPrompt = (textToSend) => {
     if (!textToSend.trim()) return;
 
+    const socketOpen = socketRef.current && socketRef.current.readyState === WebSocket.OPEN;
+
+    // If the standalone socket is offline (e.g. backend restarting), keep the
+    // input text and surface a notice instead of silently dropping the message.
+    if (!onSendMessage && !socketOpen) {
+      setOfflineSendNotice(true);
+      return;
+    }
+
     // 1. Instantly append User message & pending AI thinking card to local view
     const userMsg = { role: 'user', content: textToSend };
     const pendingAiMsg = { role: 'assistant', content: '...', isThinking: true };
@@ -850,8 +887,8 @@ export const AgenticWorkspaceWindow = ({
 
     if (onSendMessage) {
       onSendMessage(textToSend);
-    } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
+    } else {
+      socketRef.current.send(JSON.stringify({
         type: 'chat',
         message: textToSend,
         overrides: {
@@ -870,9 +907,9 @@ export const AgenticWorkspaceWindow = ({
           llm_reviewer_enabled: activeSettings.llm_reviewer_enabled !== undefined ? activeSettings.llm_reviewer_enabled : true,
           llm_reviewer_model: activeSettings.llm_reviewer_model,
           llm_summary_model: activeSettings.llm_summary_model,
-          prompt_persona: promptPersona,
-          prompt_expressions: promptExpressions,
-          prompt_memory: promptMemory,
+          prompt_persona: isCodingMode ? false : promptPersona,
+          prompt_expressions: isCodingMode ? false : promptExpressions,
+          prompt_memory: isCodingMode ? false : promptMemory,
           prompt_directives: promptDirectives,
           prompt_planning: promptPlanning
         }
@@ -882,8 +919,8 @@ export const AgenticWorkspaceWindow = ({
   };
 
   const handleInterruptProcess = () => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'interrupt' }));
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'interrupt' }));
       console.log('[ChatWindow] Sent interrupt signal to backend.');
     }
   };
@@ -954,7 +991,7 @@ export const AgenticWorkspaceWindow = ({
     // 2. Active Tool Schemas
     const basicTools = ['web_search', 'read_file_content', 'search_files', 'list_directory', 'launch_app', 'open_or_play_file', 'set_system_volume', 'manage_time', 'get_system_stats', 'update_user_fact', 'take_screenshot', 'run_terminal_command', 'run_python_script'];
     const jarvisTools = [...basicTools, 'jarvis_query_file_db', 'read_and_review_file', 'list_directory_tree', 'git_status_and_history', 'system_diagnostics_and_processes', 'scrape_web_page', 'jarvis_remember_user_fact'];
-    const codingTools = ['run_terminal_command', 'run_python_script', 'read_and_review_file', 'read_file_content', 'jarvis_create_or_edit_file', 'list_directory_tree', 'list_directory', 'git_status_and_history', 'search_files', 'jarvis_query_file_db', 'web_search', 'scrape_web_page', 'system_diagnostics_and_processes'];
+    const codingTools = ['jarvis_run_terminal', 'jarvis_run_python', 'jarvis_read_file', 'jarvis_create_or_edit_file', 'jarvis_replace_file_content', 'jarvis_list_dir_tree', 'jarvis_git_status', 'find_files_by_glob', 'jarvis_web_search', 'jarvis_web_scrape', 'jarvis_system_diagnostics', 'jarvis_send_stdin'];
 
     const activeToolList = isCodingMode ? codingTools : (chatWindowToolMode === 'advanced' ? jarvisTools : basicTools);
 
@@ -982,7 +1019,7 @@ ${promptParts.length > 0 ? promptParts.join('\n\n') : '⚠️ All prompt modules
 ═════════════════════════════════════════════════════════
 3. ACTIVE TOOL DEFINITIONS ARRAY (tools: [...])
 ═════════════════════════════════════════════════════════
-• Tool Operating Mode: ${isCodingMode ? '💻 Specialized Coding Agent (11 coding tools)' : (chatWindowToolMode === 'advanced' ? '🤖 Autonomous Jarvis (20 tools)' : '⚡ Basic ReAct (13 tools)')}
+• Tool Operating Mode: ${isCodingMode ? '💻 Specialized Coding Agent (12 coding tools)' : (chatWindowToolMode === 'advanced' ? '🤖 Autonomous Jarvis (20 tools)' : '⚡ Basic ReAct (13 tools)')}
 • Dynamic Relevance Filter: ${dynamicToolCallingOverride ? 'ENABLED (selects schemas by query intent)' : 'DISABLED (sends all active schemas)'}
 • Tool Schemas Active for LLM:
   [
@@ -1867,6 +1904,18 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
               scrollbarColor: 'rgba(167, 139, 250, 0.3) transparent'
             }}
           >
+            {backendStatus === 'offline' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#fbbf24', fontSize: '0.76rem', fontWeight: 600, flexShrink: 0 }}>
+                <RefreshCw style={{ width: '14px', height: '14px', animation: 'spin 1.5s linear infinite' }} />
+                Backend offline — reconnecting...
+              </div>
+            )}
+            {offlineSendNotice && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#f87171', fontSize: '0.76rem', fontWeight: 600, flexShrink: 0 }}>
+                <ShieldAlert style={{ width: '14px', height: '14px' }} />
+                Message kept in the input — backend is offline, it will send once the connection is restored.
+              </div>
+            )}
             {displayMessages.length === 0 ? (
               <div style={{
                 margin: 'auto',
@@ -2174,7 +2223,10 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       fontSize: '0.82rem',
                       lineHeight: '1.5',
                       boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                      wordBreak: 'break-word'
+                      wordBreak: 'break-word',
+                      maxWidth: '100%',
+                      minWidth: 0,
+                      boxSizing: 'border-box'
                     }}>
                       <RenderMessageContent content={cleanContent} />
                     </div>
@@ -3199,26 +3251,35 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                 <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600, marginBottom: '2px' }}>
                   System Prompt Modules
                 </div>
+                {isCodingMode && (
+                  <div style={{ fontSize: '0.65rem', color: '#f59e0b', marginBottom: '4px' }}>
+                    Coding Mode: Persona, Expressions &amp; Memory modules are ignored (coding agent prompt is used).
+                  </div>
+                )}
                 {[
-                  { id: 'persona', label: 'Persona & Mood Spectrum', state: promptPersona, set: setPromptPersona, key: 'yuki-prompt-persona' },
-                  { id: 'expressions', label: '3D Avatar Expressions', state: promptExpressions, set: setPromptExpressions, key: 'yuki-prompt-expressions' },
-                  { id: 'memory', label: 'User Memory Card', state: promptMemory, set: setPromptMemory, key: 'yuki-prompt-memory' },
+                  { id: 'persona', label: 'Persona & Mood Spectrum', state: promptPersona, set: setPromptPersona, key: 'yuki-prompt-persona', coderInert: true },
+                  { id: 'expressions', label: '3D Avatar Expressions', state: promptExpressions, set: setPromptExpressions, key: 'yuki-prompt-expressions', coderInert: true },
+                  { id: 'memory', label: 'User Memory Card', state: promptMemory, set: setPromptMemory, key: 'yuki-prompt-memory', coderInert: true },
                   { id: 'directives', label: 'Behavioral Tool Directives', state: promptDirectives, set: setPromptDirectives, key: 'yuki-prompt-directives' },
                   { id: 'planning', label: 'Section 5 Implementation Planning', state: promptPlanning, set: setPromptPlanning, key: 'yuki-prompt-planning' }
-                ].map(mod => (
-                  <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.73rem', color: '#cbd5e1', cursor: 'pointer' }}>
+                ].map(mod => {
+                  const inert = isCodingMode && mod.coderInert;
+                  return (
+                  <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.73rem', color: inert ? '#475569' : '#cbd5e1', cursor: inert ? 'not-allowed' : 'pointer' }}>
                     <input
                       type="checkbox"
                       checked={mod.state}
+                      disabled={inert}
                       onChange={(e) => {
                         mod.set(e.target.checked);
                         localStorage.setItem(mod.key, String(e.target.checked));
                       }}
                       style={{ accentColor: '#a78bfa' }}
                     />
-                    {mod.label}
+                    {mod.label}{inert ? ' (ignored in Coding Mode)' : ''}
                   </label>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Section 5: Dynamic API Payload & Prompt Inspector */}

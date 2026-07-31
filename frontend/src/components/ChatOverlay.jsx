@@ -126,7 +126,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
   // 4. file:/// URIs
   // 5. Windows Folder Paths (no ext): D:\path\to\folder
   // 6. Code block `code` & Bold **bold**
-  const linkOrPathRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+|www\.[^\)]+|file:\/\/\/?[^\)]+|[A-Za-z]:[\\\/][^\)]+)\)|(https?:\/\/[^\s\(\)<>"'\n]+|www\.[^\s\(\)<>"'\n]+)|([A-Za-z]:[\\\/][^:\*\?"<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|(file:\/\/\/[^:\*\?"<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|([A-Za-z]:[\\\/][^:\*\?"<>\|\s\n\(\)\[\]{}]+)|`([^`]+)`|\*\*([^*]+)\*\*/gi;
+  const linkOrPathRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+|www\.[^\)]+|file:\/\/\/?[^\)]+|[A-Za-z]:[\\\/][^\)]+)\)|(https?:\/\/[^\s\(\)<>"'\`\n]+|www\.[^\s\(\)<>"'\`\n]+)|([A-Za-z]:[\\\/][^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|(file:\/\/\/[^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|([A-Za-z]:[\\\/][^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+)|`([^`]+)`|\*\*([^*]+)\*\*/gi;
 
   const parts = [];
   let lastIndex = 0;
@@ -136,6 +136,20 @@ export const formatMessageText = (text, disableFileLinks = false) => {
     const matchIndex = match.index;
     if (matchIndex > lastIndex) {
       parts.push(text.substring(lastIndex, matchIndex));
+    }
+    lastIndex = linkOrPathRegex.lastIndex;
+
+    // Don't make pills out of URL/path text wrapped in quotes or backticks
+    const beforeChar = text[matchIndex - 1];
+    const afterChar = text[lastIndex];
+    const isQuoteWrapped =
+      (beforeChar === '"' && afterChar === '"') ||
+      (beforeChar === "'" && afterChar === "'") ||
+      (beforeChar === '`' && afterChar === '`');
+
+    if (isQuoteWrapped) {
+      parts.push(text.substring(matchIndex, lastIndex));
+      continue;
     }
 
     if (match[1] && match[2]) {
@@ -456,8 +470,6 @@ export const formatMessageText = (text, disableFileLinks = false) => {
         </strong>
       );
     }
-
-    lastIndex = linkOrPathRegex.lastIndex;
   }
 
   if (lastIndex < text.length) {
@@ -866,14 +878,16 @@ export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFi
       {blocks.map((block, bIdx) => {
         if (block.type === 'code') {
           return (
-            <div key={`code-block-${bIdx}`} style={{ margin: '6px 0', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)', background: '#020617' }}>
+            <div key={`code-block-${bIdx}`} style={{ margin: '6px 0', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)', background: '#020617', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px', background: 'rgba(15, 23, 42, 0.9)', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: '0.68rem', fontFamily: 'monospace' }}>
                 <span style={{ fontWeight: 600, color: '#38bdf8', textTransform: 'uppercase' }}>{block.lang || 'code'}</span>
                 <CodeBlockCopyButton code={block.code} />
               </div>
-              <pre style={{ margin: 0, padding: '10px 12px', fontSize: '0.76rem', fontFamily: 'Consolas, Monaco, monospace', color: '#cbd5e1', overflowX: 'auto', whiteSpace: 'pre', wordBreak: 'normal' }}>
-                {block.code}
-              </pre>
+              <div style={{ overflowX: 'auto', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                <pre style={{ margin: 0, padding: '10px 12px', fontSize: '0.76rem', fontFamily: 'Consolas, Monaco, monospace', color: '#cbd5e1', whiteSpace: 'pre', wordBreak: 'normal', display: 'block', width: 'max-content', minWidth: '100%', boxSizing: 'border-box' }}>
+                  {block.code}
+                </pre>
+              </div>
             </div>
           );
         }
