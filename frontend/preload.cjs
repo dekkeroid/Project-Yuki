@@ -160,6 +160,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendLog: (msg) => {
     ipcRenderer.send('yuki-renderer-log', msg);
   },
+  openExternalUrl: (url) => {
+    return ipcRenderer.invoke('open-external-url', url);
+  },
   platform: process.platform,
   isElectron: true
 });

@@ -74,6 +74,16 @@ const handleOpenFolderInSidebar = (folderPath) => {
   }
 };
 
+export const openExternalUrl = (url) => {
+  if (!url) return;
+  const target = url.startsWith('www.') ? `https://${url}` : url;
+  if (window.electronAPI?.openExternalUrl) {
+    window.electronAPI.openExternalUrl(target);
+  } else {
+    window.open(target, '_blank', 'noopener,noreferrer');
+  }
+};
+
 export const formatMessageText = (text, disableFileLinks = false) => {
   if (!text || typeof text !== 'string') return text || '';
 
@@ -140,8 +150,8 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           <button
             key={matchIndex}
             type="button"
-            onClick={() => window.open(target.startsWith('www.') ? `https://${target}` : target, '_blank', 'noopener,noreferrer')}
-            title={`Click to open ${target} in web browser`}
+            onClick={() => openExternalUrl(target)}
+            title={`Click to open ${target} in external web browser`}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -230,7 +240,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
         <button
           key={matchIndex}
           type="button"
-          onClick={() => window.open(rawUrl.startsWith('www.') ? `https://${rawUrl}` : rawUrl, '_blank', 'noopener,noreferrer')}
+          onClick={() => openExternalUrl(rawUrl)}
           title={`Click to open ${rawUrl} in external web browser`}
           style={{
             display: 'inline-flex',

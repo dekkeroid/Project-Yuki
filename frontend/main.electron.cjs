@@ -1,9 +1,30 @@
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, powerMonitor, Menu, Tray, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, powerMonitor, Menu, Tray, dialog, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const os = require('os');
+
+// ---------- Intercept & Route All External Web URLs to User's Default OS Browser ----------
+app.on('web-contents-created', (_evt, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      console.log(`[Electron] Intercepted window.open -> Opening in default OS browser: ${url}`);
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
+  contents.on('will-navigate', (event, url) => {
+    const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.startsWith('file://');
+    if ((url.startsWith('http://') || url.startsWith('https://')) && !isLocal) {
+      event.preventDefault();
+      console.log(`[Electron] Intercepted navigation -> Opening in default OS browser: ${url}`);
+      shell.openExternal(url);
+    }
+  });
+});
 
 const BACKEND_PORT = 58392;
 
@@ -143,7 +164,7 @@ function createStopwatchWindow(stopwatchData) {
   const encodedLabel = encodeURIComponent(label);
 
   if (isDev) {
-    win.loadURL(`http://localhost:5173/?mode=stopwatch&label=${encodedLabel}`);
+    win.loadURL(`http://localhost:5178/?mode=stopwatch&label=${encodedLabel}`);
   } else {
     win.loadFile(path.join(__dirname, 'dist', 'index.html'), {
       query: { mode: 'stopwatch', label }
@@ -216,7 +237,7 @@ function createAlarmWindow(alarmData) {
   const customToneFile = encodeURIComponent(alarmData?.customToneFile || '');
 
   if (isDev) {
-    win.loadURL(`http://localhost:5173/?mode=alarm&id=${alarmId}&msg=${alarmMsg}&category=${alarmCat}&mute=${isMuted}&tone=${tone}&customFile=${customToneFile}`);
+    win.loadURL(`http://localhost:5178/?mode=alarm&id=${alarmId}&msg=${alarmMsg}&category=${alarmCat}&mute=${isMuted}&tone=${tone}&customFile=${customToneFile}`);
   } else {
     win.loadFile(path.join(__dirname, 'dist', 'index.html'), {
       query: { mode: 'alarm', id: String(alarmId), msg: alarmData?.message || 'Timer Up!', category: alarmData?.category || 'timer', mute: String(isMuted), tone: alarmData?.tone || 'pulse_chime', customFile: alarmData?.customToneFile || '' }
@@ -270,7 +291,7 @@ function createSettingsWindow() {
 
   const isDev = !app.isPackaged;
   if (isDev) {
-    settingsWindow.loadURL('http://localhost:5173/?mode=settings');
+    settingsWindow.loadURL('http://localhost:5178/?mode=settings');
   } else {
     settingsWindow.loadFile(path.join(__dirname, 'dist', 'index.html'), { query: { mode: 'settings' } });
   }
@@ -317,7 +338,7 @@ function createChatWorkspaceWindow() {
     }
   });
 
-  loadWithRetry(chatWorkspaceWindow, [5173, 5174], 60, 500, 'chat');
+  loadWithRetry(chatWorkspaceWindow, [5178, 5179], 60, 500, 'chat');
 
   chatWorkspaceWindow.on('closed', () => {
     chatWorkspaceWindow = null;
@@ -693,7 +714,7 @@ function createWindow() {
   // Disable automatic DevTools opening in Electron
   // mainWindow.webContents.openDevTools({ mode: 'detach' });
 
-  loadWithRetry(mainWindow, [5173, 5174]);
+  loadWithRetry(mainWindow, [5178, 5179]);
 
   // ---------- IPC Handlers ----------
 
@@ -853,6 +874,15 @@ function createWindow() {
     if (senderWin && !senderWin.isDestroyed()) {
       senderWin.minimize();
     }
+  });
+
+  ipcMain.handle('open-external-url', async (_event, targetUrl) => {
+    if (targetUrl && (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))) {
+      console.log(`[Electron IPC] Opening external URL in default browser: ${targetUrl}`);
+      await shell.openExternal(targetUrl);
+      return true;
+    }
+    return false;
   });
 
   // Launch on Startup (Start with PC) Setting
