@@ -223,8 +223,9 @@ class AgentExecutor:
             ),
             "jarvis_create_or_edit_file": lambda **kwargs: jarvis_create_or_edit_file(
                 kwargs.get("file_path") or kwargs.get("path") or "",
-                kwargs.get("content") or "",
-                kwargs.get("mode", "write")
+                kwargs.get("content") if kwargs.get("content") is not None else (kwargs.get("file_content") or kwargs.get("code") or kwargs.get("text") or kwargs.get("body") or ""),
+                kwargs.get("mode", "write"),
+                **kwargs
             ),
             "jarvis_replace_file_content": lambda **kwargs: jarvis_replace_file_content(
                 kwargs.get("file_path") or kwargs.get("path") or "",
@@ -1095,56 +1096,34 @@ class AgentExecutor:
             print(f"\n[LLM Response (Iteration {iteration}, Backend: {backend_used})]:\n{llm_response}\n")
             
             if tool_calls:
-                tool_call = tool_calls[0]
-                tool_name = tool_call["function"]["name"]
-                try:
-                    tool_args = json.loads(tool_call["function"]["arguments"])
-                except Exception:
-                    tool_args = {}
-                    
-                print(f"Agent triggered tool '{tool_name}' with args {tool_args} (iteration {iteration})")
-                
-                tool_failed = False
-                tool_result = ""
-                
-                # Use shared async dispatcher (runs in thread-pool for sync tools).
-                # It enforces server-side confirmation grants; model-supplied
-                # confirmed=True is never trusted.
-                loop = asyncio.get_event_loop()
-                tool_result = loop.run_until_complete(self._run_tool_async(tool_name, tool_args))
-
-                if not tool_failed and isinstance(tool_result, str):
-                    lower_res = tool_result.lower().strip()
-                    if lower_res.startswith("error") or lower_res.startswith("failed") or lower_res.startswith("access denied") or "exception" in lower_res:
-                        tool_failed = True
-
-                print(f"Tool execution result: {tool_result}")
-                
-                if not tool_failed and tool_name in _SHORT_CIRCUIT_TOOLS:
-                    short_circuit_msg = _format_short_circuit_result(tool_name, tool_result, tool_args)
-                    if llm_response.strip():
-                        accumulated_response_total.append(llm_response.strip())
-                    accumulated_response_total.append(short_circuit_msg)
-                    
-                    assistant_final_speech = "\n".join(accumulated_response_total)
-                    final_history.append({"role": "assistant", "content": assistant_final_speech})
-                    return assistant_final_speech, final_history, backend_used
-                    
-                if llm_response.strip():
-                    accumulated_response_total.append(llm_response.strip())
-                
                 current_messages.append({
                     "role": "assistant",
                     "content": llm_response or None,
                     "tool_calls": tool_calls
                 })
                 
-                current_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.get("id", "call_default"),
-                    "name": tool_name,
-                    "content": str(tool_result)
-                })
+                if llm_response.strip():
+                    accumulated_response_total.append(llm_response.strip())
+
+                loop = asyncio.get_event_loop()
+                for tc in tool_calls:
+                    tool_name = tc["function"]["name"]
+                    try:
+                        tool_args = json.loads(tc["function"]["arguments"])
+                    except Exception:
+                        tool_args = {}
+                        
+                    print(f"Agent triggered tool '{tool_name}' with args {tool_args} (iteration {iteration})")
+                    tool_result = loop.run_until_complete(self._run_tool_async(tool_name, tool_args))
+                    print(f"Tool execution result: {tool_result}")
+
+                    tc_id = tc.get("id") or f"call_{uuid.uuid4().hex[:8]}"
+                    current_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "name": tool_name,
+                        "content": str(tool_result)
+                    })
             else:
                 if llm_response.strip():
                     accumulated_response_total.append(llm_response.strip())
@@ -1838,154 +1817,57 @@ class AgentExecutor:
                 full_llm_response = accumulated_response.strip()
                 
                 if tool_calls_to_execute:
-                    tool_call = tool_calls_to_execute[0]
-                    tool_name = tool_call["function"]["name"]
-                    try:
-                        tool_args = json.loads(tool_call["function"]["arguments"])
-                        # Unwrap malformed envelope: some models output the full tool-call
-                        # object as the arguments JSON, e.g.:
-                        #   {"type": "function", "function": "web_search", "parameters": {"query": "..."}}
-                        # Detect this by checking for "type"/"function" keys typical of a
-                        # tool-call wrapper, and extract the inner parameters dict.
-                        if isinstance(tool_args, dict) and tool_args.get("type") == "function" and "function" in tool_args:
-                            inner = tool_args.get("parameters") or tool_args.get("arguments") or {}
-                            if isinstance(inner, dict) and inner:
-                                print(f"[Executor] Unwrapping malformed tool-call envelope in arguments for '{tool_name}': {tool_args}")
-                                tool_args = inner
-                    except Exception:
-                        tool_args = {}
-                        
-                    # Loop detection: stop if we are repeating the exact same tool execution
-                    tool_args_str = tool_call["function"]["arguments"]
-                    call_signature = (tool_name, tool_args_str)
-                    if call_signature in executed_calls:
-                        print(f"[Executor] Loop detected! Tool '{tool_name}' with args {tool_args_str} was already executed in this turn. Breaking.")
-                        # Include last tool result if available
-                        if last_tool_result and isinstance(last_tool_result, str):
-                            # Stream the tool's result to the frontend so it is displayed and spoken
-                            yield "token", last_tool_result, backend_used
-                            accumulated_response_total.append(last_tool_result)
-                        assistant_final_speech = "\n".join(accumulated_response_total)
-                        if not assistant_final_speech.strip():
-                            assistant_final_speech = "I have completed that action, Master."
-                            yield "token", assistant_final_speech, backend_used
-                        final_history.append({"role": "assistant", "content": assistant_final_speech})
-                        yield "final_history", final_history, backend_used
-                        return
-                        
-                    skip_execution = False
-                    tool_result = ""
-                    tool_failed = False
+                    current_messages.append({
+                        "role": "assistant",
+                        "content": accumulated_response if accumulated_response.strip() else f"Running tool...",
+                        "tool_calls": tool_calls_to_execute
+                    })
 
-                    if tool_name in ("open_or_play_file", "launch_app"):
-                        if any(call[0] == tool_name for call in executed_calls):
-                            print(f"[Executor] Prevented duplicate execution of '{tool_name}' in the same turn.")
-                            tool_result = "Success: The requested target is already open and active."
-                            skip_execution = True
+                    for tool_call in tool_calls_to_execute:
+                        tool_name = tool_call["function"]["name"]
+                        try:
+                            tool_args = json.loads(tool_call["function"]["arguments"])
+                            if isinstance(tool_args, dict) and tool_args.get("type") == "function" and "function" in tool_args:
+                                inner = tool_args.get("parameters") or tool_args.get("arguments") or {}
+                                if isinstance(inner, dict) and inner:
+                                    tool_args = inner
+                        except Exception:
+                            tool_args = {}
+                            
+                        tool_args_str = tool_call["function"]["arguments"]
+                        call_signature = (tool_name, tool_args_str)
+                        if call_signature in executed_calls:
+                            print(f"[Executor] Loop detected for tool '{tool_name}'. Skipping duplicate call.")
+                            continue
+                            
+                        executed_calls.add(call_signature)
+                        print(f"Agent triggered tool '{tool_name}' with args {tool_args} (iteration {iteration})")
+                        yield "tool_start", {"name": tool_name, "args": tool_args}, backend_used
 
-                    # Add to executed calls list
-                    executed_calls.add(call_signature)
-                    
-                    print(f"Agent triggered tool '{tool_name}' with args {tool_args} (iteration {iteration})")
-                    yield "tool_start", {"name": tool_name, "args": tool_args}, backend_used
-
-                    if not skip_execution:
                         tool_result = await self._run_tool_async(tool_name, tool_args)
                         last_tool_result = tool_result
 
-                        # Handle sandbox/inside-tool confirmation request. The
-                        # model cannot authorize by passing confirmed=True; the
-                        # backend issues a grant after the user approves.
-                        target_path = _extract_confirmation_target(tool_result)
-                        if target_path:
-                            print(f"[Executor] Tool '{tool_name}' returned CONFIRM_REQUIRED for target: {target_path}")
+                        output_snippet = str(tool_result).strip()
+                        if len(output_snippet) > 800:
+                            output_snippet = output_snippet[:800] + "\n... [truncated]"
 
-                            confirmed_args = strip_internal_auth_fields(tool_args)
-                            if tool_name == "open_or_play_file":
-                                confirmed_args = {
-                                    "file_path_or_query": target_path,
-                                    "play_mode": bool(tool_args.get("play_mode", False)),
-                                }
-                            confirmed_status = yield "tool_confirm_required", target_path, backend_used
+                        try:
+                            args_json = json.dumps(tool_args, indent=2, ensure_ascii=False) if tool_args else ""
+                        except Exception:
+                            args_json = str(tool_args)
+                        args_block = f"\n```tool_args\n{args_json}\n```" if args_json else ""
 
-                            if confirmed_status:
-                                grant_id = issue_confirmation_grant(
-                                    tool_name,
-                                    confirmed_args,
-                                    target=target_path or describe_tool_target(tool_name, confirmed_args),
-                                )
-                                confirmed_args["confirmation_grant_id"] = grant_id
-                                print(f"[Executor] Re-running '{tool_name}' with backend confirmation grant for target: {target_path}")
-                                tool_result = await self._run_tool_async(tool_name, confirmed_args)
-                            else:
-                                # User explicitly cancelled. Do not troubleshoot, do not retry. Abort loop immediately.
-                                print(f"[Executor] Tool '{tool_name}' execution was cancelled by the user. Aborting ReAct loop.")
-                                if accumulated_response.strip():
-                                    accumulated_response_total.append(accumulated_response.strip())
-                                cancel_msg = "Action cancelled by security confirmation check."
-                                accumulated_response_total.append(cancel_msg)
-                                
-                                assistant_final_speech = "\n".join(accumulated_response_total)
-                                final_history.append({"role": "assistant", "content": assistant_final_speech})
-                                yield "final_history", final_history, backend_used
-                                return
+                        tool_badge = f"🛠️ **[{tool_name} — ✓ Done]**{args_block}\n```tool_output\n{output_snippet}\n```"
+                        accumulated_response_total.append(tool_badge)
 
-                        if isinstance(tool_result, str):
-                            lower_res = tool_result.lower().strip()
-                            if lower_res.startswith("error") or lower_res.startswith("failed") or lower_res.startswith("access denied") or "exception" in lower_res:
-                                tool_failed = True
-
-                    print(f"Tool execution result: {tool_result}")
-                    yield "tool_result", tool_result, backend_used
-                    
-                    if not tool_failed and tool_name in _SHORT_CIRCUIT_TOOLS:
-                        short_circuit_msg = _format_short_circuit_result(tool_name, tool_result, tool_args)
-                        yield "token", short_circuit_msg, backend_used
-                        if accumulated_response.strip() and accumulated_response.strip() != "Running tool...":
-                            accumulated_response_total.append(accumulated_response.strip())
-                        accumulated_response_total.append(short_circuit_msg)
-                        
-                        assistant_final_speech = "\n".join(accumulated_response_total)
-                        final_history.append({"role": "assistant", "content": assistant_final_speech})
-                        yield "final_history", final_history, backend_used
-                        return
-
-                    # Format clean, rich tool execution badge for prompt history and UI
-                    tool_target = tool_args.get("file_path") or tool_args.get("path") or tool_args.get("command") or tool_args.get("url") or ""
-                    if tool_target and len(str(tool_target)) > 60:
-                        tool_target = "..." + str(tool_target)[-57:]
-                    target_info = f" (`{tool_target}`)" if tool_target else ""
-                    status_symbol = "❌ Error" if tool_failed else "✓ Done"
-
-                    output_snippet = str(tool_result).strip()
-                    if len(output_snippet) > 800:
-                        output_snippet = output_snippet[:800] + "\n... [truncated]"
-
-                    try:
-                        args_json = json.dumps(tool_args, indent=2, ensure_ascii=False) if tool_args else ""
-                    except Exception:
-                        args_json = str(tool_args)
-                    args_block = f"\n```tool_args\n{args_json}\n```" if args_json else ""
-
-                    tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**{args_block}\n```tool_output\n{output_snippet}\n```"
-
-                    if accumulated_response.strip() and accumulated_response.strip() != "Running tool...":
-                        accumulated_response_total.append(accumulated_response.strip())
-                    accumulated_response_total.append(tool_badge)
-                    
-                    current_messages.append({
-                        "role": "assistant",
-                        "content": accumulated_response if accumulated_response.strip() else f"Running tool {tool_name}...",
-                        "tool_calls": tool_calls_to_execute
-                    })
-                    
-                    tool_call_id = tool_call.get("id") or "call_default"
-                    current_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "name": tool_name,
-                        "content": str(tool_result)
-                    })
+                        tc_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:8]}"
+                        current_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "name": tool_name,
+                            "content": str(tool_result)
+                        })
+                        yield "tool_result", tool_result, backend_used
 
                     # ── Post-tool guidance injection ─────────────────────────────────────────
                     # Inject a structured guidance message after every tool result so the

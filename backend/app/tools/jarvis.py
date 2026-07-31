@@ -204,10 +204,12 @@ def _run_auto_lsp_check(clean_path: str) -> str:
         return ""
 
 
-def jarvis_create_or_edit_file(file_path: str, content: str, mode: str = "write") -> str:
+def jarvis_create_or_edit_file(file_path: str, content: str = "", mode: str = "write", **kwargs) -> str:
     """
     Creates or edits a file on disk. Mode: 'write' (overwrite/create) or 'append'.
     """
+    if not content and kwargs:
+        content = kwargs.get("file_content") or kwargs.get("code") or kwargs.get("text") or kwargs.get("body") or ""
     clean_path = os.path.abspath(file_path.strip('"\''))
     try:
         os.makedirs(os.path.dirname(clean_path), exist_ok=True)
