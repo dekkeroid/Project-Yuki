@@ -598,6 +598,7 @@ export const AgenticWorkspaceWindow = ({
   const [selectedCoderEndpointId, setSelectedCoderEndpointId] = useState('');
   const [coderCustomLabel, setCoderCustomLabel] = useState('');
   const [saveCoderEndpointBtnText, setSaveCoderEndpointBtnText] = useState('Save Preset');
+  const [draftCoderKeys, setDraftCoderKeys] = useState(['']);
 
   const activeSettings = { ...internalSettings, ...settings };
 
@@ -631,8 +632,12 @@ export const AgenticWorkspaceWindow = ({
       if (sRes.ok) {
         const sData = await sRes.json();
         setInternalSettings(sData || {});
+        if (sData && sData.llm_coder_api_key) {
+          const arr = sData.llm_coder_api_key.split(',').map(k => k.trim());
+          setDraftCoderKeys(arr.length > 0 ? arr : ['']);
+        }
       }
-      const eRes = await fetch(`${API_BASE}/api/settings/custom-endpoints`);
+      const eRes = await fetch(`${API_BASE}/api/settings/custom-endpoints?decrypt=true`);
       if (eRes.ok) {
         const eData = await eRes.json();
         setSavedCustomEndpoints(eData.endpoints || []);
@@ -647,6 +652,39 @@ export const AgenticWorkspaceWindow = ({
     fetchCoderLlmModels();
   }, [fetchSettingsAndEndpoints]);
 
+  const selectCoderPreset = async (targetId) => {
+    if (!targetId) {
+      setSelectedCoderEndpointId('');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/select`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: targetId, target_type: 'coder' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedCoderEndpointId(targetId);
+        if (data.active_endpoint && data.active_endpoint.label) {
+          setCoderCustomLabel(data.active_endpoint.label);
+        }
+        const keysArr = data.keys_array && data.keys_array.length > 0 ? data.keys_array : [''];
+        setDraftCoderKeys(keysArr);
+        handleUpdateSetting({
+          llm_coder_backend: data.backend || 'custom',
+          llm_coder_base_url: data.base_url || '',
+          llm_coder_api_key: data.api_key_decrypted || '',
+          llm_coder_model: data.coder_model || activeSettings.llm_coder_model || '',
+          llm_reviewer_model: data.reviewer_model || activeSettings.llm_reviewer_model || '',
+          llm_summary_model: data.summary_model || activeSettings.llm_summary_model || '',
+        });
+      }
+    } catch (err) {
+      console.error("Failed to select custom endpoint preset:", err);
+    }
+  };
+
   const handleSaveCoderEndpoint = async () => {
     const labelToSave = coderCustomLabel.trim() || 'Coder Endpoint';
     const baseUrlToSave = activeSettings.llm_coder_base_url || '';
@@ -655,6 +693,7 @@ export const AgenticWorkspaceWindow = ({
       return;
     }
     setSaveCoderEndpointBtnText("Saving...");
+    const joinedKeys = draftCoderKeys.filter(k => k.trim()).join(', ');
     try {
       const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/save`, {
         method: 'POST',
@@ -663,8 +702,11 @@ export const AgenticWorkspaceWindow = ({
           id: selectedCoderEndpointId || '',
           label: labelToSave,
           base_url: baseUrlToSave,
-          api_key: activeSettings.llm_coder_api_key || '',
-          llm_backend: activeSettings.llm_coder_backend || 'custom'
+          api_key: joinedKeys,
+          llm_backend: activeSettings.llm_coder_backend || 'custom',
+          coder_model: activeSettings.llm_coder_model || '',
+          reviewer_model: activeSettings.llm_reviewer_model || '',
+          summary_model: activeSettings.llm_summary_model || ''
         })
       });
       if (res.ok) {
@@ -674,6 +716,10 @@ export const AgenticWorkspaceWindow = ({
         if (data.saved && data.saved.id) {
           setSelectedCoderEndpointId(data.saved.id);
         }
+        if (data.keys_array) {
+          setDraftCoderKeys(data.keys_array.length > 0 ? data.keys_array : ['']);
+        }
+        await handleUpdateSetting({ llm_coder_api_key: joinedKeys });
         setSaveCoderEndpointBtnText("✓ Saved to DB");
         setTimeout(() => setSaveCoderEndpointBtnText('Save Preset'), 2500);
       } else {
@@ -3400,19 +3446,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                             <select
                               value={selectedCoderEndpointId}
-                              onChange={async (e) => {
-                                const selId = e.target.value;
-                                setSelectedCoderEndpointId(selId);
-                                const ep = savedCustomEndpoints.find(item => item.id === selId);
-                                if (ep) {
-                                  setCoderCustomLabel(ep.label || '');
-                                  await handleUpdateSetting({
-                                    llm_coder_backend: ep.llm_backend || 'custom',
-                                    llm_coder_base_url: ep.base_url || '',
-                                    ...(ep.api_key ? { llm_coder_api_key: ep.api_key } : {})
-                                  });
-                                }
-                              }}
+                              onChange={(e) => selectCoderPreset(e.target.value)}
                               style={{
                                 flex: 1,
                                 padding: '7px 10px',
@@ -3566,23 +3600,25 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 
                   {/* 4. Multi-API Key Vault Pool (Scalable Key A, Key B, Key C...) */}
                   {(activeSettings.llm_coder_backend === 'custom' || activeSettings.llm_coder_backend === 'openai') && (() => {
-                    const rawKeys = activeSettings.llm_coder_api_key || '';
-                    const keyArray = rawKeys.split(',').map(k => k.trim());
-                    if (keyArray.length === 0) keyArray.push('');
+                    const keyArray = draftCoderKeys.length > 0 ? draftCoderKeys : [''];
 
                     const updateKeyAtIndex = (idx, val) => {
-                      const updated = [...keyArray];
-                      updated[idx] = val;
-                      handleUpdateSetting({ llm_coder_api_key: updated.join(', ') });
+                      setDraftCoderKeys(prev => {
+                        const updated = [...prev];
+                        updated[idx] = val;
+                        return updated;
+                      });
                     };
 
                     const addKeySlot = () => {
-                      handleUpdateSetting({ llm_coder_api_key: [...keyArray, ''].join(', ') });
+                      setDraftCoderKeys(prev => [...prev, '']);
                     };
 
                     const removeKeySlot = (idx) => {
-                      const updated = keyArray.filter((_, i) => i !== idx);
-                      handleUpdateSetting({ llm_coder_api_key: updated.join(', ') });
+                      setDraftCoderKeys(prev => {
+                        const updated = prev.filter((_, i) => i !== idx);
+                        return updated.length > 0 ? updated : [''];
+                      });
                     };
 
                     return (

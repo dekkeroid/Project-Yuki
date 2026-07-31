@@ -1238,6 +1238,9 @@ class CustomEndpointRequest(BaseModel):
     base_url: str
     api_key: Optional[str] = ""
     llm_backend: Optional[str] = "openai"
+    coder_model: Optional[str] = None
+    reviewer_model: Optional[str] = None
+    summary_model: Optional[str] = None
 
 
 class DeleteCustomEndpointRequest(BaseModel):
@@ -1247,28 +1250,35 @@ class DeleteCustomEndpointRequest(BaseModel):
 
 
 @app.get("/api/settings/custom-endpoints")
-def get_custom_endpoints():
-    """Returns saved custom LLM endpoint configurations with masked API keys."""
-    from app.utils.security import mask_api_key
+def get_custom_endpoints(decrypt: bool = False):
+    """Returns saved custom LLM endpoint configurations."""
+    from app.utils.security import mask_api_key, decrypt_api_key
     raw_endpoints = memory_manager.profile["settings"].get("saved_custom_endpoints", [])
     masked_list = []
     for ep in raw_endpoints:
+        raw_k = ep.get("api_key", "")
+        dec_k = decrypt_api_key(raw_k)
+        keys_arr = [k.strip() for k in re.split(r'[,;\s]+', str(dec_k)) if k.strip()]
         masked_list.append({
             "id": ep.get("id", ""),
             "label": ep.get("label", ""),
             "base_url": ep.get("base_url", ""),
-            "api_key_masked": mask_api_key(ep.get("api_key", "")),
-            "has_key": bool(ep.get("api_key")),
+            "api_key_masked": mask_api_key(raw_k),
+            "api_key_decrypted": dec_k if decrypt else "",
+            "keys_array": keys_arr if decrypt else [],
+            "has_key": bool(raw_k),
             "llm_backend": ep.get("llm_backend", "openai"),
-            "model": ep.get("model", "")
+            "coder_model": ep.get("coder_model", ""),
+            "reviewer_model": ep.get("reviewer_model", ""),
+            "summary_model": ep.get("summary_model", "")
         })
     return {"endpoints": masked_list}
 
 
 @app.post("/api/settings/custom-endpoints/save")
 async def save_custom_endpoint(req: CustomEndpointRequest):
-    """Saves or updates a custom LLM endpoint configuration with encrypted API key."""
-    from app.utils.security import encrypt_api_key, mask_api_key
+    """Saves or updates a custom LLM endpoint configuration with encrypted API keys."""
+    from app.utils.security import encrypt_api_key, mask_api_key, decrypt_api_key
     import uuid
 
     label = req.label.strip()
@@ -1279,11 +1289,11 @@ async def save_custom_endpoint(req: CustomEndpointRequest):
     raw_endpoints = memory_manager.profile["settings"].get("saved_custom_endpoints", [])
     ep_id = req.id.strip() if req.id else f"ep_{uuid.uuid4().hex[:8]}"
 
-    # Process API key with encryption
+    # Process API key pool with encryption
     api_key_enc = ""
     if req.api_key:
         k = req.api_key.strip()
-        if "..." in k or "•••" in k: # Masked key passed back from UI
+        if "..." in k or "•••" in k:
             existing = next((e for e in raw_endpoints if e.get("id") == ep_id or e.get("label") == label), None)
             api_key_enc = existing.get("api_key", "") if existing else ""
         else:
@@ -1295,6 +1305,9 @@ async def save_custom_endpoint(req: CustomEndpointRequest):
         "base_url": base_url,
         "api_key": api_key_enc,
         "llm_backend": req.llm_backend or "openai",
+        "coder_model": req.coder_model or "",
+        "reviewer_model": req.reviewer_model or "",
+        "summary_model": req.summary_model or "",
     }
 
     updated_endpoints = []
@@ -1311,6 +1324,9 @@ async def save_custom_endpoint(req: CustomEndpointRequest):
     memory_manager.update_setting("saved_custom_endpoints", updated_endpoints)
     await broadcast_profile_update()
 
+    dec_k = decrypt_api_key(api_key_enc)
+    keys_arr = [k.strip() for k in re.split(r'[,;\s]+', str(dec_k)) if k.strip()]
+
     masked_list = []
     for ep in updated_endpoints:
         masked_list.append({
@@ -1320,9 +1336,18 @@ async def save_custom_endpoint(req: CustomEndpointRequest):
             "api_key_masked": mask_api_key(ep.get("api_key", "")),
             "has_key": bool(ep.get("api_key")),
             "llm_backend": ep.get("llm_backend", "openai"),
+            "coder_model": ep.get("coder_model", ""),
+            "reviewer_model": ep.get("reviewer_model", ""),
+            "summary_model": ep.get("summary_model", "")
         })
 
-    return {"message": f"Saved endpoint '{label}' successfully.", "endpoints": masked_list, "saved": new_ep}
+    return {
+        "message": f"Saved preset '{label}' successfully.",
+        "endpoints": masked_list,
+        "saved": new_ep,
+        "keys_array": keys_arr,
+        "api_key_decrypted": dec_k
+    }
 
 
 @app.post("/api/settings/custom-endpoints/delete")
@@ -1346,7 +1371,9 @@ async def delete_custom_endpoint(req: DeleteCustomEndpointRequest):
             "api_key_masked": mask_api_key(ep.get("api_key", "")),
             "has_key": bool(ep.get("api_key")),
             "llm_backend": ep.get("llm_backend", "openai"),
-            "model": ep.get("model", "")
+            "coder_model": ep.get("coder_model", ""),
+            "reviewer_model": ep.get("reviewer_model", ""),
+            "summary_model": ep.get("summary_model", "")
         })
 
     return {"message": "Endpoint deleted.", "endpoints": masked_list}
@@ -1354,7 +1381,7 @@ async def delete_custom_endpoint(req: DeleteCustomEndpointRequest):
 
 @app.post("/api/settings/custom-endpoints/select")
 async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
-    """Selects and activates a saved custom endpoint for either simple or complex endpoint."""
+    """Selects and activates a saved custom endpoint for simple or coder endpoint."""
     from app.utils.security import decrypt_api_key, mask_api_key
     from app.agent.llm_backend import reset_backend
 
@@ -1367,7 +1394,8 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
         raise HTTPException(status_code=404, detail="Saved endpoint not found.")
 
     decrypted_key = decrypt_api_key(ep.get("api_key", ""))
-    target_type = req.target_type or "complex"
+    keys_arr = [k.strip() for k in re.split(r'[,;\s]+', str(decrypted_key)) if k.strip()]
+    target_type = req.target_type or "coder"
 
     if target_type == "simple":
         config.LLM_SIMPLE_BACKEND = ep.get("llm_backend", "openai")
@@ -1378,28 +1406,37 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
         memory_manager.update_setting("llm_simple_base_url", config.LLM_SIMPLE_BASE_URL)
         memory_manager.update_setting("llm_simple_api_key", ep.get("api_key", ""))
     else:
-        config.LLM_BACKEND = ep.get("llm_backend", "openai")
-        config.LLM_BASE_URL = ep.get("base_url", "")
-        config.LLM_API_KEY = decrypted_key
-        if ep.get("model"):
-            config.LLM_MODEL = ep.get("model")
-            memory_manager.update_setting("llm_model", ep.get("model"))
+        config.LLM_CODER_BACKEND = ep.get("llm_backend", "custom")
+        config.LLM_CODER_BASE_URL = ep.get("base_url", "")
+        config.LLM_CODER_API_KEY = decrypted_key
+        if ep.get("coder_model"):
+            config.LLM_CODER_MODEL = ep.get("coder_model")
+            memory_manager.update_setting("llm_coder_model", ep.get("coder_model"))
 
-        memory_manager.update_setting("llm_backend", config.LLM_BACKEND)
-        memory_manager.update_setting("llm_base_url", config.LLM_BASE_URL)
-        memory_manager.update_setting("llm_api_key", ep.get("api_key", ""))
+        memory_manager.update_setting("llm_coder_backend", config.LLM_CODER_BACKEND)
+        memory_manager.update_setting("llm_coder_base_url", config.LLM_CODER_BASE_URL)
+        memory_manager.update_setting("llm_coder_api_key", ep.get("api_key", ""))
+        if ep.get("reviewer_model"):
+            memory_manager.update_setting("llm_reviewer_model", ep.get("reviewer_model"))
+        if ep.get("summary_model"):
+            memory_manager.update_setting("llm_summary_model", ep.get("summary_model"))
+
         reset_backend()
 
     invalidate_models_cache()
     await broadcast_profile_update()
     return {
-        "message": f"Activated custom endpoint '{ep.get('label')}' for {target_type}",
+        "message": f"Activated preset '{ep.get('label')}' for {target_type}",
         "active_endpoint": ep,
         "masked_key": mask_api_key(ep.get("api_key", "")),
+        "api_key_decrypted": decrypted_key,
+        "keys_array": keys_arr,
         "target_type": target_type,
         "backend": ep.get("llm_backend", "openai"),
         "base_url": ep.get("base_url", ""),
-        "model": ep.get("model", "")
+        "coder_model": ep.get("coder_model", ""),
+        "reviewer_model": ep.get("reviewer_model", ""),
+        "summary_model": ep.get("summary_model", "")
     }
 
 @app.get("/api/tts")
