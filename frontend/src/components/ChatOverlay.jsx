@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, ExternalLink, Copy, Check, Globe, Code, Sliders, Database, Eye, FileText, Folder, Brain, Wrench } from 'lucide-react';
+import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, ExternalLink, Copy, Check, Globe, Code, Sliders, Database, Eye, FileText, Folder, Brain, Wrench, Paperclip } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
 import { SLASH_COMMANDS } from '../constants';
@@ -956,11 +956,17 @@ const ChatOverlay = ({
   setIsPanelOpen,
   muteVoice,
   setMuteVoice,
-  disabledAnimations = []
+  disabledAnimations = [],
+  attachments = [],
+  onUploadAttachments,
+  onRemoveAttachment,
+  isUploadingAttachment = false
 }) => {
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
+  const attachmentInputRef = useRef(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // ── Unified suggestions state ──────────────────────────────────────────────
   const [activeSuggIdx, setActiveSuggIdx] = useState(-1);
@@ -1553,14 +1559,103 @@ const ChatOverlay = ({
             </div>
           )}
 
-          <form onSubmit={onSubmit} className="input-form-row">
+          {/* Attachment Chips Preview */}
+          {attachments && attachments.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '6px 12px', background: 'rgba(15,23,42,0.9)', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              {attachments.map((att, aIdx) => (
+                <div
+                  key={`overlay_att_${aIdx}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '3px 8px',
+                    borderRadius: '8px',
+                    background: att.is_image ? 'rgba(56, 189, 248, 0.18)' : 'rgba(167, 139, 250, 0.18)',
+                    border: att.is_image ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(167, 139, 250, 0.4)',
+                    fontSize: '0.70rem',
+                    color: att.is_image ? '#38bdf8' : '#c4b5fd'
+                  }}
+                >
+                  {att.is_image ? (
+                    <img src={att.data_url} alt={att.filename} style={{ width: '18px', height: '18px', objectFit: 'cover', borderRadius: '3px' }} />
+                  ) : (
+                    <FileText style={{ width: '12px', height: '12px', flexShrink: 0 }} />
+                  )}
+                  <span style={{ fontWeight: 600, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {att.filename}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveAttachment && onRemoveAttachment(aIdx)}
+                    title="Remove attachment"
+                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0 2px' }}
+                  >
+                    <X style={{ width: '12px', height: '12px' }} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <form
+            onSubmit={onSubmit}
+            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragOver(false);
+              if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                onUploadAttachments && onUploadAttachments(e.dataTransfer.files);
+              }
+            }}
+            className="input-form-row"
+            style={{
+              border: isDragOver ? '2px dashed #38bdf8' : undefined,
+              borderRadius: isDragOver ? '14px' : undefined
+            }}
+          >
+            <input
+              type="file"
+              ref={attachmentInputRef}
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => onUploadAttachments && onUploadAttachments(e.target.files)}
+            />
+
+            <button
+              type="button"
+              onClick={() => attachmentInputRef.current?.click()}
+              disabled={isUploadingAttachment}
+              title="Attach files or images"
+              style={{
+                background: isUploadingAttachment ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                color: '#38bdf8',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
+
             <input
               ref={inputRef}
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
+              onPaste={(e) => {
+                if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+                  e.preventDefault();
+                  onUploadAttachments && onUploadAttachments(e.clipboardData.files);
+                }
+              }}
               onKeyDown={handleKeyDown}
-              placeholder="Type a command or message..."
+              placeholder={isDragOver ? "Drop files here to attach..." : "Type a command or message..."}
               className="glass-input"
             />
             <button type="submit" className="glass-button">

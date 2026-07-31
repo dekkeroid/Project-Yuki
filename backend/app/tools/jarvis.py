@@ -458,3 +458,79 @@ def jarvis_send_stdin(input_text: str, pid: int = None) -> str:
     """
     from app.tools.system import send_process_stdin
     return send_process_stdin(input_text=input_text, pid=pid)
+
+
+def jarvis_analyze_image(image_path: str, prompt: str = "Analyze and describe this image in detail.") -> str:
+    """
+    Scans and analyzes an image file on disk using a vision API or vision model.
+    Allows text-only LLMs to understand visual diagrams, screenshots, and UI mockups.
+    """
+    clean_path = os.path.abspath(image_path.strip('"\''))
+    if not os.path.exists(clean_path):
+        return f"Vision Error: Image path '{clean_path}' does not exist."
+
+    from app.utils.attachment_manager import encode_image_to_base64_url
+    data_url = encode_image_to_base64_url(clean_path)
+    if not data_url:
+        return f"Vision Error: Failed to read image bytes from '{clean_path}'."
+
+    try:
+        from app import config
+        from app.memory.manager import memory_manager
+        vision_model = memory_manager.profile.get("settings", {}).get("llm_vision_model") or getattr(config, "LLM_VISION_MODEL", "gemini-3.6-flash") or "gemini-2.5-flash"
+        api_key = config.LLM_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
+
+        import requests
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        base_url = config.get_effective_base_url()
+        url = f"{base_url}/chat/completions"
+
+        payload = {
+            "model": vision_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": data_url}}
+                    ]
+                }
+            ],
+            "temperature": 0.2
+        }
+
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
+        if resp.status_code == 200:
+            data = resp.json()
+            choices = data.get("choices", [])
+            if choices and choices[0].get("message", {}).get("content"):
+                return choices[0]["message"]["content"]
+
+        # Fallback to direct Gemini API if custom base_url returns error
+        gemini_key = getattr(config, "GEMINI_API_KEY", None) or api_key
+        if gemini_key:
+            g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{vision_model}:generateContent?key={gemini_key}"
+            b64_data = data_url.split(",")[1] if "," in data_url else data_url
+            mime = data_url.split(";")[0].replace("data:", "") if ";" in data_url else "image/png"
+            g_payload = {
+                "contents": [{
+                    "parts": [
+                        {"text": prompt},
+                        {"inline_data": {"mime_type": mime, "data": b64_data}}
+                    ]
+                }]
+            }
+            g_resp = requests.post(g_url, json=g_payload, timeout=60)
+            if g_resp.status_code == 200:
+                g_data = g_resp.json()
+                try:
+                    return g_data["candidates"][0]["content"]["parts"][0]["text"]
+                except Exception:
+                    pass
+
+        return f"Vision Error: Failed to analyze image. HTTP {resp.status_code}: {resp.text[:300]}"
+    except Exception as e:
+        return f"Vision Exception: {str(e)}"

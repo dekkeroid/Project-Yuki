@@ -5,7 +5,7 @@ import {
   Code, Activity, Brain, Volume2, Mic, MicOff, ChevronDown, ChevronRight,
   Folder, Calendar, Plus, Trash2, History, PanelLeftClose, PanelLeftOpen,
   Settings, Globe, Sliders, Check, ShieldAlert, Tag, FolderPlus, FolderOpen, Layers,
-  FileText, ExternalLink, Square, Key
+  FileText, ExternalLink, Square, Key, Paperclip, Image
 } from 'lucide-react';
 import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought } from './ChatOverlay';
 import { SearchableModelSelect } from './ControlDashboard';
@@ -553,6 +553,46 @@ export const AgenticWorkspaceWindow = ({
   const [dirKeyInput, setDirKeyInput] = useState('');
   const [dirValInput, setDirValInput] = useState('');
 
+  // File & Image Attachments State
+  const [attachments, setAttachments] = useState([]);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const attachmentInputRef = useRef(null);
+
+  const handleFileUpload = async (files) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingAttachment(true);
+    try {
+      const newAtts = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const formData = new FormData();
+        formData.append('file', file);
+        const resp = await fetch(`${API_BASE}/api/chat/attachments/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.status === 'success' && data.attachment) {
+            newAtts.push(data.attachment);
+          }
+        }
+      }
+      if (newAtts.length > 0) {
+        setAttachments(prev => [...prev, ...newAtts]);
+      }
+    } catch (err) {
+      console.error("Attachment upload error:", err);
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
+  const handleRemoveAttachment = (idx) => {
+    setAttachments(prev => prev.filter((_, i) => i !== idx));
+  };
+
   // File Viewer (Readonly Inspector) State
   const [fileInspectorData, setFileInspectorData] = useState(null);
   const [treeSelectedFileData, setTreeSelectedFileData] = useState(null);
@@ -891,6 +931,7 @@ export const AgenticWorkspaceWindow = ({
       socketRef.current.send(JSON.stringify({
         type: 'chat',
         message: textToSend,
+        attachments: attachments,
         overrides: {
           coding_mode: isCodingMode,
           session_facts: sessionFacts,
@@ -915,6 +956,7 @@ export const AgenticWorkspaceWindow = ({
         }
       }));
     }
+    setAttachments([]);
     handleInputChange('');
   };
 
@@ -2248,29 +2290,99 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                 e.preventDefault();
                 handleSendPrompt(currentInputText);
               }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  handleFileUpload(e.dataTransfer.files);
+                }
+              }}
               style={{
                 background: 'rgba(24, 24, 32, 0.95)',
-                border: `1px solid ${themeAccent}35`,
+                border: isDragOver ? '2px dashed #38bdf8' : `1px solid ${themeAccent}35`,
                 borderRadius: '18px',
                 padding: '12px 14px 10px',
-                boxShadow: `0 8px 32px rgba(0, 0, 0, 0.4), 0 0 15px ${themeAccent}15`,
+                boxShadow: isDragOver ? '0 0 20px rgba(56, 189, 248, 0.4)' : `0 8px 32px rgba(0, 0, 0, 0.4), 0 0 15px ${themeAccent}15`,
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '10px'
+                gap: '10px',
+                transition: 'border 0.15s ease, box-shadow 0.15s ease'
               }}
             >
+              {/* Hidden File Input */}
+              <input
+                type="file"
+                ref={attachmentInputRef}
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => handleFileUpload(e.target.files)}
+              />
+
+              {/* Attachment Preview Chips */}
+              {attachments.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '4px' }}>
+                  {attachments.map((att, aIdx) => (
+                    <div
+                      key={`att_${aIdx}`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 8px',
+                        borderRadius: '8px',
+                        background: att.is_image ? 'rgba(56, 189, 248, 0.18)' : 'rgba(167, 139, 250, 0.18)',
+                        border: att.is_image ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(167, 139, 250, 0.4)',
+                        fontSize: '0.72rem',
+                        color: att.is_image ? '#38bdf8' : '#c4b5fd'
+                      }}
+                    >
+                      {att.is_image ? (
+                        <img src={att.data_url} alt={att.filename} style={{ width: '20px', height: '20px', objectFit: 'cover', borderRadius: '4px' }} />
+                      ) : (
+                        <FileText style={{ width: '14px', height: '14px', flexShrink: 0 }} />
+                      )}
+                      <span style={{ fontWeight: 600, maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {att.filename}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAttachment(aIdx)}
+                        title="Remove attachment"
+                        style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0 2px' }}
+                      >
+                        <X style={{ width: '12px', height: '12px' }} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Top Textarea Input Area (Auto-expanding up to 200px max height) */}
               <textarea
                 ref={textareaRef}
                 value={currentInputText}
                 onChange={(e) => handleInputChange(e.target.value)}
+                onPaste={(e) => {
+                  if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+                    e.preventDefault();
+                    handleFileUpload(e.clipboardData.files);
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     handleSendPrompt(currentInputText);
                   }
                 }}
-                placeholder="Ask Yuki anything, run code, or search session history (Shift+Enter for line break)..."
+                placeholder={isDragOver ? "Drop files here to attach..." : "Ask Yuki anything, run code, or attach files/images (Shift+Enter for line break)..."}
                 style={{
                   width: '100%',
                   minHeight: '38px',
@@ -2301,6 +2413,31 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
               }}>
                 {/* Left Side: Prompt Module Toggles */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  {/* Paperclip File / Image Upload Button */}
+                  <button
+                    type="button"
+                    onClick={() => attachmentInputRef.current?.click()}
+                    disabled={isUploadingAttachment}
+                    title="Attach files or images (or drag & drop / Ctrl+V paste)"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '3px 9px',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(56, 189, 248, 0.4)',
+                      background: isUploadingAttachment ? 'rgba(56, 189, 248, 0.25)' : 'rgba(56, 189, 248, 0.12)',
+                      color: '#38bdf8',
+                      cursor: 'pointer',
+                      fontSize: '0.70rem',
+                      fontWeight: 600,
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <Paperclip style={{ width: '12px', height: '12px' }} />
+                    <span>{isUploadingAttachment ? 'Uploading...' : 'Attach'}</span>
+                  </button>
+
                   {!isCodingMode && (
                     <>
                       <button

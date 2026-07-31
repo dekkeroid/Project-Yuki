@@ -1932,6 +1932,9 @@ const App = () => {
       if (sttTimeMs !== null) {
         payload.stt_time_ms = sttTimeMs;
       }
+      if (attachmentsList && attachmentsList.length > 0) {
+        payload.attachments = attachmentsList;
+      }
       socketRef.current.send(JSON.stringify(payload));
     } else {
       console.log(`WebSocket offline, cannot send message. ReadyState: ${socketRef.current ? socketRef.current.readyState : 'null'}`);
@@ -1943,6 +1946,56 @@ const App = () => {
       setTtsStreamActive(false);
       updateListeningState();
     }
+  };
+
+  // Main App File & Image Attachments State
+  const [mainAppAttachments, setMainAppAttachments] = useState([]);
+  const [isUploadingMainAppAttachment, setIsUploadingMainAppAttachment] = useState(false);
+
+  const handleUploadMainAppAttachments = async (files) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingMainAppAttachment(true);
+    try {
+      const newAtts = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const formData = new FormData();
+        formData.append('file', file);
+        const resp = await fetch(`${API_BASE}/api/chat/attachments/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.status === 'success' && data.attachment) {
+            newAtts.push(data.attachment);
+          }
+        }
+      }
+      if (newAtts.length > 0) {
+        setMainAppAttachments(prev => [...prev, ...newAtts]);
+      }
+    } catch (err) {
+      console.error("Main app attachment upload error:", err);
+    } finally {
+      setIsUploadingMainAppAttachment(false);
+    }
+  };
+
+  const handleRemoveMainAppAttachment = (idx) => {
+    setMainAppAttachments(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  // 5. Send text message
+  const handleSendMessage = (e, textOverride, fromSuggestion = false) => {
+    if (e) e.preventDefault();
+    const textToSubmit = textOverride !== undefined ? textOverride : inputText;
+    if (!textToSubmit.trim() && mainAppAttachments.length === 0) return;
+    const text = textToSubmit.trim() || "Analyze attached files/images.";
+    const currentAtts = [...mainAppAttachments];
+    setMainAppAttachments([]);
+    setInputText('');
+    sendMessageText(text, null, fromSuggestion, currentAtts);
   };
 
 const detectExpression = (text) => {
@@ -1987,15 +2040,7 @@ const detectExpression = (text) => {
   return 'neutral';
 };
 
-  // 5. Send text message
-  const handleSendMessage = (e, textOverride, fromSuggestion = false) => {
-    if (e) e.preventDefault();
-    const textToSubmit = textOverride !== undefined ? textOverride : inputText;
-    if (!textToSubmit.trim()) return;
-    const text = textToSubmit.trim();
-    setInputText('');
-    sendMessageText(text, null, fromSuggestion);
-  };
+
 
   // 6. Reset settings and history
   const handleReset = async () => {
@@ -4580,6 +4625,10 @@ const detectExpression = (text) => {
           muteVoice={muteVoice}
           setMuteVoice={handleToggleMute}
           disabledAnimations={disabledAnimations}
+          attachments={mainAppAttachments}
+          onUploadAttachments={handleUploadMainAppAttachments}
+          onRemoveAttachment={handleRemoveMainAppAttachment}
+          isUploadingAttachment={isUploadingMainAppAttachment}
         />
       </Suspense>
 

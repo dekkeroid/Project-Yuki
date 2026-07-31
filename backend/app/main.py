@@ -937,6 +937,7 @@ class SettingsUpdateRequest(BaseModel):
     llm_reviewer_enabled: Optional[bool] = None
     llm_reviewer_model: Optional[str] = None
     llm_summary_model: Optional[str] = None
+    llm_vision_model: Optional[str] = None
     persistent_chat_history: Optional[bool] = None
     basic_history_token_limit: Optional[int] = None
     basic_history_keep_turns: Optional[int] = None
@@ -1225,10 +1226,44 @@ async def update_settings(req: SettingsUpdateRequest):
         "tagger_paused": crawler.is_tagger_paused(),
     })
     
+    if req.llm_vision_model is not None:
+        memory_manager.update_setting("llm_vision_model", req.llm_vision_model.strip())
+
     return {
+        "status": "success",
         "message": "Settings updated successfully.",
         "settings": current_settings
     }
+
+
+@app.post("/api/chat/attachments/upload")
+async def upload_attachment_endpoint(file: UploadFile = File(...)):
+    """
+    Receives uploaded image or document file, saves it to workspace .yuki_attachments/,
+    and returns attachment metadata (save_path, data_url for images, text_content for docs).
+    """
+    try:
+        from app.utils.attachment_manager import process_uploaded_attachment
+        file_bytes = await file.read()
+        res = process_uploaded_attachment(file.filename, file_bytes)
+        return {"status": "success", "attachment": res}
+    except Exception as e:
+        return {"status": "error", "message": f"Upload failed: {str(e)}"}
+
+
+@app.post("/api/chat/vision/analyze")
+async def analyze_vision_endpoint(payload: dict = Body(...)):
+    """
+    Analyzes an image file on disk using vision models or fallback vision API.
+    """
+    image_path = payload.get("image_path", "")
+    prompt = payload.get("prompt", "Analyze and describe this image in detail.")
+    if not image_path or not os.path.exists(image_path):
+        return {"status": "error", "message": f"Image path '{image_path}' not found."}
+    
+    from app.tools.jarvis import jarvis_analyze_image
+    description = jarvis_analyze_image(image_path, prompt=prompt)
+    return {"status": "success", "description": description}
 
 
 class CustomEndpointRequest(BaseModel):
@@ -2531,7 +2566,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                         await broadcast_ws_event({"type": "error", "content": "Agent is still initializing, please try again in a moment."})
                                         return
                                     overrides = payload_data.get("overrides") or {}
-                                    gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides)
+                                    attachments = payload_data.get("attachments") or []
+                                    gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides, attachments=attachments)
                                 try:
                                     event = await gen.__anext__()
                                     while True:

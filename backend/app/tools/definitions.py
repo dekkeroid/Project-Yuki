@@ -445,6 +445,21 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
+                "name": "jarvis_analyze_image",
+                "description": "Scans and analyzes an image file on disk using a vision API or vision engine. Reads screenshots, UI mockups, diagrams, and image files.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "image_path": {"type": "string", "description": "Absolute file path to the target image file on disk."},
+                        "prompt": {"type": "string", "description": "Specific question or analysis prompt for the vision model."}
+                    },
+                    "required": ["image_path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "jarvis_run_python",
                 "description": "Execute Python code for calculations, math, stats, data processing (CSV/JSON/XML), file operations (batch rename, find duplicates, hash), text processing, format conversion, system interrogation, web API calls, encryption/hashing, code analysis/lint, and any custom logic. Full Python stdlib + numpy/pandas available. Returns stdout output.",
                 "parameters": {

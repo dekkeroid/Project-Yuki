@@ -568,12 +568,23 @@ class AgentExecutor:
         if updates:
             self.memory.update_mood_spectrum(updates)
 
+def is_vision_model(model_name: str) -> bool:
+    """Helper function to dynamically detect if a resolved model supports native vision API payloads."""
+    if not model_name:
+        return False
+    name_low = str(model_name).lower().strip()
+    vision_keywords = ("gemini", "gpt-4o", "gpt-4-turbo", "claude-3", "qwen-vl", "llava", "vision")
+    return any(kw in name_low for kw in vision_keywords)
+
+
     def _build_messages(
         self,
         user_message: str,
         chat_history: List[Dict[str, str]],
         backend: str,
         overrides: Optional[Dict[str, Any]] = None,
+        active_model: str = "",
+        attachments: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, str]]:
         """
         Builds the message list to send to the LLM.
@@ -690,11 +701,45 @@ class AgentExecutor:
                         "content": content
                     })
 
+        user_content = user_message
+        is_native_vision = is_vision_model(active_model)
+
+        if attachments:
+            text_attach_snippets = []
+            image_attach_snippets = []
+            image_content_parts = []
+
+            for att in attachments:
+                fname = att.get("filename", "file")
+                spath = att.get("save_path", "")
+                if att.get("is_text") and att.get("text_content"):
+                    text_attach_snippets.append(f"\n[Attached Document/Code File: {fname} ({spath})]\n```\n{att['text_content']}\n```")
+                elif att.get("is_image"):
+                    if is_native_vision and att.get("data_url"):
+                        image_content_parts.append({"type": "image_url", "image_url": {"url": att["data_url"]}})
+                    else:
+                        image_attach_snippets.append(f"\n[Attached Image File: {fname} ({spath}). Call tool 'jarvis_analyze_image' with image_path='{spath}' to inspect visual content if needed.]")
+
+            if text_attach_snippets:
+                user_content += "\n".join(text_attach_snippets)
+            if image_attach_snippets:
+                user_content += "\n".join(image_attach_snippets)
+
+            if is_native_vision and image_content_parts:
+                user_msg_obj = {
+                    "role": "user",
+                    "content": [{"type": "text", "text": user_content}] + image_content_parts
+                }
+            else:
+                user_msg_obj = {"role": "user", "content": user_content}
+        else:
+            user_msg_obj = {"role": "user", "content": user_content}
+
         final_messages = [system_msg]
         if recap_msg:
             final_messages.append(recap_msg)
         final_messages.extend(sanitized_history)
-        final_messages.append({"role": "user", "content": user_message})
+        final_messages.append(user_msg_obj)
 
         return final_messages
 
@@ -1152,7 +1197,7 @@ class AgentExecutor:
     #  Streaming methods                                                 #
     # ------------------------------------------------------------------ #
 
-    async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]], intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None) -> list:
+    async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]], intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None, active_model: str = "") -> list:
         """Return tool schemas from MCP discovery, with local-schema fallback."""
         overrides = overrides or {}
         effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
@@ -1165,6 +1210,10 @@ class AgentExecutor:
 
         filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic)
 
+        # Omit jarvis_analyze_image for native vision models to prevent redundant tool execution
+        if is_vision_model(active_model):
+            filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") != "jarvis_analyze_image"]
+
         # Filter tool definition list based on per-turn coding_mode or effective_tool_mode override
         if overrides.get("coding_mode"):
             coding_allowed = {
@@ -1173,14 +1222,16 @@ class AgentExecutor:
                 "jarvis_list_dir_tree", "jarvis_git_status", "find_files_by_glob",
                 "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
                 "jarvis_send_stdin", "read_and_review_file", "search_files",
-                "read_file_content", "run_terminal_command", "run_python_script"
+                "read_file_content", "run_terminal_command", "run_python_script",
+                "jarvis_analyze_image"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in coding_allowed]
         elif effective_tool_mode == "basic":
             basic_allowed = {
                 "web_search", "read_file_content", "search_files", "list_directory",
                 "launch_app", "open_or_play_file", "set_system_volume", "manage_time",
-                "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script"
+                "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script",
+                "jarvis_analyze_image"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in basic_allowed]
 
@@ -1200,7 +1251,7 @@ class AgentExecutor:
         llm_backend = get_backend()
         tools = None
         if use_tools:
-            tools = await self._get_tool_definitions_for_messages(messages, intent_tool_hint=intent_tool_hint, overrides=overrides)
+            tools = await self._get_tool_definitions_for_messages(messages, intent_tool_hint=intent_tool_hint, overrides=overrides, active_model=model)
 
         payload = llm_backend.build_payload(
             model=model,
@@ -1704,7 +1755,7 @@ class AgentExecutor:
             compiled_calls = [accumulated_tool_calls[idx] for idx in sorted_indices]
             yield "tool_calls", compiled_calls, last_label
 
-    async def execute_chat_turn_stream(self, user_message: str, chat_history: List[Dict[str, str]], overrides: Optional[Dict[str, Any]] = None):
+    async def execute_chat_turn_stream(self, user_message: str, chat_history: List[Dict[str, str]], overrides: Optional[Dict[str, Any]] = None, attachments: Optional[List[Dict[str, Any]]] = None):
         """
         Executes a chat turn in a streaming ReAct loop. Supports per-turn overrides from Chat Window.
         """
@@ -1850,7 +1901,8 @@ class AgentExecutor:
             set_active_workspace_directory(active_ws_dir)
 
         try:
-            current_messages = self._build_messages(user_message, chat_history, resolved_backend, overrides=overrides)
+            tb, tm = self._get_backend_and_model_for_task(resolved_backend, overrides=overrides)
+            current_messages = self._build_messages(user_message, chat_history, resolved_backend, overrides=overrides, active_model=tm, attachments=attachments)
         except Exception as e:
             import traceback
             traceback.print_exc()
