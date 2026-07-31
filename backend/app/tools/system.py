@@ -665,6 +665,11 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
     Runs a shell command asynchronously with real-time output capture, line-by-line streaming,
     stdin input support, non-interactive environment variables, and ExecutionPolicy Bypass.
     """
+    cmd_lower = command.lower().strip()
+    banned_cmds = ("npm run dev", "npm dev", "yarn dev", "pnpm dev", "bun dev")
+    if any(banned in cmd_lower for banned in banned_cmds):
+        return "Security / Execution Error: Executing development servers ('npm run dev') by AI is strictly prohibited by security policy. Project files and builds were updated. Please start dev servers manually in your terminal if needed."
+
     import time, os, threading, queue
     global _ACTIVE_PROCESSES
     
