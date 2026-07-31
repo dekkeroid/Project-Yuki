@@ -128,10 +128,10 @@ class MemoryManager:
                 raw_key = data["settings"].get("llm_api_key", config.LLM_API_KEY)
                 simple_key = data["settings"].get("llm_simple_api_key", config.LLM_SIMPLE_API_KEY)
                 coder_key = data["settings"].get("llm_coder_api_key", getattr(config, "LLM_CODER_API_KEY", ""))
-                from app.utils.security import decrypt_api_key, encrypt_api_key
-                config.LLM_API_KEY = decrypt_api_key(raw_key) if raw_key else ""
-                config.LLM_SIMPLE_API_KEY = decrypt_api_key(simple_key) if simple_key else ""
-                config.LLM_CODER_API_KEY = decrypt_api_key(coder_key) if coder_key else ""
+                from app.utils.security import decrypt_api_key
+                config.LLM_API_KEY = decrypt_api_key(raw_key) if (raw_key and ("enc_v1:" in str(raw_key) or "gAAAA" in str(raw_key))) else (raw_key or "")
+                config.LLM_SIMPLE_API_KEY = decrypt_api_key(simple_key) if (simple_key and ("enc_v1:" in str(simple_key) or "gAAAA" in str(simple_key))) else (simple_key or "")
+                config.LLM_CODER_API_KEY = decrypt_api_key(coder_key) if (coder_key and ("enc_v1:" in str(coder_key) or "gAAAA" in str(coder_key))) else (coder_key or "")
                 
                 return data
         except Exception as e:
@@ -335,4 +335,123 @@ class MemoryManager:
         self.profile["mood_spectrum"] = dict(DEFAULT_MOOD_SPECTRUM)
         self._save_profile()
         return self.profile["mood_spectrum"]
+
+    def export_persona_data(self) -> dict:
+        import datetime
+        return {
+            "export_type": "persona",
+            "version": "1.0",
+            "exported_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "app": "Project Yuki",
+            "persona": {
+                "character_name": self.profile.get("settings", {}).get("character_name", config.CHARACTER_NAME),
+                "character_persona": self.profile.get("settings", {}).get("character_persona", config.CHARACTER_PERSONA),
+                "tts_voice": self.profile.get("settings", {}).get("tts_voice", config.TTS_VOICE)
+            },
+            "user_profile": {
+                "user_name": self.profile.get("user_name", "Master"),
+                "user_interests": self.profile.get("user_interests", []),
+                "user_hobbies": self.profile.get("user_hobbies", []),
+                "user_likes": self.profile.get("user_likes", []),
+                "user_dislikes": self.profile.get("user_dislikes", []),
+                "custom_facts": self.profile.get("custom_facts", {}),
+                "mood_spectrum": self.get_mood_spectrum(),
+                "interaction_count": self.profile.get("interaction_count", 0)
+            }
+        }
+
+    def import_persona_data(self, data: dict):
+        if not isinstance(data, dict):
+            raise ValueError("Invalid persona JSON payload")
+        
+        persona = data.get("persona", {})
+        user_prof = data.get("user_profile", {})
+
+        # If data is flat or structured
+        char_name = persona.get("character_name") or data.get("character_name")
+        char_persona = persona.get("character_persona") or data.get("character_persona")
+        tts_voice = persona.get("tts_voice") or data.get("tts_voice")
+
+        if char_name:
+            self.profile["settings"]["character_name"] = str(char_name).strip()
+            config.CHARACTER_NAME = str(char_name).strip()
+        if char_persona:
+            self.profile["settings"]["character_persona"] = str(char_persona).strip()
+            config.CHARACTER_PERSONA = str(char_persona).strip()
+        if tts_voice:
+            self.profile["settings"]["tts_voice"] = str(tts_voice).strip()
+            config.TTS_VOICE = str(tts_voice).strip()
+
+        if "user_name" in user_prof:
+            self.profile["user_name"] = str(user_prof["user_name"])
+        elif "user_name" in data:
+            self.profile["user_name"] = str(data["user_name"])
+
+        for field in ["user_interests", "user_hobbies", "user_likes", "user_dislikes"]:
+            val = user_prof.get(field, data.get(field))
+            if isinstance(val, list):
+                self.profile[field] = val
+
+        custom_facts = user_prof.get("custom_facts", data.get("custom_facts"))
+        if isinstance(custom_facts, dict):
+            self.profile["custom_facts"] = custom_facts
+
+        mood = user_prof.get("mood_spectrum", data.get("mood_spectrum"))
+        if isinstance(mood, dict):
+            self.update_mood_spectrum(mood)
+
+        interaction_count = user_prof.get("interaction_count", data.get("interaction_count"))
+        if isinstance(interaction_count, int):
+            self.profile["interaction_count"] = interaction_count
+
+        self._save_profile()
+        return self.profile
+
+    def export_settings_data(self) -> dict:
+        import datetime
+        import copy
+        from app.utils.security import decrypt_api_key
+
+        settings_copy = copy.deepcopy(self.profile.get("settings", {}))
+        
+        # Decrypt API keys for export so they can be restored on another machine
+        raw_key = settings_copy.get("llm_api_key", "")
+        if raw_key:
+            settings_copy["llm_api_key"] = decrypt_api_key(raw_key) if raw_key.startswith("enc_v1:") else raw_key
+            
+        simple_key = settings_copy.get("llm_simple_api_key", "")
+        if simple_key:
+            settings_copy["llm_simple_api_key"] = decrypt_api_key(simple_key) if simple_key.startswith("enc_v1:") else simple_key
+
+        return {
+            "export_type": "settings",
+            "version": "1.0",
+            "exported_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "app": "Project Yuki",
+            "settings": settings_copy
+        }
+
+    def import_settings_data(self, data: dict):
+        if not isinstance(data, dict):
+            raise ValueError("Invalid settings JSON payload")
+
+        imported_settings = data.get("settings", data)
+        if not isinstance(imported_settings, dict):
+            raise ValueError("Invalid settings structure in payload")
+
+        from app.utils.security import encrypt_api_key, decrypt_api_key
+
+        # Update settings object
+        for k, v in imported_settings.items():
+            if k in ["llm_api_key", "llm_simple_api_key"]:
+                decrypted = decrypt_api_key(v) if isinstance(v, str) and v.startswith("enc_v1:") else v
+                self.profile["settings"][k] = encrypt_api_key(decrypted) if decrypted else ""
+            else:
+                self.profile["settings"][k] = v
+
+        self._save_profile()
+        # Re-apply all settings to runtime config
+        self.profile = self._load_profile()
+        return self.profile["settings"]
+
 

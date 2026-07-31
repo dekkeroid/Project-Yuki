@@ -448,7 +448,27 @@ class OpenAICompatibleBackend(LLMBackend):
         raw_key = self._api_key_override or getattr(config, "LLM_CODER_API_KEY", None) or config.LLM_API_KEY or ""
         if not raw_key:
             return []
-        keys = [k.strip() for k in re.split(r'[,;\s]+', str(raw_key)) if k.strip()]
+        
+        from app.utils.security import decrypt_api_key
+        raw_str = str(raw_key).strip()
+
+        # 1. If key is encrypted (contains enc_v1: or gAAAA), decrypt it first
+        if "enc_v1:" in raw_str or "gAAAA" in raw_str:
+            raw_str = decrypt_api_key(raw_str)
+
+        # 2. If key is a masked preview (contains ... or •••), ignore masked override and fallback to config
+        if ("..." in raw_str or "•••" in raw_str) and not ("enc_v1:" in raw_str or "gAAAA" in raw_str):
+            fallback = getattr(config, "LLM_CODER_API_KEY", "") or config.LLM_API_KEY or ""
+            fallback_str = str(fallback).strip()
+            if "enc_v1:" in fallback_str or "gAAAA" in fallback_str:
+                raw_str = decrypt_api_key(fallback_str)
+            else:
+                raw_str = fallback_str
+
+        keys = [
+            k.strip() for k in re.split(r'[,;\s]+', str(raw_str))
+            if k.strip() and "..." not in k and "•••" not in k and not k.startswith("enc_v1:")
+        ]
         return keys
 
     @classmethod
