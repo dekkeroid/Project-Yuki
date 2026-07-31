@@ -416,14 +416,14 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "find_files_by_glob",
-                "description": "Find files matching a glob pattern (e.g. 'src/**/*.jsx', '**/*.py', 'package*.json') starting from root_dir. Excludes node_modules, .git, dist, build, venv.",
+                "description": "Find files matching a glob pattern (e.g. 'src/**/*.jsx', '**/*.py', 'package*.json') inside target search_dir. Excludes node_modules, .git, dist, build, venv.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "pattern": {"type": "string", "description": "Glob pattern string (e.g. 'src/**/*.jsx', '**/*.py', 'package*.json')."},
-                        "root_dir": {"type": "string", "description": "Optional root directory path to search in. Defaults automatically to the active project workspace directory."}
+                        "search_dir": {"type": "string", "description": "Absolute directory path to search in."}
                     },
-                    "required": ["pattern"]
+                    "required": ["pattern", "search_dir"]
                 }
             }
         },

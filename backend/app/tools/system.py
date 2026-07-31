@@ -558,11 +558,10 @@ def set_active_workspace_directory(dir_path: str):
 def get_active_workspace_directory() -> str:
     return _ACTIVE_WORKSPACE_DIR
 
-def find_files_by_glob(pattern: str, root_dir: str = None, max_results: int = 150) -> str:
+def find_files_by_glob(pattern: str, search_dir: str = None, root_dir: str = None, max_results: int = 150) -> str:
     """
-    Finds files matching a glob pattern (e.g. 'src/**/*.jsx', '**/*.py') starting from root_dir.
+    Finds files matching a glob pattern (e.g. 'src/**/*.jsx', '**/*.py') inside search_dir.
     Automatically excludes node_modules, .git, dist, build, venv directories.
-    Defaults to the active project workspace directory if root_dir is omitted.
     """
     import os, glob, pathlib
     
@@ -570,21 +569,22 @@ def find_files_by_glob(pattern: str, root_dir: str = None, max_results: int = 15
     if not clean_pattern:
         return "Error: Glob pattern cannot be empty."
 
-    raw_dir = str(root_dir).strip('"\'') if root_dir else None
+    target_dir = search_dir or root_dir
+    raw_dir = str(target_dir).strip('"\'') if target_dir else None
     if raw_dir and raw_dir != "None":
-        search_dir = os.path.abspath(raw_dir)
+        final_dir = os.path.abspath(raw_dir)
     else:
         active_ws = get_active_workspace_directory()
-        search_dir = active_ws if active_ws else os.getcwd()
+        final_dir = active_ws if active_ws else os.getcwd()
 
-    if not os.path.exists(search_dir):
-        return f"Error: Search directory '{search_dir}' does not exist."
+    if not os.path.exists(final_dir):
+        return f"Error: Search directory '{final_dir}' does not exist."
 
     ignored = {"node_modules", ".git", "dist", "build", "venv", ".venv", "__pycache__", ".next", ".cache", "coverage"}
 
     matches = []
     try:
-        path_obj = pathlib.Path(search_dir)
+        path_obj = pathlib.Path(final_dir)
         glob_pat = clean_pattern.lstrip('/\\')
         
         for p in path_obj.glob(glob_pat):
@@ -592,17 +592,17 @@ def find_files_by_glob(pattern: str, root_dir: str = None, max_results: int = 15
             if parts.intersection(ignored):
                 continue
             if p.is_file():
-                rel_path = os.path.relpath(str(p), search_dir)
+                rel_path = os.path.relpath(str(p), final_dir)
                 matches.append(rel_path.replace('\\', '/'))
                 if len(matches) >= max_results:
                     break
 
         if not matches:
-            return f"No files matching pattern '{clean_pattern}' found in {search_dir}."
+            return f"No files matching pattern '{clean_pattern}' found in {final_dir}."
 
         result_str = "\n".join(f"- {m}" for m in matches)
         count_suffix = f" (showing first {max_results})" if len(matches) >= max_results else ""
-        return f"=== Glob Search Results for '{clean_pattern}' in {search_dir} ({len(matches)} files found{count_suffix}) ===\n{result_str}"
+        return f"=== Glob Search Results for '{clean_pattern}' in {final_dir} ({len(matches)} files found{count_suffix}) ===\n{result_str}"
     except Exception as e:
         return f"Glob Search Error: {str(e)}"
 
