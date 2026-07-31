@@ -47,6 +47,42 @@ def is_vision_model(model_name: str) -> bool:
     return any(kw in name_low for kw in vision_keywords)
 
 
+def _sanitize_attachments_for_history(attachments) -> list:
+    """Strip heavy payloads (base64 data_url, text_content) and keep only metadata for persistence."""
+    if not attachments:
+        return []
+    out = []
+    for att in attachments:
+        if not isinstance(att, dict):
+            continue
+        out.append({
+            "filename": att.get("filename", ""),
+            "save_path": att.get("save_path", ""),
+            "is_image": bool(att.get("is_image", False)),
+            "is_text": bool(att.get("is_text", False)),
+            "file_size": att.get("file_size", 0)
+        })
+    return out
+
+
+def _message_text(content) -> str:
+    """Convert message content (possibly a multimodal list) into plain text for intent/tool logic."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") == "text":
+                    parts.append(str(part.get("text", "")))
+                elif isinstance(part.get("content"), str):
+                    parts.append(part["content"])
+            elif isinstance(part, str):
+                parts.append(part)
+        return " ".join(p for p in parts if p).strip()
+    return str(content or "")
+
+
 def _format_short_circuit_result(tool_name: str, tool_result: str, tool_args: dict) -> str:
     if not isinstance(tool_result, str):
         return str(tool_result)
@@ -125,7 +161,7 @@ class AgentExecutor:
             jarvis_query_file_db, jarvis_read_file, jarvis_create_or_edit_file,
             jarvis_replace_file_content, jarvis_list_dir_tree, jarvis_git_status,
             jarvis_system_diagnostics, jarvis_network_status, jarvis_web_scrape,
-            jarvis_window_control, jarvis_run_terminal
+            jarvis_window_control, jarvis_run_terminal, jarvis_analyze_image
         )
         from app.tools.system import send_process_stdin, find_files_by_glob
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
@@ -286,6 +322,10 @@ class AgentExecutor:
             "jarvis_send_stdin": lambda **kwargs: send_process_stdin(
                 input_text=kwargs.get("input_text") or "",
                 pid=kwargs.get("pid")
+            ),
+            "jarvis_analyze_image": lambda **kwargs: jarvis_analyze_image(
+                kwargs.get("image_path") or "",
+                prompt=kwargs.get("prompt") or "Analyze and describe this image in detail."
             ),
             "find_files_by_glob": lambda **kwargs: find_files_by_glob(
                 pattern=kwargs.get("pattern") or "*",
@@ -533,7 +573,7 @@ class AgentExecutor:
         if not user_message:
             return
             
-        msg_lower = user_message.lower()
+        msg_lower = _message_text(user_message).lower()
         mood = self.memory.get_mood_spectrum()
         updates = {}
         
@@ -816,7 +856,7 @@ class AgentExecutor:
         )
 
         # Fast short-circuit: if user is asking Yuki questions about herself, route to CHAT
-        msg_lower = user_message.lower().strip()
+        msg_lower = _message_text(user_message).strip().lower()
         yuki_q_patterns = [
             "what do you", "what do u", "what u", "what you", "do you", "do u",
             "what is your", "what's your", "who are you", "who r u", "tell me about yourself", "about you"
@@ -1027,27 +1067,19 @@ class AgentExecutor:
             use_tools=use_tools,
             tools=tools,
         )
-        max_attempts = len(backend.get_api_key_pool()) if hasattr(backend, "get_api_key_pool") and backend.get_api_key_pool() else 1
-        for attempt in range(max(1, max_attempts)):
-            response = requests.post(
-                url,
-                headers=backend.build_headers(),
-                json=payload,
-                timeout=120,
-            )
-            if response.status_code == 429 or "RESOURCE_EXHAUSTED" in response.text or "quota" in response.text.lower():
-                if hasattr(backend, "rotate_on_rate_limit"):
-                    backend.rotate_on_rate_limit()
-                    print(f"[KeyPool] Retrying request with backup key (attempt {attempt+2}/{max_attempts})...")
-                    continue
-            break
+        response = requests.post(
+            url,
+            headers=backend.build_headers(),
+            json=payload,
+            timeout=120,
+        )
+        if response.status_code == 429 or "RESOURCE_EXHAUSTED" in response.text or "quota" in response.text.lower():
+            print(f"[KeyPool] ⚠️ 429 Rate Limit/Quota Exceeded (non-coder mode, no key rotation).")
 
         response.raise_for_status()
         res_json = response.json()
         if "error" in res_json:
             err_msg = str(res_json.get("error", {}).get("message", ""))
-            if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg) and hasattr(backend, "rotate_on_rate_limit"):
-                backend.rotate_on_rate_limit()
             return f"Error from brain server: {err_msg}", None, self._get_model_label(model_name)
 
         choices = res_json.get("choices", [])
@@ -1200,7 +1232,7 @@ class AgentExecutor:
         user_message = ""
         for msg in reversed(messages):
             if msg.get("role") == "user":
-                user_message = msg.get("content", "")
+                user_message = _message_text(msg.get("content", ""))
                 break
 
         filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic)
@@ -1226,6 +1258,7 @@ class AgentExecutor:
                 "web_search", "read_file_content", "search_files", "list_directory",
                 "launch_app", "open_or_play_file", "set_system_volume", "manage_time",
                 "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script",
+                "jarvis_query_file_db", "jarvis_open_or_play_file",
                 "jarvis_analyze_image"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in basic_allowed]
@@ -1242,8 +1275,8 @@ class AgentExecutor:
         print(f"[Tools] Sending {len(filtered_tools)} {source} tools to LLM (mode: {effective_tool_mode}): {', '.join(tool_names)}")
         return filtered_tools
 
-    async def _stream_request(self, session: aiohttp.ClientSession, url: str, model: str, messages: List[Dict[str, str]], headers: dict = None, temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None):
-        llm_backend = get_backend()
+    async def _stream_request(self, session: aiohttp.ClientSession, url: str, model: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None, backend=None, allow_key_rotation: bool = False):
+        llm_backend = backend or get_backend()
         tools = None
         if use_tools:
             tools = await self._get_tool_definitions_for_messages(messages, intent_tool_hint=intent_tool_hint, overrides=overrides, active_model=model)
@@ -1257,7 +1290,7 @@ class AgentExecutor:
             stream=True,
         )
             
-        max_attempts = len(llm_backend.get_api_key_pool()) if hasattr(llm_backend, "get_api_key_pool") and llm_backend.get_api_key_pool() else 1
+        max_attempts = len(llm_backend.get_api_key_pool()) if allow_key_rotation and hasattr(llm_backend, "get_api_key_pool") and llm_backend.get_api_key_pool() else 1
         for attempt in range(max(1, max_attempts)):
             headers = llm_backend.build_headers()
             async with session.post(url, json=payload, headers=headers, timeout=120) as resp:
@@ -1270,7 +1303,7 @@ class AgentExecutor:
                         err_text_preview = err_text[:500] if err_text else "(empty body)"
                         err_msg = f"HTTP {resp.status}: {err_text_preview}"
                     
-                    if (resp.status == 429 or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower()) and hasattr(llm_backend, "rotate_on_rate_limit") and attempt < max_attempts - 1:
+                    if allow_key_rotation and (resp.status == 429 or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower()) and hasattr(llm_backend, "rotate_on_rate_limit") and attempt < max_attempts - 1:
                         llm_backend.rotate_on_rate_limit()
                         print(f"[KeyPool][Stream] ⚠️ 429 Rate Limit/Quota Exceeded! Rotating key and retrying (attempt {attempt+2}/{max_attempts})...")
                         continue
@@ -1303,14 +1336,13 @@ class AgentExecutor:
                 break
 
 
-    async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", backend=None, overrides: Optional[Dict[str, Any]] = None):
+    async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", backend=None, overrides: Optional[Dict[str, Any]] = None, allow_key_rotation: bool = False):
         if backend is None:
             llm_backend = get_backend()
         else:
             llm_backend = backend
         url = llm_backend.get_chat_url()
-        headers = llm_backend.build_headers()
-        async for chunk in self._stream_request(session, url, model_name, messages, headers=headers, temperature=temperature, use_tools=use_tools, intent_tool_hint=intent_tool_hint, overrides=overrides):
+        async for chunk in self._stream_request(session, url, model_name, messages, temperature=temperature, use_tools=use_tools, intent_tool_hint=intent_tool_hint, overrides=overrides, backend=llm_backend, allow_key_rotation=allow_key_rotation):
             yield chunk, self._get_model_label(model_name)
 
     async def _query_llm_stream(
@@ -1337,7 +1369,7 @@ class AgentExecutor:
                 task = "coder"
                 tb, tm = self._get_backend_and_model_for_task("coder", overrides=overrides)
                 print(f"[Router][Coder Mode] Task=coder -> streaming {tm} via {tb.name} (temp=0.2)")
-                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides):
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides, allow_key_rotation=True):
                     yield chunk, label
                 return
             except Exception as e:
@@ -1813,7 +1845,7 @@ class AgentExecutor:
                     yield "tool_result", tool_result, "resolver"
                     yield "token", tool_result, "resolver"
                     updated_history = list(chat_history) + [
-                        {"role": "user",      "content": user_message},
+                        {"role": "user",      "content": user_message, "attachments": _sanitize_attachments_for_history(attachments)},
                         {"role": "assistant", "content": tool_result},
                     ]
                     yield "final_history", updated_history, "resolver"
@@ -1833,7 +1865,7 @@ class AgentExecutor:
                 final_response = announcement.strip() + " " + display_result
                 
             updated_history = list(chat_history) + [
-                {"role": "user",      "content": user_message},
+                {"role": "user",      "content": user_message, "attachments": _sanitize_attachments_for_history(attachments)},
                 {"role": "assistant", "content": final_response},
             ]
             yield "final_history", updated_history, "resolver"
@@ -1910,7 +1942,11 @@ class AgentExecutor:
             troubleshoot_attempts = 0
 
             final_history = list(chat_history)
-            final_history.append({"role": "user", "content": user_message})
+            final_history.append({
+                "role": "user",
+                "content": user_message,
+                "attachments": _sanitize_attachments_for_history(attachments)
+            })
 
             accumulated_response_total = []
             backend_used = "local"

@@ -438,8 +438,8 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
     base_prompt = "\n\n".join(sections)
     parts = [base_prompt]
 
-    if memory_summary and overrides.get("prompt_memory", True):
-        parts.append(f"--- USER CONTEXT ---\n{memory_summary}\n-------------------")
+    # NOTE: The personal memory card (interests/hobbies/likes/custom facts) is
+    # intentionally NOT injected in coder mode — the coding agent doesn't need it.
 
     session_facts = overrides.get("session_facts") or []
     session_directories = overrides.get("session_directories") or []

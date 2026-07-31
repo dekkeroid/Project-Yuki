@@ -182,3 +182,59 @@ def get_gpu_memory_usage() -> Dict[str, Any]:
         return {"gpus": [], "top5": {}, "error": "PowerShell timed out (10s)"}
     except Exception as e:
         return {"gpus": [], "top5": {}, "error": f"GPU monitor error: {type(e).__name__}"}
+
+
+def get_dedicated_gpu_vram_percent() -> Optional[float]:
+    """
+    Returns used/total VRAM percentage for the dedicated (non-integrated) NVIDIA GPU via NVML.
+    Picks the NVIDIA device with the largest total memory. Returns None if unavailable.
+    """
+    try:
+        import ctypes
+        nvml = ctypes.WinDLL("nvml.dll")
+
+        nvml.nvmlInit.restype = ctypes.c_int
+        nvml.nvmlDeviceGetCount.restype = ctypes.c_int
+        nvml.nvmlDeviceGetHandleByIndex.restype = ctypes.c_int
+        nvml.nvmlDeviceGetMemoryInfo.restype = ctypes.c_int
+        nvml.nvmlShutdown.restype = ctypes.c_int
+
+        if nvml.nvmlInit() != 0:
+            return None
+
+        try:
+            count = ctypes.c_uint(0)
+            if nvml.nvmlDeviceGetCount(ctypes.byref(count)) != 0:
+                return None
+
+            class MemoryInfo(ctypes.Structure):
+                _fields_ = [
+                    ("total", ctypes.c_ulonglong),
+                    ("free", ctypes.c_ulonglong),
+                    ("used", ctypes.c_ulonglong),
+                ]
+
+            best_used = 0
+            best_total = 0
+            for i in range(count.value):
+                handle = ctypes.c_void_p()
+                if nvml.nvmlDeviceGetHandleByIndex(i, ctypes.byref(handle)) != 0:
+                    continue
+                info = MemoryInfo()
+                if nvml.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(info)) != 0:
+                    continue
+                # Dedicated GPU = the one with the most total VRAM (beats any iGPU)
+                if info.total > best_total:
+                    best_total = info.total
+                    best_used = info.used
+
+            if best_total <= 0:
+                return None
+            return round((best_used / best_total) * 100.0, 1)
+        finally:
+            try:
+                nvml.nvmlShutdown()
+            except Exception:
+                pass
+    except Exception:
+        return None

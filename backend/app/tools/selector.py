@@ -43,6 +43,8 @@ _ALWAYS_INCLUDED_JARVIS_TOOLS = {
     "jarvis_remember_user_fact",
     "jarvis_web_search",
     "jarvis_web_scrape",
+    "jarvis_launch_app",
+    "jarvis_query_file_db",
 }
 
 _ALWAYS_INCLUDED_BASIC_TOOLS = {
@@ -154,8 +156,10 @@ def select_relevant_tools(
     return always_tools + matched_tools
 
 
-def _tokens(text: str) -> set[str]:
-    return {token for token in _TOKEN_RE.findall((text or "").lower()) if token not in _STOPWORDS}
+def _tokens(text) -> set[str]:
+    if isinstance(text, list):
+        text = " ".join(str(p) for p in text)
+    return {token for token in _TOKEN_RE.findall(str(text or "").lower()) if token not in _STOPWORDS}
 
 
 def _expand_query_terms(tokens: set[str]) -> set[str]:

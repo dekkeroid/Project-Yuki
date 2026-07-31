@@ -43,6 +43,7 @@ backend/.venv/
 backend/profile.json
 backend/.yuki_confirmation_grants.json
 backend/.yuki_confirmation_grants.json.*
+backend/.yuki_attachments/*
 
 # Ignore local Kokoro AI model weights and audio binary matrices
 backend/app/voice/*.onnx

@@ -13,7 +13,22 @@ _current_compute_type = None
 _current_device = None
 
 _last_stt_request_time = 0.0
-STT_IDLE_TIMEOUT = 120.0  # 2 minutes
+STT_IDLE_TIMEOUT = 300.0  # 5 minutes
+
+_whisper_loading = False
+_whisper_using_gpu = False
+
+def set_whisper_loading(v: bool):
+    """Mark whether the Whisper model is currently being loaded (used to hold off memory optimization)."""
+    global _whisper_loading
+    _whisper_loading = bool(v)
+
+def is_whisper_loading() -> bool:
+    return _whisper_loading
+
+def is_whisper_on_gpu() -> bool:
+    """True if the currently loaded Whisper model is running on CUDA (dedicated GPU)."""
+    return _whisper_using_gpu and _whisper_instance is not None
 
 def update_last_stt_time():
     global _last_stt_request_time
@@ -22,31 +37,33 @@ def update_last_stt_time():
 def get_last_stt_time():
     return _last_stt_request_time
 
-def unload_whisper_if_idle():
-    global _whisper_instance, _current_model_size, _current_compute_type, _current_device
+def unload_whisper_if_idle(force: bool = False):
+    global _whisper_instance, _current_model_size, _current_compute_type, _current_device, _whisper_using_gpu
     if _whisper_instance is None:
         return
     idle_time = time.time() - _last_stt_request_time
-    if idle_time > STT_IDLE_TIMEOUT:
-        print(f"[STT] Whisper has been idle for {int(idle_time)}s. Unloading model to free RAM...")
+    if force or idle_time > STT_IDLE_TIMEOUT:
+        print(f"[STT] Whisper model unloaded ({'forced by memory pressure' if force else f'idle for {int(idle_time)}s'}).")
         _whisper_instance = None
         _current_model_size = None
         _current_compute_type = None
         _current_device = None
+        _whisper_using_gpu = False
         import gc
         gc.collect()
 
 def reset_whisper():
     """Clear the cached Whisper instance so the next call re-initializes with current config."""
-    global _whisper_instance, _current_model_size, _current_compute_type, _current_device
+    global _whisper_instance, _current_model_size, _current_compute_type, _current_device, _whisper_using_gpu
     _whisper_instance = None
     _current_model_size = None
     _current_compute_type = None
     _current_device = None
+    _whisper_using_gpu = False
     print("[STT] Whisper model cleared. Will re-initialize on next transcription request.")
 
 def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16") -> "WhisperModel":
-    global _whisper_instance, _current_model_size, _current_compute_type, _current_device
+    global _whisper_instance, _current_model_size, _current_compute_type, _current_device, _whisper_using_gpu
 
     from faster_whisper import WhisperModel
     device_pref = getattr(config, "STT_DEVICE", "auto").lower()
@@ -78,6 +95,7 @@ def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16"
         _current_model_size = model_size
         _current_compute_type = actual_compute
         _current_device = device_pref
+        _whisper_using_gpu = (actual_device == "cuda")
         update_last_stt_time()
         print(f"[STT] faster-whisper (CTranslate2) model '{model_size}' loaded successfully on {actual_device.upper()} ({actual_compute}).")
     except Exception as e:
@@ -90,6 +108,7 @@ def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16"
             _current_model_size = model_size
             _current_compute_type = "int8"
             _current_device = device_pref
+            _whisper_using_gpu = False
             update_last_stt_time()
             print(f"[STT] faster-whisper (CTranslate2) model '{model_size}' loaded successfully on CPU (int8).")
         except Exception as cpu_err:

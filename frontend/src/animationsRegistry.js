@@ -225,8 +225,8 @@ export const LLM_ANIMATION_MAP = {
 
 export const LLM_EMOTION_MAP = {
   neutral: 'neutral',
-  happy: 'happy',
-  joy: 'happy',
+  happy: 'relaxed',
+  joy: 'relaxed',
   excited: 'excited',
   sad: 'sad',
   angry: 'angry',

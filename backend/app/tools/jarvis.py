@@ -476,8 +476,15 @@ def jarvis_analyze_image(image_path: str, prompt: str = "Analyze and describe th
 
     try:
         from app import config
-        from app.memory.manager import memory_manager
-        vision_model = memory_manager.profile.get("settings", {}).get("llm_vision_model") or getattr(config, "LLM_VISION_MODEL", "gemini-3.6-flash") or "gemini-2.5-flash"
+        vision_model = ""
+        try:
+            from app.memory.local_mem import MemoryManager
+            vision_model = MemoryManager().profile.get("settings", {}).get("llm_vision_model") or ""
+        except Exception:
+            pass
+        vision_model = vision_model or getattr(config, "LLM_VISION_MODEL", "") or ""
+        if not vision_model:
+            vision_model = "gemini-3.6-flash"
         api_key = config.LLM_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
 
         import requests

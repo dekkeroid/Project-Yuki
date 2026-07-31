@@ -52,6 +52,7 @@ from app.agent.executor import AgentExecutor
 # Synchronization events for coordinated startup optimization
 llm_loaded_event = asyncio.Event()
 tts_warmed_up_event = asyncio.Event()
+whisper_warmed_up_event = asyncio.Event()
 
 # ---------------------------------------------------------------------------
 # Lifespan context manager (replaces deprecated @app.on_event)
@@ -196,11 +197,12 @@ async def _do_model_swap(backend, old_model: str, new_model: str):
 async def _run_memory_optimizer_bg():
     """Background task to periodically run garbage collection and optimize process memory."""
     print("[Startup] Memory optimizer background task started.")
-    # Wait for startup warmups to complete before starting the periodic loop
+    # Wait for startup warmups (incl. Whisper) to complete before starting the periodic loop
     try:
         await asyncio.gather(
             llm_loaded_event.wait(),
             tts_warmed_up_event.wait(),
+            whisper_warmed_up_event.wait(),
             return_exceptions=True
         )
     except Exception:
@@ -208,14 +210,44 @@ async def _run_memory_optimizer_bg():
     await asyncio.sleep(30)
     while True:
         try:
-            from app.voice.stt import unload_whisper_if_idle
-            unload_whisper_if_idle()
-            
+            # Only unload Whisper under real memory pressure, and only when running on the GPU:
+            # if the dedicated GPU VRAM exceeds 90%, force-unload Whisper to free VRAM.
+            try:
+                from app.voice.stt import is_whisper_on_gpu, unload_whisper_if_idle
+                if is_whisper_on_gpu():
+                    from app.gpu_monitor import get_dedicated_gpu_vram_percent
+                    vram_pct = get_dedicated_gpu_vram_percent()
+                    if vram_pct is not None and vram_pct > 90:
+                        print(f"[Memory] Dedicated GPU VRAM at {vram_pct:.1f}% - unloading Whisper to free VRAM.")
+                        unload_whisper_if_idle(force=True)
+            except Exception:
+                pass
+
             from app.memory.optimizer import optimize_all_processes
             optimize_all_processes()
         except Exception as e:
             print(f"[Memory] Error in background memory optimizer: {e}")
         await asyncio.sleep(300)
+
+
+async def _warmup_whisper():
+    """Background: preload the faster-whisper model so the first STT use is instant."""
+    try:
+        saved_model = memory_manager.profile.get("settings", {}).get("whisper_model")
+        active_model = saved_model or getattr(config, "WHISPER_MODEL", None) or "base"
+        active_compute = memory_manager.profile.get("settings", {}).get("whisper_compute_type", "int8_float16")
+        print(f"[Startup] Preloading faster-whisper model '{active_model}' ({active_compute})...")
+        from app.voice.stt import get_whisper_model, set_whisper_loading
+        set_whisper_loading(True)
+        try:
+            await asyncio.to_thread(get_whisper_model, active_model, active_compute)
+            print(f"[Startup] Whisper model '{active_model}' warm-started.")
+        finally:
+            set_whisper_loading(False)
+    except Exception as e:
+        print(f"[Startup] Whisper warm-up failed (non-fatal): {e}")
+    finally:
+        whisper_warmed_up_event.set()
 
 
 async def _coordinate_startup_optimization():
@@ -224,6 +256,7 @@ async def _coordinate_startup_optimization():
         await asyncio.gather(
             llm_loaded_event.wait(),
             tts_warmed_up_event.wait(),
+            whisper_warmed_up_event.wait(),
             return_exceptions=True
         )
         await asyncio.sleep(5)
@@ -299,6 +332,7 @@ async def lifespan(app: FastAPI):
         llm_loaded_event.set()
 
     asyncio.create_task(_warmup_tts())
+    asyncio.create_task(_warmup_whisper())
     asyncio.create_task(_coordinate_startup_optimization())
     asyncio.create_task(_start_crawler_bg())
     asyncio.create_task(_run_memory_optimizer_bg())
@@ -1251,6 +1285,32 @@ async def upload_attachment_endpoint(file: UploadFile = File(...)):
         return {"status": "error", "message": f"Upload failed: {str(e)}"}
 
 
+@app.get("/api/chat/attachments/file")
+def get_attachment_file(path: str = ""):
+    """
+    Serves a previously uploaded attachment file (images/docs) from a .yuki_attachments directory.
+    Path is validated to only allow files inside such directories for security.
+    """
+    import os
+    from pathlib import Path as PPath
+    from fastapi.responses import FileResponse
+
+    if not path:
+        return Response(status_code=400, content="Missing path parameter")
+
+    clean_path = os.path.abspath(path.strip().strip('"\''))
+    p = PPath(clean_path)
+    if not p.exists() or not p.is_file():
+        return Response(status_code=404, content="Attachment file not found")
+
+    # Security: only allow serving files that live inside a .yuki_attachments directory
+    parts = list(p.parts)
+    if ".yuki_attachments" not in parts:
+        return Response(status_code=403, content="Access denied: attachment must be inside a .yuki_attachments directory")
+
+    return FileResponse(clean_path, filename=p.name)
+
+
 @app.post("/api/chat/vision/analyze")
 async def analyze_vision_endpoint(payload: dict = Body(...)):
     """
@@ -2048,13 +2108,8 @@ def optimize_memory_endpoint():
     """
     Manually triggers process memory optimization.
     Called when the app is hidden or minimized to reclaim RAM immediately.
+    (Whisper model is intentionally NOT unloaded here to avoid cold-load delays on next STT use.)
     """
-    try:
-        from app.voice.stt import unload_whisper_if_idle
-        unload_whisper_if_idle()
-    except Exception:
-        pass
-        
     try:
         from app.memory.optimizer import optimize_all_processes
         optimize_all_processes(force=True)

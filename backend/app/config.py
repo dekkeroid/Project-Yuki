@@ -72,7 +72,7 @@ TOOL_TRANSPORT = os.environ.get("YUKI_TOOL_TRANSPORT", "local").strip().lower()
 MCP_FALLBACK_TO_LOCAL = os.environ.get("YUKI_MCP_FALLBACK_TO_LOCAL", "true").strip().lower() not in ("0", "false", "no", "off")
 # Tool selection: auto scores tool schemas like a local tool-search step; all disables filtering.
 TOOL_SELECTION_MODE = os.environ.get("YUKI_TOOL_SELECTION_MODE", "auto").strip().lower()
-TOOL_SELECTION_MAX_TOOLS = int(os.environ.get("YUKI_TOOL_SELECTION_MAX_TOOLS", "8"))
+TOOL_SELECTION_MAX_TOOLS = int(os.environ.get("YUKI_TOOL_SELECTION_MAX_TOOLS", "10"))
 TOOL_SELECTION_FALLBACK_THRESHOLD = float(os.environ.get("YUKI_TOOL_SELECTION_FALLBACK_THRESHOLD", "0.08"))
 # Backwards-compatible override from the first MCP implementation.
 MCP_SEND_ALL_TOOLS = os.environ.get("YUKI_MCP_SEND_ALL_TOOLS", "").strip().lower() in ("1", "true", "yes", "on")

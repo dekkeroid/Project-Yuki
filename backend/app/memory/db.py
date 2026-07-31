@@ -401,6 +401,11 @@ def init_db():
     );
     """)
 
+    # Migration: add attachments column to chat_messages if missing
+    chat_msg_cols = [col[1] for col in cursor.execute("PRAGMA table_info(chat_messages)").fetchall()]
+    if "attachments" not in chat_msg_cols:
+        cursor.execute("ALTER TABLE chat_messages ADD COLUMN attachments TEXT;")
+
     # Migration: add os_task_name column if it doesn't exist yet
     existing_cols = [row[1] for row in cursor.execute("PRAGMA table_info(reminders)").fetchall()]
     if "os_task_name" not in existing_cols:
@@ -917,11 +922,18 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
                 tool_name = m.get("name", "Tool")
                 c = f"[Previous Tool Result ({tool_name})]: {c}"
             if c:
-                msg_rows.append((session_id, r, c, now))
+                atts = m.get("attachments")
+                atts_json = None
+                if atts:
+                    try:
+                        atts_json = json.dumps(atts, ensure_ascii=False)
+                    except Exception:
+                        atts_json = None
+                msg_rows.append((session_id, r, c, atts_json, now))
 
         cursor.executemany("""
-        INSERT INTO chat_messages (session_id, role, content, timestamp)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO chat_messages (session_id, role, content, attachments, timestamp)
+        VALUES (?, ?, ?, ?, ?)
         """, msg_rows)
         
         conn.commit()
@@ -1012,8 +1024,8 @@ def get_session_messages(session_id: str, limit: Optional[int] = None) -> List[D
     try:
         if limit and isinstance(limit, int) and limit > 0:
             rows = conn.execute("""
-            SELECT role, content FROM (
-                SELECT id, role, content FROM chat_messages
+            SELECT role, content, attachments FROM (
+                SELECT id, role, content, attachments FROM chat_messages
                 WHERE session_id = ?
                 ORDER BY id DESC
                 LIMIT ?
@@ -1021,11 +1033,23 @@ def get_session_messages(session_id: str, limit: Optional[int] = None) -> List[D
             """, (session_id, limit)).fetchall()
         else:
             rows = conn.execute("""
-            SELECT role, content FROM chat_messages
+            SELECT role, content, attachments FROM chat_messages
             WHERE session_id = ?
             ORDER BY id ASC
             """, (session_id,)).fetchall()
-        return [{"role": r["role"], "content": r["content"]} for r in rows]
+        msgs = []
+        for r in rows:
+            msg = {"role": r["role"], "content": r["content"]}
+            atts = r["attachments"]
+            if atts:
+                try:
+                    parsed = json.loads(atts)
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        msg["attachments"] = parsed
+                except Exception:
+                    pass
+            msgs.append(msg)
+        return msgs
     except Exception as e:
         print(f"[DB] Error fetching messages for session '{session_id}': {e}")
         return []

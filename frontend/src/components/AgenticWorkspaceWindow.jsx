@@ -7,7 +7,7 @@ import {
   Settings, Globe, Sliders, Check, ShieldAlert, Tag, FolderPlus, FolderOpen, Layers,
   FileText, ExternalLink, Square, Key, Paperclip, Image
 } from 'lucide-react';
-import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought } from './ChatOverlay';
+import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought, renderMessageAttachments } from './ChatOverlay';
 import { SearchableModelSelect } from './ControlDashboard';
 import MicLevelMeter from './MicLevelMeter';
 import { API_BASE } from '../api';
@@ -918,7 +918,7 @@ export const AgenticWorkspaceWindow = ({
     }
 
     // 1. Instantly append User message & pending AI thinking card to local view
-    const userMsg = { role: 'user', content: textToSend };
+    const userMsg = { role: 'user', content: textToSend, attachments: attachments || [] };
     const pendingAiMsg = { role: 'assistant', content: '...', isThinking: true };
 
     if (selectedPastSessionId || viewMessages !== null) {
@@ -1031,8 +1031,8 @@ export const AgenticWorkspaceWindow = ({
     }
 
     // 2. Active Tool Schemas
-    const basicTools = ['web_search', 'read_file_content', 'search_files', 'list_directory', 'launch_app', 'open_or_play_file', 'set_system_volume', 'manage_time', 'get_system_stats', 'update_user_fact', 'take_screenshot', 'run_terminal_command', 'run_python_script'];
-    const jarvisTools = [...basicTools, 'jarvis_query_file_db', 'read_and_review_file', 'list_directory_tree', 'git_status_and_history', 'system_diagnostics_and_processes', 'scrape_web_page', 'jarvis_remember_user_fact'];
+    const basicTools = ['web_search', 'read_file_content', 'search_files', 'list_directory', 'launch_app', 'open_or_play_file', 'set_system_volume', 'manage_time', 'get_system_stats', 'update_user_fact', 'take_screenshot', 'run_terminal_command', 'run_python_script', 'jarvis_query_file_db', 'jarvis_open_or_play_file'];
+    const jarvisTools = [...basicTools, 'read_and_review_file', 'list_directory_tree', 'git_status_and_history', 'system_diagnostics_and_processes', 'scrape_web_page', 'jarvis_remember_user_fact'];
     const codingTools = ['jarvis_run_terminal', 'jarvis_run_python', 'jarvis_read_file', 'jarvis_create_or_edit_file', 'jarvis_replace_file_content', 'jarvis_list_dir_tree', 'jarvis_git_status', 'find_files_by_glob', 'jarvis_web_search', 'jarvis_web_scrape', 'jarvis_system_diagnostics', 'jarvis_send_stdin'];
 
     const activeToolList = isCodingMode ? codingTools : (chatWindowToolMode === 'advanced' ? jarvisTools : basicTools);
@@ -2270,6 +2270,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       minWidth: 0,
                       boxSizing: 'border-box'
                     }}>
+                      {isUser && msg.attachments && renderMessageAttachments(msg.attachments)}
                       <RenderMessageContent content={cleanContent} />
                     </div>
                   </div>
@@ -4074,16 +4075,16 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                           {/* Role 4: Vision Scan & Analysis Model */}
                           <div style={{ background: 'rgba(9, 13, 22, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
                             <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#38bdf8', display: 'block', marginBottom: '2px' }}>
-                              🔍 4. Vision Scan & Analysis Model (Tool Model)
+                              4. Vision Scan & Analysis Model (Tool Model)
                             </label>
                             <div style={{ fontSize: '0.66rem', color: '#94a3b8', marginBottom: '6px' }}>
                               Target model used by <code style={{ color: '#38bdf8' }}>jarvis_analyze_image</code> tool when non-vision models analyze screenshots & image files.
                             </div>
                             <SearchableModelSelect
-                              value={activeSettings.llm_vision_model || 'gemini-3.6-flash'}
+                              value={activeSettings.llm_vision_model || ''}
                               onChange={(val) => handleUpdateSetting({ llm_vision_model: val })}
-                              options={Array.from(new Set([...allNames, 'gemini-3.6-flash', 'gemini-2.5-flash', 'gpt-4o']))}
-                              placeholder="Search or select Vision Scan model (e.g. gemini-3.6-flash)..."
+                              options={allNames}
+                              placeholder="Search or select Vision Scan model..."
                             />
                           </div>
                         </div>

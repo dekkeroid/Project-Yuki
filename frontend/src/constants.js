@@ -226,7 +226,7 @@ export const detectExpression = (text) => {
     lower.includes('😄') || lower.includes('😁') || lower.includes('😆') ||
     lower.includes('😃') || lower.includes('😂') || lower.includes('🤣')
   ) {
-    return 'happy';
+    return 'relaxed';
   }
   if (
     lower.includes('cry') || lower.includes('sad') || lower.includes('sigh') ||

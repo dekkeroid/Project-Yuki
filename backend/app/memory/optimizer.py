@@ -36,6 +36,19 @@ def optimize_all_processes(force=False):
         return
     LAST_OPTIMIZATION_TIME = now
 
+    # Hold off trimming while the Whisper model is loading - EmptyWorkingSet would
+    # page out the model pages as they're being read, massively slowing STT startup.
+    try:
+        from app.voice.stt import is_whisper_loading
+        if is_whisper_loading():
+            try:
+                print('[Memory] Whisper model is still loading - holding off memory optimization until it completes.')
+            except Exception:
+                pass
+            return
+    except Exception:
+        pass
+
     print('[Memory] Running memory optimization...')
 
     # 1. Python GC — release circular references before trimming pages

@@ -16,7 +16,7 @@ import AgenticWorkspaceWindow from './components/AgenticWorkspaceWindow';
 const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
-import { RenderMessageContent, AgenticToolTimelineItem } from './components/ChatOverlay';
+import { RenderMessageContent, AgenticToolTimelineItem, renderMessageAttachments } from './components/ChatOverlay';
 
 let stream_end_exception = false;
 
@@ -764,7 +764,7 @@ const App = () => {
             setTimeout(() => setCustomAnimation(''), 100);
           },
           onEmotion: (emotionName) => {
-            setAvatarExpression(emotionName);
+            setAvatarExpression(emotionName === 'happy' ? 'relaxed' : emotionName);
           }
         });
 
@@ -1050,7 +1050,7 @@ const App = () => {
                 : "A storage drive was disconnected. Bye-bye USB!";
 
               setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to drive* ${msg}` }]);
-              speakSystemMessage(msg, inserted ? 'happy' : 'relaxed');
+              speakSystemMessage(msg, 'relaxed');
             }
             return count;
           });
@@ -1107,7 +1107,7 @@ const App = () => {
 
           const baseMsg = pct !== null ? pickRandom(BATTERY_PLUG_RESPONSES[tier])(pct) : "Power plugged in! Charging now, Master.";
           msg = wasHiding ? `*stretches* I'm back, Master! ${baseMsg}` : baseMsg;
-          expr = 'happy';
+          expr = 'relaxed';
         } else {
           // --- UNPLUGGED ---
           let tier;
@@ -1225,7 +1225,7 @@ const App = () => {
       isAfkRef.current = false;
       const msg = "Welcome back, Master! I missed you.";
       setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to welcome* ${msg}` }]);
-      speakSystemMessage(msg, 'happy');
+      speakSystemMessage(msg, 'relaxed');
     }
   }, [systemIdleTime, muteVoice]);
 
@@ -1265,7 +1265,7 @@ const App = () => {
                     if (factData.text) {
                       const msg = `Hurray, the internet is back! Let's see something fun! Did you know? ${factData.text}`;
                       setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
-                      speakSystemMessage(msg, 'happy');
+                      speakSystemMessage(msg, 'relaxed');
                       announced = true;
                     }
                   }
@@ -1274,7 +1274,7 @@ const App = () => {
               if (!announced) {
                 const msg = INTERNET_RECOVERY_RESPONSES[Math.floor(Math.random() * INTERNET_RECOVERY_RESPONSES.length)];
                 setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to internet* ${msg}` }]);
-                speakSystemMessage(msg, 'happy');
+                speakSystemMessage(msg, 'relaxed');
               }
             }
           }
@@ -1618,7 +1618,7 @@ const App = () => {
       if (cmd === '/pcstat') {
         // 1. Immediately log user message and clear input field
         setMessages((prev) => [...prev, { role: 'user', content: text }]);
-        setAvatarExpression('happy');
+        setAvatarExpression('relaxed');
         setIsThinking(true);
         setTtsStreamActive(false);
 
@@ -1738,7 +1738,7 @@ const App = () => {
               { role: 'assistant', content: chatText }
             ]);
 
-            speakSystemMessage(ttsText, 'happy');
+            speakSystemMessage(ttsText, 'relaxed');
           })
           .catch((err) => {
             setIsThinking(false);
@@ -1846,7 +1846,7 @@ const App = () => {
                 ...prev,
                 { role: 'assistant', content: chatText }
               ]);
-              speakSystemMessage(chatText, 'happy');
+              speakSystemMessage(chatText, 'relaxed');
             })
             .catch((err) => {
               setIsThinking(false);
@@ -1926,7 +1926,7 @@ const App = () => {
     // Default chat turn: Set stream active and thinking state FIRST to prevent coordinator race
     setTtsStreamActive(true);
     setIsThinking(true);
-    setMessages((prev) => [...prev, { role: 'user', content: text }]);
+    setMessages((prev) => [...prev, { role: 'user', content: text, attachments: attachmentsList || [] }]);
 
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       const payload = { type: 'chat', message: text };
@@ -2011,30 +2011,30 @@ const detectExpression = (text) => {
   }
   if (
     lower.includes('smile') || lower.includes('giggle') || lower.includes('laugh') ||
-    lower.includes('happy') || lower.includes('joy') || lower.includes('・') ||
-    lower.includes('・') || lower.includes('・') || lower.includes('・') ||
-    lower.includes('・') || lower.includes('・') || lower.includes('､｣')
+    lower.includes('happy') || lower.includes('joy') || lower.includes('😊') ||
+    lower.includes('😄') || lower.includes('😁') || lower.includes('😆') ||
+    lower.includes('😃') || lower.includes('😂') || lower.includes('🤣')
   ) {
-    return 'happy';
+    return 'relaxed';
   }
   if (
     lower.includes('cry') || lower.includes('sad') || lower.includes('sigh') ||
-    lower.includes('sorrow') || lower.includes('个') || lower.includes('亊') ||
-    lower.includes('・') || lower.includes('弌') || lower.includes('仭')
+    lower.includes('sorrow') || lower.includes('😢') || lower.includes('😭') ||
+    lower.includes('😞') || lower.includes('😟') || lower.includes('😿')
   ) {
     return 'sad';
   }
   if (
     lower.includes('pout') || lower.includes('angry') || lower.includes('anger') ||
-    lower.includes('scold') || lower.includes('丐') || lower.includes('丕') ||
-    lower.includes('､ｬ') || lower.includes('汰')
+    lower.includes('scold') || lower.includes('😠') || lower.includes('😡') ||
+    lower.includes('🤬') || lower.includes('👿')
   ) {
     return 'angry';
   }
   if (
     lower.includes('gasp') || lower.includes('surprise') || lower.includes('shock') ||
-    lower.includes('舒') || lower.includes('亟') || lower.includes('亠') ||
-    lower.includes('亞') || lower.includes('凰')
+    lower.includes('😮') || lower.includes('😲') || lower.includes('😳') ||
+    lower.includes('😱') || lower.includes('🙀')
   ) {
     return 'surprised';
   }
@@ -2487,6 +2487,7 @@ const detectExpression = (text) => {
                             whiteSpace: 'pre-line'
                           }}>
                             <RenderMessageContent content={msg.content} isSystem={false} />
+                            {isUser && msg.attachments && renderMessageAttachments(msg.attachments)}
                           </div>
                         </div>
                       );

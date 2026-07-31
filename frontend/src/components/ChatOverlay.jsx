@@ -941,6 +941,66 @@ export const RenderMessageContent = ({ content, isSystem, disableFileLinks = fal
   );
 };
 
+export const getAttachmentSrc = (att) => {
+  if (!att) return '';
+  if (att.data_url) return att.data_url;
+  if (att.save_path) return `${API_BASE}/api/chat/attachments/file?path=${encodeURIComponent(att.save_path)}`;
+  return '';
+};
+
+export const renderMessageAttachments = (attachments, maxHeight = 220) => {
+  if (!attachments || !Array.isArray(attachments) || attachments.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+      {attachments.map((att, idx) => {
+        if (!att) return null;
+        const src = getAttachmentSrc(att);
+        if (att.is_image) {
+          return (
+            <img
+              key={idx}
+              src={src}
+              alt={att.filename || 'attachment'}
+              title={att.filename || 'attachment'}
+              style={{
+                width: 'auto',
+                height: 'auto',
+                maxWidth: '100%',
+                maxHeight: `${maxHeight}px`,
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.15)',
+                objectFit: 'contain',
+                background: '#020617',
+                cursor: src ? 'pointer' : 'default'
+              }}
+              onClick={() => { if (src) window.open(src, '_blank', 'noopener,noreferrer'); }}
+            />
+          );
+        }
+        return (
+          <div
+            key={idx}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              borderRadius: '8px',
+              fontSize: '0.72rem',
+              background: 'rgba(167, 139, 250, 0.18)',
+              border: '1px solid rgba(167, 139, 250, 0.4)',
+              color: '#c4b5fd'
+            }}
+          >
+            <FileText style={{ width: '12px', height: '12px', flexShrink: 0 }} />
+            <span style={{ fontWeight: 600 }}>{att.filename || 'Attachment'}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const ChatOverlay = ({
   messages,
   inputText,
@@ -1338,6 +1398,7 @@ const ChatOverlay = ({
                     isSystem ? 'system' : isUser ? 'user' : 'assistant'
                   }`}
                 >
+                  {isUser && msg.attachments && renderMessageAttachments(msg.attachments)}
                   <RenderMessageContent content={msg.content} isSystem={isSystem} />
                 </div>
               </div>

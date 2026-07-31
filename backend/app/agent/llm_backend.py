@@ -428,6 +428,7 @@ class OpenAICompatibleBackend(LLMBackend):
     def __init__(self, base_url_override: str = None, api_key_override: str = None):
         self._base_url_override = base_url_override
         self._api_key_override = api_key_override
+        self._active_key_index = 0
 
     @property
     def name(self) -> str:
@@ -441,8 +442,6 @@ class OpenAICompatibleBackend(LLMBackend):
 
     def supports_context_length(self) -> bool:
         return False
-
-    _active_key_index: int = 0
 
     def get_api_key_pool(self) -> List[str]:
         raw_key = self._api_key_override or config.LLM_API_KEY or getattr(config, "LLM_CODER_API_KEY", None) or ""
@@ -471,17 +470,16 @@ class OpenAICompatibleBackend(LLMBackend):
         ]
         return keys
 
-    @classmethod
-    def rotate_on_rate_limit(cls):
+    def rotate_on_rate_limit(self):
         """Switches to the next backup API key in the pool when a 429 rate limit is encountered."""
-        cls._active_key_index += 1
-        print(f"[KeyPool] ⚠️ 429 Rate Limit encountered! Rotated active key index to #{cls._active_key_index + 1}")
+        self._active_key_index += 1
+        print(f"[KeyPool] ⚠️ 429 Rate Limit encountered! Rotated active key index to #{self._active_key_index + 1}")
 
     def build_headers(self, key_index: Optional[int] = None) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
         keys = self.get_api_key_pool()
         if keys:
-            idx = key_index if key_index is not None else OpenAICompatibleBackend._active_key_index
+            idx = key_index if key_index is not None else self._active_key_index
             selected_key = keys[idx % len(keys)]
             headers["Authorization"] = f"Bearer {selected_key}"
             print(f"[KeyPool] Using active key {idx % len(keys) + 1}/{len(keys)} (...{selected_key[-6:]})")
