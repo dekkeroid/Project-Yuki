@@ -210,15 +210,15 @@ async def _run_memory_optimizer_bg():
     await asyncio.sleep(30)
     while True:
         try:
-            # Only unload Whisper under real memory pressure, and only when running on the GPU:
-            # if the dedicated GPU VRAM exceeds 90%, force-unload Whisper to free VRAM.
+            # Only unload Whisper under real memory pressure, and only when running on the GPU.
+            # Never unload while listening mode is active (mic is on, whisper in active use).
             try:
-                from app.voice.stt import is_whisper_on_gpu, unload_whisper_if_idle
-                if is_whisper_on_gpu():
+                from app.voice.stt import is_whisper_on_gpu, is_listening_mode_active, unload_whisper_if_idle
+                if not is_listening_mode_active() and config.WHISPER_AUTO_UNLOAD and is_whisper_on_gpu():
                     from app.gpu_monitor import get_dedicated_gpu_vram_percent
                     vram_pct = get_dedicated_gpu_vram_percent()
-                    if vram_pct is not None and vram_pct > 90:
-                        print(f"[Memory] Dedicated GPU VRAM at {vram_pct:.1f}% - unloading Whisper to free VRAM.")
+                    if vram_pct is not None and vram_pct > config.WHISPER_VRAM_THRESHOLD:
+                        print(f"[Memory] GPU VRAM at {vram_pct:.1f}% > {config.WHISPER_VRAM_THRESHOLD}% - unloading Whisper to free VRAM.")
                         unload_whisper_if_idle(force=True)
             except Exception:
                 pass
@@ -978,6 +978,9 @@ class SettingsUpdateRequest(BaseModel):
     basic_history_keep_turns: Optional[int] = None
     advanced_history_token_limit: Optional[int] = None
     advanced_history_keep_turns: Optional[int] = None
+    whisper_idle_timeout: Optional[int] = None
+    whisper_vram_threshold: Optional[float] = None
+    whisper_auto_unload: Optional[bool] = None
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -1198,6 +1201,17 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("whisper_compute_type", req.whisper_compute_type.strip())
         from app.voice.stt import reset_whisper
         reset_whisper()
+    if req.whisper_idle_timeout is not None:
+        val = max(60, int(req.whisper_idle_timeout))  # minimum 60s
+        config.WHISPER_IDLE_TIMEOUT = val
+        memory_manager.update_setting("whisper_idle_timeout", val)
+    if req.whisper_vram_threshold is not None:
+        val = max(50, min(100, float(req.whisper_vram_threshold)))  # clamp 50-100%
+        config.WHISPER_VRAM_THRESHOLD = val
+        memory_manager.update_setting("whisper_vram_threshold", val)
+    if req.whisper_auto_unload is not None:
+        config.WHISPER_AUTO_UNLOAD = req.whisper_auto_unload
+        memory_manager.update_setting("whisper_auto_unload", req.whisper_auto_unload)
     if req.vad_threshold is not None:
         config.SILERO_VAD_THRESHOLD = float(req.vad_threshold)
         memory_manager.update_setting("vad_threshold", float(req.vad_threshold))
@@ -1521,10 +1535,8 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
         memory_manager.update_setting("llm_simple_backend", config.LLM_SIMPLE_BACKEND)
         memory_manager.update_setting("llm_simple_base_url", config.LLM_SIMPLE_BASE_URL)
         memory_manager.update_setting("llm_simple_api_key", ep.get("api_key", ""))
-    else:
-        print(f"[VAULT-SELECT-BE] ⚠️ target_type='{target_type}' — saving to CODER config (NOT main LLM config!)")
-        print(f"[VAULT-SELECT-BE]   LLM_CODER_BASE_URL will be: {ep.get('base_url')}")
-        print(f"[VAULT-SELECT-BE]   LLM_BASE_URL (main) is STILL: {config.LLM_BASE_URL}")
+    elif target_type == "coder":
+        print(f"[VAULT-SELECT-BE] Saving to CODER config: LLM_CODER_BASE_URL={ep.get('base_url')}")
         config.LLM_CODER_BACKEND = ep.get("llm_backend", "custom")
         config.LLM_CODER_BASE_URL = ep.get("base_url", "")
         config.LLM_CODER_API_KEY = decrypted_key
@@ -1539,6 +1551,18 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
             memory_manager.update_setting("llm_reviewer_model", ep.get("reviewer_model"))
         if ep.get("summary_model"):
             memory_manager.update_setting("llm_summary_model", ep.get("summary_model"))
+
+        reset_backend()
+    else:
+        # "complex" or any other value → save to MAIN LLM config (AI Brain vault)
+        print(f"[VAULT-SELECT-BE] Saving to MAIN config: LLM_BASE_URL={ep.get('base_url')}")
+        config.LLM_BACKEND = ep.get("llm_backend", "custom")
+        config.LLM_BASE_URL = ep.get("base_url", "")
+        config.LLM_API_KEY = decrypted_key
+
+        memory_manager.update_setting("llm_backend", config.LLM_BACKEND)
+        memory_manager.update_setting("llm_base_url", config.LLM_BASE_URL)
+        memory_manager.update_setting("llm_api_key", ep.get("api_key", ""))
 
         reset_backend()
 
@@ -1652,6 +1676,12 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
 @app.post("/api/speech/status")
 async def speech_status(req: dict):
     msg = req.get("message", "")
+    if msg == "listening_mode_on":
+        from app.voice.stt import set_listening_mode
+        set_listening_mode(True)
+    elif msg == "listening_mode_off":
+        from app.voice.stt import set_listening_mode
+        set_listening_mode(False)
     print(f"[STT Frontend] {msg}")
     return {"status": "ok"}
 
@@ -2074,6 +2104,9 @@ Strict constraints:
             "whisper_compute_type": "int8_float16",
             "use_local_whisper": True,
             "stt_language": "en",
+            "whisper_idle_timeout": 300,
+            "whisper_vram_threshold": 90,
+            "whisper_auto_unload": True,
             "no_llm_mode": False,
             "dynamic_tool_calling": True,
             "enable_rotation": True,
@@ -2091,6 +2124,9 @@ Strict constraints:
     config.STT_DEVICE = default_profile["settings"]["stt_device"]
     config.CHARACTER_NAME = default_profile["settings"]["character_name"]
     config.CHARACTER_PERSONA = default_profile["settings"]["character_persona"]
+    config.WHISPER_IDLE_TIMEOUT = default_profile["settings"]["whisper_idle_timeout"]
+    config.WHISPER_VRAM_THRESHOLD = default_profile["settings"]["whisper_vram_threshold"]
+    config.WHISPER_AUTO_UNLOAD = default_profile["settings"]["whisper_auto_unload"]
     
     # Reset TTS/STT engines with new device settings
     from app.voice.tts import reset_kokoro

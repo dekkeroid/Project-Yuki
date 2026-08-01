@@ -2746,22 +2746,22 @@ const AvatarViewer = ({
           updateExpressions(vrm);
         }
 
-        // Real-time 3D head tracking for chat overlay + speech bubble (Electron only)
+        // Real-time 3D tracking for chat overlay + speech bubble (Electron only)
         if (isElectron && camera) {
           let targetY = 1.45 * scaleRef.current;
           let targetX = 0;
           let targetZ = 0;
           let headY = 1.4 * scaleRef.current;
 
+          // Chat overlay anchor: use leftFoot (stable, no breathing/fidget noise)
           if (vrmRef.current) {
-            const headNode = getBoneNode(vrmRef.current, 'head');
-            if (headNode) {
+            const footNode = getBoneNode(vrmRef.current, 'leftFoot');
+            if (footNode) {
               const tempV = new THREE.Vector3();
-              headNode.getWorldPosition(tempV);
+              footNode.getWorldPosition(tempV);
               targetX = tempV.x;
-              targetY = tempV.y + 0.25 * scaleRef.current;
+              targetY = tempV.y;
               targetZ = tempV.z;
-              headY = tempV.y;
             }
           }
 
@@ -2772,7 +2772,15 @@ const AvatarViewer = ({
           const yPercent = (headWorld.y * -0.5 + 0.5) * 100;
           window.yukiAvatarHeadYPercent = yPercent;
 
-          // Speech bubble positioning (only when bubble element exists)
+          // Speech bubble positioning still uses head (only when bubble element exists)
+          if (vrmRef.current) {
+            const headNode = getBoneNode(vrmRef.current, 'head');
+            if (headNode) {
+              const tempV = new THREE.Vector3();
+              headNode.getWorldPosition(tempV);
+              headY = tempV.y;
+            }
+          }
           const bubbleEl = document.querySelector('.desktop-speech-bubble');
           if (bubbleEl) {
             // Project head top for bubble bottom clamp

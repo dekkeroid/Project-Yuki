@@ -131,6 +131,9 @@ TTS_PRELOAD = os.environ.get("TTS_PRELOAD", "true").strip().lower() in ("1", "tr
 STT_DEVICE = os.environ.get("STT_DEVICE", "auto")  # "auto", "gpu", "cpu"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
 WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8_float16")
+WHISPER_IDLE_TIMEOUT = int(os.environ.get("WHISPER_IDLE_TIMEOUT", "300"))  # seconds before auto-unload when idle
+WHISPER_VRAM_THRESHOLD = float(os.environ.get("WHISPER_VRAM_THRESHOLD", "90"))  # % VRAM to trigger force-unload
+WHISPER_AUTO_UNLOAD = os.environ.get("WHISPER_AUTO_UNLOAD", "true").strip().lower() in ("1", "true", "yes", "on")
 SILERO_VAD_THRESHOLD = float(os.environ.get("SILERO_VAD_THRESHOLD", "0.5"))
 SILENCE_TIMEOUT_MS = int(os.environ.get("SILENCE_TIMEOUT_MS", "450"))
 # Character Settings

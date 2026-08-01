@@ -17,6 +17,7 @@ STT_IDLE_TIMEOUT = 300.0  # 5 minutes
 
 _whisper_loading = False
 _whisper_using_gpu = False
+_listening_mode_active = False
 
 def set_whisper_loading(v: bool):
     """Mark whether the Whisper model is currently being loaded (used to hold off memory optimization)."""
@@ -25,6 +26,15 @@ def set_whisper_loading(v: bool):
 
 def is_whisper_loading() -> bool:
     return _whisper_loading
+
+def set_listening_mode(active: bool):
+    """Track whether the frontend microphone listening mode is active."""
+    global _listening_mode_active
+    _listening_mode_active = bool(active)
+
+def is_listening_mode_active() -> bool:
+    """True when the frontend mic is actively listening (whisper in active use)."""
+    return _listening_mode_active
 
 def is_whisper_on_gpu() -> bool:
     """True if the currently loaded Whisper model is running on CUDA (dedicated GPU)."""
@@ -42,7 +52,7 @@ def unload_whisper_if_idle(force: bool = False):
     if _whisper_instance is None:
         return
     idle_time = time.time() - _last_stt_request_time
-    if force or idle_time > STT_IDLE_TIMEOUT:
+    if force or idle_time > config.WHISPER_IDLE_TIMEOUT:
         print(f"[STT] Whisper model unloaded ({'forced by memory pressure' if force else f'idle for {int(idle_time)}s'}).")
         _whisper_instance = None
         _current_model_size = None

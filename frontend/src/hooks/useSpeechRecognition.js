@@ -30,6 +30,17 @@ export function useSpeechRecognition(options = {}) {
   }, []);
 
   const [isListening, setIsListening] = useState(false);
+
+  // Signal backend when listening mode changes (prevents whisper unload during active mic)
+  useEffect(() => {
+    if (!API_BASE) return;
+    const msg = isListening ? 'listening_mode_on' : 'listening_mode_off';
+    fetch(`${API_BASE}/api/speech/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg })
+    }).catch(() => {});
+  }, [isListening, API_BASE]);
   const [isTalkMode, setIsTalkModeState] = useState(false);
   const isTalkModeRef = useRef(false);
   const setIsTalkMode = useCallback((val) => {

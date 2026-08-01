@@ -473,14 +473,13 @@ const App = () => {
     isChatOpenRef.current = isChatOpen;
   }, [isChatOpen]);
 
-  // Keeps chat overlay positioned near the avatar's head when she rotates,
-  // while defaulting to bottom:16px when she faces forward. Also clamps to
-  // screen bounds so the chat never goes off-screen.
+  // Keeps chat overlay bottom-aligned with avatar's feet position on screen.
+  // EMA smoothing filters float oscillation; direct feet mapping tracks drag/sleep.
   useEffect(() => {
     if (!isChatOpen) return;
-    let baseline = null;
+    let smoothedPct = null;
     let animId = null;
-    let currentBottom = 16;
+    const EMA_ALPHA = 0.12; // Smoothing: lower = more stable, higher = more responsive
     const updatePosition = () => {
       const el = chatContainerRef.current;
       if (!el) {
@@ -489,25 +488,21 @@ const App = () => {
       }
       const currentPct = window.yukiAvatarHeadYPercent;
       if (typeof currentPct === 'number') {
-        if (baseline === null) baseline = currentPct;
-        const headPx = ((100 - currentPct) / 100) * window.innerHeight;
-        const baselineHeadPx = ((100 - baseline) / 100) * window.innerHeight;
-        const delta = baselineHeadPx - headPx;
-        const DEADZONE = 25;
-        if (Math.abs(delta) > DEADZONE) {
-          let bottom = Math.max(16, 16 + delta);
-          if (window.electronAPI) {
-            const windowScreenY = window.screenY || 0;
-            const screenHeight = window.screen.height;
-            const windowBottomScreen = windowScreenY + window.innerHeight;
-            if (windowBottomScreen > screenHeight) {
-              const minByScreen = windowBottomScreen - screenHeight;
-              if (minByScreen > bottom) bottom = minByScreen;
-            }
+        // EMA filters fast float oscillation (~1.1 rad/s) while preserving
+        // slow genuine movements (drag, sleep, model changes)
+        smoothedPct = smoothedPct === null ? currentPct : smoothedPct + EMA_ALPHA * (currentPct - smoothedPct);
+        // Chat bottom aligns with feet screen position, nudged slightly below
+        let bottom = Math.max(16, ((100 - smoothedPct) / 100) * window.innerHeight - 100);
+        if (window.electronAPI) {
+          const windowScreenY = window.screenY || 0;
+          const screenHeight = window.screen.height;
+          const windowBottomScreen = windowScreenY + window.innerHeight;
+          if (windowBottomScreen > screenHeight) {
+            const minByScreen = windowBottomScreen - screenHeight;
+            if (minByScreen > bottom) bottom = minByScreen;
           }
-          currentBottom = bottom;
-          el.style.bottom = `${Math.round(bottom)}px`;
         }
+        el.style.bottom = `${Math.round(bottom)}px`;
       }
       animId = requestAnimationFrame(updatePosition);
     };

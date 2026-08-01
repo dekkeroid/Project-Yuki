@@ -430,7 +430,10 @@ const ControlDashboard = ({
     active_vrm_model: 'default.vrm',
     whisper_model: 'base',
     use_local_whisper: true,
-    stt_language: 'en'
+    stt_language: 'en',
+    whisper_idle_timeout: 300,
+    whisper_vram_threshold: 90,
+    whisper_auto_unload: true
   });
 
   // Local Character States
@@ -831,6 +834,11 @@ const ControlDashboard = ({
         };
         console.log(`[VAULT-SELECT] Setting complex: base_url="${newSettings.llm_base_url}" backend="${newSettings.llm_backend}" model="${newSettings.llm_model}"`);
         setSettings(newSettings);
+        await handleUpdateSetting({
+          llm_backend: newSettings.llm_backend,
+          llm_base_url: newSettings.llm_base_url,
+          llm_api_key: newSettings.llm_api_key,
+        });
         if (onRefreshLlmModels) {
           setTimeout(() => onRefreshLlmModels(), 400);
         }
@@ -1182,7 +1190,7 @@ const ControlDashboard = ({
             console.error(`[SETTINGS-UPDATE] ❌ REVERT DETECTED! Sent llm_base_url="${updates.llm_base_url || '(not sent)'}" but server returned llm_base_url="${serverUrl}"`);
           }
           console.log(`[SETTINGS-UPDATE] Server response llm_base_url="${serverUrl}" llm_backend="${data.settings.llm_backend}"`);
-          setSettings(data.settings);
+          setSettings(prev => ({ ...prev, ...data.settings }));
         }
         if (updates.tool_mode) {
           fetchToolsList();
@@ -4453,6 +4461,81 @@ const ControlDashboard = ({
                             <option value="ja" style={{ background: '#0b0813', color: 'white' }}>Japanese (日本語)</option>
                             <option value="auto" style={{ background: '#0b0813', color: 'white' }}>Auto Detect</option>
                           </select>
+                        </div>
+
+                        {/* Whisper Memory Management */}
+                        <div style={{ marginTop: '16px', marginBottom: '4px', paddingTop: '12px', borderTop: '1px solid rgba(167, 139, 250, 0.15)' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Memory Management</span>
+                        </div>
+
+                        {/* Auto-Unload Toggle */}
+                        <div className="identity-field" style={{ marginTop: '6px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label">Auto-Unload Whisper (Save VRAM)</span>
+                            <button
+                              onClick={() => handleUpdateSetting('whisper_auto_unload', settings.whisper_auto_unload !== false ? false : true)}
+                              style={{
+                                padding: '4px 12px',
+                                borderRadius: '12px',
+                                border: 'none',
+                                background: settings.whisper_auto_unload !== false ? 'rgba(167, 139, 250, 0.3)' : 'rgba(255,255,255,0.1)',
+                                color: settings.whisper_auto_unload !== false ? '#a78bfa' : '#888',
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              {settings.whisper_auto_unload !== false ? 'ON' : 'OFF'}
+                            </button>
+                          </div>
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            When ON: unloads Whisper from VRAM when mic is off and VRAM is full or idle too long.
+                          </span>
+                        </div>
+
+                        {/* VRAM Threshold */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label">VRAM Threshold (Force Unload)</span>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                              {settings.whisper_vram_threshold || 90}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="50"
+                            max="100"
+                            step="5"
+                            value={settings.whisper_vram_threshold || 90}
+                            onChange={(e) => handleUpdateSetting('whisper_vram_threshold', parseFloat(e.target.value))}
+                            style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
+                          />
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            When mic is off and GPU VRAM exceeds this %, Whisper is force-unloaded. (Default: 90%)
+                          </span>
+                        </div>
+
+                        {/* Idle Timeout */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label">Idle Timeout (Auto Unload)</span>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                              {settings.whisper_idle_timeout || 300}s
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="60"
+                            max="600"
+                            step="30"
+                            value={settings.whisper_idle_timeout || 300}
+                            onChange={(e) => handleUpdateSetting('whisper_idle_timeout', parseInt(e.target.value, 10))}
+                            style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
+                          />
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            When mic is off, unload Whisper after this many seconds of no transcription requests. (Default: 300s)
+                          </span>
                         </div>
                       </>
                     )}
