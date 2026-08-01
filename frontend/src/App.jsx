@@ -709,6 +709,7 @@ const App = () => {
   updateListeningStateRef.current = updateListeningState;
 
   const currentResponseTextRef = useRef('');
+  const toolBadgesAccumulatorRef = useRef('');
   const handleWebSocketMessageRef = useRef(null);
   const lastFetchTime = useRef(0);
   const FETCH_COOLDOWN_MS = 2000;
@@ -735,20 +736,92 @@ const App = () => {
           // Clear speech bubble immediately since a new response generation starts
           setCurrentSpeechText('');
           currentResponseTextRef.current = '';
+          toolBadgesAccumulatorRef.current = '';
           hasReceivedAudioRef.current = false;
-          if (msg.message) {
-            setMessages((prev) => [...prev, {
-              role: 'system',
-              content: `⚙️ [Tool Start] ${msg.message}`
-            }]);
-          }
         } else if (msg.status === 'idle') {
           // Do not override isThinking immediately if audio is still active
           if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
             setIsThinking(false);
           }
         }
+      } else if (msg.type === 'tool_start') {
+        // Build the live 🛠️ tool badge inline into the last assistant message so
+        // tool activity is visible during the turn and matches the persisted cards.
+        const toolName = msg.tool_name || 'tool';
+        const toolArgs = msg.tool_args || {};
+        const toolTarget = toolArgs.file_path || toolArgs.path || toolArgs.command || toolArgs.url || '';
+        const targetInfo = toolTarget ? ` (\`${toolTarget}\`)` : '';
+        const argsBlock = Object.keys(toolArgs).length
+          ? `\n\`\`\`tool_args\n${JSON.stringify(toolArgs, null, 2)}\n\`\`\`` : '';
+        const badgeText = `\n🛠️ **[${toolName}${targetInfo} — ⏳ Running...]**${argsBlock}\n`;
+        toolBadgesAccumulatorRef.current += badgeText;
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+            const last = newMessages[newMessages.length - 1];
+            newMessages[newMessages.length - 1] = {
+              ...last,
+              content: (last.content || '') + badgeText
+            };
+          } else {
+            newMessages.push({ role: 'assistant', content: badgeText });
+          }
+          return newMessages;
+        });
+      } else if (msg.type === 'tool_result') {
+        try {
+          if (msg.result && typeof msg.result === 'string' && msg.result.includes('window_control')) {
+            const data = JSON.parse(msg.result);
+            if (data.window_control && window.electronAPI) {
+              const act = data.window_control.action;
+              if (act === 'minimize') {
+                window.electronAPI.minimizeWindow();
+              } else if (act === 'maximize') {
+                window.electronAPI.maximizeWindow();
+              } else if (act === 'restore') {
+                window.electronAPI.restoreWindow();
+              } else if (act === 'move') {
+                const { x, y } = data.window_control;
+                if (x !== undefined && y !== undefined) {
+                  window.electronAPI.setWindowPosition(x, y);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to check tool result for window_control JSON:", e);
+        }
+        const resultStr = typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result || '');
+        const snippet = resultStr.length > 800 ? resultStr.slice(0, 800) + '\n... [truncated]' : resultStr;
+        toolBadgesAccumulatorRef.current = toolBadgesAccumulatorRef.current.replace('⏳ Running...', '✓ Done');
+        if (!toolBadgesAccumulatorRef.current.includes('```terminal_stream\n')) {
+          toolBadgesAccumulatorRef.current += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
+        }
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+            const last = newMessages[newMessages.length - 1];
+            let content = last.content || '';
+            if (content.includes('⏳ Running...')) {
+              content = content.replace('⏳ Running...', '✓ Done');
+              if (!content.includes('```terminal_stream\n')) {
+                content += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
+              }
+            }
+            newMessages[newMessages.length - 1] = {
+              ...last,
+              content
+            };
+          }
+          return newMessages;
+        });
       } else if (msg.type === 'text_stream') {
+        // Skip intermediate thinking/narration text so only the final reply
+        // appears in the main app conversation log (and native-TTS fallback).
+        if (msg.final === false) {
+          setTtsStreamActive(true);
+          return;
+        }
         // Keep isThinking true so the bubble thinking animation remains active
         setTtsStreamActive(true);
         currentResponseTextRef.current += msg.text;
@@ -765,17 +838,19 @@ const App = () => {
 
         setMessages((prev) => {
           const newMessages = [...prev];
+          const badgesPart = toolBadgesAccumulatorRef.current || '';
+          const combinedContent = badgesPart + (badgesPart && cleanText ? '\n' : '') + cleanText;
           if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
             const last = newMessages[newMessages.length - 1];
             newMessages[newMessages.length - 1] = {
               ...last,
-              content: cleanText,
+              content: combinedContent,
               backend: msg.backend_used
             };
           } else {
             newMessages.push({
               role: 'assistant',
-              content: cleanText,
+              content: combinedContent,
               backend: msg.backend_used
             });
           }
@@ -812,29 +887,6 @@ const App = () => {
       } else if (msg.type === 'session_switched' || msg.type === 'chat_update') {
         if (msg.messages && Array.isArray(msg.messages)) {
           setMessages(msg.messages);
-        }
-      } else if (msg.type === 'tool_result') {
-        try {
-          if (msg.result && typeof msg.result === 'string' && msg.result.includes('window_control')) {
-            const data = JSON.parse(msg.result);
-            if (data.window_control && window.electronAPI) {
-              const act = data.window_control.action;
-              if (act === 'minimize') {
-                window.electronAPI.minimizeWindow();
-              } else if (act === 'maximize') {
-                window.electronAPI.maximizeWindow();
-              } else if (act === 'restore') {
-                window.electronAPI.restoreWindow();
-              } else if (act === 'move') {
-                const { x, y } = data.window_control;
-                if (x !== undefined && y !== undefined) {
-                  window.electronAPI.setWindowPosition(x, y);
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("Failed to check tool result for window_control JSON:", e);
         }
       } else if (msg.type === 'speech') {
         setTtsStreamActive(true);

@@ -905,9 +905,7 @@ export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFi
 };
 
 export const RenderMessageContent = ({ content, isSystem, disableFileLinks = false }) => {
-  const { thoughts, cleanContent } = parseMessageThought(content || "");
-
-  if (!cleanContent) return null;
+  const { thoughts, toolBadges, cleanContent } = parseMessageThought(content || "");
 
   return (
     <div>
@@ -936,7 +934,91 @@ export const RenderMessageContent = ({ content, isSystem, disableFileLinks = fal
         </details>
       ))}
 
-      {renderMarkdownBlocks(cleanContent, { isSystem, disableFileLinks })}
+      {/* Persistent collapsible tool-run cards so tool activity survives reloads */}
+      {toolBadges && toolBadges.map((tb, bIdx) => {
+        const isRunning = tb.status.includes('Running') || tb.status.includes('Processing');
+        const isSuccess = tb.status.includes('Done') || tb.status.includes('Success') || tb.status.includes('Completed');
+        const isFailed = !isRunning && !isSuccess;
+        const statusBadgeBg = isRunning ? 'rgba(56, 189, 248, 0.15)' : isSuccess ? 'rgba(74, 222, 128, 0.15)' : 'rgba(248, 113, 113, 0.15)';
+        const statusBadgeColor = isRunning ? '#38bdf8' : isSuccess ? '#4ade80' : '#f87171';
+        const statusBadgeBorder = isRunning ? 'rgba(56, 189, 248, 0.4)' : isSuccess ? 'rgba(74, 222, 128, 0.3)' : 'rgba(248, 113, 113, 0.3)';
+        const statusLabel = isRunning ? '⏳ Processing...' : isSuccess ? '✓ Completed' : '❌ Failed';
+
+        return (
+          <details
+            key={bIdx}
+            open={isRunning}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              margin: '3px 0 6px 0',
+              background: 'rgba(15, 23, 42, 0.85)',
+              border: `1px solid ${statusBadgeBorder}`,
+              borderRadius: '8px',
+              overflow: 'hidden',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+          >
+            <summary style={{
+              cursor: 'pointer',
+              padding: '6px 10px',
+              background: 'rgba(30, 41, 59, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '0.70rem',
+              fontWeight: 600,
+              color: '#38bdf8',
+              userSelect: 'none',
+              boxSizing: 'border-box'
+            }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                🛠️ Tool Run: <strong>{tb.toolName}</strong>
+              </span>
+              <span style={{
+                fontSize: '0.64rem',
+                padding: '1px 8px',
+                borderRadius: '4px',
+                background: statusBadgeBg,
+                color: statusBadgeColor,
+                border: `1px solid ${statusBadgeBorder}`,
+                flexShrink: 0
+              }}>
+                {statusLabel}
+              </span>
+            </summary>
+            <div style={{ padding: '8px 10px', fontSize: '0.70rem', background: '#090d16', color: '#cbd5e1', fontFamily: 'monospace', boxSizing: 'border-box', overflowX: 'auto' }}>
+              {tb.target && (
+                <div style={{ color: '#94a3b8', marginBottom: '5px', fontSize: '0.68rem', wordBreak: 'break-all' }}>
+                  <strong style={{ color: '#a78bfa' }}>Target / Command:</strong> {tb.target}
+                </div>
+              )}
+              {tb.args && (
+                <div style={{ marginTop: '5px', marginBottom: '6px' }}>
+                  <div style={{ color: '#38bdf8', fontSize: '0.66rem', fontWeight: 700, marginBottom: '3px' }}>
+                    📥 INPUT / ARGUMENTS:
+                  </div>
+                  <div style={{ background: '#020617', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.2)', maxHeight: '200px', overflow: 'auto', fontSize: '0.68rem', color: '#cbd5e1' }}>
+                    <pre style={{ margin: 0, whiteSpace: 'pre', fontFamily: 'Consolas, Monaco, monospace' }}>{tb.args}</pre>
+                  </div>
+                </div>
+              )}
+              {tb.output && (
+                <div style={{ marginTop: '5px', marginBottom: '5px' }}>
+                  <div style={{ color: '#64748b', fontSize: '0.66rem', fontWeight: 600, marginBottom: '3px' }}>
+                    📤 RESULT / OUTPUT:
+                  </div>
+                  <div style={{ background: '#020617', padding: '6px 8px', borderRadius: '6px', border: '1px solid #1e293b', maxHeight: '200px', overflow: 'auto', fontSize: '0.68rem', color: isFailed ? '#f87171' : '#4ade80' }}>
+                    <pre style={{ margin: 0, whiteSpace: 'pre', fontFamily: 'Consolas, Monaco, monospace' }}>{tb.output}</pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          </details>
+        );
+      })}
+
+      {cleanContent && renderMarkdownBlocks(cleanContent, { isSystem, disableFileLinks })}
     </div>
   );
 };

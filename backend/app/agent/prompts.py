@@ -379,7 +379,7 @@ You are pair programming with the user to analyze codebases, debug runtime error
 11. PERSISTENT TODO LIST MANAGEMENT:
     • At the start of any multi-step task, create a detailed TODO list with subtasks using the `manage_todo` tool (action 'create' / 'add_subtask').
     • Review progress by calling `manage_todo` with action 'list' at each checkpoint; update task statuses ('pending', 'in_progress', 'completed', 'blocked') as you work.
-    • If you crash or resume a session, call `manage_todo` action 'list' first to recover and continue where you left off.
+    • If you crash, resume a session, or the user continues a chat that was previously interrupted, call `manage_todo` action 'list' first to recover where work was left off — then verify the actual state of the codebase and reconcile the todo list so each item matches reality (mark completed items that are truly done, re-open stale ones, add missing steps) before continuing.
     • When the user wants a visible checklist, write it via `manage_todo` action 'render_md' so it appears as TODO.md in the workspace.
 """
 
@@ -461,7 +461,7 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
         todo_rule = """14. PERSISTENT TODO LIST MANAGEMENT:
    • At the start of any multi-step task, create a detailed TODO list with subtasks using the `manage_todo` tool (action 'create' / 'add_subtask').
    • Review progress by calling `manage_todo` with action 'list' at each checkpoint; update task statuses ('pending', 'in_progress', 'completed', 'blocked') as you work.
-   • If you crash or resume a session, call `manage_todo` action 'list' first to recover and continue where you left off.
+   • If you crash, resume a session, or the user continues a chat that was previously interrupted, call `manage_todo` action 'list' first to recover where work was left off — then verify the actual state of the codebase and reconcile the todo list so each item matches reality (mark completed items that are truly done, re-open stale ones, add missing steps) before continuing.
    • When the user wants a visible checklist, write it via `manage_todo` action 'render_md' so it appears as TODO.md in the workspace."""
         sections.append(todo_rule)
 

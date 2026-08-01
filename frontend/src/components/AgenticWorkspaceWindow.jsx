@@ -1323,6 +1323,32 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
     }
   }, [displayMessages, selectedPastSessionId]);
 
+  // Persistent TODO list panel (Live Output tab) — visible in coder mode when the toggle is ON
+  const [todoListText, setTodoListText] = React.useState('');
+  const [todoListLoading, setTodoListLoading] = React.useState(false);
+  const todoEnabled = activeSettings.manage_todo_enabled !== undefined ? activeSettings.manage_todo_enabled : true;
+  React.useEffect(() => {
+    if (!isCodingMode || !todoEnabled) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setTodoListLoading(true);
+        const res = await fetch(`${API_BASE}/api/todo/list`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          setTodoListText(data.text || '');
+        }
+      } catch (e) {
+        if (!cancelled) setTodoListText('');
+      } finally {
+        if (!cancelled) setTodoListLoading(false);
+      }
+    };
+    load();
+    const interval = setInterval(load, 4000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [isCodingMode, todoEnabled, activeTab, displayMessages]);
+
   // Extract all tool execution events for Inspector
   const toolLogs = React.useMemo(() => {
     const logs = [];
@@ -2597,6 +2623,29 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   >
                     📋 Planning {promptPlanning ? 'ON' : 'OFF'}
                   </button>
+
+                  {isCodingMode && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = activeSettings.manage_todo_enabled !== undefined ? !activeSettings.manage_todo_enabled : false;
+                        handleUpdateSetting({ manage_todo_enabled: val });
+                      }}
+                      title="Persistent TODO list tool (coder mode)"
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        border: (activeSettings.manage_todo_enabled !== undefined ? activeSettings.manage_todo_enabled : true) ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                        background: (activeSettings.manage_todo_enabled !== undefined ? activeSettings.manage_todo_enabled : true) ? 'rgba(16, 185, 129, 0.25)' : 'rgba(0,0,0,0.3)',
+                        color: (activeSettings.manage_todo_enabled !== undefined ? activeSettings.manage_todo_enabled : true) ? '#ffffff' : '#64748b',
+                        cursor: 'pointer',
+                        fontSize: '0.66rem',
+                        fontWeight: 600
+                      }}
+                    >
+                      ✅ TODO List {activeSettings.manage_todo_enabled !== undefined ? (activeSettings.manage_todo_enabled ? 'ON' : 'OFF') : 'ON'}
+                    </button>
+                  )}
                 </div>
 
                 {/* Right Side: Mic + Circular Send Button */}
@@ -2933,6 +2982,31 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                 <Terminal style={{ width: '14px', height: '14px' }} />
                 Real-Time Tool Execution Log
               </div>
+
+              {isCodingMode && todoEnabled && (
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.07)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: '8px',
+                  padding: '10px'
+                }}>
+                  <div style={{ fontSize: '0.70rem', color: '#6ee7b7', fontWeight: 600, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    ✅ Persistent TODO List
+                    {todoListLoading && <span style={{ fontSize: '0.6rem', color: '#94a3b8', fontWeight: 400 }}>refreshing...</span>}
+                  </div>
+                  <div style={{
+                    fontSize: '0.72rem',
+                    fontFamily: 'Consolas, Monaco, monospace',
+                    whiteSpace: 'pre-wrap',
+                    color: '#e2e8f0',
+                    lineHeight: '1.5',
+                    maxHeight: '220px',
+                    overflowY: 'auto'
+                  }}>
+                    {todoListText ? todoListText : 'No todos yet. Ask the coding agent to start a task list with manage_todo.'}
+                  </div>
+                </div>
+              )}
 
               {lastToolResult ? (
                 <div style={{
@@ -3670,26 +3744,6 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   </div>
                   <div style={{ fontSize: '0.70rem', color: 'rgba(255,255,255,0.65)', lineHeight: '1.4', marginBottom: '12px' }}>
                     Configure the custom LLM Provider, Base URL, API Key, and Model specifically used when Coder Mode is ON. Bypasses TTS voice audio and avatar animations for raw coding throughput.
-                  </div>
-
-                  {/* Coder Feature Toggle: Persistent TODO List */}
-                  <div style={{ background: 'rgba(16, 185, 129, 0.06)', borderRadius: '8px', padding: '10px 12px', border: '1px solid rgba(16, 185, 129, 0.25)', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#6ee7b7' }}>
-                        ✅ Persistent TODO List Tool
-                      </div>
-                      <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.55)', lineHeight: '1.4', marginTop: '2px' }}>
-                        Lets the coding agent create & track task lists with subtasks (survives crashes). Disable to save on tool-call costs and hide the tool from the AI.
-                      </div>
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', color: '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      <input
-                        type="checkbox"
-                        checked={activeSettings.manage_todo_enabled !== undefined ? activeSettings.manage_todo_enabled : true}
-                        onChange={(e) => handleUpdateSetting({ manage_todo_enabled: e.target.checked })}
-                      />
-                      Enable
-                    </label>
                   </div>
 
                   {/* 1. Coder Mode LLM Backend Dropdown */}

@@ -848,6 +848,22 @@ def get_file_content(path: str):
     except Exception as e:
         return Response(status_code=500, content=f"Failed to read file: {e}")
 
+@app.get("/api/todo/list")
+def get_todo_list():
+    """
+    Returns the current persistent TODO list for display in the Live Output panel.
+    """
+    try:
+        from app.tools.todo_list import get_todos, format_todo_tree
+        todos = get_todos()
+        return {
+            "todos": todos,
+            "text": format_todo_tree(todos)
+        }
+    except Exception as e:
+        print(f"[TodoList] Failed to load todo list: {e}")
+        return {"todos": [], "text": ""}
+
 
 
 @app.delete("/api/models/vrm/{name}")
@@ -2751,7 +2767,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                                 await broadcast_ws_event({
                                                     "type": "text_stream",
                                                     "text": value,
-                                                    "backend_used": backend_used
+                                                    "backend_used": backend_used,
+                                                    "final": True
                                                 })
                                                 
                                                 # Batch into sentences for TTS (skipping <thought>/<think>/<reasoning> blocks)
@@ -2770,6 +2787,17 @@ async def websocket_endpoint(websocket: WebSocket):
                                                         queue_sentence(clean_s, audio_idx)
                                                         audio_idx += 1
                                                         
+                                            elif event_type == "thinking":
+                                                # Intermediate thinking/narration text (e.g. before a tool call).
+                                                # Broadcast for display-only UIs (Agentic Workspace) but never
+                                                # sent to TTS so only the final reply is spoken.
+                                                await broadcast_ws_event({
+                                                    "type": "text_stream",
+                                                    "text": value,
+                                                    "backend_used": backend_used,
+                                                    "final": False
+                                                })
+
                                             elif event_type == "tool_start":
                                                 tool_start_time = time.time()
                                                 tool_name = value.get("name") if isinstance(value, dict) else str(value)

@@ -615,10 +615,22 @@ class AgentExecutor:
 
         session_id = kwargs.get("session_id")
         target_dir = self._get_active_session_dir(kwargs) or kwargs.get("target_dir")
-        return manage_todo(action, title=title, todo_id=todo_id, parent_id=parent_id,
-                           status=status, priority=priority, position=position,
-                           session_id=session_id, include_completed=include_completed,
-                           target_dir=target_dir)
+        result = manage_todo(action, title=title, todo_id=todo_id, parent_id=parent_id,
+                             status=status, priority=priority, position=position,
+                             session_id=session_id, include_completed=include_completed,
+                             target_dir=target_dir)
+
+        mutation_actions = {"create", "add", "add_task", "new", "update", "edit", "change", "modify",
+                            "reorder", "move", "complete", "done", "finish", "mark_complete",
+                            "reopen", "uncomplete", "undo", "add_subtask", "subtask", "child",
+                            "delete", "remove", "rm", "clear_completed", "clear", "cleanup"}
+        if result.startswith("Success:") and action in mutation_actions and target_dir:
+            try:
+                from app.tools.todo_list import render_md_file, get_todos
+                render_md_file(get_todos(session_id=session_id), target_dir=target_dir)
+            except Exception as e:
+                print(f"[ManageTodo] Auto-render TODO.md failed: {e}")
+        return result
 
     async def ensure_model_loaded(self, model_name: str) -> bool:
         """
@@ -2014,7 +2026,7 @@ class AgentExecutor:
             
             announcement = announcements.get(tool_name)
             if announcement:
-                yield "token", announcement, "resolver"
+                yield "thinking", announcement, "resolver"
                 # Give the backend/frontend a moment to stream, generate TTS, and start playback
                 await asyncio.sleep(1.0)
                 
@@ -2180,6 +2192,7 @@ class AgentExecutor:
                 accumulated_response = ""
                 first_token = True
                 
+                iteration_tokens = []
                 async for event_type, value, label in self._parse_native_stream(stream):
                     backend_used = label
                     if event_type == "token":
@@ -2188,14 +2201,21 @@ class AgentExecutor:
                             first_token = False
                         accumulated_response += value
                         print(value, end="", flush=True)
-                        yield "token", value, label
+                        iteration_tokens.append((value, label))
                     elif event_type == "tool_calls":
                         tool_calls_to_execute = value
                 
                 if not first_token:
                     print()
                 full_llm_response = accumulated_response.strip()
-                
+
+                # Emit the buffered narration, tagged so consumers can separate
+                # intermediate thinking text (before tool calls) from the final reply.
+                if iteration_tokens:
+                    emit_type = "thinking" if tool_calls_to_execute else "token"
+                    for _val, _label in iteration_tokens:
+                        yield emit_type, _val, _label
+
                 if tool_calls_to_execute:
                     # Pre-filter already-executed duplicate calls and normalize missing
                     # tool_call ids BEFORE appending the assistant message, so every
