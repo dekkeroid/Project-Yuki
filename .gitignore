@@ -32,6 +32,7 @@ metadata_tagger.log
 
 # Python testing sandbox files (Scratch directory)
 backend/scratch/
+backend/tests/
 scratch_scripts/
 backend/test.mp3
 
