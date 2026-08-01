@@ -98,26 +98,9 @@ def jarvis_query_file_db(
                 if len(unique) >= limit:
                     break
 
-        output_lines = [f"Found {len(unique)} indexed files matching query '{clean_query}':"]
+        output_lines = [f"Found {len(unique)} files matching '{clean_query}':"]
         for r in unique:
-            path_str = r.get("file_path", "")
-            size_bytes = r.get("size", 0) or 0
-            ext = r.get("extension", "") or ""
-            cat = r.get("category", "") or ""
-            size_mb = size_bytes / (1024 * 1024)
-
-            meta_parts = []
-            if cat:
-                meta_parts.append(f"Category: {cat}")
-            if r.get("title") and r["title"].lower() != r.get("file_name", "").lower():
-                meta_parts.append(f"Title: {r['title']}")
-            if r.get("artist_or_creator"):
-                meta_parts.append(f"Creator: {r['artist_or_creator']}")
-            if r.get("genre_or_tags"):
-                meta_parts.append(f"Tags: {r['genre_or_tags']}")
-            meta_str = f" ({', '.join(meta_parts)})" if meta_parts else ""
-
-            output_lines.append(f"• [{path_str}]{meta_str} ({size_mb:.2f} MB, ext: {ext or 'none'})")
+            output_lines.append(r.get("file_path", ""))
 
         return "\n".join(output_lines)
 

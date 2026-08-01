@@ -33,11 +33,52 @@ const renderTreeFileIcon = (fileName) => {
   return <FileText style={{ width: '13px', height: '13px', color: '#94a3b8', flexShrink: 0 }} />;
 };
 
+const TODO_STATUS_STYLE = {
+  pending: { label: 'pending', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)', border: 'rgba(148, 163, 184, 0.4)' },
+  in_progress: { label: 'in progress', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)', border: 'rgba(251, 191, 36, 0.4)' },
+  completed: { label: 'completed', color: '#4ade80', bg: 'rgba(74, 222, 128, 0.15)', border: 'rgba(74, 222, 128, 0.4)' },
+  blocked: { label: 'blocked', color: '#f87171', bg: 'rgba(248, 113, 113, 0.15)', border: 'rgba(248, 113, 113, 0.4)' },
+};
+const TODO_GLYPH = { pending: '○', in_progress: '◐', completed: '✓', blocked: '⊗' };
+
+const TodoTree = ({ todos }) => {
+  if (!todos || todos.length === 0) return null;
+  const byParent = {};
+  todos.forEach((t) => { (byParent[t.parent_id ?? null] = byParent[t.parent_id ?? null] || []).push(t); });
+  const renderNode = (parentId, counters) => {
+    const children = byParent[parentId] || [];
+    return children.map((t, i) => {
+      const number = [...counters, i + 1].join('.');
+      const st = TODO_STATUS_STYLE[t.status] || TODO_STATUS_STYLE.pending;
+      const glyph = TODO_GLYPH[t.status] || '○';
+      return (
+        <React.Fragment key={t.id}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '1px 0' }}>
+            <span style={{ color: '#64748b', flexShrink: 0, fontFamily: 'Consolas, Monaco, monospace' }}>
+              {number}.
+            </span>
+            <span style={{ color: st.color, flexShrink: 0 }}>{glyph}</span>
+            <span style={{ color: '#94a3b8', flexShrink: 0, fontSize: '0.62rem', fontFamily: 'Consolas, Monaco, monospace', marginTop: '1px' }}>#{t.id}</span>
+            <span style={{ color: t.status === 'completed' ? '#6b7280' : '#e2e8f0', textDecoration: t.status === 'completed' ? 'line-through' : 'none' }}>
+              {t.title}
+            </span>
+            {t.priority && t.priority !== 'normal' && (
+              <span style={{ fontSize: '0.58rem', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.35)', borderRadius: '4px', padding: '0 4px', flexShrink: 0 }}>{t.priority}</span>
+            )}
+            <span style={{ fontSize: '0.6rem', color: st.color, background: st.bg, border: `1px solid ${st.border}`, borderRadius: '999px', padding: '0 6px', flexShrink: 0, marginLeft: 'auto' }}>{st.label}</span>
+          </div>
+          {renderNode(t.id, [...counters, i + 1])}
+        </React.Fragment>
+      );
+    });
+  };
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>{renderNode(null, [])}</div>;
+};
+
 const CodeViewerWithLineNumbers = ({ content, maxHeight = '450px' }) => {
   if (!content && content !== '') return null;
   const lines = content.split('\n');
   const padLength = Math.max(2, String(lines.length).length);
-
   return (
     <div style={{
       background: '#020617',
@@ -1325,6 +1366,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 
   // Persistent TODO list panel (Live Output tab) — visible in coder mode when the toggle is ON
   const [todoListText, setTodoListText] = React.useState('');
+  const [todoItems, setTodoItems] = React.useState([]);
   const [todoListLoading, setTodoListLoading] = React.useState(false);
   const todoEnabled = activeSettings.manage_todo_enabled !== undefined ? activeSettings.manage_todo_enabled : true;
   React.useEffect(() => {
@@ -1333,13 +1375,16 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
     const load = async () => {
       try {
         setTodoListLoading(true);
-        const res = await fetch(`${API_BASE}/api/todo/list`);
+        const targetSid = selectedPastSessionId || activeSessionId;
+        const url = `${API_BASE}/api/todo/list${targetSid ? `?session_id=${encodeURIComponent(targetSid)}` : ''}`;
+        const res = await fetch(url);
         if (res.ok && !cancelled) {
           const data = await res.json();
           setTodoListText(data.text || '');
+          setTodoItems(data.todos || []);
         }
       } catch (e) {
-        if (!cancelled) setTodoListText('');
+        if (!cancelled) { setTodoListText(''); setTodoItems([]); }
       } finally {
         if (!cancelled) setTodoListLoading(false);
       }
@@ -1347,7 +1392,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
     load();
     const interval = setInterval(load, 4000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [isCodingMode, todoEnabled, activeTab, displayMessages]);
+  }, [isCodingMode, todoEnabled, activeTab, displayMessages, selectedPastSessionId, activeSessionId]);
 
   // Extract all tool execution events for Inspector
   const toolLogs = React.useMemo(() => {
@@ -3003,7 +3048,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     maxHeight: '220px',
                     overflowY: 'auto'
                   }}>
-                    {todoListText ? todoListText : 'No todos yet. Ask the coding agent to start a task list with manage_todo.'}
+                    {todoItems.length > 0 ? <TodoTree todos={todoItems} /> : (todoListText ? todoListText : 'No todos yet. Ask the coding agent to start a task list with manage_todo.')}
                   </div>
                 </div>
               )}

@@ -22,13 +22,20 @@ _QUERY_EXPANSIONS = {
     "browse": ("web", "internet", "search"),
     "browser": ("web", "internet", "url", "launch"),
     "clip": ("screenshot", "capture"),
+    "dashboard": ("html", "page", "interactive", "widget"),
+    "diagram": ("svg", "flowchart", "architecture", "visual"),
     "dir": ("directory", "folder", "list", "file"),
+    "draw": ("svg", "canvas", "illustration", "pixel"),
     "folder": ("directory", "file", "open", "list", "search"),
+    "flowchart": ("svg", "diagram", "process", "visual"),
     "google": ("web", "internet", "search"),
+    "illustration": ("svg", "draw", "art", "visual"),
     "internet": ("web", "search", "browse"),
     "movie": ("video", "media", "play", "file"),
     "music": ("audio", "media", "play", "file"),
     "open": ("launch", "file", "directory", "application"),
+    "page": ("html", "dashboard", "interactive", "website"),
+    "pixel": ("art", "svg", "canvas", "sprite"),
     "play": ("media", "audio", "video", "file"),
     "pull": ("open", "launch", "show"),
     "run": ("execute", "terminal", "command", "script"),
@@ -36,8 +43,10 @@ _QUERY_EXPANSIONS = {
     "start": ("launch", "open", "play"),
     "time": ("date", "current", "datetime"),
     "video": ("media", "movie", "play", "file", "watch"),
+    "visual": ("svg", "canvas", "diagram", "illustration"),
     "watch": ("video", "media", "play", "open"),
     "web": ("internet", "search", "browse"),
+    "website": ("html", "page", "dashboard"),
 }
 
 _ALWAYS_INCLUDED_JARVIS_TOOLS = {
@@ -84,6 +93,8 @@ _TOOL_HINTS = {
     "jarvis_media_playback_control": ("pause", "next", "previous", "media", "music", "playback", "stop"),
     "jarvis_analyze_image": ("screenshot", "image", "vision", "picture", "photo", "scan", "analyze"),
     "jarvis_see_screen": ("screen", "look", "see", "watch", "display", "view", "monitor", "desktop", "window", "current"),
+    "jarvis_html_graphics": ("diagram", "flowchart", "pixel", "art", "illustration", "svg", "canvas", "animate", "visual", "architecture", "uml", "wireframe", "draw", "sketch", "icon", "logo"),
+    "jarvis_html_viewer": ("html", "page", "website", "dashboard", "interactive", "full", "document", "form", "button", "layout", "webpage", "embed"),
     "find_files_by_glob": ("glob", "find", "search", "pattern", "files", "match"),
 
     # Legacy Basic Mode Tools

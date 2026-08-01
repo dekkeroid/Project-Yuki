@@ -119,7 +119,7 @@ def approve_pending_confirmation(
     ttl_seconds: int | None = None,
 ) -> tuple[bool, str]:
     """Consume a pending token and mint the executable grant after approval."""
-    tool = _normalize_tool_name(tool_name)
+    tool = _resolve_alias(_normalize_tool_name(tool_name))
     canonical_args = canonicalize_tool_args(tool, arguments or {})
     now = time.time()
 
@@ -154,42 +154,58 @@ def authorize_tool_call(
     *,
     consume_grant: bool = True,
     scope: str = DEFAULT_CONFIRMATION_SCOPE,
+    mode: str = "assistant",
+    workspace_root: str | None = None,
 ) -> ToolSafetyDecision:
     """Validate policy and return sanitized arguments for actual execution.
 
     `consume_grant=False` is used before dispatching to the stdio MCP server so
     the child server remains the final execution boundary and consumes the grant.
     Local fallback calls this again with `consume_grant=True`.
+
+    `mode="coder"` applies the Coder Mode policy: sensitive tools run freely
+    (no confirmation prompts) but are gated by a hard blacklist and a workspace
+    path sandbox instead. `mode="advanced"` is the same blacklist-only policy
+    without the workspace path sandbox (autonomous jarvis mode). `mode="assistant"`
+    (default) keeps the confirmation-driven authorization flow.
     """
     raw_args = dict(arguments or {})
     tool = _normalize_tool_name(tool_name)
+    decision_tool = _resolve_alias(tool)
     canonical_args = canonicalize_tool_args(tool, raw_args)
 
     if not config.TOOL_SANDBOX_ENABLED:
         return ToolSafetyDecision(True, arguments=canonical_args)
 
-    if tool in _configured_set(config.TOOL_SANDBOX_BLOCKED_TOOLS):
+    blocked_tools = _configured_set(config.TOOL_SANDBOX_BLOCKED_TOOLS)
+    if tool in blocked_tools or decision_tool in blocked_tools:
         return _blocked(f"Error: Tool '{tool}' is blocked by the Yuki tool sandbox.", canonical_args)
 
-    blocked_reason = _blocked_reason(tool, canonical_args)
+    blocked_reason = _blocked_reason(decision_tool, canonical_args)
     if blocked_reason:
         return _blocked(f"Error: Blocked by Yuki's command safety sandbox: {blocked_reason}", canonical_args)
 
-    if not _requires_confirmation(tool, raw_args, canonical_args):
-        return ToolSafetyDecision(True, arguments=_execution_arguments(tool, canonical_args, authorized=False))
+    if mode in ("coder", "advanced"):
+        return _authorize_autonomous(tool, decision_tool, canonical_args, workspace_root=workspace_root, apply_file_guard=(mode == "coder"))
+
+    if not _requires_confirmation(decision_tool, raw_args, canonical_args):
+        return ToolSafetyDecision(True, arguments=_execution_arguments(decision_tool, canonical_args, authorized=False))
 
     grant_id = _extract_grant_id(raw_args)
     if grant_id:
+        # Hash against the decision-canonicalized args so jarvis_* aliases match
+        # grants issued under their canonical tool name.
+        decision_args = canonicalize_tool_args(decision_tool, canonical_args)
         ok, reason = _validate_grant(
             grant_id,
-            tool,
-            canonical_args,
+            decision_tool,
+            decision_args,
             scope=scope or DEFAULT_CONFIRMATION_SCOPE,
             consume=consume_grant,
         )
         if ok:
-            return ToolSafetyDecision(True, arguments=_execution_arguments(tool, canonical_args, authorized=True))
-        target = describe_tool_target(tool, canonical_args)
+            return ToolSafetyDecision(True, arguments=_execution_arguments(decision_tool, canonical_args, authorized=True))
+        target = describe_tool_target(decision_tool, canonical_args)
         return ToolSafetyDecision(
             False,
             requires_confirmation=True,
@@ -198,7 +214,7 @@ def authorize_tool_call(
             arguments=canonical_args,
         )
 
-    target = describe_tool_target(tool, canonical_args)
+    target = describe_tool_target(decision_tool, canonical_args)
     return ToolSafetyDecision(
         False,
         requires_confirmation=True,
@@ -381,6 +397,82 @@ def _blocked_reason(tool: str, args: dict[str, Any]) -> str | None:
     return None
 
 
+# jarvis_* tools are thin wrappers over the canonical tools (see executor.py
+# tool registry). Decisions (blocked set, destructive patterns, confirmation)
+# use the resolved canonical name so jarvis_* calls receive the exact same
+# safety treatment as their canonical counterparts.
+_TOOL_ALIASES = {
+    "jarvis_run_terminal": "run_terminal_command",
+    "jarvis_run_python": "run_python_script",
+    "jarvis_system_power": "system_power_control",
+    "jarvis_close_app": "manage_process",
+    "jarvis_launch_app": "launch_app",
+    "jarvis_open_or_play_file": "open_or_play_file",
+    "jarvis_window_control": "control_window",
+    "jarvis_keyboard_input": "keyboard_mouse_input",
+    "jarvis_create_or_edit_file": "create_file",
+    "jarvis_replace_file_content": "edit_file",
+}
+
+_CODER_MODE_FILE_TOOLS = {"create_file", "edit_file", "delete_file"}
+
+
+def _resolve_alias(tool_name: str) -> str:
+    return _TOOL_ALIASES.get(tool_name, tool_name)
+
+
+def _expand_path(value: str) -> str:
+    try:
+        return os.path.abspath(os.path.expanduser(os.path.expandvars(value)))
+    except Exception:
+        return value
+
+
+def _path_is_within(root: str, target: str) -> bool:
+    try:
+        return os.path.commonpath([root, target]) == root
+    except Exception:
+        return False
+
+
+def _coder_mode_file_guard(decision_tool: str, canonical_args: dict[str, Any], *, workspace_root: str | None) -> str | None:
+    """Return a block reason when a Coder Mode file tool targets a disallowed path."""
+    if decision_tool not in _CODER_MODE_FILE_TOOLS:
+        return None
+    path = str(canonical_args.get("file_path") or "").strip().strip("\"'")
+    if not path:
+        return None
+    target = _expand_path(path)
+    root = _expand_path(workspace_root) if workspace_root else None
+    if root and _path_is_within(root, target):
+        return None
+    from app.tools.files import _is_safe_path
+
+    if not _is_safe_path(path, write_operation=True):
+        return f"'{path}' is a sensitive system location"
+    if not root:
+        return None
+    return f"'{path}' is outside the active workspace '{workspace_root}'"
+
+
+def _authorize_autonomous(tool: str, decision_tool: str, canonical_args: dict[str, Any], *, workspace_root: str | None, apply_file_guard: bool) -> ToolSafetyDecision:
+    """Autonomous mode policy (Coder + Advanced jarvis): blacklist-only, no confirmation prompts.
+
+    A hard blacklist and (for Coder Mode) a workspace path sandbox gate
+    dangerous actions instead of prompting. Tools that internally re-check
+    confirmations (open_or_play_file, delete_file) receive `confirmed=True` so
+    they run without dead-ending.
+    """
+    coder_blocked = _configured_set(config.TOOL_SANDBOX_CODER_MODE_BLOCKED_TOOLS)
+    if tool in coder_blocked or decision_tool in coder_blocked:
+        return _blocked(f"Error: Tool '{tool}' is blocked in autonomous mode by the Yuki tool sandbox.", canonical_args)
+    if apply_file_guard:
+        reason = _coder_mode_file_guard(decision_tool, canonical_args, workspace_root=workspace_root)
+        if reason:
+            return _blocked(f"Error: Blocked by Yuki's Coder Mode path sandbox: {reason}", canonical_args)
+    return ToolSafetyDecision(True, arguments=_execution_arguments(decision_tool, canonical_args, authorized=True))
+
+
 def _execution_arguments(tool: str, args: dict[str, Any], *, authorized: bool) -> dict[str, Any]:
     clean = dict(args)
     if authorized and tool in {"open_or_play_file", "delete_file", "system_power_control"}:
@@ -390,7 +482,7 @@ def _execution_arguments(tool: str, args: dict[str, Any], *, authorized: bool) -
 
 def _issue_record(record_type: str, tool_name: str, arguments: dict[str, Any] | None, *, target: str | None, scope: str, ttl_seconds: int | None) -> str:
     token = secrets.token_urlsafe(32)
-    tool = _normalize_tool_name(tool_name)
+    tool = _resolve_alias(_normalize_tool_name(tool_name))
     canonical_args = canonicalize_tool_args(tool, arguments or {})
     now = time.time()
     record = _make_record(record_type, tool, canonical_args, target=target, scope=scope, ttl_seconds=ttl_seconds, now=now)

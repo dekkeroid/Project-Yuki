@@ -920,6 +920,10 @@ const App = () => {
         if (window.electronAPI && window.electronAPI.openStopwatchWindow) {
           window.electronAPI.openStopwatchWindow({ label: msg.label, started_at: msg.started_at });
         }
+      } else if (msg.type === 'open-canvas') {
+        if (window.electronAPI && window.electronAPI.openCanvasWindow) {
+          window.electronAPI.openCanvasWindow({ mode: msg.mode, filename: msg.filename });
+        }
       } else if (msg.type === 'confirm_request') {
         let displayMessage = `Yuki wants to execute the following action:\n\n${msg.name}`;
         if (msg.name.startsWith("Run terminal command:")) {

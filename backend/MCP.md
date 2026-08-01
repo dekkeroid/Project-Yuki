@@ -71,7 +71,8 @@ Sandbox configuration:
 
 - `YUKI_TOOL_SANDBOX_ENABLED=true` (default)
 - `YUKI_TOOL_SANDBOX_BLOCKED_TOOLS=` comma-separated deny-list for whole tools
-- `YUKI_TOOL_SANDBOX_REQUIRE_CONFIRMATION_TOOLS=` comma-separated sensitive tools
+- `YUKI_TOOL_SANDBOX_REQUIRE_CONFIRMATION_TOOLS=` comma-separated sensitive tools (empty = config.py defaults, which include the `jarvis_*` wrappers)
+- `YUKI_TOOL_SANDBOX_CODER_MODE_BLOCKED_TOOLS=` tools blocked outright in Coder Mode / Advanced (autonomous) mode — no confirmation prompts (default `system_power_control,jarvis_system_power`); Coder Mode additionally enforces a workspace path sandbox on file create/edit/delete, while Advanced mode runs file operations freely
 - `YUKI_TOOL_SANDBOX_BLOCKED_POWER_ACTIONS=shutdown,restart` by default
 - `YUKI_TOOL_SANDBOX_BLOCKED_TERMINAL_PATTERNS=` optional `||`-separated regex list; these add to the built-in destructive command patterns
 - `YUKI_TOOL_CONFIRMATION_GRANT_FILE=` optional file path override

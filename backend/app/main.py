@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 import requests as http_requests
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File, HTTPException, Body
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File, HTTPException, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from typing import List, Dict, Optional, Any
@@ -121,7 +121,13 @@ async def _validate_cloud_key():
 
 async def _start_crawler_bg():
     """Background: init DB and start file crawler after server is live."""
-    await asyncio.sleep(120)  # 2-min grace period after startup
+    from app.memory.crawler import start_watchdog_services
+    try:
+        start_watchdog_services()
+    except Exception as e:
+        print(f"[Startup] Failed to start watchdog services: {e}")
+
+    await asyncio.sleep(120)  # 2-min grace period after startup (crawler only)
     print("[Startup] Initializing file crawler and indexing database...")
     try:
         from app.memory import crawler
@@ -343,6 +349,10 @@ async def lifespan(app: FastAPI):
     time_manager.init_exact_timer_scheduler()
     time_manager.init_time_manager()
     asyncio.create_task(reminder_heartbeat_loop())
+
+    from app.tools import canvas as _canvas_tools
+    _canvas_tools.set_broadcast_callback(broadcast_ws)
+    _canvas_tools.set_main_loop(asyncio.get_running_loop())
 
     yield
 
@@ -849,13 +859,15 @@ def get_file_content(path: str):
         return Response(status_code=500, content=f"Failed to read file: {e}")
 
 @app.get("/api/todo/list")
-def get_todo_list():
+def get_todo_list(session_id: Optional[str] = Query(None)):
     """
     Returns the current persistent TODO list for display in the Live Output panel.
+    When session_id is provided, returns only todos belonging to that session
+    (adopting any legacy global todos into that session).
     """
     try:
         from app.tools.todo_list import get_todos, format_todo_tree
-        todos = get_todos()
+        todos = get_todos(session_id=session_id or None)
         return {
             "todos": todos,
             "text": format_todo_tree(todos)
@@ -1753,6 +1765,26 @@ async def get_tools_list(mode: Optional[str] = None):
                     tools.append(m_tool)
         except Exception:
             pass
+
+    # In 'all' mode, also surface legacy tools that are registered directly on the
+    # executor (self.tools) but have no formal LLM schema (e.g. get_current_datetime,
+    # take_screenshot, control_window, list_directory). Keeps the tester comprehensive.
+    if mode == "all" and agent_executor is not None:
+        try:
+            known = {t.get("function", {}).get("name") for t in tools if isinstance(t, dict)}
+            exec_tools = getattr(agent_executor, "tools", {}) or {}
+            for legacy_name in sorted(exec_tools):
+                if legacy_name not in known:
+                    tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": legacy_name,
+                            "description": "Legacy in-process tool registered directly in AgentExecutor.tools (no formal LLM schema). Arguments are free-form keyword arguments — use the JSON editor or check the Code tab.",
+                            "parameters": {"type": "object", "properties": {}}
+                        }
+                    })
+        except Exception:
+            pass
     
     formatted = []
     for t in tools:
@@ -1767,13 +1799,13 @@ async def get_tools_list(mode: Optional[str] = None):
             category = "Memory & User Facts"
         elif name in ("web_search", "read_file_content", "search_files", "list_directory", "jarvis_query_file_db", "jarvis_web_search", "jarvis_web_scrape"):
             category = "Information & Search"
-        elif name in ("launch_app", "open_or_play_file", "media_playback_control", "set_system_volume", "jarvis_launch_app", "jarvis_open_or_play_file", "jarvis_system_volume", "jarvis_media_playback_control", "jarvis_take_screenshot"):
+        elif name in ("launch_app", "open_or_play_file", "media_playback_control", "set_system_volume", "jarvis_launch_app", "jarvis_open_or_play_file", "jarvis_system_volume", "jarvis_media_playback_control", "jarvis_take_screenshot", "keyboard_mouse_input"):
             category = "Media & Control"
-        elif name in ("jarvis_analyze_image", "jarvis_see_screen"):
+        elif name in ("jarvis_analyze_image", "jarvis_see_screen", "take_screenshot"):
             category = "Vision & Media"
         elif name in ("run_terminal_command", "run_python_script", "create_file", "edit_file", "delete_file", "jarvis_read_file", "jarvis_create_or_edit_file", "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_run_terminal", "jarvis_run_python"):
             category = "Code & Filesystem"
-        elif name in ("jarvis_system_diagnostics", "jarvis_network_status", "jarvis_window_control", "jarvis_system_power", "system_power_control", "manage_process", "jarvis_manage_time", "manage_time", "jarvis_close_app"):
+        elif name in ("jarvis_system_diagnostics", "jarvis_network_status", "jarvis_window_control", "jarvis_system_power", "system_power_control", "manage_process", "jarvis_manage_time", "manage_time", "jarvis_close_app", "get_current_datetime", "control_window"):
             category = "Diagnostics & Automation"
             
         formatted.append({
@@ -1788,6 +1820,114 @@ async def get_tools_list(mode: Optional[str] = None):
         "tools": formatted,
         "count": len(formatted)
     }
+
+
+@app.post("/api/tools/run")
+async def run_tool_direct(payload: dict = Body(...)):
+    """
+    Directly executes a registered tool by name with the provided arguments.
+
+    Testing/diagnostic endpoint used by the tool tester page (testing/tool_tester.html).
+    Routes through the exact same pipeline the agent uses: `_run_tool_async` →
+    safety preflight (`authorize_tool_call`) → MCP stdio bridge (if enabled) →
+    local in-process dispatcher. Returns the raw tool output string.
+    """
+    global agent_executor
+    if agent_executor is None:
+        return {
+            "ok": False,
+            "error": "Agent executor is not initialized yet. Try again in a few seconds.",
+        }
+
+    tool_name = str(
+        payload.get("name") or payload.get("tool_name") or payload.get("tool") or ""
+    ).strip()
+
+    raw_args = payload.get("arguments")
+    if raw_args is None:
+        raw_args = payload.get("args")
+    if isinstance(raw_args, str):
+        try:
+            raw_args = json.loads(raw_args)
+        except Exception:
+            return {"ok": False, "tool": tool_name, "error": "arguments must be a JSON object."}
+    if not isinstance(raw_args, dict):
+        raw_args = {}
+
+    if not tool_name:
+        return {"ok": False, "error": "Missing required field: tool name ('name')."}
+
+    mode = str(payload.get("mode") or "assistant").strip().lower()
+    if mode not in ("assistant", "advanced", "coder"):
+        mode = "assistant"
+
+    t0 = time.time()
+    try:
+        result = await agent_executor._run_tool_async(tool_name, raw_args, mode=mode)
+        elapsed_ms = int((time.time() - t0) * 1000)
+        lowered = str(result or "").strip().lower()
+        is_error = lowered.startswith(("error:", "error executing", "failed:"))
+        return {
+            "ok": not is_error,
+            "tool": tool_name,
+            "arguments": raw_args,
+            "result": result or "",
+            "duration_ms": elapsed_ms,
+            "mode": mode,
+        }
+    except Exception as e:
+        elapsed_ms = int((time.time() - t0) * 1000)
+        return {
+            "ok": False,
+            "tool": tool_name,
+            "arguments": raw_args,
+            "result": f"Error: {e}",
+            "error": str(e),
+            "duration_ms": elapsed_ms,
+            "mode": mode,
+        }
+
+
+@app.get("/api/tools/source")
+def get_tools_source():
+    """
+    Returns the Python source of the tool implementation modules so the
+    tool tester page can show the actual code behind every tool.
+    """
+    modules = [
+        "app/agent/executor.py",
+        "app/tools/definitions.py",
+        "app/tools/system.py",
+        "app/tools/files.py",
+        "app/tools/jarvis.py",
+        "app/tools/web.py",
+        "app/tools/todo_list.py",
+        "app/tools/selector.py",
+        "app/tools/safety.py",
+    ]
+    out = {}
+    for rel in modules:
+        p = config.BASE_DIR / rel
+        if p.exists():
+            try:
+                out[rel] = p.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                out[rel] = ""
+    return {"modules": out}
+
+
+@app.get("/tool-tester")
+def serve_tool_tester():
+    """
+    Serves the testing/tool_tester.html page straight from the repository so it
+    can be opened at http://localhost:58392/tool-tester without any CORS issues.
+    """
+    from fastapi.responses import FileResponse
+    tester_path = config.BASE_DIR.parent / "testing" / "tool_tester.html"
+    if tester_path.exists():
+        return FileResponse(str(tester_path))
+    return Response(status_code=404, content="tool_tester.html not found in testing/ folder")
+
 
 async def broadcast_due_reminders(due: List[Dict[str, Any]]):
     """
@@ -2728,6 +2868,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                     import uuid
                                     turn_id = uuid.uuid4().hex[:12]
                                     overrides["turn_id"] = turn_id
+                                    if not overrides.get("session_id"):
+                                        overrides["session_id"] = active_session_id
                                     attachments = payload_data.get("attachments") or []
                                     gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides, attachments=attachments)
                                     # First crash-recovery checkpoint: prior history + the new user message.
@@ -3146,6 +3288,18 @@ def debug_threads():
     for thread_id, frame in sys._current_frames().items():
         result[str(thread_id)] = [f"{f.filename}:{f.lineno} ({f.name})" for f in traceback.extract_stack(frame)]
     return result
+
+@app.get("/api/canvas/{filename}")
+async def serve_canvas_file(filename: str):
+    """Serve canvas HTML files from .yuki_attachments/canvas/."""
+    import os
+    from starlette.responses import FileResponse
+    from app.config import BASE_DIR
+    file_path = os.path.join(str(BASE_DIR), ".yuki_attachments", "canvas", filename)
+    print(f"[Canvas] Serving {filename} (exists={os.path.isfile(file_path)})")
+    if os.path.isfile(file_path):
+        return FileResponse(file_path, media_type="text/html")
+    raise HTTPException(status_code=404, detail="Canvas file not found")
 
 if _frontend_dir.exists():
     from starlette.staticfiles import StaticFiles

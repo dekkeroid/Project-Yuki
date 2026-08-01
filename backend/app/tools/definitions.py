@@ -121,7 +121,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_query_file_db",
-                "description": "Search the SQLite indexed file database (yuki_files.db) across all PC drives. Matches file names, parent folders, full directory paths, Japanese/Chinese Romaji/Pinyin transliterations, and metadata tags (title, artist, genre). Uses density ranking (/o algorithm).",
+                "description": "Search the SQLite indexed file database (yuki_files.db) across all PC drives. Matches file names, parent folders, full directory paths, Japanese/Chinese Romaji/Pinyin transliterations, and metadata tags (title, artist, genre). Uses density ranking (/o algorithm). If the first search returns no or poor results, retry: (1) drop episode/part numbers and search core title only, (2) try search_scope='folder_only' or path_hint to narrow by location, (3) increase limit to 50 for broader matches. The density scorer ranks best when all query words appear together in the filename.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -416,20 +416,35 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "manage_todo",
-                "description": "Manage a persistent TODO task list with subtasks. Creates, lists, updates, completes, and deletes tasks that survive crashes. Use 'create' to start a task list, 'list' to review progress, 'update'/'complete' to track as you work, 'render_md' to write a visible TODO.md.",
+                "description": "Manage a persistent TODO task list with subtasks that is unique to the current session. Use 'sync' to create/update/delete many tasks in a single call by passing a full items list; use 'create'/'list'/'update'/'complete'/'delete' for individual tweaks; 'render_md' writes a visible TODO.md.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["create", "list", "update", "complete", "reopen", "add_subtask", "list_subtasks", "delete", "clear_completed", "render_md"]
+                            "enum": ["sync", "create", "list", "update", "complete", "reopen", "add_subtask", "list_subtasks", "delete", "clear_completed", "render_md"]
                         },
                         "title": {"type": "string", "description": "Title of the task or subtask."},
                         "todo_id": {"type": "integer", "description": "ID of an existing todo to update/complete/delete."},
                         "parent_id": {"type": "integer", "description": "Parent todo ID when creating a subtask or listing its subtasks."},
                         "status": {"type": "string", "description": "Status to set: pending, in_progress, completed, blocked."},
                         "priority": {"type": "string", "description": "Priority: low, normal, high, critical."},
-                        "include_completed": {"type": "boolean", "description": "Whether to include completed tasks when listing. Default true."}
+                        "include_completed": {"type": "boolean", "description": "Whether to include completed tasks when listing. Default true."},
+                        "items": {
+                            "type": "array",
+                            "description": "For action 'sync': the full desired list of items to reconcile. Each item has optional id (existing task to update), title (required for new tasks), status, priority, parent_id, and delete (true to remove).",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "integer", "description": "Existing todo id to update; omit to create."},
+                                    "title": {"type": "string", "description": "Task title."},
+                                    "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "blocked"], "description": "Status to set."},
+                                    "priority": {"type": "string", "enum": ["low", "normal", "high", "critical"], "description": "Priority to set."},
+                                    "parent_id": {"type": "integer", "description": "Parent todo id for subtasks."},
+                                    "delete": {"type": "boolean", "description": "Set true to delete this item (and its subtasks)."}
+                                }
+                            }
+                        }
                     },
                     "required": ["action"]
                 }
@@ -550,6 +565,40 @@ def get_advanced_jarvis_tools_definition() -> list:
                         }
                     },
                     "required": ["action"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_html_graphics",
+                "description": "Render raw SVG or HTML5 Canvas in a borderless floating window with a soft light background (#f0f0f0). Use this to show diagrams, flowcharts, pixel art, SVG illustrations, animated visuals, system architecture diagrams, or any creative visual. For data graphs and charts, use matplotlib via jarvis_run_python instead. Input must be a raw <svg>...</svg> block or <canvas> with inline <script>. Do NOT wrap in <html>/<body>. Use dark colors for strokes/text so they contrast against the light background.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "svg_or_canvas": {
+                            "type": "string",
+                            "description": "Raw SVG markup (<svg>...</svg>) or a <canvas> element with inline <script> that draws to it. Self-contained, no external imports."
+                        }
+                    },
+                    "required": ["svg_or_canvas"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_html_viewer",
+                "description": "Render a complete HTML document in a standard window with title bar and native controls (like a browser). Use this for full HTML pages, interactive dashboards, or any content that needs <html>, <head>, <body>, or external-like structure. All CSS and JS must be inline (no external resource imports). The window behaves like a normal app window.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "html_content": {
+                            "type": "string",
+                            "description": "Complete HTML document. Should start with <!DOCTYPE html> and include <html>, <head>, <body>. All CSS/JS inline."
+                        }
+                    },
+                    "required": ["html_content"]
                 }
             }
         }

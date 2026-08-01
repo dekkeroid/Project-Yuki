@@ -14,6 +14,10 @@ DB_PATH = Path(config.BASE_DIR) / "yuki_files.db"
 # Lazy-initialized pykakasi instance (deferred to avoid ~15 MB RAM cost on import)
 _kks_instance = None
 
+# Path of the last fully-initialized database (re-entrancy guard so repeated
+# init_db() calls at startup are no-ops).
+_DB_INITIALIZED_PATH = None
+
 def _get_kks():
     global _kks_instance
     if _kks_instance is None:
@@ -222,7 +226,11 @@ def init_db():
     Initializes database schema and triggers for automated FTS5 indexing.
     Handles migration from old schemas (content-synced FTS5, old file_metadata with id PK,
     old directories with dir_path, etc.) by detecting and recreating as needed.
+    No-op if this database path was already initialized in this process.
     """
+    global _DB_INITIALIZED_PATH
+    if _DB_INITIALIZED_PATH == str(DB_PATH):
+        return
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -533,6 +541,7 @@ def init_db():
 
     conn.commit()
     conn.close()
+    _DB_INITIALIZED_PATH = str(DB_PATH)
     print(f"[DB] Initialized database at '{DB_PATH}'")
 
 def get_crawler_state(key: str) -> Optional[str]:

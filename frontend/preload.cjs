@@ -163,6 +163,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternalUrl: (url) => {
     return ipcRenderer.invoke('open-external-url', url);
   },
+  // Canvas windows (graphics viewer & HTML viewer)
+  openCanvasWindow: (data) => {
+    ipcRenderer.send('open-canvas-window', data);
+  },
+  minimizeCanvasWindow: () => {
+    ipcRenderer.send('minimize-canvas-window');
+  },
+  closeCanvasWindow: () => {
+    ipcRenderer.send('close-canvas-window');
+  },
+  saveCanvasContent: (data) => {
+    return ipcRenderer.invoke('save-canvas-content', data);
+  },
   platform: process.platform,
   isElectron: true
 });

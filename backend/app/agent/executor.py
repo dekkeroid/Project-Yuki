@@ -52,6 +52,15 @@ def _is_local_url(url: str) -> bool:
     )
 
 
+def _extract_confirmation_target(result: str) -> str:
+    """Pull the human-readable target out of a `CONFIRM_REQUIRED: ...` tool result."""
+    match = re.search(r"CONFIRM_REQUIRED:\s*(.+)", str(result or ""))
+    if not match:
+        return ""
+    target = match.group(1).strip()
+    return re.sub(r"\s+\([^)]*\)$", "", target)
+
+
 
 def is_vision_model(model_name: str) -> bool:
     """Helper function to dynamically detect if a resolved model supports native vision API payloads."""
@@ -158,6 +167,7 @@ class AgentExecutor:
     def __init__(self, memory_manager: MemoryManager):
         self.memory = memory_manager
         self._active_turn_id = None
+        self._active_session_id = None
         
         async def _async_web_search(**kwargs):
             from app.tools.web import web_search
@@ -180,6 +190,7 @@ class AgentExecutor:
             jarvis_window_control, jarvis_run_terminal, jarvis_analyze_image,
             jarvis_see_screen
         )
+        from app.tools.canvas import jarvis_html_graphics, jarvis_html_viewer
         from app.tools.system import send_process_stdin, find_files_by_glob
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
@@ -372,6 +383,12 @@ class AgentExecutor:
                 app_name=kwargs.get("app_name"),
                 all=bool(kwargs.get("all", False))
             ),
+            "jarvis_html_graphics": lambda **kwargs: jarvis_html_graphics(
+                kwargs.get("svg_or_canvas") or ""
+            ),
+            "jarvis_html_viewer": lambda **kwargs: jarvis_html_viewer(
+                kwargs.get("html_content") or ""
+            ),
         }
         from app.mcp_client import StdioMCPToolBridge
         self.mcp_tools = StdioMCPToolBridge(get_tools_definition, get_filtered_tools)
@@ -380,7 +397,7 @@ class AgentExecutor:
     #  Tool dispatcher helper                                              #
     # ------------------------------------------------------------------ #
 
-    async def _run_tool_async(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
+    async def _run_tool_async(self, tool_name: str, tool_args: Dict[str, Any], *, mode: str = "assistant", workspace_root: Optional[str] = None) -> str:
         """
         Executes a registered tool by name with the given args.
         Prefers the stdio MCP tool boundary and falls back to the legacy
@@ -397,7 +414,7 @@ class AgentExecutor:
         start_ts = time.time()
         record_tool_start(turn_id, tool_name, raw_args)
         try:
-            result = await self._dispatch_tool(tool_name, raw_args)
+            result = await self._dispatch_tool(tool_name, raw_args, mode=mode, workspace_root=workspace_root)
         except Exception as e:
             record_tool_end(turn_id, tool_name, "error", result="", error=str(e), duration_ms=(time.time() - start_ts) * 1000)
             raise
@@ -405,14 +422,14 @@ class AgentExecutor:
         record_tool_end(turn_id, tool_name, status, result=result, error=(result if status == "error" else ""), duration_ms=(time.time() - start_ts) * 1000)
         return result
 
-    async def _dispatch_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
+    async def _dispatch_tool(self, tool_name: str, tool_args: Dict[str, Any], *, mode: str = "assistant", workspace_root: Optional[str] = None) -> str:
         """Inner dispatch: preflight auth -> MCP boundary -> legacy local dispatcher."""
         raw_args = dict(tool_args or {})
 
         # Gate before dispatching to either MCP or the legacy local dispatcher.
         # Do not consume a valid grant here while MCP is enabled: the stdio MCP
         # subprocess is the final execution boundary and consumes the grant.
-        preflight = self._authorize_tool_call(tool_name, raw_args, consume_grant=False)
+        preflight = self._authorize_tool_call(tool_name, raw_args, consume_grant=False, mode=mode, workspace_root=workspace_root)
         if not preflight.allowed:
             return preflight.message
 
@@ -429,7 +446,7 @@ class AgentExecutor:
             if self.mcp_tools.last_error:
                 return f"Error: Tool '{tool_name}' is not registered. MCP status: {self.mcp_tools.last_error}"
             return f"Error: Tool '{tool_name}' is not registered."
-        local_decision = self._authorize_tool_call(tool_name, raw_args, consume_grant=True)
+        local_decision = self._authorize_tool_call(tool_name, raw_args, consume_grant=True, mode=mode, workspace_root=workspace_root)
         if not local_decision.allowed:
             return local_decision.message
 
@@ -613,17 +630,19 @@ class AgentExecutor:
             else:
                 action = "list"
 
-        session_id = kwargs.get("session_id")
+        session_id = kwargs.get("session_id") or getattr(self, "_active_session_id", None)
+        items = kwargs.get("items")
         target_dir = self._get_active_session_dir(kwargs) or kwargs.get("target_dir")
         result = manage_todo(action, title=title, todo_id=todo_id, parent_id=parent_id,
                              status=status, priority=priority, position=position,
                              session_id=session_id, include_completed=include_completed,
-                             target_dir=target_dir)
+                             target_dir=target_dir, items=items)
 
         mutation_actions = {"create", "add", "add_task", "new", "update", "edit", "change", "modify",
                             "reorder", "move", "complete", "done", "finish", "mark_complete",
                             "reopen", "uncomplete", "undo", "add_subtask", "subtask", "child",
-                            "delete", "remove", "rm", "clear_completed", "clear", "cleanup"}
+                            "delete", "remove", "rm", "clear_completed", "clear", "cleanup",
+                            "sync", "apply", "set", "batch"}
         if result.startswith("Success:") and action in mutation_actions and target_dir:
             try:
                 from app.tools.todo_list import render_md_file, get_todos
@@ -2002,6 +2021,7 @@ class AgentExecutor:
         effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
 
         self._active_turn_id = overrides.get("turn_id") or ""
+        self._active_session_id = overrides.get("session_id")
 
         self.memory.increment_interactions()
 
@@ -2298,7 +2318,35 @@ class AgentExecutor:
                         print(f"Agent triggered tool '{tool_name}' with args {tool_args} (iteration {iteration})")
                         yield "tool_start", {"name": tool_name, "args": tool_args}, backend_used
 
-                        tool_result = await self._run_tool_async(tool_name, tool_args)
+                        # Coder/Advanced modes run autonomously (no confirmation prompts);
+                        # only basic/assistant mode falls back to the confirmation flow.
+                        tool_mode = "coder" if is_coder_mode else ("advanced" if effective_tool_mode == "advanced" else "assistant")
+                        tool_workspace = self._get_active_session_dir(tool_args)
+                        tool_result = await self._run_tool_async(tool_name, tool_args, mode=tool_mode, workspace_root=tool_workspace)
+
+                        # ── Confirmation flow ─────────────────────────────────────────────
+                        # A sensitive tool returned CONFIRM_REQUIRED. Surface the dialog to
+                        # the user (main.py consumes this event) and re-dispatch with a
+                        # backend-issued grant on approval.
+                        if isinstance(tool_result, str) and tool_result.startswith("CONFIRM_REQUIRED:"):
+                            confirm_target = _extract_confirmation_target(tool_result)
+                            print(f"[Agent] Tool '{tool_name}' returned CONFIRM_REQUIRED for: {confirm_target}")
+                            confirmed_status = yield "tool_confirm_required", confirm_target, backend_used
+                            if confirmed_status:
+                                from app.tools.safety import issue_confirmation_grant, strip_internal_auth_fields
+                                confirmed_args = strip_internal_auth_fields(dict(tool_args or {}))
+                                from app.tools.safety import describe_tool_target
+                                grant_id = issue_confirmation_grant(
+                                    tool_name,
+                                    confirmed_args,
+                                    target=confirm_target or describe_tool_target(tool_name, confirmed_args),
+                                )
+                                confirmed_args["confirmation_grant_id"] = grant_id
+                                print(f"[Agent] Re-running '{tool_name}' with backend confirmation grant for: {confirm_target}")
+                                tool_result = await self._run_tool_async(tool_name, confirmed_args, mode=tool_mode, workspace_root=tool_workspace)
+                            else:
+                                print(f"[Agent] Tool '{tool_name}' execution cancelled by user.")
+                                tool_result = "Action cancelled by security confirmation check."
                         last_tool_result = tool_result
 
                         tool_failed = False

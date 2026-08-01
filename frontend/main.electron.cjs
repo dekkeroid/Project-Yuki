@@ -876,6 +876,139 @@ function createWindow() {
     }
   });
 
+  // ---------- Canvas Window (borderless graphics / framed HTML viewer) ----------
+  const canvasWindows = new Map();
+
+  function createCanvasWindow({ mode, filename }) {
+    const fileUrl = `http://127.0.0.1:${BACKEND_PORT}/api/canvas/${filename}`;
+    console.log(`[Canvas] Opening ${mode} window: ${fileUrl}`);
+
+    const isGraphics = mode === 'graphics';
+    const MIN_W = 500, MIN_H = 500;
+    const win = new BrowserWindow({
+      width: isGraphics ? MIN_W : 1000,
+      height: isGraphics ? MIN_H : 700,
+      minWidth: MIN_W,
+      minHeight: MIN_H,
+      frame: !isGraphics,
+      titleBarStyle: isGraphics ? 'hidden' : 'default',
+      backgroundColor: '#f0f0f0',
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.cjs'),
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+      show: false,
+      autoHideMenuBar: true,
+    });
+
+    win.loadURL(fileUrl);
+
+    win.once('ready-to-show', () => {
+      win.show();
+      // For graphics mode, measure SVG/canvas content and resize to fit
+      if (isGraphics) {
+        win.webContents.executeJavaScript(`
+          (() => {
+            const el = document.querySelector('svg') || document.querySelector('canvas');
+            if (!el) return null;
+            const rect = el.getBoundingClientRect();
+            return { w: Math.ceil(rect.width), h: Math.ceil(rect.height) };
+          })()
+        `).then((size) => {
+          if (size && size.w > 0 && size.h > 0) {
+            const pad = 40;
+            const newW = Math.max(MIN_W, size.w + pad * 2);
+            const newH = Math.max(MIN_H, size.h + pad * 2);
+            const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
+            win.setSize(Math.min(newW, screenW - 100), Math.min(newH, screenH - 100));
+            win.center();
+          }
+        }).catch(() => {});
+      }
+    });
+
+    win.on('closed', () => {
+      canvasWindows.delete(filename);
+    });
+
+    canvasWindows.set(filename, win);
+  }
+
+  ipcMain.on('open-canvas-window', (_event, data) => {
+    createCanvasWindow(data);
+  });
+
+  ipcMain.on('minimize-canvas-window', (event) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (senderWin && !senderWin.isDestroyed()) {
+      senderWin.minimize();
+    }
+  });
+
+  ipcMain.on('close-canvas-window', (event) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (senderWin && !senderWin.isDestroyed()) {
+      senderWin.close();
+    }
+  });
+
+  ipcMain.handle('save-canvas-content', async (event, { filename, format } = {}) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWin || senderWin.isDestroyed()) return { success: false, error: 'Window not found' };
+
+    const defaultName = filename ? filename.replace(/\.[^.]+$/, '') : `canvas_${Date.now()}`;
+    const ext = format === 'svg' ? 'svg' : 'png';
+    const filters = ext === 'svg'
+      ? [{ name: 'SVG Files', extensions: ['svg'] }]
+      : [{ name: 'PNG Image', extensions: ['png'] }];
+
+    const { filePath: savePath, canceled } = await dialog.showSaveDialog(senderWin, {
+      defaultPath: `${defaultName}.${ext}`,
+      filters,
+    });
+    if (canceled || !savePath) return { success: false, error: 'Cancelled' };
+
+    try {
+      if (ext === 'svg') {
+        // Extract SVG content from the page
+        const svgData = await senderWin.webContents.executeJavaScript(
+          `(() => { const svg = document.querySelector('svg'); return svg ? svg.outerHTML : null; })()`
+        );
+        if (!svgData) return { success: false, error: 'No SVG found in page' };
+        fs.writeFileSync(savePath, svgData, 'utf-8');
+      } else {
+        // Capture only the SVG/canvas element, hiding overlay buttons
+        const bounds = await senderWin.webContents.executeJavaScript(`
+          (() => {
+            const overlay = document.querySelector('.canvas-overlay');
+            const el = document.querySelector('svg') || document.querySelector('canvas');
+            if (overlay) overlay.style.display = 'none';
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return { x: Math.max(0, Math.round(r.x) - 1), y: Math.max(0, Math.round(r.y) - 1), width: Math.round(r.width) + 2, height: Math.round(r.height) + 2 };
+          })()
+        `);
+        let image;
+        if (bounds && bounds.width > 0 && bounds.height > 0) {
+          const rect = { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+          image = await senderWin.webContents.capturePage(rect);
+        } else {
+          image = await senderWin.webContents.capturePage();
+        }
+        // Restore overlay
+        await senderWin.webContents.executeJavaScript(
+          `(() => { const o = document.querySelector('.canvas-overlay'); if (o) o.style.display = ''; })()`
+        );
+        fs.writeFileSync(savePath, image.toPNG());
+      }
+      return { success: true, path: savePath };
+    } catch (e) {
+      console.error('[Canvas] Save failed:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
   ipcMain.handle('open-external-url', async (_event, targetUrl) => {
     if (targetUrl && (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))) {
       console.log(`[Electron IPC] Opening external URL in default browser: ${targetUrl}`);

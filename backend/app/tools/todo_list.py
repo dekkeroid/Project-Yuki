@@ -9,9 +9,17 @@ VALID_PRIORITIES = {"low", "normal", "high", "critical"}
 
 DEFAULT_MD_FILENAME = "TODO.md"
 
+_STATUS_ICONS = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]", "blocked": "[!]"}
+
 
 def _now() -> float:
     return time.time()
+
+
+def _adopt_orphaned_todos(conn, session_id: str) -> int:
+    """Migrate legacy global todos (session_id IS NULL) into the active session."""
+    cursor = conn.execute("UPDATE todos SET session_id = ? WHERE session_id IS NULL", (session_id,))
+    return cursor.rowcount
 
 
 def add_todo(title: str, parent_id: Optional[int] = None, status: str = "pending",
@@ -50,13 +58,19 @@ def add_todo(title: str, parent_id: Optional[int] = None, status: str = "pending
 
 
 def get_todos(session_id: Optional[str] = None, include_completed: bool = True) -> List[Dict[str, Any]]:
-    """Fetch all todos, ordered parent-first then by position."""
+    """Fetch all todos for a session, ordered parent-first then by position.
+
+    When session_id is given, any legacy NULL-session todos are adopted into
+    that session first so the list is strictly unique per session.
+    """
     conn = get_connection()
     if session_id is not None:
+        _adopt_orphaned_todos(conn, session_id)
+        conn.commit()
         rows = conn.execute("""
         SELECT id, parent_id, title, status, priority, position, session_id, created_at, updated_at
         FROM todos
-        WHERE session_id = ? OR session_id IS NULL
+        WHERE session_id = ?
         ORDER BY parent_id IS NOT NULL, position ASC, id ASC
         """, (session_id,)).fetchall()
     else:
@@ -147,29 +161,111 @@ def clear_completed() -> int:
     return deleted
 
 
+def sync_todos(items: List[Dict[str, Any]], session_id: Optional[str] = None) -> Dict[str, int]:
+    """Reconcile the todo list against a desired item list in one transaction.
+
+    Each item may contain: id (existing todo), title, status, priority,
+    parent_id, and delete (bool). Items with an id are updated in place, items
+    without an id are created, and items with delete=True are removed.
+    Returns {"created": n, "updated": n, "deleted": n}.
+    """
+    created = 0
+    updated = 0
+    deleted = 0
+    now = _now()
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    if session_id is not None:
+        _adopt_orphaned_todos(conn, session_id)
+
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("delete"):
+            todo_id = item.get("id")
+            if todo_id is None:
+                continue
+            cursor.execute("DELETE FROM todos WHERE id = ? OR parent_id = ?", (int(todo_id), int(todo_id)))
+            if cursor.rowcount > 0:
+                deleted += 1
+            continue
+
+        title = str(item.get("title") or "").strip()
+        parent_id = item.get("parent_id")
+        if parent_id is not None:
+            parent_id = int(parent_id)
+        status = (item.get("status") or "pending").lower()
+        if status not in VALID_STATUSES:
+            status = "pending"
+        priority = (item.get("priority") or "normal").lower()
+        if priority not in VALID_PRIORITIES:
+            priority = "normal"
+
+        todo_id = item.get("id")
+        if todo_id is not None:
+            todo_id = int(todo_id)
+            if parent_id is not None:
+                cursor.execute("UPDATE todos SET parent_id = ? WHERE id = ?", (parent_id, todo_id))
+            if title:
+                cursor.execute("UPDATE todos SET title = ? WHERE id = ?", (title, todo_id))
+            cursor.execute("UPDATE todos SET status = ?, priority = ?, updated_at = ? WHERE id = ?",
+                           (status, priority, now, todo_id))
+            if cursor.rowcount > 0:
+                updated += 1
+        else:
+            if not title:
+                continue
+            if parent_id is not None:
+                parent = cursor.execute("SELECT id FROM todos WHERE id = ?", (parent_id,)).fetchone()
+                if not parent:
+                    continue
+            position = cursor.execute(
+                "SELECT COALESCE(MAX(position), 0) + 1 FROM todos WHERE parent_id IS ?",
+                (parent_id,)).fetchone()[0]
+            cursor.execute("""
+            INSERT INTO todos (parent_id, title, status, priority, position, session_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (parent_id, title, status, priority, position, session_id, now, now))
+            created += 1
+
+    conn.commit()
+    conn.close()
+    return {"created": created, "updated": updated, "deleted": deleted}
+
+
 def format_todo_tree(todos: List[Dict[str, Any]], include_completed: bool = True) -> str:
-    """Render todos as an indented tree with status/priority markers."""
+    """Render todos as a numbered indented tree with status/priority markers.
+
+    Numbering is hierarchical: top-level tasks are numbered 1, 2, 3... and
+    subtasks are numbered relative to their parent (1.1, 1.2, ...).
+    """
     by_parent: Dict[Optional[int], List[Dict[str, Any]]] = {}
     for t in todos:
         by_parent.setdefault(t["parent_id"], []).append(t)
 
-    def _status_icon(status: str) -> str:
-        return {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]", "blocked": "[!]"}.get(status, "[ ]")
+    if not include_completed:
+        todos = [t for t in todos if t["status"] != "completed"]
+        by_parent = {}
+        for t in todos:
+            by_parent.setdefault(t["parent_id"], []).append(t)
 
-    def _render(parent: Optional[int], depth: int) -> List[str]:
+    def _render(parent: Optional[int], counters: List[int]) -> List[str]:
         lines = []
+        index = 1
         for t in by_parent.get(parent, []):
-            indent = "   " * depth
+            suffix = "." if not counters else ""
+            number = ".".join(str(c) for c in (*counters, index))
+            icon = _STATUS_ICONS.get(t["status"], "[ ]")
             pri = f" ({t['priority']})" if t["priority"] != "normal" else ""
-            lines.append(f"{indent}{_status_icon(t['status'])} #{t['id']}{pri}: {t['title']}")
-            lines.extend(_render(t["id"], depth + 1))
+            lines.append(f"{number}{suffix} {icon} #{t['id']}{pri}: {t['title']}")
+            lines.extend(_render(t["id"], [*counters, index]))
+            index += 1
         return lines
 
-    lines = _render(None, 0)
+    lines = _render(None, [])
     if not lines:
         return "No todos in the list."
-    if not include_completed:
-        lines = [l for l in lines if "[x]" not in l]
     return "\n".join(lines)
 
 
@@ -193,12 +289,20 @@ def manage_todo(action: str, title: Optional[str] = None, todo_id: Optional[int]
                 parent_id: Optional[int] = None, status: Optional[str] = None,
                 priority: Optional[str] = None, position: Optional[int] = None,
                 session_id: Optional[str] = None, include_completed: bool = True,
-                target_dir: Optional[str] = None) -> str:
+                target_dir: Optional[str] = None, items: Optional[List[Dict[str, Any]]] = None) -> str:
     """
     Single dispatcher for all persistent TODO list operations.
     Returns a human-readable string result.
     """
     action = (action or "").lower().strip()
+
+    if action in ("sync", "apply", "set", "batch"):
+        if not items:
+            return "Error: A list of items is required to sync the todo list."
+        counts = sync_todos(items, session_id=session_id)
+        return (f"Success: Synced {counts['created'] + counts['updated'] + counts['deleted']} "
+                f"items ({counts['created']} created, {counts['updated']} updated, {counts['deleted']} deleted).\n"
+                f"Current list:\n{format_todo_tree(get_todos(session_id=session_id, include_completed=include_completed), include_completed=include_completed)}")
 
     if action in ("create", "add", "add_task", "new"):
         if not title or not str(title).strip():
@@ -255,10 +359,10 @@ def manage_todo(action: str, title: Optional[str] = None, todo_id: Optional[int]
         if not todos:
             return f"No subtasks found under todo #{parent_id}."
         lines = []
-        for t in todos:
+        for idx, t in enumerate(todos, start=1):
             pri = f" ({t['priority']})" if t["priority"] != "normal" else ""
-            icon = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]", "blocked": "[!]"}.get(t["status"], "[ ]")
-            lines.append(f"{icon} #{t['id']}{pri}: {t['title']}")
+            icon = _STATUS_ICONS.get(t["status"], "[ ]")
+            lines.append(f"{idx}. {icon} #{t['id']}{pri}: {t['title']}")
         return "\n".join(lines)
 
     if action in ("delete", "remove", "rm"):
@@ -280,4 +384,4 @@ def manage_todo(action: str, title: Optional[str] = None, todo_id: Optional[int]
             return f"Error: {e}"
         return f"Success: Wrote TODO.md to: {path}"
 
-    return f"Unknown action '{action}' for manage_todo. Valid actions: create, list, update, complete, reopen, add_subtask, list_subtasks, delete, clear_completed, render_md."
+    return f"Unknown action '{action}' for manage_todo. Valid actions: sync, create, list, update, complete, reopen, add_subtask, list_subtasks, delete, clear_completed, render_md."

@@ -5,6 +5,8 @@ frontend/build/
 
 #yuki home
 yuki home/
+testing/
+!testing/tool_tester.html
 
 # Python caching and environments
 __pycache__/

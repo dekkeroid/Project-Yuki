@@ -26,14 +26,9 @@ TEXT_EXTENSIONS = {
 
 
 def get_attachment_directory(workspace_dir: Optional[str] = None) -> str:
-    """Returns absolute path to the workspace attachment cache directory."""
-    if not workspace_dir or not os.path.exists(workspace_dir):
-        from app.tools.system import get_active_workspace_directory
-        workspace_dir = get_active_workspace_directory()
-    if not workspace_dir or not os.path.exists(workspace_dir):
-        workspace_dir = os.getcwd()
-
-    target_dir = os.path.join(workspace_dir, ATTACHMENT_DIR_NAME)
+    """Returns absolute path to the .yuki_attachments cache directory."""
+    from app.config import BASE_DIR
+    target_dir = os.path.join(str(BASE_DIR), ATTACHMENT_DIR_NAME)
     os.makedirs(target_dir, exist_ok=True)
     return target_dir
 

@@ -89,25 +89,31 @@ MCP_SERVER_ENV = {}
 # short-lived backend-issued grant, not by model-supplied booleans.
 TOOL_SANDBOX_ENABLED = os.environ.get("YUKI_TOOL_SANDBOX_ENABLED", "true").strip().lower() not in ("0", "false", "no", "off")
 TOOL_SANDBOX_BLOCKED_TOOLS = os.environ.get("YUKI_TOOL_SANDBOX_BLOCKED_TOOLS", "")
+_TOOL_CONFIRMATION_DEFAULT = ",".join([
+    "launch_app",
+    "create_file",
+    "edit_file",
+    "delete_file",
+    "system_power_control",
+    "run_terminal_command",
+    "run_python_script",
+    "keyboard_mouse_input",
+    "manage_process",
+    "control_window",
+    "jarvis_run_terminal",
+    "jarvis_close_app",
+    "jarvis_run_python",
+    "jarvis_keyboard_input",
+])
+# Empty env value falls back to the defaults above (which include jarvis_* aliases).
 TOOL_SANDBOX_REQUIRE_CONFIRMATION_TOOLS = os.environ.get(
     "YUKI_TOOL_SANDBOX_REQUIRE_CONFIRMATION_TOOLS",
-    ",".join([
-        "launch_app",
-        "create_file",
-        "edit_file",
-        "delete_file",
-        "system_power_control",
-        "run_terminal_command",
-        "run_python_script",
-        "keyboard_mouse_input",
-        "manage_process",
-        "control_window",
-        "jarvis_run_terminal",
-        "jarvis_close_app",
-        "jarvis_run_python",
-        "jarvis_keyboard_mouse_input",
-    ]),
-)
+    "",
+).strip() or _TOOL_CONFIRMATION_DEFAULT
+TOOL_SANDBOX_CODER_MODE_BLOCKED_TOOLS = os.environ.get("YUKI_TOOL_SANDBOX_CODER_MODE_BLOCKED_TOOLS", ",".join([
+    "system_power_control",
+    "jarvis_system_power",
+]))
 TOOL_SANDBOX_BLOCKED_POWER_ACTIONS = os.environ.get("YUKI_TOOL_SANDBOX_BLOCKED_POWER_ACTIONS", "shutdown,restart")
 TOOL_SANDBOX_BLOCKED_TERMINAL_PATTERNS = os.environ.get("YUKI_TOOL_SANDBOX_BLOCKED_TERMINAL_PATTERNS", "")
 TOOL_CONFIRMATION_GRANT_TTL_SECONDS = int(os.environ.get("YUKI_TOOL_CONFIRMATION_GRANT_TTL_SECONDS", "120"))

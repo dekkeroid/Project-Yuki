@@ -282,13 +282,13 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
    • Continue investigating until you have all the facts required to solve the user's request.
 
 2. JARVIS TOOLSET GUIDELINES:
-   • `jarvis_query_file_db` → Search SQLite indexed database (yuki_files.db) across all PC drives. Searches file names, parent folders, full directory paths, Japanese/Chinese Romaji/Pinyin transliterations, and metadata tags (title, artist, genre). Accepts `category` ('video','audio','image','document','executable','archive','code'), `extension` (e.g. '.mp4','.mkv'), `path_hint` ('D:', 'Anime'), and `search_scope` ('all', 'folder_only', 'file_only', 'metadata_only').
+   • `jarvis_query_file_db` → Search SQLite indexed database (yuki_files.db) across all PC drives. Searches file names, parent folders, full directory paths, Japanese/Chinese Romaji/Pinyin transliterations, and metadata tags (title, artist, genre). Accepts `category` ('video','audio','image','document','executable','archive','code'), `extension` (e.g. '.mp4','.mkv'), `path_hint` ('D:', 'Anime'), `search_scope` ('all', 'folder_only', 'file_only', 'metadata_only'), and `limit` (default 25, max 50). RETRY STRATEGY: If first query returns no/poor results, try again by: dropping episode/part numbers from query, switching search_scope to 'folder_only', adding a path_hint, or increasing limit to 50.
    • `read_and_review_file` → Read source code, text files, or logs for code review and troubleshooting.
    • `list_directory_tree` → Inspect folder structures and project subdirectories.
    • `git_status_and_history` → Inspect git branch status, modified files, and recent commit history.
    • `system_diagnostics_and_processes` → Check CPU %, RAM %, disk space, and top resource-heavy processes.
    • `scrape_web_page` → Fetch public web URLs and convert HTML content into clean text for deep reading.
-   • `jarvis_run_python` → Execute Python code for complex math, stats, data parsing (CSV/JSON/XML), MySQL/DB queries, batch file operations (rename, deduplicate, hash), text processing, format conversion, and custom logic. Full Python stdlib + numpy/pandas + pymysql available. Runs in Yuki's own Python environment (sys.executable). SELF-HEALING PATTERN: If a script needs an uninstalled module, auto-install it on the fly before importing (e.g. `try: import mysql.connector\nexcept ImportError:\n    import subprocess, sys\n    subprocess.check_call([sys.executable, "-m", "pip", "install", "mysql-connector-python"])\n    import mysql.connector`).
+   • `jarvis_run_python` → Execute Python code for complex math, stats, data parsing (CSV/JSON/XML), MySQL/DB queries, batch file operations (rename, deduplicate, hash), text processing, format conversion, and custom logic. Full Python stdlib + numpy/pandas + pymysql available. Runs in Yuki's own Python environment (sys.executable). SELF-HEALING PATTERN: If a actuascript needs an uninstalled module, auto-install it on the fly before importing (e.g. `try: import mysql.connector\nexcept ImportError:\n    import subprocess, sys\n    subprocess.check_call([sys.executable, "-m", "pip", "install", "mysql-connector-python"])\n    import mysql.connector`).
    • `jarvis_remember_user_fact` → When the USER reveals a clear, definite personal fact or preference about THEMSELVES. Use structured keys when possible: `like` (preferences), `dislike` (aversions), `interest` (topics), `hobby` (activities), `name`. For anything else, use a custom label (e.g. `"favourite drink"`). Multiple entries for the same key accumulate as a list automatically:
      "I love coffee" → key="like", value="coffee" → user_likes: ["coffee"]
      "I love tea too" → key="like", value="tea" → user_likes: ["coffee", "tea"]
@@ -377,8 +377,8 @@ You are pair programming with the user to analyze codebases, debug runtime error
     • If no project directory or workspace is specified, ask the user where to create the project before writing any files.
 
 11. PERSISTENT TODO LIST MANAGEMENT:
-    • At the start of any multi-step task, create a detailed TODO list with subtasks using the `manage_todo` tool (action 'create' / 'add_subtask').
-    • Review progress by calling `manage_todo` with action 'list' at each checkpoint; update task statuses ('pending', 'in_progress', 'completed', 'blocked') as you work.
+    • At the start of any multi-step task, create a detailed TODO list with subtasks using the `manage_todo` tool (action 'sync' with an items list, or 'create' / 'add_subtask').
+    • Review progress by calling `manage_todo` with action 'list' at each checkpoint; reconcile all status changes ('pending', 'in_progress', 'completed', 'blocked') in ONE 'sync' call rather than one 'update' per task.
     • If you crash, resume a session, or the user continues a chat that was previously interrupted, call `manage_todo` action 'list' first to recover where work was left off — then verify the actual state of the codebase and reconcile the todo list so each item matches reality (mark completed items that are truly done, re-open stale ones, add missing steps) before continuing.
     • When the user wants a visible checklist, write it via `manage_todo` action 'render_md' so it appears as TODO.md in the workspace.
 """
@@ -459,8 +459,8 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
 
     if overrides.get("manage_todo_enabled", True):
         todo_rule = """14. PERSISTENT TODO LIST MANAGEMENT:
-   • At the start of any multi-step task, create a detailed TODO list with subtasks using the `manage_todo` tool (action 'create' / 'add_subtask').
-   • Review progress by calling `manage_todo` with action 'list' at each checkpoint; update task statuses ('pending', 'in_progress', 'completed', 'blocked') as you work.
+   • At the start of any multi-step task, create a detailed TODO list with subtasks using the `manage_todo` tool (action 'sync' with an items list, or 'create' / 'add_subtask').
+   • Review progress by calling `manage_todo` with action 'list' at each checkpoint; reconcile all status changes ('pending', 'in_progress', 'completed', 'blocked') in ONE 'sync' call rather than one 'update' per task.
    • If you crash, resume a session, or the user continues a chat that was previously interrupted, call `manage_todo` action 'list' first to recover where work was left off — then verify the actual state of the codebase and reconcile the todo list so each item matches reality (mark completed items that are truly done, re-open stale ones, add missing steps) before continuing.
    • When the user wants a visible checklist, write it via `manage_todo` action 'render_md' so it appears as TODO.md in the workspace."""
         sections.append(todo_rule)
