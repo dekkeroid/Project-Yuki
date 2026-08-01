@@ -907,6 +907,7 @@ def get_settings():
         "crawler_paused": is_crawler_paused(),
         "tagger_paused": is_tagger_paused(),
     })
+    print(f"[SETTINGS-GET-BE] GET /api/settings → llm_base_url='{settings_dict.get('llm_base_url', '')}' llm_backend='{settings_dict.get('llm_backend', '')}'")
     return settings_dict
 
 @app.post("/api/settings/decrypt-key")
@@ -986,6 +987,17 @@ async def update_settings(req: SettingsUpdateRequest):
     global tts_online_status
     from app.memory import crawler
     from app.agent.llm_backend import get_backend
+
+    # DEBUG: Log what fields are being updated
+    update_fields = {k: v for k, v in req.dict().items() if v is not None}
+    print(f"[SETTINGS-UPDATE-BE] ⚡ Received update with {len(update_fields)} fields: {list(update_fields.keys())}")
+    if 'llm_api_key' in update_fields:
+        print(f"[SETTINGS-UPDATE-BE]   llm_api_key = '{str(update_fields['llm_api_key'])[:20]}...'")
+    if 'llm_base_url' in update_fields:
+        print(f"[SETTINGS-UPDATE-BE]   llm_base_url = '{update_fields['llm_base_url']}'")
+    if 'llm_backend' in update_fields:
+        print(f"[SETTINGS-UPDATE-BE]   llm_backend = '{update_fields['llm_backend']}'")
+    print(f"[SETTINGS-UPDATE-BE]   BEFORE: llm_base_url='{config.LLM_BASE_URL}' llm_backend='{config.LLM_BACKEND}'")
 
     backend_switched = False
     captured_old_backend = None
@@ -1263,6 +1275,8 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.llm_vision_model is not None:
         memory_manager.update_setting("llm_vision_model", req.llm_vision_model.strip())
 
+    print(f"[SETTINGS-UPDATE-BE]   AFTER:  llm_base_url='{current_settings.get('llm_base_url', '')}' llm_backend='{current_settings.get('llm_backend', '')}'")
+    print(f"[SETTINGS-UPDATE-BE] ✅ Returning {len(current_settings)} settings keys")
     return {
         "status": "success",
         "message": "Settings updated successfully.",
@@ -1479,19 +1493,27 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
     from app.utils.security import decrypt_api_key, mask_api_key
     from app.agent.llm_backend import reset_backend
 
+    print(f"[VAULT-SELECT-BE] ⚡ select_custom_endpoint called: id={req.id} label={req.label} target_type={req.target_type}")
+    
     raw_endpoints = memory_manager.profile["settings"].get("saved_custom_endpoints", [])
     target_id = req.id.strip() if req.id else ""
     target_label = req.label.strip() if req.label else ""
 
     ep = next((e for e in raw_endpoints if e.get("id") == target_id or e.get("label") == target_label), None)
     if not ep:
+        print(f"[VAULT-SELECT-BE] ❌ Endpoint not found: id={target_id} label={target_label}")
         raise HTTPException(status_code=404, detail="Saved endpoint not found.")
 
     decrypted_key = decrypt_api_key(ep.get("api_key", ""))
     keys_arr = [k.strip() for k in re.split(r'[,;\s]+', str(decrypted_key)) if k.strip()]
     target_type = req.target_type or "coder"
+    
+    print(f"[VAULT-SELECT-BE] Found endpoint: label={ep.get('label')} base_url={ep.get('base_url')} llm_backend={ep.get('llm_backend')}")
+    print(f"[VAULT-SELECT-BE] Resolved target_type={target_type} (req.target_type={req.target_type})")
+    print(f"[VAULT-SELECT-BE] Decrypted key count: {len(keys_arr)} keys")
 
     if target_type == "simple":
+        print(f"[VAULT-SELECT-BE] Saving to SIMPLE config: LLM_SIMPLE_BASE_URL={ep.get('base_url')}")
         config.LLM_SIMPLE_BACKEND = ep.get("llm_backend", "openai")
         config.LLM_SIMPLE_BASE_URL = ep.get("base_url", "")
         config.LLM_SIMPLE_API_KEY = decrypted_key
@@ -1500,6 +1522,9 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
         memory_manager.update_setting("llm_simple_base_url", config.LLM_SIMPLE_BASE_URL)
         memory_manager.update_setting("llm_simple_api_key", ep.get("api_key", ""))
     else:
+        print(f"[VAULT-SELECT-BE] ⚠️ target_type='{target_type}' — saving to CODER config (NOT main LLM config!)")
+        print(f"[VAULT-SELECT-BE]   LLM_CODER_BASE_URL will be: {ep.get('base_url')}")
+        print(f"[VAULT-SELECT-BE]   LLM_BASE_URL (main) is STILL: {config.LLM_BASE_URL}")
         config.LLM_CODER_BACKEND = ep.get("llm_backend", "custom")
         config.LLM_CODER_BASE_URL = ep.get("base_url", "")
         config.LLM_CODER_API_KEY = decrypted_key
@@ -1519,6 +1544,8 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
 
     invalidate_models_cache()
     await broadcast_profile_update()
+    
+    print(f"[VAULT-SELECT-BE] ✅ Response: base_url={ep.get('base_url')} backend={ep.get('llm_backend')}")
     return {
         "message": f"Activated preset '{ep.get('label')}' for {target_type}",
         "active_endpoint": ep,
@@ -2480,6 +2507,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         stt_time_ms = payload_data.get("stt_time_ms")
                         if not user_msg:
                             return
+                        turn_id = None
                         print(f"[WebSocket] Received chat message: '{user_msg}'")
                             
                         # 1. Send status indicating Yuki is thinking
@@ -2621,8 +2649,18 @@ async def websocket_endpoint(websocket: WebSocket):
                                         await broadcast_ws_event({"type": "error", "content": "Agent is still initializing, please try again in a moment."})
                                         return
                                     overrides = payload_data.get("overrides") or {}
+                                    overrides = dict(overrides)
+                                    import uuid
+                                    turn_id = uuid.uuid4().hex[:12]
+                                    overrides["turn_id"] = turn_id
                                     attachments = payload_data.get("attachments") or []
                                     gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides, attachments=attachments)
+                                    # First crash-recovery checkpoint: prior history + the new user message.
+                                    try:
+                                        from app.memory import db as memory_db
+                                        memory_db.save_incomplete_turn(turn_id, list(global_chat_history) + [{"role": "user", "content": user_msg}])
+                                    except Exception as _cp_err:
+                                        print(f"[Recovery] Initial checkpoint failed: {_cp_err}")
                                 try:
                                     event = await gen.__anext__()
                                     while True:
@@ -2707,6 +2745,13 @@ async def websocket_endpoint(websocket: WebSocket):
                                                     "type": "status",
                                                     "status": "thinking"
                                                 })
+                                            elif event_type == "checkpoint":
+                                                if turn_id:
+                                                    try:
+                                                        from app.memory import db as memory_db
+                                                        memory_db.save_incomplete_turn(turn_id, value)
+                                                    except Exception as _cp_err:
+                                                        print(f"[Recovery] Checkpoint persist failed: {_cp_err}")
                                             elif event_type == "final_history":
                                                 global_chat_history = value
                                                 save_persistent_chat_history(global_chat_history)
@@ -2715,6 +2760,13 @@ async def websocket_endpoint(websocket: WebSocket):
                                                     "messages": global_chat_history,
                                                     "session_id": active_session_id
                                                 })
+                                                # Turn completed normally — remove the temp recovery session.
+                                                if turn_id:
+                                                    try:
+                                                        from app.memory import db as memory_db
+                                                        memory_db.delete_incomplete_turn(turn_id)
+                                                    except Exception as _del_err:
+                                                        print(f"[Recovery] Cleanup of temp turn failed: {_del_err}")
                                                 
                                             event = await gen.__anext__()
                                 except StopAsyncIteration:

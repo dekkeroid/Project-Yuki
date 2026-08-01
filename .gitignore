@@ -55,9 +55,13 @@ backend/app/voice/whisper-base/
 # PyInstaller build artifacts
 backend/build/
 backend/dist/
+backend/tests/*
 
 # Runtime marker file
 backend/.yuki-ready
+
+# Runtime tool execution logs
+backend/tool_runs.jsonl
 
 # Electron-builder and installer output
 frontend/release/

@@ -13,6 +13,11 @@ from typing import Dict, Any, List, Optional, Tuple
 ATTACHMENT_DIR_NAME = ".yuki_attachments"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"}
+
+# Images larger than this are re-encoded as downscaled WebP to keep LLM payloads small.
+COMPRESS_THRESHOLD_BYTES = 1_048_576  # 1 MB
+MAX_IMAGE_DIMENSION = 1280
+WEBP_QUALITY = 90
 TEXT_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".json",
     ".csv", ".yaml", ".yml", ".c", ".cpp", ".h", ".hpp", ".rs", ".go", ".java",
@@ -91,6 +96,56 @@ def extract_file_text_content(file_path: str, max_chars: int = 12000) -> str:
     return "[Error: Unable to decode file content.]"
 
 
+def compress_large_image(save_path: str, file_size: int) -> Optional[str]:
+    """
+    Re-encodes a large raster image (>1MB) as a downscaled WebP (q90, max 1280px).
+    Returns the compressed file path, or None when compression is not applicable
+    or would not reduce the file size. The original is preserved unless replaced.
+    """
+    if not file_size or file_size <= COMPRESS_THRESHOLD_BYTES:
+        return None
+    if not is_image_file(save_path):
+        return None
+
+    ext = os.path.splitext(save_path)[1].lower()
+    if ext == ".svg":
+        return None
+
+    try:
+        from PIL import Image, ImageOps
+
+        with Image.open(save_path) as img:
+            if getattr(img, "is_animated", False):
+                return None
+            img = ImageOps.exif_transpose(img)
+            if img.mode in ("RGBA", "LA", "PA"):
+                img = img.convert("RGBA")
+            else:
+                img = img.convert("RGB")
+            img.thumbnail((MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION), Image.Resampling.LANCZOS)
+
+            tmp_path = f"{save_path}.yuki_tmp"
+            img.save(tmp_path, "WEBP", quality=WEBP_QUALITY, method=4)
+    except Exception as e:
+        print(f"[AttachmentManager] Image compression failed for '{save_path}': {e}")
+        return None
+
+    try:
+        if os.path.getsize(tmp_path) < file_size:
+            final_path = save_path if ext == ".webp" else f"{os.path.splitext(save_path)[0]}.webp"
+            os.replace(tmp_path, final_path)
+            return final_path
+        os.remove(tmp_path)
+    except Exception as e:
+        print(f"[AttachmentManager] Compression finalize failed for '{save_path}': {e}")
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+    return None
+
+
 def process_uploaded_attachment(
     filename: str,
     file_bytes: bytes,
@@ -98,6 +153,7 @@ def process_uploaded_attachment(
 ) -> Dict[str, Any]:
     """
     Saves uploaded file bytes to .yuki_attachments/ and returns attachment metadata dict.
+    Large images (>1MB) are automatically re-encoded as downscaled WebP for token efficiency.
     """
     clean_name = sanitize_filename(filename)
     target_dir = get_attachment_directory(workspace_dir)
@@ -118,15 +174,26 @@ def process_uploaded_attachment(
     is_img = is_image_file(clean_name)
     is_txt = is_text_file(clean_name)
 
-    data_url = encode_image_to_base64_url(save_path) if is_img else None
-    text_snippet = extract_file_text_content(save_path) if is_txt else ""
+    display_name = clean_name
+    final_save_path = save_path
+    final_size = len(file_bytes)
+
+    if is_img:
+        compressed_path = compress_large_image(save_path, final_size)
+        if compressed_path:
+            print(f"[AttachmentManager] Compressed '{clean_name}' ({final_size} bytes -> {os.path.getsize(compressed_path)} bytes) -> {os.path.basename(compressed_path)}")
+            final_save_path = compressed_path
+            final_size = os.path.getsize(compressed_path)
+
+    data_url = encode_image_to_base64_url(final_save_path) if is_img else None
+    text_snippet = extract_file_text_content(final_save_path) if is_txt else ""
 
     return {
-        "filename": clean_name,
-        "save_path": save_path,
+        "filename": display_name,
+        "save_path": final_save_path,
         "is_image": is_img,
         "is_text": is_txt,
-        "file_size": len(file_bytes),
+        "file_size": final_size,
         "data_url": data_url,
         "text_content": text_snippet
     }

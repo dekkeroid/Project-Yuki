@@ -11,9 +11,13 @@ import time
 _DEV_SERVER_ERROR_MESSAGE = "Security / Execution Error: Executing development servers by AI is strictly prohibited by security policy. Project files and builds were updated. Please start dev servers manually in your terminal if needed."
 
 _DEV_SERVER_BANNED_SUBSTRINGS = (
-    "npm run dev", "npm dev", "yarn dev", "pnpm dev", "bun dev",
+    "npm run dev", "npm dev", "yarn run dev", "yarn dev", "pnpm run dev", "pnpm dev", "bun run dev", "bun dev",
     "npm run start", "yarn run start", "pnpm run start", "bun run start",
+    "npm run preview", "yarn run preview", "pnpm run preview", "bun run preview",
+    "npm run serve", "yarn run serve", "pnpm run serve", "bun run serve",
     "npm start", "yarn start", "pnpm start", "bun start",
+    "npm preview", "yarn preview", "pnpm preview", "bun preview",
+    "npm serve", "yarn serve", "pnpm serve", "bun serve",
 )
 
 _DEV_SERVER_LAUNCHER_PREFIXES = (

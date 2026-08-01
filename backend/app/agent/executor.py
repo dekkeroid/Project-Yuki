@@ -6,6 +6,7 @@ import asyncio
 import concurrent.futures
 import inspect
 import os
+import time
 import uuid
 from typing import Dict, Any, List, Tuple, Optional
 from app import config
@@ -35,6 +36,20 @@ _SHORT_CIRCUIT_TOOLS = {
     "jarvis_keyboard_mouse_input",
     "jarvis_media_playback_control",
 }
+
+
+def _is_local_url(url: str) -> bool:
+    """True if the URL points to a local/loopback endpoint (no API key required)."""
+    try:
+        host = url.split("//", 1)[1].split("/", 1)[0].lower()
+    except Exception:
+        return False
+    host = host.split(":", 1)[0]
+    return (
+        host in ("localhost", "127.0.0.1", "0.0.0.0", "::1")
+        or host.startswith("192.168.")
+        or host.startswith("10.")
+    )
 
 
 
@@ -142,6 +157,7 @@ def _format_short_circuit_result(tool_name: str, tool_result: str, tool_args: di
 class AgentExecutor:
     def __init__(self, memory_manager: MemoryManager):
         self.memory = memory_manager
+        self._active_turn_id = None
         
         async def _async_web_search(**kwargs):
             from app.tools.web import web_search
@@ -363,7 +379,28 @@ class AgentExecutor:
         Executes a registered tool by name with the given args.
         Prefers the stdio MCP tool boundary and falls back to the legacy
         in-process dispatcher when configured or when MCP startup fails.
+
+        Durably journals the START record (with full raw args) BEFORE any
+        dispatch and the END record afterwards, so a hard crash mid-run still
+        leaves the running tool's parameters on disk (tool_runs.jsonl).
         """
+        from app.agent.tool_journal import record_tool_start, record_tool_end
+
+        raw_args = dict(tool_args or {})
+        turn_id = self._active_turn_id or ""
+        start_ts = time.time()
+        record_tool_start(turn_id, tool_name, raw_args)
+        try:
+            result = await self._dispatch_tool(tool_name, raw_args)
+        except Exception as e:
+            record_tool_end(turn_id, tool_name, "error", result="", error=str(e), duration_ms=(time.time() - start_ts) * 1000)
+            raise
+        status = "error" if isinstance(result, str) and result.lower().startswith(("error", "failed")) else "success"
+        record_tool_end(turn_id, tool_name, status, result=result, error=(result if status == "error" else ""), duration_ms=(time.time() - start_ts) * 1000)
+        return result
+
+    async def _dispatch_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
+        """Inner dispatch: preflight auth -> MCP boundary -> legacy local dispatcher."""
         raw_args = dict(tool_args or {})
 
         # Gate before dispatching to either MCP or the legacy local dispatcher.
@@ -717,9 +754,25 @@ class AgentExecutor:
                     "content": f"[Previous Tool Result ({tool_name})]: {content}"
                 })
             elif role == "assistant":
-                # Strip visual UI tool badges from LLM prompt context to prevent prompt pollution
+                # Strip visual UI tool badges from LLM prompt context to prevent prompt
+                # pollution, but preserve a compact record of each tool result so that
+                # follow-up turns ("continue") keep the context of what was done.
+                tool_outputs = re.findall(r'```tool_output\n([\s\S]*?)```', content)
                 clean_content = re.sub(r'🛠️\s*\*\*\s*\[.*?\]\s*\*\*(?:\n```tool_args[\s\S]*?```)?(?:\n```tool_output[\s\S]*?```)?', '', content).strip()
-                if not clean_content:
+                preserved = []
+                for out in tool_outputs:
+                    snippet = out.strip()
+                    if len(snippet) > 400:
+                        snippet = snippet[:400] + "..."
+                    if snippet:
+                        preserved.append(f"[Previous Tool Result]: {snippet}")
+                if preserved:
+                    preserved = preserved[-4:]
+                    if clean_content:
+                        clean_content = clean_content + "\n" + "\n".join(preserved)
+                    else:
+                        clean_content = "\n".join(preserved)
+                elif not clean_content:
                     clean_content = "Task step executed."
                 msg_obj = {"role": "assistant", "content": clean_content}
                 if m.get("tool_calls"):
@@ -731,9 +784,23 @@ class AgentExecutor:
                 sanitized_history.append(msg_obj)
             elif role in ("user", "system"):
                 if content:
+                    hist_content = content
+                    hist_atts = m.get("attachments")
+                    if hist_atts and isinstance(hist_atts, list):
+                        att_lines = []
+                        for att_idx, att in enumerate(hist_atts, start=1):
+                            if not isinstance(att, dict):
+                                continue
+                            att_label = "image" if att.get("is_image") else "file"
+                            att_fname = att.get("filename", "file")
+                            att_spath = att.get("save_path", "")
+                            if att_fname or att_spath:
+                                att_lines.append(f"[Attached {att_label} #{att_idx}: {att_fname} at '{att_spath}']")
+                        if att_lines:
+                            hist_content = content + "\n" + "\n".join(att_lines)
                     sanitized_history.append({
                         "role": role,
-                        "content": content
+                        "content": hist_content
                     })
 
         user_content = user_message
@@ -752,6 +819,11 @@ class AgentExecutor:
                 elif att.get("is_image"):
                     if is_native_vision and att.get("data_url"):
                         image_content_parts.append({"type": "image_url", "image_url": {"url": att["data_url"]}})
+                        text_attach_snippets.append(
+                            f"\n[Attached image #{len(image_content_parts)}: {fname} saved at '{spath}'. "
+                            f"This image is shown inline. If the user asks about it in a future turn, re-inspect it "
+                            f"on demand via tool 'jarvis_analyze_image' with image_path='{spath}' instead of relying on memory.]"
+                        )
                     else:
                         image_attach_snippets.append(f"\n[Attached Image File: {fname} ({spath}). Call tool 'jarvis_analyze_image' with image_path='{spath}' to inspect visual content if needed.]")
 
@@ -1067,9 +1139,12 @@ class AgentExecutor:
             use_tools=use_tools,
             tools=tools,
         )
+        headers = backend.build_headers()
+        if "Authorization" not in headers and not _is_local_url(url):
+            return f"Missing API key for {url}. Add a valid API key for this endpoint, then try again.", None, self._get_model_label(model_name)
         response = requests.post(
             url,
-            headers=backend.build_headers(),
+            headers=headers,
             json=payload,
             timeout=120,
         )
@@ -1216,6 +1291,19 @@ class AgentExecutor:
                 final_history.append({"role": "assistant", "content": assistant_final_speech})
                 return assistant_final_speech, final_history, backend_used
                 
+        # ── Iteration cap reached with tool calls still pending ──────────────────────
+        # Force one final tool-free turn so the user gets a real closing summary
+        # instead of a badge-only message that forces them to type "continue".
+        current_messages.append({
+            "role": "user",
+            "content": (
+                "[SYSTEM] Iteration limit reached. Do NOT call more tools. "
+                "Write your final summary of everything completed, the current state now, and what's left to do."
+            )
+        })
+        wrap_response, _, _ = self._query_llm(current_messages, user_message=user_message, use_tools=False)
+        if wrap_response.strip():
+            accumulated_response_total.append(wrap_response.strip())
         assistant_final_speech = "\n".join(accumulated_response_total)
         final_history.append({"role": "assistant", "content": assistant_final_speech})
         return assistant_final_speech, final_history, backend_used
@@ -1237,9 +1325,8 @@ class AgentExecutor:
 
         filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic)
 
-        # Omit jarvis_analyze_image for native vision models to prevent redundant tool execution
-        if is_vision_model(active_model):
-            filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") != "jarvis_analyze_image"]
+        # Note: jarvis_analyze_image stays available for native vision models so the agent can
+        # re-inspect previously attached images on demand by path in later turns.
 
         # Filter tool definition list based on per-turn coding_mode or effective_tool_mode override
         if overrides.get("coding_mode"):
@@ -1293,6 +1380,9 @@ class AgentExecutor:
         max_attempts = len(llm_backend.get_api_key_pool()) if allow_key_rotation and hasattr(llm_backend, "get_api_key_pool") and llm_backend.get_api_key_pool() else 1
         for attempt in range(max(1, max_attempts)):
             headers = llm_backend.build_headers()
+            if "Authorization" not in headers and not _is_local_url(url):
+                yield {"content": f"Missing API key for {url}. Add a valid API key for this endpoint in the workspace's Coder Endpoint settings (e.g. your OpenRouter key), then try again."}
+                return
             async with session.post(url, json=payload, headers=headers, timeout=120) as resp:
                 if resp.status != 200:
                     try:
@@ -1706,6 +1796,23 @@ class AgentExecutor:
             print("[Executor] Transcript repair applied before LLM request.")
         return repaired
 
+    # Matches "tool in progress" announcements the model emits before a tool call
+    # (e.g. "Running tool...", "I'll use a tool."). These carry no information and
+    # pile up in the UI/transcript, so they are suppressed during streaming and
+    # replaced with a synthesized step line when building the assistant message.
+    _TOOL_FILLER_RE = re.compile(
+        r"^\s*((running|executing|using|calling|starting|performing)\s+(a\s+)?tool)|"
+        r"^\s*((let me|i'?ll|i will|let's|i'?m going to|i'?m)\s+(use|run|call|execute|invoke|start|fire)\s+(up\s+)?(a\s+)?tool)|"
+        r"^\s*(running|executing|working|loading|one moment|just a moment|please wait|hold on|give me a moment)[.!]*\s*$|"
+        r"^\s*\.{3,}\s*$",
+        re.IGNORECASE,
+    )
+    _FILLER_BUFFER_CAP = 500
+
+    def _is_pure_filler(self, text: str) -> bool:
+        """True if the given text is only a 'tool in progress' announcement with no real content."""
+        return bool(self._TOOL_FILLER_RE.match(text or ""))
+
     async def _parse_native_stream(self, token_stream):
         """
         Accumulates tool calls from delta chunks and yields normal tokens.
@@ -1716,6 +1823,7 @@ class AgentExecutor:
         last_label = "local"
         
         text_buffer = ""
+        pending_text = ""  # text held back until it is confirmed to be real narration, not filler
         is_json_candidate = None  # None = undecided, True = buffering as JSON, False = streaming normally
         
         async for delta, label in token_stream:
@@ -1732,20 +1840,30 @@ class AgentExecutor:
                         if stripped.startswith("{") or stripped.startswith("```") or stripped.startswith("["):
                             is_json_candidate = True
                         else:
-                            # Plain text response — stream immediately on first token
+                            # Plain text response — buffer briefly until it is confirmed
+                            # to be real narration (not "Running tool..." filler).
                             is_json_candidate = False
-                            yield "token", text_buffer, label
+                            pending_text += text_buffer
                             text_buffer = ""
+                            if not self._is_pure_filler(pending_text) or len(pending_text) > self._FILLER_BUFFER_CAP:
+                                yield "token", pending_text, label
+                                pending_text = ""
                 elif is_json_candidate:
                     text_buffer += content
                 else:
-                    text_buffer += content
-                    yield "token", content, label
+                    pending_text += content
+                    if not self._is_pure_filler(pending_text) or len(pending_text) > self._FILLER_BUFFER_CAP:
+                        yield "token", pending_text, label
+                        pending_text = ""
                     
             # 2. Accumulate tool calls
             tool_calls = delta.get("tool_calls")
             if tool_calls:
                 is_json_candidate = False
+                # A tool call follows: release real narration, drop filler announcements.
+                if pending_text and not self._is_pure_filler(pending_text):
+                    yield "token", pending_text, label
+                pending_text = ""
                 for tc_delta in tool_calls:
                     index = tc_delta.get("index", 0)
                     if index not in accumulated_tool_calls:
@@ -1775,6 +1893,11 @@ class AgentExecutor:
             if fallback_calls:
                 print(f"[Fallback Parser] Intercepted markdown simulated tool call in text: {fallback_calls}")
                 yield "tool_calls", fallback_calls, last_label
+
+        if pending_text:
+            # Never lose real text: anything still buffered (e.g. a response that
+            # started filler-like but was never followed by a tool call) is flushed.
+            yield "token", pending_text, last_label
                 
         # Stream complete, yield any accumulated tool calls
         if accumulated_tool_calls:
@@ -1788,6 +1911,8 @@ class AgentExecutor:
         """
         overrides = overrides or {}
         effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
+
+        self._active_turn_id = overrides.get("turn_id") or ""
 
         self.memory.increment_interactions()
 
@@ -1937,7 +2062,7 @@ class AgentExecutor:
 
         async with aiohttp.ClientSession() as session:
             is_coder_mode = bool(overrides.get("coding_mode")) or resolved_backend in ("coder", "complex_coder")
-            max_iterations = 30 if is_coder_mode else 10
+            max_iterations = 50 if is_coder_mode else 10
             iteration = 0
             troubleshoot_attempts = 0
 
@@ -1951,6 +2076,8 @@ class AgentExecutor:
             accumulated_response_total = []
             backend_used = "local"
             executed_calls = set()
+            consecutive_signature = None
+            consecutive_count = 0
             last_tool_result = ""
             
             while iteration < max_iterations:
@@ -2011,25 +2138,63 @@ class AgentExecutor:
 
                         tool_args_str = tool_call["function"]["arguments"]
                         call_signature = (tool_name, tool_args_str)
-                        if call_signature in executed_calls:
-                            print(f"[Executor] Loop detected for tool '{tool_name}'. Skipping duplicate call.")
-                            continue
+                        if is_coder_mode:
+                            # Coder mode: never block duplicate calls — frontier models
+                            # legitimately re-run commands (e.g. re-verify a build after
+                            # an edit). Track consecutive identical calls only to emit a
+                            # transparent soft nudge (see reminder below) if the model
+                            # looks stuck repeating the exact same call.
+                            if call_signature == consecutive_signature:
+                                consecutive_count += 1
+                            else:
+                                consecutive_signature = call_signature
+                                consecutive_count = 1
+                        else:
+                            if call_signature in executed_calls:
+                                print(f"[Executor] Loop detected for tool '{tool_name}'. Skipping duplicate call.")
+                                continue
+                            executed_calls.add(call_signature)
 
-                        executed_calls.add(call_signature)
                         if not tool_call.get("id"):
                             tool_call["id"] = f"call_{uuid.uuid4().hex[:8]}"
                         pending_calls.append((tool_call, tool_name, tool_args))
 
                     if pending_calls:
+                        assistant_content = accumulated_response.strip()
+                        if not assistant_content or self._is_pure_filler(assistant_content):
+                            _call_name = pending_calls[0][1]
+                            _call_args = pending_calls[0][2] or {}
+                            _desc = _call_args.get("description")
+                            if _desc:
+                                assistant_content = f"Running '{_call_name}': {_desc}"
+                            else:
+                                _target = (_call_args.get("file_path") or _call_args.get("path") or _call_args.get("command") or _call_args.get("url") or _call_args.get("query") or "")
+                                if _target and len(str(_target)) > 60:
+                                    _target = "..." + str(_target)[-57:]
+                                assistant_content = f"Running '{_call_name}'" + (f" on `{_target}`" if _target else "") + "..."
                         current_messages.append({
                             "role": "assistant",
-                            "content": accumulated_response if accumulated_response.strip() else f"Running tool...",
+                            "content": assistant_content,
                             "tool_calls": [pc[0] for pc in pending_calls]
                         })
                     elif accumulated_response.strip():
                         current_messages.append({
                             "role": "assistant",
                             "content": accumulated_response.strip()
+                        })
+
+                    if not pending_calls and tool_calls_to_execute and not is_coder_mode:
+                        # Every tool call this iteration was filtered as a duplicate. Tell the
+                        # model its calls were already executed (results are in the transcript)
+                        # so it doesn't re-emit the same call silently until the iteration cap.
+                        current_messages.append({
+                            "role": "user",
+                            "content": (
+                                "[SYSTEM] The tool call(s) you just requested have already been executed earlier "
+                                "this turn with identical arguments; their results are in the transcript above. "
+                                "Do NOT re-issue identical tool calls. Read the earlier result and either take a "
+                                "NEW distinct step toward the user's goal, or write your final summary now."
+                            )
                         })
 
                     for tool_call, tool_name, tool_args in pending_calls:
@@ -2073,6 +2238,13 @@ class AgentExecutor:
                         })
                         yield "tool_result", tool_result, backend_used
 
+                    # Emit a crash-recovery checkpoint: the running display transcript
+                    # (prior history + user msg + assistant text/tool badges so far).
+                    _checkpoint_history = list(final_history) + [
+                        {"role": "assistant", "content": "\n".join(accumulated_response_total)}
+                    ]
+                    yield "checkpoint", _checkpoint_history, backend_used
+
                     # ── Post-tool guidance injection ─────────────────────────────────────────
                     # Inject a structured guidance message after every tool result so the
                     # model knows whether to stop, summarize, or chain the next step.
@@ -2101,11 +2273,20 @@ class AgentExecutor:
                         if is_coder_mode:
                             # Autonomous Coder Mode: Keep coder backend active & encourage continuous tool execution until goal is complete!
                             resolved_backend = "coder"
+                            loop_nudge = ""
+                            if consecutive_count >= 5:
+                                loop_nudge = (
+                                    " ⚠️ NOTE: You have executed the exact same tool call 5 or more times in a row. "
+                                    "If you are re-verifying after file changes, that's fine — but if the result has not "
+                                    "changed, stop repeating this identical call, read the existing output above, and either "
+                                    "take a NEW distinct step or write your final summary."
+                                )
                             reminder = (
                                 f"[SYSTEM] {_iter_note} Tool '{tool_name}' completed with result above. "
                                 f"User's overall goal: \"{_orig}\". "
                                 "You are in Autonomous Coder Mode. If additional steps, file creations, refactors, or terminal/python commands are needed to fully build and verify the user's goal, execute the next tool call immediately. "
                                 "Only write your final summary when the entire task is fully built and verified."
+                                f"{loop_nudge}"
                             )
                         elif tool_name in _INFO_TOOLS:
                             # Hard-stop: full content returned, model must summarize now without tools.
@@ -2178,6 +2359,27 @@ class AgentExecutor:
                     yield "final_history", final_history, backend_used
                     return
             
+            # ── Iteration cap reached with tool calls still pending ──────────────────
+            # Force one final tool-free turn so the user gets a real closing summary
+            # instead of a badge-only message that forces them to type "continue".
+            current_messages.append({
+                "role": "user",
+                "content": (
+                    "[SYSTEM] Iteration limit reached. Do NOT call more tools. "
+                    "Write your final summary of everything completed, the current state now, and what's left to do."
+                )
+            })
+            wrap_stream = self._query_llm_stream(
+                session, current_messages, user_message=user_message, use_tools=False,
+                resolved_backend="simple", intent_tool_hint="", intent_source=intent_source, overrides=overrides
+            )
+            wrap_response = ""
+            async for event_type, value, label in self._parse_native_stream(wrap_stream):
+                if event_type == "token":
+                    wrap_response += value
+                    yield "token", value, label
+            if wrap_response.strip():
+                accumulated_response_total.append(wrap_response.strip())
             assistant_final_speech = "\n".join(accumulated_response_total)
             final_history.append({"role": "assistant", "content": assistant_final_speech})
             yield "final_history", final_history, backend_used

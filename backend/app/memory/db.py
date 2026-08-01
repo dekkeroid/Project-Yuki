@@ -2,6 +2,7 @@ import os
 import sqlite3
 import time
 import re
+import json
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from app import config
@@ -389,6 +390,10 @@ def init_db():
     cols = [col[1] for col in cursor.fetchall()]
     if 'pruned_context' not in cols:
         cursor.execute("ALTER TABLE chat_sessions ADD COLUMN pruned_context TEXT;")
+
+    # Migration: add status column (default 'complete'; 'incomplete' = recovered/crashed temp turns)
+    if 'status' not in cols:
+        cursor.execute("ALTER TABLE chat_sessions ADD COLUMN status TEXT;")
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS chat_messages (
@@ -883,7 +888,7 @@ def generate_session_title(messages: List[Dict[str, str]]) -> str:
         return combined[:57] + "..."
     return combined.title()
 
-def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]], pruned_context: Optional[List[Dict[str, str]]] = None):
+def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]], pruned_context: Optional[List[Dict[str, str]]] = None, status: str = "complete"):
     """
     Saves or updates a chat session in SQLite ONLY IF len(messages) >= 2.
     Discards empty or 1-message orphan turns. Stores optional pruned_context JSON for LLM budget state.
@@ -904,13 +909,14 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
     try:
         cursor = conn.cursor()
         cursor.execute("""
-        INSERT INTO chat_sessions (session_id, title, created_at, updated_at, year, month_name, date_str, pruned_context)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO chat_sessions (session_id, title, created_at, updated_at, year, month_name, date_str, pruned_context, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(session_id) DO UPDATE SET
             title = excluded.title,
             updated_at = excluded.updated_at,
-            pruned_context = COALESCE(excluded.pruned_context, chat_sessions.pruned_context)
-        """, (session_id, title, now, now, year, month_name, date_str, pruned_json))
+            pruned_context = COALESCE(excluded.pruned_context, chat_sessions.pruned_context),
+            status = excluded.status
+        """, (session_id, title, now, now, year, month_name, date_str, pruned_json, status))
         
         cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
         msg_rows = []
@@ -942,6 +948,80 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
     finally:
         conn.close()
 
+def save_incomplete_turn(turn_id: str, messages: List[Dict[str, str]]):
+    """
+    Writes a crash-recovery checkpoint into a temp session `turn_<id>` with
+    status='incomplete'. DELETE+INSERT makes each checkpoint idempotent.
+    The real session's completed history is never touched.
+    """
+    if not turn_id or not messages:
+        return
+    session_id = f"turn_{turn_id}"
+    now = time.time()
+    t_struct = time.localtime(now)
+    year = t_struct.tm_year
+    month_name = time.strftime("%B %Y", t_struct)
+    date_str = time.strftime("%d %B %Y", t_struct)
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO chat_sessions (session_id, title, created_at, updated_at, year, month_name, date_str, pruned_context, status)
+        VALUES (?, 'Recovered (crashed)', ?, ?, ?, ?, ?, NULL, 'incomplete')
+        ON CONFLICT(session_id) DO UPDATE SET
+            updated_at = excluded.updated_at,
+            status = 'incomplete'
+        """, (session_id, now, now, year, month_name, date_str))
+
+        cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+        msg_rows = []
+        for m in messages:
+            r = m.get("role", "user")
+            c = str(m.get("content") or "").strip()
+            if r == "tool":
+                r = "user"
+                tool_name = m.get("name", "Tool")
+                c = f"[Previous Tool Result ({tool_name})]: {c}"
+            if c:
+                atts = m.get("attachments")
+                atts_json = None
+                if atts:
+                    try:
+                        atts_json = json.dumps(atts, ensure_ascii=False)
+                    except Exception:
+                        atts_json = None
+                msg_rows.append((session_id, r, c, atts_json, now))
+
+        cursor.executemany("""
+        INSERT INTO chat_messages (session_id, role, content, attachments, timestamp)
+        VALUES (?, ?, ?, ?, ?)
+        """, msg_rows)
+
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Error saving incomplete turn '{turn_id}': {e}")
+    finally:
+        conn.close()
+
+
+def delete_incomplete_turn(turn_id: str):
+    """Removes the temp recovery session for a turn that completed normally."""
+    if not turn_id:
+        return
+    session_id = f"turn_{turn_id}"
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM chat_sessions WHERE session_id = ?", (session_id,))
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Error deleting incomplete turn '{turn_id}': {e}")
+    finally:
+        conn.close()
+
+
 def get_session_pruned_context(session_id: str) -> Optional[List[Dict[str, str]]]:
     """
     Retrieves the serialized pruned LLM context JSON for a session if available.
@@ -968,7 +1048,7 @@ def get_hierarchical_chat_sessions() -> Dict[str, Any]:
     conn = get_connection()
     try:
         rows = conn.execute("""
-        SELECT session_id, title, created_at, updated_at, year, month_name, date_str
+        SELECT session_id, title, created_at, updated_at, year, month_name, date_str, status
         FROM chat_sessions
         ORDER BY updated_at DESC
         """).fetchall()
@@ -990,7 +1070,8 @@ def get_hierarchical_chat_sessions() -> Dict[str, Any]:
                 "session_id": r["session_id"],
                 "title": r["title"] or "Chat Session",
                 "created_at": r["created_at"],
-                "updated_at": r["updated_at"]
+                "updated_at": r["updated_at"],
+                "status": r["status"] or "complete"
             })
             
         result_years = []

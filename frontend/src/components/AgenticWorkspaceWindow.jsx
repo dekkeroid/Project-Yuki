@@ -250,6 +250,7 @@ export const AgenticWorkspaceWindow = ({
   const [activeSessionId, setActiveSessionId] = useState('');
   const [selectedPastSessionId, setSelectedPastSessionId] = useState(null);
   const [viewMessages, setViewMessages] = useState(null); // Loaded messages when inspecting past session
+  const [isTurnRunning, setIsTurnRunning] = useState(false);
   const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
@@ -378,7 +379,9 @@ export const AgenticWorkspaceWindow = ({
         const toolArgs = data.tool_args || {};
         const toolTarget = toolArgs.file_path || toolArgs.path || toolArgs.command || toolArgs.url || '';
         const targetInfo = toolTarget ? ` (\`${toolTarget}\`)` : '';
-        const badgeText = `\n🛠️ **[${toolName}${targetInfo} — ⏳ Running...]**\n`;
+        const argsBlock = Object.keys(toolArgs).length
+          ? `\n\`\`\`tool_args\n${JSON.stringify(toolArgs, null, 2)}\n\`\`\`` : '';
+        const badgeText = `\n🛠️ **[${toolName}${targetInfo} — ⏳ Running...]**${argsBlock}\n`;
 
         setViewMessages(prev => {
           if (!prev || prev.length === 0) return prev;
@@ -446,6 +449,7 @@ export const AgenticWorkspaceWindow = ({
           return newMsgs;
         });
       } else if (data.type === 'turn_interrupted') {
+        setIsTurnRunning(false);
         setViewMessages(prev => {
           if (!prev || prev.length === 0) return prev;
           const newMsgs = [...prev];
@@ -471,6 +475,9 @@ export const AgenticWorkspaceWindow = ({
           return newMsgs;
         });
       } else if (data.type === 'status') {
+        if (data.status === 'idle') {
+          setIsTurnRunning(false);
+        }
         if (data.message && data.status !== 'idle') {
           setViewMessages(prev => {
             if (!prev || prev.length === 0) return prev;
@@ -490,6 +497,7 @@ export const AgenticWorkspaceWindow = ({
         setViewMessages(data.messages);
         fetchSessionTree();
       } else if (data.type === 'stream_done') {
+        setIsTurnRunning(false);
         fetchSessionTree();
       }
     } catch (_) { }
@@ -925,6 +933,8 @@ export const AgenticWorkspaceWindow = ({
       setViewMessages(prev => [...(prev || []), userMsg, pendingAiMsg]);
     }
 
+    setIsTurnRunning(true);
+
     if (onSendMessage) {
       onSendMessage(textToSend);
     } else {
@@ -942,7 +952,7 @@ export const AgenticWorkspaceWindow = ({
           dynamic_tool_calling: dynamicToolCallingOverride,
           send_tools_in_simple: sendToolsInSimpleOverride,
           llm_coder_model: activeSettings.llm_coder_model,
-          llm_coder_api_key: activeSettings.llm_coder_api_key,
+          llm_coder_api_key: (activeSettings.llm_coder_api_key && !activeSettings.llm_coder_api_key.includes('...') && !activeSettings.llm_coder_api_key.includes('•••')) ? activeSettings.llm_coder_api_key : '',
           llm_coder_backend: activeSettings.llm_coder_backend,
           llm_coder_base_url: activeSettings.llm_coder_base_url,
           llm_reviewer_enabled: activeSettings.llm_reviewer_enabled !== undefined ? activeSettings.llm_reviewer_enabled : true,
@@ -961,11 +971,26 @@ export const AgenticWorkspaceWindow = ({
   };
 
   const handleInterruptProcess = () => {
+    setIsTurnRunning(false);
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'interrupt' }));
       console.log('[ChatWindow] Sent interrupt signal to backend.');
     }
   };
+
+  // Escape key instantly stops a running turn (same as the Stop button).
+  const handleInterruptProcessRef = useRef(null);
+  handleInterruptProcessRef.current = handleInterruptProcess;
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape' && (isTurnRunning || isGenerating)) {
+        e.preventDefault();
+        handleInterruptProcessRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isTurnRunning, isGenerating]);
 
   // Standalone Preferences Modal & Active Tab State
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
@@ -1383,6 +1408,34 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
         {/* Right Header Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 
+          {/* Stop Button — instantly aborts the running turn (kills subprocesses + cancels iteration loop) */}
+          {(isTurnRunning || isGenerating) && (
+            <button
+              type="button"
+              onClick={handleInterruptProcess}
+              title="Stop the running process and abort this turn immediately (Esc)"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                borderRadius: '7px',
+                border: '1px solid rgba(239, 68, 68, 0.7)',
+                background: 'rgba(239, 68, 68, 0.25)',
+                color: '#fecaca',
+                cursor: 'pointer',
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                boxShadow: '0 0 0 0 rgba(239, 68, 68, 0.6)',
+                animation: 'yuki-stop-pulse 1.2s infinite',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Square style={{ width: '12px', height: '12px', fill: '#f87171' }} />
+              Stop
+            </button>
+          )}
+
           {/* Coding Mode Toggle Button (OFF by default on open) */}
           <button
             type="button"
@@ -1666,6 +1719,23 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                                                       <MessageSquare style={{ width: '12px', height: '12px', flexShrink: 0 }} />
                                                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sess.title}</span>
+                                                      {sess.status === 'incomplete' && (
+                                                        <span
+                                                          title="This turn was interrupted or crashed and was recovered"
+                                                          style={{
+                                                            flexShrink: 0,
+                                                            fontSize: '0.58rem',
+                                                            fontWeight: 600,
+                                                            color: '#fbbf24',
+                                                            background: 'rgba(251, 191, 36, 0.15)',
+                                                            border: '1px solid rgba(251, 191, 36, 0.4)',
+                                                            borderRadius: '4px',
+                                                            padding: '1px 5px'
+                                                          }}
+                                                        >
+                                                          ⚠ Recovered
+                                                        </span>
+                                                      )}
                                                     </div>
 
                                                     <button
@@ -3730,6 +3800,10 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                               type="button"
                               onClick={async () => {
                                 setCoderCustomLabel(p.label);
+                                const keyOk = activeSettings.llm_coder_api_key && !activeSettings.llm_coder_api_key.includes('...') && !activeSettings.llm_coder_api_key.includes('•••');
+                                if (!keyOk) {
+                                  alert(`${p.label} requires an API key. Enter your ${p.name} API key in the "Coder API Key Pool" field below, then click "Save Preset" before chatting.`);
+                                }
                                 const updates = {
                                   llm_coder_backend: 'custom',
                                   llm_coder_base_url: p.url

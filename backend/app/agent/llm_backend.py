@@ -455,9 +455,10 @@ class OpenAICompatibleBackend(LLMBackend):
         if "enc_v1:" in raw_str or "gAAAA" in raw_str:
             raw_str = decrypt_api_key(raw_str)
 
-        # 2. If key is a masked preview (contains ... or •••), ignore masked override and fallback to config
+        # 2. If key is a masked preview (contains ... or •••), ignore masked override and fallback to config.
+        #    Masked overrides always originate from the coder settings UI, so prefer the coder key first.
         if ("..." in raw_str or "•••" in raw_str) and not ("enc_v1:" in raw_str or "gAAAA" in raw_str):
-            fallback = config.LLM_API_KEY or getattr(config, "LLM_CODER_API_KEY", "") or ""
+            fallback = getattr(config, "LLM_CODER_API_KEY", "") or config.LLM_API_KEY or ""
             fallback_str = str(fallback).strip()
             if "enc_v1:" in fallback_str or "gAAAA" in fallback_str:
                 raw_str = decrypt_api_key(fallback_str)
@@ -483,6 +484,12 @@ class OpenAICompatibleBackend(LLMBackend):
             selected_key = keys[idx % len(keys)]
             headers["Authorization"] = f"Bearer {selected_key}"
             print(f"[KeyPool] Using active key {idx % len(keys) + 1}/{len(keys)} (...{selected_key[-6:]})")
+        else:
+            print(f"[KeyPool] ⚠️ No API key available for {self.base_url} — requests will be sent WITHOUT Authorization.")
+        # OpenRouter optional headers (site attribution for rankings, per official API docs)
+        if "openrouter" in self.base_url.lower():
+            headers["HTTP-Referer"] = "https://github.com/not-nef/jarvis"
+            headers["X-OpenRouter-Title"] = "Jarvis Assistant"
         return headers
 
     def build_payload(self, model: str, messages: List[Dict], temperature: float,

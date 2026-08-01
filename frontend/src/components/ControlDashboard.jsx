@@ -638,10 +638,17 @@ const ControlDashboard = ({
         if (data && data.endpoints) {
           setSavedCustomEndpoints(data.endpoints);
           // Sync selected ID with current settings base_url
-          const active = data.endpoints.find(e => e.base_url && settings.llm_base_url && e.base_url.replace(/\/$/, '') === settings.llm_base_url.replace(/\/$/, ''));
+          const currentUrl = settings.llm_base_url;
+          const active = data.endpoints.find(e => e.base_url && currentUrl && e.base_url.replace(/\/$/, '') === currentUrl.replace(/\/$/, ''));
+          const prevSelectedId = selectedEndpointId;
           if (active) {
+            if (prevSelectedId && prevSelectedId !== active.id) {
+              console.warn(`[VAULT-SYNC] ⚠️ Auto-sync CHANGING selectedEndpointId: "${prevSelectedId}" → "${active.id}" (label="${active.label}") because URL="${currentUrl}" matched this endpoint`);
+            }
             setSelectedEndpointId(active.id);
             if (!customLabel) setCustomLabel(active.label);
+          } else if (prevSelectedId) {
+            console.warn(`[VAULT-SYNC] ⚠️ No endpoint matches current URL="${currentUrl}" — selectedEndpointId="${prevSelectedId}" will remain (may be stale)`);
           }
           const activeSimple = data.endpoints.find(e => e.base_url && settings.llm_simple_base_url && e.base_url.replace(/\/$/, '') === settings.llm_simple_base_url.replace(/\/$/, ''));
           if (activeSimple) {
@@ -651,7 +658,7 @@ const ControlDashboard = ({
         }
       }
     } catch (e) {
-      console.warn("Failed to fetch custom endpoints:", e);
+      console.warn("[VAULT-SYNC] Failed to fetch custom endpoints:", e);
     }
   };
 
@@ -785,6 +792,8 @@ const ControlDashboard = ({
 
   const handleSelectCustomEndpoint = async (ep, targetType = 'complex') => {
     if (!ep) return;
+    console.log(`[VAULT-SELECT] ⚡ Selecting preset: label="${ep.label}" id="${ep.id}" targetType="${targetType}" base_url="${ep.base_url}"`);
+    console.log(`[VAULT-SELECT] Before: settings.llm_base_url="${settings.llm_base_url}" settings.llm_api_key="${settings.llm_api_key?.substring(0,15)}..." settings.llm_backend="${settings.llm_backend}"`);
     try {
       const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/select`, {
         method: 'POST',
@@ -792,36 +801,42 @@ const ControlDashboard = ({
         body: JSON.stringify({ id: ep.id, label: ep.label, target_type: targetType })
       });
       const data = res.ok ? await res.json() : null;
+      console.log(`[VAULT-SELECT] Backend response:`, data ? { message: data.message, api_key_decrypted: data.api_key_decrypted?.substring(0,15)+'...', base_url: data.base_url, backend: data.backend } : 'null');
       const keyToUse = (data && data.active_endpoint && data.active_endpoint.api_key) || ep.api_key || '';
+      console.log(`[VAULT-SELECT] keyToUse="${keyToUse?.substring(0,15)}..."`);
       
       if (targetType === 'simple') {
         setSelectedSimpleEndpointId(ep.id || '');
         setCustomSimpleLabel(ep.label || '');
-        setSettings(prev => ({
-          ...prev,
+        const newSettings = {
+          ...settings,
           llm_simple_backend: ep.llm_backend === 'openai' ? 'custom' : (ep.llm_backend || 'custom'),
           llm_simple_base_url: ep.base_url || '',
           llm_simple_api_key: keyToUse,
-        }));
+        };
+        console.log(`[VAULT-SELECT] Setting simple: base_url="${newSettings.llm_simple_base_url}" backend="${newSettings.llm_simple_backend}"`);
+        setSettings(newSettings);
         if (onRefreshSimpleLlmModels) {
           setTimeout(() => onRefreshSimpleLlmModels(), 400);
         }
       } else {
         setSelectedEndpointId(ep.id || '');
         setCustomLabel(ep.label || '');
-        setSettings(prev => ({
-          ...prev,
+        const newSettings = {
+          ...settings,
           llm_backend: ep.llm_backend === 'openai' ? 'custom' : (ep.llm_backend || 'custom'),
           llm_base_url: ep.base_url || '',
           llm_api_key: keyToUse,
-          llm_model: ep.model || prev.llm_model
-        }));
+          llm_model: ep.model || settings.llm_model
+        };
+        console.log(`[VAULT-SELECT] Setting complex: base_url="${newSettings.llm_base_url}" backend="${newSettings.llm_backend}" model="${newSettings.llm_model}"`);
+        setSettings(newSettings);
         if (onRefreshLlmModels) {
           setTimeout(() => onRefreshLlmModels(), 400);
         }
       }
     } catch (e) {
-      console.error("Failed to select custom endpoint:", e);
+      console.error("[VAULT-SELECT] ❌ Failed to select custom endpoint:", e);
     }
   };
 
@@ -1134,6 +1149,13 @@ const ControlDashboard = ({
 
   const handleUpdateSetting = async (keyOrObj, value) => {
     const updates = typeof keyOrObj === 'object' && keyOrObj !== null ? keyOrObj : { [keyOrObj]: value };
+    const updateKeys = Object.keys(updates);
+    console.log(`[SETTINGS-UPDATE] ⚡ Sending:`, JSON.stringify(updates).substring(0, 200));
+    
+    // Snapshot before optimistic update
+    const prevBaseUrl = settings.llm_base_url;
+    const prevApiKey = settings.llm_api_key?.substring(0, 15);
+    
     setSettings(prev => ({ ...prev, ...updates }));
     if (updates.tool_mode) {
       setTimeout(() => fetchToolsList(), 100);
@@ -1147,6 +1169,19 @@ const ControlDashboard = ({
       if (res.ok) {
         const data = await res.json();
         if (data && data.settings) {
+          // Log what changed between server response and local state
+          const serverUrl = data.settings.llm_base_url;
+          const serverKey = data.settings.llm_api_key?.substring(0, 15);
+          if (serverUrl !== prevBaseUrl) {
+            console.warn(`[SETTINGS-UPDATE] ⚠️ SERVER llm_base_url CHANGED: "${prevBaseUrl}" → "${serverUrl}" (sent keys: ${updateKeys.join(',')})`);
+          }
+          if (serverKey !== prevApiKey) {
+            console.warn(`[SETTINGS-UPDATE] ⚠️ SERVER llm_api_key CHANGED: "${prevApiKey}..." → "${serverKey}..."`);
+          }
+          if (updateKeys.includes('llm_api_key') && serverUrl !== updates.llm_base_url) {
+            console.error(`[SETTINGS-UPDATE] ❌ REVERT DETECTED! Sent llm_base_url="${updates.llm_base_url || '(not sent)'}" but server returned llm_base_url="${serverUrl}"`);
+          }
+          console.log(`[SETTINGS-UPDATE] Server response llm_base_url="${serverUrl}" llm_backend="${data.settings.llm_backend}"`);
           setSettings(data.settings);
         }
         if (updates.tool_mode) {
@@ -1166,7 +1201,7 @@ const ControlDashboard = ({
         }
       }
     } catch (e) {
-      console.error('Failed to update setting:', e);
+      console.error('[SETTINGS-UPDATE] ❌ Failed to update setting:', e);
     }
   };
 
@@ -3881,7 +3916,10 @@ const ControlDashboard = ({
                             type={showComplexApiKey ? "text" : "password"}
                             placeholder="sk-..."
                             value={settings.llm_api_key || ''}
-                            onChange={(e) => handleUpdateSetting('llm_api_key', e.target.value)}
+                            onChange={(e) => {
+                              console.log(`[API-KEY-INPUT] 🔑 Typing in complex API key field. Current llm_base_url="${settings.llm_base_url}" value length=${e.target.value.length}`);
+                              handleUpdateSetting('llm_api_key', e.target.value);
+                            }}
                             style={{
                               flex: 1,
                               padding: '7px 10px',
