@@ -419,6 +419,7 @@ const ControlDashboard = ({
     llm_simple_api_key: '',
     llm_simple_model: '',
     llm_vision_model: '',
+    always_included_tools: [],
     tts_voice: 'af_bella',
     tts_rate: '1.0',
     tts_device: 'auto',
@@ -1097,6 +1098,13 @@ const ControlDashboard = ({
       if (interval) clearInterval(interval);
     };
   }, [isOpen, activeTab]);
+
+  useEffect(() => {
+    if (isOpen && (settings.tool_mode || 'basic') === 'advanced') {
+      const hasJarvis = (toolsList || []).some(t => String(t.name || '').startsWith('jarvis_'));
+      if (!hasJarvis) fetchToolsList('advanced');
+    }
+  }, [isOpen, settings.tool_mode, toolsList]);
 
   const interests = profile.user_interests || [];
   const hobbies = profile.user_hobbies || [];
@@ -3320,6 +3328,45 @@ const ControlDashboard = ({
                         </button>
                       </div>
                     </div>
+
+                    {/* Always Included Tools (Dynamic Mode) */}
+                    {(settings.tool_mode || 'basic') === 'advanced' && (
+                      <div className="identity-field" style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.08)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                          <span className="field-label" style={{ color: '#38bdf8' }}>Always Included Tools (Dynamic Mode)</span>
+                        </div>
+                        <div style={{ fontSize: '0.66rem', color: '#94a3b8', marginBottom: '8px', lineHeight: '1.3' }}>
+                          These tools are always sent to the LLM when dynamic tool calling is active, regardless of the query. Unchecking the box removes it from the always-included set.
+                        </div>
+                        {(() => {
+                          const jarvisTools = (toolsList || []).filter(t => String(t.name || '').startsWith('jarvis_')).map(t => t.name);
+                          const selected = Array.isArray(settings.always_included_tools) ? settings.always_included_tools : [];
+                          if (jarvisTools.length === 0) {
+                            return <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.35)', padding: '8px 0' }}>Loading jarvis tools…</div>;
+                          }
+                          return (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', maxHeight: '220px', overflowY: 'auto' }}>
+                              {jarvisTools.map(name => {
+                                const checked = selected.includes(name);
+                                return (
+                                  <label key={name} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', color: checked ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: '2px 0' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => {
+                                        const next = checked ? selected.filter(t => t !== name) : [...selected, name];
+                                        handleUpdateSetting('always_included_tools', next);
+                                      }}
+                                    />
+                                    <span style={{ fontFamily: 'monospace' }}>{name.replace('jarvis_', '')}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
 
                   {/* Card 2: AI Brain & Language Model (LLM API Configuration) */}

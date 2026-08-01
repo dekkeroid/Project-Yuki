@@ -177,7 +177,8 @@ class AgentExecutor:
             jarvis_query_file_db, jarvis_read_file, jarvis_create_or_edit_file,
             jarvis_replace_file_content, jarvis_list_dir_tree, jarvis_git_status,
             jarvis_system_diagnostics, jarvis_network_status, jarvis_web_scrape,
-            jarvis_window_control, jarvis_run_terminal, jarvis_analyze_image
+            jarvis_window_control, jarvis_run_terminal, jarvis_analyze_image,
+            jarvis_see_screen
         )
         from app.tools.system import send_process_stdin, find_files_by_glob
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
@@ -263,6 +264,7 @@ class AgentExecutor:
                 confirmed=bool(kwargs.get("confirmed", False))
             ),
             "manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
+            "manage_todo": lambda **kwargs: self._execute_manage_todo(**kwargs),
             "web_search": _async_web_search,
 
             # --- INDEPENDENT ADVANCED JARVIS TOOLS ---
@@ -342,6 +344,10 @@ class AgentExecutor:
             "jarvis_analyze_image": lambda **kwargs: jarvis_analyze_image(
                 kwargs.get("image_path") or "",
                 prompt=kwargs.get("prompt") or "Analyze and describe this image in detail."
+            ),
+            "jarvis_see_screen": lambda **kwargs: jarvis_see_screen(
+                kwargs.get("prompt") or "",
+                window_title=kwargs.get("window_title")
             ),
             "find_files_by_glob": lambda **kwargs: find_files_by_glob(
                 pattern=kwargs.get("pattern") or "*",
@@ -560,6 +566,60 @@ class AgentExecutor:
             return "Missing item_id for cancellation."
         return f"Unknown action '{action}' for manage_time."
 
+    def _execute_manage_todo(self, **kwargs) -> str:
+        from app.tools.todo_list import manage_todo
+
+        settings = self.memory.profile.get("settings", {}) if getattr(self, "memory", None) else {}
+        enabled = bool(settings.get("manage_todo_enabled", True))
+        override = kwargs.get("manage_todo_enabled")
+        if override is not None:
+            enabled = bool(override)
+        if not enabled:
+            return "Error: The todo list feature is disabled. Enable 'manage_todo' in settings before using this tool."
+
+        action = (kwargs.get("action") or "").lower().strip()
+        title = kwargs.get("title") or kwargs.get("task") or kwargs.get("name")
+        todo_id = kwargs.get("todo_id") or kwargs.get("id")
+        parent_id = kwargs.get("parent_id")
+        status = kwargs.get("status")
+        priority = kwargs.get("priority")
+        position = kwargs.get("position")
+        include_completed = bool(kwargs.get("include_completed", True))
+
+        if todo_id is not None:
+            try:
+                todo_id = int(todo_id)
+            except (ValueError, TypeError):
+                return "Error: todo_id must be an integer."
+        if parent_id is not None:
+            try:
+                parent_id = int(parent_id)
+            except (ValueError, TypeError):
+                return "Error: parent_id must be an integer."
+        if position is not None:
+            try:
+                position = int(position)
+            except (ValueError, TypeError):
+                return "Error: position must be an integer."
+
+        # Smart action inferring if model omitted action parameter
+        if not action:
+            if parent_id is not None:
+                action = "add_subtask"
+            elif title:
+                action = "create"
+            elif todo_id is not None:
+                action = "complete"
+            else:
+                action = "list"
+
+        session_id = kwargs.get("session_id")
+        target_dir = self._get_active_session_dir(kwargs) or kwargs.get("target_dir")
+        return manage_todo(action, title=title, todo_id=todo_id, parent_id=parent_id,
+                           status=status, priority=priority, position=position,
+                           session_id=session_id, include_completed=include_completed,
+                           target_dir=target_dir)
+
     async def ensure_model_loaded(self, model_name: str) -> bool:
         """
         Ensures the selected model is available in the active LLM backend.
@@ -664,6 +724,8 @@ class AgentExecutor:
         preventing cache invalidations on every single turn.
         """
         overrides = overrides or {}
+        if overrides.get("manage_todo_enabled") is None:
+            overrides["manage_todo_enabled"] = bool(self.memory.profile.get("settings", {}).get("manage_todo_enabled", True))
         memory_summary = self.memory.get_profile_summary()
         mood = self.memory.get_mood_spectrum()
 
@@ -1129,6 +1191,7 @@ class AgentExecutor:
                 tools = get_filtered_tools(user_message)
             else:
                 tools = get_tools_definition()
+            tools = self._drop_disabled_tools(tools)
             tool_names = [t["function"]["name"] for t in tools]
             print(f"[Tools] Sending {len(tools)} tools to LLM: {', '.join(tool_names)}")
 
@@ -1312,6 +1375,18 @@ class AgentExecutor:
     #  Streaming methods                                                 #
     # ------------------------------------------------------------------ #
 
+    def _drop_disabled_tools(self, tools: list, overrides: Optional[Dict[str, Any]] = None) -> list:
+        """Remove tools whose feature toggle is disabled (e.g. manage_todo)."""
+        overrides = overrides or {}
+        override = overrides.get("manage_todo_enabled")
+        if override is not None:
+            enabled = bool(override)
+        else:
+            enabled = bool(self.memory.profile.get("settings", {}).get("manage_todo_enabled", True))
+        if not enabled:
+            tools = [t for t in tools if t.get("function", {}).get("name") != "manage_todo"]
+        return tools
+
     async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]], intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None, active_model: str = "") -> list:
         """Return tool schemas from MCP discovery, with local-schema fallback."""
         overrides = overrides or {}
@@ -1337,7 +1412,7 @@ class AgentExecutor:
                 "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
                 "jarvis_send_stdin", "read_and_review_file", "search_files",
                 "read_file_content", "run_terminal_command", "run_python_script",
-                "jarvis_analyze_image"
+                "jarvis_analyze_image", "jarvis_see_screen", "manage_todo"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in coding_allowed]
         elif effective_tool_mode == "basic":
@@ -1346,9 +1421,11 @@ class AgentExecutor:
                 "launch_app", "open_or_play_file", "set_system_volume", "manage_time",
                 "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script",
                 "jarvis_query_file_db", "jarvis_open_or_play_file",
-                "jarvis_analyze_image"
+                "jarvis_analyze_image", "jarvis_see_screen"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in basic_allowed]
+
+        filtered_tools = self._drop_disabled_tools(filtered_tools, overrides)
 
         if intent_tool_hint:
             targeted = [t for t in filtered_tools if t.get("function", {}).get("name") == intent_tool_hint]

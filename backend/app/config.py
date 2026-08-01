@@ -65,6 +65,10 @@ LLM_VISION_MODEL = os.environ.get("LLM_VISION_MODEL", "gemini-3.6-flash")
 # Tool Operating Mode — "basic" (weak/local LLMs) vs "advanced" (frontier cloud LLMs with parallel multi-step execution)
 TOOL_MODE = os.environ.get("TOOL_MODE", "basic").strip().lower()
 
+# User-configurable list of tools ALWAYS included when dynamic tool calling is active.
+# None = not configured -> selector falls back to its hardcoded defaults.
+ALWAYS_INCLUDED_JARVIS_TOOLS = None
+
 # Tool transport configuration
 # mcp-stdio routes Yuki tool execution through backend/app/mcp_server.py over MCP stdio.
 # local keeps the legacy in-process Python dispatcher.

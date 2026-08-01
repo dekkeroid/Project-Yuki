@@ -65,6 +65,15 @@ def resolve_command(message: str) -> Optional[ResolvedCommand]:
     if re.search(r"\b(take (a )?screenshot|screenshot|screen capture|capture (my |the )?(screen|display))\b", msg):
         return ("take_screenshot", {})
 
+    # ── See the screen (vision capture + analysis) ───────────────────────────
+    if re.search(
+        r"\b(look at|see|show me|show (yourself )?|read (off )?|what('?s| is) on|what (is |'s )?on|"
+        r"check (the )?|describe|look (on|at)|watch|examine|inspect|view|read the (screen|display|window)|"
+        r"tell me what('?s| is) on)\b.*\b(screen|display|desktop|monitor|window|tab|page|dialog|popup|message|notification|taskbar|browser)\b",
+        msg
+    ):
+        return ("jarvis_see_screen", {"prompt": msg})
+
     # ── System stats ─────────────────────────────────────────────────────────
     if re.search(
         r"\b(system (stats|status|info|information|performance)|pc (stats|status|info)|"

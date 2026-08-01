@@ -351,7 +351,7 @@ async def lifespan(app: FastAPI):
         await agent_executor.mcp_tools.aclose()
 
 
-app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.2.2-beta", lifespan=lifespan)
+app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.0-beta", lifespan=lifespan)
 
 # Setup CORS — restrict to localhost and LAN origins
 app.add_middleware(
@@ -907,6 +907,9 @@ def get_settings():
         "crawler_paused": is_crawler_paused(),
         "tagger_paused": is_tagger_paused(),
     })
+    if "always_included_tools" not in settings_dict:
+        from app.tools.selector import _ALWAYS_INCLUDED_JARVIS_TOOLS
+        settings_dict["always_included_tools"] = sorted(_ALWAYS_INCLUDED_JARVIS_TOOLS)
     print(f"[SETTINGS-GET-BE] GET /api/settings → llm_base_url='{settings_dict.get('llm_base_url', '')}' llm_backend='{settings_dict.get('llm_backend', '')}'")
     return settings_dict
 
@@ -973,7 +976,9 @@ class SettingsUpdateRequest(BaseModel):
     llm_reviewer_model: Optional[str] = None
     llm_summary_model: Optional[str] = None
     llm_vision_model: Optional[str] = None
+    always_included_tools: Optional[List[str]] = None
     persistent_chat_history: Optional[bool] = None
+    manage_todo_enabled: Optional[bool] = None
     basic_history_token_limit: Optional[int] = None
     basic_history_keep_turns: Optional[int] = None
     advanced_history_token_limit: Optional[int] = None
@@ -1009,6 +1014,8 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("persistent_chat_history", val)
         if val:
             save_persistent_chat_history(global_chat_history)
+    if req.manage_todo_enabled is not None:
+        memory_manager.update_setting("manage_todo_enabled", bool(req.manage_todo_enabled))
     if req.basic_history_token_limit is not None:
         memory_manager.update_setting("basic_history_token_limit", int(req.basic_history_token_limit))
     if req.basic_history_keep_turns is not None:
@@ -1288,6 +1295,20 @@ async def update_settings(req: SettingsUpdateRequest):
     
     if req.llm_vision_model is not None:
         memory_manager.update_setting("llm_vision_model", req.llm_vision_model.strip())
+
+    if req.always_included_tools is not None:
+        seen = set()
+        clean_tools = []
+        for t in req.always_included_tools:
+            if not t:
+                continue
+            name = str(t).strip()
+            if name and name not in seen:
+                seen.add(name)
+                clean_tools.append(name)
+        config.ALWAYS_INCLUDED_JARVIS_TOOLS = clean_tools
+        memory_manager.update_setting("always_included_tools", clean_tools)
+        print(f"[SETTINGS-UPDATE-BE] always_included_tools = {clean_tools}")
 
     print(f"[SETTINGS-UPDATE-BE]   AFTER:  llm_base_url='{current_settings.get('llm_base_url', '')}' llm_backend='{current_settings.get('llm_backend', '')}'")
     print(f"[SETTINGS-UPDATE-BE] ✅ Returning {len(current_settings)} settings keys")
@@ -1732,6 +1753,8 @@ async def get_tools_list(mode: Optional[str] = None):
             category = "Information & Search"
         elif name in ("launch_app", "open_or_play_file", "media_playback_control", "set_system_volume", "jarvis_launch_app", "jarvis_open_or_play_file", "jarvis_system_volume", "jarvis_media_playback_control", "jarvis_take_screenshot"):
             category = "Media & Control"
+        elif name in ("jarvis_analyze_image", "jarvis_see_screen"):
+            category = "Vision & Media"
         elif name in ("run_terminal_command", "run_python_script", "create_file", "edit_file", "delete_file", "jarvis_read_file", "jarvis_create_or_edit_file", "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_run_terminal", "jarvis_run_python"):
             category = "Code & Filesystem"
         elif name in ("jarvis_system_diagnostics", "jarvis_network_status", "jarvis_window_control", "jarvis_system_power", "system_power_control", "manage_process", "jarvis_manage_time", "manage_time", "jarvis_close_app"):

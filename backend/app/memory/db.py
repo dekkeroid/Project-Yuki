@@ -371,6 +371,21 @@ def init_db():
     );
     """)
 
+    # 1d2. Persistent Agent TODO List (tasks & subtasks)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_id INTEGER,
+        title TEXT,
+        status TEXT DEFAULT 'pending',
+        priority TEXT DEFAULT 'normal',
+        position INTEGER DEFAULT 0,
+        session_id TEXT,
+        created_at REAL,
+        updated_at REAL
+    );
+    """)
+
     # 1e. Persistent Chat Sessions & Message History
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS chat_sessions (

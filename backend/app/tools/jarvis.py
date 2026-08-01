@@ -460,10 +460,20 @@ def jarvis_send_stdin(input_text: str, pid: int = None) -> str:
     return send_process_stdin(input_text=input_text, pid=pid)
 
 
-def jarvis_analyze_image(image_path: str, prompt: str = "Analyze and describe this image in detail.") -> str:
+def _mask_key(key: str) -> str:
+    """Mask an API key, keeping only the last 4 characters (e.g. 'ab..****' -> '****xyz1')."""
+    key = str(key or "")
+    if not key:
+        return "<empty>"
+    if len(key) <= 4:
+        return "*" * len(key)
+    return "*" * (len(key) - 4) + key[-4:]
+
+
+def _analyze_image_file(image_path: str, prompt: str) -> str:
     """
-    Scans and analyzes an image file on disk using a vision API or vision model.
-    Allows text-only LLMs to understand visual diagrams, screenshots, and UI mockups.
+    Shared vision-analysis pipeline used by jarvis_analyze_image and jarvis_see_screen.
+    Sends a local image file to the configured vision model and returns its text response.
     """
     clean_path = os.path.abspath(image_path.strip('"\''))
     if not os.path.exists(clean_path):
@@ -487,12 +497,14 @@ def jarvis_analyze_image(image_path: str, prompt: str = "Analyze and describe th
             vision_model = "gemini-3.6-flash"
         api_key = config.LLM_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
 
+        base_url = config.get_effective_base_url()
+        print(f"[Vision] Analyzing '{clean_path}' with model='{vision_model}' | key='{_mask_key(api_key)}' | base_url='{base_url}'")
+
         import requests
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        base_url = config.get_effective_base_url()
         url = f"{base_url}/chat/completions"
 
         payload = {
@@ -518,6 +530,8 @@ def jarvis_analyze_image(image_path: str, prompt: str = "Analyze and describe th
 
         # Fallback to direct Gemini API if custom base_url returns error
         gemini_key = getattr(config, "GEMINI_API_KEY", None) or api_key
+        print(f"[Vision] Primary request failed: HTTP {resp.status_code}. "
+              f"Fallback direct-Gemini: {'yes' if gemini_key else 'no'} (key='{_mask_key(gemini_key)}'). Response: {resp.text[:300]}")
         if gemini_key:
             g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{vision_model}:generateContent?key={gemini_key}"
             b64_data = data_url.split(",")[1] if "," in data_url else data_url
@@ -537,7 +551,90 @@ def jarvis_analyze_image(image_path: str, prompt: str = "Analyze and describe th
                     return g_data["candidates"][0]["content"]["parts"][0]["text"]
                 except Exception:
                     pass
+            print(f"[Vision] Fallback Gemini request failed: HTTP {g_resp.status_code}. Response: {g_resp.text[:300]}")
 
         return f"Vision Error: Failed to analyze image. HTTP {resp.status_code}: {resp.text[:300]}"
     except Exception as e:
+        print(f"[Vision] Exception during analysis: {str(e)}")
         return f"Vision Exception: {str(e)}"
+
+
+def jarvis_analyze_image(image_path: str, prompt: str = "Analyze and describe this image in detail.") -> str:
+    """
+    Scans and analyzes an image file on disk using a vision API or vision model.
+    Allows text-only LLMs to understand visual diagrams, screenshots, and UI mockups.
+    """
+    return _analyze_image_file(image_path, prompt)
+
+
+def jarvis_see_screen(prompt: str, window_title: str = None) -> str:
+    """
+    Captures the current screen (or a specific app window via window_title) and analyzes it
+    with a vision model, returning a detailed description of what is visible including any text.
+    """
+    try:
+        from app.utils.attachment_manager import get_attachment_directory
+        from PIL import Image, ImageGrab
+        import datetime
+
+        if window_title:
+            bbox = _find_window_bbox(window_title)
+            if bbox:
+                img = ImageGrab.grab(bbox=bbox)
+            else:
+                img = ImageGrab.grab()
+        else:
+            img = ImageGrab.grab()
+
+        # Downscale very large captures to keep vision payloads token-efficient.
+        max_dim = 1280
+        if max(img.size) > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+
+        target_dir = get_attachment_directory()
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = os.path.join(target_dir, f"screen_{stamp}.png")
+        img.save(save_path, "PNG")
+        print(f"[Jarvis] Screen captured to '{save_path}' ({img.size[0]}x{img.size[1]}).")
+    except Exception as e:
+        return f"Vision Exception: Screen capture failed: {str(e)}"
+
+    effective_prompt = prompt or (
+        "Analyze this screen capture in extreme detail. Describe every visible element: layout, "
+        "windows, icons, buttons, menus, colors, and state. Then transcribe ALL visible text verbatim, "
+        "including titles, labels, error messages, dialog boxes, status bars, and menu items."
+    )
+    return _analyze_image_file(save_path, effective_prompt)
+
+
+def _find_window_bbox(window_title: str):
+    """Returns (left, top, right, bottom) for the first window matching window_title, or None."""
+    try:
+        import win32gui
+    except Exception:
+        try:
+            import pygetwindow as gw
+            wins = gw.getWindowsWithTitle(window_title)
+            if not wins:
+                return None
+            w = wins[0]
+            return (w.left, w.top, w.right, w.bottom)
+        except Exception:
+            return None
+
+    def enum_cb(hwnd, results):
+        if not win32gui.IsWindowVisible(hwnd):
+            return
+        title = win32gui.GetWindowText(hwnd)
+        if title and (window_title.lower() in title.lower()):
+            results.append(hwnd)
+
+    results = []
+    try:
+        win32gui.EnumWindows(enum_cb, results)
+    except Exception:
+        pass
+    if not results:
+        return None
+    rect = win32gui.GetWindowRect(results[0])
+    return tuple(rect)

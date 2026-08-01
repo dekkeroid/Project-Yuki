@@ -415,6 +415,29 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
+                "name": "manage_todo",
+                "description": "Manage a persistent TODO task list with subtasks. Creates, lists, updates, completes, and deletes tasks that survive crashes. Use 'create' to start a task list, 'list' to review progress, 'update'/'complete' to track as you work, 'render_md' to write a visible TODO.md.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["create", "list", "update", "complete", "reopen", "add_subtask", "list_subtasks", "delete", "clear_completed", "render_md"]
+                        },
+                        "title": {"type": "string", "description": "Title of the task or subtask."},
+                        "todo_id": {"type": "integer", "description": "ID of an existing todo to update/complete/delete."},
+                        "parent_id": {"type": "integer", "description": "Parent todo ID when creating a subtask or listing its subtasks."},
+                        "status": {"type": "string", "description": "Status to set: pending, in_progress, completed, blocked."},
+                        "priority": {"type": "string", "description": "Priority: low, normal, high, critical."},
+                        "include_completed": {"type": "boolean", "description": "Whether to include completed tasks when listing. Default true."}
+                    },
+                    "required": ["action"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "find_files_by_glob",
                 "description": "Find files matching a glob pattern (e.g. 'src/**/*.jsx', '**/*.py', 'package*.json') inside target search_dir. Excludes node_modules, .git, dist, build, venv.",
                 "parameters": {
@@ -454,6 +477,21 @@ def get_advanced_jarvis_tools_definition() -> list:
                         "prompt": {"type": "string", "description": "Specific question or analysis prompt for the vision model."}
                     },
                     "required": ["image_path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_see_screen",
+                "description": "Captures the current screen (full display, or a specific app window via window_title) and analyzes it with a vision model. Returns a detailed description of everything visible including a verbatim transcription of all on-screen text (titles, buttons, menus, error messages, dialog boxes). Use this when you need to SEE what the user is looking at. ALWAYS ask for an extremely detailed description AND a full verbatim transcription of ALL text in the capture so the answer can answer any follow-up question.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Highly detailed analysis instructions for the vision model. Ask for a comprehensive description of every element AND a verbatim transcription of all visible text."},
+                        "window_title": {"type": "string", "description": "Optional window title substring. If provided, only that app window is captured instead of the full screen."}
+                    },
+                    "required": ["prompt"]
                 }
             }
         },

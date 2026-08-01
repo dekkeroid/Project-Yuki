@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, Sequence
 
+import app.config as config
+
 DEFAULT_MAX_TOOLS = 8
 DEFAULT_FALLBACK_THRESHOLD = 0.08
 
@@ -45,6 +47,8 @@ _ALWAYS_INCLUDED_JARVIS_TOOLS = {
     "jarvis_web_scrape",
     "jarvis_launch_app",
     "jarvis_query_file_db",
+    "jarvis_see_screen",
+    "manage_todo",
 }
 
 _ALWAYS_INCLUDED_BASIC_TOOLS = {
@@ -65,6 +69,7 @@ _TOOL_HINTS = {
     "jarvis_replace_file_content": ("replace", "edit", "change", "file", "modify", "patch"),
     "jarvis_list_dir_tree": ("dir", "directory", "tree", "list", "folder", "files", "ls"),
     "jarvis_git_status": ("git", "repo", "commit", "status", "branch", "diff", "vcs"),
+    "manage_todo": ("todo", "task", "checklist", "subtask", "track", "progress", "plan", "steps"),
     "jarvis_system_diagnostics": ("cpu", "ram", "memory", "disk", "stats", "system", "health", "battery", "performance"),
     "jarvis_launch_app": ("open", "launch", "start", "app", "application", "program", "browser", "exec"),
     "jarvis_open_or_play_file": ("open", "play", "media", "video", "audio", "file", "folder", "watch", "music"),
@@ -78,6 +83,7 @@ _TOOL_HINTS = {
     "jarvis_keyboard_input": ("keyboard", "type", "press", "key", "shortcut"),
     "jarvis_media_playback_control": ("pause", "next", "previous", "media", "music", "playback", "stop"),
     "jarvis_analyze_image": ("screenshot", "image", "vision", "picture", "photo", "scan", "analyze"),
+    "jarvis_see_screen": ("screen", "look", "see", "watch", "display", "view", "monitor", "desktop", "window", "current"),
     "find_files_by_glob": ("glob", "find", "search", "pattern", "files", "match"),
 
     # Legacy Basic Mode Tools
@@ -120,7 +126,14 @@ def select_relevant_tools(
 
     # Detect if we are in Jarvis mode (contains jarvis_* tool definitions)
     is_jarvis = any(_tool_name(t).startswith("jarvis_") for t in tools)
-    always_names = _ALWAYS_INCLUDED_JARVIS_TOOLS if is_jarvis else _ALWAYS_INCLUDED_BASIC_TOOLS
+    if is_jarvis:
+        configured = getattr(config, "ALWAYS_INCLUDED_JARVIS_TOOLS", None)
+        if configured is not None:
+            always_names = set(configured)
+        else:
+            always_names = _ALWAYS_INCLUDED_JARVIS_TOOLS
+    else:
+        always_names = _ALWAYS_INCLUDED_BASIC_TOOLS
 
     always_tools = [t for t in tools if _tool_name(t) in always_names]
     always_tool_names = {_tool_name(t) for t in always_tools}

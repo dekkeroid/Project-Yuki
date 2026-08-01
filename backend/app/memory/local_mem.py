@@ -68,6 +68,7 @@ class MemoryManager:
                 "llm_simple_api_key": "",
                 "llm_simple_model": "",
                 "persistent_chat_history": False,
+                "manage_todo_enabled": True,
                 "basic_history_token_limit": 2500,
                 "basic_history_keep_turns": 6,
                 "advanced_history_token_limit": 40000,
@@ -132,6 +133,8 @@ class MemoryManager:
                 config.LLM_API_KEY = decrypt_api_key(raw_key) if (raw_key and ("enc_v1:" in str(raw_key) or "gAAAA" in str(raw_key))) else (raw_key or "")
                 config.LLM_SIMPLE_API_KEY = decrypt_api_key(simple_key) if (simple_key and ("enc_v1:" in str(simple_key) or "gAAAA" in str(simple_key))) else (simple_key or "")
                 config.LLM_CODER_API_KEY = decrypt_api_key(coder_key) if (coder_key and ("enc_v1:" in str(coder_key) or "gAAAA" in str(coder_key))) else (coder_key or "")
+                if "always_included_tools" in data["settings"]:
+                    config.ALWAYS_INCLUDED_JARVIS_TOOLS = list(data["settings"].get("always_included_tools") or [])
                 
                 return data
         except Exception as e:

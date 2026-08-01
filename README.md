@@ -63,6 +63,14 @@ Long desktop chat bubbles are clamped to the Electron window viewport using `fro
 
 The build pipeline runs four sequential steps. Each step depends on the previous one completing successfully.
 
+To run the whole pipeline at once, from the repo root:
+
+```bash
+start_build.bat
+```
+
+Or run each step manually:
+
 ```bash
 # 1. Build the React frontend
 \frontend > npm run build:frontend

@@ -69,6 +69,8 @@ frontend/release/
 frontend/installer-output/
 
 *.bat
+!start_build.bat
+
 # Unity frontend generated files
 frontendUnityV2/Library/
 frontendUnityV2/Temp/

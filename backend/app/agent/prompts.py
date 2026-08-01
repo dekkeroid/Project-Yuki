@@ -67,6 +67,13 @@ Messages may carry attachment references like `[Attached image #1: name at 'path
 • Use `jarvis_analyze_image` (with `image_path` and a `prompt`) to re-read an attached image.
 • Use `read_file_content` / `read_and_review_file` (with the path) to re-read an attached text or code file.
 • Do NOT call `jarvis_analyze_image` for an image already shown inline to you in the current turn.
+
+--- LIVE SCREEN VISION GUIDANCE ---
+When the user asks you to look at, describe, check, or read what is currently on their screen (e.g. "what's on my screen", "look at my screen", "see this window", "what error is showing"), call `jarvis_see_screen`.
+• ALWAYS pass a VERY DETAILED `prompt` instructing the vision model to (1) describe every visible element in depth — layout, windows, panels, icons, buttons, menus, dialog boxes, colors, and state — and (2) transcribe ALL visible text VERBATIM, including titles, labels, error messages, code, menu items, status bars, and any on-screen numbers. Pass the raw user message plus these instructions so no detail is missed.
+• Use `window_title` to target a specific app window when the user names one (e.g. "look at the VSCode window" → window_title="Code", "look at my browser" → window_title="Chrome", "look at the error dialog" → window_title="error").
+• After calling `jarvis_see_screen`, the text you get back lets you answer any follow-up about the screen content — keep it in context so you can reference it later.
+• Do NOT use `take_screenshot` (that only opens the Snipping Tool overlay for the user). Use `jarvis_see_screen` whenever YOU need to see the screen.
 ---------------------------------------"""
 
 def get_simple_system_prompt(memory_summary: str, mood: dict = None) -> str:
@@ -368,6 +375,12 @@ You are pair programming with the user to analyze codebases, debug runtime error
 10. USER CONFIRMATION & PREFERENCES:
     • When working on projects that require network ports (frontend dev servers, backend APIs, databases), ask the user for their preferred port with sensible suggestions (e.g., 3000, 5173, 8080, 8000) before proceeding.
     • If no project directory or workspace is specified, ask the user where to create the project before writing any files.
+
+11. PERSISTENT TODO LIST MANAGEMENT:
+    • At the start of any multi-step task, create a detailed TODO list with subtasks using the `manage_todo` tool (action 'create' / 'add_subtask').
+    • Review progress by calling `manage_todo` with action 'list' at each checkpoint; update task statuses ('pending', 'in_progress', 'completed', 'blocked') as you work.
+    • If you crash or resume a session, call `manage_todo` action 'list' first to recover and continue where you left off.
+    • When the user wants a visible checklist, write it via `manage_todo` action 'render_md' so it appears as TODO.md in the workspace.
 """
 
 def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, overrides: dict = None) -> str:
@@ -444,8 +457,16 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
     • If no project directory or workspace is specified, ask the user where to create the project before writing any files."""
         sections.append(directives)
 
+    if overrides.get("manage_todo_enabled", True):
+        todo_rule = """14. PERSISTENT TODO LIST MANAGEMENT:
+   • At the start of any multi-step task, create a detailed TODO list with subtasks using the `manage_todo` tool (action 'create' / 'add_subtask').
+   • Review progress by calling `manage_todo` with action 'list' at each checkpoint; update task statuses ('pending', 'in_progress', 'completed', 'blocked') as you work.
+   • If you crash or resume a session, call `manage_todo` action 'list' first to recover and continue where you left off.
+   • When the user wants a visible checklist, write it via `manage_todo` action 'render_md' so it appears as TODO.md in the workspace."""
+        sections.append(todo_rule)
+
     if overrides.get("prompt_planning", True):
-        planning = """14. RESTRUCTURING, PLANNING & MARKDOWN FILES:
+        planning = """15. RESTRUCTURING, PLANNING & MARKDOWN FILES:
    • For complex multi-file refactors or new feature creations, present an Implementation Plan outlining affected files, architectural decisions, and verification steps before executing edits.
    • PROJECT PLAN FILE ETIQUETTE: Whenever the user asks to make a plan, outline architectural steps, or design a project, you MUST create a detailed Markdown implementation plan file (e.g. `implementation_plan.md` or `project_plan.md`) inside the designated project workspace directory using `jarvis_create_or_edit_file`.
    • INTERACTIVE PLAN REVISION ETIQUETTE: When you present an implementation plan and the user requests changes, critiques, or additions, immediately update and re-write the implementation plan markdown file (`jarvis_create_or_edit_file` / `jarvis_replace_file_content`) to reflect the newly revised plan and present the updated file link.
