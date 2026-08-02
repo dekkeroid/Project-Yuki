@@ -354,6 +354,9 @@ async def lifespan(app: FastAPI):
     _canvas_tools.set_broadcast_callback(broadcast_ws)
     _canvas_tools.set_main_loop(asyncio.get_running_loop())
 
+    from app.tools import ask_user
+    ask_user.set_ask_callback(broadcast_ask_event)
+
     yield
 
     # ── Shutdown ─────────────────────────────────────────────────────────
@@ -472,6 +475,19 @@ async def broadcast_ws(payload: dict):
         except Exception:
             if ws in active_websockets:
                 active_websockets.remove(ws)
+
+async def broadcast_ask_event(ask_id: str, questions: list):
+    """Broadcast an ask_user event to all connected WebSocket clients.
+
+    Mirrors the callback-broadcast pattern used by time_manager.set_due_callback
+    and canvas.set_broadcast_callback.
+    """
+    payload = {
+        "type": "ask_user",
+        "ask_id": ask_id,
+        "questions": questions
+    }
+    await broadcast_ws(payload)
 
 def _handle_terminal_stream_event(payload: dict):
     try:
@@ -876,6 +892,17 @@ def get_todo_list(session_id: Optional[str] = Query(None)):
         print(f"[TodoList] Failed to load todo list: {e}")
         return {"todos": [], "text": ""}
 
+
+@app.post("/api/ask_user/{ask_id}/answer")
+async def answer_ask_user(ask_id: str, body: dict = Body(...)):
+    """Resolve a pending ask_user call with the user's answers.
+
+    The frontend dialog POSTs ``{answers: {<question_id>: <label or [labels]>}}``
+    when the user submits, which completes the Future the agent is awaiting.
+    """
+    from app.tools.ask_user import resolve_ask
+    ok = resolve_ask(ask_id, body.get("answers", {}))
+    return {"status": "ok" if ok else "not_found"}
 
 
 @app.delete("/api/models/vrm/{name}")
