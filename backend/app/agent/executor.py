@@ -52,6 +52,24 @@ def _is_local_url(url: str) -> bool:
     )
 
 
+def _grep_tool_candidates(mcp_tools) -> list:
+    """Best-effort sources for the jarvis_grep_files schema so coder mode can force-ship it."""
+    candidates = []
+    all_local = getattr(mcp_tools, "_all_local_definitions", None)
+    if callable(all_local):
+        try:
+            candidates.extend(all_local())
+        except Exception:
+            pass
+    if not any(t.get("function", {}).get("name") == "jarvis_grep_files" for t in candidates):
+        try:
+            from app.tools.definitions import get_advanced_jarvis_tools_definition
+            candidates.extend(get_advanced_jarvis_tools_definition())
+        except Exception:
+            pass
+    return candidates
+
+
 def _extract_confirmation_target(result: str) -> str:
     """Pull the human-readable target out of a `CONFIRM_REQUIRED: ...` tool result."""
     match = re.search(r"CONFIRM_REQUIRED:\s*(.+)", str(result or ""))
@@ -191,7 +209,7 @@ class AgentExecutor:
             jarvis_see_screen
         )
         from app.tools.canvas import jarvis_html_graphics, jarvis_html_viewer
-        from app.tools.system import send_process_stdin, find_files_by_glob
+        from app.tools.system import send_process_stdin, find_files_by_glob, jarvis_grep_files
         from app.tools.ask_user import ask_user as _ask_user_async
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
@@ -362,9 +380,16 @@ class AgentExecutor:
                 kwargs.get("prompt") or "",
                 window_title=kwargs.get("window_title")
             ),
-            "find_files_by_glob": lambda **kwargs: find_files_by_glob(
+            "jarvis_find_files_by_glob": lambda **kwargs: find_files_by_glob(
                 pattern=kwargs.get("pattern") or "*",
                 search_dir=kwargs.get("search_dir") or kwargs.get("root_dir") or self._get_active_session_dir(kwargs)
+            ),
+            "jarvis_grep_files": lambda **kwargs: jarvis_grep_files(
+                pattern=kwargs.get("pattern") or "",
+                file_pattern=kwargs.get("file_pattern") or kwargs.get("glob") or "*",
+                search_dir=kwargs.get("search_dir") or kwargs.get("directory") or kwargs.get("dir") or self._get_active_session_dir(kwargs),
+                case_sensitive=bool(kwargs.get("case_sensitive", False)),
+                max_results=int(kwargs.get("max_results") or 100)
             ),
             "jarvis_run_python": lambda **kwargs: run_python_script(
                 kwargs.get("code") or "",
@@ -1281,7 +1306,7 @@ class AgentExecutor:
         if config.LLM_MODE == 3:
             try:
                 label = "complex" if backend == "complex" else "simple"
-                temp = 0.2 if label == "complex" else 0.7
+                temp = 0.2 if label == "complex" else 0.6
                 tb, tm = self._get_backend_and_model_for_task(label)
                 print(f"[Router][Mode 3] Task={label} -> using {tm} via {tb.name} with {'full' if label == 'complex' else 'lean'} prompt (temp={temp})")
                 return self._query_lmstudio_model(messages, tm, temperature=temp, use_tools=use_tools, backend=tb)
@@ -1306,8 +1331,8 @@ class AgentExecutor:
         else:
             try:
                 tb, tm = self._get_backend_and_model_for_task("simple")
-                print(f"[Router][Mode 1] Task=simple -> using {tm} via {tb.name} with simple prompt (temp=0.7)")
-                return self._query_lmstudio_model(messages, tm, temperature=0.7, use_tools=use_tools, backend=tb)
+                print(f"[Router][Mode 1] Task=simple -> using {tm} via {tb.name} with simple prompt (temp=0.6)")
+                return self._query_lmstudio_model(messages, tm, temperature=0.6, use_tools=use_tools, backend=tb)
             except Exception as e:
                 tb_e, tm_e = self._get_backend_and_model_for_task("simple")
                 return (
@@ -1453,13 +1478,20 @@ class AgentExecutor:
             coding_allowed = {
                 "jarvis_run_terminal", "jarvis_run_python", "jarvis_read_file",
                 "jarvis_create_or_edit_file", "jarvis_replace_file_content",
-                "jarvis_list_dir_tree", "jarvis_git_status", "find_files_by_glob",
+                "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_find_files_by_glob",
+                "jarvis_grep_files",
                 "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
                 "jarvis_send_stdin", "read_and_review_file", "search_files",
                 "read_file_content", "run_terminal_command", "run_python_script",
                 "jarvis_analyze_image", "jarvis_see_screen", "manage_todo", "ask_user"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in coding_allowed]
+            # Guarantee the core search tools are always shipped to the coding LLM even when
+            # dynamic tool selection would have dropped them (e.g. custom always_included_tools).
+            for _name in ("jarvis_grep_files", "jarvis_find_files_by_glob"):
+                _def = next((t for t in _grep_tool_candidates(self.mcp_tools) if t.get("function", {}).get("name") == _name), None)
+                if _def and all(t.get("function", {}).get("name") != _name for t in filtered_tools):
+                    filtered_tools.append(_def)
         elif effective_tool_mode == "basic":
             basic_allowed = {
                 "web_search", "read_file_content", "search_files", "list_directory",
@@ -1580,8 +1612,8 @@ class AgentExecutor:
             try:
                 task = "coder"
                 tb, tm = self._get_backend_and_model_for_task("coder", overrides=overrides)
-                print(f"[Router][Coder Mode] Task=coder -> streaming {tm} via {tb.name} (temp=0.2)")
-                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides, allow_key_rotation=True):
+                print(f"[Router][Coder Mode] Task=coder -> streaming {tm} via {tb.name} (temp=0.1)")
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.1, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides, allow_key_rotation=True):
                     yield chunk, label
                 return
             except Exception as e:
@@ -1608,7 +1640,7 @@ class AgentExecutor:
                 else:
                     task = self._classify_task(user_message) if user_message else "simple"
                     source = "regex"
-                temp = 0.2 if task in ("complex", "coder", "complex_coder") else 0.7
+                temp = 0.1 if task in ("coder", "complex_coder") else (0.2 if task == "complex" else 0.6)
                 tb, tm = self._get_backend_and_model_for_task(task)
                 print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {tm} via {tb.name} with {'full' if task in ('complex', 'coder', 'complex_coder') else 'lean'} prompt (temp={temp})")
                 async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides):
@@ -1629,8 +1661,8 @@ class AgentExecutor:
         else:
             try:
                 tb, tm = self._get_backend_and_model_for_task("simple")
-                print(f"[Router] Task=simple -> streaming {tm} via {tb.name} (temp=0.7)")
-                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.7, use_tools=use_tools, backend=tb, overrides=overrides):
+                print(f"[Router] Task=simple -> streaming {tm} via {tb.name} (temp=0.6)")
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.6, use_tools=use_tools, backend=tb, overrides=overrides):
                     yield chunk, label
             except Exception as e:
                 tb_e, tm_e = self._get_backend_and_model_for_task("simple")

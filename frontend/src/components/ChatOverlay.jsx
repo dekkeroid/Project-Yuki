@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState, useMemo } from 'react';
 import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, ExternalLink, Copy, Check, Globe, Code, Sliders, Database, Eye, FileText, Folder, Brain, Wrench, Paperclip } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
@@ -1104,7 +1104,7 @@ const ChatOverlay = ({
   onRemoveAttachment,
   isUploadingAttachment = false
 }) => {
-  const chatEndRef = useRef(null);
+  const chatScrollRef = useRef(null);
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
   const attachmentInputRef = useRef(null);
@@ -1267,9 +1267,10 @@ const ChatOverlay = ({
     }
   };
 
-  useEffect(() => {
-    if (chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  // Instant bottom-up scroll (0-jump, consistent with AgenticWorkspaceWindow).
+  useLayoutEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
   }, [messages, isThinking]);
 
@@ -1380,7 +1381,7 @@ const ChatOverlay = ({
         </div>
 
         {/* Message Log Scroll Container */}
-        <div className="chat-scroll-area">
+        <div className="chat-scroll-area" ref={chatScrollRef}>
           {messages.length === 0 && (
             <div className="chat-empty-state">
               <MessageSquare className="w-8 h-8 opacity-25" style={{ color: 'var(--text-muted)' }} />
@@ -1498,7 +1499,7 @@ const ChatOverlay = ({
               </div>
             </div>
           )}
-          <div ref={chatEndRef} />
+
         </div>
 
         {/* Input Bar */}

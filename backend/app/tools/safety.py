@@ -306,6 +306,15 @@ def canonicalize_tool_args(tool_name: str, arguments: dict[str, Any] | None) -> 
         return {"action": args.get("action") or ""}
     if tool == "web_search":
         return {"query": args.get("query") or args.get("search") or args.get("text") or _first_value(args)}
+    if tool == "jarvis_grep_files":
+        out = {"pattern": args.get("pattern") or ""}
+        put_if_present(out, "file_pattern", args.get("file_pattern") or args.get("glob"))
+        put_if_present(out, "search_dir", args.get("search_dir") or args.get("directory") or args.get("dir"))
+        if _as_bool(args.get("case_sensitive")):
+            out["case_sensitive"] = True
+        if args.get("max_results") is not None:
+            out["max_results"] = int(args.get("max_results"))
+        return out
 
     return _drop_empty_generic(args)
 

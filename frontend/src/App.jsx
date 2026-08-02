@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, Suspense, lazy } from 'react';
 import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
@@ -1042,7 +1042,7 @@ const App = () => {
   handleWebSocketMessageRef.current = handleWebSocketMessage;
 
 
-  const desktopChatEndRef = useRef(null);
+  const desktopChatScrollRef = useRef(null);
   useEffect(() => {
     isSessionActiveRef.current = isSessionActive;
   }, [isSessionActive]);
@@ -1098,6 +1098,7 @@ const App = () => {
         ...prev,
         { role: 'assistant', content: "Oh no! I'm offline right now, Master. I can't read files when disconnected." }
       ]);
+      speakSystemMessage("Oh no! I'm offline right now, Master. I can't read files when disconnected.", 'sad');
     }
   };
 
@@ -1636,9 +1637,10 @@ const App = () => {
 
 
 
-  useEffect(() => {
-    if (isPanelOpen && desktopChatEndRef.current) {
-      desktopChatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  // Instant bottom-up scroll for the Conversation Log panel (0-jump, no top->bottom animation).
+  useLayoutEffect(() => {
+    if (isPanelOpen && desktopChatScrollRef.current) {
+      desktopChatScrollRef.current.scrollTop = desktopChatScrollRef.current.scrollHeight;
     }
   }, [isPanelOpen, messages]);
 
@@ -1711,6 +1713,7 @@ const App = () => {
           ]);
           setIsThinking(false);
           setTtsStreamActive(false);
+          speakSystemMessage("Hmph! I'm currently offline, Master. Make sure the backend server is running!", 'sad');
           updateListeningState();
         }
         return;
@@ -1740,7 +1743,10 @@ const App = () => {
 
             // CPU
             if (data.cpu && !data.cpu.error) {
-              chatText += `🖥️ **CPU**: ${data.cpu.usage_percent}% (${data.cpu.cores_logical} cores`;
+              const coresLabel = data.cpu.cores_physical && data.cpu.cores_physical !== data.cpu.cores_logical
+                ? `${data.cpu.cores_physical} cores / ${data.cpu.cores_logical} threads`
+                : `${data.cpu.cores_logical} cores`;
+              chatText += `🖥️ **CPU**: ${data.cpu.usage_percent}% (${coresLabel}`;
               if (data.cpu.freq_mhz) {
                 chatText += ` @ ${(data.cpu.freq_mhz / 1000).toFixed(1)} GHz`;
               }
@@ -1788,7 +1794,7 @@ const App = () => {
 
             // Uptime
             if (data.uptime && !data.uptime.error) {
-              chatText += `⏱️ **Uptime**: ${data.uptime.hours}h ${data.uptime.minutes}m\n`;
+              chatText += `⏱️ **Uptime since last restart**: ${data.uptime.hours}h ${data.uptime.minutes}m\n`;
             }
 
             // OS info
@@ -1826,7 +1832,11 @@ const App = () => {
             }
 
             if (data.disk && !data.disk.error) {
-              if (data.disk.usage_percent > 90) {
+              const isWindows = data.os && /windows/i.test(data.os);
+              if (data.disk.free_gb < 15) {
+                const cleanupHint = isWindows ? " You can do slash o, disk cleanup." : "";
+                ttsParts.push(`Warning: C drive has less than 15 gigabytes free.${cleanupHint}`);
+              } else if (data.disk.usage_percent > 90) {
                 ttsParts.push(`Warning: C drive is ${data.disk.usage_percent} percent full.`);
               }
             }
@@ -2046,6 +2056,7 @@ const App = () => {
       ]);
       setIsThinking(false);
       setTtsStreamActive(false);
+      speakSystemMessage("Hmph! I'm currently offline, Master. Make sure the backend server is running!", 'sad');
       updateListeningState();
     }
   };
@@ -2531,7 +2542,7 @@ const detectExpression = (text) => {
                 </div>
 
                 {/* Messages scroll area */}
-                <div style={{
+                <div ref={desktopChatScrollRef} style={{
                   padding: '10px 14px',
                   overflowY: 'auto',
                   flex: 1,
@@ -2594,8 +2605,6 @@ const detectExpression = (text) => {
                       );
                     })
                   )}
-                  {/* Dummy ref to scroll to bottom */}
-                  <div ref={desktopChatEndRef} />
                 </div>
               </div>
             )}

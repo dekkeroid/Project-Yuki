@@ -1099,7 +1099,7 @@ export const AgenticWorkspaceWindow = ({
     // 2. Active Tool Schemas
     const basicTools = ['web_search', 'read_file_content', 'search_files', 'list_directory', 'launch_app', 'open_or_play_file', 'set_system_volume', 'manage_time', 'get_system_stats', 'update_user_fact', 'take_screenshot', 'run_terminal_command', 'run_python_script', 'jarvis_query_file_db', 'jarvis_open_or_play_file'];
     const jarvisTools = [...basicTools, 'read_and_review_file', 'list_directory_tree', 'git_status_and_history', 'system_diagnostics_and_processes', 'scrape_web_page', 'jarvis_remember_user_fact'];
-    const codingTools = ['jarvis_run_terminal', 'jarvis_run_python', 'jarvis_read_file', 'jarvis_create_or_edit_file', 'jarvis_replace_file_content', 'jarvis_list_dir_tree', 'jarvis_git_status', 'find_files_by_glob', 'jarvis_web_search', 'jarvis_web_scrape', 'jarvis_system_diagnostics', 'jarvis_send_stdin'];
+    const codingTools = ['jarvis_run_terminal', 'jarvis_run_python', 'jarvis_read_file', 'jarvis_create_or_edit_file', 'jarvis_replace_file_content', 'jarvis_list_dir_tree', 'jarvis_git_status', 'jarvis_find_files_by_glob', 'jarvis_grep_files', 'jarvis_web_search', 'jarvis_web_scrape', 'jarvis_system_diagnostics', 'jarvis_send_stdin'];
 
     const activeToolList = isCodingMode ? codingTools : (chatWindowToolMode === 'advanced' ? jarvisTools : basicTools);
 

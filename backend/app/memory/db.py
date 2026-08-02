@@ -3,11 +3,69 @@ import sqlite3
 import time
 import re
 import json
+import threading
+import functools
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from app import config
 from anyascii import anyascii
 import pypinyin
+
+# Single-writer serialization for SQLite writes. All in-process writers (crawler,
+# watchdog, metadata tagger, chat/session saves, todo/time tools) acquire this
+# re-entrant lock around their write transactions so two threads never hold an
+# open write transaction at the same time. Combined with short transactions and a
+# busy_timeout, this makes "database is locked" effectively impossible in-process.
+DB_WRITE_LOCK = threading.RLock()
+
+# Retry policy for the rare case of cross-process contention (e.g. an external
+# script touching the same DB file). We retry the whole write with a fresh
+# connection and linear backoff before giving up.
+_WRITE_RETRY_ATTEMPTS = 4
+_WRITE_RETRY_BASE_DELAY = 0.25
+
+
+def _run_write(fn, log_prefix: str = "DB"):
+    """
+    Runs fn(conn) inside the global write lock and commits it, retrying the
+    whole operation on transient 'database is locked'/'busy' errors.
+
+    fn receives a fresh connection and performs DML (no commit — this helper
+    owns the commit). Returns fn's result on success; raises the last error
+    after retries are exhausted.
+    """
+    for attempt in range(_WRITE_RETRY_ATTEMPTS):
+        try:
+            with DB_WRITE_LOCK:
+                conn = get_connection()
+                try:
+                    result = fn(conn)
+                    conn.commit()
+                    return result
+                finally:
+                    conn.close()
+        except sqlite3.OperationalError as e:
+            msg = str(e).lower()
+            if ("locked" not in msg and "busy" not in msg) or attempt == _WRITE_RETRY_ATTEMPTS - 1:
+                raise
+            time.sleep(_WRITE_RETRY_BASE_DELAY * (attempt + 1))
+    raise sqlite3.OperationalError(f"[{log_prefix}] write failed: database is locked")
+
+
+def _locked_if_standalone(func):
+    """
+    Wraps a write helper so that when it opens its own connection (conn is not
+    provided) it runs under DB_WRITE_LOCK. When the caller supplies a conn (the
+    crawler's long-lived scan connection), the caller already holds the lock
+    across its batch, so we defer to it to avoid locking per statement.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if kwargs.get("conn") is not None:
+            return func(*args, **kwargs)
+        with DB_WRITE_LOCK:
+            return func(*args, **kwargs)
+    return wrapper
 
 DB_PATH = Path(config.BASE_DIR) / "yuki_files.db"
 
@@ -161,11 +219,18 @@ def get_connection():
     """
     Returns a thread-safe connection to the SQLite database.
     Enforces foreign keys support.
+
+    - timeout/busy_timeout: wait up to 30s for a write lock instead of failing
+      instantly with 'database is locked'.
+    - WAL: concurrent readers + a single writer.
+    - synchronous=NORMAL: keeps frequent commits cheap in WAL mode.
     """
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn = sqlite3.connect(str(DB_PATH), timeout=30.0, check_same_thread=False)
     conn.execute("PRAGMA foreign_keys = ON;")
     # Set journal mode to WAL for concurrent read/write performance
     conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA busy_timeout = 30000;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -618,18 +683,14 @@ def get_crawler_state(key: str) -> Optional[str]:
     return row["val"] if row else None
 
 def set_crawler_state(key: str, val: str):
-    conn = get_connection()
     try:
-        conn.execute("""
+        _run_write(lambda c: c.execute("""
         INSERT INTO crawler_state (key, val)
         VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET val = excluded.val
-        """, (key, val))
-        conn.commit()
+        """, (key, val)), log_prefix=f"set_crawler_state('{key}')")
     except Exception as e:
         print(f"[DB] Error setting crawler state '{key}': {e}")
-    finally:
-        conn.close()
 
 # --- Directories CRUD ---
 
@@ -654,6 +715,7 @@ def get_hot_directories() -> List[str]:
     conn.close()
     return [row["path"] for row in rows]
 
+@_locked_if_standalone
 def upsert_directory(path: str, last_modified: float, change_count_increment: int = 0, conn=None):
     should_close = False
     if conn is None:
@@ -695,6 +757,7 @@ def get_all_indexed_file_paths() -> List[str]:
     conn.close()
     return [row["file_path"] for row in rows]
 
+@_locked_if_standalone
 def upsert_file(file_path: str, file_name: str, parent_folder: str, extension: str, size: int, last_modified: float, category: str, conn=None) -> int:
     """
     Inserts a new file or updates file size/mtime if modified.
@@ -765,22 +828,23 @@ def upsert_file(file_path: str, file_name: str, parent_folder: str, extension: s
 def delete_files_by_paths(file_paths: List[str]):
     if not file_paths:
         return
-    conn = get_connection()
-    try:
+
+    def _do(conn):
         # Batch deletes to prevent hitting maximum parameter limits
         batch_size = 500
         for i in range(0, len(file_paths), batch_size):
             batch = file_paths[i:i+batch_size]
             placeholders = ",".join("?" for _ in batch)
             conn.execute(f"DELETE FROM files WHERE file_path IN ({placeholders})", batch)
-        conn.commit()
+
+    try:
+        _run_write(_do, log_prefix=f"delete_files_by_paths({len(file_paths)})")
     except Exception as e:
         print(f"[DB] Error deleting files: {e}")
-    finally:
-        conn.close()
 
 # --- Metadata CRUD ---
 
+@_locked_if_standalone
 def upsert_metadata(file_id: int, title: str, artist_or_creator: str, genre_or_tags: str, release_year: Optional[int], alternate_titles: str, enriched: int = 1, category: Optional[str] = None, conn=None):
     should_close = False
     if conn is None:
@@ -991,18 +1055,17 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
     """
     if not session_id or not messages or len(messages) < 2:
         return
-    
+
     now = time.time()
     t_struct = time.localtime(now)
     year = t_struct.tm_year
     month_name = time.strftime("%B %Y", t_struct)  # e.g. "July 2026"
     date_str = time.strftime("%d %B %Y", t_struct)  # e.g. "30 July 2026"
-    
+
     title = generate_session_title(messages)
     pruned_json = json.dumps(pruned_context) if pruned_context else None
-    
-    conn = get_connection()
-    try:
+
+    def _do(conn):
         cursor = conn.cursor()
         cursor.execute("""
         INSERT INTO chat_sessions (session_id, title, created_at, updated_at, year, month_name, date_str, pruned_context, status)
@@ -1013,7 +1076,7 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
             pruned_context = COALESCE(excluded.pruned_context, chat_sessions.pruned_context),
             status = excluded.status
         """, (session_id, title, now, now, year, month_name, date_str, pruned_json, status))
-        
+
         cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
         msg_rows = []
         for m in messages:
@@ -1037,12 +1100,11 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
         INSERT INTO chat_messages (session_id, role, content, attachments, timestamp)
         VALUES (?, ?, ?, ?, ?)
         """, msg_rows)
-        
-        conn.commit()
+
+    try:
+        _run_write(_do, log_prefix=f"save_chat_session('{session_id}')")
     except Exception as e:
         print(f"[DB] Error saving chat session '{session_id}': {e}")
-    finally:
-        conn.close()
 
 def save_incomplete_turn(turn_id: str, messages: List[Dict[str, str]]):
     """
@@ -1059,8 +1121,7 @@ def save_incomplete_turn(turn_id: str, messages: List[Dict[str, str]]):
     month_name = time.strftime("%B %Y", t_struct)
     date_str = time.strftime("%d %B %Y", t_struct)
 
-    conn = get_connection()
-    try:
+    def _do(conn):
         cursor = conn.cursor()
         cursor.execute("""
         INSERT INTO chat_sessions (session_id, title, created_at, updated_at, year, month_name, date_str, pruned_context, status)
@@ -1094,11 +1155,10 @@ def save_incomplete_turn(turn_id: str, messages: List[Dict[str, str]]):
         VALUES (?, ?, ?, ?, ?)
         """, msg_rows)
 
-        conn.commit()
+    try:
+        _run_write(_do, log_prefix=f"save_incomplete_turn('{turn_id}')")
     except Exception as e:
         print(f"[DB] Error saving incomplete turn '{turn_id}': {e}")
-    finally:
-        conn.close()
 
 
 def delete_incomplete_turn(turn_id: str):
@@ -1106,16 +1166,16 @@ def delete_incomplete_turn(turn_id: str):
     if not turn_id:
         return
     session_id = f"turn_{turn_id}"
-    conn = get_connection()
-    try:
+
+    def _do(conn):
         cursor = conn.cursor()
         cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
         cursor.execute("DELETE FROM chat_sessions WHERE session_id = ?", (session_id,))
-        conn.commit()
+
+    try:
+        _run_write(_do, log_prefix=f"delete_incomplete_turn('{turn_id}')")
     except Exception as e:
         print(f"[DB] Error deleting incomplete turn '{turn_id}': {e}")
-    finally:
-        conn.close()
 
 
 def get_session_pruned_context(session_id: str) -> Optional[List[Dict[str, str]]]:
@@ -1234,15 +1294,14 @@ def get_session_messages(session_id: str, limit: Optional[int] = None) -> List[D
         conn.close()
 
 def delete_chat_session(session_id: str):
-    conn = get_connection()
-    try:
+    def _do(conn):
         conn.execute("DELETE FROM chat_sessions WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM session_metadata WHERE session_id = ?", (session_id,))
-        conn.commit()
+
+    try:
+        _run_write(_do, log_prefix=f"delete_chat_session('{session_id}')")
     except Exception as e:
         print(f"[DB] Error deleting session '{session_id}': {e}")
-    finally:
-        conn.close()
 
 
 # ── Session Metadata Helpers (Facts & Workspace Directories) ─────────
@@ -1251,17 +1310,14 @@ def save_session_meta(session_id: str, meta_type: str, meta_key: str, meta_value
     """
     Saves or updates a session metadata entry (meta_type: 'fact' | 'directory').
     """
-    conn = get_connection()
     try:
-        conn.execute("""
+        _run_write(lambda c: c.execute("""
             INSERT OR REPLACE INTO session_metadata (session_id, meta_type, meta_key, meta_value, created_at)
             VALUES (?, ?, ?, ?, ?)
-        """, (session_id, meta_type, meta_key, meta_value, time.time()))
-        conn.commit()
+        """, (session_id, meta_type, meta_key, meta_value, time.time())),
+            log_prefix=f"save_session_meta('{session_id}')")
     except Exception as e:
         print(f"[DB] Error saving session meta for '{session_id}': {e}")
-    finally:
-        conn.close()
 
 def get_session_meta(session_id: str) -> Dict[str, List[Dict[str, str]]]:
     """
@@ -1297,17 +1353,13 @@ def delete_session_meta(session_id: str, meta_type: str, meta_key: str):
     """
     Deletes a session metadata entry.
     """
-    conn = get_connection()
     try:
-        conn.execute("""
+        _run_write(lambda c: c.execute("""
             DELETE FROM session_metadata
             WHERE session_id = ? AND meta_type = ? AND meta_key = ?
-        """, (session_id, meta_type, meta_key))
-        conn.commit()
+        """, (session_id, meta_type, meta_key)), log_prefix=f"delete_session_meta('{session_id}')")
     except Exception as e:
         print(f"[DB] Error deleting session meta for '{session_id}': {e}")
-    finally:
-        conn.close()
 
 
 # ── Crawler Database Export & Import Helpers ──────────────────────────
@@ -1352,6 +1404,7 @@ def import_crawler_database_json(data: dict) -> dict:
     meta = data.get("file_metadata", [])
     state = data.get("crawler_state", [])
 
+    DB_WRITE_LOCK.acquire()
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -1430,6 +1483,7 @@ def import_crawler_database_json(data: dict) -> dict:
         raise e
     finally:
         conn.close()
+        DB_WRITE_LOCK.release()
 
 
 

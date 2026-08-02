@@ -10,6 +10,13 @@ from typing import List, Optional
 LAST_OPTIMIZATION_TIME = 0
 OPTIMIZATION_COOLDOWN = 10.0
 
+# How many memory-heavy processes the >95% RAM branch may trim, and how many
+# candidates to enrich before applying the exclusion filters. The enrich window
+# is larger than MAX_TRIM_CANDIDATES so that safelist/foreground/young/priority
+# exclusions don't starve the trim list below the target size.
+MAX_TRIM_CANDIDATES = 15
+SCAN_ENRICH_WINDOW = 30
+
 PROCESS_QUERY_INFORMATION = 0x0400
 PROCESS_SET_QUOTA         = 0x0100
 
@@ -75,8 +82,8 @@ def _select_trim_candidates(procs, now, foreground_pid):
     """Pure, side-effect-free selection of which processes are safe to trim.
 
     Given an iterable of `_ProcInfo`, the current time `now` (epoch seconds)
-    and the foreground-window PID (or None), return up to 10 candidates safe to
-    trim, sorted by memory_percent descending.
+    and the foreground-window PID (or None), return up to MAX_TRIM_CANDIDATES
+    candidates safe to trim, sorted by memory_percent descending.
 
     Excludes:
       - safelisted system-critical processes (_NEVER_TRIM, matched case-insensitively)
@@ -97,7 +104,7 @@ def _select_trim_candidates(procs, now, foreground_pid):
             continue
         candidates.append(p)
     candidates.sort(key=lambda p: p.memory_percent or 0, reverse=True)
-    return candidates[:10]
+    return candidates[:MAX_TRIM_CANDIDATES]
 
 
 def _empty_working_set(pid: int) -> bool:
@@ -200,13 +207,13 @@ def optimize_all_processes(force=False):
     if pids_to_optimize:
         print(f'[Memory] EmptyWorkingSet called on {optimized_count}/{len(pids_to_optimize)} Electron/Node process(es).')
 
-    # 6. If system RAM > 95%, trim top 10 memory-hogging processes — safely.
-    #    The original branch trimmed the raw top-10 by memory_percent with no
-    #    guards, which could trim dwm.exe/explorer.exe/the just-opened foreground
-    #    app and freeze the UI. Now we safelist critical processes, skip the
-    #    foreground window, skip processes younger than 30s, and skip HIGH/
-    #    REALTIME priority processes. Selection is factored into the pure, unit-
-    #    testable _select_trim_candidates helper.
+    # 6. If system RAM > 95%, trim top MAX_TRIM_CANDIDATES memory-hogging
+    #    processes — safely. The original branch trimmed the raw top-10 by
+    #    memory_percent with no guards, which could trim dwm.exe/explorer.exe/the
+    #    just-opened foreground app and freeze the UI. Now we safelist critical
+    #    processes, skip the foreground window, skip processes younger than 30s,
+    #    and skip HIGH/REALTIME priority processes. Selection is factored into the
+    #    pure, unit-testable _select_trim_candidates helper.
     try:
         ram = psutil.virtual_memory()
         if ram.percent > 95:
@@ -229,11 +236,13 @@ def optimize_all_processes(force=False):
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
 
-            # Sort by memory_percent desc and only fetch priority for the top ~15,
-            # so the global scan stays cheap (nice() is a per-process syscall).
+            # Sort by memory_percent desc and only fetch priority for the top
+            # SCAN_ENRICH_WINDOW, so the global scan stays cheap (nice() is a
+            # per-process syscall) while leaving headroom for the exclusion
+            # filters to fill all MAX_TRIM_CANDIDATES slots.
             scanned.sort(key=lambda pi: pi.memory_percent, reverse=True)
             enriched = []
-            for pi in scanned[:15]:
+            for pi in scanned[:SCAN_ENRICH_WINDOW]:
                 pc = None
                 try:
                     pc = psutil.Process(pi.pid).nice()

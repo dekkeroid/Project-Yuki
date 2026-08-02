@@ -661,11 +661,14 @@ def get_active_workspace_directory() -> str:
 
 def find_files_by_glob(pattern: str, search_dir: str = None, root_dir: str = None, max_results: int = 150) -> str:
     """
-    Finds files matching a glob pattern (e.g. 'src/**/*.jsx', '**/*.py') inside search_dir.
+    Finds files matching a glob pattern (e.g. '*.py', 'src/**/*.jsx') inside search_dir.
+    Bare basename patterns (no '/' and no '**') are matched RECURSIVELY — '*.py' finds
+    .py files at any depth inside search_dir. Explicit '**' and path-scoped patterns
+    ('src/**/*.jsx', 'sub/*.py') behave per normal glob semantics.
     Automatically excludes node_modules, .git, dist, build, venv directories.
     """
-    import os, glob, pathlib
-    
+    import os, pathlib
+
     clean_pattern = str(pattern).strip()
     if not clean_pattern:
         return "Error: Glob pattern cannot be empty."
@@ -673,7 +676,7 @@ def find_files_by_glob(pattern: str, search_dir: str = None, root_dir: str = Non
     target_dir = search_dir or root_dir
     raw_dir = str(target_dir).strip('"\'') if target_dir else None
     if raw_dir and raw_dir != "None":
-        final_dir = os.path.abspath(raw_dir)
+        final_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(raw_dir)))
     else:
         active_ws = get_active_workspace_directory()
         final_dir = active_ws if active_ws else os.getcwd()
@@ -682,15 +685,28 @@ def find_files_by_glob(pattern: str, search_dir: str = None, root_dir: str = Non
         return f"Error: Search directory '{final_dir}' does not exist."
 
     ignored = {"node_modules", ".git", "dist", "build", "venv", ".venv", "__pycache__", ".next", ".cache", "coverage"}
+    ignored_prefixes = ("venv", ".venv", "site-packages")
+
+    def _is_ignored_dir(name: str) -> bool:
+        name_lower = name.lower()
+        return name_lower in ignored or name_lower.startswith(ignored_prefixes)
 
     matches = []
     try:
         path_obj = pathlib.Path(final_dir)
         glob_pat = clean_pattern.lstrip('/\\')
-        
-        for p in path_obj.glob(glob_pat):
+
+        # Auto-recursion: a bare basename pattern ('*.py') is almost always intended to
+        # match files at any depth (mirrors jarvis_grep_files file_pattern semantics).
+        # Only pattern with no path separator and no '**' gets the recursive treatment.
+        bare_pattern = ("/" not in glob_pat) and ("**" not in glob_pat)
+        iterator = path_obj.rglob(glob_pat) if bare_pattern else path_obj.glob(glob_pat)
+
+        for p in iterator:
             parts = set(p.parts)
             if parts.intersection(ignored):
+                continue
+            if _is_ignored_dir(p.name):
                 continue
             if p.is_file():
                 rel_path = os.path.relpath(str(p), final_dir)
@@ -706,6 +722,82 @@ def find_files_by_glob(pattern: str, search_dir: str = None, root_dir: str = Non
         return f"=== Glob Search Results for '{clean_pattern}' in {final_dir} ({len(matches)} files found{count_suffix}) ===\n{result_str}"
     except Exception as e:
         return f"Glob Search Error: {str(e)}"
+
+def jarvis_grep_files(pattern: str, file_pattern: str = "*", search_dir: str = None, case_sensitive: bool = False, max_results: int = 100) -> str:
+    """
+    Search file CONTENTS for a regex pattern and return every match as path:line: <matching line>.
+    Accepts a file glob filter (e.g. '*.py', 'src/**/*.tsx') to limit which files are scanned.
+    Skips ignored directories (node_modules, .git, venv, dist, build, __pycache__, ...), binary
+    files, and paths outside the safety boundary.
+    """
+    import fnmatch as _fnmatch
+    from app.tools.files import _is_safe_path
+
+    clean_pattern = str(pattern).strip() if pattern is not None else ""
+    if not clean_pattern:
+        return "Error: Search pattern cannot be empty."
+
+    try:
+        flags = 0 if case_sensitive else re.IGNORECASE
+        regex = re.compile(clean_pattern, flags)
+    except re.error as e:
+        return f"Error: Invalid regex pattern '{clean_pattern}': {e}"
+
+    target_dir = str(search_dir).strip('"\'') if search_dir and str(search_dir).strip('"\'').lower() not in ("", "none") else None
+    if target_dir:
+        final_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(target_dir)))
+    else:
+        active_ws = get_active_workspace_directory()
+        final_dir = active_ws if active_ws else os.getcwd()
+
+    if not os.path.isdir(final_dir):
+        return f"Error: Search directory '{final_dir}' does not exist."
+
+    ignored = {"node_modules", ".git", "dist", "build", "venv", ".venv", "__pycache__", ".next", ".cache", "coverage", "site-packages"}
+    ignored_prefixes = ("venv", ".venv", "site-packages")
+
+    def _is_ignored_dir(name: str) -> bool:
+        name_lower = name.lower()
+        return name_lower in ignored or name_lower.startswith(ignored_prefixes)
+
+    clean_file_pat = str(file_pattern or "*").strip()
+
+    hits = []
+    try:
+        for root, dirs, files in os.walk(final_dir):
+            dirs[:] = [d for d in dirs if not _is_ignored_dir(d)]
+            for fname in files:
+                if not _fnmatch.fnmatch(fname, clean_file_pat) and not _fnmatch.fnmatch(os.path.relpath(os.path.join(root, fname), final_dir), clean_file_pat):
+                    continue
+                full_path = os.path.join(root, fname)
+                if not _is_safe_path(full_path):
+                    continue
+                if os.path.getsize(full_path) > 20 * 1024 * 1024:
+                    continue
+                try:
+                    with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for line_no, line in enumerate(f, 1):
+                            if len(line) > 10000:
+                                continue
+                            if regex.search(line):
+                                rel_path = os.path.relpath(full_path, final_dir).replace("\\", "/")
+                                hits.append(f"{rel_path}:{line_no}: {line.rstrip()}")
+                                if len(hits) >= max_results:
+                                    break
+                except Exception:
+                    continue
+                if len(hits) >= max_results:
+                    break
+            if len(hits) >= max_results:
+                break
+    except Exception as e:
+        return f"Grep Search Error: {str(e)}"
+
+    if not hits:
+        return f"No matches for '{clean_pattern}' in {final_dir} (file filter: {clean_file_pat})."
+
+    count_suffix = f" (showing first {max_results} of more)" if len(hits) >= max_results else ""
+    return f"=== Grep Results for '{clean_pattern}' in {final_dir} ({len(hits)} match{'' if len(hits) == 1 else 'es'}{count_suffix}) ===\n" + "\n".join(hits)
 
 _TERMINAL_STREAM_LISTENERS = []
 

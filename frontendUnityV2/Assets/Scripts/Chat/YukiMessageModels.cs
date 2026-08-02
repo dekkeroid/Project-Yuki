@@ -95,6 +95,9 @@ namespace Yuki.UnityFrontend.Chat
         [JsonProperty("usage_percent")]
         public float UsagePercent { get; set; }
 
+        [JsonProperty("cores_physical")]
+        public int CoresPhysical { get; set; }
+
         [JsonProperty("cores_logical")]
         public int CoresLogical { get; set; }
 
@@ -172,6 +175,9 @@ namespace Yuki.UnityFrontend.Chat
 
         [JsonProperty("usage_percent")]
         public float UsagePercent { get; set; }
+
+        [JsonProperty("free_gb")]
+        public float FreeGb { get; set; }
 
         [JsonProperty("error")]
         public string Error { get; set; }

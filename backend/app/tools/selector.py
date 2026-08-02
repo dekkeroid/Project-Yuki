@@ -60,6 +60,8 @@ _ALWAYS_INCLUDED_JARVIS_TOOLS = {
     "jarvis_query_file_db",
     "jarvis_see_screen",
     "manage_todo",
+    "jarvis_grep_files",
+    "jarvis_find_files_by_glob",
 }
 
 _ALWAYS_INCLUDED_BASIC_TOOLS = {
@@ -97,7 +99,8 @@ _TOOL_HINTS = {
     "jarvis_see_screen": ("screen", "look", "see", "watch", "display", "view", "monitor", "desktop", "window", "current"),
     "jarvis_html_graphics": ("diagram", "flowchart", "pixel", "art", "illustration", "svg", "canvas", "animate", "visual", "architecture", "uml", "wireframe", "draw", "sketch", "icon", "logo"),
     "jarvis_html_viewer": ("html", "page", "website", "dashboard", "interactive", "full", "document", "form", "button", "layout", "webpage", "embed", "open", "file", "serve", "local"),
-    "find_files_by_glob": ("glob", "find", "search", "pattern", "files", "match"),
+    "jarvis_find_files_by_glob": ("glob", "find", "search", "pattern", "files", "match"),
+    "jarvis_grep_files": ("grep", "search", "find", "pattern", "content", "code", "source", "files", "symbol", "function", "keyword", "line"),
 
     # Legacy Basic Mode Tools
     "open_or_play_file": ("open", "play", "media", "video", "audio", "file", "folder", "watch", "anime"),

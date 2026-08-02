@@ -224,7 +224,10 @@ namespace Yuki.UnityFrontend.UI
 
             if (data.Cpu != null && string.IsNullOrEmpty(data.Cpu.Error))
             {
-                sb.Append($"CPU: {data.Cpu.UsagePercent}% ({data.Cpu.CoresLogical} cores");
+                string coresLabel = data.Cpu.CoresPhysical > 0 && data.Cpu.CoresPhysical != data.Cpu.CoresLogical
+                    ? $"{data.Cpu.CoresPhysical} cores / {data.Cpu.CoresLogical} threads"
+                    : $"{data.Cpu.CoresLogical} cores";
+                sb.Append($"CPU: {data.Cpu.UsagePercent}% ({coresLabel}");
                 if (data.Cpu.FreqMhz > 0)
                     sb.Append($" @ {(data.Cpu.FreqMhz / 1000f):F1} GHz");
                 sb.AppendLine(")");
@@ -270,7 +273,7 @@ namespace Yuki.UnityFrontend.UI
 
             if (data.Uptime != null && string.IsNullOrEmpty(data.Uptime.Error))
             {
-                sb.AppendLine($"Uptime: {data.Uptime.Hours}h {data.Uptime.Minutes}m");
+                sb.AppendLine($"Uptime since last restart: {data.Uptime.Hours}h {data.Uptime.Minutes}m");
             }
 
             if (!string.IsNullOrEmpty(data.Os))
@@ -309,8 +312,19 @@ namespace Yuki.UnityFrontend.UI
                     parts.Add($"The battery is fully charged at {b.Percent} percent.");
             }
 
-            if (data.Disk != null && string.IsNullOrEmpty(data.Disk.Error) && data.Disk.UsagePercent > 90)
-                parts.Add($"Warning: C drive is {data.Disk.UsagePercent} percent full.");
+            if (data.Disk != null && string.IsNullOrEmpty(data.Disk.Error))
+            {
+                bool isWindows = data.Os.IndexOf("Windows", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (data.Disk.FreeGb < 15)
+                {
+                    string cleanupHint = isWindows ? " You can do slash o, disk cleanup." : "";
+                    parts.Add($"Warning: C drive has less than 15 gigabytes free.{cleanupHint}");
+                }
+                else if (data.Disk.UsagePercent > 90)
+                {
+                    parts.Add($"Warning: C drive is {data.Disk.UsagePercent} percent full.");
+                }
+            }
 
             return string.Join(" ", parts);
         }

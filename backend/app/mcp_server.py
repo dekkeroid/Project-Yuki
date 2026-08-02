@@ -125,6 +125,38 @@ async def search_files(query: str, start_directory: str | None = None) -> str:
 
 
 @mcp.tool()
+async def jarvis_grep_files(
+    pattern: str,
+    file_pattern: str | None = None,
+    search_dir: str | None = None,
+    case_sensitive: bool = False,
+    max_results: int = 100,
+) -> str:
+    """Search file contents for a regex pattern, returning path:line: <matching line> hits."""
+    return await _guarded_tool_call(
+        "jarvis_grep_files",
+        system_tools.jarvis_grep_files,
+        {
+            "pattern": pattern,
+            "file_pattern": file_pattern,
+            "search_dir": search_dir,
+            "case_sensitive": case_sensitive,
+            "max_results": max_results,
+        },
+    )
+
+
+@mcp.tool()
+async def jarvis_find_files_by_glob(pattern: str, search_dir: str | None = None) -> str:
+    """Find files matching a glob pattern inside a folder. Bare patterns like '*.py' match at any depth."""
+    return await _guarded_tool_call(
+        "jarvis_find_files_by_glob",
+        system_tools.find_files_by_glob,
+        {"pattern": pattern, "search_dir": search_dir},
+    )
+
+
+@mcp.tool()
 async def open_or_play_file(
     file_path_or_query: str,
     play_mode: bool = False,

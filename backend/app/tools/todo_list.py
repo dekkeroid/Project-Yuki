@@ -1,8 +1,9 @@
 import os
 import time
+import functools
 from typing import Any, Dict, List, Optional
 
-from app.memory.db import get_connection
+from app.memory.db import get_connection, DB_WRITE_LOCK
 
 VALID_STATUSES = {"pending", "in_progress", "completed", "blocked"}
 VALID_PRIORITIES = {"low", "normal", "high", "critical"}
@@ -10,6 +11,18 @@ VALID_PRIORITIES = {"low", "normal", "high", "critical"}
 DEFAULT_MD_FILENAME = "TODO.md"
 
 _STATUS_ICONS = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]", "blocked": "[!]"}
+
+
+def _write_locked(func):
+    """
+    Serializes this write through the shared SQLite write lock so todo writes
+    never collide with crawler/watchdog/chat-session writes.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with DB_WRITE_LOCK:
+            return func(*args, **kwargs)
+    return wrapper
 
 
 def _now() -> float:
@@ -36,6 +49,7 @@ def _adopt_orphaned_todos(conn, session_id: str) -> int:
     return cursor.rowcount
 
 
+@_write_locked
 def add_todo(title: str, parent_id: Optional[int] = None, status: str = "pending",
              priority: str = "normal", session_id: Optional[str] = None,
              block_reason: Optional[str] = None) -> Dict[str, Any]:
@@ -114,6 +128,7 @@ def get_todo(todo_id: int) -> Optional[Dict[str, Any]]:
     return dict(row) if row else None
 
 
+@_write_locked
 def update_todo(todo_id: int, title: Optional[str] = None, status: Optional[str] = None,
                 priority: Optional[str] = None, position: Optional[int] = None,
                 session_id: Optional[str] = None,
@@ -170,6 +185,7 @@ def update_todo(todo_id: int, title: Optional[str] = None, status: Optional[str]
     return changed
 
 
+@_write_locked
 def complete_todo(todo_id: int, session_id: Optional[str] = None) -> bool:
     """Mark a todo completed and auto-advance the next pending sibling.
 
@@ -206,6 +222,7 @@ def reopen_todo(todo_id: int) -> bool:
     return update_todo(todo_id, status="pending")
 
 
+@_write_locked
 def delete_todo(todo_id: int) -> bool:
     """Delete a todo and cascade-delete any subtasks."""
     conn = get_connection()
@@ -217,6 +234,7 @@ def delete_todo(todo_id: int) -> bool:
     return changed
 
 
+@_write_locked
 def clear_completed() -> int:
     """Archive all completed todos (soft-delete via the archived flag).
 
@@ -233,6 +251,7 @@ def clear_completed() -> int:
     return archived
 
 
+@_write_locked
 def sync_todos(items: List[Dict[str, Any]], session_id: Optional[str] = None) -> Dict[str, int]:
     """Reconcile the todo list against a desired item list in one transaction.
 
