@@ -10,7 +10,7 @@ import base64
 import mimetypes
 from typing import Dict, Any, List, Optional, Tuple
 
-ATTACHMENT_DIR_NAME = ".yuki_attachments"
+ATTACHMENT_DIR_NAME = "yuki_attachment"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"}
 
@@ -26,7 +26,7 @@ TEXT_EXTENSIONS = {
 
 
 def get_attachment_directory(workspace_dir: Optional[str] = None) -> str:
-    """Returns absolute path to the .yuki_attachments cache directory."""
+    """Returns absolute path to the yuki_attachment cache directory."""
     from app.config import BASE_DIR
     target_dir = os.path.join(str(BASE_DIR), ATTACHMENT_DIR_NAME)
     os.makedirs(target_dir, exist_ok=True)
@@ -147,7 +147,7 @@ def process_uploaded_attachment(
     workspace_dir: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Saves uploaded file bytes to .yuki_attachments/ and returns attachment metadata dict.
+    Receives uploaded image or document file, saves it to workspace yuki_attachment/, and returns attachment metadata dict.
     Large images (>1MB) are automatically re-encoded as downscaled WebP for token efficiency.
     """
     clean_name = sanitize_filename(filename)

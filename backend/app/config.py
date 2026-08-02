@@ -146,6 +146,20 @@ WHISPER_VRAM_THRESHOLD = float(os.environ.get("WHISPER_VRAM_THRESHOLD", "90"))  
 WHISPER_AUTO_UNLOAD = os.environ.get("WHISPER_AUTO_UNLOAD", "true").strip().lower() in ("1", "true", "yes", "on")
 SILERO_VAD_THRESHOLD = float(os.environ.get("SILERO_VAD_THRESHOLD", "0.5"))
 SILENCE_TIMEOUT_MS = int(os.environ.get("SILENCE_TIMEOUT_MS", "450"))
+
+# ── Cloud/Custom STT provider settings ────────────────────────────────────────
+# Provider IDs: "local" | "google" | "azure" | "assemblyai" | "deepgram" | "custom"
+STT_PROVIDER = os.environ.get("STT_PROVIDER", "local")
+STT_CLOUD_API_KEY = ""   # Runtime only — loaded from profile["settings"] on startup
+STT_CLOUD_ENDPOINT = ""  # Runtime only — used for "custom" provider
+
+# ── Cloud/Custom TTS provider settings ────────────────────────────────────────
+# Provider IDs: "local" | "google" | "azure" | "elevenlabs" | "openai" | "custom"
+TTS_PROVIDER = os.environ.get("TTS_PROVIDER", "local")
+TTS_CLOUD_API_KEY = ""   # Runtime only — loaded from profile["settings"] on startup
+TTS_CLOUD_ENDPOINT = ""  # Runtime only — used for "custom" provider
+TTS_CLOUD_VOICE = ""     # Runtime only — voice/model name for cloud TTS
+
 # Character Settings
 CHARACTER_NAME = "Yuki"
 CHARACTER_PERSONA = """You are Yuki, a brilliant, highly intelligent agentic 3D companion. 

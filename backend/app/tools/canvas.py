@@ -27,9 +27,9 @@ def set_main_loop(loop):
 
 
 def _get_canvas_dir() -> Path:
-    """Get the canvas directory under .yuki_attachments."""
+    """Get the canvas directory under yuki_attachment."""
     from app.config import BASE_DIR
-    canvas_dir = Path(BASE_DIR) / ".yuki_attachments" / "canvas"
+    canvas_dir = Path(BASE_DIR) / "yuki_attachment" / "canvas"
     canvas_dir.mkdir(parents=True, exist_ok=True)
     return canvas_dir
 
