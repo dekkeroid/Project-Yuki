@@ -10,6 +10,38 @@ from typing import List, Optional
 LAST_OPTIMIZATION_TIME = 0
 OPTIMIZATION_COOLDOWN = 10.0
 
+# Active-work guard: while a chat turn or TTS synthesis is running, the optimizer
+# must NOT empty the own process's working set — that would page out the just-loaded
+# Kokoro/Whisper model pages and force slow re-faults + CUDA re-warm on the next turn.
+# Electron/Node processes are still trimmed; only the model-holding Python process
+# is spared. A counter (not a plain bool) keeps overlapping turns / background TTS safe.
+_own_process_busy_count = 0
+
+
+def set_own_process_busy(busy: bool):
+    """Increment/decrement the active-work counter (nested/overlapping turns safe)."""
+    global _own_process_busy_count
+    if busy:
+        _own_process_busy_count += 1
+    else:
+        _own_process_busy_count = max(0, _own_process_busy_count - 1)
+
+
+def is_own_process_busy() -> bool:
+    """True while a chat turn or TTS synthesis is actively using the loaded models."""
+    return _own_process_busy_count > 0
+
+
+class own_process_busy_guard:
+    """Context manager: marks that a chat turn / TTS synthesis is active."""
+
+    def __enter__(self):
+        set_own_process_busy(True)
+
+    def __exit__(self, *exc):
+        set_own_process_busy(False)
+        return False
+
 # How many memory-heavy processes the >95% RAM branch may trim, and how many
 # candidates to enrich before applying the exclusion filters. The enrich window
 # is larger than MAX_TRIM_CANDIDATES so that safelist/foreground/young/priority
@@ -124,7 +156,7 @@ def _empty_working_set(pid: int) -> bool:
         return False
 
 
-def optimize_all_processes(force=False):
+def optimize_all_processes(force=False, skip_own_process=False):
     global LAST_OPTIMIZATION_TIME
     now = time.time()
     if not force and now - LAST_OPTIMIZATION_TIME < OPTIMIZATION_COOLDOWN:
@@ -157,12 +189,17 @@ def optimize_all_processes(force=False):
     # 2. Trim our own Python process first. GetCurrentProcess() returns the
     #    current-process pseudo-handle (equivalent to -1) but correctly typed
     #    as a pointer-sized HANDLE for 64-bit Python.
-    try:
-        own_handle = ctypes.windll.kernel32.GetCurrentProcess()
-        ctypes.windll.psapi.EmptyWorkingSet(own_handle)
-        print('[Memory] Own process working set trimmed.')
-    except Exception as e:
-        print(f'[Memory] Failed to trim own process: {e}')
+    #    Skipped while a chat turn / TTS synthesis is active (busy guard) and
+    #    during the initial startup sweep (skip_own_process) — trimming would
+    #    page out the freshly preloaded Kokoro/Whisper model pages and undo the
+    #    warm-up, making the first real turn slow.
+    if not is_own_process_busy() and not skip_own_process:
+        try:
+            own_handle = ctypes.windll.kernel32.GetCurrentProcess()
+            ctypes.windll.psapi.EmptyWorkingSet(own_handle)
+            print('[Memory] Own process working set trimmed.')
+        except Exception as e:
+            print(f'[Memory] Failed to trim own process: {e}')
 
     # 3. Collect parent PID + its full child tree (covers the Electron main process
     #    when Python is launched as a child, or vice-versa)
