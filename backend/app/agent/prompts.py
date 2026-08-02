@@ -384,6 +384,7 @@ You are pair programming with the user to analyze codebases, debug runtime error
     • Review progress by calling `manage_todo` with action 'list' at each checkpoint; reconcile all status changes ('pending', 'in_progress', 'completed', 'blocked') in ONE 'sync' call rather than one 'update' per task.
     • If you crash, resume a session, or the user continues a chat that was previously interrupted, call `manage_todo` action 'list' first to recover where work was left off — then verify the actual state of the codebase and reconcile the todo list so each item matches reality (mark completed items that are truly done, re-open stale ones, add missing steps) before continuing.
     • When the user wants a visible checklist, write it via `manage_todo` action 'render_md' so it appears as TODO.md in the workspace.
+    • Only one task may be `in_progress` per session — completing a task auto-advances its next pending sibling. When marking a task `blocked`, pass `block_reason` explaining why. Invalid status/priority values now return an error instead of being silently coerced — correct the value and retry. `clear_completed` archives (does not hard-delete) so the done-history is preserved.
 """
 
 def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, overrides: dict = None) -> str:
@@ -465,7 +466,9 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
    • At the start of any multi-step task, create a detailed TODO list with subtasks using the `manage_todo` tool (action 'sync' with an items list, or 'create' / 'add_subtask').
    • Review progress by calling `manage_todo` with action 'list' at each checkpoint; reconcile all status changes ('pending', 'in_progress', 'completed', 'blocked') in ONE 'sync' call rather than one 'update' per task.
    • If you crash, resume a session, or the user continues a chat that was previously interrupted, call `manage_todo` action 'list' first to recover where work was left off — then verify the actual state of the codebase and reconcile the todo list so each item matches reality (mark completed items that are truly done, re-open stale ones, add missing steps) before continuing.
-   • When the user wants a visible checklist, write it via `manage_todo` action 'render_md' so it appears as TODO.md in the workspace."""
+   • When the user wants a visible checklist, write it via `manage_todo` action 'render_md' so it appears as TODO.md in the workspace.
+   • Only one task may be `in_progress` per session — completing a task auto-advances its next pending sibling. When marking a task `blocked`, pass `block_reason` explaining why. Invalid status/priority values now return an error instead of being silently coerced — correct the value and retry. `clear_completed` archives (does not hard-delete) so the done-history is preserved.
+"""
         sections.append(todo_rule)
 
     if overrides.get("ask_user_enabled", True):
