@@ -25,6 +25,11 @@ _WRITE_RETRY_ATTEMPTS = 4
 _WRITE_RETRY_BASE_DELAY = 0.25
 
 
+def _is_locked_or_busy(e):
+    msg = str(e).lower()
+    return "locked" in msg or "busy" in msg
+
+
 def _run_write(fn, log_prefix: str = "DB"):
     """
     Runs fn(conn) inside the global write lock and commits it, retrying the
@@ -45,8 +50,7 @@ def _run_write(fn, log_prefix: str = "DB"):
                 finally:
                     conn.close()
         except sqlite3.OperationalError as e:
-            msg = str(e).lower()
-            if ("locked" not in msg and "busy" not in msg) or attempt == _WRITE_RETRY_ATTEMPTS - 1:
+            if not _is_locked_or_busy(e) or attempt == _WRITE_RETRY_ATTEMPTS - 1:
                 raise
             time.sleep(_WRITE_RETRY_BASE_DELAY * (attempt + 1))
     raise sqlite3.OperationalError(f"[{log_prefix}] write failed: database is locked")
@@ -55,16 +59,26 @@ def _run_write(fn, log_prefix: str = "DB"):
 def _locked_if_standalone(func):
     """
     Wraps a write helper so that when it opens its own connection (conn is not
-    provided) it runs under DB_WRITE_LOCK. When the caller supplies a conn (the
-    crawler's long-lived scan connection), the caller already holds the lock
-    across its batch, so we defer to it to avoid locking per statement.
+    provided) it runs under DB_WRITE_LOCK, retrying the whole operation on
+    transient 'database is locked'/'busy' errors with a fresh connection (the
+    helper opens one per call and closes it on the way out). When the caller
+    supplies a conn (the crawler's long-lived scan connection), the caller
+    already holds the lock across its batch, so we defer to it to avoid locking
+    per statement.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if kwargs.get("conn") is not None:
             return func(*args, **kwargs)
-        with DB_WRITE_LOCK:
-            return func(*args, **kwargs)
+        for attempt in range(_WRITE_RETRY_ATTEMPTS):
+            try:
+                with DB_WRITE_LOCK:
+                    return func(*args, **kwargs)
+            except sqlite3.OperationalError as e:
+                if not _is_locked_or_busy(e) or attempt == _WRITE_RETRY_ATTEMPTS - 1:
+                    raise
+                time.sleep(_WRITE_RETRY_BASE_DELAY * (attempt + 1))
+        raise sqlite3.OperationalError(f"[DB] {func.__name__} failed: database is locked")
     return wrapper
 
 DB_PATH = Path(config.BASE_DIR) / "yuki_files.db"
@@ -732,6 +746,8 @@ def upsert_directory(path: str, last_modified: float, change_count_increment: in
         if should_close:
             conn.commit()
     except Exception as e:
+        if isinstance(e, sqlite3.OperationalError) and _is_locked_or_busy(e):
+            raise
         print(f"[DB] Error upserting directory '{path}': {e}")
     finally:
         if should_close:
@@ -819,6 +835,8 @@ def upsert_file(file_path: str, file_name: str, parent_folder: str, extension: s
             conn.commit()
         return file_id
     except Exception as e:
+        if isinstance(e, sqlite3.OperationalError) and _is_locked_or_busy(e):
+            raise
         print(f"[DB] Error upserting file '{file_path}': {e}")
         return -1
     finally:
@@ -869,6 +887,8 @@ def upsert_metadata(file_id: int, title: str, artist_or_creator: str, genre_or_t
         if should_close:
             conn.commit()
     except Exception as e:
+        if isinstance(e, sqlite3.OperationalError) and _is_locked_or_busy(e):
+            raise
         print(f"[DB] Error upserting metadata for file_id {file_id}: {e}")
     finally:
         if should_close:

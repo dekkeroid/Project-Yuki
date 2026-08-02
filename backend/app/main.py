@@ -13,6 +13,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFil
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from typing import List, Dict, Optional, Any
+from app.memory.optimizer import own_process_busy_guard
 
 # Silence periodic telemetry polling logs from clogging the terminal console
 class TelemetryLogFilter(logging.Filter):
@@ -268,7 +269,10 @@ async def _coordinate_startup_optimization():
         await asyncio.sleep(5)
         print("[Startup] Model warmups complete. Performing initial memory sweep...")
         from app.memory.optimizer import optimize_all_processes
-        optimize_all_processes()
+        # skip_own_process: don't page out the models we JUST preloaded — the
+        # periodic loop (which waits for warmups + 30s) will trim the own process
+        # once pages have settled. Electron/Node still get trimmed here.
+        optimize_all_processes(skip_own_process=True)
     except Exception as e:
         print(f"[Startup] Coordinated memory sweep failed: {e}")
 
@@ -2744,358 +2748,362 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 async def run_chat(payload_data):
                     global global_chat_history
-                    try:
-                        user_msg = payload_data.get("message", "").strip()
-                        stt_time_ms = payload_data.get("stt_time_ms")
-                        if not user_msg:
-                            return
-                        turn_id = None
-                        print(f"[WebSocket] Received chat message: '{user_msg}'")
-                            
-                        # 1. Send status indicating Yuki is thinking
-                        await websocket.send_json({"type": "status", "status": "thinking"})
-                        
-                        start_time = time.time()
-                        ttft_duration = 0.0
-                        llm_start_time = None
-                        llm_generation_duration = 0.0
-                        tool_duration = 0.0
-                        tool_start_time = None
-                        
-                        # Parallel TTS Queue
-                        tts_tasks = []
-                        tts_tasks_event = asyncio.Event()
-                        stream_done_flag = False
-                        tts_semaphore = asyncio.Semaphore(1)
-                        
-                        is_coding_mode = bool(payload_data.get("overrides", {}).get("coding_mode", False))
-                        
-                        def queue_sentence(sentence_text, idx):
-                            nonlocal tts_tasks_event, stream_done_flag
-                            if not tts_online_status or is_coding_mode:
-                                return
-                                
-                            async def synth():
-                                global tts_online_status
-                                if not tts_online_status:
-                                    return None
-                                async with tts_semaphore:
-                                    try:
-                                        from app.voice.tts import generate_speech_bytes
-                                        speech_text = make_speech_friendly(sentence_text)
-                                        # Use a timeout of 30.0 seconds for local Kokoro call
-                                        t_start = time.time()
-                                        # Mark which backend we expect to use at the time of synthesis
-                                        expected_backend = 'kokoro' if tts_online_status else 'backend-disabled'
-                                        audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=30.0)
-                                        t_elapsed = time.time() - t_start
-                                        if audio_bytes:
-                                            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-                                            audio_url = f"data:audio/wav;base64,{audio_base64}"
-                                            print(f"[TTS] Chunk {idx} ready ({int(t_elapsed*1000)}ms): '{speech_text[:50]}'")
-                                            return {
-                                                "type": "audio_chunk",
-                                                "audio_url": audio_url,
-                                                "index": idx,
-                                                "text": sentence_text,
-                                                "speech_text": speech_text,
-                                                "tts_backend": expected_backend,
-                                                "tts_time_ms": int(t_elapsed*1000),
-                                                "requested_text": sentence_text
-                                            }
-                                    except Exception as e:
-                                        print(f"TTS Synthesis timeout/error for '{sentence_text}': {e}.")
-                                    return None
-                            
-                            task = asyncio.create_task(synth())
-                            tts_tasks.append(task)
-                            tts_tasks_event.set()
-                        
-                        async def tts_sender():
-                            idx = 0
-                            while True:
-                                while idx >= len(tts_tasks):
-                                    if stream_done_flag and idx >= len(tts_tasks):
-                                        return
-                                    tts_tasks_event.clear()
-                                    await tts_tasks_event.wait()
-                                
-                                task = tts_tasks[idx]
-                                result = await task
-                                if result:
-                                    await broadcast_ws_event(result)
-                                idx += 1
-                        
-                        sender_task = asyncio.create_task(tts_sender())
-                        
+                    # Hold the optimizer's own-process trim for the whole turn:
+                    # LLM streaming + all TTS synthesis must not have model pages
+                    # paged out mid-turn (the guard clears on cancel/interrupt too).
+                    with own_process_busy_guard():
                         try:
-                            # 2. Call the executor's streaming generator
-                            sentence_buffer = ""
-                            backend_used = "local"
-                            audio_idx = 0
+                            user_msg = payload_data.get("message", "").strip()
+                            stt_time_ms = payload_data.get("stt_time_ms")
+                            if not user_msg:
+                                return
+                            turn_id = None
+                            print(f"[WebSocket] Received chat message: '{user_msg}'")
                             
-                            def find_sentence_boundary(text: str) -> int:
-                                min_idx = -1
-                                terminators = [('? ', 1), ('! ', 1), ('. ', 1), ('\n', 0), ('? \n', 2), ('! \n', 2), ('. \n', 2)]
-                                for term, offset in terminators:
-                                    idx = text.find(term)
-                                    if idx != -1:
-                                        if min_idx == -1 or idx < min_idx:
-                                            min_idx = idx + len(term) - offset - 1
-                                return min_idx
+                            # 1. Send status indicating Yuki is thinking
+                            await websocket.send_json({"type": "status", "status": "thinking"})
+
+                            start_time = time.time()
+                            ttft_duration = 0.0
+                            llm_start_time = None
+                            llm_generation_duration = 0.0
+                            tool_duration = 0.0
+                            tool_start_time = None
+
+                            # Parallel TTS Queue
+                            tts_tasks = []
+                            tts_tasks_event = asyncio.Event()
+                            stream_done_flag = False
+                            tts_semaphore = asyncio.Semaphore(1)
+
+                            is_coding_mode = bool(payload_data.get("overrides", {}).get("coding_mode", False))
+
+                            def queue_sentence(sentence_text, idx):
+                                nonlocal tts_tasks_event, stream_done_flag
+                                if not tts_online_status or is_coding_mode:
+                                    return
+
+                                async def synth():
+                                    global tts_online_status
+                                    if not tts_online_status:
+                                        return None
+                                    async with tts_semaphore:
+                                        try:
+                                            from app.voice.tts import generate_speech_bytes
+                                            speech_text = make_speech_friendly(sentence_text)
+                                            # Use a timeout of 30.0 seconds for local Kokoro call
+                                            t_start = time.time()
+                                            # Mark which backend we expect to use at the time of synthesis
+                                            expected_backend = 'kokoro' if tts_online_status else 'backend-disabled'
+                                            audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=30.0)
+                                            t_elapsed = time.time() - t_start
+                                            if audio_bytes:
+                                                audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                                                audio_url = f"data:audio/wav;base64,{audio_base64}"
+                                                print(f"[TTS] Chunk {idx} ready ({int(t_elapsed*1000)}ms): '{speech_text[:50]}'")
+                                                return {
+                                                    "type": "audio_chunk",
+                                                    "audio_url": audio_url,
+                                                    "index": idx,
+                                                    "text": sentence_text,
+                                                    "speech_text": speech_text,
+                                                    "tts_backend": expected_backend,
+                                                    "tts_time_ms": int(t_elapsed*1000),
+                                                    "requested_text": sentence_text
+                                                }
+                                        except Exception as e:
+                                            print(f"TTS Synthesis timeout/error for '{sentence_text}': {e}.")
+                                        return None
+
+                                task = asyncio.create_task(synth())
+                                tts_tasks.append(task)
+                                tts_tasks_event.set()
+
+                            async def tts_sender():
+                                idx = 0
+                                while True:
+                                    while idx >= len(tts_tasks):
+                                        if stream_done_flag and idx >= len(tts_tasks):
+                                            return
+                                        tts_tasks_event.clear()
+                                        await tts_tasks_event.wait()
+
+                                    task = tts_tasks[idx]
+                                    result = await task
+                                    if result:
+                                        await broadcast_ws_event(result)
+                                    idx += 1
+
+                            sender_task = asyncio.create_task(tts_sender())
 
                             try:
-                                if user_msg.startswith("/read "):
-                                    parts = user_msg.split(maxsplit=1)
-                                    file_path = parts[1].strip().strip('"').strip("'") if len(parts) > 1 else ""
-                                    
-                                    async def read_gen():
-                                        if not file_path:
-                                            yield "token", "Hmph! Please provide a file path to read.", "local"
-                                            yield "final_history", global_chat_history + [
-                                                {"role": "user", "content": user_msg},
-                                                {"role": "assistant", "content": "Hmph! Please provide a file path to read."}
-                                            ], "local"
-                                            return
-                                        
-                                        from app.tools.files import read_file_content
-                                        print(f"[Direct Read] Reading file content directly: '{file_path}'")
-                                        try:
-                                            content = await asyncio.to_thread(read_file_content, file_path)
-                                            if content.startswith("Success: "):
-                                                content = content[len("Success: "):].strip()
-                                            yield "token", content, "local"
-                                            yield "final_history", global_chat_history + [
-                                                {"role": "user", "content": user_msg},
-                                                {"role": "assistant", "content": content}
-                                            ], "local"
-                                        except Exception as e:
-                                            err_msg = f"Failed to read file: {str(e)}"
-                                            yield "token", err_msg, "local"
-                                            yield "final_history", global_chat_history + [
-                                                {"role": "user", "content": user_msg},
-                                                {"role": "assistant", "content": err_msg}
-                                            ], "local"
-                                    gen = read_gen()
-                                elif getattr(config, 'NO_LLM_MODE', False):
-                                    async def no_llm_gen():
-                                        yield "token", "sorry, LLM is currently turned off", "local"
-                                        updated_history = global_chat_history + [
-                                            {"role": "user", "content": user_msg},
-                                            {"role": "assistant", "content": "sorry, LLM is currently turned off"}
-                                        ]
-                                        yield "final_history", updated_history, "local"
-                                    gen = no_llm_gen()
-                                else:
-                                    if agent_executor is None:
-                                        await broadcast_ws_event({"type": "error", "content": "Agent is still initializing, please try again in a moment."})
-                                        return
-                                    overrides = payload_data.get("overrides") or {}
-                                    overrides = dict(overrides)
-                                    import uuid
-                                    turn_id = uuid.uuid4().hex[:12]
-                                    overrides["turn_id"] = turn_id
-                                    if not overrides.get("session_id"):
-                                        overrides["session_id"] = active_session_id
-                                    attachments = payload_data.get("attachments") or []
-                                    gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides, attachments=attachments)
-                                    # First crash-recovery checkpoint: prior history + the new user message.
-                                    try:
-                                        from app.memory import db as memory_db
-                                        await asyncio.to_thread(memory_db.save_incomplete_turn, turn_id, list(global_chat_history) + [{"role": "user", "content": user_msg}])
-                                    except Exception as _cp_err:
-                                        print(f"[Recovery] Initial checkpoint failed: {_cp_err}")
+                                # 2. Call the executor's streaming generator
+                                sentence_buffer = ""
+                                backend_used = "local"
+                                audio_idx = 0
+
+                                def find_sentence_boundary(text: str) -> int:
+                                    min_idx = -1
+                                    terminators = [('? ', 1), ('! ', 1), ('. ', 1), ('\n', 0), ('? \n', 2), ('! \n', 2), ('. \n', 2)]
+                                    for term, offset in terminators:
+                                        idx = text.find(term)
+                                        if idx != -1:
+                                            if min_idx == -1 or idx < min_idx:
+                                                min_idx = idx + len(term) - offset - 1
+                                    return min_idx
+
                                 try:
-                                    event = await gen.__anext__()
-                                    while True:
-                                        event_type, value, label = event
-                                        backend_used = label
-                                        
-                                        if event_type == "tool_confirm_required":
-                                            import uuid
-                                            conf_id = str(uuid.uuid4())
-                                            future = asyncio.Future()
-                                            active_confirmations[conf_id] = future
+                                    if user_msg.startswith("/read "):
+                                        parts = user_msg.split(maxsplit=1)
+                                        file_path = parts[1].strip().strip('"').strip("'") if len(parts) > 1 else ""
+
+                                        async def read_gen():
+                                            if not file_path:
+                                                yield "token", "Hmph! Please provide a file path to read.", "local"
+                                                yield "final_history", global_chat_history + [
+                                                    {"role": "user", "content": user_msg},
+                                                    {"role": "assistant", "content": "Hmph! Please provide a file path to read."}
+                                                ], "local"
+                                                return
+
+                                            from app.tools.files import read_file_content
+                                            print(f"[Direct Read] Reading file content directly: '{file_path}'")
                                             try:
-                                                await broadcast_ws_event({
-                                                    "type": "confirm_request",
-                                                    "conf_id": conf_id,
-                                                    "name": value
-                                                })
-                                                confirmed = await future
-                                            finally:
-                                                active_confirmations.pop(conf_id, None)
-                                            
-                                            event = await gen.asend(confirmed)
-                                        else:
-                                            if event_type == "token":
-                                                if llm_start_time is None:
-                                                    llm_start_time = time.time()
-                                                    ttft_duration = llm_start_time - start_time
-                                                # Send token to frontend
-                                                await broadcast_ws_event({
-                                                    "type": "text_stream",
-                                                    "text": value,
-                                                    "backend_used": backend_used,
-                                                    "final": True
-                                                })
-                                                
-                                                # Batch into sentences for TTS (skipping <thought>/<think>/<reasoning> blocks)
-                                                sentence_buffer += value
-                                                while True:
-                                                    sentence_buffer = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', sentence_buffer, flags=re.IGNORECASE)
-                                                    if re.search(r'<(thought|think|reasoning)>(?![\s\S]*?</\1>)', sentence_buffer, flags=re.IGNORECASE):
-                                                        break
-                                                    boundary = find_sentence_boundary(sentence_buffer)
-                                                    if boundary == -1:
-                                                        break
-                                                    sentence = sentence_buffer[:boundary + 1].strip()
-                                                    sentence_buffer = sentence_buffer[boundary + 1:]
-                                                    clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
-                                                    if clean_s:
-                                                        queue_sentence(clean_s, audio_idx)
-                                                        audio_idx += 1
-                                                        
-                                            elif event_type == "thinking":
-                                                # Intermediate thinking/narration text (e.g. before a tool call).
-                                                # Broadcast for display-only UIs (Agentic Workspace) but never
-                                                # sent to TTS so only the final reply is spoken.
-                                                await broadcast_ws_event({
-                                                    "type": "text_stream",
-                                                    "text": value,
-                                                    "backend_used": backend_used,
-                                                    "final": False
-                                                })
+                                                content = await asyncio.to_thread(read_file_content, file_path)
+                                                if content.startswith("Success: "):
+                                                    content = content[len("Success: "):].strip()
+                                                yield "token", content, "local"
+                                                yield "final_history", global_chat_history + [
+                                                    {"role": "user", "content": user_msg},
+                                                    {"role": "assistant", "content": content}
+                                                ], "local"
+                                            except Exception as e:
+                                                err_msg = f"Failed to read file: {str(e)}"
+                                                yield "token", err_msg, "local"
+                                                yield "final_history", global_chat_history + [
+                                                    {"role": "user", "content": user_msg},
+                                                    {"role": "assistant", "content": err_msg}
+                                                ], "local"
+                                        gen = read_gen()
+                                    elif getattr(config, 'NO_LLM_MODE', False):
+                                        async def no_llm_gen():
+                                            yield "token", "sorry, LLM is currently turned off", "local"
+                                            updated_history = global_chat_history + [
+                                                {"role": "user", "content": user_msg},
+                                                {"role": "assistant", "content": "sorry, LLM is currently turned off"}
+                                            ]
+                                            yield "final_history", updated_history, "local"
+                                        gen = no_llm_gen()
+                                    else:
+                                        if agent_executor is None:
+                                            await broadcast_ws_event({"type": "error", "content": "Agent is still initializing, please try again in a moment."})
+                                            return
+                                        overrides = payload_data.get("overrides") or {}
+                                        overrides = dict(overrides)
+                                        import uuid
+                                        turn_id = uuid.uuid4().hex[:12]
+                                        overrides["turn_id"] = turn_id
+                                        if not overrides.get("session_id"):
+                                            overrides["session_id"] = active_session_id
+                                        attachments = payload_data.get("attachments") or []
+                                        gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides, attachments=attachments)
+                                        # First crash-recovery checkpoint: prior history + the new user message.
+                                        try:
+                                            from app.memory import db as memory_db
+                                            await asyncio.to_thread(memory_db.save_incomplete_turn, turn_id, list(global_chat_history) + [{"role": "user", "content": user_msg}])
+                                        except Exception as _cp_err:
+                                            print(f"[Recovery] Initial checkpoint failed: {_cp_err}")
+                                    try:
+                                        event = await gen.__anext__()
+                                        while True:
+                                            event_type, value, label = event
+                                            backend_used = label
 
-                                            elif event_type == "tool_start":
-                                                tool_start_time = time.time()
-                                                tool_name = value.get("name") if isinstance(value, dict) else str(value)
-                                                tool_args = value.get("args") if isinstance(value, dict) else {}
-                                                args_str = ""
-                                                if tool_args and isinstance(tool_args, dict):
-                                                    parts = [f"{k}={repr(v)}" for k, v in tool_args.items() if k != "confirmation_grant_id"]
-                                                    args_str = f" ({', '.join(parts)})" if parts else ""
+                                            if event_type == "tool_confirm_required":
+                                                import uuid
+                                                conf_id = str(uuid.uuid4())
+                                                future = asyncio.Future()
+                                                active_confirmations[conf_id] = future
+                                                try:
+                                                    await broadcast_ws_event({
+                                                        "type": "confirm_request",
+                                                        "conf_id": conf_id,
+                                                        "name": value
+                                                    })
+                                                    confirmed = await future
+                                                finally:
+                                                    active_confirmations.pop(conf_id, None)
 
-                                                await broadcast_ws_event({
-                                                    "type": "tool_start",
-                                                    "tool_name": tool_name,
-                                                    "tool_args": tool_args
-                                                })
-                                                await broadcast_ws_event({
-                                                    "type": "status",
-                                                    "status": "thinking",
-                                                    "message": f"Running tool '{tool_name}'{args_str}...",
-                                                    "tool_name": tool_name,
-                                                    "tool_args": tool_args
-                                                })
-                                            elif event_type == "tool_result":
-                                                if tool_start_time is not None:
-                                                    tool_duration += time.time() - tool_start_time
-                                                    tool_start_time = None
-                                                # Notify frontend tool finished
-                                                await broadcast_ws_event({
-                                                    "type": "tool_result",
-                                                    "result": value
-                                                })
-                                                await broadcast_ws_event({
-                                                    "type": "status",
-                                                    "status": "thinking"
-                                                })
-                                            elif event_type == "checkpoint":
-                                                if turn_id:
-                                                    try:
-                                                        from app.memory import db as memory_db
-                                                        await asyncio.to_thread(memory_db.save_incomplete_turn, turn_id, value)
-                                                    except Exception as _cp_err:
-                                                        print(f"[Recovery] Checkpoint persist failed: {_cp_err}")
-                                            elif event_type == "final_history":
-                                                global_chat_history = value
-                                                await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
-                                                await broadcast_ws_event({
-                                                    "type": "chat_update",
-                                                    "messages": global_chat_history,
-                                                    "session_id": active_session_id
-                                                })
-                                                # Turn completed normally — remove the temp recovery session.
-                                                if turn_id:
-                                                    try:
-                                                        from app.memory import db as memory_db
-                                                        await asyncio.to_thread(memory_db.delete_incomplete_turn, turn_id)
-                                                    except Exception as _del_err:
-                                                        print(f"[Recovery] Cleanup of temp turn failed: {_del_err}")
-                                                
-                                            event = await gen.__anext__()
-                                except StopAsyncIteration:
-                                    pass
-                            except Exception as e:
-                                import traceback
-                                print(f"Error during stream generation: {e}")
-                                traceback.print_exc()
-                                friendly_error = await agent_executor.get_friendly_error_explanation(str(e))
-                                await websocket.send_json({"type": "error", "message": friendly_error})
-                            
-                            # Feed any remaining text in sentence buffer
-                            clean_remaining = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence_buffer, flags=re.IGNORECASE).strip()
-                            if clean_remaining:
-                                queue_sentence(clean_remaining, audio_idx)
-                                audio_idx += 1
-                                
-                            # Signal the worker to finish and wait for it
-                            stream_done_flag = True
-                            tts_tasks_event.set()
-                            await sender_task
-                        finally:
-                            # Clean up the background task to prevent event loop task leaks
-                            stream_done_flag = True
-                            tts_tasks_event.set()
-                            if not sender_task.done():
-                                sender_task.cancel()
-                                try:
-                                    await sender_task
-                                except asyncio.CancelledError:
-                                    pass
-                        
-                        elapsed_time = time.time() - start_time
-                        llm_generation_duration = time.time() - (llm_start_time or start_time)
-                        
-                        # Print Timing Breakdown in Backend Terminal
-                        ttft_str = f"{ttft_duration:.2f}s" if llm_start_time is not None else "N/A (No tokens generated)"
-                        llm_gen_str = f"{llm_generation_duration:.2f}s"
-                        tool_str = f"{tool_duration:.2f}s"
-                        
-                        print(f"\n================ CHAT TURN TIMING BREAKDOWN ================")
-                        if stt_time_ms is not None:
-                            print(f"Overall End-to-End Latency: {elapsed_time + (stt_time_ms / 1000.0):.2f}s")
-                            print(f"  - Speech-to-Text (STT):       {stt_time_ms / 1000.0:.2f}s")
-                            print(f"  - Processing (LLM + TTS):     {elapsed_time:.2f}s")
-                        else:
-                            print(f"Total Turn Time: {elapsed_time:.2f}s")
-                        print(f"  - Time to First Token (TTFT): {ttft_str}")
-                        print(f"  - LLM Token Generation:       {llm_gen_str}")
-                        print(f"  - Tool Executions:            {tool_str}")
-                        print(f"============================================================\n")
-                        
-                        # Send final stream done message containing total time to all connected clients
-                        await broadcast_ws_event({
-                            "type": "stream_done",
-                            "backend_used": backend_used,
-                            "response_time": round(elapsed_time, 2),
-                            "is_coding_mode": is_coding_mode
-                        })
-                        
-                        # Push profile update to all connected clients
-                        await broadcast_ws_event({
-                            "type": "profile_update",
-                            "profile": memory_manager.profile
-                        })
-                    except asyncio.CancelledError:
-                        print("[WebSocket] Chat turn was cancelled/interrupted.")
-                        # Send status to frontend that we are idle now
-                        try:
-                            await broadcast_ws_event({"type": "status", "status": "idle"})
-                        except:
-                            pass
-                        raise
+                                                event = await gen.asend(confirmed)
+                                            else:
+                                                if event_type == "token":
+                                                    if llm_start_time is None:
+                                                        llm_start_time = time.time()
+                                                        ttft_duration = llm_start_time - start_time
+                                                    # Send token to frontend
+                                                    await broadcast_ws_event({
+                                                        "type": "text_stream",
+                                                        "text": value,
+                                                        "backend_used": backend_used,
+                                                        "final": True
+                                                    })
+
+                                                    # Batch into sentences for TTS (skipping <thought>/<think>/<reasoning> blocks)
+                                                    sentence_buffer += value
+                                                    while True:
+                                                        sentence_buffer = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', sentence_buffer, flags=re.IGNORECASE)
+                                                        if re.search(r'<(thought|think|reasoning)>(?![\s\S]*?</\1>)', sentence_buffer, flags=re.IGNORECASE):
+                                                            break
+                                                        boundary = find_sentence_boundary(sentence_buffer)
+                                                        if boundary == -1:
+                                                            break
+                                                        sentence = sentence_buffer[:boundary + 1].strip()
+                                                        sentence_buffer = sentence_buffer[boundary + 1:]
+                                                        clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
+                                                        if clean_s:
+                                                            queue_sentence(clean_s, audio_idx)
+                                                            audio_idx += 1
+
+                                                elif event_type == "thinking":
+                                                    # Intermediate thinking/narration text (e.g. before a tool call).
+                                                    # Broadcast for display-only UIs (Agentic Workspace) but never
+                                                    # sent to TTS so only the final reply is spoken.
+                                                    await broadcast_ws_event({
+                                                        "type": "text_stream",
+                                                        "text": value,
+                                                        "backend_used": backend_used,
+                                                        "final": False
+                                                    })
+
+                                                elif event_type == "tool_start":
+                                                    tool_start_time = time.time()
+                                                    tool_name = value.get("name") if isinstance(value, dict) else str(value)
+                                                    tool_args = value.get("args") if isinstance(value, dict) else {}
+                                                    args_str = ""
+                                                    if tool_args and isinstance(tool_args, dict):
+                                                        parts = [f"{k}={repr(v)}" for k, v in tool_args.items() if k != "confirmation_grant_id"]
+                                                        args_str = f" ({', '.join(parts)})" if parts else ""
+
+                                                    await broadcast_ws_event({
+                                                        "type": "tool_start",
+                                                        "tool_name": tool_name,
+                                                        "tool_args": tool_args
+                                                    })
+                                                    await broadcast_ws_event({
+                                                        "type": "status",
+                                                        "status": "thinking",
+                                                        "message": f"Running tool '{tool_name}'{args_str}...",
+                                                        "tool_name": tool_name,
+                                                        "tool_args": tool_args
+                                                    })
+                                                elif event_type == "tool_result":
+                                                    if tool_start_time is not None:
+                                                        tool_duration += time.time() - tool_start_time
+                                                        tool_start_time = None
+                                                    # Notify frontend tool finished
+                                                    await broadcast_ws_event({
+                                                        "type": "tool_result",
+                                                        "result": value
+                                                    })
+                                                    await broadcast_ws_event({
+                                                        "type": "status",
+                                                        "status": "thinking"
+                                                    })
+                                                elif event_type == "checkpoint":
+                                                    if turn_id:
+                                                        try:
+                                                            from app.memory import db as memory_db
+                                                            await asyncio.to_thread(memory_db.save_incomplete_turn, turn_id, value)
+                                                        except Exception as _cp_err:
+                                                            print(f"[Recovery] Checkpoint persist failed: {_cp_err}")
+                                                elif event_type == "final_history":
+                                                    global_chat_history = value
+                                                    await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
+                                                    await broadcast_ws_event({
+                                                        "type": "chat_update",
+                                                        "messages": global_chat_history,
+                                                        "session_id": active_session_id
+                                                    })
+                                                    # Turn completed normally — remove the temp recovery session.
+                                                    if turn_id:
+                                                        try:
+                                                            from app.memory import db as memory_db
+                                                            await asyncio.to_thread(memory_db.delete_incomplete_turn, turn_id)
+                                                        except Exception as _del_err:
+                                                            print(f"[Recovery] Cleanup of temp turn failed: {_del_err}")
+
+                                                event = await gen.__anext__()
+                                    except StopAsyncIteration:
+                                        pass
+                                except Exception as e:
+                                    import traceback
+                                    print(f"Error during stream generation: {e}")
+                                    traceback.print_exc()
+                                    friendly_error = await agent_executor.get_friendly_error_explanation(str(e))
+                                    await websocket.send_json({"type": "error", "message": friendly_error})
+
+                                # Feed any remaining text in sentence buffer
+                                clean_remaining = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence_buffer, flags=re.IGNORECASE).strip()
+                                if clean_remaining:
+                                    queue_sentence(clean_remaining, audio_idx)
+                                    audio_idx += 1
+
+                                # Signal the worker to finish and wait for it
+                                stream_done_flag = True
+                                tts_tasks_event.set()
+                                await sender_task
+                            finally:
+                                # Clean up the background task to prevent event loop task leaks
+                                stream_done_flag = True
+                                tts_tasks_event.set()
+                                if not sender_task.done():
+                                    sender_task.cancel()
+                                    try:
+                                        await sender_task
+                                    except asyncio.CancelledError:
+                                        pass
+
+                            elapsed_time = time.time() - start_time
+                            llm_generation_duration = time.time() - (llm_start_time or start_time)
+
+                            # Print Timing Breakdown in Backend Terminal
+                            ttft_str = f"{ttft_duration:.2f}s" if llm_start_time is not None else "N/A (No tokens generated)"
+                            llm_gen_str = f"{llm_generation_duration:.2f}s"
+                            tool_str = f"{tool_duration:.2f}s"
+
+                            print(f"\n================ CHAT TURN TIMING BREAKDOWN ================")
+                            if stt_time_ms is not None:
+                                print(f"Overall End-to-End Latency: {elapsed_time + (stt_time_ms / 1000.0):.2f}s")
+                                print(f"  - Speech-to-Text (STT):       {stt_time_ms / 1000.0:.2f}s")
+                                print(f"  - Processing (LLM + TTS):     {elapsed_time:.2f}s")
+                            else:
+                                print(f"Total Turn Time: {elapsed_time:.2f}s")
+                            print(f"  - Time to First Token (TTFT): {ttft_str}")
+                            print(f"  - LLM Token Generation:       {llm_gen_str}")
+                            print(f"  - Tool Executions:            {tool_str}")
+                            print(f"============================================================\n")
+
+                            # Send final stream done message containing total time to all connected clients
+                            await broadcast_ws_event({
+                                "type": "stream_done",
+                                "backend_used": backend_used,
+                                "response_time": round(elapsed_time, 2),
+                                "is_coding_mode": is_coding_mode
+                            })
+
+                            # Push profile update to all connected clients
+                            await broadcast_ws_event({
+                                "type": "profile_update",
+                                "profile": memory_manager.profile
+                            })
+                        except asyncio.CancelledError:
+                            print("[WebSocket] Chat turn was cancelled/interrupted.")
+                            # Send status to frontend that we are idle now
+                            try:
+                                await broadcast_ws_event({"type": "status", "status": "idle"})
+                            except:
+                                pass
+                            raise
                 
                 chat_task = asyncio.create_task(run_chat(data))
                 
@@ -3130,31 +3138,34 @@ async def websocket_endpoint(websocket: WebSocket):
                             if sentence:
                                 sentences.append(sentence)
 
-                        # Now synthesize and send each sentence sequentially
-                        from app.voice.tts import generate_speech_bytes
-                        audio_idx = 0
-                        for sentence in sentences:
-                            speech_text = make_speech_friendly(sentence)
-                            if not re.sub(r'[^\w\s]', '', speech_text).strip():
-                                continue
-                            try:
-                                audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=40.0)
-                                if audio_bytes:
-                                    audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-                                    audio_url = f"data:audio/wav;base64,{audio_base64}"
-                                    await websocket.send_json({
-                                        "type": "audio_chunk",
-                                        "audio_url": audio_url,
-                                        "index": audio_idx,
-                                        "text": sentence,
-                                        "speech_text": speech_text,
-                                        "tts_backend": "kokoro",
-                                        "tts_time_ms": 0,
-                                        "expression": expression
-                                    })
-                                    audio_idx += 1
-                            except Exception as e:
-                                print(f"[TTS-Only] Sentence synthesis error for '{sentence}': {e}")
+                        # Hold the optimizer's own-process trim while synthesizing so
+                        # the Kokoro model pages stay resident across all sentences.
+                        with own_process_busy_guard():
+                            # Now synthesize and send each sentence sequentially
+                            from app.voice.tts import generate_speech_bytes
+                            audio_idx = 0
+                            for sentence in sentences:
+                                speech_text = make_speech_friendly(sentence)
+                                if not re.sub(r'[^\w\s]', '', speech_text).strip():
+                                    continue
+                                try:
+                                    audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=40.0)
+                                    if audio_bytes:
+                                        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                                        audio_url = f"data:audio/wav;base64,{audio_base64}"
+                                        await websocket.send_json({
+                                            "type": "audio_chunk",
+                                            "audio_url": audio_url,
+                                            "index": audio_idx,
+                                            "text": sentence,
+                                            "speech_text": speech_text,
+                                            "tts_backend": "kokoro",
+                                            "tts_time_ms": 0,
+                                            "expression": expression
+                                        })
+                                        audio_idx += 1
+                                except Exception as e:
+                                    print(f"[TTS-Only] Sentence synthesis error for '{sentence}': {e}")
                     except Exception as e:
                         print(f"[TTS-Only] Segment synthesis error: {e}")
                 await websocket.send_json({"type": "stream_done", "backend_used": "tts_only", "response_time": 0})
