@@ -587,7 +587,16 @@ def jarvis_see_screen(prompt: str, window_title: str = None) -> str:
         "windows, icons, buttons, menus, colors, and state. Then transcribe ALL visible text verbatim, "
         "including titles, labels, error messages, dialog boxes, status bars, and menu items."
     )
-    return _analyze_image_file(save_path, effective_prompt)
+    try:
+        result = _analyze_image_file(save_path, effective_prompt)
+    finally:
+        try:
+            if os.path.exists(save_path):
+                os.remove(save_path)
+                print(f"[Jarvis] Temp screen capture '{save_path}' deleted.")
+        except Exception:
+            pass
+    return result
 
 
 def _find_window_bbox(window_title: str):

@@ -1,4 +1,3 @@
-import uvicorn
 import os
 import sys
 from pathlib import Path
@@ -9,6 +8,16 @@ if sys.stderr:
     sys.stderr.reconfigure(encoding='utf-8')
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 3 and sys.argv[1] == "--yuki-run-script":
+        import runpy
+        os.environ.setdefault("PYTHONUNBUFFERED", "1")
+        script = sys.argv[2]
+        sys.argv = [script] + sys.argv[3:]
+        runpy.run_path(script, run_name="__main__")
+        raise SystemExit(0)
+
+    import uvicorn
+
     print("Launching Yuki Desktop Assistant Backend...")
     is_dev = not getattr(sys, 'frozen', False)
     default_reload = "1" if is_dev else "0"

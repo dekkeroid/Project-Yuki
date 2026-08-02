@@ -945,8 +945,12 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
 
     start_time = time.time()
     try:
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "--yuki-run-script", temp_file]
+        else:
+            cmd = [sys.executable, temp_file]
         proc = subprocess.Popen(
-            [sys.executable, temp_file],
+            cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             encoding="utf-8",
