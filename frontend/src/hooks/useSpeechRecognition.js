@@ -387,7 +387,25 @@ export function useSpeechRecognition(options = {}) {
               body: formData
             });
 
-            if (!res.ok) throw new Error(`Server returned code ${res.status}`);
+            if (!res.ok) {
+              const errorBody = await res.text().catch(() => '');
+              if (res.status === 503) {
+                // Cloud STT provider error — show specific message, no fallback
+                const cloudErrMsg = errorBody || `Cloud STT provider returned error ${res.status}`;
+                logSTTStatus(`Cloud STT failed: ${cloudErrMsg}`);
+                if (logToTerminal) logToTerminal(`[STT] Cloud provider error: ${cloudErrMsg}`);
+                setIsTranscribing(false);
+                if (setMessages) {
+                  setMessages((prev) => [...prev, {
+                    role: 'system',
+                    content: `⚠️ Speech-to-Text Error: ${cloudErrMsg}`
+                  }]);
+                }
+                updateListeningState();
+                return;
+              }
+              throw new Error(`Server returned code ${res.status}${errorBody ? ': ' + errorBody.slice(0, 120) : ''}`);
+            }
             const data = await res.json();
             const sttDurationMs = Date.now() - sttStartTime;
             logSTTStatus(`Transcribed: "${data.text}" in ${sttDurationMs}ms`);
@@ -401,20 +419,17 @@ export function useSpeechRecognition(options = {}) {
             }
           } catch (e) {
             let errMsg = e.message;
-            if (res) {
-              const body = await res.text().catch(() => '<unreadable>');
-              errMsg += ` | status=${res.status} body="${body}"`;
-            }
-            logSTTStatus(`Whisper STT transcription failed: ${errMsg}`);
+            logSTTStatus(`STT transcription failed: ${errMsg}`);
             setIsTranscribing(false);
             if (setMessages) {
               setMessages((prev) => [...prev, {
                 role: 'system',
-                content: "System Notice: Local Whisper Speech-to-Text transcription failed. Please verify your backend server is online."
+                content: `⚠️ Speech-to-Text failed. Please verify your backend server is online.`
               }]);
             }
             updateListeningState();
           }
+
         };
 
         mediaRecorder.start(250);

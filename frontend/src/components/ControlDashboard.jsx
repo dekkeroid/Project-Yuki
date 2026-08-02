@@ -434,7 +434,17 @@ const ControlDashboard = ({
     stt_language: 'en',
     whisper_idle_timeout: 300,
     whisper_vram_threshold: 90,
-    whisper_auto_unload: true
+    whisper_auto_unload: true,
+    // Cloud provider settings
+    stt_provider: 'local',
+    stt_cloud_api_key: '',
+    stt_cloud_endpoint: '',
+    stt_cloud_region: 'eastus',
+    tts_provider: 'local',
+    tts_cloud_api_key: '',
+    tts_cloud_endpoint: '',
+    tts_cloud_region: 'eastus',
+    tts_cloud_voice: ''
   });
 
   // Local Character States
@@ -474,6 +484,16 @@ const ControlDashboard = ({
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [newInterestText, setNewInterestText] = useState('');
+
+  // Cloud provider key visibility toggles
+  const [showSttKey, setShowSttKey] = useState(false);
+  const [showTtsKey, setShowTtsKey] = useState(false);
+  // Cloud provider config panel open state
+  const [sttCloudOpen, setSttCloudOpen] = useState(false);
+  const [ttsCloudOpen, setTtsCloudOpen] = useState(false);
+  // Pending cloud key edits (not saved until Confirm)
+  const [pendingSttKey, setPendingSttKey] = useState('');
+  const [pendingTtsKey, setPendingTtsKey] = useState('');
 
   // Custom Facts Edit State
   const [isAddingFact, setIsAddingFact] = useState(false);
@@ -4152,6 +4172,106 @@ const ControlDashboard = ({
                       <span className="card-group-title">Speech Synthesis (TTS Output)</span>
                     </div>
 
+                    {/* TTS Provider Select */}
+                    <div className="identity-field" style={{ marginTop: '8px' }}>
+                      <span className="field-label">TTS Provider</span>
+                      <select
+                        value={settings.tts_provider || 'local'}
+                        onChange={(e) => {
+                          handleUpdateSetting('tts_provider', e.target.value);
+                          setTtsCloudOpen(e.target.value !== 'local');
+                        }}
+                        style={{ width: '100%', padding: '7px 10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '0.78rem', outline: 'none', cursor: 'pointer', marginTop: '2px' }}
+                      >
+                        <option value="local" style={{ background: '#0b0813' }}>🖥️ Local — Kokoro ONNX (Offline, Private)</option>
+                        <option value="google" style={{ background: '#0b0813' }}>☁️ Google Cloud TTS (1M chars/mo free)</option>
+                        <option value="azure" style={{ background: '#0b0813' }}>☁️ Azure Cognitive TTS (500K chars/mo free)</option>
+                        <option value="elevenlabs" style={{ background: '#0b0813' }}>☁️ ElevenLabs (10K chars/mo free)</option>
+                        <option value="openai" style={{ background: '#0b0813' }}>☁️ OpenAI TTS (pay-per-use)</option>
+                        <option value="custom" style={{ background: '#0b0813' }}>🔧 Custom API Endpoint</option>
+                      </select>
+                    </div>
+
+                    {/* Cloud TTS Config Panel */}
+                    {(settings.tts_provider && settings.tts_provider !== 'local') && (
+                      <div style={{ marginTop: '10px', padding: '12px', background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '10px' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#c4b5fd', fontWeight: 600, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>☁️</span> Cloud TTS Configuration
+                        </div>
+
+                        {/* API Key */}
+                        <div style={{ marginBottom: '8px' }}>
+                          <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>API Key</span>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <input
+                              type={showTtsKey ? 'text' : 'password'}
+                              value={pendingTtsKey !== '' ? pendingTtsKey : (settings.tts_cloud_api_key || '')}
+                              onChange={(e) => setPendingTtsKey(e.target.value)}
+                              placeholder="Paste your API key here…"
+                              style={{ flex: 1, padding: '6px 10px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '7px', color: 'white', fontSize: '0.75rem', outline: 'none' }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowTtsKey(v => !v)}
+                              title={showTtsKey ? 'Hide key' : 'Show key'}
+                              style={{ padding: '5px 8px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '7px', color: '#a78bfa', cursor: 'pointer', fontSize: '0.8rem' }}
+                            >{showTtsKey ? '🙈' : '👁️'}</button>
+                            {pendingTtsKey && (
+                              <button
+                                type="button"
+                                onClick={() => { handleUpdateSetting('tts_cloud_api_key', pendingTtsKey); setPendingTtsKey(''); }}
+                                style={{ padding: '5px 10px', background: 'rgba(139,92,246,0.4)', border: '1px solid rgba(139,92,246,0.5)', borderRadius: '7px', color: 'white', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600 }}
+                              >Save</button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Voice / Model Name */}
+                        <div style={{ marginBottom: '8px' }}>
+                          <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>Voice / Model Name</span>
+                          <input
+                            type="text"
+                            value={settings.tts_cloud_voice || ''}
+                            onChange={(e) => handleUpdateSetting('tts_cloud_voice', e.target.value)}
+                            placeholder={settings.tts_provider === 'google' ? 'e.g. en-US-Standard-C' : settings.tts_provider === 'azure' ? 'e.g. en-US-AriaNeural' : settings.tts_provider === 'elevenlabs' ? 'Voice ID (21m00Tcm4TlvDq8ikWAM)' : settings.tts_provider === 'openai' ? 'alloy / nova / shimmer' : 'voice or model name'}
+                            style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '7px', color: 'white', fontSize: '0.75rem', outline: 'none', boxSizing: 'border-box' }}
+                          />
+                        </div>
+
+                        {/* Azure Region (Azure only) */}
+                        {settings.tts_provider === 'azure' && (
+                          <div style={{ marginBottom: '8px' }}>
+                            <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>Azure Region</span>
+                            <input
+                              type="text"
+                              value={settings.tts_cloud_region || 'eastus'}
+                              onChange={(e) => handleUpdateSetting('tts_cloud_region', e.target.value)}
+                              placeholder="e.g. eastus, westeurope"
+                              style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '7px', color: 'white', fontSize: '0.75rem', outline: 'none', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Custom endpoint URL (custom only) */}
+                        {settings.tts_provider === 'custom' && (
+                          <div style={{ marginBottom: '8px' }}>
+                            <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>Endpoint URL</span>
+                            <input
+                              type="text"
+                              value={settings.tts_cloud_endpoint || ''}
+                              onChange={(e) => handleUpdateSetting('tts_cloud_endpoint', e.target.value)}
+                              placeholder="https://your-tts-api.com/synthesize"
+                              style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '7px', color: 'white', fontSize: '0.75rem', outline: 'none', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', marginTop: '4px' }}>
+                          ⚡ Keys are encrypted (AES-XOR) on the server and never stored in plain text. On cloud failure, browser speechSynthesis is used as fallback.
+                        </div>
+                      </div>
+                    )}
+
                     {/* Voice Volume & Mute Controls */}
                     <div className="identity-field" style={{ marginTop: '4px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -4371,29 +4491,90 @@ const ControlDashboard = ({
                       <MicLevelMeter deviceId={selectedMicDeviceId} deviceName={micDevices.find(d => d.deviceId === selectedMicDeviceId)?.label || ''} vadThreshold={vadThreshold} />
                     </div>
 
-                    {/* STT Engine Select */}
+                    {/* STT Provider Select */}
                     <div className="identity-field" style={{ marginTop: '10px' }}>
-                      <span className="field-label">Speech-to-Text Engine</span>
+                      <span className="field-label">Speech-to-Text Provider</span>
                       <select
-                        value={settings.use_local_whisper !== false ? 'whisper' : 'web'}
-                        onChange={(e) => handleUpdateSetting('use_local_whisper', e.target.value === 'whisper')}
-                        style={{
-                          width: '100%',
-                          padding: '7px 10px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          color: 'white',
-                          fontSize: '0.78rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                          marginTop: '4px'
-                        }}
+                        value={settings.stt_provider || 'local'}
+                        onChange={(e) => handleUpdateSetting('stt_provider', e.target.value)}
+                        style={{ width: '100%', padding: '7px 10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '0.78rem', outline: 'none', cursor: 'pointer', marginTop: '4px' }}
                       >
-                        <option value="whisper" style={{ background: '#0b0813', color: 'white' }}>Local Faster-Whisper (Private / GPU Accelerated)</option>
-                        <option value="web" style={{ background: '#0b0813', color: 'web' }}>Web Speech API (Browser Fallback)</option>
+                        <option value="local" style={{ background: '#0b0813' }}>🖥️ Local — Faster-Whisper (Offline, Private)</option>
+                        <option value="google" style={{ background: '#0b0813' }}>☁️ Google Cloud Speech (60 min/mo free)</option>
+                        <option value="azure" style={{ background: '#0b0813' }}>☁️ Azure Cognitive Speech (5 hrs/mo free)</option>
+                        <option value="assemblyai" style={{ background: '#0b0813' }}>☁️ AssemblyAI (100 hrs/mo free tier)</option>
+                        <option value="deepgram" style={{ background: '#0b0813' }}>☁️ Deepgram Nova-3 ($200 free credit)</option>
+                        <option value="custom" style={{ background: '#0b0813' }}>🔧 Custom API Endpoint</option>
                       </select>
                     </div>
+
+                    {/* Cloud STT Config Panel */}
+                    {(settings.stt_provider && settings.stt_provider !== 'local') && (
+                      <div style={{ marginTop: '10px', padding: '12px', background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '10px' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#c4b5fd', fontWeight: 600, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>☁️</span> Cloud STT Configuration
+                        </div>
+
+                        {/* API Key */}
+                        <div style={{ marginBottom: '8px' }}>
+                          <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>API Key</span>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <input
+                              type={showSttKey ? 'text' : 'password'}
+                              value={pendingSttKey !== '' ? pendingSttKey : (settings.stt_cloud_api_key || '')}
+                              onChange={(e) => setPendingSttKey(e.target.value)}
+                              placeholder="Paste your API key here…"
+                              style={{ flex: 1, padding: '6px 10px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '7px', color: 'white', fontSize: '0.75rem', outline: 'none' }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowSttKey(v => !v)}
+                              title={showSttKey ? 'Hide key' : 'Show key'}
+                              style={{ padding: '5px 8px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '7px', color: '#a78bfa', cursor: 'pointer', fontSize: '0.8rem' }}
+                            >{showSttKey ? '🙈' : '👁️'}</button>
+                            {pendingSttKey && (
+                              <button
+                                type="button"
+                                onClick={() => { handleUpdateSetting('stt_cloud_api_key', pendingSttKey); setPendingSttKey(''); }}
+                                style={{ padding: '5px 10px', background: 'rgba(139,92,246,0.4)', border: '1px solid rgba(139,92,246,0.5)', borderRadius: '7px', color: 'white', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600 }}
+                              >Save</button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Azure Region (Azure only) */}
+                        {settings.stt_provider === 'azure' && (
+                          <div style={{ marginBottom: '8px' }}>
+                            <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>Azure Region</span>
+                            <input
+                              type="text"
+                              value={settings.stt_cloud_region || 'eastus'}
+                              onChange={(e) => handleUpdateSetting('stt_cloud_region', e.target.value)}
+                              placeholder="e.g. eastus, westeurope"
+                              style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '7px', color: 'white', fontSize: '0.75rem', outline: 'none', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Custom endpoint URL (custom only) */}
+                        {settings.stt_provider === 'custom' && (
+                          <div style={{ marginBottom: '8px' }}>
+                            <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>Endpoint URL</span>
+                            <input
+                              type="text"
+                              value={settings.stt_cloud_endpoint || ''}
+                              onChange={(e) => handleUpdateSetting('stt_cloud_endpoint', e.target.value)}
+                              placeholder="https://your-stt-api.com/transcribe"
+                              style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '7px', color: 'white', fontSize: '0.75rem', outline: 'none', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', marginTop: '4px' }}>
+                          🔒 Keys are encrypted on the server. On failure, an error toast is shown — no silent fallback for STT.
+                        </div>
+                      </div>
+                    )}
 
                     {/* Local Whisper Options */}
                     {(settings.use_local_whisper !== false) && (
