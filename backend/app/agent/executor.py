@@ -389,7 +389,8 @@ class AgentExecutor:
                 kwargs.get("svg_or_canvas") or ""
             ),
             "jarvis_html_viewer": lambda **kwargs: jarvis_html_viewer(
-                kwargs.get("html_content") or ""
+                html_content=kwargs.get("html_content") or "",
+                file_path=kwargs.get("file_path") or ""
             ),
         }
         from app.mcp_client import StdioMCPToolBridge

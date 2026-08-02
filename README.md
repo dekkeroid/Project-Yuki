@@ -97,7 +97,7 @@ The final installer is output to `frontend/installer-output/`.
 You do not need to build an installer for every change.
 
 - **Daily iteration:** run `start yuki ai (2 windows).bat`. Vite hot-reloads frontend changes and uvicorn auto-reloads backend Python changes — no builds at all. Editing `main.electron.cjs` or `preload.cjs` now auto-restarts Electron (see `frontend/dev-main-watch.mjs`).
-- **Update your installed app quickly:** run `update_installed.bat`. It auto-locates your installed Yuki, rebuilds only what changed (PyInstaller only if `backend/app/*` changed, electron-builder only if the Electron main files or backend changed) and copies the result straight over the installed app — no installer, no reinstall, and your user data (`.db`, `.env`, attachments) is preserved.
+- **Update your installed app quickly:** run `update_installed.bat`. It auto-locates your installed Yuki, detects what changed (backend / frontend / electron shell), shows a preview, and asks which parts to include in that update before rebuilding and copying them straight over the installed app — no installer, no reinstall, and your user data (`.db`, `.env`, attachments) is preserved. You can opt out of any component for a given update.
 
 Since the packaged app loads the frontend from `resources/frontend/dist` (outside the asar), frontend-only updates skip electron-builder entirely and finish in seconds.
 

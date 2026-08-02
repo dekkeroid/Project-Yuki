@@ -41,11 +41,25 @@ function Get-YukiInstallDir {
     return $null
 }
 
+function Confirm-Yes {
+    param([string]$Message, [bool]$Default)
+    $prompt = if ($Default) { '[Y/n]' } else { '[y/N]' }
+    $answer = Read-Host "$Message $prompt"
+    if ([string]::IsNullOrWhiteSpace($answer)) { return $Default }
+    return ($answer -match '^(y|yes)$')
+}
+
+function Is-AnyNewer {
+    param([string]$ReferencePath, [object[]]$Sources)
+    $ref = Get-Item $ReferencePath -ErrorAction SilentlyContinue
+    if (-not $ref) { return $true }
+    return @($Sources | Where-Object { $_ -and $_.LastWriteTime -gt $ref.LastWriteTime }).Count -gt 0
+}
+
 $installDir = Get-YukiInstallDir
 
 Write-Host "============================================"
 Write-Host "  Yuki AI - Fast Update (installed app)"
-Write-Host "  Rebuilds only what changed, no installer."
 Write-Host "============================================"
 
 if (-not $installDir) {
@@ -57,105 +71,148 @@ if (-not $installDir) {
 Write-Host ""
 Write-Host "Installed at: $installDir"
 
-# --- Close the running app (its exe would lock files during copy) ---
+# ---------- Detect changes (source vs installed app) ----------
+Write-Host ""
+Write-Host "Checking for changes..."
+
+$backendSources = @(Get-ChildItem "$backendDir\app" -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch '\\__pycache__\\' -and $_.Extension -notin '.pyc', '.pyo' })
+$backendSources += @(Get-Item "$backendDir\run.py" -ErrorAction SilentlyContinue)
+$backendChanged = Is-AnyNewer (Join-Path $installDir 'resources\backend\backend.exe') $backendSources
+
+$frontendSources = @(Get-ChildItem "$frontendDir\src" -Recurse -File -ErrorAction SilentlyContinue)
+$frontendSources += @(Get-Item "$frontendDir\index.html", "$frontendDir\vite.config.js" -ErrorAction SilentlyContinue)
+$frontendChanged = Is-AnyNewer (Join-Path $installDir 'resources\frontend\dist\index.html') $frontendSources
+
+$electronSources = @(Get-Item `
+    "$frontendDir\main.electron.cjs", `
+    "$frontendDir\preload.cjs", `
+    "$frontendDir\electron-builder.yml", `
+    "$frontendDir\installer.iss", `
+    "$frontendDir\icon.ico" -ErrorAction SilentlyContinue)
+$electronChanged = Is-AnyNewer (Join-Path $installDir 'resources\app.asar') $electronSources
+
+# ---------- Preview ----------
+$rows = @(
+    [pscustomobject]@{ Name = 'Backend engine'; Changed = $backendChanged;  Detail = 'Python backend (backend.exe + bundled files)' }
+    [pscustomobject]@{ Name = 'Frontend UI';    Changed = $frontendChanged; Detail = 'React UI (resources\frontend\dist)' }
+    [pscustomobject]@{ Name = 'Electron shell'; Changed = $electronChanged; Detail = 'Electron app + asar + binaries' }
+)
+
+Write-Host ""
+Write-Host "Detected changes:"
+foreach ($r in $rows) {
+    $mark = if ($r.Changed) { 'x' } else { ' ' }
+    $status = if ($r.Changed) { 'CHANGED' } else { 'up to date' }
+    Write-Host ("  [{0}] {1,-16} {2,-12} - {3}" -f $mark, $r.Name, $status, $r.Detail)
+}
+
+$anyChanged = @($rows | Where-Object { $_.Changed }).Count -gt 0
+if (-not $anyChanged) {
+    Write-Host ""
+    Write-Host "Nothing to update - your installed Yuki AI is up to date."
+    exit 0
+}
+
+# ---------- Opt-out selection ----------
+Write-Host ""
+Write-Host "Choose which parts to include in THIS update:"
+foreach ($r in $rows) {
+    $r | Add-Member -NotePropertyName Selected -NotePropertyValue (Confirm-Yes "Include $($r.Name)?" $r.Changed)
+}
+
+$selected = @($rows | Where-Object { $_.Selected })
+if ($selected.Count -eq 0) {
+    Write-Host ""
+    Write-Host "Nothing selected - aborting, no changes made."
+    exit 0
+}
+
+# ---------- Final confirmation ----------
+Write-Host ""
+Write-Host "Will run:"
+foreach ($r in $selected) {
+    $step = switch ($r.Name) {
+        'Frontend UI'    { "npm run build:frontend, then copy dist" }
+        'Backend engine' { "pyinstaller yuki-backend.spec, then copy backend" }
+        'Electron shell' { "npm run build:electron, then copy shell + asar" }
+    }
+    Write-Host ("  - {0}: {1}" -f $r.Name, $step)
+}
+Write-Host "  - Target: $installDir"
+Write-Host ""
+if (-not (Confirm-Yes "Proceed?" $true)) {
+    Write-Host "Aborted - no changes made."
+    exit 0
+}
+
+# ---------- Close running app (exe locks files during copy) ----------
 $proc = Get-Process | Where-Object { $_.ProcessName -like 'Yuki AI*' }
 if ($proc) {
     Write-Host ""
     Write-Host "[WARN] Yuki AI is currently running."
-    $choice = Read-Host "Close it now and continue? [Y/n]"
-    if ($choice -notmatch '^n') {
+    if (Confirm-Yes "Close it now and continue?" $true) {
         $proc | Stop-Process -Force -ErrorAction SilentlyContinue
         Write-Host "[OK] Yuki AI closed."
         Start-Sleep -Seconds 2
+    } else {
+        Write-Host "[WARN] Proceeding without closing - copy may fail on locked files."
     }
 }
 
-# --- Detect changes (compare timestamps against last build output) ---
-Write-Host ""
-Write-Host "[Detect] Checking what changed..."
+$selFrontend = @($selected | Where-Object { $_.Name -eq 'Frontend UI' }).Count -gt 0
+$selBackend  = @($selected | Where-Object { $_.Name -eq 'Backend engine' }).Count -gt 0
+$selElectron = @($selected | Where-Object { $_.Name -eq 'Electron shell' }).Count -gt 0
 
-$backendExe = Get-Item "$backendDir\dist\backend\backend.exe" -ErrorAction SilentlyContinue
-$backendChanged = $false
-if (-not $backendExe) {
-    $backendChanged = $true
-} else {
-    $src = @(Get-ChildItem "$backendDir\app" -Recurse -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch '\\__pycache__\\' -and $_.Extension -notin '.pyc', '.pyo' })
-    $src += @(Get-Item "$backendDir\run.py" -ErrorAction SilentlyContinue)
-    $backendChanged = @($src | Where-Object { $_ -and $_.LastWriteTime -gt $backendExe.LastWriteTime }).Count -gt 0
-}
+# ---------- Execute selected components ----------
 
-$asar = Get-Item "$frontendDir\release\win-unpacked\resources\app.asar" -ErrorAction SilentlyContinue
-$electronChanged = $false
-if (-not $asar) {
-    $electronChanged = $true
-} else {
-    $mainFiles = @(Get-Item `
-        "$frontendDir\main.electron.cjs", `
-        "$frontendDir\preload.cjs", `
-        "$frontendDir\electron-builder.yml", `
-        "$frontendDir\installer.iss", `
-        "$frontendDir\icon.ico" -ErrorAction SilentlyContinue)
-    $electronChanged = @($mainFiles | Where-Object { $_ -and $_.LastWriteTime -gt $asar.LastWriteTime }).Count -gt 0
-}
-
-Write-Host "  backend  : $backendChanged"
-Write-Host "  electron : $electronChanged"
-
-# --- Step 1: frontend (always rebuilt, it is fast) ---
-Write-Host ""
-Write-Host "Step 1/3 - frontend build (npm run build:frontend)"
-Push-Location $frontendDir
-npm run build:frontend
-if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host ""; Write-Host "BUILD FAILED."; exit 1 }
-
-# --- Step 2: backend (only when backend sources changed) ---
-Write-Host ""
-if ($backendChanged) {
-    Write-Host "Step 2/3 - backend build (PyInstaller)"
-    Push-Location ..\$backendDir
-    .\venv\Scripts\pyinstaller.exe yuki-backend.spec --noconfirm
-    if ($LASTEXITCODE -ne 0) { Pop-Location; Pop-Location; Write-Host ""; Write-Host "BUILD FAILED."; exit 1 }
+if ($selFrontend) {
+    Write-Host ""
+    Write-Host "--- Frontend UI: rebuilding ---"
+    Push-Location "$root\$frontendDir"
+    npm run build:frontend
+    if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host ""; Write-Host "BUILD FAILED."; exit 1 }
     Pop-Location
-} else {
-    Write-Host "Step 2/3 - backend unchanged, skipping PyInstaller"
+
+    Write-Host "--- Frontend UI: copying dist ---"
+    $rc = robocopy "$root\$frontendDir\dist" (Join-Path $installDir 'resources\frontend\dist') /E /NFL /NDL /NJH /NJS
+    if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
 }
 
-# --- Step 3: electron packaging (only when electron main OR backend changed) ---
-Write-Host ""
-$needElectron = $electronChanged -or $backendChanged
-if ($needElectron) {
-    Write-Host "Step 3/3 - electron packaging (electron-builder --win)"
+if ($selBackend) {
+    Write-Host ""
+    Write-Host "--- Backend engine: rebuilding (PyInstaller) ---"
+    Push-Location "$root\$backendDir"
+    .\venv\Scripts\pyinstaller.exe yuki-backend.spec --noconfirm
+    if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host ""; Write-Host "BUILD FAILED."; exit 1 }
+    Pop-Location
+
+    Write-Host "--- Backend engine: copying (preserving your .env / data) ---"
+    $rc = robocopy "$root\$backendDir\dist\backend" (Join-Path $installDir 'resources\backend') /E /XF .env /NFL /NDL /NJH /NJS
+    if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
+}
+
+if ($selElectron) {
+    Write-Host ""
+    Write-Host "--- Electron shell: repacking ---"
+    Push-Location "$root\$frontendDir"
     npm run build:electron
     if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host ""; Write-Host "BUILD FAILED."; exit 1 }
-} else {
-    Write-Host "Step 3/3 - electron unchanged, skipping packaging"
-}
+    Pop-Location
 
-# --- Keep win-unpacked's external dist fresh even when packaging was skipped ---
-$unpackedDist = 'release\win-unpacked\resources\frontend\dist'
-if (Test-Path 'release\win-unpacked') {
-    if (-not (Test-Path $unpackedDist)) {
-        New-Item -ItemType Directory -Force -Path $unpackedDist | Out-Null
+    Write-Host "--- Electron shell: copying (shell + asar, excluding backend/frontend) ---"
+    $src = "$root\$frontendDir\release\win-unpacked"
+    $copyArgs = @('/E', '/NFL', '/NDL', '/NJH', '/NJS', '/XF', '.env')
+    foreach ($d in @("$src\resources\backend", "$src\resources\frontend\dist")) {
+        $copyArgs += @('/XD', $d)
     }
-    Copy-Item 'dist\*' $unpackedDist -Recurse -Force
-}
-Pop-Location
-
-# --- Copy updated app over the install dir (incremental, never deletes user data) ---
-Write-Host ""
-Write-Host "Copying updated app to $installDir"
-robocopy "$root\$frontendDir\release\win-unpacked" $installDir /E /XF ".env" /NFL /NDL /NJH /NJS
-$rc = $LASTEXITCODE
-if ($rc -ge 8) {
-    Write-Host ""
-    Write-Host "COPY FAILED (robocopy code $rc). Close Yuki AI and retry."
-    exit 1
+    $rc = robocopy $src $installDir @copyArgs
+    if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
 }
 
 Write-Host ""
 Write-Host "============================================"
-Write-Host "  Update complete! (robocopy code $rc)"
+Write-Host "  Update complete!"
 Write-Host "  Launch Yuki AI from your Start Menu / desktop."
 Write-Host "============================================"
 exit 0
