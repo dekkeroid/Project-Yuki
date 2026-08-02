@@ -92,6 +92,17 @@ The final installer is output to `frontend/installer-output/`.
 - Python venv with all backend dependencies installed in `backend/venv`
 - [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed at the default location
 
+## Development vs. fast updates
+
+You do not need to build an installer for every change.
+
+- **Daily iteration:** run `start yuki ai (2 windows).bat`. Vite hot-reloads frontend changes and uvicorn auto-reloads backend Python changes — no builds at all. Editing `main.electron.cjs` or `preload.cjs` now auto-restarts Electron (see `frontend/dev-main-watch.mjs`).
+- **Update your installed app quickly:** run `update_installed.bat`. It auto-locates your installed Yuki, rebuilds only what changed (PyInstaller only if `backend/app/*` changed, electron-builder only if the Electron main files or backend changed) and copies the result straight over the installed app — no installer, no reinstall, and your user data (`.db`, `.env`, attachments) is preserved.
+
+Since the packaged app loads the frontend from `resources/frontend/dist` (outside the asar), frontend-only updates skip electron-builder entirely and finish in seconds.
+
+- **Distribution:** use `start_build.bat` to produce a fresh installer for other machines.
+
 ## Development checks
 
 Backend:

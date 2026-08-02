@@ -60,6 +60,22 @@ export default function SettingsApp() {
     else localStorage.removeItem('yuki-mic-device-id');
   }, []);
 
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === 'yuki-mute-voice') {
+        setMuteVoice(e.newValue === 'true');
+      }
+      if (e.key === 'yuki-voice-volume') {
+        const parsed = parseFloat(e.newValue);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) {
+          setVoiceVolume(parsed);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   const hostPlatform = useMemo(() => {
     if (window.electronAPI?.platform) {
       const p = window.electronAPI.platform;
@@ -230,11 +246,17 @@ export default function SettingsApp() {
         onMuteVoiceChange={(muted) => {
           setMuteVoice(muted);
           localStorage.setItem('yuki-mute-voice', muted.toString());
+          if (window.electronAPI && window.electronAPI.setVoiceSettings) {
+            window.electronAPI.setVoiceSettings({ muted, volume: voiceVolume });
+          }
         }}
         voiceVolume={voiceVolume}
         onVoiceVolumeChange={(vol) => {
           setVoiceVolume(vol);
           localStorage.setItem('yuki-voice-volume', vol.toString());
+          if (window.electronAPI && window.electronAPI.setVoiceSettings) {
+            window.electronAPI.setVoiceSettings({ muted: muteVoice, volume: vol });
+          }
         }}
         availableLlmModels={availableLlmModels}
         availableSimpleLlmModels={availableSimpleLlmModels}

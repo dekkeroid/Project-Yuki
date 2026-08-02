@@ -27,13 +27,18 @@ _ort_datas, _ort_bins, _ort_hidden = collect_all('onnxruntime')
 _hf_datas, _hf_bins, _hf_hidden = collect_all('huggingface_hub')
 
 # NVIDIA CUDA DLLs only (skip headers, .lib, Python files to save ~2GB)
+# Only CUDA 12 components are bundled — cublas/cudart/cudnn/cufft are required by BOTH
+# onnxruntime-gpu 1.26 (CUDA 12 build) and ctranslate2 (Whisper). curand/nvrtc/nvjitlink
+# are referenced by neither at runtime (verified via PE import analysis) and are omitted
+# to save ~340 MB. nvblas64_12 / cufftw64_11 are unused variants of kept components.
 _nvidia_dlls = []
-_nvidia_subpkgs = ['cublas', 'cuda_runtime', 'cudnn', 'cufft', 'curand', 'cuda_nvrtc', 'nvjitlink']
+_nvidia_subpkgs = ['cublas', 'cuda_runtime', 'cudnn', 'cufft']
+_nvidia_dll_excludes = {'nvblas64_12.dll', 'cufftw64_11.dll'}
 for _subpkg in _nvidia_subpkgs:
     _bin_dir = os.path.join(SITE, 'nvidia', _subpkg, 'bin')
     if os.path.isdir(_bin_dir):
         for _f in os.listdir(_bin_dir):
-            if _f.lower().endswith('.dll'):
+            if _f.lower().endswith('.dll') and _f.lower() not in _nvidia_dll_excludes:
                 _nvidia_dlls.append((os.path.join(_bin_dir, _f), os.path.join('nvidia', _subpkg, 'bin')))
 _nvidia_datas = []
 _nvidia_bins = _nvidia_dlls

@@ -2405,9 +2405,9 @@ def get_search_suggestions(query: str, type: str):
     results = []
 
     if type == "play":
-        # Search only database files of category song or movie
+        # Search only database files of category song or video
         try:
-            raw_candidates = query_database_union(parsed, limit_raw=500, categories=["song", "movie"], silent=True)
+            raw_candidates = query_database_union(parsed, limit_raw=500, categories=["song", "video"], silent=True)
         except Exception as e:
             print(f"[Suggestions API] DB search error: {e}")
             raw_candidates = []

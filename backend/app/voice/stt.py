@@ -123,9 +123,9 @@ def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16"
             print(f"[STT] faster-whisper (CTranslate2) model '{model_size}' loaded successfully on CPU (int8).")
         except Exception as cpu_err:
             print(f"[STT] Failed to load Whisper model on CPU: {cpu_err}")
-            if model_size != "tiny":
-                print("[STT] Falling back to 'tiny' Whisper model...")
-                return get_whisper_model("tiny", compute_type)
+            if model_size != "base":
+                print("[STT] Falling back to 'base' Whisper model...")
+                return get_whisper_model("base", compute_type)
             raise cpu_err
         
     return _whisper_instance

@@ -44,6 +44,14 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "release\win-unpacked\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+; Remove stale PyInstaller payload from previous installs so old DLLs/model files
+; (e.g. leftover python3xx.dll, outdated NVIDIA libs) cannot linger and break upgrades.
+; User data (yuki_files.db, profile.json, tool_runs.jsonl, .env) is intentionally kept.
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\resources\backend\_internal"
+Type: files; Name: "{app}\resources\backend\backend.exe"
+Type: files; Name: "{app}\resources\backend\.yuki-ready"
+
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
