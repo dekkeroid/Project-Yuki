@@ -394,6 +394,13 @@ def init_db():
     );
     """)
 
+    # Migration check for block_reason / archived columns on todos
+    todo_cols = [row[1] for row in cursor.execute("PRAGMA table_info(todos)").fetchall()]
+    if "block_reason" not in todo_cols:
+        cursor.execute("ALTER TABLE todos ADD COLUMN block_reason TEXT")
+    if "archived" not in todo_cols:
+        cursor.execute("ALTER TABLE todos ADD COLUMN archived INTEGER DEFAULT 0")
+
     # 1e. Persistent Chat Sessions & Message History
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS chat_sessions (
