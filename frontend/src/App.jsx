@@ -764,6 +764,21 @@ const App = () => {
       const handleWebSocketMessage = (event) => {
       const msg = JSON.parse(event.data);
 
+      // Global WS event bus — lets any component (ControlDashboard etc.) react to messages.
+      window.dispatchEvent(new CustomEvent('yuki_ws_message', { detail: msg }));
+
+      // ── mood_update: use engine expression as idle fallback ────────────
+      if (msg.type === 'mood_update') {
+        if (msg.mood?.expression) {
+          // Only update avatar if not currently speaking / showing an explicit emotion
+          setAvatarExpression(prev =>
+            // Don't override an explicit emotion set mid-turn; only update the idle default
+            (prev === 'neutral' || prev === 'relaxed') ? (msg.mood.expression || prev) : prev
+          );
+        }
+        return; // mood_update is fully handled here
+      }
+
       if (msg.type === 'profile_update') {
         setProfile(msg.profile);
         if (msg.profile.settings && msg.profile.settings.llm_model) {

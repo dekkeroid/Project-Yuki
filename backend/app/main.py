@@ -361,6 +361,28 @@ async def lifespan(app: FastAPI):
     from app.tools import ask_user
     ask_user.set_ask_callback(broadcast_ask_event)
 
+    # ── Mood Engine v2 wires ─────────────────────────────────────────────
+    # 1. Connect the WS broadcast so _notify() pushes live mood_update events.
+    memory_manager.set_mood_broadcast(broadcast_ws)
+
+    # 2. Offline catch-up + daily shake-up + hourly jitter on every boot.
+    try:
+        memory_manager.on_mood_startup()
+        print("[MoodEngine] Startup catch-up complete.")
+    except Exception as _me:
+        print(f"[MoodEngine] Startup error: {_me}")
+
+    # 3. Background idle drift — step every 60 s so mood moves between messages.
+    async def _mood_idle_loop():
+        while True:
+            await asyncio.sleep(60)
+            try:
+                memory_manager.step_mood()
+            except Exception as _e:
+                print(f"[MoodEngine] idle step error: {_e}")
+
+    asyncio.create_task(_mood_idle_loop())
+
     yield
 
     # ── Shutdown ─────────────────────────────────────────────────────────
