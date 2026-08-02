@@ -37,6 +37,7 @@ backend/scratch/
 backend/tests/
 scratch_scripts/
 backend/test.mp3
+backend/TODO.md
 
 # Virtual Environment configuration tracking
 backend/venv/

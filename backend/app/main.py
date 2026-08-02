@@ -1960,10 +1960,6 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
         print(f"[STT] Unexpected error in transcribe endpoint: {e}")
         return {"text": ""}
 
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
 
 @app.post("/api/speech/status")
 async def speech_status(req: dict):
