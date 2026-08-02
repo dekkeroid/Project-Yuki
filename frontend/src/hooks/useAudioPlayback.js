@@ -48,6 +48,7 @@ export function useAudioPlayback(options = {}) {
   const analyserRef = useRef(null);
   const isNativeSpeakingRef = useRef(false);
   const nativeSpeechIntervalRef = useRef(null);
+  const speakTextNativelyRef = useRef(null); // Forward ref to break circular dep with queueAudioChunk
   const bubbleTimeoutRef = useRef(null);
   const playbackTimeoutRef = useRef(null);
   const micActivationTimeoutRef = useRef(null);
@@ -291,14 +292,35 @@ export function useAudioPlayback(options = {}) {
   playNextAudioRef.current = playNextAudio;
 
   const queueAudioChunk = useCallback((audioUrl, speechText, index) => {
-    audioQueueRef.current.push({ url: audioUrl, text: speechText, index: index });
-    audioQueueRef.current.sort((a, b) => a.index - b.index);
-
-    if (!isPlayingRef.current) {
-      isPlayingRef.current = true;
-      playNextAudio();
-    }
+    // Pre-flight: check for 202 X-TTS-Fallback:web sentinel (cloud TTS failure → browser fallback)
+    fetch(audioUrl)
+      .then(resp => {
+        if (resp.status === 202 && resp.headers.get('X-TTS-Fallback') === 'web') {
+          // Cloud TTS failed — use browser speechSynthesis as fallback
+          console.warn('[TTS] Cloud provider failed, using browser speechSynthesis fallback. Error:', resp.headers.get('X-TTS-Error') || '(unknown)');
+          hasReceivedAudioRef.current = true; // prevent duplicate native fallback at stream_done
+          if (speakTextNativelyRef.current) speakTextNativelyRef.current(speechText);
+          return;
+        }
+        // Normal audio — create blob URL so we don't re-fetch
+        return resp.blob().then(blob => {
+          const blobUrl = URL.createObjectURL(blob);
+          audioQueueRef.current.push({ url: blobUrl, text: speechText, index: index });
+          audioQueueRef.current.sort((a, b) => a.index - b.index);
+          if (!isPlayingRef.current) {
+            isPlayingRef.current = true;
+            playNextAudio();
+          }
+        });
+      })
+      .catch(err => {
+        // Network error — fall back to native TTS
+        console.warn('[TTS] Audio fetch failed, using browser speechSynthesis fallback:', err);
+        hasReceivedAudioRef.current = true;
+        if (speakTextNativelyRef.current) speakTextNativelyRef.current(speechText);
+      });
   }, [playNextAudio]);
+
 
   const speakTextNatively = useCallback((text, forcedExpression = null) => {
     window.speechSynthesis.cancel();
@@ -394,6 +416,9 @@ export function useAudioPlayback(options = {}) {
 
     window.speechSynthesis.speak(utterance);
   }, [profile, setAudioLevel, setAvatarExpression, setIsThinking, updateListeningStateGlobal]);
+
+  // Wire forward ref so queueAudioChunk can call speakTextNatively without circular dep
+  speakTextNativelyRef.current = speakTextNatively;
 
   const speakSystemMessage = useCallback((text, expression = null) => {
     if (muteVoiceRef.current) {
