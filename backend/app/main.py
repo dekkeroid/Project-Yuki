@@ -383,6 +383,31 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_mood_idle_loop())
 
+    # ── Restore cloud STT / TTS provider settings from saved profile ─────
+    try:
+        _saved_settings = memory_manager.profile.get("settings", {})
+        from app.utils.security import decrypt_api_key as _decrypt
+        _stt_prov = _saved_settings.get("stt_provider", "local")
+        if _stt_prov:
+            config.STT_PROVIDER = _stt_prov
+        _stt_key = _saved_settings.get("stt_cloud_api_key", "")
+        if _stt_key:
+            config.STT_CLOUD_API_KEY = _decrypt(_stt_key)
+        config.STT_CLOUD_ENDPOINT = _saved_settings.get("stt_cloud_endpoint", "")
+
+        _tts_prov = _saved_settings.get("tts_provider", "local")
+        if _tts_prov:
+            config.TTS_PROVIDER = _tts_prov
+        _tts_key = _saved_settings.get("tts_cloud_api_key", "")
+        if _tts_key:
+            config.TTS_CLOUD_API_KEY = _decrypt(_tts_key)
+        config.TTS_CLOUD_ENDPOINT = _saved_settings.get("tts_cloud_endpoint", "")
+        config.TTS_CLOUD_VOICE = _saved_settings.get("tts_cloud_voice", "")
+        print(f"[Startup] STT provider: {config.STT_PROVIDER} | TTS provider: {config.TTS_PROVIDER}")
+    except Exception as _cp_err:
+        print(f"[Startup] Cloud provider settings restore error: {_cp_err}")
+
+
     yield
 
     # ── Shutdown ─────────────────────────────────────────────────────────
@@ -390,7 +415,7 @@ async def lifespan(app: FastAPI):
         await agent_executor.mcp_tools.aclose()
 
 
-app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.0-beta", lifespan=lifespan)
+app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.1-beta", lifespan=lifespan)
 
 # Setup CORS — restrict to localhost and LAN origins
 app.add_middleware(
@@ -978,7 +1003,8 @@ def get_settings():
     from app.memory.crawler import is_crawler_paused, is_tagger_paused
     settings_dict = copy.deepcopy(memory_manager.profile.get("settings", {}))
     from app.utils.security import mask_api_key, decrypt_api_key
-    for k_name in ["llm_api_key", "llm_simple_api_key", "llm_coder_api_key"]:
+    for k_name in ["llm_api_key", "llm_simple_api_key", "llm_coder_api_key",
+                   "stt_cloud_api_key", "tts_cloud_api_key"]:
         if k_name in settings_dict and settings_dict[k_name]:
             settings_dict[k_name] = mask_api_key(decrypt_api_key(settings_dict[k_name]))
     settings_dict.update({
@@ -1067,6 +1093,18 @@ class SettingsUpdateRequest(BaseModel):
     whisper_idle_timeout: Optional[int] = None
     whisper_vram_threshold: Optional[float] = None
     whisper_auto_unload: Optional[bool] = None
+    # Cloud STT provider
+    stt_provider: Optional[str] = None          # "local"|"google"|"azure"|"assemblyai"|"deepgram"|"custom"
+    stt_cloud_api_key: Optional[str] = None     # Encrypted in profile
+    stt_cloud_endpoint: Optional[str] = None    # Custom provider endpoint URL
+    stt_cloud_region: Optional[str] = None      # Azure region, etc.
+    # Cloud TTS provider
+    tts_provider: Optional[str] = None          # "local"|"google"|"azure"|"elevenlabs"|"openai"|"custom"
+    tts_cloud_api_key: Optional[str] = None     # Encrypted in profile
+    tts_cloud_endpoint: Optional[str] = None    # Custom provider endpoint URL
+    tts_cloud_region: Optional[str] = None      # Azure region, etc.
+    tts_cloud_voice: Optional[str] = None       # Voice/model name for cloud TTS
+
 
 @app.post("/api/settings/update")
 async def update_settings(req: SettingsUpdateRequest):
@@ -1356,6 +1394,61 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.custom_alarm_tone_file is not None:
         memory_manager.update_setting("custom_alarm_tone_file", req.custom_alarm_tone_file.strip())
 
+    # ── Cloud STT provider settings ───────────────────────────────────────────
+    _VALID_STT_PROVIDERS = {"local", "google", "azure", "assemblyai", "deepgram", "custom"}
+    if req.stt_provider is not None:
+        prov = req.stt_provider.strip().lower()
+        if prov in _VALID_STT_PROVIDERS:
+            config.STT_PROVIDER = prov
+            memory_manager.update_setting("stt_provider", prov)
+    if req.stt_cloud_api_key is not None:
+        from app.utils.security import encrypt_api_key, decrypt_api_key
+        key_val = req.stt_cloud_api_key.strip()
+        if key_val:
+            if "..." in key_val and not key_val.startswith("enc_v1:"):
+                pass  # masked value — ignore
+            else:
+                decrypted = decrypt_api_key(key_val) if key_val.startswith("enc_v1:") else key_val
+                config.STT_CLOUD_API_KEY = decrypted
+                memory_manager.update_setting("stt_cloud_api_key", encrypt_api_key(decrypted))
+        else:
+            config.STT_CLOUD_API_KEY = ""
+            memory_manager.update_setting("stt_cloud_api_key", "")
+    if req.stt_cloud_endpoint is not None:
+        config.STT_CLOUD_ENDPOINT = req.stt_cloud_endpoint.strip()
+        memory_manager.update_setting("stt_cloud_endpoint", req.stt_cloud_endpoint.strip())
+    if req.stt_cloud_region is not None:
+        memory_manager.update_setting("stt_cloud_region", req.stt_cloud_region.strip())
+
+    # ── Cloud TTS provider settings ───────────────────────────────────────────
+    _VALID_TTS_PROVIDERS = {"local", "google", "azure", "elevenlabs", "openai", "custom"}
+    if req.tts_provider is not None:
+        prov = req.tts_provider.strip().lower()
+        if prov in _VALID_TTS_PROVIDERS:
+            config.TTS_PROVIDER = prov
+            memory_manager.update_setting("tts_provider", prov)
+    if req.tts_cloud_api_key is not None:
+        from app.utils.security import encrypt_api_key, decrypt_api_key
+        key_val = req.tts_cloud_api_key.strip()
+        if key_val:
+            if "..." in key_val and not key_val.startswith("enc_v1:"):
+                pass  # masked value — ignore
+            else:
+                decrypted = decrypt_api_key(key_val) if key_val.startswith("enc_v1:") else key_val
+                config.TTS_CLOUD_API_KEY = decrypted
+                memory_manager.update_setting("tts_cloud_api_key", encrypt_api_key(decrypted))
+        else:
+            config.TTS_CLOUD_API_KEY = ""
+            memory_manager.update_setting("tts_cloud_api_key", "")
+    if req.tts_cloud_endpoint is not None:
+        config.TTS_CLOUD_ENDPOINT = req.tts_cloud_endpoint.strip()
+        memory_manager.update_setting("tts_cloud_endpoint", req.tts_cloud_endpoint.strip())
+    if req.tts_cloud_region is not None:
+        memory_manager.update_setting("tts_cloud_region", req.tts_cloud_region.strip())
+    if req.tts_cloud_voice is not None:
+        config.TTS_CLOUD_VOICE = req.tts_cloud_voice.strip()
+        memory_manager.update_setting("tts_cloud_voice", req.tts_cloud_voice.strip())
+
     if req.tts_voice is not None or req.tts_rate is not None:
         tts_online_status = True
         new_voice = req.tts_voice.strip() if req.tts_voice is not None else config.TTS_VOICE
@@ -1403,7 +1496,7 @@ async def update_settings(req: SettingsUpdateRequest):
 @app.post("/api/chat/attachments/upload")
 async def upload_attachment_endpoint(file: UploadFile = File(...)):
     """
-    Receives uploaded image or document file, saves it to workspace .yuki_attachments/,
+    Receives uploaded image or document file, saves it to workspace yuki_attachment/,
     and returns attachment metadata (save_path, data_url for images, text_content for docs).
     """
     try:
@@ -1418,7 +1511,7 @@ async def upload_attachment_endpoint(file: UploadFile = File(...)):
 @app.get("/api/chat/attachments/file")
 def get_attachment_file(path: str = ""):
     """
-    Serves a previously uploaded attachment file (images/docs) from a .yuki_attachments directory.
+    Serves a previously uploaded attachment file (images/docs) from a yuki_attachment directory.
     Path is validated to only allow files inside such directories for security.
     """
     import os
@@ -1433,10 +1526,10 @@ def get_attachment_file(path: str = ""):
     if not p.exists() or not p.is_file():
         return Response(status_code=404, content="Attachment file not found")
 
-    # Security: only allow serving files that live inside a .yuki_attachments directory
+    # Security: only allow serving files that live inside a yuki_attachment directory
     parts = list(p.parts)
-    if ".yuki_attachments" not in parts:
-        return Response(status_code=403, content="Access denied: attachment must be inside a .yuki_attachments directory")
+    if "yuki_attachment" not in parts:
+        return Response(status_code=403, content="Access denied: attachment must be inside a yuki_attachment directory")
 
     return FileResponse(clean_path, filename=p.name)
 
@@ -1689,23 +1782,73 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
 @app.get("/api/tts")
 async def tts_endpoint(text: str, voice: Optional[str] = None, rate: Optional[str] = None):
     """
-    Generates WAV audio for the given text and streams it back.
-    The frontend can play this directly by setting an Audio src.
+    Generates audio for the given text.
+    Routes to cloud/custom TTS when tts_provider != 'local'.
+    On cloud failure, returns 202 + X-TTS-Fallback: web so the frontend
+    can use browser speechSynthesis as a fallback.
     """
     if not text:
         return Response(status_code=400, content="Text query parameter is required.")
-    
+
+    decoded_text = urllib.parse.unquote(text)
+    settings = memory_manager.profile.get("settings", {})
+    tts_provider = settings.get("tts_provider", "local")
+
+    # ── Cloud / Custom provider path ──────────────────────────────────────────
+    if tts_provider and tts_provider != "local":
+        from app.voice.cloud_tts import synthesize_via_cloud_provider, TTSProviderError
+        from app.utils.security import decrypt_api_key
+        import re as _re
+
+        raw_key  = settings.get("tts_cloud_api_key", "")
+        api_key  = decrypt_api_key(raw_key) if raw_key else getattr(config, "TTS_CLOUD_API_KEY", "")
+        endpoint = settings.get("tts_cloud_endpoint", "") or getattr(config, "TTS_CLOUD_ENDPOINT", "")
+        region   = settings.get("tts_cloud_region", "eastus")
+        cvoice   = settings.get("tts_cloud_voice", "") or getattr(config, "TTS_CLOUD_VOICE", "")
+        # Parse rate to float
+        rate_str = rate or getattr(config, "TTS_RATE", "1.0")
+        try:
+            speed = float(_re.sub(r"[^\d.+\-]", "", str(rate_str)) or "1.0")
+        except Exception:
+            speed = 1.0
+
+        try:
+            audio_bytes = await asyncio.wait_for(
+                synthesize_via_cloud_provider(
+                    decoded_text,
+                    provider=tts_provider,
+                    api_key=api_key,
+                    endpoint=endpoint,
+                    region=region,
+                    voice=cvoice,
+                    speaking_rate=speed,
+                ),
+                timeout=30.0
+            )
+            media = "audio/wav" if audio_bytes[:4] == b"RIFF" else "audio/mpeg"
+            return Response(content=audio_bytes, media_type=media)
+        except TTSProviderError as e:
+            print(f"[TTS] Cloud provider '{tts_provider}' failed, signalling web fallback: {e}")
+            # 202 signals the frontend to use browser speechSynthesis
+            return Response(
+                status_code=202,
+                content=decoded_text,
+                media_type="text/plain",
+                headers={"X-TTS-Fallback": "web", "X-TTS-Error": str(e)[:200]},
+            )
+
+    # ── Local Kokoro path ─────────────────────────────────────────────────────
     if not tts_online_status:
         return Response(status_code=500, content="TTS service is currently offline.")
-        
-    decoded_text = urllib.parse.unquote(text)
+
     from app.voice.tts import generate_speech_bytes
     audio_bytes = await generate_speech_bytes(decoded_text, voice=voice, rate=rate)
-    
+
     if not audio_bytes:
         return Response(status_code=500, content="Failed to generate speech audio.")
-        
+
     return Response(content=audio_bytes, media_type="audio/wav")
+
 
 @app.post("/api/tts/test")
 async def tts_test_endpoint(req: SettingsUpdateRequest):
@@ -1732,44 +1875,91 @@ async def tts_test_endpoint(req: SettingsUpdateRequest):
 @app.post("/api/speech/transcribe")
 async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str] = None):
     """
-    Receives an audio blob, writes it to a temp file, transcribes it using local faster-whisper, 
-    and returns the transcribed text.
+    Receives an audio blob and transcribes it.
+    Routes to cloud/custom STT provider when stt_provider != 'local',
+    otherwise uses local faster-whisper. On cloud failure, returns a 503
+    with a user-friendly error message (no silent fallback for STT).
     """
     import tempfile
     import os
     import uuid
-    from app.voice.stt import transcribe_audio_file
-    
-    saved_model = memory_manager.profile["settings"].get("whisper_model")
-    active_model = saved_model or getattr(config, "WHISPER_MODEL", None) or model or "base"
-    active_lang = memory_manager.profile["settings"].get("stt_language", "en")
-    active_compute = memory_manager.profile["settings"].get("whisper_compute_type", "int8_float16")
-    
-    temp_dir = tempfile.gettempdir()
-    temp_path = os.path.join(temp_dir, f"yuki_voice_{uuid.uuid4().hex}.webm")
-    
+
+    settings = memory_manager.profile.get("settings", {})
+    active_lang = settings.get("stt_language", "en")
+    stt_provider = settings.get("stt_provider", "local")
+
     try:
         content = await file.read()
         if not content or len(content) < 1000:
             return {"text": ""}
 
-        with open(temp_path, "wb") as f:
-            f.write(content)
-            
-        transcript = await transcribe_audio_file(
-            temp_path, 
-            model_size=active_model, 
-            compute_type=active_compute, 
-            language=active_lang
-        )
-        if transcript and transcript.strip():
-            print(f"[STT] Transcribed ({len(content)} bytes) using model '{active_model}' ({active_compute}) -> '{transcript}'")
-        return {"text": transcript or ""}
+        # ── Cloud / Custom provider path ──────────────────────────────────────
+        if stt_provider and stt_provider != "local":
+            from app.voice.cloud_stt import transcribe_via_cloud_provider, STTProviderError
+            from app.utils.security import decrypt_api_key
+
+            raw_key = settings.get("stt_cloud_api_key", "")
+            api_key = decrypt_api_key(raw_key) if raw_key else getattr(config, "STT_CLOUD_API_KEY", "")
+            endpoint = settings.get("stt_cloud_endpoint", "") or getattr(config, "STT_CLOUD_ENDPOINT", "")
+            region   = settings.get("stt_cloud_region", "eastus")
+
+            try:
+                transcript = await asyncio.wait_for(
+                    transcribe_via_cloud_provider(
+                        content,
+                        provider=stt_provider,
+                        api_key=api_key,
+                        endpoint=endpoint,
+                        region=region,
+                        language=active_lang,
+                    ),
+                    timeout=35.0
+                )
+                print(f"[STT] Transcribed via '{stt_provider}' ({len(content)} bytes) → '{transcript}'")
+                return {"text": transcript or ""}
+            except STTProviderError as e:
+                print(f"[STT] Cloud provider '{stt_provider}' failed: {e}")
+                return Response(
+                    status_code=503,
+                    content=str(e),
+                    media_type="text/plain"
+                )
+
+        # ── Local Whisper path ────────────────────────────────────────────────
+        from app.voice.stt import transcribe_audio_file
+
+        saved_model  = settings.get("whisper_model")
+        active_model = saved_model or getattr(config, "WHISPER_MODEL", None) or model or "base"
+        active_compute = settings.get("whisper_compute_type", "int8_float16")
+
+        temp_dir  = tempfile.gettempdir()
+        temp_path = os.path.join(temp_dir, f"yuki_voice_{uuid.uuid4().hex}.webm")
+        try:
+            with open(temp_path, "wb") as f:
+                f.write(content)
+            transcript = await transcribe_audio_file(
+                temp_path,
+                model_size=active_model,
+                compute_type=active_compute,
+                language=active_lang
+            )
+            if transcript and transcript.strip():
+                print(f"[STT] Transcribed ({len(content)} bytes) using model '{active_model}' ({active_compute}) → '{transcript}'")
+            return {"text": transcript or ""}
+        except Exception as e:
+            print(f"[STT] Audio file transcription skipped: {e}")
+            return {"text": ""}
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
     except Exception as e:
-        print(f"[STT] Audio file transcription skipped: {e}")
+        print(f"[STT] Unexpected error in transcribe endpoint: {e}")
         return {"text": ""}
-    finally:
-        if os.path.exists(temp_path):
+
             try:
                 os.remove(temp_path)
             except Exception:
@@ -3351,11 +3541,11 @@ def debug_threads():
 
 @app.get("/api/canvas/{filename}")
 async def serve_canvas_file(filename: str):
-    """Serve canvas HTML files from .yuki_attachments/canvas/."""
+    """Serve canvas HTML files from yuki_attachment/canvas/."""
     import os
     from starlette.responses import FileResponse
     from app.config import BASE_DIR
-    file_path = os.path.join(str(BASE_DIR), ".yuki_attachments", "canvas", filename)
+    file_path = os.path.join(str(BASE_DIR), "yuki_attachment", "canvas", filename)
     print(f"[Canvas] Serving {filename} (exists={os.path.isfile(file_path)})")
     if os.path.isfile(file_path):
         return FileResponse(file_path, media_type="text/html")
