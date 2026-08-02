@@ -1068,7 +1068,7 @@ async def update_settings(req: SettingsUpdateRequest):
         val = bool(req.persistent_chat_history)
         memory_manager.update_setting("persistent_chat_history", val)
         if val:
-            save_persistent_chat_history(global_chat_history)
+            await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
     if req.manage_todo_enabled is not None:
         memory_manager.update_setting("manage_todo_enabled", bool(req.manage_todo_enabled))
     if req.basic_history_token_limit is not None:
@@ -2902,7 +2902,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     # First crash-recovery checkpoint: prior history + the new user message.
                                     try:
                                         from app.memory import db as memory_db
-                                        memory_db.save_incomplete_turn(turn_id, list(global_chat_history) + [{"role": "user", "content": user_msg}])
+                                        await asyncio.to_thread(memory_db.save_incomplete_turn, turn_id, list(global_chat_history) + [{"role": "user", "content": user_msg}])
                                     except Exception as _cp_err:
                                         print(f"[Recovery] Initial checkpoint failed: {_cp_err}")
                                 try:
@@ -3005,12 +3005,12 @@ async def websocket_endpoint(websocket: WebSocket):
                                                 if turn_id:
                                                     try:
                                                         from app.memory import db as memory_db
-                                                        memory_db.save_incomplete_turn(turn_id, value)
+                                                        await asyncio.to_thread(memory_db.save_incomplete_turn, turn_id, value)
                                                     except Exception as _cp_err:
                                                         print(f"[Recovery] Checkpoint persist failed: {_cp_err}")
                                             elif event_type == "final_history":
                                                 global_chat_history = value
-                                                save_persistent_chat_history(global_chat_history)
+                                                await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
                                                 await broadcast_ws_event({
                                                     "type": "chat_update",
                                                     "messages": global_chat_history,
@@ -3020,7 +3020,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                                 if turn_id:
                                                     try:
                                                         from app.memory import db as memory_db
-                                                        memory_db.delete_incomplete_turn(turn_id)
+                                                        await asyncio.to_thread(memory_db.delete_incomplete_turn, turn_id)
                                                     except Exception as _del_err:
                                                         print(f"[Recovery] Cleanup of temp turn failed: {_del_err}")
                                                 
@@ -3242,10 +3242,10 @@ async def activate_chat_session_api(req: ActivateSessionRequest):
         raise HTTPException(status_code=400, detail="Missing session_id")
     
     from app.memory.db import get_session_messages
-    msgs = get_session_messages(req.session_id)
+    msgs = await asyncio.to_thread(get_session_messages, req.session_id)
     active_session_id = req.session_id
     global_chat_history = msgs
-    save_persistent_chat_history(global_chat_history)
+    await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
     
     # Broadcast session switch event to all connected WebSocket clients
     await broadcast_ws_event({
@@ -3263,7 +3263,7 @@ async def create_new_chat_session():
     global active_session_id, global_chat_history
     active_session_id = generate_new_session_id()
     global_chat_history = []
-    save_persistent_chat_history(global_chat_history)
+    await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
     print(f"[Session] Started new user session: {active_session_id}")
     
     await broadcast_ws_event({
@@ -3278,7 +3278,7 @@ async def delete_chat_session_by_id(session_id: str):
     """Deletes a past session."""
     try:
         from app.memory.db import delete_chat_session
-        delete_chat_session(session_id)
+        await asyncio.to_thread(delete_chat_session, session_id)
         return {"status": "success", "deleted": session_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -3287,7 +3287,7 @@ async def delete_chat_session_by_id(session_id: str):
 async def get_session_metadata_api(session_id: str):
     """Fetches custom facts and workspace directories for a specific session."""
     from app.memory.db import get_session_meta
-    return get_session_meta(session_id)
+    return await asyncio.to_thread(get_session_meta, session_id)
 
 @app.post("/api/chat/sessions/{session_id}/meta")
 async def save_session_metadata_api(session_id: str, payload: dict = Body(...)):
@@ -3298,14 +3298,14 @@ async def save_session_metadata_api(session_id: str, payload: dict = Body(...)):
     meta_value = payload.get("value", "").strip()
     if not meta_key or not meta_value:
         raise HTTPException(status_code=400, detail="key and value are required")
-    save_session_meta(session_id, meta_type, meta_key, meta_value)
+    await asyncio.to_thread(save_session_meta, session_id, meta_type, meta_key, meta_value)
     return {"status": "success", "session_id": session_id, "meta_type": meta_type, "meta_key": meta_key, "meta_value": meta_value}
 
 @app.delete("/api/chat/sessions/{session_id}/meta")
 async def delete_session_metadata_api(session_id: str, meta_type: str, meta_key: str):
     """Deletes a custom fact or workspace directory entry for a specific session."""
     from app.memory.db import delete_session_meta
-    delete_session_meta(session_id, meta_type, meta_key)
+    await asyncio.to_thread(delete_session_meta, session_id, meta_type, meta_key)
     return {"status": "success", "session_id": session_id, "meta_type": meta_type, "meta_key": meta_key}
 
 @app.get("/api/debug/threads")

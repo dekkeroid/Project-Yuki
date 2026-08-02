@@ -64,7 +64,7 @@ def get_basic_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "search_files",
-                "description": "Find files stored on the user's local computer by name or keyword.",
+                "description": "WHEN TO USE: Find a file stored on the user's local computer by its NAME or keyword (media, documents, downloads) — like jarvis_query_file_db. DON'T USE: to search text inside code files (use jarvis_grep_files).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -161,7 +161,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_query_file_db",
-                "description": "Search the SQLite indexed file database (yuki_files.db) across all PC drives. Matches file names, parent folders, full directory paths, Japanese/Chinese Romaji/Pinyin transliterations, and metadata tags (title, artist, genre). Uses density ranking (/o algorithm). If the first search returns no or poor results, retry: (1) drop episode/part numbers and search core title only, (2) try search_scope='folder_only' or path_hint to narrow by location, (3) increase limit to 50 for broader matches. The density scorer ranks best when all query words appear together in the filename.",
+                "description": "WHEN TO USE: Find a FILE anywhere on the PC by its NAME, folder, or metadata — especially media (anime/movies/music), downloads, documents, games, or files you can't see in the workspace. Searches the SQLite indexed database (yuki_files.db) across all drives (names, parent folders, full paths, Romaji/Pinyin, tags). RETRY STRATEGY (use BEFORE giving up): (1) if the first search returns no or poor results, try again by changing the query — drop episode/part numbers and search the core title only, or switch search_scope='folder_only' with a path_hint to narrow location; (2) if it STILL fails, increase limit to 50 for broader matches; (3) if that still fails, fall back to jarvis_find_files_by_glob to list files in a folder the user mentioned (e.g. '*.mp4' in a Downloads path); (4) only after all of those fail, ask the user for a better folder path or more details. DON'T USE: for searching text INSIDE code files (use jarvis_grep_files) or listing files matching a known pattern in the workspace (use jarvis_find_files_by_glob). The density scorer ranks best when all query words appear together in the filename.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -495,15 +495,33 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "find_files_by_glob",
-                "description": "Find files matching a glob pattern (e.g. 'src/**/*.jsx', '**/*.py', 'package*.json') inside target search_dir. Excludes node_modules, .git, dist, build, venv.",
+                "name": "jarvis_find_files_by_glob",
+                "description": "WHEN TO USE: List the FILES whose names match a glob pattern inside a folder — you want filenames, not content. Pass `search_dir` as the absolute folder path to search in (defaults to the active workspace); the pattern is evaluated relative to that folder, so do NOT put an absolute path in the pattern. Glob syntax: '*' matches any name within one level, '**/' means any depth, and 'src/**/*.jsx' scopes to a subfolder. IMPORTANT: a bare pattern like '*.py' already matches files at ANY depth (recursion is automatic — you do NOT need '**/'). Examples: '*.py', 'package*.json', 'src/**/*.jsx', 'sub/*.ts'. RETRY STRATEGY: if no files match, first broaden the pattern (e.g. '*.tsx' -> '*.ts' or '*' ), or if the folder path seems wrong, ask the user for a better/known directory path before guessing. DON'T USE: to search text INSIDE files (use jarvis_grep_files) or to find a file by natural-language name across the whole PC (use jarvis_query_file_db). Excludes node_modules, .git, dist, build, venv.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "pattern": {"type": "string", "description": "Glob pattern string (e.g. 'src/**/*.jsx', '**/*.py', 'package*.json')."},
-                        "search_dir": {"type": "string", "description": "Absolute directory path to search in."}
+                        "pattern": {"type": "string", "description": "Glob pattern string relative to search_dir (e.g. '*.py', '**/*.py', 'src/**/*.jsx', 'package*.json'). Bare patterns like '*.py' are recursive automatically."},
+                        "search_dir": {"type": "string", "description": "Optional absolute folder path to search inside (e.g. 'D:/proj/src'). Defaults to the active workspace directory."}
                     },
-                    "required": ["pattern", "search_dir"]
+                    "required": ["pattern"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_grep_files",
+                "description": "WHEN TO USE: Search file CONTENTS for a regex pattern and return every match as 'path:line: <matching line>' — find every place a symbol, function, variable, string, or keyword appears in code (e.g. pattern='def .*search', file_pattern='*.py'). The go-to tool for code review, refactoring, and debugging. DON'T USE: to find a file by its NAME (use jarvis_query_file_db for whole-PC name search, or jarvis_find_files_by_glob for a name glob). Skips node_modules, .git, venv, dist, build, and binary files.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {"type": "string", "description": "Regex pattern to search for in file contents (e.g. 'jarvis_grep_files', 'def .*search', 'TODO')."},
+                        "file_pattern": {"type": "string", "description": "Optional glob filter restricting which files are scanned, e.g. '*.py', '*.jsx', '**/*.ts'. Defaults to all text files."},
+                        "search_dir": {"type": "string", "description": "Optional absolute directory path to search in. Defaults to the active workspace directory."},
+                        "case_sensitive": {"type": "boolean", "description": "Whether matching should be case-sensitive. Default false."},
+                        "max_results": {"type": "integer", "description": "Max matches to return (default 100)."}
+                    },
+                    "required": ["pattern"]
                 }
             }
         },

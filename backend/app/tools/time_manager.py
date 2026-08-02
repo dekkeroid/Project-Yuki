@@ -5,10 +5,20 @@ import datetime
 import tempfile
 import os
 import uuid
+import functools
 from typing import Dict, Any, List, Optional
-from app.memory.db import get_connection
+from app.memory.db import get_connection, DB_WRITE_LOCK
 
 import sys
+
+# Serialize timer/reminder writes through the shared SQLite write lock so they
+# never collide with crawler/watchdog/chat-session writes.
+def _write_locked(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with DB_WRITE_LOCK:
+            return func(*args, **kwargs)
+    return wrapper
 
 # ── OS-Native Scheduling (works even when app is closed) ────────────────────
 
@@ -317,6 +327,7 @@ def parse_target_timestamp(time_str: str) -> float:
 # Don't bother scheduling OS tasks for durations shorter than this — asyncio handles them in-app.
 MIN_OS_SCHEDULE_SECONDS = 5 * 60  # 5 minutes
 
+@_write_locked
 def add_timer(duration_seconds: int, message: str = "Timer Up!", action_command: Optional[str] = None, category: str = "timer") -> Dict[str, Any]:
     try:
         duration_seconds = int(duration_seconds)
@@ -362,6 +373,7 @@ def add_timer(duration_seconds: int, message: str = "Timer Up!", action_command:
         "target_time": target
     }
 
+@_write_locked
 def add_reminder(target_time_str: str, message: str, recurrence: Optional[str] = None, action_command: Optional[str] = None, category: str = "reminder") -> Dict[str, Any]:
     now = time.time()
     target = parse_target_timestamp(target_time_str)
@@ -402,6 +414,7 @@ def add_reminder(target_time_str: str, message: str, recurrence: Optional[str] =
         "target_time": target
     }
 
+@_write_locked
 def add_datetime_alarm(date_str: str, time_str: str, message: str = "Alarm!") -> Dict[str, Any]:
     """
     Schedules an alarm for a specific date (YYYY-MM-DD) and time (HH:MM).
@@ -442,6 +455,7 @@ def add_datetime_alarm(date_str: str, time_str: str, message: str = "Alarm!") ->
         "target_time": target
     }
 
+@_write_locked
 def start_stopwatch(label: str = "default") -> Dict[str, Any]:
     label_clean = (label or "default").strip().lower()
     now = time.time()
@@ -495,6 +509,7 @@ def check_stopwatch(label: str = "default") -> Dict[str, Any]:
         "is_active": bool(row["is_active"])
     }
 
+@_write_locked
 def stop_stopwatch(label: str = "default") -> Dict[str, Any]:
     label_clean = (label or "default").strip().lower()
     info = check_stopwatch(label_clean)
@@ -507,6 +522,7 @@ def stop_stopwatch(label: str = "default") -> Dict[str, Any]:
         
     return info
 
+@_write_locked
 def edit_reminder(reminder_id: int, new_message: str) -> bool:
     conn = get_connection()
     conn.execute("UPDATE reminders SET message = ? WHERE id = ?", (new_message, reminder_id))
@@ -514,6 +530,7 @@ def edit_reminder(reminder_id: int, new_message: str) -> bool:
     conn.close()
     return True
 
+@_write_locked
 def delete_stopwatch(label: str = "default") -> bool:
     label_clean = (label or "default").strip().lower()
     conn = get_connection()
@@ -588,6 +605,7 @@ def get_active_time_items() -> Dict[str, Any]:
         "stopwatches": stopwatches
     }
 
+@_write_locked
 def delete_reminder(item_id: int) -> bool:
     conn = get_connection()
     # Fetch OS task name before deleting so we can cancel it
@@ -634,7 +652,8 @@ def schedule_exact_timer(item_id: int, target_time: float):
     async def _exact_runner():
         if delay > 0:
             await asyncio.sleep(delay)
-        due_items = process_single_due_reminder(item_id)
+        # Run the DB write off the event loop so a lock wait never blocks the server.
+        due_items = await asyncio.to_thread(process_single_due_reminder, item_id)
         if due_items and _due_callback:
             try:
                 if asyncio.iscoroutinefunction(_due_callback):
@@ -680,6 +699,7 @@ def init_exact_timer_scheduler():
     for r in rows:
         schedule_exact_timer(r["id"], r["target_time"])
 
+@_write_locked
 def process_single_due_reminder(item_id: int) -> List[Dict[str, Any]]:
     now = time.time()
     conn = get_connection()
@@ -725,6 +745,7 @@ def process_single_due_reminder(item_id: int) -> List[Dict[str, Any]]:
     conn.close()
     return [item]
 
+@_write_locked
 def snooze_reminder(item_id: int, minutes: int = 5) -> Dict[str, Any]:
     now = time.time()
     new_target = now + (minutes * 60)
@@ -735,6 +756,7 @@ def snooze_reminder(item_id: int, minutes: int = 5) -> Dict[str, Any]:
     schedule_exact_timer(item_id, new_target)
     return {"status": "ok", "id": item_id, "new_target": new_target}
 
+@_write_locked
 def process_due_reminders() -> List[Dict[str, Any]]:
     """
     Called every 10 seconds by the heartbeat loop in main.py.

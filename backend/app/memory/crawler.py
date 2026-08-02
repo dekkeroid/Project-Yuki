@@ -908,7 +908,12 @@ def scan_target_root(root_dir: str, all_targets: List[str]) -> bool:
             
             change_increment = 1 if folder_changes_detected else 0
             db.upsert_directory(root, current_mtime, change_increment, conn=conn)
-            
+            # Commit per-directory so the SQLite write lock is held only for the
+            # current directory batch (milliseconds) instead of the whole root
+            # scan (minutes). Watchdog/chat/session writers never starve this way,
+            # and the pacing sleep below runs with NO open transaction.
+            conn.commit()
+
         # --- Localized Orphan File Cleanup (streaming) ---
         search_prefix = root_dir if root_dir.endswith(os.sep) else root_dir + os.sep
         like_pattern = search_prefix + "%"
@@ -923,7 +928,16 @@ def scan_target_root(root_dir: str, all_targets: List[str]) -> bool:
                         
         if orphans:
             log_message(f"[Crawler] Found {len(orphans)} deleted files under '{root_dir}'. Removing from database...")
-            db.delete_files_by_paths(orphans)
+            # Delete on the SAME scan connection. Opening a second connection here
+            # while this connection's write transaction is still open caused the
+            # self-deadlock behind "[DB] Error deleting files: database is locked".
+            with db.DB_WRITE_LOCK:
+                batch_size = 500
+                for i in range(0, len(orphans), batch_size):
+                    batch = orphans[i:i+batch_size]
+                    placeholders = ",".join("?" for _ in batch)
+                    conn.execute(f"DELETE FROM files WHERE file_path IN ({placeholders})", batch)
+                conn.commit()
             
         # --- Clean up Zombie Directories Cache (streaming) ---
         dead_directories = []
@@ -935,12 +949,13 @@ def scan_target_root(root_dir: str, all_targets: List[str]) -> bool:
         if dead_directories:
             log_message(f"[Crawler] Found {len(dead_directories)} deleted folders under '{root_dir}'. Purging directory cache...")
             try:
-                batch_size = 500
-                for i in range(0, len(dead_directories), batch_size):
-                    batch = dead_directories[i:i+batch_size]
-                    placeholders = ",".join("?" for _ in batch)
-                    conn.execute(f"DELETE FROM directories WHERE path IN ({placeholders})", batch)
-                conn.commit()
+                with db.DB_WRITE_LOCK:
+                    batch_size = 500
+                    for i in range(0, len(dead_directories), batch_size):
+                        batch = dead_directories[i:i+batch_size]
+                        placeholders = ",".join("?" for _ in batch)
+                        conn.execute(f"DELETE FROM directories WHERE path IN ({placeholders})", batch)
+                    conn.commit()
             except Exception as e:
                 log_message(f"[Crawler] Error purging dead directories cache: {e}")
                 
@@ -1577,22 +1592,61 @@ def run_metadata_enrichment_loop():
 # --- Watchdog Filesystem Observer Handler ---
 
 class YukiFileSystemHandler(FileSystemEventHandler):
+    """
+    Debounces filesystem events into short batches (DEBOUNCE_SECONDS). A mass
+    copy/move/delete of thousands of files otherwise opens thousands of tiny DB
+    write transactions, which can briefly starve other writers. Batching also
+    dedupes create/modify storms on the same path.
+    """
+
+    DEBOUNCE_SECONDS = 0.5
+
+    def __init__(self):
+        super().__init__()
+        self._pending = {}
+        self._pend_lock = threading.Lock()
+        self._flush_timer = None
+
     def on_created(self, event):
         if event.is_directory:
             return
-        self.handle_file_change(event.src_path, "created")
+        self._record(event.src_path, "created")
 
     def on_modified(self, event):
         if event.is_directory:
             return
-        self.handle_file_change(event.src_path, "modified")
+        self._record(event.src_path, "modified")
 
     def on_deleted(self, event):
         if event.is_directory:
             return
-        self.handle_file_change(event.src_path, "deleted")
+        self._record(event.src_path, "deleted")
 
-    def handle_file_change(self, file_path: str, change_type: str):
+    def _record(self, file_path: str, change_type: str):
+        with self._pend_lock:
+            self._pending[file_path] = change_type
+            if self._flush_timer is None:
+                self._flush_timer = threading.Timer(self.DEBOUNCE_SECONDS, self._flush)
+                self._flush_timer.daemon = True
+                self._flush_timer.start()
+
+    def _flush(self):
+        with self._pend_lock:
+            items = list(self._pending.items())
+            self._pending.clear()
+            self._flush_timer = None
+        if not items:
+            return
+        # Let files settle ONCE per batch (not per file) so mass copies/moves
+        # don't stall the watchdog thread for a second per file.
+        time.sleep(1.0)
+        for file_path, change_type in items:
+            try:
+                self.process_change(file_path, change_type)
+            except Exception as e:
+                log_message(f"[Watchdog] Error handling change for '{file_path}': {e}")
+
+    def process_change(self, file_path: str, change_type: str):
         if not _is_safe_path(file_path, write_operation=False):
             return
             
@@ -1625,8 +1679,7 @@ class YukiFileSystemHandler(FileSystemEventHandler):
             db.delete_files_by_paths([file_path])
         else:
             try:
-                # Give file a brief moment to finish writing if copying/moving
-                time.sleep(1.0)
+                # The file has had DEBOUNCE + batch settle time to finish writing.
                 if not os.path.exists(file_path):
                     return
                 file_stat = os.stat(file_path)
