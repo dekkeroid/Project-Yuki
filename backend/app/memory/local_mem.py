@@ -69,6 +69,7 @@ class MemoryManager:
                 "llm_simple_model": "",
                 "persistent_chat_history": False,
                 "manage_todo_enabled": True,
+                "ask_user_enabled": True,
                 "basic_history_token_limit": 2500,
                 "basic_history_keep_turns": 6,
                 "advanced_history_token_limit": 40000,

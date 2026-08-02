@@ -327,6 +327,9 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
    • Keep final spoken answers concise, direct, and engaging.
    • Round numbers naturally (e.g. "32% RAM" instead of "31.8472%").
    • Be warm, intelligent, and act as the user's ultimate PC assistant and expert companion!
+
+8. STRUCTURED CLARIFICATION (ask_user):
+   • Use `ask_user` ONLY when you cannot proceed without a decision between materially different tradeoffs. Do NOT use it for questions answerable from context, trivial choices, or destructive-action confirmation (the safety confirmation flow handles that). Always set `recommended` to the most conservative option. Batch related questions in one call (max ~5). Prefer acting on the best inferred choice; asking is the exception.
 ----------------------------------------------
 
 {ATTACHMENT_REINSPECTION_GUIDE}"""
@@ -465,8 +468,13 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
    • When the user wants a visible checklist, write it via `manage_todo` action 'render_md' so it appears as TODO.md in the workspace."""
         sections.append(todo_rule)
 
+    if overrides.get("ask_user_enabled", True):
+        ask_rule = """15. STRUCTURED CLARIFICATION (ask_user):
+   • Use `ask_user` ONLY when you cannot proceed without a decision between materially different tradeoffs. Do NOT use it for questions answerable from context, trivial choices, or destructive-action confirmation (the safety confirmation flow handles that). Always set `recommended` to the most conservative option. Batch related questions in one call (max ~5). Prefer acting on the best inferred choice; asking is the exception."""
+        sections.append(ask_rule)
+
     if overrides.get("prompt_planning", True):
-        planning = """15. RESTRUCTURING, PLANNING & MARKDOWN FILES:
+        planning = """16. RESTRUCTURING, PLANNING & MARKDOWN FILES:
    • For complex multi-file refactors or new feature creations, present an Implementation Plan outlining affected files, architectural decisions, and verification steps before executing edits.
    • PROJECT PLAN FILE ETIQUETTE: Whenever the user asks to make a plan, outline architectural steps, or design a project, you MUST create a detailed Markdown implementation plan file (e.g. `implementation_plan.md` or `project_plan.md`) inside the designated project workspace directory using `jarvis_create_or_edit_file`.
    • INTERACTIVE PLAN REVISION ETIQUETTE: When you present an implementation plan and the user requests changes, critiques, or additions, immediately update and re-write the implementation plan markdown file (`jarvis_create_or_edit_file` / `jarvis_replace_file_content`) to reflect the newly revised plan and present the updated file link.

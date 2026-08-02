@@ -12,6 +12,7 @@ import { parseResponseTags } from './utils/responseParser';
 import AlarmOverlay from './components/AlarmOverlay';
 import StopwatchOverlay from './components/StopwatchOverlay';
 import AgenticWorkspaceWindow from './components/AgenticWorkspaceWindow';
+import AskUserDialog from './components/AskUserDialog';
 
 const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
@@ -533,6 +534,27 @@ const App = () => {
   // Active Alarm / Timer Overlay State
   const [activeAlarm, setActiveAlarm] = useState(null);
 
+  // AskUser dialog state (ask_user tool: { ask_id, questions } or null)
+  const [askUserData, setAskUserData] = useState(null);
+
+  const handleAskUserSubmit = async (askId, answers) => {
+    setAskUserData(null);
+    try {
+      await fetch(`${API_BASE}/api/ask_user/${askId}/answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers })
+      });
+    } catch (e) {
+      console.error('[AskUser] Failed to submit answer:', e);
+    }
+  };
+
+  const handleAskUserClose = () => {
+    // Dismiss without answering — the agent will time out and use the recommended option.
+    setAskUserData(null);
+  };
+
   const handleDismissAlarm = async (id) => {
     setActiveAlarm(null);
     try {
@@ -986,6 +1008,10 @@ const App = () => {
             }
           }
         });
+      } else if (msg.type === 'ask_user') {
+        // ask_user tool: render a structured question dialog.
+        // The agent is blocked awaiting resolution via POST /api/ask_user/{ask_id}/answer.
+        setAskUserData({ ask_id: msg.ask_id, questions: msg.questions });
       }
     };
 
@@ -4648,6 +4674,11 @@ const detectExpression = (text) => {
             </div>
           </div>
         )}
+      <AskUserDialog
+        askData={askUserData}
+        onSubmit={handleAskUserSubmit}
+        onClose={handleAskUserClose}
+      />
       </div>
     );
   }
@@ -4876,6 +4907,11 @@ const detectExpression = (text) => {
         alarm={activeAlarm}
         onDismiss={handleDismissAlarm}
         onSnooze={handleSnoozeAlarm}
+      />
+      <AskUserDialog
+        askData={askUserData}
+        onSubmit={handleAskUserSubmit}
+        onClose={handleAskUserClose}
       />
 
     </div>
