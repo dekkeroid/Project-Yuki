@@ -388,11 +388,23 @@ const App = () => {
           setAvatarScale(parsed);
         }
       }
+      if (e.key === 'yuki-mute-voice') {
+        const muted = e.newValue === 'true';
+        setMuteVoice(muted);
+        if (muted) stopAllPlayback();
+      }
+      if (e.key === 'yuki-voice-volume') {
+        const parsed = parseFloat(e.newValue);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) {
+          setVoiceVolume(parsed);
+        }
+      }
     };
     window.addEventListener('storage', handleStorage);
 
     let cleanupSkin = null;
     let cleanupCam = null;
+    let cleanupVoice = null;
 
     if (window.electronAPI) {
       if (window.electronAPI.onSkinToneColorChanged) {
@@ -405,12 +417,24 @@ const App = () => {
           setCameraTracking(Boolean(enabled));
         });
       }
+      if (window.electronAPI.onVoiceSettingsChanged) {
+        cleanupVoice = window.electronAPI.onVoiceSettingsChanged(({ muted, volume }) => {
+          if (typeof muted === 'boolean') {
+            setMuteVoice(muted);
+            if (muted) stopAllPlayback();
+          }
+          if (typeof volume === 'number' && !isNaN(volume) && volume >= 0 && volume <= 1) {
+            setVoiceVolume(volume);
+          }
+        });
+      }
     }
 
     return () => {
       window.removeEventListener('storage', handleStorage);
       if (cleanupSkin) cleanupSkin();
       if (cleanupCam) cleanupCam();
+      if (cleanupVoice) cleanupVoice();
     };
   }, []);
 

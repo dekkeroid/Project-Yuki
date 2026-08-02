@@ -142,10 +142,9 @@ def get_kokoro() -> "Kokoro":
             if gpu_provider not in active_providers:
                 print(f"[TTS] {gpu_provider} listed but not active (missing runtime libs). Active: {active_providers}")
                 if device_pref == "gpu":
-                    print(f"[TTS] GPU forced but {gpu_provider} is unavailable. TTS will fail on next request.")
-                    _kokoro_instance = Kokoro.from_session(session, str(VOICES_PATH))
-                    return _kokoro_instance
-                print(f"[TTS] Falling back to CPU. Install the matching CUDA Toolkit to enable GPU.")
+                    print(f"[TTS] GPU forced but {gpu_provider} is unavailable. Falling back to CPU so TTS still works.")
+                else:
+                    print(f"[TTS] Falling back to CPU. Install the matching CUDA Toolkit to enable GPU.")
             else:
                 kokoro = Kokoro.from_session(session, str(VOICES_PATH))
                 print("[TTS] Validating GPU provider with warm-up inference...")
@@ -157,14 +156,9 @@ def get_kokoro() -> "Kokoro":
                 return _kokoro_instance
         except Exception as e:
             if device_pref == "gpu":
-                print(f"[TTS] GPU forced but failed ({type(e).__name__}: {e}). TTS will fail on next request.")
-                try:
-                    session = _build_session([gpu_provider])
-                    _kokoro_instance = Kokoro.from_session(session, str(VOICES_PATH))
-                    return _kokoro_instance
-                except Exception:
-                    pass
-            print(f"[TTS] {gpu_provider} is incompatible with this model ({type(e).__name__} : {e}). Falling back to CPU.")
+                print(f"[TTS] GPU forced but failed ({type(e).__name__}: {e}). Falling back to CPU so TTS still works.")
+            else:
+                print(f"[TTS] {gpu_provider} is incompatible with this model ({type(e).__name__} : {e}). Falling back to CPU.")
 
     # CPU-only path (fallback or no GPU)
     print("[TTS] Loading with CPU provider...")

@@ -251,30 +251,56 @@ EXT_CATEGORIES = {
     # Songs / Audio
     '.mp3': 'song', '.wav': 'song', '.flac': 'song', '.m4a': 'song', 
     '.ogg': 'song', '.wma': 'song', '.aac': 'song', '.opus': 'song',
+    '.aiff': 'song', '.aif': 'song', '.mid': 'song', '.midi': 'song',
     
     # Movies / Video
-    '.mp4': 'movie', '.mkv': 'movie', '.avi': 'movie', '.mov': 'movie', 
-    '.wmv': 'movie', '.flv': 'movie', '.webm': 'movie', '.m4v': 'movie', 
-    '.ts': 'movie',
+    '.mp4': 'video', '.mkv': 'video', '.avi': 'video', '.mov': 'video', 
+    '.wmv': 'video', '.flv': 'video', '.webm': 'video', '.m4v': 'video', 
+    '.mts': 'video', '.m2ts': 'video', '.vob': 'video', 
+    '.ogv': 'video', '.3gp': 'video', '.rmvb': 'video', '.rm': 'video', 
+    '.f4v': 'video',
     
     # Photos / Images
     '.jpg': 'photo', '.jpeg': 'photo', '.png': 'photo', '.gif': 'photo', 
     '.bmp': 'photo', '.heic': 'photo', '.tiff': 'photo', '.webp': 'photo', 
-    '.svg': 'photo', '.avif': 'photo',
+    '.svg': 'photo', '.avif': 'photo', '.ico': 'photo', '.jfif': 'photo', 
+    '.dng': 'photo', '.raw': 'photo', '.cr2': 'photo', '.nef': 'photo', 
+    '.arw': 'photo', '.psd': 'photo', '.ai': 'photo', '.tga': 'photo',
     
     # Documents
     '.pdf': 'document', '.txt': 'document', '.docx': 'document', 
     '.xlsx': 'document', '.pptx': 'document', '.md': 'document', 
     '.rtf': 'document', '.csv': 'document', '.epub': 'document', 
     '.doc': 'document', '.xls': 'document', '.ppt': 'document',
+    '.odt': 'document', '.ods': 'document', '.odp': 'document', 
+    '.tex': 'document', '.mobi': 'document', '.azw3': 'document', 
+    '.docm': 'document', '.xlsm': 'document', '.pptm': 'document',
     
     # Archives / Compressed
     '.zip': 'archive', '.rar': 'archive', '.7z': 'archive',
+    '.tar': 'archive', '.gz': 'archive', '.tgz': 'archive', '.bz2': 'archive', 
+    '.xz': 'archive', '.zst': 'archive', '.zipx': 'archive', '.iso': 'archive', 
+    '.dmg': 'archive', '.cab': 'archive',
     
     # Application Launchers, Installers, and Scripts
     '.exe': 'program', '.lnk': 'program', '.bat': 'program', '.cmd': 'program',
     '.ps1': 'program', '.msi': 'program', '.msix': 'program', '.appx': 'program',
-    '.jar': 'program', '.pyw': 'program', '.vbs': 'program', '.url': 'program'
+    '.jar': 'program', '.vbs': 'program', '.url': 'program',
+    '.app': 'program', '.deb': 'program', '.rpm': 'program', '.apk': 'program', 
+    '.ipa': 'program', '.dll': 'program', '.dylib': 'program', '.so': 'program', 
+    '.scr': 'program', '.reg': 'program',
+    
+    # Code / Source Files
+    '.py': 'code', '.pyi': 'code', '.js': 'code', '.jsx': 'code', 
+    '.ts': 'code', '.tsx': 'code', '.json': 'code', '.rs': 'code', 
+    '.c': 'code', '.cpp': 'code', '.cc': 'code', '.cxx': 'code', 
+    '.h': 'code', '.hpp': 'code', '.go': 'code', '.java': 'code', 
+    '.cs': 'code', '.kt': 'code', '.swift': 'code', '.rb': 'code', 
+    '.php': 'code', '.lua': 'code', '.dart': 'code', '.html': 'code', 
+    '.htm': 'code', '.css': 'code', '.scss': 'code', '.sass': 'code', 
+    '.vue': 'code', '.svelte': 'code', '.ipynb': 'code', '.sql': 'code', 
+    '.yml': 'code', '.yaml': 'code', '.toml': 'code', '.xml': 'code', 
+    '.ini': 'code', '.cfg': 'code', '.sh': 'code', '.pyw': 'code'
 }
 
 CRAWL_DRIVES = []
@@ -339,6 +365,10 @@ def build_all_targets() -> List[str]:
                     # If reading Level 2 fails (permissions, etc.), fall back to adding Level 1
                     _add(level1_path)
                     
+            # Also register the drive root itself so files sitting directly at the
+            # drive root (e.g. D:\movie.mp4) or directly inside a Level 1 folder
+            # (e.g. D:\Anime\favorites.mp4) get scanned too.
+            _add(drive)
         except Exception:
             # Critical fallback: treat the entire drive root as a fallback single target
             _add(drive)
@@ -367,34 +397,54 @@ EXCLUDED_DIRS: List[str] = []
 # If the path contains the keyword (case-insensitive), ONLY files with one of the allowed extensions are accepted.
 FOLDER_EXTENSION_CONSTRAINTS = {
     # Games and program directories: only index .exe files
-    "steam": {".exe"},
-    "games": {".exe"},
     "epic games": {".exe"},
-    "origin": {".exe"},
     "riot games": {".exe"},
     "blizzard": {".exe"},
     "ubisoft": {".exe"},
-    "gog": {".exe"},
     "program files": {".exe"},
     "programdata": {".exe"},
     "node_modules": {".exe"},
-    "appdata": {".exe"},
     ".git": {".exe"},
+    "windowsapps": {".exe"},
+}
+
+# Folder name constraints that only apply when a path component is an EXACT match
+# (case-insensitive). Prevents short/noisy patterns like "bin", "games", or "steam"
+# from matching innocent substrings inside other words (e.g. "Combined", "Original").
+EXACT_FOLDERNAME_EXTENSION_CONSTRAINTS = {
+    "steam": {".exe"},
+    "games": {".exe"},
+    "origin": {".exe"},
+    "gog": {".exe"},
+    "appdata": {".exe"},
     "bin": {".exe"},
     "obj": {".exe"},
-    "windowsapps": {".exe"},
 }
 
 def should_skip_by_path_constraints(file_path: str, ext_lower: str) -> bool:
     """
     Checks if a file path matches any folder-specific extension constraints.
     Returns True if the file should be skipped (i.e. is not allowed).
+
+    Two layers:
+      1. FOLDER_EXTENSION_CONSTRAINTS — substring match against the full path.
+      2. EXACT_FOLDERNAME_EXTENSION_CONSTRAINTS — exact folder-name (component) match.
     """
     path_lower = file_path.lower()
+
     for pattern, allowed_extensions in FOLDER_EXTENSION_CONSTRAINTS.items():
         if pattern in path_lower:
             if ext_lower not in allowed_extensions:
                 return True
+
+    # Exact folder-name match: compare against every directory component
+    # (excluding the file name itself) so only literal folder names trigger.
+    components = [c for c in re.split(r"[\\/]+", path_lower) if c]
+    for comp in components[:-1]:
+        if comp in EXACT_FOLDERNAME_EXTENSION_CONSTRAINTS:
+            if ext_lower not in EXACT_FOLDERNAME_EXTENSION_CONSTRAINTS[comp]:
+                return True
+
     return False
 
 # Every single word here will only trigger a skip if the folder name is an EXACT match
@@ -596,7 +646,11 @@ def _is_game_or_program_dir(dir_path: str) -> bool:
     path_lower = dir_path.lower()
     # Find all patterns in FOLDER_EXTENSION_CONSTRAINTS that restrict files to .exe
     patterns = [pat for pat, allowed in FOLDER_EXTENSION_CONSTRAINTS.items() if allowed == {".exe"}]
-    return any(pattern in path_lower for pattern in patterns)
+    if any(pattern in path_lower for pattern in patterns):
+        return True
+    # Exact folder-name match: e.g. a directory literally named 'steam' or 'games'
+    components = [c for c in re.split(r"[\\/]+", path_lower) if c]
+    return any(c in EXACT_FOLDERNAME_EXTENSION_CONSTRAINTS for c in components)
 
 def guess_category(file_path: str, ext: str, size: int = 0) -> str:
     """
@@ -618,7 +672,7 @@ def guess_category(file_path: str, ext: str, size: int = 0) -> str:
             category = "other"
             
     # Video songs / Music videos heuristics: classify as song if path contains music/video songs keywords
-    if category == "movie":
+    if category == "video":
         path_lower = file_path.lower()
         song_keywords = ["video songs", "video song", "music video", "music-video", "soundtrack", "ost", "singles", "mv"]
         if any(kw in path_lower for kw in song_keywords):
@@ -832,7 +886,7 @@ def scan_target_root(root_dir: str, all_targets: List[str]) -> bool:
                         new_files_indexed += 1
                     else:
                         failed_inserts += 1
-                    if file_id != -1 and category in ('movie', 'song'):
+                    if file_id != -1 and category in ('video', 'song'):
                         meta = parse_filename_metadata(file)
                         db.upsert_metadata(
                             file_id, 
@@ -922,6 +976,21 @@ def sleep_pacing_between_cycles(seconds: float):
         CURRENT_CRAWL_PATH = f"Idle (Next cycle in {remaining}s)"
         time.sleep(1)
 
+def _index_rules_signature() -> str:
+    """
+    Returns a hash of the indexing rules (extension map + folder constraints).
+    When these change, the directory mtime cache is cleared so all folders are
+    re-walked and newly-eligible files (e.g. newly-added extensions) get indexed.
+    """
+    import hashlib
+    payload = json.dumps({
+        "ext": sorted(EXT_CATEGORIES.items()),
+        "folder": sorted((k, sorted(v)) for k, v in FOLDER_EXTENSION_CONSTRAINTS.items()),
+        "exact": sorted((k, sorted(v)) for k, v in EXACT_FOLDERNAME_EXTENSION_CONSTRAINTS.items()),
+    }, sort_keys=True)
+    return hashlib.md5(payload.encode("utf-8")).hexdigest()
+
+
 def run_crawl():
     """
     Main background crawl worker loop.
@@ -979,6 +1048,20 @@ def run_crawl():
             conn.execute("DELETE FROM directories")
             conn.commit()
             conn.close()
+
+        # If indexing rules changed (extensions/constraints edited), clear the
+        # directory mtime cache so unchanged folders get re-walked and newly
+        # eligible files (e.g. .py / code files) are indexed.
+        cache_sig = _index_rules_signature()
+        prev_sig = db.get_crawler_state("crawler_cache_signature")
+        if prev_sig and prev_sig != cache_sig:
+            log_message("[Crawler] Index rules changed. Clearing directory cache to re-scan all folders...")
+            conn = db.get_connection()
+            conn.execute("DELETE FROM directories")
+            conn.commit()
+            conn.close()
+            db.set_crawler_state("completed_roots_in_cycle", "[]")
+        db.set_crawler_state("crawler_cache_signature", cache_sig)
 
         resolve_crawl_targets()
         
@@ -1559,7 +1642,7 @@ class YukiFileSystemHandler(FileSystemEventHandler):
             if not existing:
                 log_message(f"[Watchdog] [NEW] Detected file: '{file_path}'")
                 file_id = db.upsert_file(file_path, file_name, parent_folder, ext, f_size, f_mtime, category)
-                if file_id != -1 and category in ('movie', 'song'):
+                if file_id != -1 and category in ('video', 'song'):
                     meta = parse_filename_metadata(file_name)
                     db.upsert_metadata(file_id, meta["title"], meta["artist_or_creator"], meta["genre_or_tags"], meta["release_year"], meta["alternate_titles"], enriched=0)
             elif existing["size"] != f_size or existing["last_modified"] != f_mtime:

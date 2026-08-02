@@ -11,6 +11,57 @@ import pypinyin
 
 DB_PATH = Path(config.BASE_DIR) / "yuki_files.db"
 
+# Category alias mapping: jarvis/prompt-facing names -> DB category values.
+CATEGORY_ALIASES = {
+    "video": ["video"],
+    "videos": ["video"],
+    "movie": ["video"],
+    "movies": ["video"],
+    "film": ["video"],
+    "audio": ["song"],
+    "audios": ["song"],
+    "songs": ["song"],
+    "song": ["song"],
+    "music": ["song"],
+    "image": ["photo"],
+    "images": ["photo"],
+    "photo": ["photo"],
+    "photos": ["photo"],
+    "picture": ["photo"],
+    "pictures": ["photo"],
+    "document": ["document"],
+    "documents": ["document"],
+    "docs": ["document"],
+    "executable": ["program"],
+    "executables": ["program"],
+    "program": ["program"],
+    "programs": ["program"],
+    "apps": ["program"],
+    "code": ["code"],
+    "archive": ["archive"],
+    "archives": ["archive"],
+    "zip": ["archive"],
+    "other": ["other"],
+}
+
+def resolve_categories(categories) -> List[str]:
+    """
+    Maps friendly category names (e.g. 'video', 'audio', 'image', 'code') to the
+    actual DB category values ('video', 'song', 'photo', 'code'). Unknown names
+    are passed through unchanged.
+    """
+    resolved: List[str] = []
+    seen: set = set()
+    for c in categories or []:
+        c = str(c).strip().lower()
+        if not c:
+            continue
+        for target in CATEGORY_ALIASES.get(c, [c]):
+            if target not in seen:
+                seen.add(target)
+                resolved.append(target)
+    return resolved
+
 # Lazy-initialized pykakasi instance (deferred to avoid ~15 MB RAM cost on import)
 _kks_instance = None
 
@@ -496,6 +547,15 @@ def init_db():
 
     _create_triggers(cursor)
 
+    # ── Phase 3b: Category rename migration (movie -> video) ─────────────
+    # AFTER UPDATE trigger on files keeps files_fts.category in sync.
+    try:
+        cursor.execute("UPDATE files SET category = 'video' WHERE category = 'movie';")
+        if cursor.rowcount:
+            print(f"[DB] Migrating: Renamed {cursor.rowcount} file(s) from category 'movie' to 'video'.")
+    except Exception as e:
+        print(f"[DB] Error during movie->video category migration: {e}")
+
     # ── Phase 4: Crawler State Table ────────────────────────────────────
 
     cursor.execute("""
@@ -761,7 +821,7 @@ def get_unenriched_files(limit: int = 50) -> List[Dict[str, Any]]:
     FROM files f
     LEFT JOIN file_metadata m ON f.id = m.file_id
     WHERE (m.enriched IS NULL OR m.enriched = 0)
-      AND f.category IN ('movie', 'song')
+      AND f.category IN ('video', 'song')
     LIMIT ?
     """
     rows = conn.execute(query, (limit,)).fetchall()
@@ -782,6 +842,11 @@ def search_files_fts(query: str, category_filter: Optional[str] = None, limit: i
     if not clean_query:
         conn.close()
         return []
+
+    # Resolve friendly category names (e.g. 'video' or legacy 'movie') to DB values
+    if category_filter:
+        resolved_cats = resolve_categories([category_filter])
+        category_filter = resolved_cats[0] if resolved_cats else None
 
     # Clean double quotes to prevent syntax errors in SQLite FTS query parser
     safe_query = clean_query.replace('"', '""')

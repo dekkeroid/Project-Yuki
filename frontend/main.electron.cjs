@@ -166,7 +166,7 @@ function createStopwatchWindow(stopwatchData) {
   if (isDev) {
     win.loadURL(`http://localhost:5178/?mode=stopwatch&label=${encodedLabel}`);
   } else {
-    win.loadFile(path.join(__dirname, 'dist', 'index.html'), {
+    win.loadFile(getDistIndexPath(), {
       query: { mode: 'stopwatch', label }
     });
   }
@@ -239,7 +239,7 @@ function createAlarmWindow(alarmData) {
   if (isDev) {
     win.loadURL(`http://localhost:5178/?mode=alarm&id=${alarmId}&msg=${alarmMsg}&category=${alarmCat}&mute=${isMuted}&tone=${tone}&customFile=${customToneFile}`);
   } else {
-    win.loadFile(path.join(__dirname, 'dist', 'index.html'), {
+    win.loadFile(getDistIndexPath(), {
       query: { mode: 'alarm', id: String(alarmId), msg: alarmData?.message || 'Timer Up!', category: alarmData?.category || 'timer', mute: String(isMuted), tone: alarmData?.tone || 'pulse_chime', customFile: alarmData?.customToneFile || '' }
     });
   }
@@ -293,7 +293,7 @@ function createSettingsWindow() {
   if (isDev) {
     settingsWindow.loadURL('http://localhost:5178/?mode=settings');
   } else {
-    settingsWindow.loadFile(path.join(__dirname, 'dist', 'index.html'), { query: { mode: 'settings' } });
+    settingsWindow.loadFile(getDistIndexPath(), { query: { mode: 'settings' } });
   }
 
   settingsWindow.on('closed', () => {
@@ -534,14 +534,30 @@ function findVitePort(ports, timeout = 500) {
   });
 }
 
+// ---------- Packaged dist resolution ----------
+// In packaged mode the renderer is loaded from resources/frontend/dist (outside
+// the asar), which electron-builder already copies as an extraResource. This lets
+// frontend updates be dropped into the installed app without repacking the asar.
+function getDistIndexPath() {
+  if (app.isPackaged) {
+    const external = path.join(process.resourcesPath, 'frontend', 'dist', 'index.html');
+    if (fs.existsSync(external)) {
+      console.log(`[Electron] Loading renderer from external dist: ${external}`);
+      return external;
+    }
+    console.warn('[Electron] External frontend dist not found — falling back to asar dist.');
+  }
+  return path.join(__dirname, 'dist', 'index.html');
+}
+
 async function loadWithRetry(win, ports, maxAttempts = 120, intervalMs = 800, mode = null) {
   // In packaged mode, skip Vite detection — load the bundled dist directly
   if (app.isPackaged) {
     console.log('[Electron] Packaged mode — loading bundled dist/index.html');
     if (mode) {
-      win.loadFile(path.join(__dirname, 'dist', 'index.html'), { query: { mode } });
+      win.loadFile(getDistIndexPath(), { query: { mode } });
     } else {
-      win.loadFile(path.join(__dirname, 'dist', 'index.html'));
+      win.loadFile(getDistIndexPath());
     }
     return;
   }
@@ -558,9 +574,9 @@ async function loadWithRetry(win, ports, maxAttempts = 120, intervalMs = 800, mo
   }
   console.warn('[Electron] Falling back to dist/index.html');
   if (mode) {
-    win.loadFile(path.join(__dirname, 'dist', 'index.html'), { query: { mode } });
+    win.loadFile(getDistIndexPath(), { query: { mode } });
   } else {
-    win.loadFile(path.join(__dirname, 'dist', 'index.html'));
+    win.loadFile(getDistIndexPath());
   }
 }
 
@@ -1052,6 +1068,12 @@ function createWindow() {
   ipcMain.on('set-camera-tracking', (event, enabled) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('yuki-camera-tracking-changed', Boolean(enabled));
+    }
+  });
+
+  ipcMain.on('set-voice-settings', (event, { muted, volume } = {}) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('yuki-voice-settings-changed', { muted, volume });
     }
   });
 

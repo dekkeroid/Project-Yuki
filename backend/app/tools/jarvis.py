@@ -32,6 +32,7 @@ def jarvis_query_file_db(
     Args:
         query: Freeform search query (e.g. "fate stay night episode 1", "elden ring save file").
         category: Optional category filter ("video", "audio", "image", "document", "executable", "archive", "code").
+            Friendly names are aliased automatically: movie->video, audio->song, image->photo, executable->program.
         extension: Optional file extension filter (e.g. ".mp4", ".mkv", ".pdf", ".zip").
         path_hint: Optional folder or drive hint (e.g. "D:", "Downloads", "Anime", "Desktop").
         search_scope: Optional target scope ("all", "folder_only", "file_only", "metadata_only").

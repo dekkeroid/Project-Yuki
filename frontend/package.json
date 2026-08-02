@@ -17,7 +17,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "electron": "electron main.electron.cjs",
-    "dev:electron": "concurrently -k -s first \"npm run dev\" \"npm run electron\"",
+    "dev:electron": "concurrently -k -s first \"npm run dev\" \"node dev-main-watch.mjs\"",
     "build:backend": "cd ../backend && venv\\Scripts\\pyinstaller.exe yuki-backend.spec --noconfirm",
     "build:frontend": "vite build",
     "build:electron": "electron-builder --win",

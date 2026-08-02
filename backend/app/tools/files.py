@@ -275,8 +275,10 @@ def query_database_union(parsed: Dict, limit_raw: int = 100, categories: List[st
     where = " OR ".join(clauses)
     category_filter = ""
     if categories:
-        placeholders = ", ".join("?" for _ in categories)
-        category_filter = f" AND f.category IN ({placeholders})"
+        categories = db.resolve_categories(categories)
+        if categories:
+            placeholders = ", ".join("?" for _ in categories)
+            category_filter = f" AND f.category IN ({placeholders})"
 
     order_params: List[str] = []
     score_expr_parts = []
@@ -574,7 +576,7 @@ def resolve_best_file(query: str, play_mode: bool = False, start_directory: str 
     parsed = parse_query_with_llm(clean_query)
 
     # Step 2 — DB union
-    categories = ["song", "movie"] if play_mode else None
+    categories = ["song", "video"] if play_mode else None
     raw_candidates = query_database_union(parsed, limit_raw=2000, categories=categories)
 
     if start_directory and start_directory.strip():
@@ -731,7 +733,7 @@ def resolve_best_file_no_llm(query: str, play_mode: bool = False, start_director
     parsed = parse_query_with_llm(clean_query)
 
     # Step 2 — DB union search
-    categories = ["song", "movie"] if play_mode else None
+    categories = ["song", "video"] if play_mode else None
     raw_candidates = query_database_union(parsed, limit_raw=2000, categories=categories)
 
     if start_directory and start_directory.strip():
@@ -1039,7 +1041,7 @@ def resolve_best_file_via_suggestions(query: str, play_mode: bool = False) -> Op
 
     if play_mode:
         try:
-            raw_candidates = query_database_union(parsed, limit_raw=500, categories=["song", "movie"], silent=True)
+            raw_candidates = query_database_union(parsed, limit_raw=500, categories=["song", "video"], silent=True)
         except Exception:
             raw_candidates = []
 

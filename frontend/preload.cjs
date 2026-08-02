@@ -154,6 +154,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('yuki-camera-tracking-changed', listener);
     return () => ipcRenderer.removeListener('yuki-camera-tracking-changed', listener);
   },
+  setVoiceSettings: (data) => {
+    ipcRenderer.send('set-voice-settings', data);
+  },
+  onVoiceSettingsChanged: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('yuki-voice-settings-changed', listener);
+    return () => ipcRenderer.removeListener('yuki-voice-settings-changed', listener);
+  },
   setWindowScale: (scale) => {
     ipcRenderer.send('set-window-scale', Number(scale));
   },
