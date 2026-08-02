@@ -3328,6 +3328,21 @@ async def serve_canvas_file(filename: str):
         return FileResponse(file_path, media_type="text/html")
     raise HTTPException(status_code=404, detail="Canvas file not found")
 
+@app.get("/api/canvas/serve")
+async def serve_html_file(path: str = ""):
+    """Serve an HTML file from an absolute path (keeps relative deps working)."""
+    import os
+    from starlette.responses import FileResponse
+    if not path:
+        raise HTTPException(status_code=400, detail="Missing path parameter")
+    clean = os.path.normpath(path.strip().strip('"\''))
+    if not os.path.isfile(clean):
+        raise HTTPException(status_code=404, detail=f"File not found: {clean}")
+    if not clean.lower().endswith((".html", ".htm")):
+        raise HTTPException(status_code=403, detail="Only .html/.htm files are allowed")
+    print(f"[Canvas] Serving external HTML: {clean}")
+    return FileResponse(clean, media_type="text/html")
+
 if _frontend_dir.exists():
     from starlette.staticfiles import StaticFiles
     from starlette.responses import FileResponse

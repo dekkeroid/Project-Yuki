@@ -631,16 +631,19 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_html_viewer",
-                "description": "Render a complete HTML document in a standard window with title bar and native controls (like a browser). Use this for full HTML pages, interactive dashboards, or any content that needs <html>, <head>, <body>, or external-like structure. All CSS and JS must be inline (no external resource imports). The window behaves like a normal app window.",
+                "description": "Render an HTML page in a standard window with title bar and native controls (like a browser). Two modes: (1) provide file_path to open an existing .html file from disk — the file is served from its original location so relative paths for CSS/JS/images work correctly; (2) provide html_content to render a complete HTML document inline. All CSS/JS must be inline when using html_content. The window behaves like a normal app window.",
                 "parameters": {
                     "type": "object",
                     "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "Absolute path to an existing .html file on disk. The file is opened from its original location so relative dependencies (CSS, JS, images) load correctly. Mutually exclusive with html_content."
+                        },
                         "html_content": {
                             "type": "string",
-                            "description": "Complete HTML document. Should start with <!DOCTYPE html> and include <html>, <head>, <body>. All CSS/JS inline."
+                            "description": "Complete HTML document. Should start with <!DOCTYPE html> and include <html>, <head>, <body>. All CSS/JS must be inline. Mutually exclusive with file_path."
                         }
-                    },
-                    "required": ["html_content"]
+                    }
                 }
             }
         },

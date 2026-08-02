@@ -31,6 +31,7 @@ _QUERY_EXPANSIONS = {
     "google": ("web", "internet", "search"),
     "illustration": ("svg", "draw", "art", "visual"),
     "internet": ("web", "search", "browse"),
+    "local": ("file", "html", "serve", "disk"),
     "movie": ("video", "media", "play", "file"),
     "music": ("audio", "media", "play", "file"),
     "open": ("launch", "file", "directory", "application"),
@@ -40,6 +41,7 @@ _QUERY_EXPANSIONS = {
     "pull": ("open", "launch", "show"),
     "run": ("execute", "terminal", "command", "script"),
     "search": ("find", "lookup", "web", "file"),
+    "serve": ("html", "file", "local", "open"),
     "start": ("launch", "open", "play"),
     "time": ("date", "current", "datetime"),
     "video": ("media", "movie", "play", "file", "watch"),
@@ -94,7 +96,7 @@ _TOOL_HINTS = {
     "jarvis_analyze_image": ("screenshot", "image", "vision", "picture", "photo", "scan", "analyze"),
     "jarvis_see_screen": ("screen", "look", "see", "watch", "display", "view", "monitor", "desktop", "window", "current"),
     "jarvis_html_graphics": ("diagram", "flowchart", "pixel", "art", "illustration", "svg", "canvas", "animate", "visual", "architecture", "uml", "wireframe", "draw", "sketch", "icon", "logo"),
-    "jarvis_html_viewer": ("html", "page", "website", "dashboard", "interactive", "full", "document", "form", "button", "layout", "webpage", "embed"),
+    "jarvis_html_viewer": ("html", "page", "website", "dashboard", "interactive", "full", "document", "form", "button", "layout", "webpage", "embed", "open", "file", "serve", "local"),
     "find_files_by_glob": ("glob", "find", "search", "pattern", "files", "match"),
 
     # Legacy Basic Mode Tools

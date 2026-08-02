@@ -102,25 +102,48 @@ __CANVAS_CONTENT__
     return f"Opened graphics window for {filename}"
 
 
-def jarvis_html_viewer(html_content: str) -> str:
+def jarvis_html_viewer(html_content: str = "", file_path: str = "") -> str:
     """Render a full HTML document in a standard Electron window (with title bar).
 
     Args:
         html_content: Complete HTML document including <!DOCTYPE html>, <html>, <head>,
                       and <body>. All CSS and JS must be inline (no external resources).
+                      Required when not using file_path.
+        file_path: Absolute path to an existing .html file to open. The file is served
+                   from its original location so relative paths (CSS, JS, images) work.
+                   Mutually exclusive with html_content.
 
     Returns:
-        Confirmation message with the filename.
+        Confirmation message with the filename or path served.
     """
+    from app.config import BASE_DIR
+
+    # Case 1: serve an existing HTML file from its original location
+    if file_path:
+        import os
+        clean = os.path.normpath(file_path.strip().strip('"\''))
+        if not os.path.isfile(clean):
+            return f"Error: File not found: {clean}"
+        if not clean.lower().endswith((".html", ".htm")):
+            return f"Error: Only .html/.htm files are supported: {clean}"
+        import urllib.parse
+        encoded = urllib.parse.quote(clean.replace("\\", "/"), safe="/:")
+        serve_url = f"serve?path={encoded}"
+        _broadcast_canvas_ws({"type": "open-canvas", "mode": "viewer", "filename": serve_url})
+        return f"Opened HTML viewer for {os.path.basename(clean)}"
+
+    # Case 2: save raw HTML content and serve it
+    if not html_content or not html_content.strip():
+        return "Error: Either html_content or file_path must be provided."
+
     canvas_dir = _get_canvas_dir()
     filename = f"viewer_{int(time.time())}_{uuid.uuid4().hex[:6]}.html"
-    file_path = canvas_dir / filename
+    file_path_saved = canvas_dir / filename
 
     content = html_content.strip()
-    # If the LLM provided a raw HTML snippet without doctype, wrap it
     if not content.lower().lstrip().startswith("<!doctype"):
         content = f"<!DOCTYPE html>\n{content}"
 
-    file_path.write_text(content, encoding="utf-8")
+    file_path_saved.write_text(content, encoding="utf-8")
     _broadcast_canvas_ws({"type": "open-canvas", "mode": "viewer", "filename": filename})
     return f"Opened HTML viewer for {filename}"
