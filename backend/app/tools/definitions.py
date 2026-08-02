@@ -107,6 +107,46 @@ def get_basic_tools_definition() -> list:
                     "required": ["action"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "ask_user",
+                "description": "Ask the user a clarifying question with structured options when you cannot proceed without a decision between materially different tradeoffs. Blocks until the user responds. Do NOT use for questions answerable from context, trivial choices, or destructive-action confirmation (the safety confirmation flow handles that). Always set 'recommended' to the most conservative option when one exists.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "questions": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id":          {"type": "string", "description": "Stable id; the result is keyed by this."},
+                                    "question":     {"type": "string", "description": "The question to ask."},
+                                    "options": {
+                                        "type": "array",
+                                        "minItems": 2,
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "label":      {"type": "string", "description": "Short option label."},
+                                                "description": {"type": "string", "description": "Explanatory tradeoff shown below the label."},
+                                                "preview":     {"type": "string", "description": "Optional rich preview (code/config snippet)."}
+                                            },
+                                            "required": ["label"]
+                                        }
+                                    },
+                                    "recommended": {"type": "integer", "description": "0-based index of the default option."},
+                                    "multi":  {"type": "boolean", "description": "Allow multiple selections. Default false."}
+                                },
+                                "required": ["id", "question", "options"]
+                            }
+                        }
+                    },
+                    "required": ["questions"]
+                }
+            }
         }
     ]
 
@@ -599,6 +639,46 @@ def get_advanced_jarvis_tools_definition() -> list:
                         }
                     },
                     "required": ["html_content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "ask_user",
+                "description": "Ask the user a clarifying question with structured options when you cannot proceed without a decision between materially different tradeoffs. Blocks until the user responds. Do NOT use for questions answerable from context, trivial choices, or destructive-action confirmation (the safety confirmation flow handles that). Always set 'recommended' to the most conservative option when one exists.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "questions": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id":          {"type": "string", "description": "Stable id; the result is keyed by this."},
+                                    "question":     {"type": "string", "description": "The question to ask."},
+                                    "options": {
+                                        "type": "array",
+                                        "minItems": 2,
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "label":      {"type": "string", "description": "Short option label."},
+                                                "description": {"type": "string", "description": "Explanatory tradeoff shown below the label."},
+                                                "preview":     {"type": "string", "description": "Optional rich preview (code/config snippet)."}
+                                            },
+                                            "required": ["label"]
+                                        }
+                                    },
+                                    "recommended": {"type": "integer", "description": "0-based index of the default option."},
+                                    "multi":  {"type": "boolean", "description": "Allow multiple selections. Default false."}
+                                },
+                                "required": ["id", "question", "options"]
+                            }
+                        }
+                    },
+                    "required": ["questions"]
                 }
             }
         }

@@ -192,6 +192,7 @@ class AgentExecutor:
         )
         from app.tools.canvas import jarvis_html_graphics, jarvis_html_viewer
         from app.tools.system import send_process_stdin, find_files_by_glob
+        from app.tools.ask_user import ask_user as _ask_user_async
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
         self._fallback_call_counter = 0
@@ -277,6 +278,7 @@ class AgentExecutor:
             "manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
             "manage_todo": lambda **kwargs: self._execute_manage_todo(**kwargs),
             "web_search": _async_web_search,
+            "ask_user": _ask_user_async,
 
             # --- INDEPENDENT ADVANCED JARVIS TOOLS ---
             "jarvis_query_file_db": lambda **kwargs: jarvis_query_file_db(
@@ -1407,7 +1409,7 @@ class AgentExecutor:
     # ------------------------------------------------------------------ #
 
     def _drop_disabled_tools(self, tools: list, overrides: Optional[Dict[str, Any]] = None) -> list:
-        """Remove tools whose feature toggle is disabled (e.g. manage_todo)."""
+        """Remove tools whose feature toggle is disabled (e.g. manage_todo, ask_user)."""
         overrides = overrides or {}
         override = overrides.get("manage_todo_enabled")
         if override is not None:
@@ -1416,6 +1418,14 @@ class AgentExecutor:
             enabled = bool(self.memory.profile.get("settings", {}).get("manage_todo_enabled", True))
         if not enabled:
             tools = [t for t in tools if t.get("function", {}).get("name") != "manage_todo"]
+
+        ask_override = overrides.get("ask_user_enabled")
+        if ask_override is not None:
+            ask_enabled = bool(ask_override)
+        else:
+            ask_enabled = bool(self.memory.profile.get("settings", {}).get("ask_user_enabled", True))
+        if not ask_enabled:
+            tools = [t for t in tools if t.get("function", {}).get("name") != "ask_user"]
         return tools
 
     async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]], intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None, active_model: str = "") -> list:
@@ -1443,7 +1453,7 @@ class AgentExecutor:
                 "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
                 "jarvis_send_stdin", "read_and_review_file", "search_files",
                 "read_file_content", "run_terminal_command", "run_python_script",
-                "jarvis_analyze_image", "jarvis_see_screen", "manage_todo"
+                "jarvis_analyze_image", "jarvis_see_screen", "manage_todo", "ask_user"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in coding_allowed]
         elif effective_tool_mode == "basic":
@@ -1452,7 +1462,7 @@ class AgentExecutor:
                 "launch_app", "open_or_play_file", "set_system_volume", "manage_time",
                 "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script",
                 "jarvis_query_file_db", "jarvis_open_or_play_file",
-                "jarvis_analyze_image", "jarvis_see_screen"
+                "jarvis_analyze_image", "jarvis_see_screen", "ask_user"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in basic_allowed]
 
