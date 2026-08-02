@@ -602,6 +602,8 @@ class AgentExecutor:
         priority = kwargs.get("priority")
         position = kwargs.get("position")
         include_completed = bool(kwargs.get("include_completed", True))
+        include_archived = bool(kwargs.get("include_archived", False))
+        block_reason = kwargs.get("block_reason")
 
         if todo_id is not None:
             try:
@@ -636,6 +638,7 @@ class AgentExecutor:
         result = manage_todo(action, title=title, todo_id=todo_id, parent_id=parent_id,
                              status=status, priority=priority, position=position,
                              session_id=session_id, include_completed=include_completed,
+                             include_archived=include_archived, block_reason=block_reason,
                              target_dir=target_dir, items=items)
 
         mutation_actions = {"create", "add", "add_task", "new", "update", "edit", "change", "modify",

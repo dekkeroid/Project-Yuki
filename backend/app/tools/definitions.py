@@ -416,7 +416,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "manage_todo",
-                "description": "Manage a persistent TODO task list with subtasks that is unique to the current session. Use 'sync' to create/update/delete many tasks in a single call by passing a full items list; use 'create'/'list'/'update'/'complete'/'delete' for individual tweaks; 'render_md' writes a visible TODO.md.",
+"description": "Manage a persistent TODO task list with subtasks that is unique to the current session. Use 'sync' to create/update/delete many tasks in a single call by passing a full items list; use 'create'/'list'/'update'/'complete'/'delete' for individual tweaks; 'render_md' writes a visible TODO.md. Invalid status/priority values now return an error instead of being silently coerced — correct the value and retry. Only one task may be in_progress per session; completing a task auto-advances its next pending sibling. Pass block_reason when setting status='blocked'. clear_completed archives (does not hard-delete) so the done-history is preserved.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -427,9 +427,11 @@ def get_advanced_jarvis_tools_definition() -> list:
                         "title": {"type": "string", "description": "Title of the task or subtask."},
                         "todo_id": {"type": "integer", "description": "ID of an existing todo to update/complete/delete."},
                         "parent_id": {"type": "integer", "description": "Parent todo ID when creating a subtask or listing its subtasks."},
-                        "status": {"type": "string", "description": "Status to set: pending, in_progress, completed, blocked."},
-                        "priority": {"type": "string", "description": "Priority: low, normal, high, critical."},
+                        "status": {"type": "string", "description": "Status to set: pending, in_progress, completed, blocked. When 'blocked', pass block_reason explaining why. Invalid values return an error."},
+                        "priority": {"type": "string", "description": "Priority: low, normal, high, critical. Invalid values return an error."},
                         "include_completed": {"type": "boolean", "description": "Whether to include completed tasks when listing. Default true."},
+                        "include_archived": {"type": "boolean", "description": "Include archived tasks when listing. Default false."},
+                        "block_reason": {"type": "string", "description": "Reason the task is blocked. Set when status='blocked'; cleared otherwise."},
                         "items": {
                             "type": "array",
                             "description": "For action 'sync': the full desired list of items to reconcile. Each item has optional id (existing task to update), title (required for new tasks), status, priority, parent_id, and delete (true to remove).",
