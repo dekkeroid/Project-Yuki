@@ -13,6 +13,7 @@ from app import config
 from app.agent.prompts import get_system_prompt, get_simple_system_prompt, get_advanced_jarvis_system_prompt, get_coding_agent_system_prompt
 from app.agent.llm_backend import get_backend, reset_backend
 from app.memory.local_mem import MemoryManager
+from app.memory.mood_engine import MoodTagScrubber
 from app.tools.definitions import get_tools_definition, get_filtered_tools
 
 
@@ -728,48 +729,17 @@ class AgentExecutor:
     #  Message builder (history cap + prompt selection)                    #
     # ------------------------------------------------------------------ #
 
-    def _process_mood_drift(self, user_message: str):
-        if not user_message:
-            return
-            
-        msg_lower = _message_text(user_message).lower()
-        mood = self.memory.get_mood_spectrum()
-        updates = {}
-        
-        # 1. Intimacy / Horniness check
-        intimate_keywords = [
-            "kiss", "kissing", "kisses", "cuddle", "cuddling", "embrace",
-            "intimate", "make out", "holding hands", "touch me", "lips",
-            "hug me tight", "snuggle", "sexy", "flirt", "muah", "xoxo"
-        ]
-        
-        if any(kw in msg_lower for kw in intimate_keywords):
-            updates["horniness"] = min(100, mood.get("horniness", 50) + 15)
-            updates["affection"] = min(100, mood.get("affection", 70) + 5)
-            updates["happiness"] = min(100, mood.get("happiness", 75) + 5)
-            print(f"[MoodEngine] Intimacy detected! Horniness increased to {updates['horniness']}")
-        else:
-            curr_h = mood.get("horniness", 50)
-            if curr_h > 50:
-                updates["horniness"] = max(50, curr_h - 5)
-            elif curr_h < 50:
-                updates["horniness"] = min(50, curr_h + 2)
-
-        # 2. Hunger ticks up per turn (+1 up to 100)
-        food_keywords = ["eat", "food", "dinner", "lunch", "snack", "pizza", "burger", "cookie", "breakfast", "ramen"]
-        if any(kw in msg_lower for kw in food_keywords):
-            updates["hunger"] = max(0, mood.get("hunger", 30) - 25)
-            updates["happiness"] = min(100, mood.get("happiness", 75) + 5)
-        else:
-            updates["hunger"] = min(100, mood.get("hunger", 30) + 1)
-            
-        # 3. Energy & Happiness smooth decay towards baselines
-        curr_energy = mood.get("energy", 65)
-        if curr_energy > 65:
-            updates["energy"] = curr_energy - 1
-            
-        if updates:
-            self.memory.update_mood_spectrum(updates)
+    def _finalize_llm_mood(self, scrubber: MoodTagScrubber, user_message: str):
+        """Apply LLM <mood_update> deltas; fall back to script emotions if the tag is missing."""
+        try:
+            if scrubber.deltas:
+                deltas = scrubber.parsed_deltas()
+                if deltas:
+                    self.memory.apply_llm_mood(deltas)
+            elif user_message:
+                self.memory.react_mood(user_message, scope="emotion")
+        except Exception as e:
+            print(f"[MoodEngine] finalize error: {e}")
 
     def _build_messages(
         self,
@@ -790,18 +760,23 @@ class AgentExecutor:
             overrides["manage_todo_enabled"] = bool(self.memory.profile.get("settings", {}).get("manage_todo_enabled", True))
         memory_summary = self.memory.get_profile_summary()
         mood = self.memory.get_mood_spectrum()
+        mood_meta = self.memory.get_mood_meta()
+        try:
+            mood_meta["llm_mood"] = bool(self.memory.profile.get("settings", {}).get("mood_source", "script") == "llm")
+        except Exception:
+            pass
 
         effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
 
         if overrides.get("coding_mode"):
             system_content = get_coding_agent_system_prompt(memory_summary, mood, overrides=overrides)
         elif backend == "simple" and not getattr(config, "SEND_TOOLS_IN_SIMPLE", False):
-            system_content = get_simple_system_prompt(memory_summary, mood)
+            system_content = get_simple_system_prompt(memory_summary, mood, mood_meta=mood_meta)
         else:
             if effective_tool_mode == "advanced":
-                system_content = get_advanced_jarvis_system_prompt(memory_summary, mood, overrides=overrides)
+                system_content = get_advanced_jarvis_system_prompt(memory_summary, mood, overrides=overrides, mood_meta=mood_meta)
             else:
-                system_content = get_system_prompt(memory_summary, mood, overrides=overrides)
+                system_content = get_system_prompt(memory_summary, mood, overrides=overrides, mood_meta=mood_meta)
 
         system_msg = {"role": "system", "content": system_content}
 
@@ -2071,6 +2046,12 @@ class AgentExecutor:
 
         self.memory.increment_interactions()
 
+        # Time-based mood drift: she keeps "living" between messages.
+        try:
+            self.memory.step_mood()
+        except Exception as e:
+            print(f"[MoodEngine] step error: {e}")
+
         from app.agent.resolver import resolve_command
         from app.tools.safety import strip_internal_auth_fields, issue_confirmation_grant, describe_tool_target
 
@@ -2201,11 +2182,20 @@ class AgentExecutor:
                         print(f"[IntentCheck] Downgraded to CHAT ({intent_source}): '{user_message[:70]}'")
                     else:
                         print(f"[IntentCheck] Confirmed TOOL:{intent_tool_hint or '?'} ({intent_source}) — proceeding as complex")
-        # Process passive mood drift & intimacy keyword detection
+        # ── Mood reactivity (script path always runs; LLM deltas ride on top) ──
         active_ws_dir = self._get_active_session_dir(overrides or {})
         if active_ws_dir:
             from app.tools.system import set_active_workspace_directory
             set_active_workspace_directory(active_ws_dir)
+
+        mood_source = settings.get("mood_source", "script")
+        mood_llm_mode = mood_source == "llm" and resolved_backend not in ("coder", "complex_coder")
+        mood_scrubber = MoodTagScrubber() if mood_llm_mode else None
+        if user_message:
+            try:
+                self.memory.react_mood(user_message, scope="physical" if mood_llm_mode else "full")
+            except Exception as e:
+                print(f"[MoodEngine] react error: {e}")
 
         try:
             tb, tm = self._get_backend_and_model_for_task(resolved_backend, overrides=overrides)
@@ -2259,7 +2249,10 @@ class AgentExecutor:
                 first_token = True
                 
                 iteration_tokens = []
-                async for event_type, value, label in self._parse_native_stream(stream):
+                parsed_stream = self._parse_native_stream(stream)
+                if mood_scrubber is not None:
+                    parsed_stream = mood_scrubber.wrap(parsed_stream)
+                async for event_type, value, label in parsed_stream:
                     backend_used = label
                     if event_type == "token":
                         if first_token:
@@ -2400,6 +2393,12 @@ class AgentExecutor:
                             lower_res = tool_result.lower().strip()
                             if lower_res.startswith("error") or lower_res.startswith("failed") or lower_res.startswith("access denied") or "exception" in lower_res:
                                 tool_failed = True
+
+                        # Her own work affects her mood — done well is satisfying, failing stresses.
+                        try:
+                            self.memory.react_mood_outcome(tool_name, success=not tool_failed)
+                        except Exception:
+                            pass
 
                         output_snippet = str(tool_result).strip()
                         if len(output_snippet) > 800:
@@ -2545,6 +2544,8 @@ class AgentExecutor:
                     if accumulated_response.strip():
                         accumulated_response_total.append(accumulated_response.strip())
                     
+                    if mood_scrubber is not None:
+                        self._finalize_llm_mood(mood_scrubber, user_message)
                     assistant_final_speech = "\n".join(accumulated_response_total)
                     final_history.append({"role": "assistant", "content": assistant_final_speech})
                     yield "final_history", final_history, backend_used
@@ -2565,12 +2566,18 @@ class AgentExecutor:
                 resolved_backend="simple", intent_tool_hint="", intent_source=intent_source, overrides=overrides
             )
             wrap_response = ""
-            async for event_type, value, label in self._parse_native_stream(wrap_stream):
+            wrap_parsed = self._parse_native_stream(wrap_stream)
+            if mood_scrubber is not None:
+                wrap_parsed = mood_scrubber.wrap(wrap_parsed)
+            async for event_type, value, label in wrap_parsed:
                 if event_type == "token":
                     wrap_response += value
                     yield "token", value, label
+            if mood_scrubber is not None:
+                self._finalize_llm_mood(mood_scrubber, user_message)
             if wrap_response.strip():
                 accumulated_response_total.append(wrap_response.strip())
             assistant_final_speech = "\n".join(accumulated_response_total)
             final_history.append({"role": "assistant", "content": assistant_final_speech})
             yield "final_history", final_history, backend_used
+

@@ -1,6 +1,7 @@
 import json
 import os
 from app import config
+from app.memory.mood_engine import MoodEngine, AXES as MOOD_AXES
 
 DEFAULT_MOOD_SPECTRUM = {
     "happiness": 75,
@@ -10,13 +11,29 @@ DEFAULT_MOOD_SPECTRUM = {
     "stress_level": 15,
     "doomer": 20,
     "hunger": 30,
-    "horniness": 50
+    "horniness": 50,
+    "playfulness": 55
 }
 
 class MemoryManager:
     def __init__(self):
         self.profile_path = config.PROFILE_PATH
         self.profile = self._load_profile()
+        self.mood_broadcast = None
+        self._mood_engine = MoodEngine(
+            self.profile,
+            save_fn=self._save_profile,
+            broadcast_fn=self._fire_mood_broadcast,
+        )
+
+    def _fire_mood_broadcast(self, payload: dict):
+        if self.mood_broadcast:
+            self.mood_broadcast(payload)
+
+    def set_mood_broadcast(self, broadcast_fn):
+        """Allows the main app to push live mood updates over WebSocket."""
+        self.mood_broadcast = broadcast_fn
+        self._mood_engine.set_broadcast(broadcast_fn)
 
     def _load_profile(self):
         default_profile = {
@@ -55,6 +72,7 @@ class MemoryManager:
                 "llm_mode": 3,
                 "enable_rotation": True,
                 "auto_reset_rotation": False,
+                "mood_source": "script",
                 "tts_preload": True,
                 "vrm_dpr": 1.5,
                 "vrm_fps": 40,
@@ -315,30 +333,41 @@ class MemoryManager:
         return summary
 
     def get_mood_spectrum(self) -> dict:
-        if "mood_spectrum" not in self.profile or not isinstance(self.profile["mood_spectrum"], dict):
-            self.profile["mood_spectrum"] = dict(DEFAULT_MOOD_SPECTRUM)
-            self._save_profile()
-        else:
-            for k, v in DEFAULT_MOOD_SPECTRUM.items():
-                if k not in self.profile["mood_spectrum"]:
-                    self.profile["mood_spectrum"][k] = v
-        return self.profile["mood_spectrum"]
+        return self._mood_engine.current()
+
+    def get_mood_baselines(self) -> dict:
+        return self._mood_engine.baselines()
 
     def update_mood_spectrum(self, updates: dict):
-        current = self.get_mood_spectrum()
-        for k, v in updates.items():
-            if k in DEFAULT_MOOD_SPECTRUM:
-                try:
-                    current[k] = max(0, min(100, int(v)))
-                except Exception:
-                    pass
-        self._save_profile()
-        return current
+        return self._mood_engine.apply_manual(updates)
 
     def reset_mood_spectrum(self):
-        self.profile["mood_spectrum"] = dict(DEFAULT_MOOD_SPECTRUM)
-        self._save_profile()
-        return self.profile["mood_spectrum"]
+        return self._mood_engine.reset()
+
+    # ── Mood engine v2 helpers ────────────────────────────────────────
+    def step_mood(self) -> bool:
+        """Time-based drift toward baseline + random walk + circadian."""
+        return self._mood_engine.step()
+
+    def react_mood(self, text: str, scope: str = "full") -> dict:
+        """Script/regex reactions to a user message. scope: full | physical | emotion."""
+        return self._mood_engine.react_to_message(text, scope=scope)
+
+    def apply_llm_mood(self, deltas: dict) -> bool:
+        """Apply LLM-parsed <mood_update> deltas (script-only axes blocked)."""
+        return self._mood_engine.apply_llm_deltas(deltas)
+
+    def react_mood_outcome(self, tool_name: str, success: bool):
+        """Reactions to her own tool results."""
+        self._mood_engine.react_to_outcome(tool_name, success)
+
+    def on_mood_startup(self) -> bool:
+        """Offline catch-up + daily shake-up + hourly jitter."""
+        return self._mood_engine.on_startup()
+
+    def get_mood_meta(self) -> dict:
+        """Narrative/volatility/expression/voice hints for prompt, avatar and TTS."""
+        return self._mood_engine.meta()
 
     def export_persona_data(self) -> dict:
         import datetime

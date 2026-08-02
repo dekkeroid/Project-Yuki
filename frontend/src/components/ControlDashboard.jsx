@@ -858,6 +858,7 @@ const ControlDashboard = ({
     stress_level: 15,
     doomer: 20,
     hunger: 30,
+    playfulness: 55,
     horniness: 50
   });
 
@@ -1064,6 +1065,20 @@ const ControlDashboard = ({
 
   useEffect(() => {
     fetchSavedEndpoints();
+  }, []);
+
+  // Live mood_update WS listener — replaces polling while the dashboard is open
+  useEffect(() => {
+    const handleWsMoodUpdate = (e) => {
+      try {
+        const msg = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail;
+        if (msg && msg.type === 'mood_update' && msg.mood) {
+          setMoodData(prev => ({ ...prev, ...msg.mood }));
+        }
+      } catch (_) {}
+    };
+    window.addEventListener('yuki_ws_message', handleWsMoodUpdate);
+    return () => window.removeEventListener('yuki_ws_message', handleWsMoodUpdate);
   }, []);
 
   useEffect(() => {
@@ -1578,6 +1593,31 @@ const ControlDashboard = ({
                   Yuki's real-time psychological state. Injected into every turn to shape her tone, energy, and intimacy without being explicitly spoken.
                 </div>
 
+                {/* mood_source toggle — Script vs LLM */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', padding: '8px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', flex: 1 }}>Mood driver</span>
+                  {['script', 'llm'].map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      id={`mood-source-${mode}`}
+                      onClick={() => handleUpdateSetting('mood_source', mode)}
+                      style={{
+                        fontSize: '0.68rem', fontWeight: 600, padding: '3px 10px',
+                        borderRadius: '6px', cursor: 'pointer', transition: 'all 0.18s ease',
+                        background: settings.mood_source === mode ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.06)',
+                        border: settings.mood_source === mode ? '1px solid rgba(167,139,250,0.7)' : '1px solid rgba(255,255,255,0.1)',
+                        color: settings.mood_source === mode ? '#e9d5ff' : 'rgba(255,255,255,0.45)'
+                      }}
+                    >
+                      {mode === 'script' ? '⚙️ Script' : '🤖 LLM'}
+                    </button>
+                  ))}
+                  <span style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.3)' }}>
+                    {settings.mood_source === 'llm' ? 'LLM appends mood deltas' : 'Rule-based only'}
+                  </span>
+                </div>
+
                 {/* Mood Gauges Grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   {[
@@ -1588,9 +1628,11 @@ const ControlDashboard = ({
                     { key: 'stress_level', label: 'Stress Level', color: '#f59e0b', icon: '🧘' },
                     { key: 'doomer', label: 'Doomer Index', color: '#818cf8', icon: '🖤' },
                     { key: 'hunger', label: 'Hunger', color: '#fb923c', icon: '🍕' },
+                    { key: 'playfulness', label: 'Playfulness', color: '#c084fc', icon: '🎮' },
                     { key: 'horniness', label: 'Intimacy / Horniness', color: '#f43f5e', icon: '🔥' }
                   ].map(stat => {
                     const val = moodData[stat.key] !== undefined ? moodData[stat.key] : 50;
+                    const baseVal = moodData.baselines?.[stat.key];
                     return (
                       <div key={stat.key} style={{ background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
@@ -1599,6 +1641,7 @@ const ControlDashboard = ({
                           </span>
                           <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', fontWeight: 600, color: stat.color }}>
                             {val}/100
+                            {baseVal !== undefined && <span style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.3)', marginLeft: '4px' }}>({baseVal}↩)</span>}
                           </span>
                         </div>
                         {/* Slider */}

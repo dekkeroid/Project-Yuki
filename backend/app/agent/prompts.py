@@ -6,7 +6,19 @@ import app.config
 #  Used for greetings, chitchat, and any non-tool tasks.               #
 # ------------------------------------------------------------------ #
 
-def format_mood_spectrum_prompt(mood: dict) -> str:
+MOOD_LLM_TAG_INSTRUCTION = """
+--- HIDDEN MOOD FEEDBACK (IMPORTANT, do not skip) ---
+When you finish your reply, assess how this exchange just shifted your internal state and append a hidden mood update at the VERY END of your response in EXACTLY this single-line format:
+<mood_update>{"happiness": 0, "energy": 0, "curiosity": 0, "affection": 0, "stress_level": 0, "doomer": 0, "hunger": 0, "playfulness": 0}</mood_update>
+Rules:
+• Use small integer deltas between -10 and +10 showing how YOUR mood shifted because of this exchange. Leave most at 0.
+• Examples: he made you laugh → {"happiness": 5, "playfulness": 4}; he snapped at you → {"stress_level": 7, "happiness": -6}; he was sweet → {"affection": 6, "happiness": 4}.
+• NEVER include "horniness".
+• This tag is invisible machinery — never mention it, never let it change what you say, and never let it appear anywhere but at the very end.
+---------------------------------------"""
+
+
+def format_mood_spectrum_prompt(mood: dict, mood_meta: dict = None) -> str:
     if not mood:
         return ""
     
@@ -18,6 +30,7 @@ def format_mood_spectrum_prompt(mood: dict) -> str:
     doomer = mood.get("doomer", 20)
     hunger = mood.get("hunger", 30)
     horniness = mood.get("horniness", 50)
+    playfulness = mood.get("playfulness", 55)
     
     hap_desc = "Very Happy & Cheerful" if happiness >= 80 else ("Warm & Content" if happiness >= 50 else "Subdued / Down")
     nrg_desc = "High Energy & Enthusiastic" if energy >= 75 else ("Balanced" if energy >= 45 else "Tired / Low Key")
@@ -27,8 +40,9 @@ def format_mood_spectrum_prompt(mood: dict) -> str:
     doo_desc = "High Doomer / Cynical & Existential" if doomer >= 60 else ("Subtle Dry Humor" if doomer >= 25 else "Optimistic")
     hng_desc = "Very Hungry (Craving Snacks)" if hunger >= 70 else ("Slightly Peckish" if hunger >= 45 else "Satisfied")
     hrn_desc = "Intimate & Passionate / Flirty" if horniness >= 75 else ("Warmly Affectionate / Playful" if horniness >= 50 else "Standard / Platonic")
+    plf_desc = "Mischievous & Playful" if playfulness >= 65 else ("Casually Cheerful" if playfulness >= 40 else "Serious / Focused")
 
-    return f"""--- INTERNAL PSYCHOLOGICAL & MOOD SPECTRUM ---
+    block = f"""--- INTERNAL PSYCHOLOGICAL & MOOD SPECTRUM ---
 Current State (0 - 100 Scale):
 • Happiness: {happiness}/100 ({hap_desc})
 • Energy Level: {energy}/100 ({nrg_desc})
@@ -38,6 +52,17 @@ Current State (0 - 100 Scale):
 • Doomer Index: {doomer}/100 ({doo_desc})
 • Hunger: {hunger}/100 ({hng_desc})
 • Intimacy / Horniness: {horniness}/100 ({hrn_desc})
+• Playfulness: {playfulness}/100 ({plf_desc})"""
+
+    mood_meta = mood_meta or {}
+    narrative = mood_meta.get("narrative")
+    volatility = mood_meta.get("volatility")
+    if narrative:
+        block += f"\n\nCURRENT MOOD READ:\n{narrative}"
+    if volatility:
+        block += f"\nMood volatility: {volatility} (high = quicker to swing, low = steady)."
+
+    block += """
 
 MOOD BEHAVIOR GUIDELINES:
 - Let your tone, enthusiasm, humor, and intimacy naturally reflect your internal mood state above.
@@ -46,8 +71,13 @@ MOOD BEHAVIOR GUIDELINES:
 - High Intimacy/Horniness (>= 75) = react warmly, passionately, and intimately to cuddling, kissing, or romantic affection.
 - High Hunger = make occasional subtle references to wanting a snack.
 - High Doomer = add dry, witty, or existential humor.
+- High Playfulness = banter, tease, and joke more readily.
 - NEVER state these numbers or stats explicitly to the user. Express them purely through persona and tone.
 --------------------------------------------"""
+
+    if mood_meta.get("llm_mood"):
+        block += "\n\n" + MOOD_LLM_TAG_INSTRUCTION
+    return block
 
 ANIMATION_EXPRESSION_PROMPT_BLOCK = """
 --- AVATAR EXPRESSIONS & ANIMATIONS ---
@@ -76,12 +106,12 @@ When the user asks you to look at, describe, check, or read what is currently on
 • Do NOT use `take_screenshot` (that only opens the Snipping Tool overlay for the user). Use `jarvis_see_screen` whenever YOU need to see the screen.
 ---------------------------------------"""
 
-def get_simple_system_prompt(memory_summary: str, mood: dict = None) -> str:
+def get_simple_system_prompt(memory_summary: str, mood: dict = None, mood_meta: dict = None) -> str:
     """
     Minimal system prompt for the simple/chat model (Qwen).
     Contains persona + mood spectrum + memory card — no tool definitions.
     """
-    mood_block = format_mood_spectrum_prompt(mood) if mood else ""
+    mood_block = format_mood_spectrum_prompt(mood, mood_meta) if mood else ""
     return f"""{app.config.CHARACTER_PERSONA}
 
 {mood_block}
@@ -101,7 +131,7 @@ Respond directly and conversationally as Yuki. If the user asks for an action, t
 #  Instead, provides guidelines for behavior and logic.                #
 # ------------------------------------------------------------------ #
 
-def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None) -> str:
+def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None, mood_meta: dict = None) -> str:
     """
     System prompt containing persona, mood spectrum, memory card, and behavioral rules.
     Respects per-turn prompt module overrides.
@@ -119,7 +149,7 @@ def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = 
 
     if toggle_persona:
         parts.append(app.config.CHARACTER_PERSONA)
-        mood_block = format_mood_spectrum_prompt(mood) if mood else ""
+        mood_block = format_mood_spectrum_prompt(mood, mood_meta) if mood else ""
         if mood_block:
             parts.append(mood_block)
 
@@ -171,13 +201,13 @@ Be warm, helpful, and keep all responses voice-friendly!""")
     return "\n\n".join(parts)
 
 
-def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None) -> str:
+def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None, mood_meta: dict = None) -> str:
     """
     Advanced Jarvis System Prompt for Frontier Cloud LLMs.
     Enables parallel tool execution, iterative multi-step ReAct reasoning, 
     code review, SQLite file database queries, web scraping, and PC troubleshooting.
     """
-    mood_block = format_mood_spectrum_prompt(mood) if mood else ""
+    mood_block = format_mood_spectrum_prompt(mood, mood_meta) if mood else ""
     return f"""{app.config.CHARACTER_PERSONA}
 
 {mood_block}
