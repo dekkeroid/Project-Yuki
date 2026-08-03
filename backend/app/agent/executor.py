@@ -2489,7 +2489,11 @@ class AgentExecutor:
 
         try:
             tb, tm = self._get_backend_and_model_for_task(resolved_backend, overrides=overrides)
-            current_messages = self._build_messages(user_message, chat_history, resolved_backend, overrides=overrides, active_model=tm, attachments=attachments)
+            # _build_messages may block on the LLM summarizer when condensing history,
+            # so run it off the event loop to keep the stream responsive.
+            current_messages = await asyncio.to_thread(
+                self._build_messages, user_message, chat_history, resolved_backend, overrides, tm, attachments
+            )
         except Exception as e:
             import traceback
             traceback.print_exc()

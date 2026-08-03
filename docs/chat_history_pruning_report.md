@@ -1,18 +1,18 @@
-# Chat History Pruning & Summarization — Investigation Report
+# Chat History Pruning & Summarization — Investigation + Implementation Report
 
 Date: 2026-08-03
-Scope: `backend/app/agent/executor.py`, `backend/app/memory/db.py`, `backend/app/main.py`, `backend/app/memory/local_mem.py`
-Tests: `backend/tests/test_history_pruning.py` (4 tests, all passing)
+Scope: `backend/app/agent/executor.py`, `backend/app/memory/db.py`, `backend/app/main.py`, `backend/app/memory/local_mem.py`, `frontend/src/components/ControlDashboard.jsx`
+Tests: `backend/tests/test_history_pruning.py` (7 tests, all passing)
 
 ---
 
 ## TL;DR
 
 - **Yes, the token-size settings in the main app settings DO affect pruning** — `basic_history_token_limit` / `advanced_history_token_limit` (and the matching `*_history_keep_turns`) are read on every turn in `_build_messages`.
-- **But the "summarizing" is NOT LLM summarization.** It is a rolling *truncation*: the oldest messages are dropped from the transcript and a small recap system-message is injected with up to 12 one-line snippets (160 chars each). No LLM is invoked to summarize anything.
-- **The setting `llm_summary_model` (and the "synthesizer" task that would use it) is dead code** — never dispatched anywhere.
-- **The `pruned_context` column in the DB is always `NULL`** — never saved, never read. The whole "LLM budget state" persistence is dead code.
-- **It "works" mechanically**, but the budget only governs the *chat-history slice*, not the whole prompt. The system prompt alone is ~4,000 chars (~1,100 tokens) in simple mode and much larger in advanced mode, so the real token footprint sent to the LLM routinely exceeds the configured limit.
+- **The "summarizing" is now REAL LLM summarization.** When the budget is hit, the oldest/middle x% of the conversation is compressed into an LLM summary via the `synthesizer` task / `llm_summary_model`. On any failure it falls back to the old snippet recap + hard trim, and the budget is enforced against the **whole prompt** (system + summary/recap + history + user + tool schemas) with tiktoken when available.
+- **The budget now actually bounds the prompt.** Previously the check only measured the history slice (system prompt alone blew past the "limit"); now the full payload footprint is measured and enforced.
+- The previously-dead `llm_summary_model` / `"synthesizer"` path is now wired up and used.
+- `pruned_context` DB column remains dead code (see §3) — out of scope, noted for cleanup.
 
 ---
 
@@ -22,76 +22,59 @@ Tests: `backend/tests/test_history_pruning.py` (4 tests, all passing)
 
 | Setting | Where exposed (UI) | Where read |
 |---|---|---|
-| `basic_history_token_limit` | `frontend/src/components/ControlDashboard.jsx:2912` | `executor.py:859` |
-| `basic_history_keep_turns` | `ControlDashboard.jsx:2933` | `executor.py:860` |
-| `advanced_history_token_limit` | `ControlDashboard.jsx:2965` | `executor.py:856` |
-| `advanced_history_keep_turns` | `ControlDashboard.jsx:2986` | `executor.py:857` |
-| `llm_summary_model` | `AgenticWorkspaceWindow.jsx:4261` | **never used in practice** (see §4) |
+| `basic_history_token_limit` | `ControlDashboard.jsx` (Context Pruning & History Limits card) | `executor.py:926` |
+| `basic_history_keep_turns` | same card | `executor.py:927` |
+| `advanced_history_token_limit` | same card | `executor.py:923` |
+| `advanced_history_keep_turns` | same card | `executor.py:924` |
+| `history_summary_percent` | `ControlDashboard.jsx:3016` | `executor.py:929` |
+| `history_summary_position` | `ControlDashboard.jsx:3035` | `executor.py:930` |
+| `llm_summary_model` | AgenticWorkspaceWindow / endpoint mapping | `executor.py:931` → `_summarize_history_chunk` → `_get_backend_and_model_for_task("synthesizer")` |
 
-Flow: UI → `POST /api/settings` (`main.py:1141-1146`) → `MemoryManager.update_setting` → stored in `profile["settings"]` → read each turn in `AgentExecutor._build_messages` (`executor.py:855-863`).
+Flow: UI → `POST /api/settings/update` (`main.py:1163-1168`) → `MemoryManager.update_setting` → stored in `profile["settings"]` (defaults at `local_mem.py:98-100`) → read each turn in `AgentExecutor._build_messages` (`executor.py:867`).
 
-The math (`executor.py:851-863`):
-- `history_limit = token_limit * 3.5` (chars)
-- `pruned_target = token_limit/2 * 3.5` (chars)
-- If total history chars > `history_limit`, pop oldest messages until total ≤ `pruned_target` **or** message count ≤ `min_keep_turns`.
+Verified by test: dropping `advanced_history_token_limit` from 40000 → 3000 flips pruning ON; raising it flips pruning OFF (`test_advanced_tier_uses_advanced_setting`).
 
-Verified by test: dropping `advanced_history_token_limit` from 40000 → 100 flips pruning ON; raising it flips pruning OFF (`test_advanced_tier_uses_advanced_setting`).
+### Fixed caveats from the original investigation
 
-### Caveats found
+1. **Wrong tier selector — FIXED.** The prune tier now uses `effective_tool_mode = overrides.get("tool_mode") or config.TOOL_MODE` (`executor.py:898`), the same value that picks the prompt/tool tier, so a per-turn override applies to both consistently.
+2. **"Turns" are actually messages — FIXED.** `min_keep_turns` is now treated as turn *pairs*: `min_keep_msgs = max(2, min_keep_turns * 2)` (`executor.py:934`). With `basic_history_keep_turns = 6` you now always retain ≥ 12 messages (≥ 6 exchanges).
+3. **Oldest removed context is lost — PARTIALLY FIXED.** The snippet recap still caps at the last 12 removed snippets, but with LLM summarization enabled the *whole* chunk is condensed into the summary first, so nothing is lost before summarization. Only the fallback path (summary failure) drops old snippets beyond the recap's 12-line cap.
+4. **Rough token estimate — IMPROVED.** `_count_tokens` lazy-imports `tiktoken` (o200k) when installed and falls back to `chars / 3.5`. Non-ASCII/CJK content still under-counts without tiktoken.
 
-1. **Wrong tier selector.** The prune tier is chosen by `is_advanced = config.TOOL_MODE == "advanced"` (`executor.py:852`) — the *global* config — while the prompt/tool tier uses `effective_tool_mode = overrides.get("tool_mode") or config.TOOL_MODE` (`executor.py:835`). A per-turn `tool_mode` override from the chat window therefore applies to the prompt but NOT to pruning. E.g. global "basic" + per-turn override "advanced" → advanced Jarvis prompt but pruned against the tiny 2,500-token basic budget.
+## 2. What actually happens now in `_build_messages`
 
-2. **"Turns" are actually messages.** `min_keep_turns` guards `len(pruned_history)`, which counts individual user/assistant/tool messages, not turn pairs. With `min_keep_turns = 6` you can end up retaining only 6 messages (~3 exchanges), and the label over-promises.
+1. Build the system prompt, current query, and (for tool-enabled backends) the filtered tool schemas → this is the **overhead** term (`executor.py:937-947`).
+2. Count the whole history; if `history_tokens + overhead > user_token_limit`:
+   - **If `history_summary_percent > 0`:** `_select_summary_chunk` picks the oldest or middle `x%` of messages (by count, nudged so tool results are never orphaned; newest `min_keep_msgs` always stay verbatim) and `_summarize_history_chunk` compresses it via the LLM (synthesizer backend/model → coder model → main model, temp 0.2, `max_tokens=400`, thought blocks stripped). On success the summary is injected as `[CONVERSATION SUMMARY]`.
+   - **Fallback / if disabled:** the old snippet recap (`[EARLIER CONVERSATION RECAP]`, ≤12 one-line 160-char snippets) plus a hard trim.
+3. **Guarantee-fit loop** (`executor.py:969-986`): the recap's own tokens are subtracted from the history budget and the trim repeats (bounded, 3 passes) until the whole prompt fits — or a WARNING is logged when even the overhead alone exceeds the budget.
+4. The final `[History] Final prompt ~N tokens` log line reports the total (system + recap + history + user).
 
-3. **Oldest removed context is lost entirely.** The recap keeps only the *last 12* removed snippets (`recap_snippets[-12:]`, `executor.py:906`). If more than 12 messages were pruned in one turn, the very oldest ones appear nowhere — not live, not in the recap (confirmed by test + runtime log: 14 removed → recap held only TURN_1..TURN_6, TURN_0 dropped).
+`_summarize_history_chunk` (`executor.py:1145`) is a plain blocking `requests` call, so the stream path invokes `_build_messages` inside `asyncio.to_thread` (`executor.py:2492`) to keep the event loop responsive.
 
-4. **Rough token estimate.** `chars / 3.5` is an approximation (no tokenizer installed). Non-ASCII/CJK text tokenizes far denser, so the estimate can be off by 2-4× for such content.
+## 3. Dead code that remains (out of scope, noted)
 
-## 2. Are we actually summarizing parts of chat to reduce prompt size?
+- **`pruned_context` DB column** — `save_chat_session_if_eligible(session_id, messages, pruned_context, status)` accepts it (`db.py`), but the only call site (`main.py`) passes 2 args, so the column stays `NULL`. `get_session_pruned_context` is defined but never called. The "LLM budget state" persistence described in the docstring is never exercised. Recommendation: drop the column + accessors, or actually wire it to the new summarization state.
 
-**No — it's truncation with a recap, not summarization.**
+## 4. Is it working?
 
-What actually happens in `_build_messages` when history exceeds budget (`executor.py:868-905`):
-1. Oldest messages are `pop(0)`'d (with a guard so a `tool` result is never left orphaned).
-2. A recap system message is built from the removed messages: each is regex-stripped of thought blocks, truncated to 160 chars, formatted as `- User/Yuki/Tool: snippet`, capped at 12 lines.
-3. The recap is prepended to the transcript as `[EARLIER CONVERSATION RECAP]`.
+**Yes.** Verified by `backend/tests/test_history_pruning.py` (7 tests, all pass):
 
-So the "summary" is just a bulleted list of the first 160 chars of each dropped message. It reduces the *history* footprint (e.g. a 2,460-char history → 415 chars retained + ~1,900-char recap, from runtime logs) but it is not an LLM-generated condensation and it drops the oldest content entirely.
+- `test_no_pruning_when_history_is_small` — under budget, no recap, full history passes through.
+- `test_summary_injected_when_over_budget` — LLM summary injected, oldest chunk condensed, newest retained, whole prompt ≤ budget.
+- `test_snippet_recap_fallback_when_summary_fails` — summary returns `""` → snippet recap + trim, still within budget.
+- `test_summary_disabled_trims_to_budget` — `history_summary_percent=0` → snippet recap + trim path.
+- `test_tool_result_is_never_orphaned_by_pruning` — no raw `tool` role ever reaches the LLM.
+- `test_middle_position_summarizes_center_window` — `history_summary_position="middle"` condenses the center, keeps oldest+newest verbatim.
+- `test_advanced_tier_uses_advanced_setting` — advanced budget governs advanced-tier pruning.
 
-## 3. Is the dead summarization infrastructure real?
-
-**Three pieces of dead code:**
-
-1. **`llm_summary_model`** — saved (`main.py:1207-1208`, `main.py:1762-1763`) and read only inside `_get_backend_and_model_for_task` for `task == "synthesizer"` (`executor.py:1249`). Nothing ever dispatches the `"synthesizer"` task (grep: only definition + router arm exist). The user's configured summary model is never called.
-
-2. **`pruned_context` DB column** — `save_chat_session_if_eligible(session_id, messages, pruned_context, status)` accepts it (`db.py:1071`), but the only call site passes 2 args (`main.py:455`), so the column is always `NULL`. `get_session_pruned_context` (`db.py:1201`) is defined and never called. The "LLM budget state" persistence described in the docstring is never exercised.
-
-3. **The comment itself** — `executor.py:849` calls this the "Dual-Tier Rolling Summarization Pruning Strategy", but no tier ever invokes an LLM.
-
-## 4. Is it even working?
-
-**Mechanically yes; as a budget control it's misleading.**
-
-Working (verified by `test_history_pruning.py`, all 4 pass):
-- Pruning triggers above the char budget and stops at the target / keep-count.
-- Newest turns survive; oldest are removed; a recap is injected; no orphaned tool messages reach the API.
-- Changing the settings changes behavior.
-
-**What it does NOT do:**
-- It does not bound the actual prompt size. The budget check measures only `pruned_history` content chars (`executor.py:866`). The final payload also contains the system prompt + recap + current query + JSON/tool-schema overhead. Measured on a real "simple" prompt with a 20-message history: **9,084 payload chars ≈ 2,595 est tokens**, while the *default basic budget is 2,500 tokens* and the history slice alone was only ~1,185 tokens — the system prompt (3,962 chars ≈ 1,130 tokens) blew past the "limit" before pruning even considered the history.
-- The system prompt is large even in "simple" mode (full persona + mood spectrum + user memory card); advanced mode embeds the full toolset inline and is several times larger.
-
-### Recommendation (if a real token budget is desired)
-
-- Make the tier selector use `effective_tool_mode` (`overrides.get("tool_mode") or config.TOOL_MODE`) at `executor.py:852` for consistency.
-- Optionally bound the *whole* prompt (system + recap + history + user) against the limit, or add a separate system-prompt budget.
-- Either actually implement LLM summarization via the `synthesizer`/`llm_summary_model` path, or remove the dead code (synthesizer arm, `pruned_context` column + accessors) so the UI stops implying a feature that isn't wired up.
+The rest of the suite's pre-existing failures are unrelated (missing `pytest`, missing `send2trash`, and an env-dependent tool-selector assertion).
 
 ---
 
 ## New feature added alongside this report
 
-**Prompt size logging** (`executor.py`): every time a request payload is built to send to the LLM, terminal output now includes the exact totals:
+**Prompt size logging** (`executor.py:56` `_log_payload_stats`): every time a request payload is built to send to the LLM, terminal output now includes the exact totals:
 
 ```
 [LLM Send stream] model='llama-3.2-3b-instruct' | 22 messages | 9,084 total chars | ~2,595 est tokens (payload JSON, chars/3.5) | 8,126 chars in message contents
@@ -99,15 +82,11 @@ Working (verified by `test_history_pruning.py`, all 4 pass):
 
 - Covers both send paths: streaming (`_stream_request`, `tag="stream"` — the main chat flow) and non-streaming (`_query_lmstudio_model`, `tag="query"`).
 - Counts the **entire JSON payload** (messages + tools + params), not just message contents.
-- Token count is estimated at ~3.5 chars/token (no tokenizer is installed); the figure is labeled as an estimate.
+- Token count is estimated via tiktoken (o200k) when installed, else ~3.5 chars/token; labeled as an estimate.
 - Fails gracefully (prints a warning) if a payload can't be JSON-serialized.
 
-## Test summary
+## Token counting
 
-New file `backend/tests/test_history_pruning.py` (gitignored per repo convention — `backend/tests/*`):
-- `test_no_pruning_when_history_is_small` — under budget, no recap, full history passed through.
-- `test_pruning_drops_oldest_turns_and_injects_recap` — oldest dropped, newest kept, recap injected, history slice within budget, oldest pruned turn lost from recap (documents the `[-12:]` cap).
-- `test_tool_result_is_never_orphaned_by_pruning` — no raw `tool` role reaches the output.
-- `test_advanced_tier_uses_advanced_setting` — advanced budget governs advanced-tier pruning.
-
-All 4 pass. The rest of the suite's pre-existing failures are unrelated (missing `pytest`, missing `send2trash`, and an env-dependent tool-selector assertion).
+- `_count_tokens(text)` (`executor.py`): lazy-imports `tiktoken` (cached o200k encoding); falls back to `int(len(text) / 3.5)`.
+- `_count_messages_tokens(messages)`: sums `_count_tokens` over message contents.
+- No tiktoken is currently installed in the backend venv — the heuristic fallback is used until `pip install tiktoken`.
