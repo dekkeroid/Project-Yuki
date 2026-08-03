@@ -347,12 +347,24 @@ def _find_app_path(app_name: str):
 
 def launch_app(app_name: str, args: str = None, run_as_admin: bool = False) -> str:
     """
-    Launches an application on the user's PC. Supports arguments and admin privilege execution.
+    Launches an application, URL, or file link on the user's PC. Supports arguments and admin privilege execution.
     """
     if not app_name or not app_name.strip():
         return "Error: Application name must not be empty."
         
     target = app_name.strip()
+    
+    # Check if target is a URL or URI scheme (http, https, file, mailto, ftp, etc.)
+    import webbrowser
+    import urllib.parse
+    parsed_url = urllib.parse.urlparse(target)
+    if parsed_url.scheme in ("http", "https", "file", "ftp", "mailto", "vscode", "obsidian"):
+        try:
+            webbrowser.open(target)
+            return f"Success: Launched URL/Link '{target}'"
+        except Exception as e:
+            return f"Error opening URL/Link '{target}': {str(e)}"
+
     app_path = _find_app_path(target)
     
     executable = app_path if app_path else target
@@ -862,6 +874,25 @@ def run_terminal_command(command: str, use_powershell: bool = True, max_timeout:
     if banned_error:
         return banned_error
 
+    # ── Safety: block terminal commands that permanently delete without Recycle Bin ──
+    import re as _re
+    _TERMINAL_DELETION_PATTERNS = [
+        r'\brd\s+/s\b',                      # rd /s (removes whole directory tree)
+        r'\brmdir\s+/s\b',                   # rmdir /s
+        r'\bdel\s+/f\b',                     # del /f (force delete)
+        r'\brm\s+-(r|f|rf|fr|rf\s|fr\s)',   # rm -r, rm -f, rm -rf etc
+        r'\bRemove-Item\b.*(-Recurse|-Force|-rf)\b',  # PowerShell Remove-Item -Force/-Recurse
+        r'\bri\s+.*-Force\b',               # PowerShell alias ri -Force
+    ]
+    _cmd_check = command.strip()
+    for _pat in _TERMINAL_DELETION_PATTERNS:
+        if _re.search(_pat, _cmd_check, _re.IGNORECASE):
+            return (
+                "Error: Permanent deletion terminal commands (del /f, rd /s, rm -rf, Remove-Item -Force, etc.) "
+                "are blocked for safety. These bypass the Recycle Bin and cannot be undone. "
+                "Use the delete_file tool instead, which moves files to the Recycle Bin safely."
+            )
+
     import time, os, threading, queue
     global _ACTIVE_PROCESSES
     
@@ -1024,6 +1055,24 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
             banned_error = _DEV_SERVER_ERROR_MESSAGE
     if banned_error:
         return banned_error
+
+    # ── Safety: block permanent deletion operations (bypass Recycle Bin) ──────
+    import re as _re
+    _DELETION_PATTERNS = [
+        r'\bos\.remove\s*\(',
+        r'\bos\.unlink\s*\(',
+        r'\bshutil\.rmtree\s*\(',
+        r'\bshutil\.rmdir\s*\(',
+        r'\bpathlib\.Path[^)]*\.unlink\s*\(',
+        r'\bPath[^)]*\.unlink\s*\(',
+    ]
+    for _pat in _DELETION_PATTERNS:
+        if _re.search(_pat, code):
+            return (
+                "Error: Permanent file deletion operations (os.remove, os.unlink, shutil.rmtree, etc.) "
+                "are blocked in Python scripts for safety. These bypass the Recycle Bin and cannot be undone. "
+                "Use the delete_file tool instead, which moves files to the Recycle Bin safely."
+            )
 
     import tempfile, time, os
     

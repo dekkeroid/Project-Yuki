@@ -11,7 +11,7 @@ export default function SettingsApp() {
     settings: {
       llm_model: '',
       tts_voice: 'af_bella',
-      tts_rate: '1.0',
+      tts_rate: 'auto',
       character_name: 'Yuki',
       character_persona: ''
     }

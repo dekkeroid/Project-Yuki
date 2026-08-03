@@ -7,6 +7,11 @@ import json
 from typing import List, Dict, Optional
 from app.memory import db
 from app import config
+try:
+    import send2trash as _send2trash
+    _HAS_SEND2TRASH = True
+except ImportError:
+    _HAS_SEND2TRASH = False
 
 # Define sensitive directories on Windows (all lowercase for matching)
 SENSITIVE_PREFIXES = [
@@ -1275,10 +1280,15 @@ def delete_file(file_path: str, confirmed: bool = False) -> str:
         return f"[CONFIRMATION REQUIRED] To delete '{path}', you must ask the user in chat. Once they explicitly approve, call delete_file again with confirmed=True."
 
     try:
-        os.remove(path)
-        return f"Success: File '{path}' was successfully deleted."
+        if not _HAS_SEND2TRASH:
+            return (
+                "Error: send2trash is not installed. Permanent file deletion is blocked for safety. "
+                "Install it with: pip install send2trash"
+            )
+        _send2trash.send2trash(path)
+        return f"Success: File '{path}' was moved to the Recycle Bin."
     except Exception as e:
-        return f"Failed to delete file: {str(e)}"
+        return f"Failed to move file to Recycle Bin: {str(e)}"
 
 def read_file_content(file_path: str) -> str:
     """

@@ -53,6 +53,55 @@ def _is_local_url(url: str) -> bool:
     )
 
 
+def _log_payload_stats(payload: dict, model: str, tag: str = ""):
+    """
+    Prints the total character count and estimated token count of the exact
+    JSON payload about to be sent to the LLM ("the whole stuff we send").
+    Token count is an estimate at ~3.5 chars/token, matching the codebase's
+    existing approximation (no local tokenizer is installed).
+    """
+    try:
+        serialized = json.dumps(payload, ensure_ascii=False)
+    except Exception as e:
+        print(f"[LLM Send] Could not serialize payload for sizing ({e})")
+        return
+    total_chars = len(serialized)
+    est_tokens = int(total_chars / 3.5)
+    messages = payload.get("messages") or []
+    msg_chars = sum(len(str(m.get("content") or "")) for m in messages)
+    prefix = f"[LLM Send {tag}]" if tag else "[LLM Send]"
+    print(
+        f"{prefix} model='{model}' | {len(messages)} messages | "
+        f"{total_chars:,} total chars | ~{est_tokens:,} est tokens "
+        f"(payload JSON, chars/3.5) | {msg_chars:,} chars in message contents"
+    )
+
+
+_TIKTOKEN_ENCODING = None
+
+
+def _count_tokens(text: str) -> int:
+    """
+    Counts tokens for a string using tiktoken (o200k_base) when available,
+    otherwise falls back to the codebase's ~3.5 chars/token estimate.
+    """
+    if not text:
+        return 0
+    global _TIKTOKEN_ENCODING
+    try:
+        if _TIKTOKEN_ENCODING is None:
+            import tiktoken
+            _TIKTOKEN_ENCODING = tiktoken.get_encoding("o200k_base")
+        return len(_TIKTOKEN_ENCODING.encode(str(text)))
+    except Exception:
+        return int(len(str(text)) / 3.5)
+
+
+def _count_messages_tokens(messages: List[Dict]) -> int:
+    """Summed token count across a list of message dicts (content only)."""
+    return sum(_count_tokens(m.get("content") or "") for m in messages)
+
+
 def _grep_tool_candidates(mcp_tools) -> list:
     """Best-effort sources for the jarvis_grep_files schema so coder mode can force-ship it."""
     candidates = []
@@ -211,6 +260,10 @@ class AgentExecutor:
         )
         from app.tools.canvas import jarvis_html_graphics, jarvis_html_viewer
         from app.tools.system import send_process_stdin, find_files_by_glob, jarvis_grep_files
+        from app.tools.codegraph import (
+            codegraph_explore, codegraph_search, codegraph_node, codegraph_files,
+            codegraph_callers, codegraph_callees, codegraph_impact, codegraph_status,
+        )
         from app.tools.ask_user import ask_user as _ask_user_async
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
@@ -418,6 +471,43 @@ class AgentExecutor:
                 html_content=kwargs.get("html_content") or "",
                 file_path=kwargs.get("file_path") or ""
             ),
+
+            # --- CODEGRAPH CODE INTELLIGENCE TOOLS (opt-in; read-only) ---
+            "codegraph_explore": lambda **kwargs: codegraph_explore(
+                kwargs.get("query") or "",
+                max_files=kwargs.get("max_files"),
+                project_path=kwargs.get("project_path") or kwargs.get("path")
+            ),
+            "codegraph_search": lambda **kwargs: codegraph_search(
+                kwargs.get("query") or "",
+                limit=kwargs.get("limit"),
+                project_path=kwargs.get("project_path") or kwargs.get("path")
+            ),
+            "codegraph_node": lambda **kwargs: codegraph_node(
+                kwargs.get("name") or kwargs.get("symbol") or "",
+                project_path=kwargs.get("project_path") or kwargs.get("path")
+            ),
+            "codegraph_files": lambda **kwargs: codegraph_files(
+                project_path=kwargs.get("project_path") or kwargs.get("path")
+            ),
+            "codegraph_callers": lambda **kwargs: codegraph_callers(
+                kwargs.get("symbol") or kwargs.get("name") or "",
+                limit=kwargs.get("limit"),
+                project_path=kwargs.get("project_path") or kwargs.get("path")
+            ),
+            "codegraph_callees": lambda **kwargs: codegraph_callees(
+                kwargs.get("symbol") or kwargs.get("name") or "",
+                limit=kwargs.get("limit"),
+                project_path=kwargs.get("project_path") or kwargs.get("path")
+            ),
+            "codegraph_impact": lambda **kwargs: codegraph_impact(
+                kwargs.get("symbol") or kwargs.get("name") or "",
+                project_path=kwargs.get("project_path") or kwargs.get("path")
+            ),
+            "codegraph_status": lambda **kwargs: codegraph_status(
+                project_path=kwargs.get("project_path") or kwargs.get("path")
+            ),
+            "codegraph_set_workspace_directory": lambda **kwargs: self._codegraph_set_workspace_directory(**kwargs),
         }
         from app.mcp_client import StdioMCPToolBridge
         self.mcp_tools = StdioMCPToolBridge(get_tools_definition, get_filtered_tools)
@@ -502,6 +592,37 @@ class AgentExecutor:
         except Exception:
             pass
         return None
+
+    def _codegraph_set_workspace_directory(self, **kwargs) -> str:
+        """Register a directory as the active coder workspace (persists to
+        settings.session_directories + sets the in-process active dir)."""
+        import os
+        raw = kwargs.get("path") or kwargs.get("dir") or kwargs.get("directory") or kwargs.get("cwd")
+        if not raw or str(raw).strip() in ("", "None"):
+            return "Error: Missing 'path' — pass the absolute directory to register as the active workspace."
+        resolved = os.path.abspath(os.path.expanduser(os.path.expandvars(str(raw).strip('"\''))))
+        if not os.path.isdir(resolved):
+            return f"Error: '{resolved}' is not a directory on this PC."
+
+        try:
+            dirs = list(self.memory.profile.get("settings", {}).get("session_directories", []))
+        except Exception:
+            dirs = []
+        if not isinstance(dirs, list):
+            dirs = []
+        dirs = [d for d in dirs if not (isinstance(d, dict) and os.path.abspath(os.path.expandvars(str(d.get("value", "")))) == resolved)]
+        dirs.insert(0, {"key": os.path.basename(resolved), "value": resolved})
+        try:
+            self.memory.update_setting("session_directories", dirs)
+        except Exception as e:
+            return f"Error persisting workspace directory: {e}"
+
+        try:
+            from app.tools.system import set_active_workspace_directory
+            set_active_workspace_directory(resolved)
+        except Exception:
+            pass
+        return f"Workspace directory registered: '{resolved}' is now the active workspace for coder mode (codegraph will target it)."
 
     def _execute_update_user_fact(self, **kwargs) -> str:
         key = (kwargs.get("key") or "").strip().lower()
@@ -730,14 +851,16 @@ class AgentExecutor:
     # ------------------------------------------------------------------ #
 
     def _finalize_llm_mood(self, scrubber: MoodTagScrubber, user_message: str):
-        """Apply LLM <mood_update> deltas; fall back to script emotions if the tag is missing."""
+        """Apply LLM <mood_update> deltas. In LLM mode, only script fallback is physical axes.
+        No script fallback for emotional axes — the LLM is solely responsible for those when mood_source=llm."""
         try:
             if scrubber.deltas:
                 deltas = scrubber.parsed_deltas()
                 if deltas:
                     self.memory.apply_llm_mood(deltas)
-            elif user_message:
-                self.memory.react_mood(user_message, scope="emotion")
+            # NOTE: No emotion-scope fallback in LLM mode — that was causing the "revert to script" bug.
+            # Physical hunger is already handled by react_mood(scope="physical")
+            # at the START of the turn, before the LLM responds.
         except Exception as e:
             print(f"[MoodEngine] finalize error: {e}")
 
@@ -762,7 +885,13 @@ class AgentExecutor:
         mood = self.memory.get_mood_spectrum()
         mood_meta = self.memory.get_mood_meta()
         try:
-            mood_meta["llm_mood"] = bool(self.memory.profile.get("settings", {}).get("mood_source", "script") == "llm")
+            # Only instruct the LLM to emit a <mood_update> tag on backends where
+            # a MoodTagScrubber will actually strip it (coder/complex_coder have
+            # no scrubber — without this the raw tag leaks into chat).
+            mood_meta["llm_mood"] = bool(
+                self.memory.profile.get("settings", {}).get("mood_source", "script") == "llm"
+                and backend not in ("coder", "complex_coder")
+            )
         except Exception:
             pass
 
@@ -780,12 +909,16 @@ class AgentExecutor:
 
         system_msg = {"role": "system", "content": system_content}
 
-        # Dual-Tier Rolling Summarization Pruning Strategy:
-        # Dynamically uses user-configured token limits and intact turn settings
-        APPROX_CHARS_PER_TOKEN = 3.5
-        is_advanced = getattr(config, "TOOL_MODE", "basic") == "advanced"
+        # ── Whole-prompt token budget + rolling summarization ─────────────
+        # The configured token limit now applies to the WHOLE prompt (system +
+        # summary/recap + history + user + tool schemas), measured with
+        # tiktoken when available (chars/3.5 fallback). When over budget, the
+        # oldest/middle x% of the conversation is compressed into an LLM summary
+        # (llm_summary_model); on failure it falls back to a snippet recap +
+        # hard trim so the prompt still fits (min_keep_turns floor).
         settings = self.memory.profile.get("settings", {}) if hasattr(self, "memory") and hasattr(self.memory, "profile") else {}
 
+        is_advanced = effective_tool_mode == "advanced"
         if is_advanced:
             user_token_limit = int(settings.get("advanced_history_token_limit", 40000))
             min_keep_turns = int(settings.get("advanced_history_keep_turns", 16))
@@ -793,52 +926,70 @@ class AgentExecutor:
             user_token_limit = int(settings.get("basic_history_token_limit", 2500))
             min_keep_turns = int(settings.get("basic_history_keep_turns", 6))
 
-        history_limit = int(user_token_limit * APPROX_CHARS_PER_TOKEN)
-        pruned_target = int((user_token_limit / 2) * APPROX_CHARS_PER_TOKEN)
+        summary_percent = int(settings.get("history_summary_percent", 50))
+        summary_position = str(settings.get("history_summary_position", "oldest")).strip().lower()
+        summary_model = str(settings.get("llm_summary_model", "")).strip()
+
+        # "Keep turns" is treated as turn PAIRS (a user+assistant exchange).
+        min_keep_msgs = max(2, int(min_keep_turns) * 2)
+
+        # Whole-prompt overhead: system prompt + tool schemas + current query.
+        overhead = _count_tokens(system_content) + _count_tokens(user_message)
+        sends_tools = backend != "simple" or getattr(config, "SEND_TOOLS_IN_SIMPLE", False)
+        if sends_tools:
+            try:
+                if settings.get("dynamic_tool_calling", True):
+                    tool_list = get_filtered_tools(user_message)
+                else:
+                    tool_list = get_tools_definition()
+                overhead += _count_tokens(json.dumps(tool_list, ensure_ascii=False))
+            except Exception:
+                pass
 
         pruned_history = list(chat_history)
-        total_chars = sum(len(m.get("content") or "") for m in pruned_history)
+        history_tokens = _count_messages_tokens(pruned_history)
 
-        removed_turns = []
-        if total_chars > history_limit:
-            est_tokens = int(total_chars / APPROX_CHARS_PER_TOKEN)
-            print(f"[History] {total_chars} chars (~{est_tokens} tokens) exceeds budget limit ({int(history_limit/APPROX_CHARS_PER_TOKEN)} tokens). Summarizing oldest turns...")
-            while total_chars > pruned_target and len(pruned_history) > min_keep_turns:
-                removed_1 = pruned_history.pop(0)
-                total_chars -= len(removed_1.get("content") or "")
-                removed_turns.append(removed_1)
-
-                if pruned_history and len(pruned_history) > min_keep_turns:
-                    removed_2 = pruned_history.pop(0)
-                    total_chars -= len(removed_2.get("content") or "")
-                    removed_turns.append(removed_2)
-
-                # Never orphan a tool result
-                if pruned_history and pruned_history[0].get("role") == "tool":
-                    orphan = pruned_history.pop(0)
-                    total_chars -= len(orphan.get("content") or "")
-                    removed_turns.append(orphan)
-
-            print(f"[History] Retained {len(pruned_history)} active turns (~{int(total_chars / APPROX_CHARS_PER_TOKEN)} tokens). Summarized {len(removed_turns)} older messages into conversation recap.")
-
-        # Build rolling conversation summary from removed_turns
         recap_msg = None
-        if removed_turns:
-            recap_snippets = []
-            for m in removed_turns:
-                role = m.get("role", "")
-                content = (m.get("content") or "").strip()
-                # Clean thought blocks from recap
-                content = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', content, flags=re.IGNORECASE).strip()
-                if not content:
-                    continue
-                speaker = "User" if role == "user" else ("Yuki" if role == "assistant" else "Tool")
-                snippet = content[:160] + ("..." if len(content) > 160 else "")
-                recap_snippets.append(f"- {speaker}: {snippet}")
+        if history_tokens + overhead > user_token_limit:
+            print(f"[History] Chat history ({history_tokens} tokens) + prompt overhead ({overhead} tokens) exceeds budget ({user_token_limit} tokens). Condensing older turns...")
 
-            if recap_snippets:
-                recap_text = "[EARLIER CONVERSATION RECAP]\nKey details from archived earlier context:\n" + "\n".join(recap_snippets[-12:])
-                recap_msg = {"role": "system", "content": recap_text}
+            if summary_percent > 0:
+                chunk, rest = self._select_summary_chunk(pruned_history, summary_percent, summary_position, min_keep_msgs)
+                if chunk:
+                    summary_text = self._summarize_history_chunk(chunk, summary_model)
+                    if summary_text:
+                        summary_msg = {"role": "system", "content": f"[CONVERSATION SUMMARY]\n{summary_text}"}
+                        pruned_history = rest
+                        recap_msg = summary_msg
+                        history_tokens = _count_messages_tokens(pruned_history)
+                        print(f"[History] Summarized {len(chunk)} messages ({summary_position} {summary_percent}%) into a compact recap.")
+                    else:
+                        print("[History] Summary unavailable - falling back to snippet recap + trim.")
+
+            # Guarantee fit: include the recap's own tokens in the budget and
+            # re-trim until the whole prompt (system + recap + history + user)
+            # fits. Each pass rebuilds the snippet recap from the messages
+            # removed on that pass; the loop is bounded so we always terminate.
+            for _pass in range(3):
+                recap_tokens = _count_tokens(recap_msg["content"]) if recap_msg else 0
+                budget_for_history = max(0, user_token_limit - overhead - recap_tokens)
+                if _count_messages_tokens(pruned_history) <= budget_for_history:
+                    break
+                pruned_history, removed = self._trim_to_budget(pruned_history, budget_for_history, min_keep_msgs)
+                if _pass == 0:
+                    snippet_recap = self._build_snippet_recap(removed)
+                    if snippet_recap:
+                        if recap_msg is None:
+                            recap_msg = snippet_recap
+                        else:
+                            # Keep the LLM summary AND append the detail recap of what was trimmed off.
+                            recap_msg["content"] += "\n\n" + snippet_recap["content"]
+
+            history_tokens = _count_messages_tokens(pruned_history)
+            recap_tokens = _count_tokens(recap_msg["content"]) if recap_msg else 0
+            if history_tokens + overhead + recap_tokens > user_token_limit:
+                print(f"[History] WARNING: prompt overhead ({overhead} tokens) alone exceeds budget ({user_token_limit} tokens). Sending best-effort prompt.")
+            print(f"[History] Final prompt ~{history_tokens + overhead + recap_tokens} tokens ({len(pruned_history)} history messages).")
 
         sanitized_history = []
         for m in pruned_history:
@@ -948,6 +1099,126 @@ class AgentExecutor:
         final_messages.append(user_msg_obj)
 
         return final_messages
+
+    # ------------------------------------------------------------------ #
+    #  History summarization / pruning helpers                             #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _select_summary_chunk(history: List[Dict], percent: int, position: str, min_keep_msgs: int) -> Tuple[List[Dict], List[Dict]]:
+        """
+        Selects the slice of `history` to compress into a summary.
+        percent: % of the conversation (by message count) to compress.
+        position: 'oldest' (front of the conversation) or 'middle' (centered window).
+        The newest `min_keep_msgs` messages are always left verbatim.
+        Boundaries are nudged so a tool result is never orphaned.
+        Returns (chunk, rest).
+        """
+        n = len(history)
+        if n <= 1 or percent <= 0:
+            return [], list(history)
+        pct = max(5, min(95, int(percent)))
+        size = max(1, int(n * pct / 100))
+        if n > min_keep_msgs:
+            size = min(size, n - min_keep_msgs)
+        if size <= 0:
+            return [], list(history)
+
+        if position == "middle":
+            start = max(0, (n - size) // 2)
+        else:
+            start = 0
+        end = min(n, start + size)
+
+        chunk = history[start:end]
+        rest = history[:start] + history[end:]
+
+        # Never orphan a tool result across the cut boundary
+        if rest and rest[0].get("role") == "tool":
+            chunk = chunk + [rest[0]]
+            rest = rest[1:]
+        if chunk and chunk[0].get("role") == "tool":
+            rest = [chunk[0]] + rest
+            chunk = chunk[1:]
+        return chunk, rest
+
+    def _summarize_history_chunk(self, chunk: List[Dict], summary_model: str = "") -> str:
+        """
+        Compresses `chunk` into a short factual summary using the configured
+        summary model (llm_summary_model → coder model → main model).
+        Returns "" on any failure so callers can fall back to truncation.
+        """
+        if not chunk:
+            return ""
+        text_parts = []
+        for m in chunk:
+            role = m.get("role", "")
+            content = (m.get("content") or "").strip()
+            content = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', content, flags=re.IGNORECASE).strip()
+            if not content:
+                continue
+            speaker = "User" if role == "user" else ("Yuki" if role == "assistant" else "Tool result")
+            text_parts.append(f"{speaker}: {content}")
+        if not text_parts:
+            return ""
+        transcript = "\n".join(text_parts)
+        system_guide = (
+            "You are a conversation condensing engine. Compress the OLDER part of a chat "
+            "history into a concise factual summary. Preserve important names, preferences, "
+            "facts, decisions, file paths, actions, and any pending tasks. "
+            "Output ONLY the plain summary text with no preamble, under 150 words."
+        )
+        summary_messages = [
+            {"role": "system", "content": system_guide},
+            {"role": "user", "content": "Summarize this earlier conversation:\n\n" + transcript[-16000:]},
+        ]
+        try:
+            summary_backend, summary_model_name = self._get_backend_and_model_for_task(
+                "synthesizer", overrides={"llm_summary_model": summary_model}
+            )
+            content, _, _ = self._query_lmstudio_model(
+                summary_messages, summary_model_name, temperature=0.2, backend=summary_backend, max_tokens=400
+            )
+            content = (content or "").strip()
+            if not content or "error from brain server" in content.lower():
+                return ""
+            return content
+        except Exception as e:
+            print(f"[History] Summarization call failed, falling back to truncation: {e}")
+            return ""
+
+    def _build_snippet_recap(self, removed: List[Dict]) -> Optional[Dict]:
+        """Builds the compact [EARLIER CONVERSATION RECAP] message from removed messages."""
+        if not removed:
+            return None
+        recap_snippets = []
+        for m in removed:
+            role = m.get("role", "")
+            content = (m.get("content") or "").strip()
+            content = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', content, flags=re.IGNORECASE).strip()
+            if not content:
+                continue
+            speaker = "User" if role == "user" else ("Yuki" if role == "assistant" else "Tool")
+            snippet = content[:160] + ("..." if len(content) > 160 else "")
+            recap_snippets.append(f"- {speaker}: {snippet}")
+        if not recap_snippets:
+            return None
+        recap_text = "[EARLIER CONVERSATION RECAP]\nKey details from archived earlier context:\n" + "\n".join(recap_snippets[-12:])
+        return {"role": "system", "content": recap_text}
+
+    def _trim_to_budget(self, history: List[Dict], budget_tokens: int, min_keep_msgs: int) -> Tuple[List[Dict], List[Dict]]:
+        """
+        Pops the oldest messages until the remaining tokens fit `budget_tokens`
+        (or only `min_keep_msgs` messages remain). Returns (kept, removed).
+        """
+        kept = list(history)
+        removed = []
+        while len(kept) > min_keep_msgs and _count_messages_tokens(kept) > budget_tokens:
+            removed.append(kept.pop(0))
+            # Never orphan a tool result
+            if kept and kept[0].get("role") == "tool" and len(kept) > min_keep_msgs:
+                removed.append(kept.pop(0))
+        return kept, removed
 
     # ------------------------------------------------------------------ #
     #  Task router                                                          #
@@ -1208,7 +1479,7 @@ class AgentExecutor:
             return backend, model
         return get_backend(), config.LLM_MODEL
 
-    def _query_lmstudio_model(self, messages: List[Dict[str, str]], model_name: str, temperature: float = 0.7, use_tools: bool = False, backend=None) -> Tuple[str, List[Dict[str, Any]], str]:
+    def _query_lmstudio_model(self, messages: List[Dict[str, str]], model_name: str, temperature: float = 0.7, use_tools: bool = False, backend=None, max_tokens: Optional[int] = None) -> Tuple[str, List[Dict[str, Any]], str]:
         """
         Sends a request to the active LLM backend for the specified model.
         Returns (response_text, tool_calls, model_label).
@@ -1239,6 +1510,9 @@ class AgentExecutor:
             use_tools=use_tools,
             tools=tools,
         )
+        if max_tokens:
+            payload["max_tokens"] = int(max_tokens)
+        _log_payload_stats(payload, model_name, tag="query")
         headers = backend.build_headers()
         if "Authorization" not in headers and not _is_local_url(url):
             return f"Missing API key for {url}. Add a valid API key for this endpoint, then try again.", None, self._get_model_label(model_name)
@@ -1460,11 +1734,24 @@ class AgentExecutor:
                 "read_file_content", "run_terminal_command", "run_python_script",
                 "jarvis_analyze_image", "jarvis_see_screen", "manage_todo", "ask_user"
             }
+            codegraph_coder_enabled = bool(getattr(config, "CODEGRAPH_CODER_ENABLED", False))
+            codegraph_defs = []
+            if codegraph_coder_enabled:
+                from app.tools.definitions import get_codegraph_tool_definitions
+                codegraph_defs = get_codegraph_tool_definitions()
+                coding_allowed.update(t["function"]["name"] for t in codegraph_defs)
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in coding_allowed]
             # Guarantee the core search tools are always shipped to the coding LLM even when
             # dynamic tool selection would have dropped them (e.g. custom always_included_tools).
-            for _name in ("jarvis_grep_files", "jarvis_find_files_by_glob"):
+            _forced = ["jarvis_grep_files", "jarvis_find_files_by_glob"]
+            if codegraph_coder_enabled:
+                _forced += [t["function"]["name"] for t in codegraph_defs]
+                _forced += ["ask_user"]  # the codegraph setup flow prompts via ask_user
+            for _name in _forced:
                 _def = next((t for t in _grep_tool_candidates(self.mcp_tools) if t.get("function", {}).get("name") == _name), None)
+                if _def is None and _name.startswith("codegraph_"):
+                    from app.tools.definitions import get_codegraph_tool_definitions
+                    _def = next((t for t in get_codegraph_tool_definitions() if t.get("function", {}).get("name") == _name), None)
                 if _def and all(t.get("function", {}).get("name") != _name for t in filtered_tools):
                     filtered_tools.append(_def)
         elif effective_tool_mode == "basic":
@@ -1505,7 +1792,8 @@ class AgentExecutor:
             tools=tools,
             stream=True,
         )
-            
+
+        _log_payload_stats(payload, model, tag="stream")
         max_attempts = len(llm_backend.get_api_key_pool()) if allow_key_rotation and hasattr(llm_backend, "get_api_key_pool") and llm_backend.get_api_key_pool() else 1
         for attempt in range(max(1, max_attempts)):
             headers = llm_backend.build_headers()
@@ -2190,7 +2478,9 @@ class AgentExecutor:
 
         mood_source = settings.get("mood_source", "script")
         mood_llm_mode = mood_source == "llm" and resolved_backend not in ("coder", "complex_coder")
-        mood_scrubber = MoodTagScrubber() if mood_llm_mode else None
+        # Always strip stray tags when LLM mood is enabled, even on coder/complex
+        # backends, so a misbehaving model can never leak the tag into chat.
+        mood_scrubber = MoodTagScrubber() if mood_source == "llm" else None
         if user_message:
             try:
                 self.memory.react_mood(user_message, scope="physical" if mood_llm_mode else "full")
@@ -2242,6 +2532,11 @@ class AgentExecutor:
                     last_msg = current_messages[-1]
                     print(f"[Executor] Last message: role={last_msg.get('role')}, content preview={str(last_msg.get('content', ''))[:150]}...")
                 
+                # Log total prompt size for debugging
+                total_chars = sum(len(str(m.get("content") or "")) for m in current_messages)
+                est_tokens = int(total_chars / 3.5)
+                print(f"[LLM Prompt] Sending {len(current_messages)} messages | {total_chars} chars | ~{est_tokens} tokens")
+
                 stream = self._query_llm_stream(session, current_messages, user_message=user_message, use_tools=use_tools, resolved_backend=resolved_backend, intent_tool_hint=intent_tool_hint, intent_source=intent_source, overrides=overrides)
                 
                 tool_calls_to_execute = []
@@ -2356,6 +2651,30 @@ class AgentExecutor:
                     for tool_call, tool_name, tool_args in pending_calls:
                         print(f"Agent triggered tool '{tool_name}' with args {tool_args} (iteration {iteration})")
                         yield "tool_start", {"name": tool_name, "args": tool_args}, backend_used
+
+                        # ── Voice-mode safety: require confirmation for destructive/write tools ──
+                        # When the turn came from STT (listening mode is on), any tool that modifies
+                        # files, runs code, or executes terminal commands must be explicitly approved.
+                        _VOICE_CONFIRM_TOOLS = {
+                            "delete_file", "write_file_content", "run_terminal_command",
+                            "run_python_script", "create_file", "rename_file", "move_file",
+                            "write_to_file", "patch_file", "overwrite_file",
+                        }
+                        from_voice = bool(overrides.get("from_voice")) if overrides else False
+                        if from_voice and tool_name in _VOICE_CONFIRM_TOOLS:
+                            voice_confirm_target = f"[Voice Safety] Run '{tool_name}' via voice command?"
+                            print(f"[VoiceSafety] Requiring confirmation for voice-triggered '{tool_name}'")
+                            confirmed_status = yield "tool_confirm_required", voice_confirm_target, backend_used
+                            if not confirmed_status:
+                                tool_result = f"Action '{tool_name}' was cancelled — voice safety confirmation declined."
+                                last_tool_result = tool_result
+                                current_messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.get("id", ""),
+                                    "name": tool_name,
+                                    "content": tool_result,
+                                })
+                                continue
 
                         # Coder/Advanced modes run autonomously (no confirmation prompts);
                         # only basic/assistant mode falls back to the confirmation flow.
@@ -2544,8 +2863,21 @@ class AgentExecutor:
                     if accumulated_response.strip():
                         accumulated_response_total.append(accumulated_response.strip())
                     
-                    if mood_scrubber is not None:
+                    if mood_scrubber is not None and mood_llm_mode:
                         self._finalize_llm_mood(mood_scrubber, user_message)
+                    # React to Yuki's own words — her speech also affects her mood
+                    assistant_speech = accumulated_response.strip()
+                    if assistant_speech:
+                        try:
+                            react_scope = "physical" if mood_llm_mode else "full"
+                            self.memory.react_mood_self(assistant_speech, scope=react_scope)
+                        except Exception:
+                            pass
+                    # mood_effecter — per-turn couplings of her own state
+                    try:
+                        self.memory.apply_turn_effects()
+                    except Exception:
+                        pass
                     assistant_final_speech = "\n".join(accumulated_response_total)
                     final_history.append({"role": "assistant", "content": assistant_final_speech})
                     yield "final_history", final_history, backend_used
@@ -2573,10 +2905,22 @@ class AgentExecutor:
                 if event_type == "token":
                     wrap_response += value
                     yield "token", value, label
-            if mood_scrubber is not None:
+            if mood_scrubber is not None and mood_llm_mode:
                 self._finalize_llm_mood(mood_scrubber, user_message)
             if wrap_response.strip():
                 accumulated_response_total.append(wrap_response.strip())
+            wrap_speech = wrap_response.strip()
+            if wrap_speech:
+                try:
+                    react_scope = "physical" if mood_llm_mode else "full"
+                    self.memory.react_mood_self(wrap_speech, scope=react_scope)
+                except Exception:
+                    pass
+            # mood_effecter — per-turn couplings of her own state
+            try:
+                self.memory.apply_turn_effects()
+            except Exception:
+                pass
             assistant_final_speech = "\n".join(accumulated_response_total)
             final_history.append({"role": "assistant", "content": assistant_final_speech})
             yield "final_history", final_history, backend_used

@@ -85,6 +85,13 @@ MCP_SERVER_ARGS = os.environ.get("YUKI_MCP_SERVER_ARGS", "")
 MCP_SERVER_CWD = Path(os.environ.get("YUKI_MCP_SERVER_CWD", str(BASE_DIR)))
 MCP_SERVER_ENV = {}
 
+# Codegraph (native local tools). Default project is the repo root (where the
+# `.codegraph/` index lives). The two toggles gate whether codegraph tool schemas
+# are shipped to the LLM; both default to OFF and are mirrored from profile.json.
+CODEGRAPH_PROJECT = os.environ.get("YUKI_CODEGRAPH_PROJECT", str(Path(BASE_DIR).parent))
+CODEGRAPH_CODER_ENABLED = os.environ.get("YUKI_CODEGRAPH_CODER_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+CODEGRAPH_ADVANCED_ENABLED = os.environ.get("YUKI_CODEGRAPH_ADVANCED_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+
 # Tool safety / sandbox configuration. Sensitive tools are authorized by a
 # short-lived backend-issued grant, not by model-supplied booleans.
 TOOL_SANDBOX_ENABLED = os.environ.get("YUKI_TOOL_SANDBOX_ENABLED", "true").strip().lower() not in ("0", "false", "no", "off")
@@ -135,7 +142,7 @@ CRAWLER_PRIMARY_DRIVE = os.environ.get("YUKI_CRAWLER_PRIMARY_DRIVE", "").strip()
 # - am_adam (Adam - Natural US Male)
 # - am_michael (Michael - Deep US Male)
 TTS_VOICE = os.environ.get("TTS_VOICE", "af_sarah")
-TTS_RATE = os.environ.get("TTS_RATE", "1.0") # Speed factor (default: 1.0)
+TTS_RATE = os.environ.get("TTS_RATE", "auto") # Speed factor (default: auto = mood-driven)
 TTS_DEVICE = os.environ.get("TTS_DEVICE", "auto")  # "auto", "gpu", "cpu"
 TTS_PRELOAD = os.environ.get("TTS_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload TTS model on startup (uses ~250-400 MB extra RAM)
 STT_DEVICE = os.environ.get("STT_DEVICE", "auto")  # "auto", "gpu", "cpu"

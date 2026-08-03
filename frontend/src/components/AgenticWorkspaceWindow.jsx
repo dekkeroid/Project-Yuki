@@ -4285,6 +4285,24 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     })()}
                   </div>
                 </div>
+
+                {/* Codegraph toggle */}
+                <div style={{ background: 'rgba(9, 13, 22, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!activeSettings.codegraph_coder_enabled}
+                      onChange={(e) => handleUpdateSetting('codegraph_coder_enabled', e.target.checked)}
+                      style={{ accentColor: '#8b5cf6', width: '13px', height: '13px', cursor: 'pointer', marginTop: '2px' }}
+                    />
+                    <span style={{ fontSize: '0.74rem', color: '#c4b5fd', lineHeight: 1.35, fontWeight: 600 }}>
+                      Turn on codegraph for coder mode
+                    </span>
+                  </label>
+                  <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '6px', lineHeight: 1.35, paddingLeft: '21px' }}>
+                    Lets coder mode use codegraph to explore and navigate indexed codebases. <strong style={{ color: '#fbbf24' }}>Codegraph must be installed on your PC for this tool to work.</strong> (Default: OFF)
+                  </div>
+                </div>
               </div>
             )}
 

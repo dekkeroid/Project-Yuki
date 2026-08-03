@@ -38,14 +38,13 @@ AXES = {
     "hunger":       {"baseline": 30, "volatility": 6, "decay": 0.38},
     "playfulness":  {"baseline": 55, "volatility": 7, "decay": 0.26},
     "horniness":    {"baseline": 50, "volatility": 5, "decay": 0.20},
+    "anger":        {"baseline": 10, "volatility": 6, "decay": 0.24},
 }
 
-# Axes the LLM mood tag is never allowed to set (script/physical drives only).
-SCRIPT_ONLY_AXES = {"horniness"}
-
 # In LLM mood mode, which axes stay script-driven (physical drives the LLM
-# cannot judge reliably). The LLM tag handles the emotional axes instead.
-LLM_MODE_SCRIPT_AXES = {"horniness", "hunger"}
+# cannot judge reliably). The LLM tag handles every emotional axis —
+# including horniness — plus hunger on top of the script's circadian push.
+LLM_MODE_SCRIPT_AXES = {"hunger"}
 
 # Cap for how many hours of offline time we simulate on startup.
 MAX_OFFLINE_CATCHUP_HOURS = 16.0
@@ -79,11 +78,15 @@ REACTIONS = [
         "make out", "holding hands", "hold my hand", "touch me", "lips",
         "hug me", "snuggle", "sexy", "flirt", "muah", "xoxo", "romantic",
     ], {"horniness": 12, "affection": 6, "happiness": 4, "playfulness": 3}),
-    ("food", [
-        "eat", "food", "dinner", "lunch", "breakfast", "snack", "pizza",
-        "burger", "cookie", "ramen", "hungry", "cook", "taco", "sushi",
-        "noodles", "pasta", "dessert", "ice cream", "ordering food",
-    ], {"hunger": -22, "happiness": 4}),
+    ("food_eat", [
+        "eat", "ate", "eating", "dinner", "lunch", "breakfast", "snack",
+        "snacked", "ordered", "cooked", "meal", "fed", "full", "ordering food",
+    ], {"hunger": -22, "energy": 8, "happiness": 4}),
+    ("food_crave", [
+        "hungry", "starving", "crave", "craving", "tasty", "yummy",
+        "delicious", "sounds good", "sounds amazing", "want a snack",
+        "food craving", "in the mood for",
+    ], {"hunger": 12, "playfulness": 1}),
     ("praise", [
         "thank you", "you're the best", "you are the best", "cute", "adorable",
         "amazing", "wonderful", "great job", "well done", "perfect", "beautiful",
@@ -92,18 +95,47 @@ REACTIONS = [
     ], {"happiness": 6, "affection": 5, "stress_level": -3}),
     ("insult", [
         "stupid", "idiot", "dumb", "shut up", "annoying", "lazy", "pathetic",
-        "useless", "trash", "ugly", "hate you", "i hate you", "boring",
+        "useless", "trash", "ugly", "hate you", "i hate you",
         "dummy", "moron", "failure", "worst", "are you serious", "really now",
-    ], {"happiness": -8, "stress_level": 8, "affection": -4, "playfulness": -2}),
+    ], {"happiness": -8, "stress_level": 8, "affection": -4, "playfulness": -2, "anger": 6}),
     ("anger", [
         "angry", "furious", "pissed", "pissed off", "annoyed", "this sucks",
         "fix it now", "what the hell", "damn it", "dammit", "enough", "stop it",
         "that's wrong", "wrong again", "not working",
-    ], {"stress_level": 6, "happiness": -4, "energy": -2}),
+    ], {"anger": 10, "stress_level": 6, "happiness": -4, "energy": -2}),
+    ("annoy", [
+        "so annoying", "you're annoying", "you are annoying", "stfu", "shut it",
+        "whatever dude", "rolls eyes", "eye roll", "meh", "tch",
+        "are you even listening", "not this again", "you again",
+    ], {"anger": 8, "stress_level": 4, "happiness": -3}),
+    ("boring", [
+        "boring", "bored", "tedious", "monotonous", "dull", "mind-numbing",
+        "paperwork", "taxes", "bills", "laundry", "spreadsheet", "accounting",
+        "documentation", "admin work", "forms", "fine print", "manual", "legal jargon",
+    ], {"curiosity": -6, "playfulness": -5, "happiness": -3, "energy": -2}),
     ("sad", [
         "sad", "depressed", "lonely", "upset", "crying", "feel down",
         "tired of everything", "miserable", "heartbroken", "homesick", "grief",
-    ], {"happiness": -4, "stress_level": 3, "affection": 5, "doomer": 3}),
+    ], {"happiness": -5, "curiosity": -4, "doomer": 5, "stress_level": 2, "affection": 4}),
+    ("dismissal", [
+        "whatever", "idk", "i don't care", "dont care", "meh", "fine.",
+        "not interested", "don't wanna talk", "stop talking", "leave me alone",
+        "go away", "i'm done talking",
+    ], {"happiness": -4, "affection": -3, "curiosity": -3}),
+    ("good_news", [
+        "guess what", "good news", "great news", "i got the job", "i got in",
+        "i passed", "i won", "guess what happened", "i did it", "promoted",
+        "surprise!", "big news",
+    ], {"happiness": 6, "curiosity": 5, "energy": 3, "playfulness": 3}),
+    ("deep_talk", [
+        "meaning of life", "philosophy", "the universe", "consciousness",
+        "existence", "what if humans", "why do we", "nature of reality",
+        "afterlife", "fate", "free will",
+    ], {"curiosity": 8, "doomer": 3}),
+    ("unwell", [
+        "sick", "fever", "headache", "migraine", "not feeling well", "feel terrible",
+        "feel awful", "throwing up", "stomach ache", "sore throat",
+    ], {"affection": 6, "stress_level": 3, "happiness": -3, "doomer": 2}),
     ("playful", [
         "haha", "hehe", "lol", "lmao", "just kidding", "joking", "prank",
         "tease", "troll", "funny", "laugh", "rofl", "giggle",
@@ -120,7 +152,7 @@ REACTIONS = [
         "ugh", "this is so hard", "why me", "everything is broken",
         "nothing works", "i can't do this", "so frustrating", "this is a mess",
         "awful", "horrible day", "what a day",
-    ], {"stress_level": 5, "happiness": -3, "doomer": 2}),
+    ], {"stress_level": 5, "happiness": -3, "doomer": 2, "anger": 4}),
     ("comfort", [
         "i'm here", "you're ok", "its ok", "don't worry", "it'll be okay",
         "everything will be fine", "you've got this", "i'll take care of you",
@@ -139,8 +171,87 @@ _REACTION_PATTERNS = [
     for name, kws, deltas in REACTIONS
 ]
 
-# Cap for the net reaction delta applied to a single axis per turn.
-MAX_REACTION_DELTA = 15
+# ────────────────────────────────────────────────────────────────── #
+#  Self-reactions (her own speech)                                    #
+#  Talking isn't passive: laughing lifts her, venting drains her,     #
+#  being sweet warms her. These fire on Yuki's OWN generated words.   #
+# ────────────────────────────────────────────────────────────────── #
+SELF_REACTIONS = [
+    ("self_playful", [
+        "haha", "hehe", "lol", "lmao", "rofl", "giggle", "chuckle", "funny",
+        "silly", "tease", "teasing", "joking", "joke", "prank", "just kidding", "jk",
+    ], {"playfulness": 6, "happiness": 3, "energy": 1}),
+    ("self_intimate", [
+        "love you", "miss you", "kiss", "kissing", "cuddle", "hug", "hug you",
+        "hold you", "want you", "need you", "snuggle", "come here", "muah", "xoxo",
+        "sweetheart", "darling",
+    ], {"affection": 7, "horniness": 6, "happiness": 3}),
+    ("self_energetic", [
+        "exciting", "excited", "so excited", "can't wait", "cant wait", "awesome",
+        "amazing", "incredible", "woohoo", "yay", "finally", "perfect", "let's go",
+        "lets go", "yesss", "hell yeah",
+    ], {"energy": 6, "happiness": 4, "curiosity": 2}),
+    ("self_food", [
+        "hungry", "snack", "snacks", "eat", "food", "pizza", "ramen", "coffee",
+        "cookie", "cookies", "dinner", "lunch", "breakfast", "taco", "noodles", "dessert",
+    ], {"hunger": 8, "happiness": 2}),
+    ("self_tired", [
+        "tired", "exhausted", "sleepy", "drowsy", "yawning", "yawn", "long day",
+        "drained", "worn out", "so sleepy",
+    ], {"energy": -7, "stress_level": 2}),
+    ("self_stressed", [
+        "ugh", "sigh", "frustrated", "annoyed", "so annoyed", "this is hard",
+        "overwhelmed", "stressed", "stressing", "i'm sorry", "sorry", "apologize",
+        "what a mess", "i can't", "screw this", "so done with",
+    ], {"stress_level": 6, "happiness": -3, "energy": -3, "anger": 4}),
+    ("self_angry", [
+        "angry", "pissed", "pissed off", "furious", "mad", "irritating",
+        "damn", "what the hell", "i can't believe", "so done with", "enough",
+        "you keep doing this", "this is ridiculous",
+    ], {"anger": 10, "stress_level": 5, "happiness": -5, "energy": -2}),
+    ("self_bored", [
+        "boring", "bored", "tedious", "dull", "monotonous", "mind-numbing",
+        "this is a drag", "what a snooze",
+    ], {"curiosity": -6, "playfulness": -5, "happiness": -3, "energy": -3}),
+    ("self_soothing", [
+        "it's okay", "its okay", "don't worry", "everything will be fine", "it'll be fine",
+        "i've got you", "i got you", "you're safe", "take your time", "no worries", "it's fine",
+    ], {"stress_level": -5, "affection": 4, "happiness": 2}),
+    ("self_accomplished", [
+        "done", "finished", "completed", "success", "successfully", "worked", "fixed",
+        "solved", "figured it out", "got it working", "there you go", "all set", "it's ready",
+    ], {"happiness": 5, "stress_level": -4, "curiosity": 2}),
+    ("self_curious", [
+        "wonder", "interesting", "curious", "what if", "how does", "how does that",
+        "tell me more", "let me think", "let me check", "i'll look", "i'll check", "good question",
+    ], {"curiosity": 6, "energy": 1}),
+    ("self_down", [
+        "sad", "upset", "lonely", "down", "miserable", "heartbroken", "cry", "crying",
+        "depressed", "numb", "empty",
+    ], {"happiness": -6, "affection": 4, "doomer": 3}),
+]
+
+_SELF_REACTION_PATTERNS = [
+    (name, [re.compile(r"(?<!\w)" + re.escape(kw) + r"(?!\w)", re.IGNORECASE) for kw in kws], deltas)
+    for name, kws, deltas in SELF_REACTIONS
+]
+
+# ────────────────────────────────────────────────────────────────── #
+#  Repetition escalation ("emotional momentum")                       #
+#  Repeated triggers compound — the 5th provocation bites harder      #
+#  than the 1st, just like patience wearing thin — then cools off     #
+#  with time. Applies to user AND self reactions, positive and        #
+#  negative alike.                                                    #
+# ────────────────────────────────────────────────────────────────── #
+ESCALATION_MAX_BOOST = 2.8        # ceiling multiplier (~6-7 repeats)
+ESCALATION_STEP = 0.35            # extra multiplier per repeat
+ESCALATION_HALFLIFE_HOURS = 2.0   # how fast her patience recovers
+ESCALATION_PRUNE_WEIGHT = 0.5     # forget a category below this weight
+ESCALATION_MAX_AGE_HOURS = 24.0   # hard forget after a day
+
+# Hard cap on a single axis swing per turn after escalation (matches
+# the LLM <mood_update> tag's ±40 range so both modes feel symmetric).
+MAX_ESCALATED_DELTA = 40
 
 # ------------------------------------------------------------------ #
 #  LLM mood tag scrubbing                                             #
@@ -231,6 +342,7 @@ class MoodEngine:
         self._profile = profile
         self._save = save_fn
         self._broadcast = broadcast_fn
+        self._reaction_memory = {}
         self._ensure_initialized()
 
     # -- persistence helpers -----------------------------------------
@@ -368,12 +480,13 @@ class MoodEngine:
         if not text:
             return {}
         updates = {}
-        for _name, patterns, deltas in _REACTION_PATTERNS:
+        for name, patterns, deltas in _REACTION_PATTERNS:
             if any(p.search(text) for p in patterns):
+                boost = self._bump_reaction(name)
                 for axis, delta in deltas.items():
-                    updates[axis] = updates.get(axis, 0) + delta
+                    updates[axis] = updates.get(axis, 0) + int(round(delta * boost))
         for axis in list(updates):
-            updates[axis] = max(-MAX_REACTION_DELTA, min(MAX_REACTION_DELTA, int(updates[axis])))
+            updates[axis] = max(-MAX_ESCALATED_DELTA, min(MAX_ESCALATED_DELTA, int(updates[axis])))
         if scope == "physical":
             updates = {k: v for k, v in updates.items() if k in LLM_MODE_SCRIPT_AXES}
         elif scope == "emotion":
@@ -382,9 +495,106 @@ class MoodEngine:
             self.apply_deltas(updates)
         return updates
 
+    def react_to_self(self, text: str, scope: str = "full") -> dict:
+        """Script/regex self-reactions — her OWN spoken words feed back into her mood.
+
+        Speaking is a mirror, not just an output: laughing lifts her, venting
+        drains her, being sweet warms her, saying she's done calms her. scope:
+        full | physical | emotion (same semantics as react_to_message).
+        """
+        if not text:
+            return {}
+        updates = {}
+        for name, patterns, deltas in _SELF_REACTION_PATTERNS:
+            if any(p.search(text) for p in patterns):
+                boost = self._bump_reaction(name)
+                for axis, delta in deltas.items():
+                    updates[axis] = updates.get(axis, 0) + int(round(delta * boost))
+        for axis in list(updates):
+            updates[axis] = max(-MAX_ESCALATED_DELTA, min(MAX_ESCALATED_DELTA, int(updates[axis])))
+        if scope == "physical":
+            updates = {k: v for k, v in updates.items() if k in LLM_MODE_SCRIPT_AXES}
+        elif scope == "emotion":
+            updates = {k: v for k, v in updates.items() if k not in LLM_MODE_SCRIPT_AXES}
+        if updates:
+            self.apply_deltas(updates)
+        return updates
+
+    def apply_turn_effects(self) -> dict:
+        """mood_effecter — per-turn coupling of her own state.
+
+        Runs once at the end of every turn, after LLM deltas and self-reactions.
+        No reversion pull: only real elapsed time (step(), run at turn start)
+        drifts her back toward baseline, so moods persist during an active session.
+        """
+        m = self.current()
+        deltas = {"energy": -1}
+        if m["doomer"] >= 70:
+            deltas["happiness"] = deltas.get("happiness", 0) - 3
+            deltas["energy"] = deltas.get("energy", 0) - 3
+        elif m["doomer"] >= 55:
+            deltas["happiness"] = deltas.get("happiness", 0) - 1
+        if m["affection"] >= 60 or m["horniness"] >= 75:
+            deltas["happiness"] = deltas.get("happiness", 0) + 4
+            deltas["energy"] = deltas.get("energy", 0) + 2
+        if m["stress_level"] >= 65:
+            deltas["happiness"] = deltas.get("happiness", 0) - 2
+        if m["anger"] >= 70:
+            deltas["happiness"] = deltas.get("happiness", 0) - 2
+            deltas["stress_level"] = deltas.get("stress_level", 0) + 2
+        if m["hunger"] >= 75:
+            deltas["happiness"] = deltas.get("happiness", 0) - 1
+            deltas["energy"] = deltas.get("energy", 0) - 2
+        if m["playfulness"] >= 65:
+            deltas["energy"] = deltas.get("energy", 0) + 1
+        if m["happiness"] >= 80:
+            deltas["energy"] = deltas.get("energy", 0) + 1
+        if m["happiness"] <= 25:
+            deltas["energy"] = deltas.get("energy", 0) - 1
+            deltas["doomer"] = deltas.get("doomer", 0) + 1
+        if m["energy"] <= 30:
+            deltas["happiness"] = deltas.get("happiness", 0) - 1
+            deltas["curiosity"] = deltas.get("curiosity", 0) - 1
+        if m["curiosity"] >= 70:
+            deltas["energy"] = deltas.get("energy", 0) + 1
+        if deltas:
+            self.apply_deltas(deltas)
+        return deltas
+
+    def _bump_reaction(self, name: str) -> float:
+        """Record a firing of a reaction category and return its boost multiplier."""
+        now = time.time()
+        mem = self._reaction_memory.get(name)
+        if mem is None:
+            mem = {"count": 0, "last": now}
+        mem["count"] += 1
+        mem["last"] = now
+        self._reaction_memory[name] = mem
+        self._prune_reaction_memory(now)
+        return self._reaction_boost(name)
+
+    def _reaction_boost(self, name: str) -> float:
+        """Emotional momentum multiplier for a category, fading with time."""
+        mem = self._reaction_memory.get(name)
+        if not mem:
+            return 1.0
+        hours_since = max(0.0, (time.time() - mem["last"]) / 3600.0)
+        decayed = mem["count"] * (0.5 ** (hours_since / ESCALATION_HALFLIFE_HOURS))
+        return 1.0 + min(ESCALATION_MAX_BOOST - 1.0, max(0.0, decayed - 1.0) * ESCALATION_STEP)
+
+    def _prune_reaction_memory(self, now: float):
+        stale = []
+        for name, mem in self._reaction_memory.items():
+            hours_since = max(0.0, (now - mem["last"]) / 3600.0)
+            decayed = mem["count"] * (0.5 ** (hours_since / ESCALATION_HALFLIFE_HOURS))
+            if decayed < ESCALATION_PRUNE_WEIGHT or hours_since > ESCALATION_MAX_AGE_HOURS:
+                stale.append(name)
+        for name in stale:
+            self._reaction_memory.pop(name, None)
+
     def apply_llm_deltas(self, deltas: dict) -> bool:
-        """Apply parsed LLM <mood_update> deltas (script-only axes are blocked)."""
-        clean = {k: v for k, v in deltas.items() if k in AXES and k not in SCRIPT_ONLY_AXES}
+        """Apply parsed LLM <mood_update> deltas (all axes, incl. horniness/anger)."""
+        clean = {k: v for k, v in deltas.items() if k in AXES}
         if not clean:
             return False
         self.apply_deltas(clean)
@@ -456,7 +666,8 @@ class MoodEngine:
         current = self._read()
         spread = {
             "happiness": 12, "energy": 10, "curiosity": 10, "affection": 10,
-            "stress_level": 10, "doomer": 10, "hunger": 12, "playfulness": 12, "horniness": 10,
+            "stress_level": 10, "doomer": 10, "hunger": 12, "playfulness": 12,
+            "horniness": 10, "anger": 8,
         }
         for axis in AXES:
             current[axis] = _clamp(self._home_value(axis, lt) + rng.uniform(-spread[axis], spread[axis]))
@@ -513,6 +724,10 @@ class MoodEngine:
                   "You're in a more serious mood right now.")
         if v:
             parts.append(v)
+        v = trend("anger", "You're feeling unusually irritated and short-fused right now.",
+                  "You're uncharacteristically patient and even-tempered.")
+        if v:
+            parts.append(v)
 
         if m["hunger"] >= 65:
             parts.append("You're getting hungry and could really go for a snack.")
@@ -522,6 +737,10 @@ class MoodEngine:
             parts.append("You're starting to feel drowsy.")
         if m["horniness"] >= 75:
             parts.append("You're feeling warm and intimately inclined.")
+        if m["anger"] >= 60:
+            parts.append("You're genuinely angry right now — on the verge of losing your temper.")
+        elif m["anger"] >= 35:
+            parts.append("You're noticeably irritated and would rather not be provoked further.")
 
         if not parts:
             parts.append("You feel about like you normally do.")
@@ -534,6 +753,8 @@ class MoodEngine:
     def expression(self) -> str:
         """Dominant avatar expression when the LLM emits no explicit tag."""
         m = self.current()
+        if m["anger"] >= 70:
+            return "angry"
         if m["energy"] <= 30:
             return "relaxed"
         if m["happiness"] <= 25 or m["stress_level"] >= 70:
@@ -542,17 +763,37 @@ class MoodEngine:
             return "surprised"
         if m["playfulness"] >= 70:
             return "smug"
+        # High happiness → use relaxed (content/serene look), not happy emote
+        # (the "happy" blend has mouth-open/droopy-eyes which reads as goofy, not happy)
         if m["happiness"] >= 70 and m["energy"] >= 55:
-            return "happy"
+            return "relaxed"
         return "relaxed"
 
     def voice_scale(self) -> dict:
-        """Suggested TTS rate/energy modifiers derived from current mood."""
+        """Discrete TTS rate/energy modifiers derived from current mood.
+
+        A fixed ladder instead of a continuous formula so delivery changes are
+        audible. Negative states are checked first, so they always win when
+        multiple thresholds match (e.g. high energy + high doom = slow).
+        """
         m = self.current()
-        energy = m["energy"] / 100.0
-        happiness = m["happiness"] / 100.0
-        rate = round(0.92 + 0.18 * energy + 0.06 * happiness, 2)
-        return {"rate": rate, "energy": round(energy, 2), "valence": round(happiness, 2)}
+        if m["energy"] < 30:
+            rate = 0.8
+        elif m["doomer"] > 80:
+            rate = 0.8
+        elif m["doomer"] > 55:
+            rate = 0.9
+        elif m["energy"] < 35 or m["curiosity"] < 35:
+            rate = 0.9
+        elif m["energy"] > 90:
+            rate = 1.2
+        elif m["energy"] > 70:
+            rate = 1.1
+        elif m["curiosity"] > 70:
+            rate = 1.1
+        else:
+            rate = 1.0
+        return {"rate": rate, "energy": round(m["energy"] / 100.0, 2), "valence": round(m["happiness"] / 100.0, 2)}
 
     def meta(self) -> dict:
         return {

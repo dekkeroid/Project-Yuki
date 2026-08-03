@@ -554,12 +554,24 @@ try:
 except Exception as e:
     print(f"[Startup] Error registering terminal stream listener: {e}")
 
+def _resolve_tts_rate(rate: str = None) -> str:
+    """Return the effective TTS rate string, resolving 'auto' against Yuki's live mood."""
+    if rate is None:
+        rate = memory_manager.profile.get("settings", {}).get("tts_rate", getattr(config, "TTS_RATE", "auto"))
+    if str(rate).strip().lower() == "auto":
+        try:
+            return str(memory_manager.get_mood_meta()["voice"]["rate"])
+        except Exception:
+            return "1.0"
+    return rate
+
+
 async def test_and_announce_voice_change(new_voice: str, new_rate: str = None):
     global tts_online_status
     try:
         from app.voice.tts import generate_speech_bytes
         test_text = f"Voice changed to {new_voice.replace('_', ' ').replace('af ', '').replace('bf ', '').replace('jf ', '').title()}."
-        audio_bytes = await asyncio.wait_for(generate_speech_bytes(test_text, voice=new_voice, rate=new_rate), timeout=15.0)
+        audio_bytes = await asyncio.wait_for(generate_speech_bytes(test_text, voice=new_voice, rate=_resolve_tts_rate(new_rate)), timeout=15.0)
         if audio_bytes:
             import base64
             audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
@@ -1084,12 +1096,16 @@ class SettingsUpdateRequest(BaseModel):
     llm_summary_model: Optional[str] = None
     llm_vision_model: Optional[str] = None
     always_included_tools: Optional[List[str]] = None
+    codegraph_coder_enabled: Optional[bool] = None
+    codegraph_advanced_enabled: Optional[bool] = None
     persistent_chat_history: Optional[bool] = None
     manage_todo_enabled: Optional[bool] = None
     basic_history_token_limit: Optional[int] = None
     basic_history_keep_turns: Optional[int] = None
     advanced_history_token_limit: Optional[int] = None
     advanced_history_keep_turns: Optional[int] = None
+    history_summary_percent: Optional[int] = None
+    history_summary_position: Optional[str] = None
     whisper_idle_timeout: Optional[int] = None
     whisper_vram_threshold: Optional[float] = None
     whisper_auto_unload: Optional[bool] = None
@@ -1104,6 +1120,7 @@ class SettingsUpdateRequest(BaseModel):
     tts_cloud_endpoint: Optional[str] = None    # Custom provider endpoint URL
     tts_cloud_region: Optional[str] = None      # Azure region, etc.
     tts_cloud_voice: Optional[str] = None       # Voice/model name for cloud TTS
+    mood_source: Optional[str] = None           # "script"|"llm" — mood driver mode
 
 
 @app.post("/api/settings/update")
@@ -1143,6 +1160,12 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("advanced_history_token_limit", int(req.advanced_history_token_limit))
     if req.advanced_history_keep_turns is not None:
         memory_manager.update_setting("advanced_history_keep_turns", int(req.advanced_history_keep_turns))
+    if req.history_summary_percent is not None:
+        memory_manager.update_setting("history_summary_percent", max(0, min(100, int(req.history_summary_percent))))
+    if req.history_summary_position is not None:
+        pos = req.history_summary_position.strip().lower()
+        if pos in ("oldest", "middle"):
+            memory_manager.update_setting("history_summary_position", pos)
     if req.send_tools_in_simple is not None:
         config.SEND_TOOLS_IN_SIMPLE = bool(req.send_tools_in_simple)
         memory_manager.update_setting("send_tools_in_simple", bool(req.send_tools_in_simple))
@@ -1394,6 +1417,11 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.custom_alarm_tone_file is not None:
         memory_manager.update_setting("custom_alarm_tone_file", req.custom_alarm_tone_file.strip())
 
+    if req.mood_source is not None:
+        val = req.mood_source.strip().lower()
+        if val in ("script", "llm"):
+            memory_manager.update_setting("mood_source", val)
+
     # ── Cloud STT provider settings ───────────────────────────────────────────
     _VALID_STT_PROVIDERS = {"local", "google", "azure", "assemblyai", "deepgram", "custom"}
     if req.stt_provider is not None:
@@ -1483,6 +1511,13 @@ async def update_settings(req: SettingsUpdateRequest):
         config.ALWAYS_INCLUDED_JARVIS_TOOLS = clean_tools
         memory_manager.update_setting("always_included_tools", clean_tools)
         print(f"[SETTINGS-UPDATE-BE] always_included_tools = {clean_tools}")
+
+    if req.codegraph_coder_enabled is not None:
+        memory_manager.update_setting("codegraph_coder_enabled", bool(req.codegraph_coder_enabled))
+        print(f"[SETTINGS-UPDATE-BE] codegraph_coder_enabled = {bool(req.codegraph_coder_enabled)}")
+    if req.codegraph_advanced_enabled is not None:
+        memory_manager.update_setting("codegraph_advanced_enabled", bool(req.codegraph_advanced_enabled))
+        print(f"[SETTINGS-UPDATE-BE] codegraph_advanced_enabled = {bool(req.codegraph_advanced_enabled)}")
 
     print(f"[SETTINGS-UPDATE-BE]   AFTER:  llm_base_url='{current_settings.get('llm_base_url', '')}' llm_backend='{current_settings.get('llm_backend', '')}'")
     print(f"[SETTINGS-UPDATE-BE] ✅ Returning {len(current_settings)} settings keys")
@@ -1805,8 +1840,8 @@ async def tts_endpoint(text: str, voice: Optional[str] = None, rate: Optional[st
         endpoint = settings.get("tts_cloud_endpoint", "") or getattr(config, "TTS_CLOUD_ENDPOINT", "")
         region   = settings.get("tts_cloud_region", "eastus")
         cvoice   = settings.get("tts_cloud_voice", "") or getattr(config, "TTS_CLOUD_VOICE", "")
-        # Parse rate to float
-        rate_str = rate or getattr(config, "TTS_RATE", "1.0")
+        # Parse rate to float ('auto' resolves against live mood)
+        rate_str = _resolve_tts_rate(rate)
         try:
             speed = float(_re.sub(r"[^\d.+\-]", "", str(rate_str)) or "1.0")
         except Exception:
@@ -1842,7 +1877,7 @@ async def tts_endpoint(text: str, voice: Optional[str] = None, rate: Optional[st
         return Response(status_code=500, content="TTS service is currently offline.")
 
     from app.voice.tts import generate_speech_bytes
-    audio_bytes = await generate_speech_bytes(decoded_text, voice=voice, rate=rate)
+    audio_bytes = await generate_speech_bytes(decoded_text, voice=voice, rate=_resolve_tts_rate(rate))
 
     if not audio_bytes:
         return Response(status_code=500, content="Failed to generate speech audio.")
@@ -2495,7 +2530,7 @@ async def reset_profile():
             "llm_base_url": "",
             "llm_api_key": "",
             "tts_voice": "bf_isabella",
-            "tts_rate": "1.0",
+            "tts_rate": "auto",
             "tts_device": "auto",
             "stt_device": "auto",
             "character_name": "Yuki",
@@ -3003,7 +3038,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                             t_start = time.time()
                                             # Mark which backend we expect to use at the time of synthesis
                                             expected_backend = 'kokoro' if tts_online_status else 'backend-disabled'
-                                            audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=30.0)
+                                            audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text, rate=_resolve_tts_rate()), timeout=30.0)
                                             t_elapsed = time.time() - t_start
                                             if audio_bytes:
                                                 audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
@@ -3113,6 +3148,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                         overrides["turn_id"] = turn_id
                                         if not overrides.get("session_id"):
                                             overrides["session_id"] = active_session_id
+                                        # Tag voice-originated turns so the executor can require
+                                        # confirmation for destructive operations (listening mode safety)
+                                        if stt_time_ms is not None:
+                                            overrides["from_voice"] = True
                                         attachments = payload_data.get("attachments") or []
                                         gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides, attachments=attachments)
                                         # First crash-recovery checkpoint: prior history + the new user message.
@@ -3357,7 +3396,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 if not re.sub(r'[^\w\s]', '', speech_text).strip():
                                     continue
                                 try:
-                                    audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text), timeout=40.0)
+                                    audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text, rate=_resolve_tts_rate()), timeout=40.0)
                                     if audio_bytes:
                                         audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                                         audio_url = f"data:audio/wav;base64,{audio_base64}"

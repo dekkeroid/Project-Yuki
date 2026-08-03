@@ -80,3 +80,29 @@ Sandbox configuration:
 Default sensitive actions include app launch, file create/edit/delete, terminal/Python execution, keyboard/mouse injection, process kill, window close, and system power controls. Shutdown and restart are blocked by default even if a model tries to set `confirmed: true`.
 
 External MCP hosts can safely discover all Yuki tools, but sensitive tools will return `CONFIRM_REQUIRED` unless the local backend has issued a matching grant or the sandbox is explicitly disabled.
+
+## Codegraph tools (local, opt-in)
+
+Yuki can ship 9 code-intelligence tools to the LLM: the read-only `codegraph_explore`, `codegraph_search`, `codegraph_node`, `codegraph_files`, `codegraph_callers`, `codegraph_callees`, `codegraph_impact`, `codegraph_status`, plus `codegraph_set_workspace_directory` (registers a directory as the active coder workspace). They run the `codegraph` CLI locally as subprocesses — not through MCP — and are disabled by default.
+
+Prerequisites:
+
+- Install the CLI globally: `npm i -g @colbymchenry/codegraph`
+- Index the target project: run `codegraph init` inside the project (creates a `.codegraph/` index). The default project is the repo root; override with `YUKI_CODEGRAPH_PROJECT` (absolute path).
+
+Toggles (both default OFF):
+
+- `YUKI_CODEGRAPH_CODER_ENABLED` / settings key `codegraph_coder_enabled` — ships codegraph tools in Coder mode. Exposed in AI Brain (main app), desktop Brain & AI Settings, and Agentic Workspace preferences.
+- `YUKI_CODEGRAPH_ADVANCED_ENABLED` / settings key `codegraph_advanced_enabled` — also adds the codegraph tools to the Advanced (Autonomous Jarvis) tool suite. Only rendered/enabled when the coder toggle is on.
+
+Caution text shown next to the toggles: "Codegraph must be installed on your PC for this tool to work." If the CLI or index is missing, the tools return a helpful error string instead of crashing the request.
+
+### Coder-mode first-time setup flow
+
+When `codegraph_coder_enabled` is on, the coder-mode system prompt instructs the agent to prefer codegraph for code navigation and adds a `ask_user`-gated setup flow for un-indexed workspaces:
+
+1. The agent runs `codegraph_status` to check for an index.
+2. If none exists, it asks the user via `ask_user` with three options: run `codegraph init` at the active workspace path (recommended), use a different path (typed in the dialog), or "I will do it myself".
+3. On approval it runs `codegraph init "<path>"` through `jarvis_run_terminal`, and registers a user-supplied custom path via the `codegraph_set_workspace_directory(path)` tool, which persists it to `settings.session_directories` (making it the active coder workspace) and flips `set_active_workspace_directory`.
+
+

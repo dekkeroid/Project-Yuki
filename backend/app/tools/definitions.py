@@ -156,7 +156,7 @@ def get_advanced_jarvis_tools_definition() -> list:
     Returns the completely independent Advanced Jarvis tool schemas engineered for Frontier Cloud LLMs.
     Supports parallel tool calling, multi-step ReAct reasoning, SQLite DB queries, code review, and PC automation.
     """
-    return [
+    tools = [
         {
             "type": "function",
             "function": {
@@ -702,6 +702,151 @@ def get_advanced_jarvis_tools_definition() -> list:
                         }
                     },
                     "required": ["questions"]
+                }
+            }
+        }
+    ]
+
+    # Codegraph is opt-in: only shipped in advanced mode when the user enables it.
+    if getattr(config, "CODEGRAPH_ADVANCED_ENABLED", False):
+        tools.extend(get_codegraph_tool_definitions())
+    return tools
+
+
+def get_codegraph_tool_definitions() -> list:
+    """Codegraph (code intelligence) tool schemas. Read-only, opt-in via settings."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "codegraph_explore",
+                "description": "Explore an area of a codebase in one shot: the relevant symbols' verbatim source PLUS the call paths between them (including dynamic-dispatch hops like callbacks that grep can't follow). Use this BEFORE grep/read when you need to understand how code works, find where a symbol is used, or survey an area. Name a file, symbol, or natural-language question as the query.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Symbol names, file names, or a short natural-language question (e.g. 'AuthService loginUser', 'how does the MCP bridge connect')"},
+                        "max_files": {"type": "integer", "description": "Maximum number of files to include source from (optional, default varies by project size)."},
+                        "project_path": {"type": "string", "description": "Optional absolute path to the indexed project. Defaults to Yuki's workspace."}
+                    },
+                    "required": ["query"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "codegraph_search",
+                "description": "Search the codebase index for symbols (functions, classes, methods, etc.) by name or keywords. Returns matching symbol locations. Use to locate where a thing is defined before reading files.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Symbol name or keywords to search for."},
+                        "limit": {"type": "integer", "description": "Max results to return (default 10)."},
+                        "project_path": {"type": "string", "description": "Optional absolute path to the indexed project. Defaults to Yuki's workspace."}
+                    },
+                    "required": ["query"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "codegraph_node",
+                "description": "Read one symbol's verbatim source plus its caller/callee trail in a single call. Use to inspect a specific function/class definition with its call graph without separate greps.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "The exact symbol name (or file path) to inspect."},
+                        "project_path": {"type": "string", "description": "Optional absolute path to the indexed project. Defaults to Yuki's workspace."}
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "codegraph_files",
+                "description": "Show the project file structure from the codegraph index. Use to understand the overall layout of a repository.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "project_path": {"type": "string", "description": "Optional absolute path to the indexed project. Defaults to Yuki's workspace."}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "codegraph_callers",
+                "description": "Find all functions/methods that call a specific symbol. Use to understand what depends on a function before refactoring or changing it.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "The symbol name to find callers of."},
+                        "limit": {"type": "integer", "description": "Max results (default 20)."},
+                        "project_path": {"type": "string", "description": "Optional absolute path to the indexed project. Defaults to Yuki's workspace."}
+                    },
+                    "required": ["symbol"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "codegraph_callees",
+                "description": "Find all functions/methods that a specific symbol calls. Use to understand what a function depends on.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "The symbol name to find callees of."},
+                        "limit": {"type": "integer", "description": "Max results (default 20)."},
+                        "project_path": {"type": "string", "description": "Optional absolute path to the indexed project. Defaults to Yuki's workspace."}
+                    },
+                    "required": ["symbol"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "codegraph_impact",
+                "description": "Analyze what code is affected by changing a specific symbol. Use before proposing a refactor to see the blast radius.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "The symbol name to analyze impact for."},
+                        "project_path": {"type": "string", "description": "Optional absolute path to the indexed project. Defaults to Yuki's workspace."}
+                    },
+                    "required": ["symbol"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "codegraph_status",
+                "description": "Show codegraph index status and statistics for a project. Use to verify the index exists and how up-to-date it is.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "project_path": {"type": "string", "description": "Optional absolute path to the indexed project. Defaults to Yuki's workspace."}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "codegraph_set_workspace_directory",
+                "description": "Register a directory as the active coder workspace. Persists it as the session workspace directory and makes codegraph (and other coder tools) target it. Use when the user provides or picks a project directory that is not yet the active workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Absolute path to the directory to set as the active workspace (must exist on this PC)."}
+                    },
+                    "required": ["path"]
                 }
             }
         }

@@ -12,7 +12,8 @@ DEFAULT_MOOD_SPECTRUM = {
     "doomer": 20,
     "hunger": 30,
     "horniness": 50,
-    "playfulness": 55
+    "playfulness": 55,
+    "anger": 10
 }
 
 class MemoryManager:
@@ -52,7 +53,7 @@ class MemoryManager:
                 "llm_base_url": "",
                 "llm_api_key": "",
                 "tts_voice": "bf_isabella",
-                "tts_rate": "1.0",
+                "tts_rate": "auto",
                 "tts_device": "auto",
                 "stt_device": "auto",
                 "character_name": "Yuki",
@@ -88,10 +89,15 @@ class MemoryManager:
                 "persistent_chat_history": False,
                 "manage_todo_enabled": True,
                 "ask_user_enabled": True,
+                "codegraph_coder_enabled": False,
+                "codegraph_advanced_enabled": False,
                 "basic_history_token_limit": 2500,
                 "basic_history_keep_turns": 6,
                 "advanced_history_token_limit": 40000,
-                "advanced_history_keep_turns": 16
+                "advanced_history_keep_turns": 16,
+                "history_summary_percent": 50,
+                "history_summary_position": "oldest",
+                "llm_summary_model": ""
             }
         }
         if not os.path.exists(self.profile_path):
@@ -131,6 +137,8 @@ class MemoryManager:
                 config.SILENCE_TIMEOUT_MS = int(data["settings"].get("silence_timeout_ms", getattr(config, "SILENCE_TIMEOUT_MS", 450)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
                 config.SEND_TOOLS_IN_SIMPLE = bool(data["settings"].get("send_tools_in_simple", False))
+                config.CODEGRAPH_CODER_ENABLED = bool(data["settings"].get("codegraph_coder_enabled", getattr(config, "CODEGRAPH_CODER_ENABLED", False)))
+                config.CODEGRAPH_ADVANCED_ENABLED = bool(data["settings"].get("codegraph_advanced_enabled", getattr(config, "CODEGRAPH_ADVANCED_ENABLED", False)))
                 config.ENDPOINT_STRATEGY = data["settings"].get("endpoint_strategy", "single").strip().lower()
                 config.LLM_SIMPLE_BACKEND = data["settings"].get("llm_simple_backend", getattr(config, "LLM_SIMPLE_BACKEND", "lmstudio"))
                 config.LLM_SIMPLE_BASE_URL = data["settings"].get("llm_simple_base_url", getattr(config, "LLM_SIMPLE_BASE_URL", "http://127.0.0.1:1234"))
@@ -297,6 +305,10 @@ class MemoryManager:
             config.NO_LLM_MODE = bool(value)
         elif key == "llm_mode":
             config.LLM_MODE = int(value)
+        elif key == "codegraph_coder_enabled":
+            config.CODEGRAPH_CODER_ENABLED = bool(value)
+        elif key == "codegraph_advanced_enabled":
+            config.CODEGRAPH_ADVANCED_ENABLED = bool(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 
@@ -352,6 +364,14 @@ class MemoryManager:
     def react_mood(self, text: str, scope: str = "full") -> dict:
         """Script/regex reactions to a user message. scope: full | physical | emotion."""
         return self._mood_engine.react_to_message(text, scope=scope)
+
+    def react_mood_self(self, text: str, scope: str = "full") -> dict:
+        """Script/regex reactions to Yuki's OWN response text — her speech feeds back into her mood."""
+        return self._mood_engine.react_to_self(text, scope=scope)
+
+    def apply_turn_effects(self) -> dict:
+        """mood_effecter — per-turn couplings run once at the end of each turn."""
+        return self._mood_engine.apply_turn_effects()
 
     def apply_llm_mood(self, deltas: dict) -> bool:
         """Apply LLM-parsed <mood_update> deltas (script-only axes blocked)."""
