@@ -165,6 +165,8 @@ class MemoryManager:
                     config.ALWAYS_INCLUDED_JARVIS_TOOLS = list(data["settings"].get("always_included_tools") or [])
                 if "blocked_tools" in data["settings"]:
                     config.TOOL_BLACKLIST = set(data["settings"].get("blocked_tools") or [])
+                if "included_coder_tools" in data["settings"]:
+                    config.INCLUDED_CODER_TOOLS = list(data["settings"].get("included_coder_tools") or [])
                 
                 return data
         except Exception as e:

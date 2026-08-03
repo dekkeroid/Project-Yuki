@@ -97,7 +97,7 @@ def resolve_command(message: str) -> Optional[ResolvedCommand]:
     # ── Stopwatch / Timer ─────────────────────────────────────────────────────
     if re.search(r"\b(start|begin|create)\s+(a\s+)?stopwatch\b", msg):
         label = re.sub(r".*\bstopwatch\s*(for|on|about)?\s*", "", msg).strip() or "default"
-        return ("manage_time", {"action": "start_stopwatch", "label": label})
+        return ("manage_timer_stopwatch_alarms", {"action": "start_stopwatch", "label": label})
 
     # ── Open / Launch / Run ───────────────────────────────────────────────────
     # Matches "open notepad", "launch calculator", "run chrome", etc.

@@ -118,7 +118,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
     }
     return parts.length > 0 ? parts : text;
   }
-  
+
   // Regex matches:
   // 1. Markdown Links: [label](url_or_path)
   // 2. HTTP/HTTPS URLs: https://... or http://... or www....
@@ -493,7 +493,7 @@ export const formatToolName = (toolRaw) => {
   if (name.includes('system_diagnostics') || name.includes('get_system_stats')) return "💻 System Diagnostics";
   if (name.includes('list_dir') || name.includes('list_directory')) return "🌳 List Directory";
   if (name.includes('git_status')) return "🌿 Git Status";
-  if (name.includes('manage_time')) return "⏰ Timer & Clock";
+  if (name.includes('manage_timer_stopwatch_alarms')) return "⏰ Timer & Clock";
   if (name.includes('set_system_volume')) return "🔊 Volume Control";
   if (name.includes('launch_app')) return "🚀 Launch App";
 
@@ -1239,10 +1239,10 @@ const ChatOverlay = ({
     const newText = `${cmdPrefix} ${pathVal}`;
     setInputText(newText);
     setActiveSuggIdx(-1);
-    
+
     // Submit the command immediately
     setTimeout(() => {
-      const fakeEvent = { preventDefault: () => {} };
+      const fakeEvent = { preventDefault: () => { } };
       onSubmit(fakeEvent, newText, true);
     }, 50);
   };
@@ -1286,13 +1286,13 @@ const ChatOverlay = ({
 
   return (
     <div className="chat-overlay-container">
-      
+
       {/* Floating Dialog Bubble (hovers near character, visible when she speaks) */}
       {currentSpeechText && (
         <div className="speech-bubble-floating glass-panel animate-fade-in">
           {/* Arrow pointing at character */}
           <div className="bubble-arrow"></div>
-          
+
           <span className="bubble-tag">Yuki</span>
           <p className="bubble-text">{formatMessageText(currentSpeechText)}</p>
         </div>
@@ -1477,9 +1477,8 @@ const ChatOverlay = ({
 
                 {/* Speech Bubble */}
                 <div
-                  className={`bubble-content-block ${
-                    isSystem ? 'system' : isUser ? 'user' : 'assistant'
-                  }`}
+                  className={`bubble-content-block ${isSystem ? 'system' : isUser ? 'user' : 'assistant'
+                    }`}
                 >
                   {isUser && msg.attachments && renderMessageAttachments(msg.attachments)}
                   <RenderMessageContent content={msg.content} isSystem={isSystem} />
@@ -1813,9 +1812,8 @@ const ChatOverlay = ({
       <div className="audio-control-hub glass-panel">
         <button
           onClick={toggleListening}
-          className={`listen-toggle-btn ${
-            isTalkMode ? (isListening ? 'active' : 'active talk-waiting') : ''
-          }`}
+          className={`listen-toggle-btn ${isTalkMode ? (isListening ? 'active' : 'active talk-waiting') : ''
+            }`}
           title={isTalkMode ? 'Click to exit Talk Mode' : 'Click to enter Talk Mode'}
         >
           {isTalkMode ? (

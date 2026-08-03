@@ -51,19 +51,46 @@ const StopwatchOverlay = ({ initialLabel = 'default' }) => {
     };
   }, [isRunning]);
 
-  const handlePauseResume = () => {
+  const handlePauseResume = async () => {
     if (isRunning) {
-      // Pausing
+      // Pausing — freeze locally AND tell backend to stop accumulating
       accumulatedRef.current = elapsedMs;
       setIsRunning(false);
+      try {
+        await fetch(`${API_BASE}/api/reminders/stopwatch/stop`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label })
+        });
+      } catch (e) {
+        console.error("Failed to pause stopwatch on backend:", e);
+      }
     } else {
-      // Resuming
+      // Resuming — tell backend to resume timing from paused_elapsed
       startTimeRef.current = Date.now();
       setIsRunning(true);
+      try {
+        await fetch(`${API_BASE}/api/reminders/stopwatch/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label })
+        });
+      } catch (e) {
+        console.error("Failed to resume stopwatch on backend:", e);
+      }
     }
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
+    try {
+      await fetch(`${API_BASE}/api/reminders/stopwatch/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label })
+      });
+    } catch (e) {
+      console.error("Failed to reset stopwatch on backend:", e);
+    }
     accumulatedRef.current = 0;
     setElapsedMs(0);
     startTimeRef.current = Date.now();
