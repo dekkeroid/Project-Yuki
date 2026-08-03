@@ -1,6 +1,52 @@
 import app.config as config
 from app.tools.selector import select_relevant_tools
 
+
+def get_scheduled_task_schema(name: str = "manage_scheduled_task") -> dict:
+    """Shared JSON schema for the scheduled-task tool (basic and advanced modes)."""
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": "Schedule autonomous tasks that fire later or on a repeating interval, and watchers that poll a condition and fire an action when it changes. "
+                           "Actions can be a shell command, a Yuki tool (e.g. take a screenshot), or a power action (shutdown/restart — confirmed once when the task is created). "
+                           "Use 'set_delayed' to fire once after N seconds (e.g. screenshot in 30s). Use 'set_interval' to fire every N seconds (e.g. keep-alive ping). "
+                           "Use 'watch' to poll every N seconds and fire when a process/window/file/command condition flips (e.g. watch a terminal process and shut down the PC when it closes). "
+                           "Use 'list' to show active tasks and 'cancel' to stop one.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["set_delayed", "set_interval", "watch", "list", "cancel"]
+                    },
+                    "kind": {"type": "string", "description": "For watch: 'process', 'window', 'file', or 'command'."},
+                    "target": {"type": "string", "description": "For watch: PID or process name, window title substring, file/folder path, or shell command (for 'command' watcher)."},
+                    "fire_condition": {
+                        "type": "string",
+                        "description": "For watch: when to fire. process: 'gone' or 'present'. window: 'open' or 'closed'. file: 'exists', 'deleted', or 'changed'. command: 'exit0' or 'exit_nonzero'."
+                    },
+                    "seconds": {"type": "number", "description": "Delay (set_delayed) or poll/repeat interval (set_interval/watch) in seconds."},
+                    "count": {"type": "integer", "description": "Max number of fires. None = forever for intervals; watchers default to 1 (fire once then stop)."},
+                    "action_type": {
+                        "type": "string",
+                        "enum": ["shell", "tool", "power"],
+                        "description": "What to run when the task fires. 'shell' (default): run action_command. 'tool': call a Yuki tool by name via action_tool. 'power': run a system power action via action_args.action (shutdown/restart/lock/sleep/sign_out)."
+                    },
+                    "action_command": {"type": "string", "description": "Shell command to run when the task fires (for action_type='shell')."},
+                    "action_tool": {"type": "string", "description": "Yuki tool name to call when the task fires (for action_type='tool'), e.g. 'take_screenshot', 'jarvis_see_screen'."},
+                    "action_args": {
+                        "type": "object",
+                        "description": "Extra args for the action. For 'tool': args passed to the tool (e.g. {'window_title': 'Notepad'}). For 'power': {'action': 'shutdown'}."
+                    },
+                    "item_id": {"type": "integer", "description": "Task id to cancel (for 'cancel')."}
+                },
+                "required": ["action"]
+            }
+        }
+    }
+
+
 def get_basic_tools_definition() -> list:
     """
     Returns the basic tool schemas optimized for weak/local LLMs.
@@ -108,6 +154,7 @@ def get_basic_tools_definition() -> list:
                 }
             }
         },
+        get_scheduled_task_schema(),
         {
             "type": "function",
             "function": {
@@ -405,6 +452,7 @@ def get_advanced_jarvis_tools_definition() -> list:
                 }
             }
         },
+        get_scheduled_task_schema("manage_scheduled_task"),
         {
             "type": "function",
             "function": {
@@ -587,17 +635,21 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "jarvis_keyboard_input",
-                "description": "Simulate keyboard typing or key combinations (e.g. ['ctrl', 'c'], ['alt', 'tab'], ['win', 'd']).",
+                "name": "jarvis_keyboard_mouse_input",
+                "description": "Send keyboard and mouse input to the desktop app currently in focus. Prefer keyboard actions (type, press_keys with Tab/Enter/shortcuts) to avoid coordinate guessing. Only use click/double_click/move_to with x,y after reading the coordinates from jarvis_see_screen, and re-check the screen if a click misses. For websites, use the browser tools instead.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["type", "press_keys"]
+                            "enum": ["type", "press_keys", "click", "double_click", "move_to", "scroll"],
+                            "description": "Action: 'type' text, 'press_keys' a combo (e.g. ['ctrl','c']), 'click'/'double_click' at x,y, 'move_to' x,y, or 'scroll' by amount."
                         },
                         "text": {"type": "string", "description": "Text string to type (for 'type' action)."},
-                        "keys": {"type": "array", "items": {"type": "string"}, "description": "List of key strings to press simultaneously (for 'press_keys' action)."}
+                        "keys": {"type": "array", "items": {"type": "string"}, "description": "Keys to press together (for 'press_keys'), e.g. ['ctrl','c'], ['alt','tab'], ['win','d']."},
+                        "x": {"type": "integer", "description": "Screen x coordinate (for click/double_click/move_to)."},
+                        "y": {"type": "integer", "description": "Screen y coordinate (for click/double_click/move_to)."},
+                        "amount": {"type": "integer", "description": "Scroll amount in notches (for 'scroll'; positive up, negative down)."}
                     },
                     "required": ["action"]
                 }

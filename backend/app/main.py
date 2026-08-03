@@ -21,6 +21,7 @@ class TelemetryLogFilter(logging.Filter):
         msg = record.getMessage()
         return (
             "/api/reminders/active" not in msg and
+            "/api/scheduled-tasks" not in msg and
             "/api/system/pcstat" not in msg and 
             "/api/crawler/status" not in msg and 
             "/api/speech/status" not in msg and 
@@ -353,6 +354,10 @@ async def lifespan(app: FastAPI):
     time_manager.init_exact_timer_scheduler()
     time_manager.init_time_manager()
     asyncio.create_task(reminder_heartbeat_loop())
+
+    from app.tools import scheduled_tasks as _scheduled_tasks
+    _scheduled_tasks.set_main_loop(asyncio.get_running_loop())
+    _scheduled_tasks.init_scheduled_task_scheduler()
 
     from app.tools import canvas as _canvas_tools
     _canvas_tools.set_broadcast_callback(broadcast_ws)
@@ -1029,6 +1034,8 @@ def get_settings():
     if "always_included_tools" not in settings_dict:
         from app.tools.selector import _ALWAYS_INCLUDED_JARVIS_TOOLS
         settings_dict["always_included_tools"] = sorted(_ALWAYS_INCLUDED_JARVIS_TOOLS)
+    if "blocked_tools" not in settings_dict:
+        settings_dict["blocked_tools"] = sorted(config.TOOL_BLACKLIST or [])
     print(f"[SETTINGS-GET-BE] GET /api/settings → llm_base_url='{settings_dict.get('llm_base_url', '')}' llm_backend='{settings_dict.get('llm_backend', '')}'")
     return settings_dict
 
@@ -1096,6 +1103,7 @@ class SettingsUpdateRequest(BaseModel):
     llm_summary_model: Optional[str] = None
     llm_vision_model: Optional[str] = None
     always_included_tools: Optional[List[str]] = None
+    blocked_tools: Optional[List[str]] = None
     codegraph_coder_enabled: Optional[bool] = None
     codegraph_advanced_enabled: Optional[bool] = None
     persistent_chat_history: Optional[bool] = None
@@ -1511,6 +1519,20 @@ async def update_settings(req: SettingsUpdateRequest):
         config.ALWAYS_INCLUDED_JARVIS_TOOLS = clean_tools
         memory_manager.update_setting("always_included_tools", clean_tools)
         print(f"[SETTINGS-UPDATE-BE] always_included_tools = {clean_tools}")
+
+    if req.blocked_tools is not None:
+        seen = set()
+        clean_blocked = []
+        for t in req.blocked_tools:
+            if not t:
+                continue
+            name = str(t).strip()
+            if name and name not in seen:
+                seen.add(name)
+                clean_blocked.append(name)
+        config.TOOL_BLACKLIST = set(clean_blocked)
+        memory_manager.update_setting("blocked_tools", clean_blocked)
+        print(f"[SETTINGS-UPDATE-BE] blocked_tools = {clean_blocked}")
 
     if req.codegraph_coder_enabled is not None:
         memory_manager.update_setting("codegraph_coder_enabled", bool(req.codegraph_coder_enabled))
@@ -2339,6 +2361,211 @@ def delete_stopwatch(req: StopwatchRequest):
     from app.tools import time_manager
     time_manager.delete_stopwatch(req.label or "default")
     return {"status": "ok", "message": f"Deleted stopwatch '{req.label}'"}
+
+
+# ── Scheduled Tasks API (autonomous delayed / interval / watcher tasks) ──────────
+
+_SCHEDULED_POWER_ACTIONS = {"shutdown", "restart", "reboot", "lock", "sleep", "hibernate", "logoff", "signout"}
+_SCHEDULED_MONITOR_TYPES = {"process", "window", "file", "command"}
+_SCHEDULED_CONDITIONS_BY_MONITOR = {
+    "process": ["gone", "present"],
+    "window": ["closed", "open"],
+    "file": ["changed", "exists", "deleted"],
+    "command": ["exit0", "exit_nonzero"],
+}
+
+
+def _validate_scheduled_action(action_type, action_command, action_tool, action_args, confirm_destructive):
+    """Returns an error string when the fired action is invalid, else None.
+
+    Mirrors the LLM-path safety gate: destructive fired actions (power, power
+    tools, destructive shell commands) require explicit ``confirm_destructive``
+    confirmation once at creation.
+    """
+    action_type = (action_type or "shell").lower().strip()
+    action_args = dict(action_args or {})
+    if action_type == "power":
+        power_action = str(action_args.get("action") or "").lower().strip()
+        if power_action not in _SCHEDULED_POWER_ACTIONS:
+            return (
+                f"Invalid power action '{power_action}'. Allowed: "
+                f"{', '.join(sorted(_SCHEDULED_POWER_ACTIONS))}."
+            )
+        if not confirm_destructive:
+            return f"This will {power_action} the PC when triggered. Confirm to proceed."
+        return None
+    if action_type == "tool":
+        if not action_tool:
+            return "Missing 'action_tool' for a tool action."
+        if agent_executor is not None:
+            resolved = agent_executor._resolve_tool_name(action_tool)
+            if action_tool not in agent_executor.tools and resolved not in agent_executor.tools:
+                return f"Unknown scheduled action tool '{action_tool}'."
+    elif action_type == "shell":
+        if not action_command:
+            return "Missing 'action_command' for a shell action."
+    elif action_type not in ("shell", "tool", "power"):
+        return f"Unknown action_type '{action_type}' (use shell, tool, or power)."
+    if not confirm_destructive:
+        from app.tools.safety import _scheduled_task_needs_confirmation
+        if _scheduled_task_needs_confirmation({
+            "action": "set_delayed",
+            "action_type": action_type,
+            "action_command": action_command,
+            "action_tool": action_tool,
+            "action_args": action_args,
+        }):
+            return "This action is destructive. Confirm to proceed."
+    return None
+
+
+class ScheduledTaskBaseRequest(BaseModel):
+    action_type: Optional[str] = "shell"
+    action_command: Optional[str] = None
+    action_tool: Optional[str] = None
+    action_args: Optional[Dict[str, Any]] = None
+    confirm_destructive: Optional[bool] = False
+
+
+class ScheduledDelayedRequest(ScheduledTaskBaseRequest):
+    seconds: Optional[float] = None
+
+
+class ScheduledIntervalRequest(ScheduledTaskBaseRequest):
+    interval_seconds: Optional[float] = None
+    count: Optional[int] = None
+
+
+class ScheduledWatcherRequest(ScheduledTaskBaseRequest):
+    monitor_type: str = ""
+    target: str = ""
+    interval_seconds: Optional[float] = 30
+    fire_condition: Optional[str] = None
+    count: Optional[int] = None
+
+
+class ScheduledCancelRequest(BaseModel):
+    item_id: int
+
+
+@app.get("/api/scheduled-tasks")
+def list_scheduled_tasks(active_only: bool = True):
+    """
+    Lists active (or all, with active_only=false) scheduled tasks.
+    """
+    from app.tools import scheduled_tasks
+    return scheduled_tasks.list_tasks(active_only=active_only)
+
+
+@app.post("/api/scheduled-tasks/delayed")
+def create_scheduled_delayed(req: ScheduledDelayedRequest):
+    """
+    Creates a one-shot task that fires its action after `seconds`.
+    """
+    if agent_executor is None:
+        return {"ok": False, "error": "Agent executor is not initialized yet."}
+    from app.tools import scheduled_tasks
+    try:
+        seconds = float(req.seconds or 0)
+    except (ValueError, TypeError):
+        seconds = 0.0
+    if seconds <= 0:
+        return {"ok": False, "error": "'seconds' must be a positive number."}
+    err = _validate_scheduled_action(req.action_type, req.action_command, req.action_tool, req.action_args, bool(req.confirm_destructive))
+    if err:
+        return {"ok": False, "error": err}
+    res = scheduled_tasks.add_delayed(
+        seconds,
+        action_type=req.action_type,
+        action_command=req.action_command,
+        action_tool=req.action_tool,
+        action_args=req.action_args or {},
+    )
+    return {"ok": True, "task": res}
+
+
+@app.post("/api/scheduled-tasks/interval")
+def create_scheduled_interval(req: ScheduledIntervalRequest):
+    """
+    Creates a recurring task that fires its action every `interval_seconds`.
+    `count` is optional; when omitted the task repeats forever.
+    """
+    if agent_executor is None:
+        return {"ok": False, "error": "Agent executor is not initialized yet."}
+    from app.tools import scheduled_tasks
+    try:
+        interval_seconds = float(req.interval_seconds or 0)
+    except (ValueError, TypeError):
+        interval_seconds = 0.0
+    if interval_seconds <= 0:
+        return {"ok": False, "error": "'interval_seconds' must be a positive number."}
+    err = _validate_scheduled_action(req.action_type, req.action_command, req.action_tool, req.action_args, bool(req.confirm_destructive))
+    if err:
+        return {"ok": False, "error": err}
+    res = scheduled_tasks.add_interval(
+        interval_seconds,
+        count=req.count,
+        action_type=req.action_type,
+        action_command=req.action_command,
+        action_tool=req.action_tool,
+        action_args=req.action_args or {},
+    )
+    return {"ok": True, "task": res}
+
+
+@app.post("/api/scheduled-tasks/watcher")
+def create_scheduled_watcher(req: ScheduledWatcherRequest):
+    """
+    Creates a watcher that polls `monitor_type` every `interval_seconds` and
+    fires its action when `fire_condition` holds.
+    """
+    if agent_executor is None:
+        return {"ok": False, "error": "Agent executor is not initialized yet."}
+    from app.tools import scheduled_tasks
+    monitor = (req.monitor_type or "").lower().strip()
+    target = str(req.target or "").strip()
+    if monitor not in _SCHEDULED_MONITOR_TYPES:
+        return {"ok": False, "error": f"Invalid monitor_type '{monitor}'. Allowed: {', '.join(sorted(_SCHEDULED_MONITOR_TYPES))}."}
+    if not target:
+        return {"ok": False, "error": "'target' is required for a watcher."}
+    allowed_conditions = _SCHEDULED_CONDITIONS_BY_MONITOR[monitor]
+    condition = (req.fire_condition or allowed_conditions[0]).lower().strip()
+    if condition not in allowed_conditions:
+        return {"ok": False, "error": f"Invalid fire_condition '{condition}' for {monitor}. Allowed: {', '.join(allowed_conditions)}."}
+    try:
+        interval_seconds = float(req.interval_seconds or 30)
+    except (ValueError, TypeError):
+        interval_seconds = 30.0
+    if interval_seconds <= 0:
+        return {"ok": False, "error": "'interval_seconds' must be a positive number."}
+    err = _validate_scheduled_action(req.action_type, req.action_command, req.action_tool, req.action_args, bool(req.confirm_destructive))
+    if err:
+        return {"ok": False, "error": err}
+    res = scheduled_tasks.add_watcher(
+        monitor_type=monitor,
+        target=target,
+        interval_seconds=interval_seconds,
+        fire_condition=condition,
+        count=req.count,
+        action_type=req.action_type,
+        action_command=req.action_command,
+        action_tool=req.action_tool,
+        action_args=req.action_args or {},
+    )
+    return {"ok": True, "task": res}
+
+
+@app.post("/api/scheduled-tasks/cancel")
+def cancel_scheduled_task(req: ScheduledCancelRequest):
+    """
+    Cancels/deactivates a scheduled task by item_id.
+    """
+    from app.tools import scheduled_tasks
+    try:
+        res = scheduled_tasks.cancel_task(int(req.item_id))
+        return {"ok": True, "task": res}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 @app.get("/api/mood")
 def get_mood_spectrum():
@@ -3586,7 +3813,7 @@ async def serve_canvas_file(filename: str):
         return FileResponse(file_path, media_type="text/html")
     raise HTTPException(status_code=404, detail="Canvas file not found")
 
-@app.get("/api/canvas/serve")
+@app.get("/api/canvas/serve-file")
 async def serve_html_file(path: str = ""):
     """Serve an HTML file from an absolute path (keeps relative deps working)."""
     import os

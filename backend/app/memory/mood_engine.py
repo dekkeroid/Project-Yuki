@@ -314,9 +314,35 @@ class MoodTagScrubber:
             emit += tail[:idx]
             tail = "" if force else tail[idx:]
         else:
-            emit += tail
-            tail = ""
+            partial = self._trailing_tag_prefix_len(tail)
+            if partial:
+                # A tag split mid-way across tokens (e.g. "<mood" then
+                # "_update>{...}") — hold the partial prefix back so it can
+                # never leak into chat/TTS. Dropped entirely on a forced flush.
+                if force:
+                    emit += tail[:-partial]
+                    tail = ""
+                else:
+                    emit += tail[:-partial]
+                    tail = tail[-partial:]
+            else:
+                emit += tail
+                tail = ""
         return emit, tail
+
+    @staticmethod
+    def _trailing_tag_prefix_len(s: str) -> int:
+        """Length of the longest trailing suffix of ``s`` that is a prefix of
+        ``<mood_update>`` or ``</mood_update>`` (0 if none)."""
+        tags = ("<mood_update>", "</mood_update>")
+        best = 0
+        for tag in tags:
+            max_len = min(len(s), len(tag))
+            for plen in range(max_len, 0, -1):
+                if s.endswith(tag[:plen]):
+                    best = max(best, plen)
+                    break
+        return best
 
     def parsed_deltas(self) -> dict:
         """Merge every captured tag into a single int-delta dict (later wins)."""
@@ -597,7 +623,13 @@ class MoodEngine:
         clean = {k: v for k, v in deltas.items() if k in AXES}
         if not clean:
             return False
+        before = self.current()
         self.apply_deltas(clean)
+        after = self.current()
+        changed = [k for k in clean if after.get(k) != before.get(k)]
+        if changed:
+            print(f"[MoodEngine] LLM mood update -> {clean}  |  "
+                  f"{', '.join(f'{k}: {before[k]} -> {after[k]}' for k in changed)}")
         return True
 
     def apply_deltas(self, deltas: dict):

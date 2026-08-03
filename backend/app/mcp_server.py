@@ -408,6 +408,165 @@ async def manage_time(
     return f"Unknown action '{action}' for manage_time."
 
 
+@mcp.tool()
+async def manage_scheduled_task(
+    action: str,
+    kind: str | None = None,
+    target: str | None = None,
+    fire_condition: str | None = None,
+    seconds: float | None = None,
+    count: int | None = None,
+    action_type: str | None = None,
+    action_command: str | None = None,
+    action_tool: str | None = None,
+    action_args: dict | None = None,
+    item_id: int | None = None,
+    confirmation_grant_id: str | None = None,
+) -> str:
+    """Schedule autonomous tasks: delayed actions, recurring intervals, and watchers.
+
+    action options:
+    - 'set_delayed': fire once after `seconds` (e.g. seconds=30, action_tool='take_screenshot')
+    - 'set_interval': fire every `seconds` (e.g. seconds=300, action_command='...')
+    - 'watch': poll every `seconds`; fire when condition flips. `kind` in
+      process/window/file/command; `fire_condition` e.g. process 'gone'/'present',
+      window 'open'/'closed', file 'exists'/'deleted'/'changed', command 'exit0'/'exit_nonzero'.
+      Example: watch a terminal PID and shut down the PC when it closes ->
+      watch(kind='process', target='<pid>', seconds=30, fire_condition='gone',
+            action_type='power', action_args={'action': 'shutdown'})
+    - 'list': show active tasks
+    - 'cancel': cancel by item_id
+
+    Creating a task whose fired action is a power command or destructive shell
+    command is confirmed ONCE at creation; the task then runs autonomously.
+    """
+    return await _guarded_tool_call(
+        "manage_scheduled_task",
+        _dispatch_scheduled_task,
+        {
+            "action": action,
+            "kind": kind,
+            "target": target,
+            "fire_condition": fire_condition,
+            "seconds": seconds,
+            "count": count,
+            "action_type": action_type,
+            "action_command": action_command,
+            "action_tool": action_tool,
+            "action_args": action_args,
+            "item_id": item_id,
+            "confirmation_grant_id": confirmation_grant_id,
+        },
+    )
+
+
+def _dispatch_scheduled_task(**kwargs) -> str:
+    from app.tools import scheduled_tasks
+    action_clean = (kwargs.get("action") or "").lower().strip()
+    action_type = (kwargs.get("action_type") or "shell").lower().strip()
+    action_args = kwargs.get("action_args") or {}
+    if isinstance(action_args, str):
+        try:
+            import json
+            action_args = json.loads(action_args)
+        except Exception:
+            action_args = {}
+
+    if action_clean in ("set_delayed", "delayed"):
+        seconds = kwargs.get("seconds") or 0
+        try:
+            seconds = float(seconds)
+        except (ValueError, TypeError):
+            seconds = 1.0
+        if not seconds or seconds <= 0:
+            return "Error: 'seconds' is required for set_delayed."
+        res = scheduled_tasks.add_delayed(
+            seconds,
+            action_type=action_type,
+            action_command=kwargs.get("action_command"),
+            action_tool=kwargs.get("action_tool"),
+            action_args=action_args,
+        )
+        return f"Scheduled task #{res['id']} to fire in {res['seconds']:.0f} seconds."
+
+    if action_clean in ("set_interval", "interval"):
+        seconds = kwargs.get("seconds") or 0
+        try:
+            seconds = float(seconds)
+        except (ValueError, TypeError):
+            seconds = 1.0
+        if not seconds or seconds <= 0:
+            return "Error: 'seconds' (interval) is required for set_interval."
+        res = scheduled_tasks.add_interval(
+            seconds,
+            count=kwargs.get("count"),
+            action_type=action_type,
+            action_command=kwargs.get("action_command"),
+            action_tool=kwargs.get("action_tool"),
+            action_args=action_args,
+        )
+        return f"Interval task #{res['id']} every {res['interval_seconds']:.0f}s (count={kwargs.get('count')})."
+
+    if action_clean in ("watch", "watcher", "monitor"):
+        monitor = (kwargs.get("kind") or kwargs.get("monitor_type") or "").lower().strip()
+        target = kwargs.get("target") or ""
+        condition = (kwargs.get("fire_condition") or "gone").lower().strip()
+        if not monitor or not target:
+            return "Error: 'kind' (process/window/file/command) and 'target' are required for watch."
+        seconds = kwargs.get("seconds") or 30
+        try:
+            seconds = float(seconds)
+        except (ValueError, TypeError):
+            seconds = 30.0
+        count = kwargs.get("count")
+        if count is None:
+            count = 1
+        else:
+            try:
+                count = int(count)
+            except (ValueError, TypeError):
+                count = 1
+        res = scheduled_tasks.add_watcher(
+            monitor_type=monitor,
+            target=str(target),
+            interval_seconds=seconds,
+            fire_condition=condition,
+            count=count,
+            action_type=action_type,
+            action_command=kwargs.get("action_command"),
+            action_tool=kwargs.get("action_tool"),
+            action_args=action_args,
+        )
+        return (
+            f"Watcher #{res['id']} active: every {res['interval_seconds']:.0f}s check {res['monitor_type']} "
+            f"'{res['target']}' and fire when {res['fire_condition']}."
+        )
+
+    if action_clean == "list":
+        items = scheduled_tasks.list_tasks(active_only=True).get("tasks", [])
+        if not items:
+            return "No active scheduled tasks."
+        lines = []
+        for t in items:
+            kind_t = t.get("kind")
+            if kind_t == "watcher":
+                desc = f"{t.get('monitor_type')} '{t.get('target')}' -> {t.get('fire_condition')}"
+            else:
+                desc = f"every {t.get('interval_seconds')}s" if kind_t == "interval" else f"in {t.get('remaining_seconds')}s"
+            action_desc = t.get("action_command") or t.get("action_tool") or t.get("action_type") or "shell"
+            lines.append(f"- #{t['id']} [{kind_t}] {desc} -> {action_desc}")
+        return "Active scheduled tasks:\n" + "\n".join(lines)
+
+    if action_clean in ("cancel", "stop"):
+        item_id = kwargs.get("item_id") or kwargs.get("id")
+        if item_id:
+            scheduled_tasks.cancel_task(int(item_id))
+            return f"Cancelled scheduled task #{item_id}."
+        return "Missing item_id for cancellation."
+
+    return f"Unknown action '{action_clean}' for manage_scheduled_task."
+
+
 def main() -> None:
     """Run the MCP server over stdio."""
     mcp.run(transport="stdio")

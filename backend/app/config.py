@@ -69,6 +69,13 @@ TOOL_MODE = os.environ.get("TOOL_MODE", "basic").strip().lower()
 # None = not configured -> selector falls back to its hardcoded defaults.
 ALWAYS_INCLUDED_JARVIS_TOOLS = None
 
+# Prompt-level tool blacklist: these tools' schemas are NEVER sent to the LLM in
+# non-coder modes (basic/advanced, simple/complex, dynamic on/off), and their names
+# are scrubbed from system-prompt prose. Loaded from profile settings "blocked_tools".
+TOOL_BLACKLIST: set = set(
+    filter(None, os.environ.get("YUKI_TOOL_BLACKLIST", "").replace(",", " ").split())
+)
+
 # Tool transport configuration
 # mcp-stdio routes Yuki tool execution through backend/app/mcp_server.py over MCP stdio.
 # local keeps the legacy in-process Python dispatcher.
@@ -110,7 +117,7 @@ _TOOL_CONFIRMATION_DEFAULT = ",".join([
     "jarvis_run_terminal",
     "jarvis_close_app",
     "jarvis_run_python",
-    "jarvis_keyboard_input",
+    "jarvis_keyboard_mouse_input",
 ])
 # Empty env value falls back to the defaults above (which include jarvis_* aliases).
 TOOL_SANDBOX_REQUIRE_CONFIRMATION_TOOLS = os.environ.get(
