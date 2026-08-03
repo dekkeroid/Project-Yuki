@@ -349,6 +349,7 @@ class AgentExecutor:
             ),
             "manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
             "manage_todo": lambda **kwargs: self._execute_manage_todo(**kwargs),
+            "manage_scheduled_task": lambda **kwargs: self._execute_manage_scheduled_task(**kwargs),
             "web_search": _async_web_search,
             "ask_user": _ask_user_async,
 
@@ -410,6 +411,7 @@ class AgentExecutor:
                 kwargs.get("action") or ""
             ),
             "jarvis_manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
+            "jarvis_manage_scheduled_task": lambda **kwargs: self._execute_manage_scheduled_task(**kwargs),
             "jarvis_remember_user_fact": lambda **kwargs: self._execute_update_user_fact(**kwargs),
             "jarvis_close_app": lambda **kwargs: manage_process(
                 "kill",
@@ -449,15 +451,13 @@ class AgentExecutor:
                 kwargs.get("code") or "",
                 cwd=self._get_active_session_dir(kwargs)
             ),
-            "jarvis_keyboard_input": lambda **kwargs: keyboard_mouse_input(
-                kwargs.get("action") or "",
-                text=kwargs.get("text"),
-                keys=kwargs.get("keys")
-            ),
             "jarvis_keyboard_mouse_input": lambda **kwargs: keyboard_mouse_input(
                 kwargs.get("action") or "",
                 text=kwargs.get("text"),
-                keys=kwargs.get("keys")
+                keys=kwargs.get("keys"),
+                x=kwargs.get("x"),
+                y=kwargs.get("y"),
+                amount=kwargs.get("amount")
             ),
             "jarvis_media_playback_control": lambda **kwargs: media_playback_control(
                 kwargs.get("action") or "",
@@ -511,6 +511,11 @@ class AgentExecutor:
         }
         from app.mcp_client import StdioMCPToolBridge
         self.mcp_tools = StdioMCPToolBridge(get_tools_definition, get_filtered_tools)
+
+        # Let the scheduled-tasks engine fire Yuki tool / power actions in-process.
+        from app.tools import scheduled_tasks as _scheduled_tasks
+        self._scheduled_tasks_module = _scheduled_tasks
+        _scheduled_tasks.set_action_executor(self._run_scheduled_action)
 
     # ------------------------------------------------------------------ #
     #  Tool dispatcher helper                                              #
@@ -732,6 +737,162 @@ class AgentExecutor:
                 return f"Successfully cancelled timer/reminder #{item_id}."
             return "Missing item_id for cancellation."
         return f"Unknown action '{action}' for manage_time."
+
+    def _execute_manage_scheduled_task(self, **kwargs) -> str:
+        from app.tools import scheduled_tasks
+        action = (kwargs.get("action") or "").lower().strip()
+        action_type = (kwargs.get("action_type") or "shell").lower().strip()
+        action_args = kwargs.get("action_args") or {}
+        if isinstance(action_args, str):
+            try:
+                import json
+                action_args = json.loads(action_args)
+            except Exception:
+                action_args = {}
+
+        if action in ("set_delayed", "delayed", "schedule", "do_later"):
+            seconds = kwargs.get("seconds") or kwargs.get("delay") or kwargs.get("duration") or kwargs.get("after")
+            try:
+                seconds = float(seconds or 0)
+            except (ValueError, TypeError):
+                seconds = scheduled_tasks._parse_duration_seconds(str(seconds))
+            if not seconds or seconds <= 0:
+                return "Error: 'seconds' is required for set_delayed."
+            res = scheduled_tasks.add_delayed(
+                seconds,
+                action_type=action_type,
+                action_command=kwargs.get("action_command"),
+                action_tool=kwargs.get("action_tool"),
+                action_args=action_args,
+            )
+            return f"Scheduled task #{res['id']} to fire in {res['seconds']:.0f} seconds."
+
+        if action in ("set_interval", "interval", "repeat", "every"):
+            seconds = kwargs.get("seconds") or kwargs.get("interval") or kwargs.get("every") or kwargs.get("duration")
+            try:
+                seconds = float(seconds or 0)
+            except (ValueError, TypeError):
+                seconds = scheduled_tasks._parse_duration_seconds(str(seconds))
+            if not seconds or seconds <= 0:
+                return "Error: 'seconds' (interval) is required for set_interval."
+            count = kwargs.get("count")
+            if count is not None:
+                try:
+                    count = int(count)
+                except (ValueError, TypeError):
+                    count = None
+            res = scheduled_tasks.add_interval(
+                seconds,
+                count=count,
+                action_type=action_type,
+                action_command=kwargs.get("action_command"),
+                action_tool=kwargs.get("action_tool"),
+                action_args=action_args,
+            )
+            return f"Interval task #{res['id']} set to fire every {res['interval_seconds']:.0f}s (count={count})."
+
+        if action in ("watch", "watcher", "monitor", "keep_an_eye"):
+            monitor = (kwargs.get("kind") or kwargs.get("monitor_type") or kwargs.get("monitor") or "").lower().strip()
+            target = kwargs.get("target") or kwargs.get("process") or kwargs.get("pid") or kwargs.get("window") or kwargs.get("file") or ""
+            condition = (kwargs.get("fire_condition") or kwargs.get("condition") or kwargs.get("if") or "gone").lower().strip()
+            if not monitor or not target:
+                return "Error: 'kind' (process/window/file/command) and 'target' are required for watch."
+            seconds = kwargs.get("seconds") or kwargs.get("interval") or kwargs.get("every") or 30
+            try:
+                seconds = float(seconds)
+            except (ValueError, TypeError):
+                seconds = 30.0
+            count = kwargs.get("count")
+            if count is None:
+                count = 1
+            else:
+                try:
+                    count = int(count)
+                except (ValueError, TypeError):
+                    count = 1
+            res = scheduled_tasks.add_watcher(
+                monitor_type=monitor,
+                target=str(target),
+                interval_seconds=seconds,
+                fire_condition=condition,
+                count=count,
+                action_type=action_type,
+                action_command=kwargs.get("action_command"),
+                action_tool=kwargs.get("action_tool"),
+                action_args=action_args,
+            )
+            return (
+                f"Watcher #{res['id']} active: every {res['interval_seconds']:.0f}s check {res['monitor_type']} "
+                f"'{res['target']}' and fire when {res['fire_condition']}."
+            )
+
+        if action in ("list", "list_active"):
+            items = scheduled_tasks.list_tasks(active_only=True).get("tasks", [])
+            if not items:
+                return "No active scheduled tasks."
+            lines = []
+            for t in items:
+                kind = t.get("kind")
+                if kind == "watcher":
+                    desc = f"{t.get('monitor_type')} '{t.get('target')}' -> {t.get('fire_condition')}"
+                else:
+                    desc = f"every {t.get('interval_seconds')}s" if kind == "interval" else f"in {t.get('remaining_seconds')}s"
+                action_desc = t.get("action_command") or t.get("action_tool") or t.get("action_type") or "shell"
+                lines.append(f"- #{t['id']} [{kind}] {desc} -> {action_desc}")
+            return "Active scheduled tasks:\n" + "\n".join(lines)
+
+        if action in ("cancel", "delete", "stop"):
+            item_id = kwargs.get("item_id") or kwargs.get("id")
+            if item_id:
+                res = scheduled_tasks.cancel_task(int(item_id))
+                return f"Cancelled scheduled task #{res['id']}."
+            return "Missing item_id for cancellation."
+
+        return f"Unknown action '{action}' for manage_scheduled_task."
+
+    def _resolve_tool_name(self, name: str) -> str:
+        """Resolve a scheduled-action tool name to a name registered in ``self.tools``."""
+        name = (name or "").lower().strip()
+        if name in self.tools:
+            return name
+        if name.startswith("jarvis_") and name[len("jarvis_"):] in self.tools:
+            return name[len("jarvis_"):]
+        return name
+
+    def _run_scheduled_action(self, action_type, action_command, action_tool, action_args) -> str:
+        """Runs a fired scheduled action in-process (tool or power), bypassing
+        the interactive safety flow — the task creation was already authorized.
+        """
+        action_args = dict(action_args or {})
+        if action_type == "power":
+            from app.tools.system import system_power_control
+            power_action = (action_args.get("action") or "").lower().strip()
+            if not power_action:
+                return "Power action missing 'action' arg."
+            try:
+                return system_power_control(power_action, confirmed=True)
+            except Exception as e:
+                return f"Power action failed: {e}"
+
+        if action_type == "tool" and action_tool:
+            tool_name = action_tool.lower().strip()
+            # Raw screenshot capture (not the interactive Snipping Tool overlay).
+            if tool_name in ("take_screenshot", "capture_screenshot", "screenshot"):
+                from app.tools.scheduled_tasks import capture_screenshot
+                return capture_screenshot(
+                    window_title=action_args.get("window_title") or action_args.get("window") or "",
+                    save_to=action_args.get("save_to") or "",
+                )
+            handler = self.tools.get(action_tool) or self.tools.get(self._resolve_tool_name(action_tool))
+            if handler is None:
+                return f"Unknown scheduled action tool '{action_tool}'."
+            try:
+                result = handler(**action_args)
+                return str(result)
+            except Exception as e:
+                return f"Scheduled tool '{action_tool}' failed: {e}"
+
+        return f"No action configured (type={action_type})."
 
     def _execute_manage_todo(self, **kwargs) -> str:
         from app.tools.todo_list import manage_todo
@@ -1500,6 +1661,7 @@ class AgentExecutor:
             else:
                 tools = get_tools_definition()
             tools = self._drop_disabled_tools(tools)
+            tools = self._drop_blocked_tools(tools)
             tool_names = [t["function"]["name"] for t in tools]
             print(f"[Tools] Sending {len(tools)} tools to LLM: {', '.join(tool_names)}")
 
@@ -1706,6 +1868,13 @@ class AgentExecutor:
             tools = [t for t in tools if t.get("function", {}).get("name") != "ask_user"]
         return tools
 
+    def _drop_blocked_tools(self, tools: list) -> list:
+        """Remove tool schemas the user blacklisted (never sent in non-coder modes)."""
+        blocked = set(getattr(config, "TOOL_BLACKLIST", None) or ())
+        if not blocked:
+            return tools
+        return [t for t in tools if t.get("function", {}).get("name") not in blocked]
+
     async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]], intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None, active_model: str = "") -> list:
         """Return tool schemas from MCP discovery, with local-schema fallback."""
         overrides = overrides or {}
@@ -1765,6 +1934,11 @@ class AgentExecutor:
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in basic_allowed]
 
         filtered_tools = self._drop_disabled_tools(filtered_tools, overrides)
+
+        # User tool blacklist applies to every non-coder mode (basic/advanced,
+        # simple/complex, dynamic on/off). Coder mode keeps its full allowlist.
+        if not overrides.get("coding_mode"):
+            filtered_tools = self._drop_blocked_tools(filtered_tools)
 
         if intent_tool_hint:
             targeted = [t for t in filtered_tools if t.get("function", {}).get("name") == intent_tool_hint]

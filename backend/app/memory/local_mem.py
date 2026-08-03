@@ -67,6 +67,7 @@ class MemoryManager:
                 "stt_language": "en",
                 "no_llm_mode": False,
                 "dynamic_tool_calling": True,
+                "blocked_tools": [],
                 "enable_intent_check": True,
                 "vad_threshold": 0.015,
                 "silence_timeout_ms": 450,
@@ -162,6 +163,8 @@ class MemoryManager:
                 config.LLM_CODER_API_KEY = decrypt_api_key(coder_key) if (coder_key and ("enc_v1:" in str(coder_key) or "gAAAA" in str(coder_key))) else (coder_key or "")
                 if "always_included_tools" in data["settings"]:
                     config.ALWAYS_INCLUDED_JARVIS_TOOLS = list(data["settings"].get("always_included_tools") or [])
+                if "blocked_tools" in data["settings"]:
+                    config.TOOL_BLACKLIST = set(data["settings"].get("blocked_tools") or [])
                 
                 return data
         except Exception as e:

@@ -177,7 +177,7 @@ export const EMOTIONS = {
   relaxed: {
     name: 'relaxed',
     llmTag: '<yuki_emotion:relaxed/>',
-    blendShapes: { relaxed: 0.8, happy: 0.25, browUp: 0.1, sad: 0.0, angry: 0.0, surprised: 0.0, browDown: 0.0 }
+    blendShapes: { relaxed: 1.0, happy: 0.0, browUp: 0.1, sad: 0.0, angry: 0.0, surprised: 0.0, browDown: 0.0 }
   },
   thinking: {
     name: 'thinking',
@@ -192,7 +192,7 @@ export const EMOTIONS = {
   smug: {
     name: 'smug',
     llmTag: '<yuki_emotion:smug/>',
-    blendShapes: { happy: 0.6, relaxed: 0.5, browUp: 0.3 }
+    blendShapes: { happy: 0.4, relaxed: 0.5, browUp: 0.3 }
   }
 };
 

@@ -304,6 +304,19 @@ def canonicalize_tool_args(tool_name: str, arguments: dict[str, Any] | None) -> 
         return out
     if tool == "system_power_control":
         return {"action": args.get("action") or ""}
+    if tool == "manage_scheduled_task":
+        out = {"action": args.get("action") or ""}
+        for key in ("action_type", "action_command", "action_tool", "kind", "target", "fire_condition"):
+            put_if_present(out, key, args.get(key))
+        if args.get("seconds") is not None:
+            out["seconds"] = args.get("seconds")
+        if args.get("count") is not None:
+            out["count"] = int(args.get("count"))
+        if args.get("item_id") is not None:
+            out["item_id"] = int(args.get("item_id"))
+        if args.get("action_args"):
+            out["action_args"] = dict(args.get("action_args"))
+        return out
     if tool == "web_search":
         return {"query": args.get("query") or args.get("search") or args.get("text") or _first_value(args)}
     if tool == "jarvis_grep_files":
@@ -332,6 +345,19 @@ def describe_tool_target(tool_name: str, arguments: dict[str, Any] | None) -> st
         return f"{verb}: {args.get('file_path') or ''}"
     if tool == "system_power_control":
         return f"System Power Action: {args.get('action') or ''}"
+    if tool == "manage_scheduled_task":
+        action = args.get("action") or ""
+        action_type = args.get("action_type") or "shell"
+        target = args.get("target") or args.get("kind") or ""
+        action_command = args.get("action_command") or ""
+        action_args = args.get("action_args") or {}
+        if action in ("list", "cancel"):
+            return f"Scheduled task management ({action})"
+        if action_type == "power":
+            return f"Schedule task that runs power action '{action_args.get('action') or ''}'"
+        if action_type == "tool":
+            return f"Schedule task that calls tool '{args.get('action_tool') or ''}'"
+        return f"Schedule task that runs command: {action_command or target or '(none)'}"
     if tool == "run_terminal_command":
         return f"Run terminal command: {args.get('command') or ''}"
     if tool == "run_python_script":
@@ -370,7 +396,38 @@ def _requires_confirmation(tool: str, raw_args: dict[str, Any], canonical_args: 
         if any(_as_bool(raw_args.get(field)) for field in ("confirmed", "confirm", "_host_confirmed")):
             return True
         return _open_or_play_needs_confirmation(canonical_args)
+    if tool == "manage_scheduled_task":
+        # Scheduled tasks fire autonomously later, so a task that runs a power
+        # action or a destructive shell command is confirmed ONCE at creation.
+        return _scheduled_task_needs_confirmation(canonical_args)
     return tool in configured
+
+
+def _scheduled_task_needs_confirmation(args: dict[str, Any]) -> bool:
+    """True when creating a scheduled task whose fired action is dangerous
+    (power control or a command matching a destructive terminal pattern)."""
+    action = (args.get("action") or "").lower().strip()
+    if action in ("list", "cancel", ""):
+        return False
+    action_type = (args.get("action_type") or "shell").lower().strip()
+    if action_type == "power":
+        return True
+    action_args = args.get("action_args") or {}
+    if isinstance(action_args, str):
+        try:
+            action_args = json.loads(action_args)
+        except Exception:
+            action_args = {}
+    if action_type == "tool":
+        tool_name = str(args.get("action_tool") or "").lower().strip()
+        if tool_name in ("jarvis_system_power", "system_power_control"):
+            return True
+    command = str(args.get("action_command") or "")
+    if command:
+        for pattern in _terminal_patterns():
+            if re.search(pattern, command, flags=re.IGNORECASE):
+                return True
+    return False
 
 
 def _open_or_play_needs_confirmation(args: dict[str, Any]) -> bool:
@@ -418,9 +475,10 @@ _TOOL_ALIASES = {
     "jarvis_launch_app": "launch_app",
     "jarvis_open_or_play_file": "open_or_play_file",
     "jarvis_window_control": "control_window",
-    "jarvis_keyboard_input": "keyboard_mouse_input",
+    "jarvis_keyboard_mouse_input": "keyboard_mouse_input",
     "jarvis_create_or_edit_file": "create_file",
     "jarvis_replace_file_content": "edit_file",
+    "jarvis_manage_scheduled_task": "manage_scheduled_task",
 }
 
 _CODER_MODE_FILE_TOOLS = {"create_file", "edit_file", "delete_file"}

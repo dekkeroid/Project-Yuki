@@ -420,6 +420,7 @@ const ControlDashboard = ({
     llm_simple_model: '',
     llm_vision_model: '',
     always_included_tools: [],
+    blocked_tools: [],
     tts_voice: 'af_bella',
     tts_rate: 'auto',
     tts_device: 'auto',
@@ -507,6 +508,7 @@ const ControlDashboard = ({
 
   // LLM Dynamic Tools State
   const [toolsList, setToolsList] = useState([]);
+  const [blockedToolsList, setBlockedToolsList] = useState([]);
   const [expandedTool, setExpandedTool] = useState(null);
   const [toolSearch, setToolSearch] = useState('');
 
@@ -1070,6 +1072,155 @@ const ControlDashboard = ({
     }
   };
 
+  // ── Scheduled Tasks (Autonomous) ───────────────────────────────────────
+  const SCHED_CONDITIONS = {
+    process: ['gone', 'present'],
+    window: ['closed', 'open'],
+    file: ['changed', 'exists', 'deleted'],
+    command: ['exit0', 'exit_nonzero'],
+  };
+  const SCHED_MONITOR_PLACEHOLDERS = {
+    process: 'PID or process name (e.g. 8412, chrome)',
+    window: 'Window title fragment (e.g. Notepad)',
+    file: 'Full file path (e.g. C:/logs/app.log)',
+    command: 'Command whose exit code decides (e.g. exit 0)',
+  };
+
+  const [scheduledTasks, setScheduledTasks] = useState([]);
+  const [schedMsg, setSchedMsg] = useState(null); // { type: 'ok'|'error', text }
+  const [schedForm, setSchedForm] = useState({
+    type: 'delayed',            // delayed | interval | watcher
+    seconds: '30',              // in-seconds (delayed) / every-seconds (interval, watcher poll)
+    repeatForever: true,        // interval + watcher
+    count: '1',
+    monitorType: 'process',
+    target: '',
+    fireCondition: 'gone',
+    actionType: 'shell',        // shell | tool | power
+    command: '',
+    toolName: '',
+    argsJson: '',
+    powerAction: 'shutdown',
+    confirmDestructive: false,
+  });
+  const [schedCreating, setSchedCreating] = useState(false);
+
+  const setSched = (patch) => setSchedForm(prev => ({ ...prev, ...patch }));
+
+  const fetchScheduledTasks = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/scheduled-tasks`);
+      if (res.ok) {
+        const data = await res.json();
+        setScheduledTasks((data && data.tasks) || []);
+      }
+    } catch (e) {
+      console.warn("Could not fetch scheduled tasks:", e);
+    }
+  };
+
+  const schedActionIsDestructive = () => {
+    if (schedForm.actionType === 'power') return true;
+    if (schedForm.actionType === 'shell') {
+      const cmd = (schedForm.command || '').toLowerCase();
+      return /shutdown|restart|reboot|\bdel\b|rmdir|rm\s+-rf|format|rd\s+\/s|remove-item/i.test(cmd);
+    }
+    if (schedForm.actionType === 'tool') {
+      const tn = (schedForm.toolName || '').toLowerCase();
+      return tn === 'system_power_control' || tn.includes('power');
+    }
+    return false;
+  };
+  const destructive = schedActionIsDestructive();
+
+  const schedFormValid = () => {
+    if (!(parseFloat(schedForm.seconds) > 0)) return false;
+    if (schedForm.type === 'watcher' && !schedForm.target.trim()) return false;
+    if (schedForm.actionType === 'shell' && !schedForm.command.trim()) return false;
+    if (schedForm.actionType === 'tool' && !schedForm.toolName) return false;
+    if (destructive && !schedForm.confirmDestructive) return false;
+    return true;
+  };
+
+  const handleCreateScheduledTask = async () => {
+    if (!schedFormValid() || schedCreating) return;
+    let args = {};
+    if (schedForm.argsJson && schedForm.argsJson.trim()) {
+      try {
+        args = JSON.parse(schedForm.argsJson.trim());
+      } catch (e) {
+        setSchedMsg({ type: 'error', text: 'Action args must be valid JSON.' });
+        return;
+      }
+    }
+    const base = {
+      action_type: schedForm.actionType,
+      action_command: schedForm.actionType === 'shell' ? schedForm.command.trim() : null,
+      action_tool: schedForm.actionType === 'tool' ? schedForm.toolName : null,
+      action_args: schedForm.actionType === 'power' ? { action: schedForm.powerAction } : args,
+      confirm_destructive: schedForm.confirmDestructive,
+    };
+    let endpoint = '';
+    let body = {};
+    if (schedForm.type === 'delayed') {
+      endpoint = `${API_BASE}/api/scheduled-tasks/delayed`;
+      body = { ...base, seconds: parseFloat(schedForm.seconds) };
+    } else if (schedForm.type === 'interval') {
+      endpoint = `${API_BASE}/api/scheduled-tasks/interval`;
+      body = { ...base, interval_seconds: parseFloat(schedForm.seconds), count: schedForm.repeatForever ? null : parseInt(schedForm.count || '1', 10) };
+    } else {
+      endpoint = `${API_BASE}/api/scheduled-tasks/watcher`;
+      body = {
+        ...base,
+        monitor_type: schedForm.monitorType,
+        target: schedForm.target.trim(),
+        interval_seconds: parseFloat(schedForm.seconds),
+        fire_condition: schedForm.fireCondition,
+        count: schedForm.repeatForever ? null : parseInt(schedForm.count || '1', 10),
+      };
+    }
+    setSchedCreating(true);
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (data && data.ok) {
+        setSchedMsg({ type: 'ok', text: `Scheduled task #${data.task.id} created.` });
+        setSchedForm(prev => ({ ...prev, target: '', command: '', argsJson: '', confirmDestructive: false }));
+        fetchScheduledTasks();
+      } else {
+        setSchedMsg({ type: 'error', text: (data && data.error) || 'Failed to create scheduled task.' });
+      }
+    } catch (e) {
+      setSchedMsg({ type: 'error', text: 'Network error creating scheduled task.' });
+    }
+    setSchedCreating(false);
+  };
+
+  const handleCancelScheduledTask = async (id) => {
+    try {
+      await fetch(`${API_BASE}/api/scheduled-tasks/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_id: id })
+      });
+      fetchScheduledTasks();
+    } catch (e) {
+      console.error("Failed to cancel scheduled task:", e);
+    }
+  };
+
+  const schedCountdown = (t) => {
+    if (!t || t.remaining_seconds == null) return '';
+    const rem = Math.max(0, t.remaining_seconds);
+    const m = Math.floor(rem / 60);
+    const s = rem % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
   const [toolViewMode, setToolViewMode] = useState('active');
 
   const fetchToolsList = (mode = toolViewMode) => {
@@ -1082,6 +1233,19 @@ const ControlDashboard = ({
         }
       })
       .catch(err => console.error("Failed to fetch tools list:", err));
+  };
+
+  // Full (basic + advanced + MCP) tool list for the blacklist selector, which
+  // shows in every mode so users can block any tool regardless of the active mode.
+  const fetchBlockedToolsList = () => {
+    fetch(`${API_BASE}/api/tools?mode=all`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.tools) {
+          setBlockedToolsList(data.tools);
+        }
+      })
+      .catch(err => console.error("Failed to fetch blocked-tools list:", err));
   };
 
   useEffect(() => {
@@ -1107,6 +1271,7 @@ const ControlDashboard = ({
     if (isOpen) {
       fetchSavedEndpoints();
       fetchToolsList();
+      fetchBlockedToolsList();
 
       if (activeTab === 'memory') {
         fetchMood();
@@ -1119,6 +1284,10 @@ const ControlDashboard = ({
         fetchTimeItems();
       }
 
+      if (activeTab === 'tasks') {
+        fetchScheduledTasks();
+      }
+
       interval = setInterval(() => {
         if (activeTab === 'memory') {
           fetchMood();
@@ -1127,6 +1296,8 @@ const ControlDashboard = ({
           }
         } else if (activeTab === 'reminders') {
           fetchTimeItems();
+        } else if (activeTab === 'tasks') {
+          fetchScheduledTasks();
         }
       }, 3000);
     }
@@ -2572,6 +2743,257 @@ const ControlDashboard = ({
                   </div>
                 )}
               </div>
+
+              {/* Scheduled Tasks (Autonomous) Card */}
+              <div className="card-group" style={{ marginBottom: '12px' }}>
+                <div className="card-group-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Zap className="w-4 h-4 text-amber-400" />
+                    <span className="card-group-title">Scheduled Tasks (Autonomous)</span>
+                  </div>
+                  <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '10px', background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontWeight: 600 }}>
+                    {scheduledTasks.length} Active
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '4px', marginBottom: '10px' }}>
+                  Fire shell commands, Yuki tools, or power actions once, every N seconds, or when a watched condition flips. Runs autonomously after creation — destructive actions need the confirm box below.
+                </div>
+
+                {/* Type selector */}
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                  {['delayed', 'interval', 'watcher'].map(tp => (
+                    <button
+                      key={tp}
+                      type="button"
+                      onClick={() => setSched({ type: tp })}
+                      style={{
+                        flex: 1, padding: '6px 8px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600,
+                        background: schedForm.type === tp ? 'linear-gradient(135deg, #f59e0b, #fbbf24)' : 'rgba(255,255,255,0.06)',
+                        color: schedForm.type === tp ? '#111' : 'rgba(255,255,255,0.7)',
+                      }}
+                    >
+                      {tp === 'delayed' ? '⏳ Delayed' : tp === 'interval' ? '🔁 Interval' : '👁️ Watcher'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Timing / watch fields */}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '8px' }}>
+                  {schedForm.type !== 'watcher' ? (
+                    <input
+                      type="text"
+                      placeholder={schedForm.type === 'delayed' ? 'In how long? (e.g. 30s, 5m, 1h)' : 'Every? (e.g. 30s, 5m)'}
+                      value={schedForm.seconds}
+                      onChange={(e) => setSched({ seconds: e.target.value })}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', flex: 1, minWidth: '150px' }}
+                    />
+                  ) : (
+                    <>
+                      <select
+                        value={schedForm.monitorType}
+                        onChange={(e) => {
+                          const mt = e.target.value;
+                          setSched({ monitorType: mt, fireCondition: (SCHED_CONDITIONS[mt] || ['gone'])[0] });
+                        }}
+                        className="glass-input"
+                        style={{ padding: '6px 8px', fontSize: '0.76rem' }}
+                      >
+                        {['process', 'window', 'file', 'command'].map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      <input
+                        type="text"
+                        placeholder={SCHED_MONITOR_PLACEHOLDERS[schedForm.monitorType] || 'Target'}
+                        value={schedForm.target}
+                        onChange={(e) => setSched({ target: e.target.value })}
+                        className="glass-input"
+                        style={{ padding: '6px 10px', fontSize: '0.78rem', flex: 1, minWidth: '120px' }}
+                      />
+                      <select
+                        value={schedForm.fireCondition}
+                        onChange={(e) => setSched({ fireCondition: e.target.value })}
+                        className="glass-input"
+                        style={{ padding: '6px 8px', fontSize: '0.76rem' }}
+                      >
+                        {(SCHED_CONDITIONS[schedForm.monitorType] || ['gone']).map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Poll every (e.g. 30s)"
+                        value={schedForm.seconds}
+                        onChange={(e) => setSched({ seconds: e.target.value })}
+                        className="glass-input"
+                        style={{ padding: '6px 10px', fontSize: '0.78rem', width: '115px' }}
+                      />
+                    </>
+                  )}
+                  {schedForm.type !== 'delayed' && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={schedForm.repeatForever} onChange={(e) => setSched({ repeatForever: e.target.checked })} />
+                      forever
+                    </label>
+                  )}
+                </div>
+                {schedForm.type !== 'delayed' && !schedForm.repeatForever && (
+                  <div style={{ marginBottom: '8px' }}>
+                    <input
+                      type="number"
+                      min="1"
+                      value={schedForm.count}
+                      onChange={(e) => setSched({ count: e.target.value })}
+                      className="glass-input"
+                      style={{ padding: '5px 10px', fontSize: '0.76rem', width: '130px' }}
+                      placeholder="Times to fire"
+                    />
+                  </div>
+                )}
+
+                {/* Action block */}
+                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                    {['shell', 'tool', 'power'].map(at => (
+                      <button
+                        key={at}
+                        type="button"
+                        onClick={() => setSched({ actionType: at, confirmDestructive: false })}
+                        style={{
+                          flex: 1, padding: '5px 8px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600,
+                          background: schedForm.actionType === at ? 'linear-gradient(135deg, #38bdf8, #6366f1)' : 'rgba(255,255,255,0.06)',
+                          color: schedForm.actionType === at ? '#fff' : 'rgba(255,255,255,0.7)',
+                        }}
+                      >
+                        {at === 'shell' ? '⌨️ Shell' : at === 'tool' ? '🧰 Yuki Tool' : '🔌 Power'}
+                      </button>
+                    ))}
+                  </div>
+                  {schedForm.actionType === 'shell' && (
+                    <input
+                      type="text"
+                      placeholder="Shell command to run when fired (e.g. calc.exe)"
+                      value={schedForm.command}
+                      onChange={(e) => setSched({ command: e.target.value, confirmDestructive: false })}
+                      className="glass-input"
+                      style={{ padding: '6px 10px', fontSize: '0.76rem', fontFamily: 'monospace', width: '100%' }}
+                    />
+                  )}
+                  {schedForm.actionType === 'tool' && (
+                    <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+                      <select
+                        value={schedForm.toolName}
+                        onChange={(e) => setSched({ toolName: e.target.value, confirmDestructive: false })}
+                        className="glass-input"
+                        style={{ padding: '6px 8px', fontSize: '0.76rem' }}
+                      >
+                        <option value="">Select a Yuki tool…</option>
+                        {(toolsList || []).map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+                      </select>
+                      <input
+                        type="text"
+                        placeholder='Optional JSON args, e.g. {"window_title":"Notepad"}'
+                        value={schedForm.argsJson}
+                        onChange={(e) => setSched({ argsJson: e.target.value })}
+                        className="glass-input"
+                        style={{ padding: '6px 10px', fontSize: '0.72rem', fontFamily: 'monospace', width: '100%' }}
+                      />
+                    </div>
+                  )}
+                  {schedForm.actionType === 'power' && (
+                    <select
+                      value={schedForm.powerAction}
+                      onChange={(e) => setSched({ powerAction: e.target.value, confirmDestructive: false })}
+                      className="glass-input"
+                      style={{ padding: '6px 8px', fontSize: '0.76rem' }}
+                    >
+                      {['shutdown', 'restart', 'lock', 'sleep', 'hibernate', 'logoff'].map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  )}
+
+                  {destructive && (
+                    <div style={{ marginTop: '8px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.4)', fontSize: '0.7rem', color: '#fca5a5' }}>
+                      ⚠️ This action is destructive — it will run autonomously once triggered:
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={schedForm.confirmDestructive} onChange={(e) => setSched({ confirmDestructive: e.target.checked })} />
+                        <span>I understand, allow this action.</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Feedback + create */}
+                {schedMsg && (
+                  <div style={{
+                    marginBottom: '8px', padding: '6px 10px', borderRadius: '8px', fontSize: '0.7rem',
+                    background: schedMsg.type === 'ok' ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)',
+                    border: `1px solid ${schedMsg.type === 'ok' ? 'rgba(16,185,129,0.4)' : 'rgba(244,63,94,0.4)'}`,
+                    color: schedMsg.type === 'ok' ? '#6ee7b7' : '#fca5a5',
+                  }}>
+                    {schedMsg.text}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCreateScheduledTask}
+                  disabled={!schedFormValid() || schedCreating}
+                  style={{
+                    width: '100%', padding: '8px 12px', fontSize: '0.78rem', borderRadius: '8px',
+                    background: 'linear-gradient(135deg, #f59e0b, #fbbf24)', border: 'none', color: '#111', fontWeight: 700,
+                    cursor: schedFormValid() && !schedCreating ? 'pointer' : 'not-allowed',
+                    opacity: schedFormValid() && !schedCreating ? 1 : 0.45,
+                  }}
+                >
+                  {schedCreating ? 'Scheduling…' : '+ Schedule Task'}
+                </button>
+
+                {/* Active list */}
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: '6px' }}>
+                    Active Scheduled Tasks
+                  </div>
+                  {scheduledTasks.length === 0 ? (
+                    <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)', fontStyle: 'italic', padding: '14px 0', textAlign: 'center' }}>
+                      No autonomous tasks. Ask Yuki or use the form above!
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {scheduledTasks.map(t => {
+                        const badgeColor = t.kind === 'delayed' ? '#38bdf8' : t.kind === 'interval' ? '#a78bfa' : '#fbbf24';
+                        const badgeBg = t.kind === 'delayed' ? 'rgba(56,189,248,0.15)' : t.kind === 'interval' ? 'rgba(167,139,250,0.15)' : 'rgba(251,191,36,0.15)';
+                        const actionDesc = t.action_command || t.action_tool || t.action_type || 'shell';
+                        const isWatcher = t.kind === 'watcher';
+                        return (
+                          <div key={t.id} style={{ background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: `1px solid ${badgeColor}33`, padding: '10px 12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: '4px', background: badgeBg, color: badgeColor, fontWeight: 700, letterSpacing: '0.5px' }}>
+                                    {String(t.kind || '').toUpperCase()}
+                                  </span>
+                                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {isWatcher ? `${t.monitor_type} '${t.target}' → ${t.fire_condition}` : actionDesc}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.4)', marginTop: '3px', fontFamily: 'monospace' }}>
+                                  {isWatcher ? `action: ${actionDesc} · poll ${Math.round(t.interval_seconds)}s` : (t.interval_seconds ? `every ${Math.round(t.interval_seconds)}s` : '')}
+                                  {t.count != null ? ` · x${t.count}` : ''}
+                                  {t.remaining_seconds != null ? ` · ${schedCountdown(t)} left` : ''}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleCancelScheduledTask(t.id)}
+                                style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
             </>
           ) : activeTab === 'settings' ? (
             <>
@@ -3454,10 +3876,10 @@ const ControlDashboard = ({
                           These tools are always sent to the LLM when dynamic tool calling is active, regardless of the query. Unchecking the box removes it from the always-included set.
                         </div>
                         {(() => {
-                          const jarvisTools = (toolsList || []).filter(t => String(t.name || '').startsWith('jarvis_')).map(t => t.name);
+                          const jarvisTools = (toolsList || []).map(t => t.name);
                           const selected = Array.isArray(settings.always_included_tools) ? settings.always_included_tools : [];
                           if (jarvisTools.length === 0) {
-                            return <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.35)', padding: '8px 0' }}>Loading jarvis tools…</div>;
+                            return <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.35)', padding: '8px 0' }}>Loading tools…</div>;
                           }
                           return (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', maxHeight: '220px', overflowY: 'auto' }}>
@@ -3482,6 +3904,43 @@ const ControlDashboard = ({
                         })()}
                       </div>
                     )}
+
+                    {/* Blocked Tools (never sent in non-coder modes) */}
+                    <div className="identity-field" style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.08)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                        <span className="field-label" style={{ color: '#f87171' }}>Blocked Tools (hidden in non-coder mode)</span>
+                      </div>
+                      <div style={{ fontSize: '0.66rem', color: '#94a3b8', marginBottom: '8px', lineHeight: '1.3' }}>
+                        Blocked tools are never sent to the LLM in any non-coder mode (basic/advanced, simple/complex, dynamic on/off), and their names are scrubbed from the system prompt. Coder mode is unaffected.
+                      </div>
+                      {(() => {
+                        const allTools = (blockedToolsList || []).map(t => t.name);
+                        const blocked = Array.isArray(settings.blocked_tools) ? settings.blocked_tools : [];
+                        if (allTools.length === 0) {
+                          return <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.35)', padding: '8px 0' }}>Loading tools…</div>;
+                        }
+                        return (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', maxHeight: '220px', overflowY: 'auto' }}>
+                            {allTools.map(name => {
+                              const checked = blocked.includes(name);
+                              return (
+                                <label key={name} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', color: checked ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: '2px 0' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const next = checked ? blocked.filter(t => t !== name) : [...blocked, name];
+                                      handleUpdateSetting('blocked_tools', next);
+                                    }}
+                                  />
+                                  <span style={{ fontFamily: 'monospace', textDecoration: checked ? 'line-through' : 'none' }}>{name}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
 
                     {/* Codegraph (opt-in code intelligence tools) */}
                     <div className="identity-field" style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.08)' }}>

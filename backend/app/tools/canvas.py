@@ -128,7 +128,7 @@ def jarvis_html_viewer(html_content: str = "", file_path: str = "") -> str:
             return f"Error: Only .html/.htm files are supported: {clean}"
         import urllib.parse
         encoded = urllib.parse.quote(clean.replace("\\", "/"), safe="/:")
-        serve_url = f"serve?path={encoded}"
+        serve_url = f"serve-file?path={encoded}"
         _broadcast_canvas_ws({"type": "open-canvas", "mode": "viewer", "filename": serve_url})
         return f"Opened HTML viewer for {os.path.basename(clean)}"
 

@@ -509,6 +509,34 @@ def init_db():
     );
     """)
 
+    # 1d1. Scheduled Tasks: delayed actions, recurring intervals, and watchers.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at REAL,
+        kind TEXT NOT NULL,
+        monitor_type TEXT,
+        target TEXT,
+        interval_seconds REAL,
+        count INTEGER,
+        fire_condition TEXT,
+        action_type TEXT DEFAULT 'shell',
+        action_command TEXT,
+        action_tool TEXT,
+        action_args TEXT,
+        is_active INTEGER DEFAULT 1,
+        next_run_at REAL,
+        last_run_at REAL
+    );
+    """)
+
+    # Migration for scheduled_tasks schema upgrades
+    st_cols = [row[1] for row in cursor.execute("PRAGMA table_info(scheduled_tasks)").fetchall()]
+    if "next_run_at" not in st_cols:
+        cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN next_run_at REAL")
+    if "last_run_at" not in st_cols:
+        cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN last_run_at REAL")
+
     # 1d2. Persistent Agent TODO List (tasks & subtasks)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS todos (
