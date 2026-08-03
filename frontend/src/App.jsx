@@ -3921,7 +3921,7 @@ const detectExpression = (text) => {
                         <label className="desktop-label">Speech Delivery Speed</label>
                         <select
                           className="desktop-select"
-                          value={profile.settings?.tts_rate || '1.0'}
+                          value={profile.settings?.tts_rate || 'auto'}
                           onChange={(e) => handleUpdateSetting('tts_rate', e.target.value)}
                           style={{ padding: '6px 8px', fontSize: '0.75rem' }}
                         >
@@ -4204,6 +4204,38 @@ const detectExpression = (text) => {
                           </span>
                         </label>
                       </div>
+
+                      {/* Codegraph for coder mode */}
+                      <div className="desktop-form-group" style={{ marginBottom: '8px' }}>
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                          <input
+                            type="checkbox"
+                            checked={!!profile.settings?.codegraph_coder_enabled}
+                            onChange={(e) => handleUpdateSetting('codegraph_coder_enabled', e.target.checked)}
+                            style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
+                            Turn on codegraph for coder mode — lets coder mode explore and navigate indexed codebases. <strong style={{ color: '#fbbf24' }}>Codegraph must be installed on your PC for this tool to work.</strong> (Default: OFF)
+                          </span>
+                        </label>
+                      </div>
+
+                      {/* Codegraph for advanced (autonomous jarvis) suite — only when coder toggle is on */}
+                      {!!profile.settings?.codegraph_coder_enabled && (
+                        <div className="desktop-form-group" style={{ marginBottom: '8px' }}>
+                          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!profile.settings?.codegraph_advanced_enabled}
+                              onChange={(e) => handleUpdateSetting('codegraph_advanced_enabled', e.target.checked)}
+                              style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
+                            />
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #c4b5fd)', lineHeight: 1.3 }}>
+                              Turn on codegraph for advanced tools (autonomous jarvis) suite — also sends the codegraph tools in Advanced mode. Requires codegraph to be installed.
+                            </span>
+                          </label>
+                        </div>
+                      )}
 
                       {/* LLM Backend Type */}
                       <div className="desktop-form-group">

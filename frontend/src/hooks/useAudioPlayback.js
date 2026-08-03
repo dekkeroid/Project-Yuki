@@ -363,7 +363,9 @@ export function useAudioPlayback(options = {}) {
       utterance.voice = femaleVoice;
     }
 
-    const storedRate = parseFloat(profile?.settings?.tts_rate || '1.0');
+    const storedRate = profile?.settings?.tts_rate === 'auto'
+      ? 1.0
+      : parseFloat(profile?.settings?.tts_rate || '1.0');
     utterance.rate = isNaN(storedRate) ? 1.05 : storedRate;
     utterance.pitch = 1.1;
 

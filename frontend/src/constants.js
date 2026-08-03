@@ -39,6 +39,7 @@ export const TTS_VOICES = [
 ];
 
 export const TTS_RATES = [
+  { label: 'Auto (Mood)', value: 'auto' },
   { label: 'Slow (0.8x)', value: '0.8' },
   { label: 'Relaxed (0.9x)', value: '0.9' },
   { label: 'Normal (1.0x)', value: '1.0' },

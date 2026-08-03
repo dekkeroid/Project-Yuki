@@ -155,7 +155,7 @@ def _setup_profile(selected_model: str = "", llm_backend: str = "", llm_base_url
             "llm_base_url": llm_base_url or "",
             "llm_api_key": llm_api_key or "",
             "tts_voice": "af_sarah",
-            "tts_rate": "1.0",
+            "tts_rate": "auto",
             "tts_device": "auto",
             "stt_device": "auto",
             "character_name": "Yuki",

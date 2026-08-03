@@ -421,7 +421,7 @@ const ControlDashboard = ({
     llm_vision_model: '',
     always_included_tools: [],
     tts_voice: 'af_bella',
-    tts_rate: '1.0',
+    tts_rate: 'auto',
     tts_device: 'auto',
     stt_device: 'auto',
     character_name: 'Yuki',
@@ -879,7 +879,8 @@ const ControlDashboard = ({
     doomer: 20,
     hunger: 30,
     playfulness: 55,
-    horniness: 50
+    horniness: 50,
+    anger: 10
   });
 
   const fetchMood = async () => {
@@ -1177,6 +1178,7 @@ const ControlDashboard = ({
   ];
 
   const TTS_RATES = [
+    { label: 'Auto (Mood)', value: 'auto' },
     { label: 'Slow (0.8x)', value: '0.8' },
     { label: 'Normal (1.0x)', value: '1.0' },
     { label: 'Snappy (1.1x)', value: '1.1' },
@@ -1649,7 +1651,8 @@ const ControlDashboard = ({
                     { key: 'doomer', label: 'Doomer Index', color: '#818cf8', icon: '🖤' },
                     { key: 'hunger', label: 'Hunger', color: '#fb923c', icon: '🍕' },
                     { key: 'playfulness', label: 'Playfulness', color: '#c084fc', icon: '🎮' },
-                    { key: 'horniness', label: 'Intimacy / Horniness', color: '#f43f5e', icon: '🔥' }
+                    { key: 'horniness', label: 'Intimacy / Horniness', color: '#f43f5e', icon: '🔥' },
+                    { key: 'anger', label: 'Anger', color: '#f87171', icon: '😠' }
                   ].map(stat => {
                     const val = moodData[stat.key] !== undefined ? moodData[stat.key] : 50;
                     const baseVal = moodData.baselines?.[stat.key];
@@ -2880,7 +2883,7 @@ const ControlDashboard = ({
                     </div>
 
                     <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.5)', background: 'rgba(0,0,0,0.2)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', lineHeight: '1.4' }}>
-                      ℹ️ <strong>Storage & Pruning Note:</strong> When enabled, chat history is saved to <code>backend/chat_history.json</code>. Older turns are automatically summarized into a rolling context recap (up to ~2,500 tokens for local models, 40,000 tokens for cloud APIs) to preserve long-term context while staying within token limits.
+                      ℹ️ <strong>Storage & Pruning Note:</strong> When enabled, chat history is saved to <code>backend/chat_history.json</code>. When the token budget is hit, the oldest/middle share of older turns is compressed into an LLM summary (or a snippet recap if the summary model is unavailable), so the whole prompt stays within the configured limits (2,500 tokens for local models, 40,000 tokens for cloud APIs).
                     </div>
                   </div>
 
@@ -2998,9 +3001,58 @@ const ControlDashboard = ({
                         </div>
                       </div>
                     </div>
+
+                    {/* Rolling LLM Summarization */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.68rem', color: '#cbd5e1', display: 'block', marginBottom: '2px' }}>
+                          Summarize Older Turns (%): <span style={{ color: 'rgba(255,255,255,0.4)' }}>0 = off</span>
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="95"
+                          step="5"
+                          value={settings.history_summary_percent !== undefined ? settings.history_summary_percent : 50}
+                          onChange={(e) => handleUpdateSetting('history_summary_percent', Math.max(0, Math.min(95, parseInt(e.target.value) || 0)))}
+                          style={{
+                            width: '100%',
+                            padding: '4px 8px',
+                            fontSize: '0.75rem',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '6px',
+                            color: '#fff'
+                          }}
+                        />
+                        <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                          When the token limit is hit, this share of the conversation is compressed into an LLM summary.
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.68rem', color: '#cbd5e1', display: 'block', marginBottom: '2px' }}>Summary Position:</label>
+                        <select
+                          value={settings.history_summary_position || 'oldest'}
+                          onChange={(e) => handleUpdateSetting('history_summary_position', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '4px 8px',
+                            fontSize: '0.75rem',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '6px',
+                            color: '#fff'
+                          }}
+                        >
+                          <option value="oldest">Oldest turns (front)</option>
+                          <option value="middle">Middle turns (center)</option>
+                        </select>
+                        <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                          Which part of the conversation gets condensed. Recent turns always stay verbatim.
+                        </div>
+                      </div>
+                    </div>
                   </div>
-
-
 
                   {/* General Preferences Group */}
                   <div className="card-group" style={{ marginBottom: '12px' }}>
@@ -3430,6 +3482,46 @@ const ControlDashboard = ({
                         })()}
                       </div>
                     )}
+
+                    {/* Codegraph (opt-in code intelligence tools) */}
+                    <div className="identity-field" style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.08)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span className="field-label" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600 }}>Turn on codegraph for coder mode</span>
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '300px', lineHeight: '1.25' }}>
+                            Lets coder mode use codegraph to explore and navigate indexed codebases. <strong style={{ color: '#fbbf24' }}>Codegraph must be installed on your PC for this tool to work.</strong> (Default: OFF)
+                          </span>
+                        </div>
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={!!settings.codegraph_coder_enabled}
+                            onChange={(e) => handleUpdateSetting('codegraph_coder_enabled', e.target.checked)}
+                          />
+                          <span className="slider round"></span>
+                        </label>
+                      </div>
+
+                      {/* Advanced (Autonomous Jarvis) suite checkbox — only when coder toggle is on */}
+                      {!!settings.codegraph_coder_enabled && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed rgba(255,255,255,0.06)' }}>
+                          <div>
+                            <span className="field-label" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600 }}>Turn on codegraph for advanced tools (autonomous jarvis) suite</span>
+                            <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '300px', lineHeight: '1.25' }}>
+                              Also sends the codegraph tools in Advanced (Autonomous Jarvis) mode. Requires codegraph to be installed.
+                            </span>
+                          </div>
+                          <label className="switch">
+                            <input
+                              type="checkbox"
+                              checked={!!settings.codegraph_advanced_enabled}
+                              onChange={(e) => handleUpdateSetting('codegraph_advanced_enabled', e.target.checked)}
+                            />
+                            <span className="slider round"></span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Card 2: AI Brain & Language Model (LLM API Configuration) */}
