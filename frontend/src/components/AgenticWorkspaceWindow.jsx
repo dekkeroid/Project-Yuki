@@ -391,7 +391,7 @@ export const AgenticWorkspaceWindow = ({
         .then((actData) => {
           if (actData && actData.messages) setViewMessages(actData.messages);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   };
 
@@ -717,6 +717,8 @@ export const AgenticWorkspaceWindow = ({
   const [saveCoderEndpointBtnText, setSaveCoderEndpointBtnText] = useState('Save Preset');
   const [draftCoderKeys, setDraftCoderKeys] = useState(['']);
 
+  const [coderToolsList, setCoderToolsList] = useState([]);
+
   const activeSettings = { ...internalSettings, ...settings };
 
   const handleUpdateSetting = async (keyOrUpdates, value) => {
@@ -762,6 +764,13 @@ export const AgenticWorkspaceWindow = ({
       if (eRes.ok) {
         const eData = await eRes.json();
         setSavedCustomEndpoints(eData.endpoints || []);
+      }
+      const tRes = await fetch(`${API_BASE}/api/tools?mode=all`);
+      if (tRes.ok) {
+        const tData = await tRes.json();
+        if (tData && tData.tools) {
+          setCoderToolsList(tData.tools);
+        }
       }
     } catch (err) {
       console.error("[Settings] Error fetching settings/endpoints:", err);
@@ -1097,7 +1106,7 @@ export const AgenticWorkspaceWindow = ({
     }
 
     // 2. Active Tool Schemas
-    const basicTools = ['web_search', 'read_file_content', 'search_files', 'list_directory', 'launch_app', 'open_or_play_file', 'set_system_volume', 'manage_time', 'get_system_stats', 'update_user_fact', 'take_screenshot', 'run_terminal_command', 'run_python_script', 'jarvis_query_file_db', 'jarvis_open_or_play_file'];
+    const basicTools = ['web_search', 'read_file_content', 'search_files', 'list_directory', 'launch_app', 'open_or_play_file', 'set_system_volume', 'manage_timer_stopwatch_alarms', 'get_system_stats', 'update_user_fact', 'take_screenshot', 'run_terminal_command', 'run_python_script', 'jarvis_query_file_db', 'jarvis_open_or_play_file'];
     const jarvisTools = [...basicTools, 'read_and_review_file', 'list_directory_tree', 'git_status_and_history', 'system_diagnostics_and_processes', 'scrape_web_page', 'jarvis_remember_user_fact'];
     const codingTools = ['jarvis_run_terminal', 'jarvis_run_python', 'jarvis_read_file', 'jarvis_create_or_edit_file', 'jarvis_replace_file_content', 'jarvis_list_dir_tree', 'jarvis_git_status', 'jarvis_find_files_by_glob', 'jarvis_grep_files', 'jarvis_web_search', 'jarvis_web_scrape', 'jarvis_system_diagnostics', 'jarvis_send_stdin'];
 
@@ -3591,19 +3600,19 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                 ].map(mod => {
                   const inert = isCodingMode && mod.coderInert;
                   return (
-                  <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.73rem', color: inert ? '#475569' : '#cbd5e1', cursor: inert ? 'not-allowed' : 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={mod.state}
-                      disabled={inert}
-                      onChange={(e) => {
-                        mod.set(e.target.checked);
-                        localStorage.setItem(mod.key, String(e.target.checked));
-                      }}
-                      style={{ accentColor: '#a78bfa' }}
-                    />
-                    {mod.label}{inert ? ' (ignored in Coding Mode)' : ''}
-                  </label>
+                    <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.73rem', color: inert ? '#475569' : '#cbd5e1', cursor: inert ? 'not-allowed' : 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={mod.state}
+                        disabled={inert}
+                        onChange={(e) => {
+                          mod.set(e.target.checked);
+                          localStorage.setItem(mod.key, String(e.target.checked));
+                        }}
+                        style={{ accentColor: '#a78bfa' }}
+                      />
+                      {mod.label}{inert ? ' (ignored in Coding Mode)' : ''}
+                    </label>
                   );
                 })}
               </div>
@@ -4302,6 +4311,44 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '6px', lineHeight: 1.35, paddingLeft: '21px' }}>
                     Lets coder mode use codegraph to explore and navigate indexed codebases. <strong style={{ color: '#fbbf24' }}>Codegraph must be installed on your PC for this tool to work.</strong> (Default: OFF)
                   </div>
+                </div>
+
+                {/* Included Coder Tools (allowlist sent to coder mode) */}
+                <div style={{ background: 'rgba(9, 13, 22, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                  <div style={{ fontSize: '0.78rem', color: '#6ee7b7', fontWeight: 700, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Wrench style={{ width: '13px', height: '13px' }} /> Included Coder Tools
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginBottom: '8px', lineHeight: 1.35 }}>
+                    Tools sent to the coding LLM. Uncheck any tool to remove it from coder mode — its schema is not sent and its name is scrubbed from the coder system prompt. Deselection always wins; only the tools you check can be called. Codegraph tools are added automatically while codegraph is on. Note: only coder-capable tools can actually be sent.
+                  </div>
+                  {(() => {
+                    const coderTools = (coderToolsList || []).map(t => t.name);
+                    const included = Array.isArray(activeSettings.included_coder_tools) ? activeSettings.included_coder_tools : [];
+                    if (coderTools.length === 0) {
+                      return <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', padding: '8px 0' }}>Loading tools…</div>;
+                    }
+                    return (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', maxHeight: '240px', overflowY: 'auto' }}>
+                        {coderTools.map(name => {
+                          const checked = included.includes(name);
+                          return (
+                            <label key={name} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', color: checked ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)', cursor: 'pointer', padding: '2px 0' }}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  const next = checked ? included.filter(t => t !== name) : [...included, name];
+                                  handleUpdateSetting('included_coder_tools', next);
+                                }}
+                                style={{ accentColor: '#10b981', width: '12px', height: '12px', cursor: 'pointer' }}
+                              />
+                              <span style={{ fontFamily: 'monospace', textDecoration: checked ? 'none' : 'line-through' }}>{name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}

@@ -42,7 +42,7 @@ class own_process_busy_guard:
         set_own_process_busy(False)
         return False
 
-# How many memory-heavy processes the >95% RAM branch may trim, and how many
+# How many memory-heavy processes the >90% RAM branch may trim, and how many
 # candidates to enrich before applying the exclusion filters. The enrich window
 # is larger than MAX_TRIM_CANDIDATES so that safelist/foreground/young/priority
 # exclusions don't starve the trim list below the target size.
@@ -53,7 +53,7 @@ PROCESS_QUERY_INFORMATION = 0x0400
 PROCESS_SET_QUOTA         = 0x0100
 
 # Never trim working sets of these system-critical processes — trimming dwm/explorer
-# at >95% RAM can freeze the UI and look like a crash.
+# at >90% RAM can freeze the UI and look like a crash.
 _NEVER_TRIM = {
     "dwm.exe", "explorer.exe", "csrss.exe", "winlogon.exe", "smss.exe",
     "services.exe", "lsass.exe", "MsMpEng.exe", "SearchIndexer.exe",
@@ -244,7 +244,7 @@ def optimize_all_processes(force=False, skip_own_process=False):
     if pids_to_optimize:
         print(f'[Memory] EmptyWorkingSet called on {optimized_count}/{len(pids_to_optimize)} Electron/Node process(es).')
 
-    # 6. If system RAM > 95%, trim top MAX_TRIM_CANDIDATES memory-hogging
+    # 6. If system RAM > 90%, trim top MAX_TRIM_CANDIDATES memory-hogging
     #    processes — safely. The original branch trimmed the raw top-10 by
     #    memory_percent with no guards, which could trim dwm.exe/explorer.exe/the
     #    just-opened foreground app and freeze the UI. Now we safelist critical
@@ -253,7 +253,7 @@ def optimize_all_processes(force=False, skip_own_process=False):
     #    pure, unit-testable _select_trim_candidates helper.
     try:
         ram = psutil.virtual_memory()
-        if ram.percent > 95:
+        if ram.percent > 90:
             fg_pid = _foreground_pid()
             scan_time = time.time()
             scanned = []

@@ -456,20 +456,63 @@ def add_datetime_alarm(date_str: str, time_str: str, message: str = "Alarm!") ->
     }
 
 @_write_locked
+def reset_stopwatch(label: str = "default") -> Dict[str, Any]:
+    label_clean = (label or "default").strip().lower()
+    conn = get_connection()
+    cursor = conn.cursor()
+    row = cursor.execute(
+        "SELECT is_active FROM stopwatches WHERE label = ?", (label_clean,)
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        return {"status": "error", "message": f"No stopwatch found for '{label_clean}'."}
+
+    now = time.time()
+    # Zero out elapsed while preserving running/paused state
+    cursor.execute(
+        "UPDATE stopwatches SET started_at = ?, paused_elapsed = 0 WHERE label = ?",
+        (now, label_clean)
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "ok",
+        "label": label_clean,
+        "elapsed_seconds": 0,
+        "is_active": bool(row["is_active"])
+    }
+
+@_write_locked
 def start_stopwatch(label: str = "default") -> Dict[str, Any]:
     label_clean = (label or "default").strip().lower()
     now = time.time()
-    
+
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-    INSERT OR REPLACE INTO stopwatches (label, started_at, is_active)
-    VALUES (?, ?, 1)
-    """, (label_clean, now))
+    # Check if a paused stopwatch already exists; if so, resume it by adjusting started_at
+    existing = cursor.execute(
+        "SELECT paused_elapsed, is_active FROM stopwatches WHERE label = ?", (label_clean,)
+    ).fetchone()
+
+    if existing and existing["is_active"] == 0:
+        # Resume: set new started_at so that now - started_at == 0 extra, but paused_elapsed is preserved
+        cursor.execute(
+            "UPDATE stopwatches SET started_at = ?, is_active = 1 WHERE label = ?",
+            (now, label_clean)
+        )
+    else:
+        # Fresh start
+        cursor.execute("""
+        INSERT OR REPLACE INTO stopwatches (label, started_at, is_active, paused_elapsed)
+        VALUES (?, ?, 1, 0)
+        """, (label_clean, now))
+
     conn.commit()
     conn.close()
-    
-    print(f"[TimeManager] Stopwatch '{label_clean}' started at {now}")
+
+    print(f"[TimeManager] Stopwatch '{label_clean}' started/resumed at {now}")
 
     # Notify frontend so it opens a stopwatch window
     if _stopwatch_callback and _main_loop and _main_loop.is_running():
@@ -487,19 +530,25 @@ def start_stopwatch(label: str = "default") -> Dict[str, Any]:
 def check_stopwatch(label: str = "default") -> Dict[str, Any]:
     label_clean = (label or "default").strip().lower()
     now = time.time()
-    
+
     conn = get_connection()
     cursor = conn.cursor()
-    row = cursor.execute("SELECT started_at, is_active FROM stopwatches WHERE label = ?", (label_clean,)).fetchone()
+    row = cursor.execute(
+        "SELECT started_at, is_active, paused_elapsed FROM stopwatches WHERE label = ?", (label_clean,)
+    ).fetchone()
     conn.close()
-    
+
     if not row:
         return {"status": "error", "message": f"No active stopwatch found for '{label_clean}'."}
-        
-    elapsed = int(now - row["started_at"])
+
+    paused_elapsed = row["paused_elapsed"] or 0
+    if row["is_active"]:
+        elapsed = int((now - row["started_at"]) + paused_elapsed)
+    else:
+        elapsed = int(paused_elapsed)
+
     hrs, remainder = divmod(elapsed, 3600)
     mins, secs = divmod(remainder, 60)
-    
     elapsed_str = f"{hrs:02d}:{mins:02d}:{secs:02d}" if hrs > 0 else f"{mins:02d}:{secs:02d}"
     return {
         "status": "ok",
@@ -513,13 +562,17 @@ def check_stopwatch(label: str = "default") -> Dict[str, Any]:
 def stop_stopwatch(label: str = "default") -> Dict[str, Any]:
     label_clean = (label or "default").strip().lower()
     info = check_stopwatch(label_clean)
-    
-    if info.get("status") == "ok":
+
+    if info.get("status") == "ok" and info.get("is_active"):
+        # Freeze elapsed into paused_elapsed so it's preserved when resumed
         conn = get_connection()
-        conn.execute("UPDATE stopwatches SET is_active = 0 WHERE label = ?", (label_clean,))
+        conn.execute(
+            "UPDATE stopwatches SET is_active = 0, paused_elapsed = ? WHERE label = ?",
+            (info["elapsed_seconds"], label_clean)
+        )
         conn.commit()
         conn.close()
-        
+
     return info
 
 @_write_locked
@@ -577,23 +630,27 @@ def get_active_time_items() -> Dict[str, Any]:
     """).fetchall()
     
     stopwatches_rows = cursor.execute("""
-    SELECT id, label, started_at
+    SELECT id, label, started_at, is_active, paused_elapsed
     FROM stopwatches
-    WHERE is_active = 1
+    WHERE is_active = 1 OR paused_elapsed > 0
     """).fetchall()
-    
+
     conn.close()
-    
+
     reminders = []
     for r in reminders_rows:
         rem_dict = dict(r)
         rem_dict["remaining_seconds"] = max(0, int(r["target_time"] - now))
         reminders.append(rem_dict)
-        
+
     stopwatches = []
     for s in stopwatches_rows:
         sw_dict = dict(s)
-        elapsed = int(now - s["started_at"])
+        paused_elapsed = s["paused_elapsed"] or 0
+        if s["is_active"]:
+            elapsed = int((now - s["started_at"]) + paused_elapsed)
+        else:
+            elapsed = int(paused_elapsed)
         hrs, remainder = divmod(elapsed, 3600)
         mins, secs = divmod(remainder, 60)
         sw_dict["elapsed_seconds"] = elapsed

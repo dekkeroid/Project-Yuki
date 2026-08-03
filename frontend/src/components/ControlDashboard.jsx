@@ -290,7 +290,7 @@ const ControlDashboard = ({
       testIntervalRef.current = null;
     }
     if (testCtxRef.current) {
-      testCtxRef.current.close().catch(() => {});
+      testCtxRef.current.close().catch(() => { });
       testCtxRef.current = null;
     }
     if (testAudioRef.current) {
@@ -385,7 +385,7 @@ const ControlDashboard = ({
 
   const handleAvatarScaleChange = (val) => {
     setLocalAvatarScale(val);
-    try { localStorage.setItem('yuki-avatar-scale', val.toString()); } catch {}
+    try { localStorage.setItem('yuki-avatar-scale', val.toString()); } catch { }
     if (onAvatarScaleChange) onAvatarScaleChange(val);
     if (window.electronAPI && window.electronAPI.setWindowScale) {
       if (window._scaleTimer) clearTimeout(window._scaleTimer);
@@ -819,7 +819,7 @@ const ControlDashboard = ({
   const handleSelectCustomEndpoint = async (ep, targetType = 'complex') => {
     if (!ep) return;
     console.log(`[VAULT-SELECT] ⚡ Selecting preset: label="${ep.label}" id="${ep.id}" targetType="${targetType}" base_url="${ep.base_url}"`);
-    console.log(`[VAULT-SELECT] Before: settings.llm_base_url="${settings.llm_base_url}" settings.llm_api_key="${settings.llm_api_key?.substring(0,15)}..." settings.llm_backend="${settings.llm_backend}"`);
+    console.log(`[VAULT-SELECT] Before: settings.llm_base_url="${settings.llm_base_url}" settings.llm_api_key="${settings.llm_api_key?.substring(0, 15)}..." settings.llm_backend="${settings.llm_backend}"`);
     try {
       const res = await fetch(`${API_BASE}/api/settings/custom-endpoints/select`, {
         method: 'POST',
@@ -827,10 +827,10 @@ const ControlDashboard = ({
         body: JSON.stringify({ id: ep.id, label: ep.label, target_type: targetType })
       });
       const data = res.ok ? await res.json() : null;
-      console.log(`[VAULT-SELECT] Backend response:`, data ? { message: data.message, api_key_decrypted: data.api_key_decrypted?.substring(0,15)+'...', base_url: data.base_url, backend: data.backend } : 'null');
+      console.log(`[VAULT-SELECT] Backend response:`, data ? { message: data.message, api_key_decrypted: data.api_key_decrypted?.substring(0, 15) + '...', base_url: data.base_url, backend: data.backend } : 'null');
       const keyToUse = (data && data.active_endpoint && data.active_endpoint.api_key) || ep.api_key || '';
-      console.log(`[VAULT-SELECT] keyToUse="${keyToUse?.substring(0,15)}..."`);
-      
+      console.log(`[VAULT-SELECT] keyToUse="${keyToUse?.substring(0, 15)}..."`);
+
       if (targetType === 'simple') {
         setSelectedSimpleEndpointId(ep.id || '');
         setCustomSimpleLabel(ep.label || '');
@@ -925,6 +925,7 @@ const ControlDashboard = ({
 
   // Active Time Items State (Timers, Reminders, Stopwatches)
   const [timeItems, setTimeItems] = useState({ reminders: [], stopwatches: [] });
+  const [, setTick] = useState(0); // forces re-render every second for live stopwatch display
 
   const fetchTimeItems = async () => {
     try {
@@ -937,6 +938,12 @@ const ControlDashboard = ({
       console.warn("Could not fetch active time items:", e);
     }
   };
+
+  // 1-second tick so stopwatches update live in the UI without extra network calls
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleCancelReminder = async (id) => {
     try {
@@ -987,7 +994,7 @@ const ControlDashboard = ({
   const osNativeAlarms = settings?.os_native_alarms !== false;
 
   const handleToggleOsNativeAlarms = async (val) => {
-    try { localStorage.setItem('yuki-os-native-alarms', val.toString()); } catch {}
+    try { localStorage.setItem('yuki-os-native-alarms', val.toString()); } catch { }
     await handleUpdateSetting('os_native_alarms', val);
   };
 
@@ -1260,7 +1267,7 @@ const ControlDashboard = ({
         if (msg && msg.type === 'mood_update' && msg.mood) {
           setMoodData(prev => ({ ...prev, ...msg.mood }));
         }
-      } catch (_) {}
+      } catch (_) { }
     };
     window.addEventListener('yuki_ws_message', handleWsMoodUpdate);
     return () => window.removeEventListener('yuki_ws_message', handleWsMoodUpdate);
@@ -1280,11 +1287,8 @@ const ControlDashboard = ({
         }
       }
 
-      if (activeTab === 'reminders') {
-        fetchTimeItems();
-      }
-
       if (activeTab === 'tasks') {
+        fetchTimeItems();
         fetchScheduledTasks();
       }
 
@@ -1294,9 +1298,8 @@ const ControlDashboard = ({
           if (onProfileUpdate) {
             onProfileUpdate();
           }
-        } else if (activeTab === 'reminders') {
-          fetchTimeItems();
         } else if (activeTab === 'tasks') {
+          fetchTimeItems();
           fetchScheduledTasks();
         }
       }, 3000);
@@ -1375,11 +1378,11 @@ const ControlDashboard = ({
     const updates = typeof keyOrObj === 'object' && keyOrObj !== null ? keyOrObj : { [keyOrObj]: value };
     const updateKeys = Object.keys(updates);
     console.log(`[SETTINGS-UPDATE] ⚡ Sending:`, JSON.stringify(updates).substring(0, 200));
-    
+
     // Snapshot before optimistic update
     const prevBaseUrl = settings.llm_base_url;
     const prevApiKey = settings.llm_api_key?.substring(0, 15);
-    
+
     setSettings(prev => ({ ...prev, ...updates }));
     if (updates.tool_mode) {
       setTimeout(() => fetchToolsList(), 100);
@@ -2711,35 +2714,48 @@ const ControlDashboard = ({
                     })}
 
                     {/* Active Stopwatches */}
-                    {(timeItems.stopwatches || []).map(s => (
-                      <div key={s.id} style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(167,139,250,0.2)', color: '#a78bfa', fontWeight: 600, textTransform: 'uppercase', marginRight: '6px' }}>
-                            Stopwatch
-                          </span>
-                          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff' }}>'{s.label}'</span>
+                    {(timeItems.stopwatches || []).map(s => {
+                      // Compute elapsed locally for live ticking — avoids 3s poll jump
+                      const liveElapsed = s.is_active
+                        ? Math.floor((Date.now() / 1000 - s.started_at) + (s.paused_elapsed || 0))
+                        : Math.floor(s.paused_elapsed || s.elapsed_seconds || 0);
+                      const lh = Math.floor(liveElapsed / 3600);
+                      const lm = Math.floor((liveElapsed % 3600) / 60);
+                      const ls = liveElapsed % 60;
+                      const liveFmt = lh > 0
+                        ? `${String(lh).padStart(2,'0')}:${String(lm).padStart(2,'0')}:${String(ls).padStart(2,'0')}`
+                        : `${String(lm).padStart(2,'0')}:${String(ls).padStart(2,'0')}`;
+
+                      return (
+                        <div key={s.id} style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(167,139,250,0.2)', color: '#a78bfa', fontWeight: 600, textTransform: 'uppercase', marginRight: '6px' }}>
+                              {s.is_active ? 'Stopwatch' : '⏸ Paused'}
+                            </span>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff' }}>'{s.label}'</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600, color: s.is_active ? '#a78bfa' : 'rgba(167,139,250,0.5)' }}>
+                              {liveFmt}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleStopStopwatchUI(s.label)}
+                              style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', color: '#c084fc', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
+                            >
+                              {s.is_active ? 'Pause' : 'Resume'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteStopwatchUI(s.label)}
+                              style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>
-                            {s.formatted_elapsed}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleStopStopwatchUI(s.label)}
-                            style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', color: '#c084fc', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
-                          >
-                            Stop
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteStopwatchUI(s.label)}
-                            style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -3744,8 +3760,8 @@ const ControlDashboard = ({
                         {settings.llm_mode === 1
                           ? '⚡ Simple Prompts Only: Uses lean prompts for fast responses. Disables tools, intent checking, and dynamic filtering.'
                           : settings.llm_mode === 2
-                          ? '🧠 Complex Prompts Only: Forces full tool-aware system prompts for all turns.'
-                          : '🔄 Dynamic Mixed Prompts: Automatically uses lightweight prompts for basic chatter and tool-aware prompts for desktop tasks.'}
+                            ? '🧠 Complex Prompts Only: Forces full tool-aware system prompts for all turns.'
+                            : '🔄 Dynamic Mixed Prompts: Automatically uses lightweight prompts for basic chatter and tool-aware prompts for desktop tasks.'}
                       </span>
                     </div>
 
@@ -4301,21 +4317,21 @@ const ControlDashboard = ({
                                 <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
                               </button>
                             </div>
-                              {(() => {
-                                const fetchedNames = (availableSimpleLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
-                                const allNames = Array.from(new Set([
-                                  ...(settings.llm_simple_model ? [settings.llm_simple_model] : []),
-                                  ...fetchedNames
-                                ]));
-                                return (
-                                  <SearchableModelSelect
-                                    value={settings.llm_simple_model || ''}
-                                    onChange={(val) => handleUpdateSetting('llm_simple_model', val)}
-                                    options={allNames}
-                                    placeholder="Search or select Simple model..."
-                                  />
-                                );
-                              })()}
+                            {(() => {
+                              const fetchedNames = (availableSimpleLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
+                              const allNames = Array.from(new Set([
+                                ...(settings.llm_simple_model ? [settings.llm_simple_model] : []),
+                                ...fetchedNames
+                              ]));
+                              return (
+                                <SearchableModelSelect
+                                  value={settings.llm_simple_model || ''}
+                                  onChange={(val) => handleUpdateSetting('llm_simple_model', val)}
+                                  options={allNames}
+                                  placeholder="Search or select Simple model..."
+                                />
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -4373,7 +4389,7 @@ const ControlDashboard = ({
                     {/* Custom / Cloud API Key Vault & Saved Presets */}
                     {settings.llm_backend === 'custom' && (
                       <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                        
+
                         {/* Saved Key Vault Dropdown + Trash Delete Button */}
                         {savedCustomEndpoints.length > 0 && (
                           <div className="identity-field" style={{ marginBottom: '10px' }}>
@@ -4536,10 +4552,10 @@ const ControlDashboard = ({
                           type="text"
                           placeholder={
                             settings.llm_backend === 'lmstudio' ? 'http://127.0.0.1:1234' :
-                            settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
-                            settings.llm_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
-                            settings.llm_backend === 'custom' ? 'https://generativelanguage.googleapis.com/v1beta/openai' :
-                            'http://127.0.0.1:8000/v1'
+                              settings.llm_backend === 'ollama' ? 'http://127.0.0.1:11434' :
+                                settings.llm_backend === 'vllm' ? 'http://127.0.0.1:8000/v1' :
+                                  settings.llm_backend === 'custom' ? 'https://generativelanguage.googleapis.com/v1beta/openai' :
+                                    'http://127.0.0.1:8000/v1'
                           }
                           value={settings.llm_base_url || ''}
                           onChange={(e) => {
@@ -5438,8 +5454,8 @@ const ControlDashboard = ({
                           padding: '2px 8px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)',
                           border: '1px solid rgba(255,255,255,0.1)', transition: 'all 0.2s',
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(108,92,231,0.15)'; e.currentTarget.style.borderColor = 'rgba(108,92,231,0.3)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(108,92,231,0.15)'; e.currentTarget.style.borderColor = 'rgba(108,92,231,0.3)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
                         >
                           <Upload size={11} />
                           <span>{vrmUploading ? 'Uploading...' : 'Upload VRM'}</span>
@@ -5606,7 +5622,7 @@ const ControlDashboard = ({
                             onChange={(e) => {
                               const newCustom = e.target.value;
                               setCustomSkinColor(newCustom);
-                              try { localStorage.setItem('yuki-custom-skintone-color', newCustom); } catch {}
+                              try { localStorage.setItem('yuki-custom-skintone-color', newCustom); } catch { }
                               if (onSkinToneChange) onSkinToneChange(newCustom);
                             }}
                             style={{
@@ -5651,7 +5667,7 @@ const ControlDashboard = ({
                             onClick={() => {
                               const val = !isTrackingOn;
                               setLocalCameraTracking(val);
-                              try { localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false'); } catch {}
+                              try { localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false'); } catch { }
                               if (!window.yukiDebugToggles) window.yukiDebugToggles = {};
                               window.yukiDebugToggles.cameraTracking = val;
                               if (onCameraTrackingChange) onCameraTrackingChange(val);

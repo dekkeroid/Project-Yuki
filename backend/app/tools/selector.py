@@ -8,6 +8,7 @@ from typing import Any, Iterable, Sequence
 import app.config as config
 
 DEFAULT_MAX_TOOLS = 8
+DEFAULT_MAX_TOOLS_JARVIS = 14
 DEFAULT_FALLBACK_THRESHOLD = 0.08
 
 _STOPWORDS = {
@@ -42,11 +43,13 @@ _QUERY_EXPANSIONS = {
     "run": ("execute", "terminal", "command", "script"),
     "search": ("find", "lookup", "web", "file"),
     "serve": ("html", "file", "local", "open"),
+    "stopwatch" : ("stop watch","stop-watch"),
+    "stop": ("stopwatch", "timer"),
     "start": ("launch", "open", "play"),
     "time": ("date", "current", "datetime"),
     "video": ("media", "movie", "play", "file", "watch"),
     "visual": ("svg", "canvas", "diagram", "illustration"),
-    "watch": ("video", "media", "play", "open"),
+    "watch": ("stopwatch","video", "media", "play", "open"),
     "web": ("internet", "search", "browse"),
     "website": ("html", "page", "dashboard"),
 }
@@ -89,7 +92,7 @@ _TOOL_HINTS = {
     "jarvis_window_control": ("window", "minimize", "maximize", "focus", "move", "close"),
     "jarvis_system_volume": ("volume", "sound", "audio", "mute", "unmute", "loud"),
     "jarvis_system_power": ("shutdown", "restart", "reboot", "sleep", "lock", "power"),
-    "jarvis_manage_time": ("timer", "reminder", "alarm", "stopwatch", "schedule", "clock", "remind"),
+    "jarvis_manage_timer_stopwatch_alarms": ("timer", "reminder", "alarm", "stopwatch", "schedule", "clock", "remind","create","start"),
     "jarvis_close_app": ("close", "kill", "terminate", "stop", "app", "window"),
     "jarvis_run_terminal": ("terminal", "command", "shell", "powershell", "cmd", "run", "execute", "cli"),
     "jarvis_send_stdin": ("stdin", "input", "press", "enter", "key", "interactive"),
@@ -120,11 +123,26 @@ _TOOL_HINTS = {
     "get_current_datetime": ("time", "date", "today", "now", "current"),
     "get_system_stats": ("cpu", "ram", "memory", "disk", "system", "stats", "pc"),
     "update_user_fact": ("remember", "memory", "preference", "name", "interest", "fact"),
-    "manage_time": ("timer", "reminder", "alarm", "stopwatch", "schedule", "remind", "clock", "countdown"),
+    "manage_timer_stopwatch_alarms": ("timer", "reminder", "alarm", "stopwatch", "schedule", "remind", "clock", "countdown","start","create"),
     "manage_scheduled_task": ("schedule", "scheduled", "task", "delayed", "later", "interval", "repeat", "every", "watch", "watcher", "monitor", "poll", "after", "seconds", "shutdown", "trigger", "autonomous"),
     "create_file": ("create", "write", "new", "file"),
     "edit_file": ("edit", "replace", "change", "file"),
     "delete_file": ("delete", "remove", "file"),
+}
+
+# Default tool allowlist shipped to the coding LLM in Coder Mode. Used as the
+# baseline for the user-configurable "Included Coder Tools" setting
+# (config.INCLUDED_CODER_TOOLS); when that setting is unset (None), this set
+# is used verbatim. Codegraph tools are appended dynamically when enabled.
+_DEFAULT_CODING_TOOLS = {
+    "jarvis_run_terminal", "jarvis_run_python", "jarvis_read_file",
+    "jarvis_create_or_edit_file", "jarvis_replace_file_content",
+    "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_find_files_by_glob",
+    "jarvis_grep_files",
+    "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
+    "jarvis_send_stdin", "read_and_review_file", "search_files",
+    "read_file_content", "run_terminal_command", "run_python_script",
+    "jarvis_analyze_image", "jarvis_see_screen", "manage_todo", "ask_user"
 }
 
 _TOKEN_RE = re.compile(r"[a-z0-9_]+")
@@ -134,7 +152,7 @@ def select_relevant_tools(
     tools: Sequence[dict[str, Any]],
     user_message: str,
     *,
-    max_tools: int = DEFAULT_MAX_TOOLS,
+    max_tools: int | None = None,   
     fallback_threshold: float = DEFAULT_FALLBACK_THRESHOLD,
 ) -> list[dict[str, Any]]:
     """Return a compact, ranked tool list containing always-included core tools + query-matched tools."""
@@ -143,6 +161,12 @@ def select_relevant_tools(
 
     # Detect if we are in Jarvis mode (contains jarvis_* tool definitions)
     is_jarvis = any(_tool_name(t).startswith("jarvis_") for t in tools)
+
+    if max_tools is None:
+        max_tools = DEFAULT_MAX_TOOLS_JARVIS if is_jarvis else DEFAULT_MAX_TOOLS
+
+    print(f"[MAX TOOLS] = {max_tools}")
+
     if is_jarvis:
         configured = getattr(config, "ALWAYS_INCLUDED_JARVIS_TOOLS", None)
         if configured is not None:
@@ -170,12 +194,17 @@ def select_relevant_tools(
         if not overlap:
             score = 0.0
         else:
-            name_bonus = 0.18 if query_terms & set(name.split("_")) else 0.0
+            name_bonus = 0.22 if query_terms & set(name.split("_")) else 0.0
             hint_bonus = 0.12 if query_terms & hint_terms else 0.0
             score = len(overlap) / max(len(query_terms), 1) + name_bonus + hint_bonus
         scored.append((score, -index, tool))
 
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+
+    debug_view = [(round(score, 4), -neg_index, _tool_name(tool)) for score, neg_index, tool in scored]
+    print(f"[SCORED] max_tools={max_tools} query={sorted(query_terms)}")
+    for score, index, name in debug_view:
+        print(f"  {score:>7.4f}  idx={index:<3d}  {name}")
     
     # If confidence is low (e.g. casual chitchat), return ONLY the always-included core tools!
     if not scored or scored[0][0] < fallback_threshold:

@@ -1036,6 +1036,9 @@ def get_settings():
         settings_dict["always_included_tools"] = sorted(_ALWAYS_INCLUDED_JARVIS_TOOLS)
     if "blocked_tools" not in settings_dict:
         settings_dict["blocked_tools"] = sorted(config.TOOL_BLACKLIST or [])
+    if "included_coder_tools" not in settings_dict:
+        from app.tools.selector import _DEFAULT_CODING_TOOLS
+        settings_dict["included_coder_tools"] = sorted(_DEFAULT_CODING_TOOLS)
     print(f"[SETTINGS-GET-BE] GET /api/settings → llm_base_url='{settings_dict.get('llm_base_url', '')}' llm_backend='{settings_dict.get('llm_backend', '')}'")
     return settings_dict
 
@@ -1104,6 +1107,7 @@ class SettingsUpdateRequest(BaseModel):
     llm_vision_model: Optional[str] = None
     always_included_tools: Optional[List[str]] = None
     blocked_tools: Optional[List[str]] = None
+    included_coder_tools: Optional[List[str]] = None
     codegraph_coder_enabled: Optional[bool] = None
     codegraph_advanced_enabled: Optional[bool] = None
     persistent_chat_history: Optional[bool] = None
@@ -1493,16 +1497,6 @@ async def update_settings(req: SettingsUpdateRequest):
     
     await broadcast_profile_update()
     
-    import copy
-    current_settings = copy.deepcopy(memory_manager.profile.get("settings", {}))
-    current_settings.update({
-        "llm_model": config.LLM_MODEL,
-        "character_name": config.CHARACTER_NAME,
-        "character_persona": config.CHARACTER_PERSONA,
-        "crawler_paused": crawler.is_crawler_paused(),
-        "tagger_paused": crawler.is_tagger_paused(),
-    })
-    
     if req.llm_vision_model is not None:
         memory_manager.update_setting("llm_vision_model", req.llm_vision_model.strip())
 
@@ -1534,12 +1528,36 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("blocked_tools", clean_blocked)
         print(f"[SETTINGS-UPDATE-BE] blocked_tools = {clean_blocked}")
 
+    if req.included_coder_tools is not None:
+        seen = set()
+        clean_coder = []
+        for t in req.included_coder_tools:
+            if not t:
+                continue
+            name = str(t).strip()
+            if name and name not in seen:
+                seen.add(name)
+                clean_coder.append(name)
+        config.INCLUDED_CODER_TOOLS = clean_coder
+        memory_manager.update_setting("included_coder_tools", clean_coder)
+        print(f"[SETTINGS-UPDATE-BE] included_coder_tools = {clean_coder}")
+
     if req.codegraph_coder_enabled is not None:
         memory_manager.update_setting("codegraph_coder_enabled", bool(req.codegraph_coder_enabled))
         print(f"[SETTINGS-UPDATE-BE] codegraph_coder_enabled = {bool(req.codegraph_coder_enabled)}")
     if req.codegraph_advanced_enabled is not None:
         memory_manager.update_setting("codegraph_advanced_enabled", bool(req.codegraph_advanced_enabled))
         print(f"[SETTINGS-UPDATE-BE] codegraph_advanced_enabled = {bool(req.codegraph_advanced_enabled)}")
+
+    import copy
+    current_settings = copy.deepcopy(memory_manager.profile.get("settings", {}))
+    current_settings.update({
+        "llm_model": config.LLM_MODEL,
+        "character_name": config.CHARACTER_NAME,
+        "character_persona": config.CHARACTER_PERSONA,
+        "crawler_paused": crawler.is_crawler_paused(),
+        "tagger_paused": crawler.is_tagger_paused(),
+    })
 
     print(f"[SETTINGS-UPDATE-BE]   AFTER:  llm_base_url='{current_settings.get('llm_base_url', '')}' llm_backend='{current_settings.get('llm_backend', '')}'")
     print(f"[SETTINGS-UPDATE-BE] ✅ Returning {len(current_settings)} settings keys")
@@ -2101,7 +2119,7 @@ async def get_tools_list(mode: Optional[str] = None):
             category = "Vision & Media"
         elif name in ("run_terminal_command", "run_python_script", "create_file", "edit_file", "delete_file", "jarvis_read_file", "jarvis_create_or_edit_file", "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_run_terminal", "jarvis_run_python"):
             category = "Code & Filesystem"
-        elif name in ("jarvis_system_diagnostics", "jarvis_network_status", "jarvis_window_control", "jarvis_system_power", "system_power_control", "manage_process", "jarvis_manage_time", "manage_time", "jarvis_close_app", "get_current_datetime", "control_window"):
+        elif name in ("jarvis_system_diagnostics", "jarvis_network_status", "jarvis_window_control", "jarvis_system_power", "system_power_control", "manage_process", "jarvis_manage_timer_stopwatch_alarms", "manage_timer_stopwatch_alarms", "jarvis_close_app", "get_current_datetime", "control_window"):
             category = "Diagnostics & Automation"
             
         formatted.append({
@@ -2362,6 +2380,15 @@ def delete_stopwatch(req: StopwatchRequest):
     time_manager.delete_stopwatch(req.label or "default")
     return {"status": "ok", "message": f"Deleted stopwatch '{req.label}'"}
 
+
+@app.post("/api/reminders/stopwatch/reset")
+def reset_stopwatch(req: StopwatchRequest):
+    """
+    Resets a stopwatch's elapsed time to zero directly from the Tasks UI.
+    """
+    from app.tools import time_manager
+    res = time_manager.reset_stopwatch(req.label or "default")
+    return {"status": "ok", "stopwatch": res}
 
 # ── Scheduled Tasks API (autonomous delayed / interval / watcher tasks) ──────────
 

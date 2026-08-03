@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -75,6 +76,12 @@ ALWAYS_INCLUDED_JARVIS_TOOLS = None
 TOOL_BLACKLIST: set = set(
     filter(None, os.environ.get("YUKI_TOOL_BLACKLIST", "").replace(",", " ").split())
 )
+
+# Coder-mode tool allowlist. None = use selector defaults (_DEFAULT_CODING_TOOLS);
+# a list (even empty) is authoritative — tools not listed are never sent to the
+# coding LLM or mentioned in the coder system prompt. Loaded from profile settings
+# "included_coder_tools".
+INCLUDED_CODER_TOOLS: Optional[list] = None
 
 # Tool transport configuration
 # mcp-stdio routes Yuki tool execution through backend/app/mcp_server.py over MCP stdio.

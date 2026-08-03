@@ -505,7 +505,8 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         label TEXT UNIQUE,
         started_at REAL,
-        is_active INTEGER DEFAULT 1
+        is_active INTEGER DEFAULT 1,
+        paused_elapsed REAL DEFAULT 0
     );
     """)
 

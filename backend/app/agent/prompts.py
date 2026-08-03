@@ -2,29 +2,33 @@ import re
 import app.config
 
 
-def _scrub_blocked_tools(text: str) -> str:
-    """Remove references to user-blacklisted tools from prompt prose.
+def _scrub_blocked_tools(text: str, excluded=None, drop_lines: bool = True) -> str:
+    """Remove references to excluded tools from prompt prose.
 
-    Drops whole guideline lines dedicated to a blocked tool (a '• `tool` → ...'
+    Drops whole guideline lines dedicated to an excluded tool (a '• `tool` → ...'
     bullet) and replaces any remaining inline mention with `<unavailable>` so the
-    model never learns about a tool the user has blocked in non-coder modes.
+    model never learns about a tool the user has disabled. When ``excluded`` is
+    None, falls back to the global TOOL_BLACKLIST; ``drop_lines`` disables the
+    line-drop pass for prose where a bullet rarely starts with the tool name.
     """
-    blocked = {str(n).strip() for n in (getattr(app.config, "TOOL_BLACKLIST", None) or ())}
-    blocked = {n for n in blocked if n}
-    if not blocked:
+    if excluded is None:
+        excluded = {str(n).strip() for n in (getattr(app.config, "TOOL_BLACKLIST", None) or ())}
+    excluded = {n for n in excluded if n}
+    if not excluded:
         return text
 
-    names = sorted(blocked, key=len, reverse=True)
+    names = sorted(excluded, key=len, reverse=True)
 
-    lines = text.split("\n")
-    kept = []
-    for line in lines:
-        stripped = line.strip()
-        m = re.match(r"^[•\-*]?\s*`?([a-zA-Z0-9_]+)`?", stripped)
-        if m and m.group(1) in blocked and "`" in stripped[:24]:
-            continue
-        kept.append(line)
-    text = "\n".join(kept)
+    if drop_lines:
+        lines = text.split("\n")
+        kept = []
+        for line in lines:
+            stripped = line.strip()
+            m = re.match(r"^[•\-*]?\s*`?([a-zA-Z0-9_]+)`?", stripped)
+            if m and m.group(1) in excluded and "`" in stripped[:24]:
+                continue
+            kept.append(line)
+        text = "\n".join(kept)
 
     for name in names:
         text = re.sub(rf"`?\b{re.escape(name)}\b`?", "<unavailable>", text)
@@ -221,7 +225,7 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
   • `launch_app` → ONLY when the user wants to open a desktop application.
   • `update_user_fact` → Use ONLY when the USER reveals a clear, definite personal fact or preference about THEMSELVES.
   • `set_system_volume` → ONLY when the user says to change the volume.
-  • `manage_time` → ONLY when the user asks to set a timer, schedule a reminder, start/check a stopwatch, or set an alarm.
+  • `manage_timer_stopwatch_alarms` → ONLY when the user asks to set a timer, schedule a reminder, start/check a stopwatch, or set an alarm.
   • `manage_scheduled_task` → ONLY when the user asks to do something automatically LATER or REPEATEDLY, or to WATCH something and react — e.g. "take a screenshot in 30 seconds", "run this every 5 minutes", or "watch this terminal and shut down the PC if it closes". For a one-shot 'do X in N seconds' use action='set_delayed'; for 'every N seconds' use action='set_interval'; for 'keep an eye on X and react when Y happens' use action='watch' (kind in process/window/file/command, fire_condition like gone/present/open/closed/exists/deleted/changed/exit0/exit_nonzero). When the action is a shutdown/restart it is confirmed once at creation, then runs autonomously.
   • `get_system_stats` → ONLY when the user asks about CPU, RAM, disk, IP, or current time/date.
   • All other tools → ONLY for direct, unambiguous user requests to perform that exact action.
@@ -241,6 +245,8 @@ RULE 7 — AFTER PLAYING MEDIA: After `open_or_play_file` with play_mode=true, t
 RULE 8 — NO PATH HALLUCINATION: Never construct or guess file paths. Never invent song names. Always pass the user's raw query words.
 
 RULE 9 — VOICE OUTPUT: Keep all spoken responses concise. Round numbers (e.g. "32%" not "31.847%"). Never output markdown lists when speaking.
+
+RULE 10 - FOR STOPWATCHES, TIMERS, ALARMS AND REMINDERS STRICTLY USE manage_timer_stopwatch_alarms or jarvis_manage_timer_stopwatch_alarms TOOL. I REPEAT STRICTLY USE manage_timer_stopwatch_alarms TOOL. manage_scheduled_task is only for future tasks do not use it for timers, stopwatches, alarms or reminders. DONT USE PYTHON.
 ---
 
 Be warm, helpful, and keep all responses voice-friendly!""")
@@ -488,4 +494,10 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
         if dir_lines:
             parts.append("--- WORKSPACE DIRECTORIES (CODER MODE) ---\nThe user has designated the following active project directories for this session:\n" + "\n".join(dir_lines) + "\nSTRICT BOUNDARY RULE: All created files, edits, script executions, and terminal operations MUST remain strictly inside these designated workspace paths!\n-------------------------------------------------")
 
-    return "\n\n".join(parts)
+    # Scrub any deselected coder tools from the prompt prose — a deselected tool
+    # must never reach the coding LLM through its system prompt either.
+    from app.tools.selector import _DEFAULT_CODING_TOOLS
+    _configured_coding = getattr(app.config, "INCLUDED_CODER_TOOLS", None)
+    _included = set(_configured_coding) if _configured_coding is not None else set(_DEFAULT_CODING_TOOLS)
+    _deselected = set(_DEFAULT_CODING_TOOLS) - _included
+    return _scrub_blocked_tools("\n\n".join(parts), excluded=_deselected, drop_lines=False)

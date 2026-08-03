@@ -347,7 +347,7 @@ class AgentExecutor:
                 kwargs.get("action") or "",
                 confirmed=bool(kwargs.get("confirmed", False))
             ),
-            "manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
+            "manage_timer_stopwatch_alarms": lambda **kwargs: self._execute_manage_timer_stopwatch_alarms(**kwargs),
             "manage_todo": lambda **kwargs: self._execute_manage_todo(**kwargs),
             "manage_scheduled_task": lambda **kwargs: self._execute_manage_scheduled_task(**kwargs),
             "web_search": _async_web_search,
@@ -410,7 +410,7 @@ class AgentExecutor:
             "jarvis_system_power": lambda **kwargs: system_power_control(
                 kwargs.get("action") or ""
             ),
-            "jarvis_manage_time": lambda **kwargs: self._execute_manage_time(**kwargs),
+            "jarvis_manage_timer_stopwatch_alarms": lambda **kwargs: self._execute_manage_timer_stopwatch_alarms(**kwargs),
             "jarvis_manage_scheduled_task": lambda **kwargs: self._execute_manage_scheduled_task(**kwargs),
             "jarvis_remember_user_fact": lambda **kwargs: self._execute_update_user_fact(**kwargs),
             "jarvis_close_app": lambda **kwargs: manage_process(
@@ -649,7 +649,7 @@ class AgentExecutor:
         else:
             return self.memory.update_fact(kwargs.get("key"), val)
 
-    def _execute_manage_time(self, **kwargs) -> str:
+    def _execute_manage_timer_stopwatch_alarms(self, **kwargs) -> str:
         from app.tools import time_manager
         action = (kwargs.get("action") or "").lower().strip()
         
@@ -736,7 +736,7 @@ class AgentExecutor:
                 time_manager.delete_reminder(int(item_id))
                 return f"Successfully cancelled timer/reminder #{item_id}."
             return "Missing item_id for cancellation."
-        return f"Unknown action '{action}' for manage_time."
+        return f"Unknown action '{action}' for manage_timer_stopwatch_alarms."
 
     def _execute_manage_scheduled_task(self, **kwargs) -> str:
         from app.tools import scheduled_tasks
@@ -881,7 +881,7 @@ class AgentExecutor:
                 from app.tools.scheduled_tasks import capture_screenshot
                 return capture_screenshot(
                     window_title=action_args.get("window_title") or action_args.get("window") or "",
-                    save_to=action_args.get("save_to") or "",
+                    save_to=action_args.get("save_to") or action_args.get("path") or "",
                 )
             handler = self.tools.get(action_tool) or self.tools.get(self._resolve_tool_name(action_tool))
             if handler is None:
@@ -1478,7 +1478,7 @@ class AgentExecutor:
         )
         if timer_regex.search(msg_lower):
             print(f"[IntentCheck] Deterministically confirmed TOOL (time management request): '{user_message}'")
-            return "tool", "manage_time", "python deterministic"
+            return "tool", "manage_timer_stopwatch_alarms", "python deterministic"
 
         # Fast deterministic check: explicit user personal preference / fact statements anywhere in prompt
         pref_regex = re.compile(
@@ -1893,16 +1893,11 @@ class AgentExecutor:
 
         # Filter tool definition list based on per-turn coding_mode or effective_tool_mode override
         if overrides.get("coding_mode"):
-            coding_allowed = {
-                "jarvis_run_terminal", "jarvis_run_python", "jarvis_read_file",
-                "jarvis_create_or_edit_file", "jarvis_replace_file_content",
-                "jarvis_list_dir_tree", "jarvis_git_status", "jarvis_find_files_by_glob",
-                "jarvis_grep_files",
-                "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
-                "jarvis_send_stdin", "read_and_review_file", "search_files",
-                "read_file_content", "run_terminal_command", "run_python_script",
-                "jarvis_analyze_image", "jarvis_see_screen", "manage_todo", "ask_user"
-            }
+            # User-configurable coder allowlist. None = default coder set; a list
+            # (even empty) is authoritative — deselected tools are never shipped.
+            from app.tools.selector import _DEFAULT_CODING_TOOLS
+            _configured_coding = getattr(config, "INCLUDED_CODER_TOOLS", None)
+            coding_allowed = set(_configured_coding) if _configured_coding is not None else set(_DEFAULT_CODING_TOOLS)
             codegraph_coder_enabled = bool(getattr(config, "CODEGRAPH_CODER_ENABLED", False))
             codegraph_defs = []
             if codegraph_coder_enabled:
@@ -1910,23 +1905,19 @@ class AgentExecutor:
                 codegraph_defs = get_codegraph_tool_definitions()
                 coding_allowed.update(t["function"]["name"] for t in codegraph_defs)
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in coding_allowed]
-            # Guarantee the core search tools are always shipped to the coding LLM even when
-            # dynamic tool selection would have dropped them (e.g. custom always_included_tools).
-            _forced = ["jarvis_grep_files", "jarvis_find_files_by_glob"]
-            if codegraph_coder_enabled:
-                _forced += [t["function"]["name"] for t in codegraph_defs]
-                _forced += ["ask_user"]  # the codegraph setup flow prompts via ask_user
-            for _name in _forced:
-                _def = next((t for t in _grep_tool_candidates(self.mcp_tools) if t.get("function", {}).get("name") == _name), None)
-                if _def is None and _name.startswith("codegraph_"):
-                    from app.tools.definitions import get_codegraph_tool_definitions
-                    _def = next((t for t in get_codegraph_tool_definitions() if t.get("function", {}).get("name") == _name), None)
-                if _def and all(t.get("function", {}).get("name") != _name for t in filtered_tools):
+            # Ensure every INCLUDED tool is actually shipped even when dynamic tool
+            # selection dropped it (e.g. custom always_included_tools). Deselected
+            # tools are never re-added — full user control.
+            _present = {t["function"]["name"] for t in filtered_tools}
+            for _def in _grep_tool_candidates(self.mcp_tools) + codegraph_defs:
+                _name = _def.get("function", {}).get("name")
+                if _name and _name in coding_allowed and _name not in _present:
                     filtered_tools.append(_def)
+                    _present.add(_name)
         elif effective_tool_mode == "basic":
             basic_allowed = {
                 "web_search", "read_file_content", "search_files", "list_directory",
-                "launch_app", "open_or_play_file", "set_system_volume", "manage_time",
+                "launch_app", "open_or_play_file", "set_system_volume", "manage_timer_stopwatch_alarms",
                 "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script",
                 "jarvis_query_file_db", "jarvis_open_or_play_file",
                 "jarvis_analyze_image", "jarvis_see_screen", "ask_user"

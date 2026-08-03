@@ -338,7 +338,7 @@ async def web_search(query: str) -> str:
 
 
 @mcp.tool()
-async def manage_time(
+async def manage_timer_stopwatch_alarms(
     action: str,
     duration_seconds: int | None = None,
     target_time: str | None = None,
@@ -405,7 +405,7 @@ async def manage_time(
             time_manager.delete_reminder(item_id)
             return f"Successfully cancelled timer/reminder #{item_id}."
         return "Missing item_id for cancellation."
-    return f"Unknown action '{action}' for manage_time."
+    return f"Unknown action '{action}' for manage_timer_stopwatch_alarms."
 
 
 @mcp.tool()

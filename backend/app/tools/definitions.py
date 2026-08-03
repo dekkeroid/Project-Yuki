@@ -8,9 +8,10 @@ def get_scheduled_task_schema(name: str = "manage_scheduled_task") -> dict:
         "type": "function",
         "function": {
             "name": name,
-            "description": "Schedule autonomous tasks that fire later or on a repeating interval, and watchers that poll a condition and fire an action when it changes. "
+            "description": "Schedule silent background automation: delayed one-shot actions, repeating intervals, and condition watchers. "
+                           "Not for user-visible timers, alarms, reminders, or stopwatches — use manage_timer_stopwatch_alarms for those. "
                            "Actions can be a shell command, a Yuki tool (e.g. take a screenshot), or a power action (shutdown/restart — confirmed once when the task is created). "
-                           "Use 'set_delayed' to fire once after N seconds (e.g. screenshot in 30s). Use 'set_interval' to fire every N seconds (e.g. keep-alive ping). "
+                           "Use 'set_delayed' to run a tool/command once after N seconds (e.g. take_screenshot after 30s). Use 'set_interval' to repeat every N seconds (e.g. keep-alive ping). "
                            "Use 'watch' to poll every N seconds and fire when a process/window/file/command condition flips (e.g. watch a terminal process and shut down the PC when it closes). "
                            "Use 'list' to show active tasks and 'cancel' to stop one.",
             "parameters": {
@@ -137,8 +138,8 @@ def get_basic_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "manage_time",
-                "description": "Manage timers, scheduled reminders, alarms, and stopwatches.",
+                "name": "manage_timer_stopwatch_alarms",
+                "description": "Set countdown timers, schedule alarms/reminders for a specific time, and start/stop/check stopwatches. Use THIS tool — not manage_scheduled_task — whenever the user says 'remind me', 'set a timer', 'start a stopwatch', 'alarm at 5 PM', or anything time/countdown related.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -435,8 +436,8 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "jarvis_manage_time",
-                "description": "Manage timers, scheduled reminders, alarms, and stopwatches.",
+                "name": "jarvis_manage_timer_stopwatch_alarms",
+                "description": "Set countdown timers, schedule alarms/reminders for a specific time, and start/stop/check stopwatch. Use THIS tool — not manage_scheduled_task — whenever the user says 'remind me', 'set a timer', 'start a stopwatch', 'alarm at 5 PM', or anything time/countdown related.",
                 "parameters": {
                     "type": "object",
                     "properties": {
