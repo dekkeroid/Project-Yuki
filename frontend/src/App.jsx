@@ -370,7 +370,7 @@ const App = () => {
   useEffect(() => {
     try {
       localStorage.setItem('yuki-avatar-scale', '1.0');
-    } catch (e) {}
+    } catch (e) { }
   }, []);
 
   // Listen for skintone, camera tracking, and avatar scale updates sent from external Settings window via IPC and localStorage
@@ -761,298 +761,301 @@ const App = () => {
   const FETCH_COOLDOWN_MS = 2000;
   const lastSimpleFetchTime = useRef(0);
 
-      const handleWebSocketMessage = (event) => {
-      const msg = JSON.parse(event.data);
+  const handleWebSocketMessage = (event) => {
+    const msg = JSON.parse(event.data);
 
-      // Global WS event bus — lets any component (ControlDashboard etc.) react to messages.
-      window.dispatchEvent(new CustomEvent('yuki_ws_message', { detail: msg }));
+    if (msg.type === 'stopwatch_changed' || msg.type === 'stopwatch_started') {
+      console.log('[MainWindow WS] received:', msg);
+    }
+    // Global WS event bus — lets any component (ControlDashboard etc.) react to messages.
+    window.dispatchEvent(new CustomEvent('yuki_ws_message', { detail: msg }));
 
-      // ── mood_update: use engine expression as idle fallback ────────────
-      if (msg.type === 'mood_update') {
-        if (msg.mood?.expression) {
-          // Only update avatar if not currently speaking / showing an explicit emotion
-          setAvatarExpression(prev =>
-            // Don't override an explicit emotion set mid-turn; only update the idle default
-            (prev === 'neutral' || prev === 'relaxed') ? (msg.mood.expression || prev) : prev
-          );
-        }
-        return; // mood_update is fully handled here
+    // ── mood_update: use engine expression as idle fallback ────────────
+    if (msg.type === 'mood_update') {
+      if (msg.mood?.expression) {
+        // Only update avatar if not currently speaking / showing an explicit emotion
+        setAvatarExpression(prev =>
+          // Don't override an explicit emotion set mid-turn; only update the idle default
+          (prev === 'neutral' || prev === 'relaxed') ? (msg.mood.expression || prev) : prev
+        );
       }
+      return; // mood_update is fully handled here
+    }
 
-      if (msg.type === 'profile_update') {
-        setProfile(msg.profile);
-        if (msg.profile.settings && msg.profile.settings.llm_model) {
-          setModelName(msg.profile.settings.llm_model);
+    if (msg.type === 'profile_update') {
+      setProfile(msg.profile);
+      if (msg.profile.settings && msg.profile.settings.llm_model) {
+        setModelName(msg.profile.settings.llm_model);
+      }
+      if (msg.profile.settings && msg.profile.settings.crawler_paused !== undefined) {
+        setCrawlerPaused(msg.profile.settings.crawler_paused);
+      }
+      if (msg.profile.settings && msg.profile.settings.tagger_paused !== undefined) {
+        setTaggerPaused(msg.profile.settings.tagger_paused);
+      }
+    } else if (msg.type === 'status') {
+      if (msg.status === 'thinking') {
+        setIsThinking(true);
+        setTtsStreamActive(true); // WebSocket stream starts
+        // Clear speech bubble immediately since a new response generation starts
+        setCurrentSpeechText('');
+        currentResponseTextRef.current = '';
+        toolBadgesAccumulatorRef.current = '';
+        hasReceivedAudioRef.current = false;
+      } else if (msg.status === 'idle') {
+        // Do not override isThinking immediately if audio is still active
+        if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
+          setIsThinking(false);
         }
-        if (msg.profile.settings && msg.profile.settings.crawler_paused !== undefined) {
-          setCrawlerPaused(msg.profile.settings.crawler_paused);
-        }
-        if (msg.profile.settings && msg.profile.settings.tagger_paused !== undefined) {
-          setTaggerPaused(msg.profile.settings.tagger_paused);
-        }
-      } else if (msg.type === 'status') {
-        if (msg.status === 'thinking') {
-          setIsThinking(true);
-          setTtsStreamActive(true); // WebSocket stream starts
-          // Clear speech bubble immediately since a new response generation starts
-          setCurrentSpeechText('');
-          currentResponseTextRef.current = '';
-          toolBadgesAccumulatorRef.current = '';
-          hasReceivedAudioRef.current = false;
-        } else if (msg.status === 'idle') {
-          // Do not override isThinking immediately if audio is still active
-          if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
-            setIsThinking(false);
-          }
-        }
-      } else if (msg.type === 'tool_start') {
-        // Build the live 🛠️ tool badge inline into the last assistant message so
-        // tool activity is visible during the turn and matches the persisted cards.
-        const toolName = msg.tool_name || 'tool';
-        const toolArgs = msg.tool_args || {};
-        const toolTarget = toolArgs.file_path || toolArgs.path || toolArgs.command || toolArgs.url || '';
-        const targetInfo = toolTarget ? ` (\`${toolTarget}\`)` : '';
-        const argsBlock = Object.keys(toolArgs).length
-          ? `\n\`\`\`tool_args\n${JSON.stringify(toolArgs, null, 2)}\n\`\`\`` : '';
-        const badgeText = `\n🛠️ **[${toolName}${targetInfo} — ⏳ Running...]**${argsBlock}\n`;
-        toolBadgesAccumulatorRef.current += badgeText;
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
-            const last = newMessages[newMessages.length - 1];
-            newMessages[newMessages.length - 1] = {
-              ...last,
-              content: (last.content || '') + badgeText
-            };
-          } else {
-            newMessages.push({ role: 'assistant', content: badgeText });
-          }
-          return newMessages;
-        });
-      } else if (msg.type === 'tool_result') {
-        try {
-          if (msg.result && typeof msg.result === 'string' && msg.result.includes('window_control')) {
-            const data = JSON.parse(msg.result);
-            if (data.window_control && window.electronAPI) {
-              const act = data.window_control.action;
-              if (act === 'minimize') {
-                window.electronAPI.minimizeWindow();
-              } else if (act === 'maximize') {
-                window.electronAPI.maximizeWindow();
-              } else if (act === 'restore') {
-                window.electronAPI.restoreWindow();
-              } else if (act === 'move') {
-                const { x, y } = data.window_control;
-                if (x !== undefined && y !== undefined) {
-                  window.electronAPI.setWindowPosition(x, y);
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("Failed to check tool result for window_control JSON:", e);
-        }
-        const resultStr = typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result || '');
-        const snippet = resultStr.length > 800 ? resultStr.slice(0, 800) + '\n... [truncated]' : resultStr;
-        toolBadgesAccumulatorRef.current = toolBadgesAccumulatorRef.current.replace('⏳ Running...', '✓ Done');
-        if (!toolBadgesAccumulatorRef.current.includes('```terminal_stream\n')) {
-          toolBadgesAccumulatorRef.current += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
-        }
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
-            const last = newMessages[newMessages.length - 1];
-            let content = last.content || '';
-            if (content.includes('⏳ Running...')) {
-              content = content.replace('⏳ Running...', '✓ Done');
-              if (!content.includes('```terminal_stream\n')) {
-                content += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
-              }
-            }
-            newMessages[newMessages.length - 1] = {
-              ...last,
-              content
-            };
-          }
-          return newMessages;
-        });
-      } else if (msg.type === 'text_stream') {
-        // Skip intermediate thinking/narration text so only the final reply
-        // appears in the main app conversation log (and native-TTS fallback).
-        if (msg.final === false) {
-          setTtsStreamActive(true);
-          return;
-        }
-        // Keep isThinking true so the bubble thinking animation remains active
-        setTtsStreamActive(true);
-        currentResponseTextRef.current += msg.text;
-
-        const { cleanText, animations, emotions } = parseResponseTags(currentResponseTextRef.current, {
-          onAnimation: (animName) => {
-            setCustomAnimation(animName);
-            setTimeout(() => setCustomAnimation(''), 100);
-          },
-          onEmotion: (emotionName) => {
-            setAvatarExpression(emotionName === 'happy' ? 'relaxed' : emotionName);
-          }
-        });
-
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          const badgesPart = toolBadgesAccumulatorRef.current || '';
-          const combinedContent = badgesPart + (badgesPart && cleanText ? '\n' : '') + cleanText;
-          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
-            const last = newMessages[newMessages.length - 1];
-            newMessages[newMessages.length - 1] = {
-              ...last,
-              content: combinedContent,
-              backend: msg.backend_used
-            };
-          } else {
-            newMessages.push({
-              role: 'assistant',
-              content: combinedContent,
-              backend: msg.backend_used
-            });
-          }
-          return newMessages;
-        });
-      } else if (msg.type === 'audio_chunk') {
-        setTtsStreamActive(true);
-        hasReceivedAudioRef.current = true;
-        try {
-          console.log(`[TTS] audio_chunk received idx=${msg.index} backend=${msg.tts_backend || 'unknown'} time_ms=${msg.tts_time_ms || 0} text="${(msg.text || '').slice(0, 80)}"`);
-        } catch (e) { /* ignore logging errors */ }
-        queueAudioChunk(msg.audio_url, msg.text, msg.index);
-      } else if (msg.type === 'stream_done') {
-        setIsThinking(false);
-        setTtsStreamActive(false);
-
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
-            newMessages[newMessages.length - 1] = {
-              ...newMessages[newMessages.length - 1],
-              responseTime: msg.response_time
-            };
-          }
-          return newMessages;
-        });
-
-        if (!hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice && !msg.is_coding_mode) {
-          console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0, 80)}"`);
-          speakTextNatively(currentResponseTextRef.current);
+      }
+    } else if (msg.type === 'tool_start') {
+      // Build the live 🛠️ tool badge inline into the last assistant message so
+      // tool activity is visible during the turn and matches the persisted cards.
+      const toolName = msg.tool_name || 'tool';
+      const toolArgs = msg.tool_args || {};
+      const toolTarget = toolArgs.file_path || toolArgs.path || toolArgs.command || toolArgs.url || '';
+      const targetInfo = toolTarget ? ` (\`${toolTarget}\`)` : '';
+      const argsBlock = Object.keys(toolArgs).length
+        ? `\n\`\`\`tool_args\n${JSON.stringify(toolArgs, null, 2)}\n\`\`\`` : '';
+      const badgeText = `\n🛠️ **[${toolName}${targetInfo} — ⏳ Running...]**${argsBlock}\n`;
+      toolBadgesAccumulatorRef.current += badgeText;
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+          const last = newMessages[newMessages.length - 1];
+          newMessages[newMessages.length - 1] = {
+            ...last,
+            content: (last.content || '') + badgeText
+          };
         } else {
-          updateListeningState();
+          newMessages.push({ role: 'assistant', content: badgeText });
         }
-      } else if (msg.type === 'session_switched' || msg.type === 'chat_update') {
-        if (msg.messages && Array.isArray(msg.messages)) {
-          setMessages(msg.messages);
+        return newMessages;
+      });
+    } else if (msg.type === 'tool_result') {
+      try {
+        if (msg.result && typeof msg.result === 'string' && msg.result.includes('window_control')) {
+          const data = JSON.parse(msg.result);
+          if (data.window_control && window.electronAPI) {
+            const act = data.window_control.action;
+            if (act === 'minimize') {
+              window.electronAPI.minimizeWindow();
+            } else if (act === 'maximize') {
+              window.electronAPI.maximizeWindow();
+            } else if (act === 'restore') {
+              window.electronAPI.restoreWindow();
+            } else if (act === 'move') {
+              const { x, y } = data.window_control;
+              if (x !== undefined && y !== undefined) {
+                window.electronAPI.setWindowPosition(x, y);
+              }
+            }
+          }
         }
-      } else if (msg.type === 'speech') {
+      } catch (e) {
+        console.warn("Failed to check tool result for window_control JSON:", e);
+      }
+      const resultStr = typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result || '');
+      const snippet = resultStr.length > 800 ? resultStr.slice(0, 800) + '\n... [truncated]' : resultStr;
+      toolBadgesAccumulatorRef.current = toolBadgesAccumulatorRef.current.replace('⏳ Running...', '✓ Done');
+      if (!toolBadgesAccumulatorRef.current.includes('```terminal_stream\n')) {
+        toolBadgesAccumulatorRef.current += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
+      }
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+          const last = newMessages[newMessages.length - 1];
+          let content = last.content || '';
+          if (content.includes('⏳ Running...')) {
+            content = content.replace('⏳ Running...', '✓ Done');
+            if (!content.includes('```terminal_stream\n')) {
+              content += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
+            }
+          }
+          newMessages[newMessages.length - 1] = {
+            ...last,
+            content
+          };
+        }
+        return newMessages;
+      });
+    } else if (msg.type === 'text_stream') {
+      // Skip intermediate thinking/narration text so only the final reply
+      // appears in the main app conversation log (and native-TTS fallback).
+      if (msg.final === false) {
         setTtsStreamActive(true);
-        setIsThinking(false);
-        if (msg.audio_url) {
-          hasReceivedAudioRef.current = true;
-          setMessages((prev) => [...prev, {
+        return;
+      }
+      // Keep isThinking true so the bubble thinking animation remains active
+      setTtsStreamActive(true);
+      currentResponseTextRef.current += msg.text;
+
+      const { cleanText, animations, emotions } = parseResponseTags(currentResponseTextRef.current, {
+        onAnimation: (animName) => {
+          setCustomAnimation(animName);
+          setTimeout(() => setCustomAnimation(''), 100);
+        },
+        onEmotion: (emotionName) => {
+          setAvatarExpression(emotionName === 'happy' ? 'relaxed' : emotionName);
+        }
+      });
+
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const badgesPart = toolBadgesAccumulatorRef.current || '';
+        const combinedContent = badgesPart + (badgesPart && cleanText ? '\n' : '') + cleanText;
+        if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+          const last = newMessages[newMessages.length - 1];
+          newMessages[newMessages.length - 1] = {
+            ...last,
+            content: combinedContent,
+            backend: msg.backend_used
+          };
+        } else {
+          newMessages.push({
             role: 'assistant',
-            content: msg.text,
-            backend: msg.backend_used,
+            content: combinedContent,
+            backend: msg.backend_used
+          });
+        }
+        return newMessages;
+      });
+    } else if (msg.type === 'audio_chunk') {
+      setTtsStreamActive(true);
+      hasReceivedAudioRef.current = true;
+      try {
+        console.log(`[TTS] audio_chunk received idx=${msg.index} backend=${msg.tts_backend || 'unknown'} time_ms=${msg.tts_time_ms || 0} text="${(msg.text || '').slice(0, 80)}"`);
+      } catch (e) { /* ignore logging errors */ }
+      queueAudioChunk(msg.audio_url, msg.text, msg.index);
+    } else if (msg.type === 'stream_done') {
+      setIsThinking(false);
+      setTtsStreamActive(false);
+
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+          newMessages[newMessages.length - 1] = {
+            ...newMessages[newMessages.length - 1],
             responseTime: msg.response_time
-          }]);
-          playVoiceResponse(msg.audio_url, msg.text);
-        } else if (msg.text) {
-          speakSystemMessage(msg.text, 'surprised');
+          };
         }
-      } else if (msg.type === 'alarm_triggered') {
-        const enrichedMsg = {
-          ...msg,
-          muteChime: profile?.settings?.mute_alarm_chimes === true,
-          tone: profile?.settings?.alarm_tone || 'pulse_chime',
-          customToneFile: profile?.settings?.custom_alarm_tone_file || ''
-        };
-        if (window.electronAPI && window.electronAPI.openAlarmWindow) {
-          window.electronAPI.openAlarmWindow(enrichedMsg);
-        } else {
-          setActiveAlarm(enrichedMsg);
-        }
-      } else if (msg.type === 'stopwatch_started') {
-        // Open a dedicated floating stopwatch window for this label
-        if (window.electronAPI && window.electronAPI.openStopwatchWindow) {
-          window.electronAPI.openStopwatchWindow({ label: msg.label, started_at: msg.started_at });
-        }
-      } else if (msg.type === 'open-canvas') {
-        if (window.electronAPI && window.electronAPI.openCanvasWindow) {
-          window.electronAPI.openCanvasWindow({ mode: msg.mode, filename: msg.filename });
-        }
-      } else if (msg.type === 'confirm_request') {
-        let displayMessage = `Yuki wants to execute the following action:\n\n${msg.name}`;
-        if (msg.name.startsWith("Run terminal command:")) {
-          displayMessage = `Yuki wants to run the following terminal command:\n\n${msg.name.replace("Run terminal command:", "").trim()}`;
-        } else if (msg.name.startsWith("Run Python script:")) {
-          displayMessage = `Yuki wants to execute the following custom Python script:\n\n${msg.name.replace("Run Python script:", "").trim()}`;
-        } else if (msg.name.startsWith("System Power Action:")) {
-          displayMessage = `Yuki wants to execute the following system power command:\n\n${msg.name.replace("System Power Action:", "").trim()}`;
-        } else if (msg.name.startsWith("Delete file:")) {
-          displayMessage = `Yuki wants to delete the following file:\n\n${msg.name.replace("Delete file:", "").trim()}`;
-        }
+        return newMessages;
+      });
 
-        setConfirmModal({
-          visible: true,
-          title: 'Security Confirmation',
-          message: displayMessage,
-          onConfirm: () => {
-            setConfirmModal(prev => ({ ...prev, visible: false }));
-
-            // Refocus, disable clickthrough suspension temporarily
-            window.yukiConfirmJustClosed = true;
-            if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
-              window.electronAPI.setIgnoreMouseEvents(false);
-            }
-            setTimeout(() => {
-              window.yukiConfirmJustClosed = false;
-            }, 2000);
-            setTimeout(() => {
-              desktopInputRef.current?.focus();
-            }, 50);
-
-            if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-              socketRef.current.send(JSON.stringify({
-                type: 'confirm_response',
-                conf_id: msg.conf_id,
-                confirmed: true
-              }));
-            }
-          },
-          onCancel: () => {
-            setConfirmModal(prev => ({ ...prev, visible: false }));
-
-            window.yukiConfirmJustClosed = true;
-            if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
-              window.electronAPI.setIgnoreMouseEvents(false);
-            }
-            setTimeout(() => {
-              window.yukiConfirmJustClosed = false;
-            }, 2000);
-            setTimeout(() => {
-              desktopInputRef.current?.focus();
-            }, 50);
-
-            if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-              socketRef.current.send(JSON.stringify({
-                type: 'confirm_response',
-                conf_id: msg.conf_id,
-                confirmed: false
-              }));
-            }
-          }
-        });
-      } else if (msg.type === 'ask_user') {
-        // ask_user tool: render a structured question dialog.
-        // The agent is blocked awaiting resolution via POST /api/ask_user/{ask_id}/answer.
-        setAskUserData({ ask_id: msg.ask_id, questions: msg.questions });
+      if (!hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice && !msg.is_coding_mode) {
+        console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0, 80)}"`);
+        speakTextNatively(currentResponseTextRef.current);
+      } else {
+        updateListeningState();
       }
-    };
+    } else if (msg.type === 'session_switched' || msg.type === 'chat_update') {
+      if (msg.messages && Array.isArray(msg.messages)) {
+        setMessages(msg.messages);
+      }
+    } else if (msg.type === 'speech') {
+      setTtsStreamActive(true);
+      setIsThinking(false);
+      if (msg.audio_url) {
+        hasReceivedAudioRef.current = true;
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: msg.text,
+          backend: msg.backend_used,
+          responseTime: msg.response_time
+        }]);
+        playVoiceResponse(msg.audio_url, msg.text);
+      } else if (msg.text) {
+        speakSystemMessage(msg.text, 'surprised');
+      }
+    } else if (msg.type === 'alarm_triggered') {
+      const enrichedMsg = {
+        ...msg,
+        muteChime: profile?.settings?.mute_alarm_chimes === true,
+        tone: profile?.settings?.alarm_tone || 'pulse_chime',
+        customToneFile: profile?.settings?.custom_alarm_tone_file || ''
+      };
+      if (window.electronAPI && window.electronAPI.openAlarmWindow) {
+        window.electronAPI.openAlarmWindow(enrichedMsg);
+      } else {
+        setActiveAlarm(enrichedMsg);
+      }
+    } else if (msg.type === 'stopwatch_started') {
+      // Open a dedicated floating stopwatch window for this label
+      if (window.electronAPI && window.electronAPI.openStopwatchWindow) {
+        window.electronAPI.openStopwatchWindow({ label: msg.label, started_at: msg.started_at });
+      }
+    } else if (msg.type === 'open-canvas') {
+      if (window.electronAPI && window.electronAPI.openCanvasWindow) {
+        window.electronAPI.openCanvasWindow({ mode: msg.mode, filename: msg.filename });
+      }
+    } else if (msg.type === 'confirm_request') {
+      let displayMessage = `Yuki wants to execute the following action:\n\n${msg.name}`;
+      if (msg.name.startsWith("Run terminal command:")) {
+        displayMessage = `Yuki wants to run the following terminal command:\n\n${msg.name.replace("Run terminal command:", "").trim()}`;
+      } else if (msg.name.startsWith("Run Python script:")) {
+        displayMessage = `Yuki wants to execute the following custom Python script:\n\n${msg.name.replace("Run Python script:", "").trim()}`;
+      } else if (msg.name.startsWith("System Power Action:")) {
+        displayMessage = `Yuki wants to execute the following system power command:\n\n${msg.name.replace("System Power Action:", "").trim()}`;
+      } else if (msg.name.startsWith("Delete file:")) {
+        displayMessage = `Yuki wants to delete the following file:\n\n${msg.name.replace("Delete file:", "").trim()}`;
+      }
+
+      setConfirmModal({
+        visible: true,
+        title: 'Security Confirmation',
+        message: displayMessage,
+        onConfirm: () => {
+          setConfirmModal(prev => ({ ...prev, visible: false }));
+
+          // Refocus, disable clickthrough suspension temporarily
+          window.yukiConfirmJustClosed = true;
+          if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+            window.electronAPI.setIgnoreMouseEvents(false);
+          }
+          setTimeout(() => {
+            window.yukiConfirmJustClosed = false;
+          }, 2000);
+          setTimeout(() => {
+            desktopInputRef.current?.focus();
+          }, 50);
+
+          if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+            socketRef.current.send(JSON.stringify({
+              type: 'confirm_response',
+              conf_id: msg.conf_id,
+              confirmed: true
+            }));
+          }
+        },
+        onCancel: () => {
+          setConfirmModal(prev => ({ ...prev, visible: false }));
+
+          window.yukiConfirmJustClosed = true;
+          if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+            window.electronAPI.setIgnoreMouseEvents(false);
+          }
+          setTimeout(() => {
+            window.yukiConfirmJustClosed = false;
+          }, 2000);
+          setTimeout(() => {
+            desktopInputRef.current?.focus();
+          }, 50);
+
+          if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+            socketRef.current.send(JSON.stringify({
+              type: 'confirm_response',
+              conf_id: msg.conf_id,
+              confirmed: false
+            }));
+          }
+        }
+      });
+    } else if (msg.type === 'ask_user') {
+      // ask_user tool: render a structured question dialog.
+      // The agent is blocked awaiting resolution via POST /api/ask_user/{ask_id}/answer.
+      setAskUserData({ ask_id: msg.ask_id, questions: msg.questions });
+    }
+  };
 
   handleWebSocketMessageRef.current = handleWebSocketMessage;
 
@@ -1147,7 +1150,7 @@ const App = () => {
           if (ramPercent > 95) {
             if (!hasTriggeredHighRamWarningRef.current) {
               hasTriggeredHighRamWarningRef.current = true;
-              fetch('/api/system/optimize_memory', { method: 'POST' }).catch(() => {});
+              fetch('/api/system/optimize_memory', { method: 'POST' }).catch(() => { });
               const msg = `Master, your system RAM is almost full at ${ramPercent}%! I've automatically trimmed the heaviest processes behind the scenes — should help some.`;
               setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to RAM* ${msg}` }]);
               speakSystemMessage(msg, 'surprised');
@@ -1315,7 +1318,7 @@ const App = () => {
       const unsubVisibility = window.electronAPI.onVisibilityChange?.((visible) => {
         setIsVisible(visible);
         if (!visible && window.gc) {
-          try { window.gc(); } catch (_) {}
+          try { window.gc(); } catch (_) { }
         }
       });
       const unsubGC = window.electronAPI.onOptimizeMemory?.(() => {
@@ -1323,7 +1326,7 @@ const App = () => {
           try {
             window.gc();
             console.log("[Renderer] Garbage collection triggered.");
-          } catch (_) {}
+          } catch (_) { }
         }
       });
       return () => {
@@ -2126,47 +2129,47 @@ const App = () => {
     sendMessageText(text, null, fromSuggestion, currentAtts);
   };
 
-const detectExpression = (text) => {
-  if (!text) return 'neutral';
-  const lower = text.toLowerCase();
+  const detectExpression = (text) => {
+    if (!text) return 'neutral';
+    const lower = text.toLowerCase();
 
-  if (lower.includes('wink')) {
-    return 'wink';
-  }
-  if (lower.includes('relaxed') || lower.includes('smug') || lower.includes('flirt')) {
-    return 'relaxed';
-  }
-  if (
-    lower.includes('smile') || lower.includes('giggle') || lower.includes('laugh') ||
-    lower.includes('happy') || lower.includes('joy') || lower.includes('😊') ||
-    lower.includes('😄') || lower.includes('😁') || lower.includes('😆') ||
-    lower.includes('😃') || lower.includes('😂') || lower.includes('🤣')
-  ) {
-    return 'relaxed';
-  }
-  if (
-    lower.includes('cry') || lower.includes('sad') || lower.includes('sigh') ||
-    lower.includes('sorrow') || lower.includes('😢') || lower.includes('😭') ||
-    lower.includes('😞') || lower.includes('😟') || lower.includes('😿')
-  ) {
-    return 'sad';
-  }
-  if (
-    lower.includes('pout') || lower.includes('angry') || lower.includes('anger') ||
-    lower.includes('scold') || lower.includes('😠') || lower.includes('😡') ||
-    lower.includes('🤬') || lower.includes('👿')
-  ) {
-    return 'angry';
-  }
-  if (
-    lower.includes('gasp') || lower.includes('surprise') || lower.includes('shock') ||
-    lower.includes('😮') || lower.includes('😲') || lower.includes('😳') ||
-    lower.includes('😱') || lower.includes('🙀')
-  ) {
-    return 'surprised';
-  }
-  return 'neutral';
-};
+    if (lower.includes('wink')) {
+      return 'wink';
+    }
+    if (lower.includes('relaxed') || lower.includes('smug') || lower.includes('flirt')) {
+      return 'relaxed';
+    }
+    if (
+      lower.includes('smile') || lower.includes('giggle') || lower.includes('laugh') ||
+      lower.includes('happy') || lower.includes('joy') || lower.includes('😊') ||
+      lower.includes('😄') || lower.includes('😁') || lower.includes('😆') ||
+      lower.includes('😃') || lower.includes('😂') || lower.includes('🤣')
+    ) {
+      return 'relaxed';
+    }
+    if (
+      lower.includes('cry') || lower.includes('sad') || lower.includes('sigh') ||
+      lower.includes('sorrow') || lower.includes('😢') || lower.includes('😭') ||
+      lower.includes('😞') || lower.includes('😟') || lower.includes('😿')
+    ) {
+      return 'sad';
+    }
+    if (
+      lower.includes('pout') || lower.includes('angry') || lower.includes('anger') ||
+      lower.includes('scold') || lower.includes('😠') || lower.includes('😡') ||
+      lower.includes('🤬') || lower.includes('👿')
+    ) {
+      return 'angry';
+    }
+    if (
+      lower.includes('gasp') || lower.includes('surprise') || lower.includes('shock') ||
+      lower.includes('😮') || lower.includes('😲') || lower.includes('😳') ||
+      lower.includes('😱') || lower.includes('🙀')
+    ) {
+      return 'surprised';
+    }
+    return 'neutral';
+  };
 
 
 
@@ -2361,7 +2364,7 @@ const detectExpression = (text) => {
         '--button-tray-right': avatarScale > 1.6 ? '80px' : avatarScale > 1.3 ? '60px' : '48px'
       }}>
         <main className="canvas-container">
-          <Suspense fallback={<div style={{color: '#8b5cf6', padding: '20px', fontFamily: 'monospace'}}>Initializing 3D Engine...</div>}>
+          <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '20px', fontFamily: 'monospace' }}>Initializing 3D Engine...</div>}>
             <AvatarViewer
               audioLevel={audioLevel}
               isThinking={isThinking || ttsStreamActive}
@@ -3706,7 +3709,7 @@ const detectExpression = (text) => {
                                   if (!isNaN(parsed)) {
                                     const clamped = Math.max(0.2, Math.min(10.0, parsed / 100));
                                     setAvatarScale(clamped);
-                                    try { localStorage.setItem('yuki-avatar-scale', clamped.toString()); } catch {}
+                                    try { localStorage.setItem('yuki-avatar-scale', clamped.toString()); } catch { }
                                   }
                                 }}
                                 style={{
@@ -4325,33 +4328,33 @@ const detectExpression = (text) => {
 
                       {/* Active Model Selection */}
                       {llmBackend !== 'none' && (
-                      <div className="desktop-form-group">
-                        <label className="desktop-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span>Active Model Selection</span>
-                          <button
-                            onClick={fetchLlmModels}
-                            style={{ background: 'none', border: 'none', color: 'var(--accent-purple, #a855f7)', cursor: 'pointer', fontSize: '0.65rem', padding: '0', opacity: 0.75 }}
-                            title="Refresh models from backend"
-                          >↻ Refresh</button>
-                        </label>
-                        <select
-                          className="desktop-select"
-                          value={profile.settings?.llm_model || ''}
-                          onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
-                          style={{ padding: '6px 8px', fontSize: '0.75rem' }}
-                        >
-                          {!profile.settings?.llm_model && (
-                            <option value="" style={{ background: '#120c21', color: 'white', opacity: 0.5 }}>
-                              Select a model...
-                            </option>
-                          )}
-                          {availableLlmModels.map((model) => (
-                            <option key={model.name} value={model.name} style={{ background: '#120c21', color: 'white' }}>
-                              {model.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                        <div className="desktop-form-group">
+                          <label className="desktop-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>Active Model Selection</span>
+                            <button
+                              onClick={fetchLlmModels}
+                              style={{ background: 'none', border: 'none', color: 'var(--accent-purple, #a855f7)', cursor: 'pointer', fontSize: '0.65rem', padding: '0', opacity: 0.75 }}
+                              title="Refresh models from backend"
+                            >↻ Refresh</button>
+                          </label>
+                          <select
+                            className="desktop-select"
+                            value={profile.settings?.llm_model || ''}
+                            onChange={(e) => handleUpdateSetting('llm_model', e.target.value)}
+                            style={{ padding: '6px 8px', fontSize: '0.75rem' }}
+                          >
+                            {!profile.settings?.llm_model && (
+                              <option value="" style={{ background: '#120c21', color: 'white', opacity: 0.5 }}>
+                                Select a model...
+                              </option>
+                            )}
+                            {availableLlmModels.map((model) => (
+                              <option key={model.name} value={model.name} style={{ background: '#120c21', color: 'white' }}>
+                                {model.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       )}
                     </div>
 
@@ -4754,11 +4757,11 @@ const detectExpression = (text) => {
             </div>
           </div>
         )}
-      <AskUserDialog
-        askData={askUserData}
-        onSubmit={handleAskUserSubmit}
-        onClose={handleAskUserClose}
-      />
+        <AskUserDialog
+          askData={askUserData}
+          onSubmit={handleAskUserSubmit}
+          onClose={handleAskUserClose}
+        />
       </div>
     );
   }
@@ -4773,7 +4776,7 @@ const detectExpression = (text) => {
       // Step right margin up at 130% and 160% to keep tray near model at large sizes
       '--button-tray-right': avatarScale > 1.6 ? '80px' : avatarScale > 1.3 ? '60px' : '48px'
     }}>
-      
+
       {/* Top Banner Status Bar */}
       <header className="top-header glass-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -4818,7 +4821,7 @@ const detectExpression = (text) => {
       </header>
 
       <main className="canvas-container">
-        <Suspense fallback={<div style={{color: '#8b5cf6', padding: '20px', fontFamily: 'monospace'}}>Initializing 3D Engine...</div>}>
+        <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '20px', fontFamily: 'monospace' }}>Initializing 3D Engine...</div>}>
           <AvatarViewer
             audioLevel={audioLevel}
             isThinking={isThinking || ttsStreamActive}
@@ -4844,7 +4847,7 @@ const detectExpression = (text) => {
       </main>
 
       {/* Floating Symmetrical Control UI overlay */}
-      <Suspense fallback={<div style={{position: 'absolute', bottom: '20px', left: '20px', color: '#8b5cf6'}}>Loading UI...</div>}>
+      <Suspense fallback={<div style={{ position: 'absolute', bottom: '20px', left: '20px', color: '#8b5cf6' }}>Loading UI...</div>}>
         <ChatOverlay
           messages={messages}
           inputText={inputText}
@@ -4869,81 +4872,81 @@ const detectExpression = (text) => {
       </Suspense>
 
       {/* Left Symmetrical Diagnostics Dashboard */}
-      <Suspense fallback={<div style={{position: 'absolute', top: '20px', left: '20px', color: '#8b5cf6'}}>Loading Controls...</div>}>
+      <Suspense fallback={<div style={{ position: 'absolute', top: '20px', left: '20px', color: '#8b5cf6' }}>Loading Controls...</div>}>
         <ControlDashboard
-        profile={profile}
-        backendStatus={backendStatus}
-        onResetProfile={handleReset}
-        modelName={modelName}
-        lmstudioUrl={lmstudioUrl}
-        onProfileUpdate={(updatedProfile) => {
-          if (updatedProfile) {
-            setProfile(updatedProfile);
-            if (updatedProfile.settings && updatedProfile.settings.llm_model) {
-              setModelName(updatedProfile.settings.llm_model);
+          profile={profile}
+          backendStatus={backendStatus}
+          onResetProfile={handleReset}
+          modelName={modelName}
+          lmstudioUrl={lmstudioUrl}
+          onProfileUpdate={(updatedProfile) => {
+            if (updatedProfile) {
+              setProfile(updatedProfile);
+              if (updatedProfile.settings && updatedProfile.settings.llm_model) {
+                setModelName(updatedProfile.settings.llm_model);
+              }
+            } else {
+              fetchProfileDetails();
             }
-          } else {
-            fetchProfileDetails();
-          }
-        }}
-        skinToneColor={avatarSkinToneColor}
-        onSkinToneChange={(newColor) => {
-          setAvatarSkinToneColor(newColor);
-          localStorage.setItem('yuki-avatar-skintone-color', newColor);
-        }}
-        cameraTracking={cameraTracking}
-        onCameraTrackingChange={(val) => {
-          setCameraTracking(val);
-          localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false');
-        }}
-        disabledAnimations={disabledAnimations}
-        onToggleAnimation={toggleAnimationEnabled}
-        micDevices={micDevices}
-        selectedMicDeviceId={selectedMicDeviceId}
-        onMicDeviceChange={(deviceId) => {
-          setSelectedMicDeviceId(deviceId);
-          selectedMicDeviceIdRef.current = deviceId;
-          if (deviceId) {
-            localStorage.setItem('yuki-mic-device-id', deviceId);
-          } else {
-            localStorage.removeItem('yuki-mic-device-id');
-          }
-        }}
-        onRefreshMicDevices={refreshMicDevices}
-        vadThreshold={vadThreshold}
-        onVadThresholdChange={(val) => {
-          setVadThreshold(val);
-          localStorage.setItem('yuki-vad-threshold', val.toString());
-        }}
-        muteVoice={muteVoice}
-        onMuteVoiceChange={handleToggleMute}
-        voiceVolume={voiceVolume}
-        onVoiceVolumeChange={(val) => {
-          setVoiceVolume(val);
-          localStorage.setItem('yuki-voice-volume', val.toString());
-        }}
-        availableLlmModels={availableLlmModels}
-        availableSimpleLlmModels={availableSimpleLlmModels}
-        onRefreshLlmModels={() => fetchLlmModels(true)}
-        onRefreshSimpleLlmModels={() => fetchSimpleLlmModels(true)}
-        preferHeadsetMic={preferHeadsetMic}
-        onPreferHeadsetMicChange={(val) => {
-          setPreferHeadsetMic(val);
-          localStorage.setItem('yuki-prefer-headset', val.toString());
-          if (val) {
-            applyHeadsetPreference(micDevices, true);
-          } else {
-            setSelectedMicDeviceId('');
-            localStorage.removeItem('yuki-mic-device-id');
-          }
-        }}
-        hostPlatform={hostPlatform}
-        avatarScale={avatarScale}
-        onAvatarScaleChange={(newScale) => {
-          setAvatarScale(newScale);
-          localStorage.setItem('yuki-avatar-scale', newScale.toString());
-        }}
-      />
+          }}
+          skinToneColor={avatarSkinToneColor}
+          onSkinToneChange={(newColor) => {
+            setAvatarSkinToneColor(newColor);
+            localStorage.setItem('yuki-avatar-skintone-color', newColor);
+          }}
+          cameraTracking={cameraTracking}
+          onCameraTrackingChange={(val) => {
+            setCameraTracking(val);
+            localStorage.setItem('yuki-camera-tracking', val ? 'true' : 'false');
+          }}
+          disabledAnimations={disabledAnimations}
+          onToggleAnimation={toggleAnimationEnabled}
+          micDevices={micDevices}
+          selectedMicDeviceId={selectedMicDeviceId}
+          onMicDeviceChange={(deviceId) => {
+            setSelectedMicDeviceId(deviceId);
+            selectedMicDeviceIdRef.current = deviceId;
+            if (deviceId) {
+              localStorage.setItem('yuki-mic-device-id', deviceId);
+            } else {
+              localStorage.removeItem('yuki-mic-device-id');
+            }
+          }}
+          onRefreshMicDevices={refreshMicDevices}
+          vadThreshold={vadThreshold}
+          onVadThresholdChange={(val) => {
+            setVadThreshold(val);
+            localStorage.setItem('yuki-vad-threshold', val.toString());
+          }}
+          muteVoice={muteVoice}
+          onMuteVoiceChange={handleToggleMute}
+          voiceVolume={voiceVolume}
+          onVoiceVolumeChange={(val) => {
+            setVoiceVolume(val);
+            localStorage.setItem('yuki-voice-volume', val.toString());
+          }}
+          availableLlmModels={availableLlmModels}
+          availableSimpleLlmModels={availableSimpleLlmModels}
+          onRefreshLlmModels={() => fetchLlmModels(true)}
+          onRefreshSimpleLlmModels={() => fetchSimpleLlmModels(true)}
+          preferHeadsetMic={preferHeadsetMic}
+          onPreferHeadsetMicChange={(val) => {
+            setPreferHeadsetMic(val);
+            localStorage.setItem('yuki-prefer-headset', val.toString());
+            if (val) {
+              applyHeadsetPreference(micDevices, true);
+            } else {
+              setSelectedMicDeviceId('');
+              localStorage.removeItem('yuki-mic-device-id');
+            }
+          }}
+          hostPlatform={hostPlatform}
+          avatarScale={avatarScale}
+          onAvatarScaleChange={(newScale) => {
+            setAvatarScale(newScale);
+            localStorage.setItem('yuki-avatar-scale', newScale.toString());
+          }}
+        />
       </Suspense>
 
       {/* System Offline warning banner */}
