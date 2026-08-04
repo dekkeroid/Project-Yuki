@@ -927,9 +927,12 @@ const ControlDashboard = ({
   const [timeItems, setTimeItems] = useState({ reminders: [], stopwatches: [] });
   const [, setTick] = useState(0); // forces re-render every second for live stopwatch display
 
+  // API call with cache: 'no-store' to guarantee fresh SQLite data.
+  // This prevents the UI from showing deleted items because the browser/fetch
+  // can't reuse a cached 200 response for the same URL.
   const fetchTimeItems = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/reminders/active`);
+      const res = await fetch(`${API_BASE}/api/reminders/active`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setTimeItems(data);
@@ -1053,7 +1056,7 @@ const ControlDashboard = ({
     }
   };
 
-  const handleStopStopwatchUI = async (lbl) => {
+  const handlePauseStopwatchUI = async (lbl) => {
     try {
       await fetch(`${API_BASE}/api/reminders/stopwatch/stop`, {
         method: 'POST',
@@ -1062,7 +1065,33 @@ const ControlDashboard = ({
       });
       fetchTimeItems();
     } catch (e) {
-      console.error("Failed to stop stopwatch:", e);
+      console.error("Failed to pause stopwatch:", e);
+    }
+  };
+
+  const handleResumeStopwatchUI = async (lbl) => {
+    try {
+      await fetch(`${API_BASE}/api/reminders/stopwatch/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: lbl })
+      });
+      fetchTimeItems();
+    } catch (e) {
+      console.error("Failed to resume stopwatch:", e);
+    }
+  };
+
+  const handleResetStopwatchUI = async (lbl) => {
+    try {
+      await fetch(`${API_BASE}/api/reminders/stopwatch/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: lbl })
+      });
+      fetchTimeItems();
+    } catch (e) {
+      console.error("Failed to reset stopwatch:", e);
     }
   };
 
@@ -1273,6 +1302,23 @@ const ControlDashboard = ({
     return () => window.removeEventListener('yuki_ws_message', handleWsMoodUpdate);
   }, []);
 
+  // Live stopwatch WS listener — keeps Tasks tab in sync with the overlay window
+  useEffect(() => {
+    const handleWsStopwatchUpdate = (e) => {
+      try {
+        const msg = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail;
+        console.log('[Tasks tab] stopwatch event received. isOpen:', isOpen, 'activeTab:', activeTab);
+        if (msg && (msg.type === 'stopwatch_changed' || msg.type === 'stopwatch_started')) {
+          if (isOpen && activeTab === 'tasks') {
+            fetchTimeItems();
+          }
+        }
+      } catch (_) { }
+    };
+    window.addEventListener('yuki_ws_message', handleWsStopwatchUpdate);
+    return () => window.removeEventListener('yuki_ws_message', handleWsStopwatchUpdate);
+  }, [isOpen, activeTab]);
+
   useEffect(() => {
     let interval = null;
     if (isOpen) {
@@ -1298,10 +1344,9 @@ const ControlDashboard = ({
           if (onProfileUpdate) {
             onProfileUpdate();
           }
-        } else if (activeTab === 'tasks') {
-          fetchTimeItems();
-          fetchScheduledTasks();
         }
+        // Tasks tab: no polling — data is fetched once on open and after each user action.
+        // The 1-second setTick above handles smooth live display using local clock math.
       }, 3000);
     }
     return () => {
@@ -2715,35 +2760,43 @@ const ControlDashboard = ({
 
                     {/* Active Stopwatches */}
                     {(timeItems.stopwatches || []).map(s => {
-                      // Compute elapsed locally for live ticking — avoids 3s poll jump
+                      // Active: tick locally using (now - started_at) + paused_elapsed for smooth display.
+                      // Paused: show paused_elapsed directly — do NOT subtract started_at (that adds phantom time).
                       const liveElapsed = s.is_active
                         ? Math.floor((Date.now() / 1000 - s.started_at) + (s.paused_elapsed || 0))
-                        : Math.floor(s.paused_elapsed || s.elapsed_seconds || 0);
+                        : Math.floor(s.paused_elapsed || 0);
                       const lh = Math.floor(liveElapsed / 3600);
                       const lm = Math.floor((liveElapsed % 3600) / 60);
                       const ls = liveElapsed % 60;
                       const liveFmt = lh > 0
-                        ? `${String(lh).padStart(2,'0')}:${String(lm).padStart(2,'0')}:${String(ls).padStart(2,'0')}`
-                        : `${String(lm).padStart(2,'0')}:${String(ls).padStart(2,'0')}`;
+                        ? `${String(lh).padStart(2, '0')}:${String(lm).padStart(2, '0')}:${String(ls).padStart(2, '0')}`
+                        : `${String(lm).padStart(2, '0')}:${String(ls).padStart(2, '0')}`;
 
                       return (
                         <div key={s.id} style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(167,139,250,0.2)', color: '#a78bfa', fontWeight: 600, textTransform: 'uppercase', marginRight: '6px' }}>
-                              {s.is_active ? 'Stopwatch' : '⏸ Paused'}
+                              {s.is_active ? '▶ Running' : '⏸ Paused'}
                             </span>
                             <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff' }}>'{s.label}'</span>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600, color: s.is_active ? '#a78bfa' : 'rgba(167,139,250,0.5)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600, color: s.is_active ? '#a78bfa' : 'rgba(167,139,250,0.5)', minWidth: '54px', textAlign: 'right' }}>
                               {liveFmt}
                             </span>
                             <button
                               type="button"
-                              onClick={() => handleStopStopwatchUI(s.label)}
-                              style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', color: '#c084fc', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
+                              onClick={() => s.is_active ? handlePauseStopwatchUI(s.label) : handleResumeStopwatchUI(s.label)}
+                              style={{ background: s.is_active ? 'rgba(245,158,11,0.2)' : 'rgba(167,139,250,0.2)', border: `1px solid ${s.is_active ? 'rgba(245,158,11,0.4)' : 'rgba(167,139,250,0.4)'}`, color: s.is_active ? '#fcd34d' : '#c084fc', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer', fontWeight: 600 }}
                             >
                               {s.is_active ? 'Pause' : 'Resume'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleResetStopwatchUI(s.label)}
+                              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer' }}
+                            >
+                              Reset
                             </button>
                             <button
                               type="button"

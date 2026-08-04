@@ -1012,9 +1012,21 @@ namespace Yuki.UnityFrontend.UI
                 talkModeController.ToggleTalkMode();
             }
 
-            if (desktopOverlay != null && !desktopOverlay.IsWindowVisible)
+            if (desktopOverlay != null)
             {
                 desktopOverlay.ShowWindow();
+            }
+
+            if (chatInputContainer != null && !chatInputContainer.activeSelf)
+            {
+                chatInputContainer.SetActive(true);
+                UpdateButtonVisuals();
+            }
+
+            if (chatInputField != null)
+            {
+                chatInputField.ActivateInputField();
+                chatInputField.Select();
             }
         }
 

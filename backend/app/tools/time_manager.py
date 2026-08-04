@@ -477,13 +477,30 @@ def reset_stopwatch(label: str = "default") -> Dict[str, Any]:
     conn.commit()
     conn.close()
 
-    return {
+    result = {
         "status": "ok",
         "label": label_clean,
         "elapsed_seconds": 0,
         "is_active": bool(row["is_active"])
     }
 
+    # Broadcast so both the stopwatch overlay and the Tasks tab know to re-sync
+    if _stopwatch_callback and _main_loop and _main_loop.is_running():
+        asyncio.run_coroutine_threadsafe(
+            _stopwatch_callback({
+                "type": "stopwatch_changed",
+                "action": "reset",
+                "label": label_clean,
+                "is_active": bool(row["is_active"]),
+                "started_at": now,
+                "paused_elapsed": 0
+            }),
+            _main_loop
+        )
+
+    return result
+
+# time_manager.py
 @_write_locked
 def start_stopwatch(label: str = "default") -> Dict[str, Any]:
     label_clean = (label or "default").strip().lower()
@@ -497,29 +514,45 @@ def start_stopwatch(label: str = "default") -> Dict[str, Any]:
     ).fetchone()
 
     if existing and existing["is_active"] == 0:
-        # Resume: set new started_at so that now - started_at == 0 extra, but paused_elapsed is preserved
+        # Resume: set new started_at
         cursor.execute(
             "UPDATE stopwatches SET started_at = ?, is_active = 1 WHERE label = ?",
             (now, label_clean)
         )
+        conn.commit()
+        conn.close()
+
+        print(f"[TimeManager] Stopwatch '{label_clean}' resumed at {now}")
+
+        # Broadcast 'stopwatch_changed' so the Dashboard updates, but App.js doesn't spawn a new window
+        if _stopwatch_callback and _main_loop and _main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                _stopwatch_callback({
+                    "type": "stopwatch_changed", 
+                    "action": "resume", 
+                    "label": label_clean, 
+                    "is_active": True, 
+                    "started_at": now
+                }),
+                _main_loop
+            )
     else:
         # Fresh start
         cursor.execute("""
         INSERT OR REPLACE INTO stopwatches (label, started_at, is_active, paused_elapsed)
         VALUES (?, ?, 1, 0)
         """, (label_clean, now))
+        conn.commit()
+        conn.close()
 
-    conn.commit()
-    conn.close()
+        print(f"[TimeManager] Stopwatch '{label_clean}' started at {now}")
 
-    print(f"[TimeManager] Stopwatch '{label_clean}' started/resumed at {now}")
-
-    # Notify frontend so it opens a stopwatch window
-    if _stopwatch_callback and _main_loop and _main_loop.is_running():
-        asyncio.run_coroutine_threadsafe(
-            _stopwatch_callback({"type": "stopwatch_started", "label": label_clean, "started_at": now}),
-            _main_loop
-        )
+        # Broadcast 'stopwatch_started' so App.js knows to open the initial window
+        if _stopwatch_callback and _main_loop and _main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                _stopwatch_callback({"type": "stopwatch_started", "label": label_clean, "started_at": now}),
+                _main_loop
+            )
 
     return {
         "status": "ok",
@@ -558,22 +591,63 @@ def check_stopwatch(label: str = "default") -> Dict[str, Any]:
         "is_active": bool(row["is_active"])
     }
 
+# The logic in your snippet is completely sound in theory, but you have accurately spotted that the network is dead silent. There are two hidden traps in Python's threading and state management causing the broadcast to fail silently:
+
+# 1. **The State Trap:** You have the broadcast nested inside `if info.get("is_active"):`. Because the Overlay does optimistic UI updates, it is possible the backend database *already* registered the stopwatch as paused. If the backend thinks it is already paused, it completely skips your `if` block, skips the broadcast, and the `ControlDashboard` remains permanently out of sync.
+# 2. **The Threadpool Trap:** FastAPI runs standard `def` routes in a background threadpool. When it executes, `_main_loop` might be detached or evaluated as not running within that specific thread's context, causing `_main_loop.is_running()` to fail silently.
+
+# To fix this, we need to move the broadcast *outside* the DB update block so it fires unconditionally, and we need a bulletproof way to capture the active event loop.
+
+# Here is the exact drop-in replacement for `stop_stopwatch` in `time_manager.py`:
+
 @_write_locked
 def stop_stopwatch(label: str = "default") -> Dict[str, Any]:
     label_clean = (label or "default").strip().lower()
     info = check_stopwatch(label_clean)
 
-    if info.get("status") == "ok" and info.get("is_active"):
-        # Freeze elapsed into paused_elapsed so it's preserved when resumed
-        conn = get_connection()
-        conn.execute(
-            "UPDATE stopwatches SET is_active = 0, paused_elapsed = ? WHERE label = ?",
-            (info["elapsed_seconds"], label_clean)
-        )
-        conn.commit()
-        conn.close()
+    if info.get("status") == "ok":
+        # 1. Update DB if active
+        if info.get("is_active"):
+            conn = get_connection()
+            conn.execute(
+                "UPDATE stopwatches SET is_active = 0, paused_elapsed = ? WHERE label = ?",
+                (info["elapsed_seconds"], label_clean)
+            )
+            conn.commit()
+            conn.close()
+            info["is_active"] = False
+            info["paused_elapsed"] = info["elapsed_seconds"]
+        else:
+            conn = get_connection()
+            row = conn.execute("SELECT paused_elapsed FROM stopwatches WHERE label = ?", (label_clean,)).fetchone()
+            conn.close()
+            info["paused_elapsed"] = row["paused_elapsed"] if row else 0
+
+        # 2. Always Broadcast
+        print(f"[WS] Broadcasting stopwatch_changed for '{label_clean}' (action=stop)")
+        
+        # 3. Robust Event Loop capture
+        loop = _main_loop
+        if not loop or not loop.is_running():
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+                
+        if _stopwatch_callback and loop and loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                _stopwatch_callback({
+                    "type": "stopwatch_changed",
+                    "action": "stop",
+                    "label": label_clean,
+                    "is_active": False,
+                    "paused_elapsed": info.get("paused_elapsed", 0)
+                }),
+                loop
+            )
 
     return info
+
 
 @_write_locked
 def edit_reminder(reminder_id: int, new_message: str) -> bool:
@@ -590,6 +664,20 @@ def delete_stopwatch(label: str = "default") -> bool:
     conn.execute("DELETE FROM stopwatches WHERE label = ?", (label_clean,))
     conn.commit()
     conn.close()
+
+    print(f"[WS] Broadcasting stopwatch_changed for '{label_clean}' (action=delete)")
+
+    # Broadcast so the Tasks tab (and any other listener) removes this stopwatch
+    if _stopwatch_callback and _main_loop and _main_loop.is_running():
+        asyncio.run_coroutine_threadsafe(
+            _stopwatch_callback({
+                "type": "stopwatch_changed",
+                "action": "delete",
+                "label": label_clean
+            }),
+            _main_loop
+        )
+
     return True
 
 def init_time_manager():
