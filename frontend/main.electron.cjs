@@ -969,6 +969,14 @@ function createWindow() {
     }
   });
 
+  ipcMain.on('drag-canvas-window-by', (event, { dx, dy }) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (senderWin && !senderWin.isDestroyed()) {
+      const [x, y] = senderWin.getPosition();
+      senderWin.setPosition(Math.round(x + dx), Math.round(y + dy));
+    }
+  });
+
   ipcMain.handle('save-canvas-content', async (event, { filename, format } = {}) => {
     const senderWin = BrowserWindow.fromWebContents(event.sender);
     if (!senderWin || senderWin.isDestroyed()) return { success: false, error: 'Window not found' };

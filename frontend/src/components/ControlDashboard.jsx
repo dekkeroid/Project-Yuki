@@ -445,7 +445,8 @@ const ControlDashboard = ({
     tts_cloud_api_key: '',
     tts_cloud_endpoint: '',
     tts_cloud_region: 'eastus',
-    tts_cloud_voice: ''
+    tts_cloud_voice: '',
+    no_llm_mode: false
   });
 
   // Local Character States
@@ -1870,7 +1871,7 @@ const ControlDashboard = ({
                     { key: 'doomer', label: 'Doomer Index', color: '#818cf8', icon: '🖤' },
                     { key: 'hunger', label: 'Hunger', color: '#fb923c', icon: '🍕' },
                     { key: 'playfulness', label: 'Playfulness', color: '#c084fc', icon: '🎮' },
-                    { key: 'horniness', label: 'Intimacy / Horniness', color: '#f43f5e', icon: '🔥' },
+                    { key: 'horniness', label: 'Intimacy', color: '#f43f5e', icon: '🔥' },
                     { key: 'anger', label: 'Anger', color: '#f87171', icon: '😠' }
                   ].map(stat => {
                     const val = moodData[stat.key] !== undefined ? moodData[stat.key] : 50;
@@ -3772,14 +3773,44 @@ const ControlDashboard = ({
               {/* Sub-tab 1: AI Brain */}
               {settingsSubTab === 'brain' && (
                 <>
+                  {/* No LLM Mode toggle — first card so it's always visible */}
+                  <div className="card-group" style={{ borderColor: settings.no_llm_mode ? 'rgba(248,113,113,0.4)' : undefined }}>
+                    <div className="card-group-header">
+                      <span style={{ fontSize: '0.9rem' }}>🤖</span>
+                      <span className="card-group-title">LLM Access Control</span>
+                    </div>
+                    <div className="identity-field" style={{ marginTop: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span className="field-label" style={{ color: settings.no_llm_mode ? '#f87171' : undefined }}>
+                            No LLM Mode {settings.no_llm_mode ? '🔴 ON' : ''}
+                          </span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', maxWidth: '280px', lineHeight: '1.25' }}>
+                            When ON, Yuki responds with &quot;sorry, LLM is currently turned off&quot; and skips loading any model.
+                            Useful for saving resources or during offline-only usage.
+                          </span>
+                        </div>
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={!!settings.no_llm_mode}
+                            onChange={(e) => handleUpdateSetting('no_llm_mode', e.target.checked)}
+                          />
+                          <span className="slider round" style={settings.no_llm_mode ? { background: '#ef4444' } : {}}></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Card 1: Prompt & Execution Strategy (First Card) */}
                   <div className="card-group">
                     <div className="card-group-header">
                       <Zap className="w-4 h-4 text-amber-400" />
-                      <span className="card-group-title">Prompt & Execution Strategy</span>
+                      <span className="card-group-title">Prompt &amp; Execution Strategy</span>
                     </div>
 
                     {/* Prompt Strategy / LLM Mode (Mixed, Simple Only, Complex Only) */}
+
                     <div className="identity-field" style={{ marginTop: '4px' }}>
                       <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd' }}>Prompt Strategy / LLM Mode</span>
                       <select

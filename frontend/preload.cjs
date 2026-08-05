@@ -184,6 +184,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveCanvasContent: (data) => {
     return ipcRenderer.invoke('save-canvas-content', data);
   },
+  dragWindowBy: (dx, dy) => {
+    ipcRenderer.send('drag-canvas-window-by', { dx, dy });
+  },
   platform: process.platform,
   isElectron: true
 });
