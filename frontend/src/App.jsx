@@ -1336,6 +1336,22 @@ const App = () => {
     }
   }, []);
 
+  // Alt+S hotkey: show Yuki, open chat panel, and focus the chat input
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.onTriggerListening) {
+      const unsub = window.electronAPI.onTriggerListening(() => {
+        // Open the chat panel (works for both compact overlay and desktop mode)
+        setIsPanelOpen(true);
+        setIsChatOpen(true);
+        // Give React a tick to render the input before focusing
+        setTimeout(() => {
+          desktopInputRef.current?.focus();
+        }, 200);
+      });
+      return unsub;
+    }
+  }, []);
+
   // AFK Welcoming Detector hook
   const isAfkRef = useRef(false);
   useEffect(() => {

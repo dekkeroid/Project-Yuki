@@ -3828,18 +3828,6 @@ def debug_threads():
         result[str(thread_id)] = [f"{f.filename}:{f.lineno} ({f.name})" for f in traceback.extract_stack(frame)]
     return result
 
-@app.get("/api/canvas/{filename}")
-async def serve_canvas_file(filename: str):
-    """Serve canvas HTML files from yuki_attachment/canvas/."""
-    import os
-    from starlette.responses import FileResponse
-    from app.config import BASE_DIR
-    file_path = os.path.join(str(BASE_DIR), "yuki_attachment", "canvas", filename)
-    print(f"[Canvas] Serving {filename} (exists={os.path.isfile(file_path)})")
-    if os.path.isfile(file_path):
-        return FileResponse(file_path, media_type="text/html")
-    raise HTTPException(status_code=404, detail="Canvas file not found")
-
 @app.get("/api/canvas/serve-file")
 async def serve_html_file(path: str = ""):
     """Serve an HTML file from an absolute path (keeps relative deps working)."""
@@ -3854,6 +3842,20 @@ async def serve_html_file(path: str = ""):
         raise HTTPException(status_code=403, detail="Only .html/.htm files are allowed")
     print(f"[Canvas] Serving external HTML: {clean}")
     return FileResponse(clean, media_type="text/html")
+
+@app.get("/api/canvas/{filename}")
+async def serve_canvas_file(filename: str):
+    """Serve canvas HTML files from yuki_attachment/canvas/."""
+    import os
+    from starlette.responses import FileResponse
+    from app.config import BASE_DIR
+    file_path = os.path.join(str(BASE_DIR), "yuki_attachment", "canvas", filename)
+    print(f"[Canvas] Serving {filename} (exists={os.path.isfile(file_path)})")
+    if os.path.isfile(file_path):
+        return FileResponse(file_path, media_type="text/html")
+    raise HTTPException(status_code=404, detail="Canvas file not found")
+
+
 
 if _frontend_dir.exists():
     from starlette.staticfiles import StaticFiles

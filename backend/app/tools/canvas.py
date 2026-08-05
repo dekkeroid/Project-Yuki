@@ -73,21 +73,87 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
 <meta charset="UTF-8">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { background:#f0f0f0; display:flex; align-items:center; justify-content:center; min-height:100vh; overflow:auto; font-family:system-ui,sans-serif; }
-  .canvas-overlay { position:fixed; top:8px; right:8px; display:flex; gap:6px; z-index:9999; opacity:0; transition:opacity 0.2s; }
+  html, body { background:#1a1a2e; display:flex; align-items:center; justify-content:center; min-height:100vh; overflow:hidden; font-family:system-ui,sans-serif; user-select:none; }
+  #zoom-container { transform-origin:center center; transition:transform 0.1s ease; }
+  .canvas-overlay { position:fixed; top:8px; right:8px; display:flex; gap:5px; z-index:9999; opacity:0; transition:opacity 0.2s; align-items:center; }
   body:hover .canvas-overlay { opacity:1; }
-  .canvas-btn { width:28px; height:28px; border-radius:50%; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; color:#555; background:rgba(255,255,255,0.85); box-shadow:0 1px 4px rgba(0,0,0,0.15); backdrop-filter:blur(4px); transition:background 0.15s; }
-  .canvas-btn:hover { background:rgba(240,240,240,1); }
-  .canvas-btn.close:hover { background:rgba(220,80,80,0.9); color:#fff; }
+  .canvas-btn { width:28px; height:28px; border-radius:50%; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; color:#ddd; background:rgba(30,30,50,0.85); box-shadow:0 1px 4px rgba(0,0,0,0.4); backdrop-filter:blur(4px); transition:background 0.15s; }
+  .canvas-btn:hover { background:rgba(80,80,120,0.95); }
+  .canvas-btn.close:hover { background:rgba(200,60,60,0.9); color:#fff; }
+  #zoom-label { font-size:11px; color:rgba(255,255,255,0.55); background:rgba(0,0,0,0.4); padding:2px 7px; border-radius:10px; pointer-events:none; min-width:38px; text-align:center; }
+  .drag-hint { position:fixed; bottom:8px; left:50%; transform:translateX(-50%); font-size:10px; color:rgba(255,255,255,0.2); pointer-events:none; opacity:0; transition:opacity 0.3s; }
+  body:hover .drag-hint { opacity:1; }
 </style>
 </head>
 <body>
 <div class="canvas-overlay">
+  <button class="canvas-btn" onclick="zoomOut()" title="Zoom Out (Ctrl+Scroll)">−</button>
+  <span id="zoom-label">100%</span>
+  <button class="canvas-btn" onclick="zoomIn()" title="Zoom In (Ctrl+Scroll)">+</button>
+  <button class="canvas-btn" onclick="resetZoom()" title="Reset Zoom">⊙</button>
   <button class="canvas-btn" onclick="window.electronAPI?.saveCanvasContent({filename:'__FILENAME__'})" title="Save">&#8681;</button>
   <button class="canvas-btn" onclick="window.electronAPI?.minimizeCanvasWindow()" title="Minimize">&#x2013;</button>
   <button class="canvas-btn close" onclick="window.electronAPI?.closeCanvasWindow()" title="Close">&#x2715;</button>
 </div>
+<div id="zoom-container">
 __CANVAS_CONTENT__
+</div>
+<div class="drag-hint">Drag background to move • Ctrl+Scroll or +/− to zoom</div>
+<script>
+  // ── Zoom ──────────────────────────────────────────────────────
+  let currentZoom = 1.0;
+  const ZOOM_STEP = 0.15;
+  const ZOOM_MIN = 0.2;
+  const ZOOM_MAX = 5.0;
+  const container = document.getElementById('zoom-container');
+  const label = document.getElementById('zoom-label');
+
+  function applyZoom() {
+    container.style.transform = 'scale(' + currentZoom + ')';
+    label.textContent = Math.round(currentZoom * 100) + '%';
+  }
+  function zoomIn()  { currentZoom = Math.min(ZOOM_MAX, currentZoom + ZOOM_STEP); applyZoom(); }
+  function zoomOut() { currentZoom = Math.max(ZOOM_MIN, currentZoom - ZOOM_STEP); applyZoom(); }
+  function resetZoom() { currentZoom = 1.0; applyZoom(); }
+
+  // Ctrl+Scroll to zoom
+  document.addEventListener('wheel', function(e) {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      if (e.deltaY < 0) zoomIn(); else zoomOut();
+    }
+  }, { passive: false });
+
+  // ── Drag to move window ───────────────────────────────────────
+  let isDragging = false;
+  let dragStartX = 0, dragStartY = 0;
+
+  document.addEventListener('mousedown', function(e) {
+    // Only drag when clicking on non-interactive areas
+    if (e.target.closest('button, a, input, select, textarea, canvas, svg')) return;
+    if (e.button !== 0) return;
+    isDragging = true;
+    dragStartX = e.screenX;
+    dragStartY = e.screenY;
+    document.body.style.cursor = 'grabbing';
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    const dx = e.screenX - dragStartX;
+    const dy = e.screenY - dragStartY;
+    dragStartX = e.screenX;
+    dragStartY = e.screenY;
+    if (window.electronAPI && window.electronAPI.dragWindowBy) {
+      window.electronAPI.dragWindowBy(dx, dy);
+    }
+  });
+
+  document.addEventListener('mouseup', function() {
+    isDragging = false;
+    document.body.style.cursor = '';
+  });
+</script>
 </body>
 </html>"""
 
