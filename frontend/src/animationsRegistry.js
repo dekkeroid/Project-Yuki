@@ -258,6 +258,42 @@ export const ANIMATIONS = [
     blendShapes: { relaxed: 0.9 }
   },
   {
+    name: 'disappointed_nod',
+    alias: 'disappointed_nod',
+    duration: 3.0,
+    excludeFromRandomIdle: true,
+    llmTag: '<yuki_anim:disappointed_nod/>',
+    commands: [
+      { cmd: '/ani-disappointed', description: 'Disappointed slow nod & sigh' }
+    ],
+    responseText: '*nods slowly in disappointment*',
+    blendShapes: { sad: 0.6, browDown: 0.4 }
+  },
+  {
+    name: 'crying_sob',
+    alias: 'crying_sob',
+    duration: 3.5,
+    excludeFromRandomIdle: true,
+    llmTag: '<yuki_anim:crying_sob/>',
+    commands: [
+      { cmd: '/ani-crying', description: 'Tearful shuddering sob' }
+    ],
+    responseText: '*sobs tearfully*',
+    blendShapes: { sad: 0.95, browDown: 0.5 }
+  },
+  {
+    name: 'shocked_recoil',
+    alias: 'shocked_recoil',
+    duration: 2.5,
+    excludeFromRandomIdle: true,
+    llmTag: '<yuki_anim:shocked_recoil/>',
+    commands: [
+      { cmd: '/ani-shocked', description: 'Shocked recoil backward' }
+    ],
+    responseText: '*recoils in shock*',
+    blendShapes: { surprised: 1.0, browUp: 0.9 }
+  },
+  {
     name: 'breathing',
     duration: 0,
     excludeFromRandomIdle: true,
@@ -337,6 +373,56 @@ export const EMOTIONS = {
     name: 'smug',
     llmTag: '<yuki_emotion:smug/>',
     blendShapes: { happy: 0.4, relaxed: 0.5, browUp: 0.3 }
+  },
+  skeptical: {
+    name: 'skeptical',
+    llmTag: '<yuki_emotion:skeptical/>',
+    blendShapes: { browUp: 0.8, browDown: 0.5, relaxed: 0.3 }
+  },
+  disappointed: {
+    name: 'disappointed',
+    llmTag: '<yuki_emotion:disappointed/>',
+    blendShapes: { sad: 0.6, browDown: 0.4 }
+  },
+  pleading: {
+    name: 'pleading',
+    llmTag: '<yuki_emotion:pleading/>',
+    blendShapes: { surprised: 0.4, happy: 0.2, browUp: 0.85 }
+  },
+  crying: {
+    name: 'crying',
+    llmTag: '<yuki_emotion:crying/>',
+    blendShapes: { sad: 0.95, browDown: 0.5 }
+  },
+  bittersweet: {
+    name: 'bittersweet',
+    llmTag: '<yuki_emotion:bittersweet/>',
+    blendShapes: { sad: 0.5, happy: 0.65, browUp: 0.3 }
+  },
+  exhausted: {
+    name: 'exhausted',
+    llmTag: '<yuki_emotion:exhausted/>',
+    blendShapes: { sad: 0.5, angry: 0.3, browDown: 0.7 }
+  },
+  shocked: {
+    name: 'shocked',
+    llmTag: '<yuki_emotion:shocked/>',
+    blendShapes: { surprised: 1.0, browUp: 0.9 }
+  },
+  wink: {
+    name: 'wink',
+    llmTag: '<yuki_emotion:wink/>',
+    blendShapes: { happy: 0.6, relaxed: 0.4 }
+  },
+  hush: {
+    name: 'hush',
+    llmTag: '<yuki_emotion:hush/>',
+    blendShapes: { relaxed: 0.6, happy: 0.2 }
+  },
+  drowsy: {
+    name: 'drowsy',
+    llmTag: '<yuki_emotion:drowsy/>',
+    blendShapes: { relaxed: 0.5, sad: 0.2, browDown: 0.3 }
   }
 };
 
@@ -396,7 +482,10 @@ export const LLM_ANIMATION_MAP = {
   work: 'typing_air',
   stretch: 'stretching',
   stretching: 'stretching',
-  relax: 'stretching'
+  relax: 'stretching',
+  disappointed_nod: 'disappointed_nod',
+  crying_sob: 'crying_sob',
+  shocked_recoil: 'shocked_recoil'
 };
 
 export const LLM_EMOTION_MAP = {
@@ -407,11 +496,26 @@ export const LLM_EMOTION_MAP = {
   sad: 'sad',
   angry: 'angry',
   surprised: 'surprised',
-  shocked: 'surprised',
+  shocked: 'shocked',
+  screaming: 'shocked',
   relaxed: 'relaxed',
   calm: 'relaxed',
   thinking: 'thinking',
   embarrassed: 'embarrassed',
   blush: 'embarrassed',
-  smug: 'smug'
+  smug: 'smug',
+  skeptical: 'skeptical',
+  suspicious: 'skeptical',
+  disappointed: 'disappointed',
+  sigh: 'disappointed',
+  pleading: 'pleading',
+  begging: 'pleading',
+  crying: 'crying',
+  sob: 'crying',
+  bittersweet: 'bittersweet',
+  exhausted: 'exhausted',
+  distressed: 'exhausted',
+  wink: 'wink',
+  hush: 'hush',
+  drowsy: 'drowsy'
 };

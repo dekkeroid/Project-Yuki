@@ -553,6 +553,56 @@ def init_db():
     );
     """)
 
+    # 1d3. Multi-Vector Relationship Engine & Economy
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS relationship_vectors (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        active_route TEXT DEFAULT 'ROMANTIC',
+        relationship_stage INTEGER DEFAULT 1,
+        affinity_xp INTEGER DEFAULT 50,
+        romance_val REAL DEFAULT 20.0,
+        affection_val REAL DEFAULT 50.0,
+        control_val REAL DEFAULT 0.0,
+        obsession_val REAL DEFAULT 10.0,
+        star_hearts INTEGER DEFAULT 100,
+        daily_streak INTEGER DEFAULT 1,
+        last_interaction_epoch REAL,
+        unlocked_endings TEXT DEFAULT '[]'
+    );
+    """)
+
+    # Initialize default relationship vector row if empty
+    cursor.execute("SELECT COUNT(*) FROM relationship_vectors;")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+        INSERT INTO relationship_vectors (id, active_route, relationship_stage, affinity_xp, romance_val, affection_val, control_val, obsession_val, star_hearts, daily_streak, last_interaction_epoch)
+        VALUES (1, 'ROMANTIC', 1, 50, 20.0, 50.0, 0.0, 10.0, 100, 1, ?);
+        """, (time.time(),))
+
+    # 1d4. Dating Sim Inventory & Unlocked Props
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS inventory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id TEXT UNIQUE,
+        name TEXT,
+        category TEXT,
+        quantity INTEGER DEFAULT 1,
+        is_equipped INTEGER DEFAULT 0,
+        purchased_at REAL
+    );
+    """)
+
+    # 1d5. Visual Novel Decision History
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS route_decision_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        node_id TEXT,
+        route_name TEXT,
+        choice_made TEXT,
+        timestamp REAL
+    );
+    """)
+
     # Migration check for block_reason / archived columns on todos
     todo_cols = [row[1] for row in cursor.execute("PRAGMA table_info(todos)").fetchall()]
     if "block_reason" not in todo_cols:
@@ -1535,4 +1585,105 @@ def import_crawler_database_json(data: dict) -> dict:
         DB_WRITE_LOCK.release()
 
 
+# ------------------------------------------------------------------ #
+#  Relationship Engine & Economy Helpers                             #
+# ------------------------------------------------------------------ #
 
+def get_relationship_status() -> dict:
+    """Fetch current relationship state, vectors, XP, level, and currency."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT active_route, relationship_stage, affinity_xp, romance_val, affection_val, control_val, obsession_val, star_hearts, daily_streak, last_interaction_epoch FROM relationship_vectors WHERE id = 1;")
+        row = cursor.fetchone()
+        if not row:
+            return {
+                "active_route": "ROMANTIC",
+                "relationship_stage": 1,
+                "affinity_xp": 50,
+                "romance_val": 20.0,
+                "affection_val": 50.0,
+                "control_val": 0.0,
+                "obsession_val": 10.0,
+                "star_hearts": 100,
+                "daily_streak": 1,
+                "last_interaction_epoch": time.time()
+            }
+        return {
+            "active_route": row[0],
+            "relationship_stage": row[1],
+            "affinity_xp": row[2],
+            "romance_val": row[3],
+            "affection_val": row[4],
+            "control_val": row[5],
+            "obsession_val": row[6],
+            "star_hearts": row[7],
+            "daily_streak": row[8],
+            "last_interaction_epoch": row[9]
+        }
+    finally:
+        conn.close()
+
+
+def update_relationship_status(updates: dict) -> dict:
+    """Updates fields in relationship_vectors table."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        allowed = ["active_route", "relationship_stage", "affinity_xp", "romance_val", "affection_val", "control_val", "obsession_val", "star_hearts", "daily_streak", "last_interaction_epoch"]
+        clause_parts = []
+        params = []
+        for k, v in updates.items():
+            if k in allowed:
+                clause_parts.append(f"{k} = ?")
+                params.append(v)
+        if clause_parts:
+            query = f"UPDATE relationship_vectors SET {', '.join(clause_parts)} WHERE id = 1;"
+            cursor.execute(query, tuple(params))
+            conn.commit()
+        return get_relationship_status()
+    finally:
+        conn.close()
+
+
+def get_user_inventory() -> list:
+    """Fetch user's purchased gifts and cosmetics."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, item_id, name, category, quantity, is_equipped, purchased_at FROM inventory;")
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": r[0],
+                "item_id": r[1],
+                "name": r[2],
+                "category": r[3],
+                "quantity": r[4],
+                "is_equipped": bool(r[5]),
+                "purchased_at": r[6]
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def add_inventory_item(item_id: str, name: str, category: str, quantity: int = 1) -> list:
+    """Add or increment an item in user's inventory."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT quantity FROM inventory WHERE item_id = ?;", (item_id,))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("UPDATE inventory SET quantity = quantity + ? WHERE item_id = ?;", (quantity, item_id))
+        else:
+            cursor.execute("""
+            INSERT INTO inventory (item_id, name, category, quantity, is_equipped, purchased_at)
+            VALUES (?, ?, ?, ?, 0, ?);
+            """, (item_id, name, category, quantity, time.time()))
+        conn.commit()
+        return get_user_inventory()
+    finally:
+        conn.close()

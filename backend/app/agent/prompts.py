@@ -149,8 +149,8 @@ MOOD BEHAVIOR GUIDELINES:
 ANIMATION_EXPRESSION_PROMPT_BLOCK = """
 --- AVATAR EXPRESSIONS & ANIMATIONS ---
 You control a 3D avatar on the user's screen. You can express emotions and perform physical animations during your responses by including tags in your text:
-• Emotions: `<yuki_emotion:happy/>`, `<yuki_emotion:excited/>`, `<yuki_emotion:sad/>`, `<yuki_emotion:angry/>`, `<yuki_emotion:surprised/>`, `<yuki_emotion:relaxed/>`, `<yuki_emotion:thinking/>`, `<yuki_emotion:embarrassed/>`, `<yuki_emotion:smug/>`
-• Gestures/Animations: `<yuki_anim:wave/>`, `<yuki_anim:laugh/>`, `<yuki_anim:peer/>`, `<yuki_anim:nap/>`, `<yuki_anim:groove/>`, `<yuki_anim:pout/>`, `<yuki_anim:yawn/>`, `<yuki_anim:shrug/>`, `<yuki_anim:knock/>`, `<yuki_anim:nod/>`, `<yuki_anim:shake/>`, `<yuki_anim:salute/>`, `<yuki_anim:shy/>`, `<yuki_anim:giggle/>`, `<yuki_anim:facepalm/>`, `<yuki_anim:cheer/>`, `<yuki_anim:point/>`, `<yuki_anim:inspect/>`, `<yuki_anim:typing/>`, `<yuki_anim:stretch/>`
+• Emotions: `<yuki_emotion:happy/>`, `<yuki_emotion:excited/>`, `<yuki_emotion:sad/>`, `<yuki_emotion:angry/>`, `<yuki_emotion:surprised/>`, `<yuki_emotion:relaxed/>`, `<yuki_emotion:thinking/>`, `<yuki_emotion:embarrassed/>`, `<yuki_emotion:smug/>`, `<yuki_emotion:skeptical/>`, `<yuki_emotion:disappointed/>`, `<yuki_emotion:pleading/>`, `<yuki_emotion:crying/>`, `<yuki_emotion:bittersweet/>`, `<yuki_emotion:exhausted/>`, `<yuki_emotion:shocked/>`, `<yuki_emotion:wink/>`, `<yuki_emotion:hush/>`, `<yuki_emotion:drowsy/>`
+• Gestures/Animations: `<yuki_anim:wave/>`, `<yuki_anim:laugh/>`, `<yuki_anim:peer/>`, `<yuki_anim:nap/>`, `<yuki_anim:groove/>`, `<yuki_anim:pout/>`, `<yuki_anim:yawn/>`, `<yuki_anim:shrug/>`, `<yuki_anim:knock/>`, `<yuki_anim:nod/>`, `<yuki_anim:shake/>`, `<yuki_anim:salute/>`, `<yuki_anim:shy/>`, `<yuki_anim:giggle/>`, `<yuki_anim:facepalm/>`, `<yuki_anim:cheer/>`, `<yuki_anim:point/>`, `<yuki_anim:inspect/>`, `<yuki_anim:typing/>`, `<yuki_anim:stretch/>`, `<yuki_anim:disappointed_nod/>`, `<yuki_anim:crying_sob/>`, `<yuki_anim:shocked_recoil/>`
 
 GUIDELINES:
 - Use these tags naturally when responding! (e.g. `<yuki_anim:wave/> <yuki_emotion:happy/> Hello Master! I'm ready to help!`)
@@ -173,13 +173,16 @@ When the user asks you to look at, describe, check, or read what is currently on
 • Do NOT use `take_screenshot` (that only opens the Snipping Tool overlay for the user). Use `jarvis_see_screen` whenever YOU need to see the screen.
 ---------------------------------------"""
 
-def get_simple_system_prompt(memory_summary: str, mood: dict = None, mood_meta: dict = None) -> str:
+from app.agent.personas import stitch_system_persona
+
+def get_simple_system_prompt(memory_summary: str, mood: dict = None, mood_meta: dict = None, profile: dict = None) -> str:
     """
     Minimal system prompt for the simple/chat model (Qwen).
     Contains persona + mood spectrum + memory card — no tool definitions.
     """
     mood_block = format_mood_spectrum_prompt(mood, mood_meta) if mood else ""
-    return f"""{app.config.CHARACTER_PERSONA}
+    persona_text = stitch_system_persona(profile)
+    return f"""{persona_text}
 
 {mood_block}
 
@@ -198,7 +201,7 @@ Respond directly and conversationally as Yuki. If the user asks for an action, t
 #  Instead, provides guidelines for behavior and logic.                #
 # ------------------------------------------------------------------ #
 
-def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None, mood_meta: dict = None) -> str:
+def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None, mood_meta: dict = None, profile: dict = None) -> str:
     """
     System prompt containing persona, mood spectrum, memory card, and behavioral rules.
     Respects per-turn prompt module overrides.
@@ -215,7 +218,8 @@ def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = 
     parts = []
 
     if toggle_persona:
-        parts.append(app.config.CHARACTER_PERSONA)
+        persona_text = stitch_system_persona(profile)
+        parts.append(persona_text)
         mood_block = format_mood_spectrum_prompt(mood, mood_meta) if mood else ""
         if mood_block:
             parts.append(mood_block)

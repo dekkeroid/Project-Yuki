@@ -2012,6 +2012,19 @@ const AvatarViewer = ({
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
                   neckAnimZ = Math.sin(time * 4.0) * 0.06 * easeVal;
+                } else if (idleAnimState === 'disappointed_nod') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  neckAnimX = (-0.15 * easeVal + Math.sin(time * 5.0) * 0.04) * easeVal;
+                } else if (idleAnimState === 'crying_sob') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  neckAnimX = (-0.1 * easeVal + Math.sin(time * 18.0) * 0.03) * easeVal;
+                } else if (idleAnimState === 'shocked_recoil') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  neckAnimX = 0.18 * easeVal;
+                  neckAnimZ = -0.08 * easeVal;
                 }
 
                 awakeNeckY = (currentLookY + Math.sin(time * 0.5) * 0.012 + microFidgetNeckY + neckAnimY) * yMult;
@@ -2066,6 +2079,10 @@ const AvatarViewer = ({
                 const t = idleAnimProgress / idleAnimDuration;
                 const easeVal = Math.sin(t * Math.PI);
                 stretchShrug = (0.03 + Math.sin(time * 24.0) * 0.02) * easeVal;
+              } else if (idleAnimState === 'crying_sob') {
+                const t = idleAnimProgress / idleAnimDuration;
+                const easeVal = Math.sin(t * Math.PI);
+                stretchShrug = (0.04 + Math.sin(time * 20.0) * 0.03) * easeVal;
               }
 
               const finalLift = shoulderLift + stretchShrug;
@@ -2677,7 +2694,7 @@ const AvatarViewer = ({
           if (currentExpr && currentExpr !== 'neutral') {
             const emotionDef = EMOTIONS[currentExpr];
             if (currentExpr === 'wink') {
-              targetHappy = winkVal * 0.5;
+              targetRelaxed = winkVal * 0.5;
             } else if (emotionDef && emotionDef.blendShapes) {
               const bs = emotionDef.blendShapes;
               targetHappy = bs.happy || 0.0;
@@ -2710,7 +2727,7 @@ const AvatarViewer = ({
               const t = idleAnimProgress / idleAnimDuration;
               const waveRaise = Math.sin(t * Math.PI);
               targetRelaxed = 0.6 * waveRaise;
-              targetHappy = 0.35 * waveRaise;
+              targetHappy = 0 * waveRaise;
             } else if (idleAnimState === 'peering') {
               const t = idleAnimProgress / idleAnimDuration;
               const easeVal = Math.sin(t * Math.PI);
@@ -2748,7 +2765,7 @@ const AvatarViewer = ({
             } else if (idleAnimState === 'nodding') {
               const t = idleAnimProgress / idleAnimDuration;
               const easeVal = Math.sin(t * Math.PI);
-              targetHappy = 0.4 * easeVal;
+              targetHappy = 0 * easeVal;
               targetRelaxed = 0.5 * easeVal;
             } else if (idleAnimState === 'head_shake') {
               const t = idleAnimProgress / idleAnimDuration;
@@ -2758,17 +2775,17 @@ const AvatarViewer = ({
             } else if (idleAnimState === 'salute') {
               const t = idleAnimProgress / idleAnimDuration;
               const easeVal = Math.sin(t * Math.PI);
-              targetHappy = 0.7 * easeVal;
+              targetHappy = 0 * easeVal;
               targetBrowUp = 0.2 * easeVal;
             } else if (idleAnimState === 'shy_fidget') {
               const t = idleAnimProgress / idleAnimDuration;
               const easeVal = Math.sin(t * Math.PI);
-              targetHappy = 0.3 * easeVal;
+              targetHappy = 0 * easeVal;
               targetRelaxed = 0.4 * easeVal;
             } else if (idleAnimState === 'giggle_cover') {
               const t = idleAnimProgress / idleAnimDuration;
               const easeVal = Math.sin(t * Math.PI);
-              targetHappy = 0.85 * easeVal;
+              targetHappy = 0 * easeVal;
               targetBrowUp = 0.3 * easeVal;
             } else if (idleAnimState === 'facepalm') {
               const t = idleAnimProgress / idleAnimDuration;
@@ -2778,7 +2795,7 @@ const AvatarViewer = ({
             } else if (idleAnimState === 'cheering') {
               const t = idleAnimProgress / idleAnimDuration;
               const easeVal = Math.sin(t * Math.PI);
-              targetHappy = 0.95 * easeVal;
+              targetHappy = 0 * easeVal;
               targetSurprised = 0.4 * easeVal;
             } else if (idleAnimState === 'pointing') {
               const t = idleAnimProgress / idleAnimDuration;
@@ -2812,10 +2829,10 @@ const AvatarViewer = ({
               targetBrowDown = 0.55; // furrow brows while concentrating
             } else if (isListeningRef.current) {
               targetRelaxed = 0.3;
-              targetHappy = 0.2;
+              targetHappy = 0;
               targetBrowUp = 0.45;   // raise brows on listening interest
             } else {
-              targetHappy = 0.1;
+              targetHappy = 0;
               targetRelaxed = 0.0;
             }
             // Blend in sleep target values smoothly based on sleepProgressRef.current
@@ -2825,7 +2842,7 @@ const AvatarViewer = ({
           // Smoothly interpolate current values towards targets (using delta * speed)
           // A speed of 5.5s is fast enough to feel responsive, but slow enough to be beautifully smooth.
           const exprSpeed = 5.5;
-          currentHappy += (targetHappy - currentHappy) * delta * exprSpeed;
+          currentRelaxed += (targetHappy - currentHappy) * delta * exprSpeed;
           currentSad += (targetSad - currentSad) * delta * exprSpeed;
           currentAngry += (targetAngry - currentAngry) * delta * exprSpeed;
           currentSurprised += (targetSurprised - currentSurprised) * delta * exprSpeed;

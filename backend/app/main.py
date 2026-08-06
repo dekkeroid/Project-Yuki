@@ -1198,6 +1198,10 @@ class SettingsUpdateRequest(BaseModel):
     tts_cloud_region: Optional[str] = None      # Azure region, etc.
     tts_cloud_voice: Optional[str] = None       # Voice/model name for cloud TTS
     mood_source: Optional[str] = None           # "script"|"llm" — mood driver mode
+    persona_preset: Optional[str] = None        # Preset key
+    character_persona: Optional[str] = None     # Section 1 prompt override
+    execution_rules: Optional[str] = None       # Section 2 guardrail rules
+
 
 
 @app.post("/api/settings/update")
@@ -1229,6 +1233,13 @@ async def update_settings(req: SettingsUpdateRequest):
             await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
     if req.manage_todo_enabled is not None:
         memory_manager.update_setting("manage_todo_enabled", bool(req.manage_todo_enabled))
+    if req.persona_preset is not None:
+        memory_manager.update_setting("persona_preset", req.persona_preset.strip())
+    if req.character_persona is not None:
+        memory_manager.update_setting("character_persona", req.character_persona.strip())
+    if req.execution_rules is not None:
+        memory_manager.update_setting("execution_rules", req.execution_rules.strip())
+
     if req.basic_history_token_limit is not None:
         memory_manager.update_setting("basic_history_token_limit", int(req.basic_history_token_limit))
     if req.basic_history_keep_turns is not None:
@@ -1273,11 +1284,68 @@ async def update_settings(req: SettingsUpdateRequest):
                 config.LLM_SIMPLE_API_KEY = key_val
                 memory_manager.update_setting("llm_simple_api_key", encrypt_api_key(key_val))
         else:
-            config.LLM_SIMPLE_API_KEY = ""
             memory_manager.update_setting("llm_simple_api_key", "")
     if req.llm_coder_backend is not None:
         config.LLM_CODER_BACKEND = req.llm_coder_backend.strip()
         memory_manager.update_setting("llm_coder_backend", req.llm_coder_backend.strip())
+
+
+# ------------------------------------------------------------------ #
+#  Relationship Engine & Persona API Endpoints                      #
+# ------------------------------------------------------------------ #
+
+@app.get("/api/personas/presets")
+async def get_persona_presets():
+    """Returns available persona presets registry."""
+    from app.agent.personas import PERSONA_PRESETS, DEFAULT_EXECUTION_RULES
+    return {
+        "presets": PERSONA_PRESETS,
+        "default_execution_rules": DEFAULT_EXECUTION_RULES
+    }
+
+
+@app.get("/api/relationship/status")
+async def get_relationship_status_api():
+    """Returns current relationship status, level, vectors, inventory, and currency."""
+    from app.memory.db import get_relationship_status, get_user_inventory
+    from app.memory.mood_engine import calculate_stage_from_xp
+    status = get_relationship_status()
+    inventory = get_user_inventory()
+    status["calculated_stage"] = calculate_stage_from_xp(status.get("affinity_xp", 0))
+    status["inventory"] = inventory
+    return status
+
+
+class GiftPurchaseRequest(BaseModel):
+    item_id: str
+    name: str
+    category: str
+    cost: int
+
+
+@app.post("/api/relationship/gift")
+async def purchase_gift_api(req: GiftPurchaseRequest):
+    """Purchase a gift or item using Star Hearts currency."""
+    from app.memory.db import get_relationship_status, update_relationship_status, add_inventory_item
+    status = get_relationship_status()
+    current_hearts = status.get("star_hearts", 0)
+    if current_hearts < req.cost:
+        raise HTTPException(status_code=400, detail="Not enough Star Hearts currency")
+    
+    new_hearts = current_hearts - req.cost
+    new_xp = status.get("affinity_xp", 0) + 15
+    update_relationship_status({"star_hearts": new_hearts, "affinity_xp": new_xp})
+    inv = add_inventory_item(req.item_id, req.name, req.category, quantity=1)
+    
+    # Direct mood engine affection boost
+    mood_engine.adjust({"affection": 15, "happiness": 10})
+    return {
+        "success": True,
+        "star_hearts": new_hearts,
+        "affinity_xp": new_xp,
+        "inventory": inv
+    }
+
     if req.llm_coder_base_url is not None:
         config.LLM_CODER_BASE_URL = req.llm_coder_base_url.strip()
         memory_manager.update_setting("llm_coder_base_url", req.llm_coder_base_url.strip())
