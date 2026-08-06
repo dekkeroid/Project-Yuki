@@ -73,92 +73,191 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
 <meta charset="UTF-8">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { background:#1a1a2e; display:flex; align-items:center; justify-content:center; min-height:100vh; overflow:hidden; font-family:system-ui,sans-serif; user-select:none; }
-  #zoom-container { transform-origin:center center; transition:transform 0.1s ease; }
-  .canvas-overlay { position:fixed; top:8px; right:8px; display:flex; gap:5px; z-index:9999; opacity:0; transition:opacity 0.2s; align-items:center; }
-  body:hover .canvas-overlay { opacity:1; }
-  .canvas-btn { width:28px; height:28px; border-radius:50%; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; color:#ddd; background:rgba(30,30,50,0.85); box-shadow:0 1px 4px rgba(0,0,0,0.4); backdrop-filter:blur(4px); transition:background 0.15s; }
-  .canvas-btn:hover { background:rgba(80,80,120,0.95); }
+  html, body {
+    background:#1a1a2e;
+    width:100vw;
+    height:100vh;
+    overflow:hidden;
+    font-family:system-ui,sans-serif;
+    user-select:none;
+    margin:0;
+    padding:0;
+    position:relative;
+  }
+  #viewport-wrapper {
+    width:100%;
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:grab;
+    position:absolute;
+    top:0;
+    left:0;
+  }
+  #viewport-wrapper:active {
+    cursor:grabbing;
+  }
+  #zoom-container {
+    transform-origin:center center;
+    transition:transform 0.05s ease-out;
+    display:inline-block;
+  }
+  .canvas-overlay {
+    position:fixed;
+    top:8px;
+    right:8px;
+    display:flex;
+    gap:5px;
+    z-index:9999;
+    opacity:0.65;
+    transition:opacity 0.2s;
+    align-items:center;
+    background:rgba(20,20,35,0.75);
+    padding:4px 8px;
+    border-radius:20px;
+    backdrop-filter:blur(6px);
+  }
+  .canvas-overlay:hover { opacity:1; }
+  .canvas-btn {
+    width:28px;
+    height:28px;
+    border-radius:50%;
+    border:none;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:14px;
+    font-weight:bold;
+    color:#ddd;
+    background:rgba(40,40,65,0.85);
+    box-shadow:0 1px 4px rgba(0,0,0,0.4);
+    transition:all 0.15s;
+  }
+  .canvas-btn:hover { background:rgba(80,80,130,0.95); transform:scale(1.05); }
   .canvas-btn.close:hover { background:rgba(200,60,60,0.9); color:#fff; }
-  #zoom-label { font-size:11px; color:rgba(255,255,255,0.55); background:rgba(0,0,0,0.4); padding:2px 7px; border-radius:10px; pointer-events:none; min-width:38px; text-align:center; }
-  .drag-hint { position:fixed; bottom:8px; left:50%; transform:translateX(-50%); font-size:10px; color:rgba(255,255,255,0.2); pointer-events:none; opacity:0; transition:opacity 0.3s; }
+  #zoom-label {
+    font-size:11px;
+    color:rgba(255,255,255,0.75);
+    background:rgba(0,0,0,0.4);
+    padding:2px 8px;
+    border-radius:10px;
+    pointer-events:none;
+    min-width:42px;
+    text-align:center;
+    font-weight:600;
+  }
+  .drag-hint {
+    position:fixed;
+    bottom:8px;
+    left:50%;
+    transform:translateX(-50%);
+    font-size:10px;
+    color:rgba(255,255,255,0.35);
+    pointer-events:none;
+    opacity:0;
+    transition:opacity 0.3s;
+    background:rgba(0,0,0,0.4);
+    padding:3px 10px;
+    border-radius:10px;
+  }
   body:hover .drag-hint { opacity:1; }
 </style>
 </head>
 <body>
 <div class="canvas-overlay">
-  <button class="canvas-btn" onclick="zoomOut()" title="Zoom Out (Ctrl+Scroll)">−</button>
+  <button class="canvas-btn" onclick="zoomOut()" title="Zoom Out (- or Ctrl+Scroll)">−</button>
   <span id="zoom-label">100%</span>
-  <button class="canvas-btn" onclick="zoomIn()" title="Zoom In (Ctrl+Scroll)">+</button>
+  <button class="canvas-btn" onclick="zoomIn()" title="Zoom In (+ or Ctrl+Scroll)">+</button>
   <button class="canvas-btn" onclick="resetZoom()" title="Reset Zoom">⊙</button>
   <button class="canvas-btn" onclick="window.electronAPI?.saveCanvasContent({filename:'__FILENAME__'})" title="Save">&#8681;</button>
   <button class="canvas-btn" onclick="window.electronAPI?.minimizeCanvasWindow()" title="Minimize">&#x2013;</button>
   <button class="canvas-btn close" onclick="window.electronAPI?.closeCanvasWindow()" title="Close">&#x2715;</button>
 </div>
-<div id="zoom-container">
-__CANVAS_CONTENT__
+<div id="viewport-wrapper">
+  <div id="zoom-container">
+    __CANVAS_CONTENT__
+  </div>
 </div>
-<div class="drag-hint">Drag background to move • Ctrl+Scroll or +/− to zoom</div>
+<div class="drag-hint">Drag canvas/background to pan • Shift+Drag window • Ctrl+Scroll or + / − to zoom</div>
 <script>
-  // ── Zoom ──────────────────────────────────────────────────────
+  // ── Zoom & Pan State ──
   let currentZoom = 1.0;
+  let panX = 0;
+  let panY = 0;
   const ZOOM_STEP = 0.15;
-  const ZOOM_MIN = 0.2;
-  const ZOOM_MAX = 5.0;
+  const ZOOM_MIN = 0.1;
+  const ZOOM_MAX = 8.0;
+
   const container = document.getElementById('zoom-container');
+  const wrapper = document.getElementById('viewport-wrapper');
   const label = document.getElementById('zoom-label');
 
-  function applyZoom() {
-    container.style.transform = 'scale(' + currentZoom + ')';
+  function applyTransform() {
+    container.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom})`;
     label.textContent = Math.round(currentZoom * 100) + '%';
   }
-  function zoomIn()  { currentZoom = Math.min(ZOOM_MAX, currentZoom + ZOOM_STEP); applyZoom(); }
-  function zoomOut() { currentZoom = Math.max(ZOOM_MIN, currentZoom - ZOOM_STEP); applyZoom(); }
-  function resetZoom() { currentZoom = 1.0; applyZoom(); }
 
-  // Ctrl+Scroll to zoom
+  function zoomIn()  { currentZoom = Math.min(ZOOM_MAX, currentZoom + ZOOM_STEP); applyTransform(); }
+  function zoomOut() { currentZoom = Math.max(ZOOM_MIN, currentZoom - ZOOM_STEP); applyTransform(); }
+  function resetZoom() { currentZoom = 1.0; panX = 0; panY = 0; applyTransform(); }
+
+  // Keyboard shortcut controls: + / - / 0
+  document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === '+' || e.key === '=') { zoomIn(); }
+    else if (e.key === '-' || e.key === '_') { zoomOut(); }
+    else if (e.key === '0' || e.key === 'r') { resetZoom(); }
+  });
+
+  // Ctrl + MouseWheel zoom scaling
   document.addEventListener('wheel', function(e) {
-    if (e.ctrlKey) {
+    if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       if (e.deltaY < 0) zoomIn(); else zoomOut();
     }
   }, { passive: false });
 
-  // ── Drag to move window ───────────────────────────────────────
-  let isDragging = false;
-  let dragStartX = 0, dragStartY = 0;
+  // ── Drag-to-Move Panning & Window Drag ──
+  let isPanning = false;
+  let startX = 0, startY = 0;
+  let lastWindowX = 0, lastWindowY = 0;
 
-  document.addEventListener('mousedown', function(e) {
-    // Only drag when clicking on non-interactive areas
-    if (e.target.closest('button, a, input, select, textarea, canvas, svg')) return;
+  wrapper.addEventListener('mousedown', function(e) {
+    if (e.target.closest('.canvas-overlay') || e.target.closest('button, a, input, select, textarea')) return;
     if (e.button !== 0) return;
-    isDragging = true;
-    dragStartX = e.screenX;
-    dragStartY = e.screenY;
-    document.body.style.cursor = 'grabbing';
+    isPanning = true;
+    startX = e.clientX - panX;
+    startY = e.clientY - panY;
+    lastWindowX = e.screenX;
+    lastWindowY = e.screenY;
   });
 
   document.addEventListener('mousemove', function(e) {
-    if (!isDragging) return;
-    const dx = e.screenX - dragStartX;
-    const dy = e.screenY - dragStartY;
-    dragStartX = e.screenX;
-    dragStartY = e.screenY;
-    if (window.electronAPI && window.electronAPI.dragWindowBy) {
+    if (!isPanning) return;
+    const dx = e.screenX - lastWindowX;
+    const dy = e.screenY - lastWindowY;
+    lastWindowX = e.screenX;
+    lastWindowY = e.screenY;
+
+    if (e.shiftKey && window.electronAPI && window.electronAPI.dragWindowBy) {
       window.electronAPI.dragWindowBy(dx, dy);
+    } else {
+      panX = e.clientX - startX;
+      panY = e.clientY - startY;
+      applyTransform();
     }
   });
 
   document.addEventListener('mouseup', function() {
-    isDragging = false;
-    document.body.style.cursor = '';
+    isPanning = false;
   });
 </script>
 </body>
 </html>"""
 
-    # Detect canvas tag — if present, treat as canvas content
-    if not is_svg and "<canvas" in content.lower():
+    if content.lower().lstrip().startswith("<!doctype") or content.lower().lstrip().startswith("<html"):
         canvas_html = content
     else:
         canvas_html = _GRAPHICS_SHELL.replace("__CANVAS_CONTENT__", content).replace("__FILENAME__", filename)

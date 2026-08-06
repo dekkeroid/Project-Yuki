@@ -425,11 +425,30 @@ app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.1-beta", life
 # Setup CORS — restrict to localhost and LAN origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$",
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+import traceback
+from fastapi.responses import JSONResponse
+from fastapi import Request
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"[API Error] Unhandled Exception on {request.method} {request.url.path}: {exc}")
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "error": type(exc).__name__},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 # Initialize singletons for the session
 memory_manager = MemoryManager()
@@ -1023,7 +1042,7 @@ def get_settings():
     for k_name in ["llm_api_key", "llm_simple_api_key", "llm_coder_api_key",
                    "stt_cloud_api_key", "tts_cloud_api_key"]:
         if k_name in settings_dict and settings_dict[k_name]:
-            settings_dict[k_name] = mask_api_key(decrypt_api_key(settings_dict[k_name]))
+            settings_dict[k_name] = mask_api_key(settings_dict[k_name])
     settings_dict.update({
         "llm_model": config.LLM_MODEL,
         "character_name": config.CHARACTER_NAME,
@@ -2636,11 +2655,10 @@ def get_profile(decrypt_keys: bool = False):
     for key_name in ["llm_api_key", "llm_coder_api_key", "llm_simple_api_key", "llm_complex_api_key"]:
         raw = settings.get(key_name, "")
         if raw:
-            decrypted = decrypt_api_key(raw)
             if decrypt_keys:
-                settings[key_name] = decrypted
+                settings[key_name] = decrypt_api_key(raw)
             else:
-                settings[key_name] = mask_api_key(decrypted)
+                settings[key_name] = mask_api_key(raw)
         else:
             settings[key_name] = ""
 
@@ -3843,16 +3861,18 @@ async def serve_html_file(path: str = ""):
     print(f"[Canvas] Serving external HTML: {clean}")
     return FileResponse(clean, media_type="text/html")
 
-@app.get("/api/canvas/{filename}")
+@app.get("/api/canvas/{filename:path}")
 async def serve_canvas_file(filename: str):
-    """Serve canvas HTML files from yuki_attachment/canvas/."""
+    """Serve canvas HTML files and relative static assets from yuki_attachment/canvas/."""
     import os
+    import mimetypes
     from starlette.responses import FileResponse
     from app.config import BASE_DIR
-    file_path = os.path.join(str(BASE_DIR), "yuki_attachment", "canvas", filename)
+    file_path = os.path.normpath(os.path.join(str(BASE_DIR), "yuki_attachment", "canvas", filename))
     print(f"[Canvas] Serving {filename} (exists={os.path.isfile(file_path)})")
     if os.path.isfile(file_path):
-        return FileResponse(file_path, media_type="text/html")
+        media_type, _ = mimetypes.guess_type(file_path)
+        return FileResponse(file_path, media_type=media_type or "text/html")
     raise HTTPException(status_code=404, detail="Canvas file not found")
 
 
