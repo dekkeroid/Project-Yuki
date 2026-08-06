@@ -1339,20 +1339,44 @@ const App = () => {
     }
   }, []);
 
-  // Alt+S hotkey: show Yuki, open chat panel, and focus the chat input
+  // Alt+S hotkey: open/toggle floating chat overlay window and instantly focus chat input
   useEffect(() => {
-    if (window.electronAPI && window.electronAPI.onTriggerListening) {
-      const unsub = window.electronAPI.onTriggerListening(() => {
-        // Open the chat panel (works for both compact overlay and desktop mode)
-        setIsPanelOpen(true);
-        setIsChatOpen(true);
-        // Give React a tick to render the input before focusing
-        setTimeout(() => {
-          desktopInputRef.current?.focus();
-        }, 200);
+    const handleToggleChat = () => {
+      setIsChatOpen((prev) => {
+        const nextState = !prev;
+        if (nextState) {
+          setIsPanelOpen(true);
+          const focusInput = () => {
+            window.dispatchEvent(new CustomEvent('yuki-focus-chat-input'));
+            if (desktopInputRef.current) {
+              desktopInputRef.current.focus();
+            }
+          };
+          requestAnimationFrame(focusInput);
+          setTimeout(focusInput, 50);
+          setTimeout(focusInput, 150);
+        }
+        return nextState;
       });
-      return unsub;
+    };
+
+    let unsub = null;
+    if (window.electronAPI && window.electronAPI.onTriggerListening) {
+      unsub = window.electronAPI.onTriggerListening(handleToggleChat);
     }
+
+    const handleWebKeyDown = (e) => {
+      if (e.altKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        handleToggleChat();
+      }
+    };
+    window.addEventListener('keydown', handleWebKeyDown);
+
+    return () => {
+      if (unsub) unsub();
+      window.removeEventListener('keydown', handleWebKeyDown);
+    };
   }, []);
 
   // AFK Welcoming Detector hook

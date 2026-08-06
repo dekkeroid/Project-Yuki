@@ -1528,9 +1528,10 @@ app.whenReady().then(async () => {
   startElectronMemoryOptimizer();
 
   globalShortcut.register('Alt+S', () => {
-    console.log('[Electron] Alt+S — recalling Yuki.');
+    console.log('[Electron] Alt+S — toggling chat overlay window & instant input focus.');
     showYuki();
     if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
       mainWindow.webContents.send('trigger-listening');
