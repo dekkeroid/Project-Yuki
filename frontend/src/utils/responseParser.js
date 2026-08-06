@@ -1,6 +1,17 @@
 import { LLM_ANIMATION_MAP, LLM_EMOTION_MAP } from '../animationsRegistry';
 
 /**
+ * Strips animation tags (<yuki_anim:name/>) and emotion tags (<yuki_emotion:name/>)
+ * from text for UI bubbles and TTS output.
+ */
+export function stripAnimationTags(rawText) {
+  if (!rawText || typeof rawText !== 'string') return rawText || '';
+  const animRegex = /<(?:yuki_)?anim:([a-zA-Z0-9_\-]+)\/?>|\[anim:\s*([a-zA-Z0-9_\-]+)\]/gi;
+  const emotionRegex = /<(?:yuki_)?emotion:([a-zA-Z0-9_\-]+)\/?>|\[emotion:\s*([a-zA-Z0-9_\-]+)\]/gi;
+  return rawText.replace(animRegex, '').replace(emotionRegex, '').replace(/[ \t]{2,}/g, ' ').trim();
+}
+
+/**
  * Parses and strips unique animation tags (<yuki_anim:name/>) and emotion tags (<yuki_emotion:name/>)
  * from LLM text streams in real time.
  * 
@@ -47,3 +58,4 @@ export function parseResponseTags(rawText, callbacks = {}) {
 
   return { cleanText, animations, emotions };
 }
+
