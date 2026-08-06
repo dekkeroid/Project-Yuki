@@ -2439,8 +2439,8 @@ const AvatarViewer = ({
               } else if (idleAnimState === 'greeting_wave') {
                 const t = idleAnimProgress / idleAnimDuration;
                 const easeVal = Math.sin(t * Math.PI);
-                awakeElbowZ = (-1.4 * easeVal) * zMult;
-                awakeElbowY = (rightElbowOffsetY + 0.2 * easeVal) * yMult;
+                awakeElbowZ = (1.4 * easeVal) * zMult;
+                awakeElbowY = (rightElbowOffsetY + 1.6 * easeVal) * yMult;
               } else if (idleAnimState === 'pouting') {
                 const t = idleAnimProgress / idleAnimDuration;
                 const easeVal = Math.sin(t * Math.PI);
@@ -2469,12 +2469,12 @@ const AvatarViewer = ({
               let awakeZ = 0;
               if (idleAnimState === 'greeting_wave') {
                 const t = idleAnimProgress / idleAnimDuration;
-                if (t > 0.15 && t < 0.85) {
+                if (t > 0.26 && t < 0.73) {
                   // Wave hand with smooth ease-in/out multiplier
                   const waveEase = Math.sin((t - 0.15) / 0.7 * Math.PI);
-                  awakeZ = Math.sin(time * 15.0) * 0.25 * waveEase * zMult;
+                  awakeY = Math.sin(time * 17) * 0.25 * waveEase * yMult;
                 }
-                awakeY = -Math.sin(time * 1.4) * 0.004 * yMult;
+                //awakeY = -Math.sin(time * 1.4) * 0.004 * yMult;
               } else {
                 awakeY = -Math.sin(time * 1.4) * 0.004 * yMult;
               }

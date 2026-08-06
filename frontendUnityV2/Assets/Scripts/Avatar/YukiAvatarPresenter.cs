@@ -531,13 +531,13 @@ namespace Yuki.UnityFrontend.Avatar
         {
             SetExpression("happy");
             float elapsed = 0f;
-            float duration = 2f;
+            float duration = 1.33f;
 
             while (elapsed < duration)
             {
                 if (headBone != null)
                 {
-                    float wave = Mathf.Sin(elapsed * 4f) * 15f;
+                    float wave = Mathf.Sin(elapsed * 6f) * 15f;
                     headBone.localRotation = initialHeadRotation * Quaternion.Euler(0f, 0f, wave);
                 }
                 elapsed += Time.deltaTime;

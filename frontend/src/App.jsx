@@ -950,7 +950,8 @@ const App = () => {
       }
     } else if (msg.type === 'session_switched' || msg.type === 'chat_update') {
       if (msg.messages && Array.isArray(msg.messages)) {
-        setMessages(msg.messages);
+        const cleanMsgs = msg.messages.filter(m => !(m.role === 'user' && typeof m.content === 'string' && m.content.includes('[SYSTEM EVENT:')));
+        setMessages(cleanMsgs);
       }
     } else if (msg.type === 'speech') {
       setTtsStreamActive(true);
