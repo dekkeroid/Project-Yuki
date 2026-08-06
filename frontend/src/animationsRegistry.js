@@ -117,7 +117,7 @@ export const ANIMATIONS = [
     name: 'nodding',
     alias: 'nod',
     duration: 2.5,
-    excludeFromRandomIdle: false,
+    excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:nod/>',
     commands: [
       { cmd: '/ani-nod', description: 'Nod head in agreement' },
@@ -130,7 +130,7 @@ export const ANIMATIONS = [
     name: 'head_shake',
     alias: 'shake',
     duration: 2.2,
-    excludeFromRandomIdle: false,
+    excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:shake/>',
     commands: [
       { cmd: '/ani-shake', description: 'Shake head side to side' },
@@ -157,7 +157,7 @@ export const ANIMATIONS = [
     name: 'shy_fidget',
     alias: 'shy',
     duration: 3.5,
-    excludeFromRandomIdle: false,
+    excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:shy/>',
     commands: [
       { cmd: '/ani-shy', description: 'Shy fidgeting & blushing' },
@@ -170,7 +170,7 @@ export const ANIMATIONS = [
     name: 'giggle_cover',
     alias: 'giggle',
     duration: 2.8,
-    excludeFromRandomIdle: false,
+    excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:giggle/>',
     commands: [
       { cmd: '/ani-giggle', description: 'Cover mouth while giggling' },
@@ -222,7 +222,7 @@ export const ANIMATIONS = [
     name: 'inspect_screen',
     alias: 'inspect',
     duration: 4.0,
-    excludeFromRandomIdle: false,
+    excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:inspect/>',
     commands: [
       { cmd: '/ani-inspect', description: 'Lean in close to inspect screen' },

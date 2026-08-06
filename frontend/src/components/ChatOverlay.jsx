@@ -59,6 +59,11 @@ export const parseMessageThought = (rawContent) => {
   // Strip raw tool badge lines, args blocks, & output blocks from clean text content
   cleanContent = cleanContent.replace(/🛠️\s*\*{0,2}\[[^\]]+\]\*{0,2}(?:\s*```tool_args\n[\s\S]*?\n```)?(?:\s*```(?:tool_output|terminal_stream)\n[\s\S]*?\n```)?\n?/g, '').trim();
 
+  // 3. Strip animation and emotion tags (<yuki_anim:.../>, <yuki_emotion:.../>)
+  const animTagRegex = /<(?:yuki_)?anim:([a-zA-Z0-9_\-]+)\/?>|\[anim:\s*([a-zA-Z0-9_\-]+)\]/gi;
+  const emotionTagRegex = /<(?:yuki_)?emotion:([a-zA-Z0-9_\-]+)\/?>|\[emotion:\s*([a-zA-Z0-9_\-]+)\]/gi;
+  cleanContent = cleanContent.replace(animTagRegex, '').replace(emotionTagRegex, '').replace(/[ \t]{2,}/g, ' ').trim();
+
   return { thoughts, toolBadges, cleanContent };
 };
 

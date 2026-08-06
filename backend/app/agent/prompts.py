@@ -1,6 +1,25 @@
 import re
 import app.config
 
+ANIMATION_TAG_REGEX = re.compile(r'<(?:yuki_)?anim:([a-zA-Z0-9_\-]+)/?>|\[anim:\s*([a-zA-Z0-9_\-]+)\]', re.IGNORECASE)
+EMOTION_TAG_REGEX = re.compile(r'<(?:yuki_)?emotion:([a-zA-Z0-9_\-]+)/?>|\[emotion:\s*([a-zA-Z0-9_\-]+)\]', re.IGNORECASE)
+
+def log_triggered_backend_tags(text: str):
+    """
+    Scans LLM response text for animation and emotion tags and logs them in backend terminal.
+    Returns (animations, emotions).
+    """
+    if not text:
+        return [], []
+    anims = [m.group(1) or m.group(2) for m in ANIMATION_TAG_REGEX.finditer(text) if (m.group(1) or m.group(2))]
+    emotions = [m.group(1) or m.group(2) for m in EMOTION_TAG_REGEX.finditer(text) if (m.group(1) or m.group(2))]
+    
+    if anims:
+        print(f"[Backend Tag Logger] 🎬 LLM triggered animation tag(s): {', '.join(anims)}")
+    if emotions:
+        print(f"[Backend Tag Logger] 😊 LLM triggered emotion tag(s): {', '.join(emotions)}")
+    return anims, emotions
+
 
 def _scrub_blocked_tools(text: str, excluded=None, drop_lines: bool = True) -> str:
     """Remove references to excluded tools from prompt prose.

@@ -14,7 +14,7 @@ const ELECTRON_WINDOW_HEIGHT = 605;
 const YUKI_SCALE_REDUCER = 0.9; // Reduce avatar size relative to window
 const windowWidthExtra = 0;
 
-  // Yuki was here - feeling sassy and ready for snacks
+// Yuki was here - feeling sassy and ready for snacks
 const AvatarViewer = ({
   audioLevel,
   isThinking,
@@ -300,7 +300,7 @@ const AvatarViewer = ({
     if (!obj) return;
     obj.traverse((child) => {
       if (child.geometry) {
-        try { child.geometry.dispose(); } catch (_) {}
+        try { child.geometry.dispose(); } catch (_) { }
         child.geometry = null;
       }
       if (child.material) {
@@ -309,15 +309,15 @@ const AvatarViewer = ({
           for (const key of Object.keys(mat)) {
             const value = mat[key];
             if (value && typeof value.dispose === 'function') {
-              try { value.dispose(); } catch (_) {}
+              try { value.dispose(); } catch (_) { }
             }
           }
-          try { mat.dispose(); } catch (_) {}
+          try { mat.dispose(); } catch (_) { }
         }
         child.material = null;
       }
       if (child.skeleton) {
-        try { child.skeleton.dispose(); } catch (_) {}
+        try { child.skeleton.dispose(); } catch (_) { }
         child.skeleton = null;
       }
     });
@@ -402,7 +402,7 @@ const AvatarViewer = ({
       }
 
       disposeVrm(oldVrm);
-      
+
       // Clear Three.js texture/file caches
       THREE.Cache.clear();
 
@@ -412,7 +412,7 @@ const AvatarViewer = ({
           try {
             window.gc();
             console.log("[AvatarViewer] Garbage collection executed to flush old model memory.");
-          } catch (_) {}
+          } catch (_) { }
         }, 50);
       }
     }
@@ -555,7 +555,7 @@ const AvatarViewer = ({
             try {
               window.gc();
               console.log("[AvatarViewer] Post-load garbage collection executed.");
-            } catch (_) {}
+            } catch (_) { }
           }, 3000);
         }
 
@@ -569,7 +569,7 @@ const AvatarViewer = ({
               console.error("[AvatarViewer] Memory optimization error:", err);
             }
           };
-          
+
           // Double-tap the RAM optimization to ensure late shader compilations are also cleared from System RAM
           setTimeout(optimizeRAM, 2000);
           setTimeout(optimizeRAM, 6000);
@@ -651,7 +651,7 @@ const AvatarViewer = ({
       },
       set cameraTracking(val) {
         cameraTrackingRef.current = !!val;
-        try { localStorage.setItem('yuki-camera-tracking', String(!!val)); } catch {}
+        try { localStorage.setItem('yuki-camera-tracking', String(!!val)); } catch { }
         console.log(`[Yuki Debug] cameraTracking set to ${val}`);
       },
       dragPhysics: true,
@@ -2300,7 +2300,7 @@ const AvatarViewer = ({
                   awakeShoulderX = (0.85 * easeVal + 0.15 * (1 - easeVal)) * xMult;
                   awakeShoulderY = (0.5 * easeVal - 0.08 * (1 - easeVal)) * yMult;
                   awakeShoulderZ = (-0.55 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                  rightElbowOffsetY = -0.85 * easeVal;
+                  rightElbowOffsetY = 1.6 * easeVal;
                 } else if (idleAnimState === 'giggle_cover') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
