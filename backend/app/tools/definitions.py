@@ -472,6 +472,56 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
+                "name": "manage_yuki_settings",
+                "description": "Programmatically view, update, or reset Yuki runtime app settings (no_llm_mode, llm_mode, tts_voice, tts_volume, blocked_tools, always_included_tools, endpoint_strategy, etc.).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["get_settings", "update_setting", "reset_setting"],
+                            "description": "Action to perform: 'get_settings' to view settings, 'update_setting' to set a setting key-value pair, or 'reset_setting' to reset a setting key."
+                        },
+                        "key": {
+                            "type": "string",
+                            "description": "Setting key name (e.g. 'no_llm_mode', 'llm_mode', 'tts_voice', 'tts_volume', 'blocked_tools', etc.)."
+                        },
+                        "value": {
+                            "description": "New value to assign when updating a setting."
+                        }
+                    },
+                    "required": ["action"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_manage_yuki_settings",
+                "description": "Programmatically view, update, or reset Yuki runtime app settings (no_llm_mode, llm_mode, tts_voice, tts_volume, blocked_tools, always_included_tools, endpoint_strategy, etc.).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["get_settings", "update_setting", "reset_setting"],
+                            "description": "Action to perform: 'get_settings' to view settings, 'update_setting' to set a setting key-value pair, or 'reset_setting' to reset a setting key."
+                        },
+                        "key": {
+                            "type": "string",
+                            "description": "Setting key name (e.g. 'no_llm_mode', 'llm_mode', 'tts_voice', 'tts_volume', 'blocked_tools', etc.)."
+                        },
+                        "value": {
+                            "description": "New value to assign when updating a setting."
+                        }
+                    },
+                    "required": ["action"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "jarvis_close_app",
                 "description": "Close or terminate a running desktop application by name.",
                 "parameters": {
