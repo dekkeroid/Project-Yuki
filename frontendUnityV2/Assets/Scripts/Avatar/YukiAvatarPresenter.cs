@@ -479,6 +479,48 @@ namespace Yuki.UnityFrontend.Avatar
                 case "knock":
                     yield return PlayKnockAnimation();
                     break;
+                case "nod":
+                case "nodding":
+                    yield return PlayNodAnimation();
+                    break;
+                case "shake":
+                case "head_shake":
+                    yield return PlayHeadShakeAnimation();
+                    break;
+                case "salute":
+                    yield return PlaySaluteAnimation();
+                    break;
+                case "shy":
+                case "shy_fidget":
+                    yield return PlayShyAnimation();
+                    break;
+                case "giggle":
+                case "giggle_cover":
+                    yield return PlayGiggleAnimation();
+                    break;
+                case "facepalm":
+                    yield return PlayFacepalmAnimation();
+                    break;
+                case "cheer":
+                case "cheering":
+                    yield return PlayCheerAnimation();
+                    break;
+                case "point":
+                case "pointing":
+                    yield return PlayPointAnimation();
+                    break;
+                case "inspect":
+                case "inspect_screen":
+                    yield return PlayInspectAnimation();
+                    break;
+                case "typing":
+                case "typing_air":
+                    yield return PlayTypingAnimation();
+                    break;
+                case "stretch":
+                case "stretching":
+                    yield return PlayStretchAnimation();
+                    break;
             }
 
             activeAnimationCoroutine = null;
@@ -643,6 +685,281 @@ namespace Yuki.UnityFrontend.Avatar
                 yield return null;
             }
 
+            if (headBone != null) headBone.localRotation = initialHeadRotation;
+        }
+
+        private IEnumerator PlayNodAnimation()
+        {
+            SetExpression("happy");
+            float elapsed = 0f;
+            float duration = 2.5f;
+
+            while (elapsed < duration)
+            {
+                if (headBone != null)
+                {
+                    float nod = Mathf.Sin(elapsed * 12f) * 10f;
+                    headBone.localRotation = initialHeadRotation * Quaternion.Euler(nod, 0f, 0f);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (headBone != null) headBone.localRotation = initialHeadRotation;
+        }
+
+        private IEnumerator PlayHeadShakeAnimation()
+        {
+            SetExpression("surprised");
+            float elapsed = 0f;
+            float duration = 2.2f;
+
+            while (elapsed < duration)
+            {
+                if (headBone != null)
+                {
+                    float shake = Mathf.Sin(elapsed * 14f) * 15f;
+                    headBone.localRotation = initialHeadRotation * Quaternion.Euler(0f, shake, 0f);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (headBone != null) headBone.localRotation = initialHeadRotation;
+        }
+
+        private IEnumerator PlaySaluteAnimation()
+        {
+            SetExpression("happy");
+            float elapsed = 0f;
+            float duration = 3.0f;
+
+            while (elapsed < duration)
+            {
+                if (rightUpperArm != null)
+                {
+                    float t = elapsed / duration;
+                    float easeVal = Mathf.Sin(t * Mathf.PI);
+                    rightUpperArm.localRotation = Quaternion.Euler(-60f * easeVal, 30f * easeVal, -40f * easeVal);
+                }
+                if (headBone != null)
+                {
+                    float tilt = Mathf.Sin(elapsed * 2f) * 3f;
+                    headBone.localRotation = initialHeadRotation * Quaternion.Euler(0f, 0f, tilt);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (rightUpperArm != null) rightUpperArm.localRotation = Quaternion.identity;
+            if (headBone != null) headBone.localRotation = initialHeadRotation;
+        }
+
+        private IEnumerator PlayShyAnimation()
+        {
+            SetExpression("happy");
+            float elapsed = 0f;
+            float duration = 3.5f;
+
+            while (elapsed < duration)
+            {
+                float t = elapsed / duration;
+                float easeVal = Mathf.Sin(t * Mathf.PI);
+                if (headBone != null)
+                {
+                    float tilt = Mathf.Sin(elapsed * 4f) * 4f;
+                    headBone.localRotation = initialHeadRotation * Quaternion.Euler(8f * easeVal, tilt, 5f * easeVal);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (headBone != null) headBone.localRotation = initialHeadRotation;
+        }
+
+        private IEnumerator PlayGiggleAnimation()
+        {
+            SetExpression("happy");
+            float elapsed = 0f;
+            float duration = 2.8f;
+
+            while (elapsed < duration)
+            {
+                float t = elapsed / duration;
+                float easeVal = Mathf.Sin(t * Mathf.PI);
+                if (rightUpperArm != null)
+                {
+                    rightUpperArm.localRotation = Quaternion.Euler(-55f * easeVal, 25f * easeVal, -30f * easeVal);
+                }
+                if (headBone != null)
+                {
+                    float nod = Mathf.Sin(elapsed * 18f) * 4f;
+                    headBone.localRotation = initialHeadRotation * Quaternion.Euler(nod, -5f * easeVal, -5f * easeVal);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (rightUpperArm != null) rightUpperArm.localRotation = Quaternion.identity;
+            if (headBone != null) headBone.localRotation = initialHeadRotation;
+        }
+
+        private IEnumerator PlayFacepalmAnimation()
+        {
+            SetExpression("sad");
+            float elapsed = 0f;
+            float duration = 3.0f;
+
+            while (elapsed < duration)
+            {
+                float t = elapsed / duration;
+                float easeVal = Mathf.Sin(t * Mathf.PI);
+                if (rightUpperArm != null)
+                {
+                    rightUpperArm.localRotation = Quaternion.Euler(-65f * easeVal, 20f * easeVal, -35f * easeVal);
+                }
+                if (headBone != null)
+                {
+                    headBone.localRotation = initialHeadRotation * Quaternion.Euler(12f * easeVal, 0f, 0f);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (rightUpperArm != null) rightUpperArm.localRotation = Quaternion.identity;
+            if (headBone != null) headBone.localRotation = initialHeadRotation;
+        }
+
+        private IEnumerator PlayCheerAnimation()
+        {
+            SetExpression("happy");
+            float elapsed = 0f;
+            float duration = 3.2f;
+
+            while (elapsed < duration)
+            {
+                float t = elapsed / duration;
+                float easeVal = Mathf.Sin(t * Mathf.PI);
+                if (leftUpperArm != null)
+                {
+                    leftUpperArm.localRotation = Quaternion.Euler(-50f * easeVal, -10f * easeVal, 20f * easeVal);
+                }
+                if (rightUpperArm != null)
+                {
+                    rightUpperArm.localRotation = Quaternion.Euler(-50f * easeVal, 10f * easeVal, -20f * easeVal);
+                }
+                if (headBone != null)
+                {
+                    float bounce = Mathf.Sin(elapsed * 15f) * 5f;
+                    headBone.localRotation = initialHeadRotation * Quaternion.Euler(-bounce, 0f, 0f);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (leftUpperArm != null) leftUpperArm.localRotation = Quaternion.identity;
+            if (rightUpperArm != null) rightUpperArm.localRotation = Quaternion.identity;
+            if (headBone != null) headBone.localRotation = initialHeadRotation;
+        }
+
+        private IEnumerator PlayPointAnimation()
+        {
+            SetExpression("relaxed");
+            float elapsed = 0f;
+            float duration = 2.8f;
+
+            while (elapsed < duration)
+            {
+                float t = elapsed / duration;
+                float easeVal = Mathf.Sin(t * Mathf.PI);
+                if (rightUpperArm != null)
+                {
+                    rightUpperArm.localRotation = Quaternion.Euler(-45f * easeVal, 10f * easeVal, -15f * easeVal);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (rightUpperArm != null) rightUpperArm.localRotation = Quaternion.identity;
+        }
+
+        private IEnumerator PlayInspectAnimation()
+        {
+            SetExpression("surprised");
+            float elapsed = 0f;
+            float duration = 4.0f;
+
+            while (elapsed < duration)
+            {
+                float t = elapsed / duration;
+                float easeVal = Mathf.Sin(t * Mathf.PI);
+                if (headBone != null)
+                {
+                    headBone.localRotation = initialHeadRotation * Quaternion.Euler(-8f * easeVal, 0f, 0f);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (headBone != null) headBone.localRotation = initialHeadRotation;
+        }
+
+        private IEnumerator PlayTypingAnimation()
+        {
+            SetExpression("relaxed");
+            float elapsed = 0f;
+            float duration = 3.5f;
+
+            while (elapsed < duration)
+            {
+                float t = elapsed / duration;
+                float easeVal = Mathf.Sin(t * Mathf.PI);
+                if (leftUpperArm != null)
+                {
+                    float tap = Mathf.Sin(elapsed * 20f) * 3f;
+                    leftUpperArm.localRotation = Quaternion.Euler(-30f * easeVal + tap, -10f * easeVal, 15f * easeVal);
+                }
+                if (rightUpperArm != null)
+                {
+                    float tap = Mathf.Cos(elapsed * 20f) * 3f;
+                    rightUpperArm.localRotation = Quaternion.Euler(-30f * easeVal + tap, 10f * easeVal, -15f * easeVal);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (leftUpperArm != null) leftUpperArm.localRotation = Quaternion.identity;
+            if (rightUpperArm != null) rightUpperArm.localRotation = Quaternion.identity;
+        }
+
+        private IEnumerator PlayStretchAnimation()
+        {
+            SetExpression("relaxed");
+            float elapsed = 0f;
+            float duration = 4.2f;
+
+            while (elapsed < duration)
+            {
+                float t = elapsed / duration;
+                float easeVal = Mathf.Sin(t * Mathf.PI);
+                if (leftUpperArm != null)
+                {
+                    leftUpperArm.localRotation = Quaternion.Euler(-70f * easeVal, -15f * easeVal, 15f * easeVal);
+                }
+                if (rightUpperArm != null)
+                {
+                    rightUpperArm.localRotation = Quaternion.Euler(-70f * easeVal, 15f * easeVal, -15f * easeVal);
+                }
+                if (headBone != null)
+                {
+                    headBone.localRotation = initialHeadRotation * Quaternion.Euler(-10f * easeVal, 0f, 0f);
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (leftUpperArm != null) leftUpperArm.localRotation = Quaternion.identity;
+            if (rightUpperArm != null) rightUpperArm.localRotation = Quaternion.identity;
             if (headBone != null) headBone.localRotation = initialHeadRotation;
         }
 
