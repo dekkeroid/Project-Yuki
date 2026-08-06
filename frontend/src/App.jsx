@@ -97,15 +97,14 @@ const App = () => {
       const saved = localStorage.getItem('yuki-disabled-animations');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (!parsed.includes('greeting_wave')) {
-          parsed.push('greeting_wave');
-          localStorage.setItem('yuki-disabled-animations', JSON.stringify(parsed));
-        }
-        return parsed;
+        // Clean up legacy hardcoded 'greeting_wave' from disabled array if present
+        const filtered = parsed.filter(a => a !== 'greeting_wave');
+        localStorage.setItem('yuki-disabled-animations', JSON.stringify(filtered));
+        return filtered;
       }
-      return ['greeting_wave'];
+      return [];
     } catch {
-      return ['greeting_wave'];
+      return [];
     }
   });
 
@@ -1380,6 +1379,31 @@ const App = () => {
       window.removeEventListener('keydown', handleWebKeyDown);
     };
   }, []);
+
+  // On startup (after 3.5 seconds), trigger LLM mood-driven greeting (non-coder mode)
+  const hasSentStartupGreetingRef = useRef(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (hasSentStartupGreetingRef.current) return;
+      hasSentStartupGreetingRef.current = true;
+
+      // Check if WebSocket is connected & LLM is enabled (non-coder companion mode)
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && !profile?.settings?.no_llm_mode) {
+        console.log('[Startup] Requesting mood-driven LLM startup greeting...');
+        setTtsStreamActive(true);
+        setIsThinking(true);
+        const greetingPrompt = "[SYSTEM EVENT: User just opened Project Yuki. Give a brief, warm 1-sentence greeting (under 12 words) reflecting your current mood state. Include <yuki_anim:wave/> or a mood emotion tag at the start.]";
+        socketRef.current.send(JSON.stringify({ type: 'chat', message: greetingPrompt, is_startup_greeting: true }));
+      } else {
+        // Fallback offline TTS voice greeting + wave motion
+        setCustomAnimation('greeting_wave');
+        setTimeout(() => setCustomAnimation(''), 100);
+        const fallbackMsg = "Welcome back, Master! I'm ready to help you today.";
+        speakSystemMessage(fallbackMsg, 'happy');
+      }
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [profile?.settings?.no_llm_mode]);
 
   // AFK Welcoming Detector hook
   const isAfkRef = useRef(false);

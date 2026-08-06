@@ -10,7 +10,7 @@ import time
 import uuid
 from typing import Dict, Any, List, Tuple, Optional
 from app import config
-from app.agent.prompts import get_system_prompt, get_simple_system_prompt, get_advanced_jarvis_system_prompt, get_coding_agent_system_prompt
+from app.agent.prompts import get_system_prompt, get_simple_system_prompt, get_advanced_jarvis_system_prompt, get_coding_agent_system_prompt, log_triggered_backend_tags
 from app.agent.llm_backend import get_backend, reset_backend
 from app.memory.local_mem import MemoryManager
 from app.memory.mood_engine import MoodTagScrubber
@@ -1836,6 +1836,7 @@ class AgentExecutor:
             current_messages = self._repair_transcript(current_messages)
             llm_response, tool_calls, backend_used = self._query_llm(current_messages, user_message=user_message, use_tools=use_tools)
             print(f"\n[LLM Response (Iteration {iteration}, Backend: {backend_used})]:\n{llm_response}\n")
+            log_triggered_backend_tags(llm_response)
             
             if tool_calls:
                 # Normalize missing tool_call ids BEFORE appending the assistant message
@@ -2783,6 +2784,7 @@ class AgentExecutor:
                 if not first_token:
                     print()
                 full_llm_response = accumulated_response.strip()
+                log_triggered_backend_tags(full_llm_response)
 
                 # Emit the buffered narration, tagged so consumers can separate
                 # intermediate thinking text (before tool calls) from the final reply.
