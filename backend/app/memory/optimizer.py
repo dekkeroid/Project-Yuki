@@ -142,6 +142,17 @@ def _select_trim_candidates(procs, now, foreground_pid):
 def _empty_working_set(pid: int) -> bool:
     """Call EmptyWorkingSet on a process by PID. Returns True on success."""
     try:
+        # Defense-in-depth safety guard: never trim safelisted system processes or active foreground PID
+        try:
+            pname = psutil.Process(pid).name()
+            if pname and pname.lower() in _NEVER_TRIM_LOWER:
+                return False
+            fg_pid = _foreground_pid()
+            if fg_pid is not None and pid == fg_pid:
+                return False
+        except Exception:
+            pass
+
         handle = ctypes.windll.kernel32.OpenProcess(
             PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA,
             False,
