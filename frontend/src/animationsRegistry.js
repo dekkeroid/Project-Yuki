@@ -2,7 +2,7 @@ export const ANIMATIONS = [
   {
     name: 'greeting_wave',
     alias: 'wave',
-    duration: 3.5,
+    duration: 1.9,
     excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:wave/>',
     commands: [

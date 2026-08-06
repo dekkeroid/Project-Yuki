@@ -3377,11 +3377,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     with own_process_busy_guard():
                         try:
                             user_msg = payload_data.get("message", "").strip()
+                            is_startup_greeting = bool(payload_data.get("is_startup_greeting") or "[SYSTEM EVENT:" in user_msg)
                             stt_time_ms = payload_data.get("stt_time_ms")
                             if not user_msg:
                                 return
                             turn_id = None
-                            print(f"[WebSocket] Received chat message: '{user_msg}'")
+                            print(f"[WebSocket] Received chat message: '{user_msg}' (startup={is_startup_greeting})")
                             
                             # 1. Send status indicating Yuki is thinking
                             await websocket.send_json({"type": "status", "status": "thinking"})
@@ -3534,12 +3535,13 @@ async def websocket_endpoint(websocket: WebSocket):
                                             overrides["from_voice"] = True
                                         attachments = payload_data.get("attachments") or []
                                         gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides, attachments=attachments)
-                                        # First crash-recovery checkpoint: prior history + the new user message.
-                                        try:
-                                            from app.memory import db as memory_db
-                                            await asyncio.to_thread(memory_db.save_incomplete_turn, turn_id, list(global_chat_history) + [{"role": "user", "content": user_msg}])
-                                        except Exception as _cp_err:
-                                            print(f"[Recovery] Initial checkpoint failed: {_cp_err}")
+                                        # First crash-recovery checkpoint: prior history + the new user message (unless startup prompt).
+                                        if not is_startup_greeting:
+                                            try:
+                                                from app.memory import db as memory_db
+                                                await asyncio.to_thread(memory_db.save_incomplete_turn, turn_id, list(global_chat_history) + [{"role": "user", "content": user_msg}])
+                                            except Exception as _cp_err:
+                                                print(f"[Recovery] Initial checkpoint failed: {_cp_err}")
                                     try:
                                         event = await gen.__anext__()
                                         while True:
@@ -3644,7 +3646,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                                         except Exception as _cp_err:
                                                             print(f"[Recovery] Checkpoint persist failed: {_cp_err}")
                                                 elif event_type == "final_history":
-                                                    global_chat_history = value
+                                                    if is_startup_greeting:
+                                                        # Filter out system event prompt from persistent history
+                                                        global_chat_history = [m for m in value if not (m.get("role") == "user" and "[SYSTEM EVENT:" in m.get("content", ""))]
+                                                    else:
+                                                        global_chat_history = value
                                                     await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
                                                     await broadcast_ws_event({
                                                         "type": "chat_update",
