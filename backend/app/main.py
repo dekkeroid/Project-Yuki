@@ -758,15 +758,41 @@ async def get_available_models(target: str = "complex"):
         _models_in_flight.pop(cache_key, None)
 
 
+def parse_vrm_version(file_path) -> int:
+    """Read GLTF header from VRM file to detect if VRM version is 1 or 0."""
+    import json
+    try:
+        if not file_path.exists():
+            return 0
+        with open(file_path, "rb") as f:
+            header = f.read(20)
+            if len(header) < 20 or header[0:4] != b"glTF":
+                return 0
+            chunk_len = int.from_bytes(header[12:16], byteorder="little")
+            chunk_type = header[16:20]
+            if chunk_type != b"JSON":
+                return 0
+            chunk_data = f.read(chunk_len)
+            gltf = json.loads(chunk_data.decode("utf-8", errors="ignore"))
+            exts = gltf.get("extensionsUsed", []) + list(gltf.get("extensions", {}).keys())
+            if any("VRMC_vrm" in str(e) for e in exts):
+                return 1
+            return 0
+    except Exception:
+        return 0
+
+
 @app.get("/api/models/vrm")
 def get_vrm_models():
     """
     Scans bundled (resources/models/) and custom (%APPDATA%/Yuki AI/custom_models/) VRM directories.
     """
     import os
+    import json
     from app.config import BASE_DIR
     from pathlib import Path
 
+    bundled_dir = None
     bundled_models = []
     custom_models = []
 
@@ -784,6 +810,7 @@ def get_vrm_models():
             except Exception:
                 pass
             if bundled_models:
+                bundled_dir = candidate
                 break
 
     # Custom: %APPDATA%/Yuki AI/custom_models/ (user uploads)
@@ -805,7 +832,20 @@ def get_vrm_models():
         all_models.remove("default.vrm")
         all_models = ["default.vrm"] + all_models
 
-    return {"models": all_models, "custom": custom_models}
+    versions = {}
+    for name in all_models:
+        file_path = None
+        if custom_dir.exists() and (custom_dir / name).exists():
+            file_path = custom_dir / name
+        elif bundled_dir and (bundled_dir / name).exists():
+            file_path = bundled_dir / name
+
+        if file_path:
+            versions[name] = parse_vrm_version(file_path)
+        else:
+            versions[name] = 0
+
+    return {"models": all_models, "custom": custom_models, "versions": versions}
 
 
 @app.get("/api/models/vrm/files/{name}")
