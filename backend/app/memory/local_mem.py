@@ -158,9 +158,18 @@ class MemoryManager:
                 simple_key = data["settings"].get("llm_simple_api_key", config.LLM_SIMPLE_API_KEY)
                 coder_key = data["settings"].get("llm_coder_api_key", getattr(config, "LLM_CODER_API_KEY", ""))
                 from app.utils.security import decrypt_api_key
-                config.LLM_API_KEY = decrypt_api_key(raw_key) if (raw_key and ("enc_v1:" in str(raw_key) or "gAAAA" in str(raw_key))) else (raw_key or "")
-                config.LLM_SIMPLE_API_KEY = decrypt_api_key(simple_key) if (simple_key and ("enc_v1:" in str(simple_key) or "gAAAA" in str(simple_key))) else (simple_key or "")
-                config.LLM_CODER_API_KEY = decrypt_api_key(coder_key) if (coder_key and ("enc_v1:" in str(coder_key) or "gAAAA" in str(coder_key))) else (coder_key or "")
+                dec_raw = decrypt_api_key(raw_key) if (raw_key and ("enc_v1:" in str(raw_key) or "gAAAA" in str(raw_key))) else (raw_key or "")
+                dec_simple = decrypt_api_key(simple_key) if (simple_key and ("enc_v1:" in str(simple_key) or "gAAAA" in str(simple_key))) else (simple_key or "")
+                dec_coder = decrypt_api_key(coder_key) if (coder_key and ("enc_v1:" in str(coder_key) or "gAAAA" in str(coder_key))) else (coder_key or "")
+                config.LLM_API_KEY = dec_raw
+                config.LLM_SIMPLE_API_KEY = dec_simple
+                config.LLM_CODER_API_KEY = dec_coder
+                data["settings"]["llm_api_key"] = dec_raw
+                data["settings"]["llm_simple_api_key"] = dec_simple
+                data["settings"]["llm_coder_api_key"] = dec_coder
+                for ep in data["settings"].get("saved_custom_endpoints", []):
+                    if isinstance(ep, dict) and ep.get("api_key") and ("enc_v1:" in str(ep["api_key"]) or "gAAAA" in str(ep["api_key"])):
+                        ep["api_key"] = decrypt_api_key(ep["api_key"])
                 if "always_included_tools" in data["settings"]:
                     config.ALWAYS_INCLUDED_JARVIS_TOOLS = list(data["settings"].get("always_included_tools") or [])
                 if "blocked_tools" in data["settings"]:
