@@ -282,6 +282,7 @@ class AgentExecutor:
                 int(kwargs.get("volume_level") or kwargs.get("volume") or kwargs.get("level") or (list(kwargs.values())[0] if kwargs else 0))
             ),
             "update_user_fact": lambda **kwargs: self._execute_update_user_fact(**kwargs),
+            "manage_yuki_settings": lambda **kwargs: self._execute_manage_yuki_settings(**kwargs),
 
             "list_directory": lambda **kwargs: list_directory(
                 kwargs.get("directory_path") or kwargs.get("path") or kwargs.get("directory") or kwargs.get("folder")
@@ -413,6 +414,7 @@ class AgentExecutor:
             "jarvis_manage_timer_stopwatch_alarms": lambda **kwargs: self._execute_manage_timer_stopwatch_alarms(**kwargs),
             "jarvis_manage_scheduled_task": lambda **kwargs: self._execute_manage_scheduled_task(**kwargs),
             "jarvis_remember_user_fact": lambda **kwargs: self._execute_update_user_fact(**kwargs),
+            "jarvis_manage_yuki_settings": lambda **kwargs: self._execute_manage_yuki_settings(**kwargs),
             "jarvis_close_app": lambda **kwargs: manage_process(
                 "kill",
                 name=kwargs.get("app_name") or kwargs.get("name") or "",
@@ -648,6 +650,56 @@ class AgentExecutor:
             return self.memory.add_dislike(val)
         else:
             return self.memory.update_fact(kwargs.get("key"), val)
+
+    def _execute_manage_yuki_settings(self, **kwargs) -> str:
+        """Programmatically view, update, or reset runtime app settings."""
+        action = str(kwargs.get("action") or kwargs.get("cmd") or "").strip().lower()
+        key = str(kwargs.get("key") or kwargs.get("setting") or "").strip()
+        val = kwargs.get("value") if "value" in kwargs else kwargs.get("val")
+
+        memory_mgr = getattr(self, "memory", None)
+        if not memory_mgr:
+            from app.memory.local_mem import MemoryManager
+            memory_mgr = MemoryManager()
+
+        settings = memory_mgr.profile.get("settings", {})
+
+        if action in ("get_settings", "get", "view", "list", "read"):
+            if key:
+                if key not in settings:
+                    return f"Setting '{key}' is not explicitly configured (system defaults apply)."
+                v = settings[key]
+                if any(sec in key.lower() for sec in ("key", "token", "secret", "password")):
+                    v = "********" if v else ""
+                return f"Setting '{key}': {v}"
+            else:
+                import json
+                safe_settings = {}
+                for k, v in settings.items():
+                    if any(sec in k.lower() for sec in ("key", "token", "secret", "password")):
+                        safe_settings[k] = "********" if v else ""
+                    else:
+                        safe_settings[k] = v
+                return f"Current Yuki Settings:\n{json.dumps(safe_settings, indent=2)}"
+
+        elif action in ("update_setting", "update", "set", "write"):
+            if not key:
+                return "Error: 'key' parameter is required for update_setting."
+            if val is None:
+                return f"Error: 'value' parameter is required to update setting '{key}'."
+            res = memory_mgr.update_setting(key, val)
+            return res
+
+        elif action in ("reset_setting", "reset", "clear", "delete"):
+            if not key:
+                return "Error: 'key' parameter is required for reset_setting."
+            if "settings" in memory_mgr.profile and key in memory_mgr.profile["settings"]:
+                del memory_mgr.profile["settings"][key]
+                memory_mgr._save_profile()
+                return f"Setting '{key}' has been reset to default."
+            return f"Setting '{key}' was not custom-set."
+
+        return f"Error: Invalid setting action '{action}'. Supported actions: get_settings, update_setting, reset_setting."
 
     def _execute_manage_timer_stopwatch_alarms(self, **kwargs) -> str:
         from app.tools import time_manager
