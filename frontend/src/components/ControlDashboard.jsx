@@ -276,6 +276,43 @@ const ControlDashboard = ({
   const refreshTimerRef = useRef(null);
   const refreshSimpleTimerRef = useRef(null);
 
+  const [audioOutputDevices, setAudioOutputDevices] = useState([]);
+
+  useEffect(() => {
+    const fetchOutputDevices = async () => {
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const outputs = devices.filter(d => d.kind === 'audiooutput');
+          setAudioOutputDevices(outputs);
+        }
+      } catch (e) {
+        console.warn('Failed to enumerate audio output devices:', e);
+      }
+    };
+    fetchOutputDevices();
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      const listener = () => fetchOutputDevices();
+      navigator.mediaDevices.addEventListener('devicechange', listener);
+      return () => navigator.mediaDevices.removeEventListener('devicechange', listener);
+    }
+  }, []);
+
+  const handleAudioOutputDeviceChange = (deviceId) => {
+    const prevVolumes = settings.device_volumes || {};
+    const curDevice = settings.audio_output_device || 'default';
+    const updatedVolumes = { ...prevVolumes, [curDevice]: voiceVolume };
+
+    const restoredVolume = updatedVolumes[deviceId] !== undefined ? updatedVolumes[deviceId] : 1.0;
+    handleUpdateSetting({
+      audio_output_device: deviceId,
+      device_volumes: updatedVolumes
+    });
+    if (onVoiceVolumeChange) {
+      onVoiceVolumeChange(restoredVolume);
+    }
+  };
+
   const [isDevEnv, setIsDevEnv] = useState(false);
   // Alarm Tone Preview & Custom Audio State
   const [isPlayingToneTest, setIsPlayingToneTest] = useState(false);
@@ -5038,6 +5075,34 @@ const ControlDashboard = ({
                       </select>
                     </div>
 
+                    {/* Audio Output Device Select (Headphones vs Speakers) */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <span className="field-label">Audio Output Device</span>
+                      <select
+                        value={settings.audio_output_device || 'default'}
+                        onChange={(e) => handleAudioOutputDeviceChange(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '2px'
+                        }}
+                      >
+                        <option value="default" style={{ background: '#0b0813', color: 'white' }}>Default System Output</option>
+                        {audioOutputDevices.map(d => (
+                          <option key={d.deviceId} value={d.deviceId} style={{ background: '#0b0813', color: 'white' }}>
+                            🎧 {d.label || `Output Device (${d.deviceId.slice(0, 8)}…)`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     {/* Preload TTS */}
                     <div className="identity-field" style={{ marginTop: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -5082,6 +5147,44 @@ const ControlDashboard = ({
                     <div className="card-group-header">
                       <Mic className="w-4 h-4 text-violet-400" />
                       <span className="card-group-title">Speech Recognition (STT Input)</span>
+                    </div>
+
+                    {/* Preload STT (Whisper) */}
+                    <div className="identity-field" style={{ marginTop: '6px', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span className="field-label">Preload Whisper STT on Startup</span>
+                          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '1px' }}>
+                            Pre-warms Whisper model on boot for instant speech recognition.
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateSetting('stt_preload', !(settings.stt_preload ?? true))}
+                          style={{
+                            background: (settings.stt_preload ?? true) ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
+                            border: `1px solid ${(settings.stt_preload ?? true) ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                            borderRadius: '12px',
+                            width: '40px',
+                            height: '22px',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            flexShrink: 0
+                          }}
+                        >
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            background: (settings.stt_preload ?? true) ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                            position: 'absolute',
+                            top: '2px',
+                            left: (settings.stt_preload ?? true) ? '20px' : '2px',
+                            transition: 'all 0.2s ease'
+                          }} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Microphone Select */}

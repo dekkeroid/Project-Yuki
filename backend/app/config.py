@@ -159,6 +159,7 @@ TTS_VOICE = os.environ.get("TTS_VOICE", "af_sarah")
 TTS_RATE = os.environ.get("TTS_RATE", "auto") # Speed factor (default: auto = mood-driven)
 TTS_DEVICE = os.environ.get("TTS_DEVICE", "auto")  # "auto", "gpu", "cpu"
 TTS_PRELOAD = os.environ.get("TTS_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload TTS model on startup (uses ~250-400 MB extra RAM)
+STT_PRELOAD = os.environ.get("STT_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload STT Whisper model on startup
 STT_DEVICE = os.environ.get("STT_DEVICE", "auto")  # "auto", "gpu", "cpu"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
 WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8_float16")
