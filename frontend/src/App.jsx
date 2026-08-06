@@ -17,6 +17,7 @@ import AskUserDialog from './components/AskUserDialog';
 const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
+import { SearchableVrmSelect } from './components/ControlDashboard';
 import { RenderMessageContent, AgenticToolTimelineItem, renderMessageAttachments } from './components/ChatOverlay';
 
 let stream_end_exception = false;
@@ -75,6 +76,7 @@ const App = () => {
   const [llmBackend, setLlmBackend] = useState('lmstudio');
   const [vrmModels, setVrmModels] = useState(['default.vrm']);
   const [vrmCustomModels, setVrmCustomModels] = useState([]);
+  const [vrmVersions, setVrmVersions] = useState({});
   const [vrmUploading, setVrmUploading] = useState(false);
 
   // UI States
@@ -2311,6 +2313,7 @@ const App = () => {
         const data = await response.json();
         if (data.models) setVrmModels(data.models);
         if (data.custom) setVrmCustomModels(data.custom);
+        if (data.versions) setVrmVersions(data.versions);
       }
     } catch (e) {
       console.warn("Could not load VRM models list from REST API:", e);
@@ -3850,34 +3853,44 @@ const App = () => {
                             <input type="file" accept=".vrm" onChange={handleVrmUpload} style={{ display: 'none' }} />
                           </label>
                         </div>
-                        <select
-                          className="desktop-select"
+                        <SearchableVrmSelect
                           value={profile.settings?.active_vrm_model || 'default.vrm'}
-                          onChange={(e) => handleUpdateSetting('active_vrm_model', e.target.value)}
-                          style={{ padding: '6px 8px', fontSize: '0.75rem' }}
-                        >
-                          {vrmModels.map((model) => (
-                            <option key={model} value={model} style={{ background: '#120c21', color: 'white' }}>
-                              {model.replace('.vrm', '').replace(/_/g, ' ').toUpperCase() || model}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(val) => handleUpdateSetting('active_vrm_model', val)}
+                          options={vrmModels}
+                          versions={vrmVersions}
+                        />
                         {vrmCustomModels.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                            {vrmCustomModels.map((name) => (
-                              <span key={name} style={{
-                                display: 'inline-flex', alignItems: 'center', gap: '3px',
-                                padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem',
-                                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                                color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace',
-                              }}>
-                                {name.replace('.vrm', '')}
-                                <button onClick={() => handleVrmDelete(name)} style={{
-                                  background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer',
-                                  padding: 0, fontSize: '0.65rem', display: 'flex', alignItems: 'center'
-                                }}>×</button>
-                              </span>
-                            ))}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                            {vrmCustomModels.map((name) => {
+                              const ver = vrmVersions[name] !== undefined ? vrmVersions[name] : 0;
+                              return (
+                                <span key={name} style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                  padding: '3px 8px', borderRadius: '6px', fontSize: '0.68rem',
+                                  background: 'rgba(15, 23, 42, 0.75)', border: '1px solid rgba(167, 139, 250, 0.25)',
+                                  color: '#e2e8f0', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
+                                }}>
+                                  <span>{name.replace('.vrm', '')}</span>
+                                  {ver === 1 ? (
+                                    <span style={{ fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', background: 'rgba(34, 197, 94, 0.22)', color: '#6ee7b7', border: '1px solid rgba(52, 211, 153, 0.45)' }}>
+                                      VRM 1.0
+                                    </span>
+                                  ) : (
+                                    <span style={{ fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.2)', color: '#7dd3fc', border: '1px solid rgba(56, 189, 248, 0.4)' }}>
+                                      VRM 0.x
+                                    </span>
+                                  )}
+                                  <button onClick={() => handleVrmDelete(name)} style={{
+                                    background: 'none', border: 'none', color: '#f87171', cursor: 'pointer',
+                                    padding: 0, fontSize: '0.65rem', display: 'flex', alignItems: 'center', opacity: 0.7,
+                                    transition: 'opacity 0.2s'
+                                  }}
+                                    onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                                    onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+                                  >×</button>
+                                </span>
+                              );
+                            })}
                           </div>
                         )}
 

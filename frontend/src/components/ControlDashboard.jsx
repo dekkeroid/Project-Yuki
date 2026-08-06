@@ -235,6 +235,240 @@ export const SearchableModelSelect = ({ value, onChange, options = [], placehold
   );
 };
 
+export const SearchableVrmSelect = ({
+  value,
+  onChange,
+  options = [],
+  versions = {},
+  placeholder = "Select VRM avatar model..."
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const formatDisplayName = (filename) => {
+    if (!filename) return '';
+    return filename.replace('.vrm', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  };
+
+  const getVersionBadge = (version) => {
+    if (version === 1) {
+      return (
+        <span style={{
+          fontSize: '0.62rem',
+          fontWeight: 700,
+          padding: '2px 7px',
+          borderRadius: '12px',
+          background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.22), rgba(16, 185, 129, 0.32))',
+          border: '1px solid rgba(52, 211, 153, 0.55)',
+          color: '#6ee7b7',
+          letterSpacing: '0.4px',
+          boxShadow: '0 0 8px rgba(34, 197, 94, 0.25)',
+          flexShrink: 0,
+          userSelect: 'none'
+        }}>
+          VRM 1.0
+        </span>
+      );
+    }
+    return (
+      <span style={{
+        fontSize: '0.62rem',
+        fontWeight: 700,
+        padding: '2px 7px',
+        borderRadius: '12px',
+        background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(14, 165, 233, 0.3))',
+        border: '1px solid rgba(56, 189, 248, 0.5)',
+        color: '#7dd3fc',
+        letterSpacing: '0.4px',
+        boxShadow: '0 0 8px rgba(56, 189, 248, 0.2)',
+        flexShrink: 0,
+        userSelect: 'none'
+      }}>
+        VRM 0.x
+      </span>
+    );
+  };
+
+  const filteredOptions = (options || []).filter(model => {
+    if (!searchTerm) return true;
+    const name = formatDisplayName(model).toLowerCase();
+    const ver = versions[model] !== undefined ? `vrm ${versions[model]}` : '';
+    return name.includes(searchTerm.toLowerCase()) || model.toLowerCase().includes(searchTerm.toLowerCase()) || ver.includes(searchTerm.toLowerCase());
+  });
+
+  const selectedVer = versions[value] !== undefined ? versions[value] : 0;
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', marginTop: '4px' }}>
+      {/* Trigger Box */}
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          width: '100%',
+          padding: '8px 12px',
+          background: 'rgba(15, 23, 42, 0.75)',
+          border: isOpen ? '1.5px solid #a78bfa' : '1px solid rgba(255, 255, 255, 0.14)',
+          borderRadius: '9px',
+          color: value ? '#f8fafc' : '#94a3b8',
+          fontSize: '0.78rem',
+          fontWeight: value ? '500' : '400',
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          userSelect: 'none',
+          boxShadow: isOpen ? '0 0 14px rgba(167, 139, 250, 0.3)' : 'none',
+          transition: 'all 0.2s ease',
+          boxSizing: 'border-box'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '88%' }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {value ? formatDisplayName(value) : placeholder}
+          </span>
+          {value && getVersionBadge(selectedVer)}
+        </div>
+        <span style={{ fontSize: '0.65rem', color: isOpen ? '#a78bfa' : 'rgba(255,255,255,0.4)', transition: 'transform 0.2s ease', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+          ▼
+        </span>
+      </div>
+
+      {/* Dropdown Floating Panel */}
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 6px)',
+          left: 0,
+          right: 0,
+          zIndex: 99999,
+          background: '#0b0f19',
+          border: '1.5px solid rgba(167, 139, 250, 0.45)',
+          borderRadius: '10px',
+          padding: '8px',
+          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.85), 0 0 16px rgba(167, 139, 250, 0.15)',
+          backdropFilter: 'blur(20px)',
+          boxSizing: 'border-box'
+        }}>
+          {/* Search Box */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 10px',
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(167, 139, 250, 0.25)',
+            borderRadius: '7px',
+            marginBottom: '8px'
+          }}>
+            <Search style={{ width: '13px', height: '13px', color: '#c4b5fd', flexShrink: 0 }} />
+            <input
+              type="text"
+              autoFocus
+              placeholder="Search VRM avatar model..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '0.78rem',
+                lineHeight: '1.4',
+                outline: 'none',
+                fontFamily: 'inherit'
+              }}
+            />
+            {searchTerm && (
+              <span
+                onClick={() => setSearchTerm('')}
+                style={{ cursor: 'pointer', fontSize: '0.75rem', color: '#94a3b8', padding: '0 2px' }}
+              >
+                ✕
+              </span>
+            )}
+          </div>
+
+          {/* Options Scroll Container */}
+          <div style={{
+            maxHeight: '220px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '3px',
+            paddingRight: '2px',
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'rgba(167, 139, 250, 0.4) transparent'
+          }}>
+            {filteredOptions.length === 0 ? (
+              <div style={{ padding: '12px 8px', fontSize: '0.74rem', color: '#94a3b8', textAlign: 'center', lineHeight: '1.4' }}>
+                No avatar model matches "{searchTerm}".
+              </div>
+            ) : (
+              filteredOptions.map((model) => {
+                const isSelected = value === model;
+                const ver = versions[model] !== undefined ? versions[model] : 0;
+                return (
+                  <div
+                    key={model}
+                    onClick={() => {
+                      onChange(model);
+                      setIsOpen(false);
+                      setSearchTerm('');
+                    }}
+                    style={{
+                      padding: '7px 10px',
+                      borderRadius: '7px',
+                      fontSize: '0.78rem',
+                      lineHeight: '1.4',
+                      minHeight: '32px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      background: isSelected ? 'rgba(167, 139, 250, 0.28)' : 'transparent',
+                      border: isSelected ? '1px solid rgba(167, 139, 250, 0.5)' : '1px solid transparent',
+                      color: isSelected ? '#ffffff' : '#cbd5e1',
+                      fontWeight: isSelected ? '600' : '400',
+                      transition: 'all 0.15s ease',
+                      boxSizing: 'border-box'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                        e.currentTarget.style.color = '#ffffff';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.color = '#cbd5e1';
+                      }
+                    }}
+                  >
+                    <span>{formatDisplayName(model)}</span>
+                    {getVersionBadge(ver)}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ControlDashboard = ({
   profile,
   backendStatus,
@@ -1670,6 +1904,7 @@ const ControlDashboard = ({
 
   const [vrmModels, setVrmModels] = useState(['default.vrm']);
   const [vrmCustomModels, setVrmCustomModels] = useState([]);
+  const [vrmVersions, setVrmVersions] = useState({});
   const [vrmUploading, setVrmUploading] = useState(false);
 
   const fetchVrmModels = async () => {
@@ -1682,6 +1917,9 @@ const ControlDashboard = ({
         }
         if (data.custom) {
           setVrmCustomModels(data.custom);
+        }
+        if (data.versions) {
+          setVrmVersions(data.versions);
         }
       }
     } catch (e) {
@@ -5650,47 +5888,44 @@ const ControlDashboard = ({
                         </label>
                       </div>
                       <div style={{ position: 'relative' }}>
-                        <select
+                        <SearchableVrmSelect
                           value={settings.active_vrm_model || 'default.vrm'}
-                          onChange={(e) => handleUpdateSetting('active_vrm_model', e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '7px 10px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontSize: '0.78rem',
-                            outline: 'none',
-                            cursor: 'pointer',
-                            marginTop: '2px'
-                          }}
-                        >
-                          {vrmModels.map((model) => (
-                            <option key={model} value={model} style={{ background: '#0b0813', color: 'white' }}>
-                              {model.replace('.vrm', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(val) => handleUpdateSetting('active_vrm_model', val)}
+                          options={vrmModels}
+                          versions={vrmVersions}
+                        />
                         {vrmCustomModels.length > 0 && (
-                          <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                            {vrmCustomModels.map((model) => (
-                              <span key={model} style={{
-                                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                                fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px',
-                                background: 'rgba(108,92,231,0.15)', color: 'rgba(255,255,255,0.7)',
-                                border: '1px solid rgba(108,92,231,0.2)',
-                              }}>
-                                {model.replace('.vrm', '')}
-                                <Trash2
-                                  size={10}
-                                  style={{ cursor: 'pointer', opacity: 0.6, transition: 'opacity 0.2s' }}
-                                  onMouseEnter={(e) => e.target.style.opacity = 1}
-                                  onMouseLeave={(e) => e.target.style.opacity = 0.6}
-                                  onClick={() => handleVrmDelete(model)}
-                                />
-                              </span>
-                            ))}
+                          <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {vrmCustomModels.map((model) => {
+                              const ver = vrmVersions[model] !== undefined ? vrmVersions[model] : 0;
+                              return (
+                                <span key={model} style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                  fontSize: '0.68rem', padding: '3px 8px', borderRadius: '6px',
+                                  background: 'rgba(15, 23, 42, 0.75)', color: '#e2e8f0',
+                                  border: '1px solid rgba(167, 139, 250, 0.25)',
+                                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
+                                }}>
+                                  <span>{model.replace('.vrm', '')}</span>
+                                  {ver === 1 ? (
+                                    <span style={{ fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', background: 'rgba(34, 197, 94, 0.22)', color: '#6ee7b7', border: '1px solid rgba(52, 211, 153, 0.45)' }}>
+                                      VRM 1.0
+                                    </span>
+                                  ) : (
+                                    <span style={{ fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.2)', color: '#7dd3fc', border: '1px solid rgba(56, 189, 248, 0.4)' }}>
+                                      VRM 0.x
+                                    </span>
+                                  )}
+                                  <Trash2
+                                    size={11}
+                                    style={{ cursor: 'pointer', opacity: 0.7, color: '#f87171', transition: 'opacity 0.2s' }}
+                                    onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                                    onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+                                    onClick={() => handleVrmDelete(model)}
+                                  />
+                                </span>
+                              );
+                            })}
                           </div>
                         )}
                         {/* Rendering Resolution (DPR) & FPS Limit */}
