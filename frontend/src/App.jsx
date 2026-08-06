@@ -640,7 +640,6 @@ const App = () => {
     onOpen: () => {
       fetchProfileDetails();
       fetchHealthDetails();
-      fetchAvatar();
       fetchVrmModels();
     },
     onMessage: (event) => handleWebSocketMessageRef.current?.(event)
@@ -987,6 +986,10 @@ const App = () => {
     } else if (msg.type === 'open-canvas') {
       if (window.electronAPI && window.electronAPI.openCanvasWindow) {
         window.electronAPI.openCanvasWindow({ mode: msg.mode, filename: msg.filename });
+      } else {
+        const backendHost = window.location.hostname || '127.0.0.1';
+        const canvasUrl = `http://${backendHost}:8000/api/canvas/${msg.filename}`;
+        window.open(canvasUrl, '_blank', 'width=1000,height=700');
       }
     } else if (msg.type === 'confirm_request') {
       let displayMessage = `Yuki wants to execute the following action:\n\n${msg.name}`;
