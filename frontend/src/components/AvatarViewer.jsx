@@ -1543,10 +1543,18 @@ const AvatarViewer = ({
             rightArmOffsetZ = 0.18 * easeVal;
             chestOffsetX = -0.03 * easeVal;
             neckOffsetX = 0.06 * easeVal;
-          } else if (idleAnimState === 'peering') {
-            spineOffsetX = -0.08 * easeVal;
-            chestOffsetX = -0.12 * easeVal;
-            neckOffsetX = 0.04 * easeVal;
+          } else if (idleAnimState === 'peering' || idleAnimState === 'inspect_screen') {
+            spineOffsetX = (idleAnimState === 'inspect_screen' ? -0.15 : -0.08) * easeVal;
+            chestOffsetX = (idleAnimState === 'inspect_screen' ? -0.18 : -0.12) * easeVal;
+            neckOffsetX = (idleAnimState === 'inspect_screen' ? 0.08 : 0.04) * easeVal;
+          } else if (idleAnimState === 'stretching') {
+            spineOffsetX = 0.12 * easeVal;
+            neckOffsetX = -0.10 * easeVal;
+          } else if (idleAnimState === 'facepalm') {
+            neckOffsetX = -0.15 * easeVal;
+          } else if (idleAnimState === 'shy_fidget') {
+            spineOffsetX = -0.05 * easeVal;
+            neckOffsetX = 0.08 * easeVal;
           } else if (idleAnimState === 'laughing') {
             extraMouthAa = (0.24 + Math.sin(time * 18.0) * 0.12) * easeVal;
             extraBlink = 0.25 * easeVal;
@@ -1977,6 +1985,31 @@ const AvatarViewer = ({
                   const easeVal = Math.sin(t * Math.PI);
                   neckAnimY = Math.sin(time * 16.0) * 0.04 * easeVal;
                   neckAnimX = -0.06 * easeVal + Math.sin(time * 22.0) * 0.03 * easeVal;
+                } else if (idleAnimState === 'nodding') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  neckAnimX = (Math.sin(time * 12.0) * 0.12) * easeVal;
+                } else if (idleAnimState === 'head_shake') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  neckAnimY = (Math.sin(time * 14.0) * 0.18) * easeVal;
+                } else if (idleAnimState === 'salute') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  neckAnimZ = 0.05 * easeVal;
+                } else if (idleAnimState === 'giggle_cover') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  neckAnimY = Math.sin(time * 18.0) * 0.05 * easeVal;
+                  neckAnimZ = -0.06 * easeVal;
+                } else if (idleAnimState === 'cheering') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  neckAnimX = (Math.sin(time * 15.0) * 0.06) * easeVal;
+                } else if (idleAnimState === 'shy_fidget') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  neckAnimZ = Math.sin(time * 4.0) * 0.06 * easeVal;
                 }
 
                 awakeNeckY = (currentLookY + Math.sin(time * 0.5) * 0.012 + microFidgetNeckY + neckAnimY) * yMult;
@@ -2196,6 +2229,32 @@ const AvatarViewer = ({
                   awakeShoulderX = (0.35 * easeVal + 0.15 * (1 - easeVal)) * xMult;
                   awakeShoulderY = (0.45 * easeVal + 0.08 * (1 - easeVal)) * yMult;
                   awakeShoulderZ = (1.05 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                } else if (idleAnimState === 'cheering') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.6 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = 0.08 * yMult;
+                  awakeShoulderZ = (0.2 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                } else if (idleAnimState === 'shy_fidget') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.4 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = (0.2 * easeVal + 0.08 * (1 - easeVal)) * yMult;
+                  awakeShoulderZ = (1.05 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                  leftElbowOffsetY = -0.5 * easeVal;
+                } else if (idleAnimState === 'typing_air') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.45 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = 0.08 * yMult;
+                  awakeShoulderZ = (0.85 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                  leftElbowOffsetY = -0.5 * easeVal;
+                } else if (idleAnimState === 'stretching') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.8 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = 0.08 * yMult;
+                  awakeShoulderZ = (0.1 * easeVal + 1.25 * (1 - easeVal)) * zMult;
                 } else {
                   awakeShoulderX = (0.15 + Math.sin(time * 1.4) * 0.008) * xMult;
                   awakeShoulderY = 0.08 * yMult;
@@ -2234,6 +2293,60 @@ const AvatarViewer = ({
                   awakeShoulderX = (0.3 * easeVal + 0.15 * (1 - easeVal)) * xMult;
                   awakeShoulderY = (0.7 * easeVal - 0.08 * (1 - easeVal)) * yMult;
                   awakeShoulderZ = (-0.4 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                } else if (idleAnimState === 'salute') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  // Crisp military salute: raise right arm to temple
+                  awakeShoulderX = (0.85 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = (0.5 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                  awakeShoulderZ = (-0.55 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  rightElbowOffsetY = -0.85 * easeVal;
+                } else if (idleAnimState === 'giggle_cover') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.75 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = (0.45 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                  awakeShoulderZ = (-0.6 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  rightElbowOffsetY = -0.9 * easeVal;
+                } else if (idleAnimState === 'facepalm') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.85 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = (0.3 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                  awakeShoulderZ = (-0.7 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  rightElbowOffsetY = -1.1 * easeVal;
+                } else if (idleAnimState === 'cheering') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.6 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = -0.08 * yMult;
+                  awakeShoulderZ = (-0.2 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                } else if (idleAnimState === 'pointing') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.65 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = (0.1 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                  awakeShoulderZ = (-0.85 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                } else if (idleAnimState === 'shy_fidget') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.4 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = (-0.2 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                  awakeShoulderZ = (-1.05 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  rightElbowOffsetY = -0.5 * easeVal;
+                } else if (idleAnimState === 'typing_air') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.45 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = -0.08 * yMult;
+                  awakeShoulderZ = (-0.85 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  rightElbowOffsetY = -0.5 * easeVal;
+                } else if (idleAnimState === 'stretching') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  const easeVal = Math.sin(t * Math.PI);
+                  awakeShoulderX = (0.8 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                  awakeShoulderY = -0.08 * yMult;
+                  awakeShoulderZ = (-0.1 * easeVal - 1.25 * (1 - easeVal)) * zMult;
                 } else if (idleAnimState === 'pouting') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
@@ -2630,6 +2743,60 @@ const AvatarViewer = ({
               targetSad = 0.4 * easeVal;
               targetAngry = 0.3 * easeVal;
               targetBrowDown = 0.6 * easeVal;
+            } else if (idleAnimState === 'nodding') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetHappy = 0.4 * easeVal;
+              targetRelaxed = 0.5 * easeVal;
+            } else if (idleAnimState === 'head_shake') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetSurprised = 0.3 * easeVal;
+              targetBrowUp = 0.3 * easeVal;
+            } else if (idleAnimState === 'salute') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetHappy = 0.7 * easeVal;
+              targetBrowUp = 0.2 * easeVal;
+            } else if (idleAnimState === 'shy_fidget') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetHappy = 0.3 * easeVal;
+              targetRelaxed = 0.4 * easeVal;
+            } else if (idleAnimState === 'giggle_cover') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetHappy = 0.85 * easeVal;
+              targetBrowUp = 0.3 * easeVal;
+            } else if (idleAnimState === 'facepalm') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetSad = 0.5 * easeVal;
+              targetBrowDown = 0.4 * easeVal;
+            } else if (idleAnimState === 'cheering') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetHappy = 0.95 * easeVal;
+              targetSurprised = 0.4 * easeVal;
+            } else if (idleAnimState === 'pointing') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetRelaxed = 0.4 * easeVal;
+              targetBrowUp = 0.3 * easeVal;
+            } else if (idleAnimState === 'inspect_screen') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetSurprised = 0.6 * easeVal;
+              targetBrowDown = 0.3 * easeVal;
+            } else if (idleAnimState === 'typing_air') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetRelaxed = 0.5 * easeVal;
+              targetBrowDown = 0.3 * easeVal;
+            } else if (idleAnimState === 'stretching') {
+              const t = idleAnimProgress / idleAnimDuration;
+              const easeVal = Math.sin(t * Math.PI);
+              targetRelaxed = 0.9 * easeVal;
             } else if (dragStateProgress > 0) {
               targetSurprised = 0.85 * dragStateProgress; // wide eyes
               targetBrowUp = 0.75 * dragStateProgress;   // brows raised in surprise

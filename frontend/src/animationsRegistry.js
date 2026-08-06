@@ -114,6 +114,150 @@ export const ANIMATIONS = [
     blendShapes: { happy: 0.3 }
   },
   {
+    name: 'nodding',
+    alias: 'nod',
+    duration: 2.5,
+    excludeFromRandomIdle: false,
+    llmTag: '<yuki_anim:nod/>',
+    commands: [
+      { cmd: '/ani-nod', description: 'Nod head in agreement' },
+      { cmd: '/ani-agree', description: 'Nod head in agreement (alias)' }
+    ],
+    responseText: '*nods head*',
+    blendShapes: { happy: 0.4, relaxed: 0.5 }
+  },
+  {
+    name: 'head_shake',
+    alias: 'shake',
+    duration: 2.2,
+    excludeFromRandomIdle: false,
+    llmTag: '<yuki_anim:shake/>',
+    commands: [
+      { cmd: '/ani-shake', description: 'Shake head side to side' },
+      { cmd: '/ani-no', description: 'Shake head side to side (alias)' },
+      { cmd: '/ani-disagree', description: 'Shake head side to side (alias)' }
+    ],
+    responseText: '*shakes head*',
+    blendShapes: { surprised: 0.3, browUp: 0.3 }
+  },
+  {
+    name: 'salute',
+    alias: 'salute',
+    duration: 3.0,
+    excludeFromRandomIdle: true,
+    llmTag: '<yuki_anim:salute/>',
+    commands: [
+      { cmd: '/ani-salute', description: 'Playful military salute' },
+      { cmd: '/ani-ready', description: 'Playful military salute (alias)' }
+    ],
+    responseText: '*salutes playfully*',
+    blendShapes: { happy: 0.7, browUp: 0.2 }
+  },
+  {
+    name: 'shy_fidget',
+    alias: 'shy',
+    duration: 3.5,
+    excludeFromRandomIdle: false,
+    llmTag: '<yuki_anim:shy/>',
+    commands: [
+      { cmd: '/ani-shy', description: 'Shy fidgeting & blushing' },
+      { cmd: '/ani-fidget', description: 'Shy fidgeting (alias)' }
+    ],
+    responseText: '*fidgets shyingly*',
+    blendShapes: { happy: 0.3, relaxed: 0.4 }
+  },
+  {
+    name: 'giggle_cover',
+    alias: 'giggle',
+    duration: 2.8,
+    excludeFromRandomIdle: false,
+    llmTag: '<yuki_anim:giggle/>',
+    commands: [
+      { cmd: '/ani-giggle', description: 'Cover mouth while giggling' },
+      { cmd: '/ani-cover', description: 'Cover mouth while giggling (alias)' }
+    ],
+    responseText: '*giggles behind hand*',
+    blendShapes: { happy: 0.85, browUp: 0.3 }
+  },
+  {
+    name: 'facepalm',
+    alias: 'facepalm',
+    duration: 3.0,
+    excludeFromRandomIdle: true,
+    llmTag: '<yuki_anim:facepalm/>',
+    commands: [
+      { cmd: '/ani-facepalm', description: 'Hand to forehead facepalm' },
+      { cmd: '/ani-oops', description: 'Facepalm animation (alias)' }
+    ],
+    responseText: '*facepalms*',
+    blendShapes: { sad: 0.5, browDown: 0.4 }
+  },
+  {
+    name: 'cheering',
+    alias: 'cheer',
+    duration: 3.2,
+    excludeFromRandomIdle: true,
+    llmTag: '<yuki_anim:cheer/>',
+    commands: [
+      { cmd: '/ani-cheer', description: 'Two-handed victory cheer' },
+      { cmd: '/ani-victory', description: 'Victory cheer (alias)' }
+    ],
+    responseText: '*cheers with arms up*',
+    blendShapes: { happy: 0.95, surprised: 0.4 }
+  },
+  {
+    name: 'pointing',
+    alias: 'point',
+    duration: 2.8,
+    excludeFromRandomIdle: true,
+    llmTag: '<yuki_anim:point/>',
+    commands: [
+      { cmd: '/ani-point', description: 'Point index finger at screen' },
+      { cmd: '/ani-show', description: 'Point at screen (alias)' }
+    ],
+    responseText: '*points at your screen*',
+    blendShapes: { relaxed: 0.4, browUp: 0.3 }
+  },
+  {
+    name: 'inspect_screen',
+    alias: 'inspect',
+    duration: 4.0,
+    excludeFromRandomIdle: false,
+    llmTag: '<yuki_anim:inspect/>',
+    commands: [
+      { cmd: '/ani-inspect', description: 'Lean in close to inspect screen' },
+      { cmd: '/ani-lookclose', description: 'Inspect screen (alias)' }
+    ],
+    responseText: '*leans close to inspect*',
+    blendShapes: { surprised: 0.6, browDown: 0.3 }
+  },
+  {
+    name: 'typing_air',
+    alias: 'typing',
+    duration: 3.5,
+    excludeFromRandomIdle: true,
+    llmTag: '<yuki_anim:typing/>',
+    commands: [
+      { cmd: '/ani-typing', description: 'Type on invisible keyboard' },
+      { cmd: '/ani-work', description: 'Type on keyboard (alias)' }
+    ],
+    responseText: '*types rapidly on keyboard*',
+    blendShapes: { relaxed: 0.5, browDown: 0.3 }
+  },
+  {
+    name: 'stretching',
+    alias: 'stretch',
+    duration: 4.2,
+    excludeFromRandomIdle: false,
+    llmTag: '<yuki_anim:stretch/>',
+    commands: [
+      { cmd: '/ani-stretch', description: 'Stretch arms overhead' },
+      { cmd: '/ani-relax', description: 'Stretch arms overhead (alias)' }
+    ],
+    responseText: '*stretches arms overhead*',
+    blendShapes: { relaxed: 0.9 }
+  },
+  {
     name: 'breathing',
     duration: 0,
     excludeFromRandomIdle: true,
@@ -220,7 +364,39 @@ export const LLM_ANIMATION_MAP = {
   shrug: 'shrugging',
   shrugging: 'shrugging',
   knock: 'knocking',
-  knocking: 'knocking'
+  knocking: 'knocking',
+  nod: 'nodding',
+  nodding: 'nodding',
+  agree: 'nodding',
+  shake: 'head_shake',
+  head_shake: 'head_shake',
+  no: 'head_shake',
+  disagree: 'head_shake',
+  salute: 'salute',
+  ready: 'salute',
+  shy: 'shy_fidget',
+  shy_fidget: 'shy_fidget',
+  fidget: 'shy_fidget',
+  giggle: 'giggle_cover',
+  giggle_cover: 'giggle_cover',
+  cover: 'giggle_cover',
+  facepalm: 'facepalm',
+  oops: 'facepalm',
+  cheer: 'cheering',
+  cheering: 'cheering',
+  victory: 'cheering',
+  point: 'pointing',
+  pointing: 'pointing',
+  show: 'pointing',
+  inspect: 'inspect_screen',
+  inspect_screen: 'inspect_screen',
+  lookclose: 'inspect_screen',
+  typing: 'typing_air',
+  typing_air: 'typing_air',
+  work: 'typing_air',
+  stretch: 'stretching',
+  stretching: 'stretching',
+  relax: 'stretching'
 };
 
 export const LLM_EMOTION_MAP = {
