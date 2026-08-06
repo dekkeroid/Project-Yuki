@@ -1214,15 +1214,27 @@ const ChatOverlay = ({
     setActiveSuggIdx(-1);
   }, [activeSuggestions.length]);
 
-  // Focus the input box automatically when the chat overlay panel is opened
+  // Focus the input box automatically when the chat overlay panel is opened or focus event received
   useEffect(() => {
     if (isPanelOpen) {
-      const timer = setTimeout(() => {
-        inputRef.current?.focus();
-      }, 150);
-      return () => clearTimeout(timer);
+      const focus = () => inputRef.current?.focus();
+      requestAnimationFrame(focus);
+      const timer1 = setTimeout(focus, 50);
+      const timer2 = setTimeout(focus, 150);
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
     }
   }, [isPanelOpen]);
+
+  useEffect(() => {
+    const handleFocusEvent = () => {
+      inputRef.current?.focus();
+    };
+    window.addEventListener('yuki-focus-chat-input', handleFocusEvent);
+    return () => window.removeEventListener('yuki-focus-chat-input', handleFocusEvent);
+  }, []);
 
   const pickSuggestion = (cmd) => {
     setInputText(cmd + ' ');
