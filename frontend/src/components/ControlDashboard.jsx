@@ -5928,6 +5928,31 @@ const ControlDashboard = ({
                             })}
                           </div>
                         )}
+                        {/* Model Credits */}
+                        <details style={{ marginTop: '8px' }}>
+                          <summary style={{
+                            fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', cursor: 'pointer',
+                            userSelect: 'none', outline: 'none',
+                          }}>
+                            Model Credits
+                          </summary>
+                          <div style={{
+                            marginTop: '4px', padding: '8px', borderRadius: '6px',
+                            background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)',
+                            fontSize: '0.65rem', color: 'rgba(255,255,255,0.5)', lineHeight: '1.6',
+                          }}>
+                            <div style={{ marginBottom: '6px' }}>
+                              <div style={{ fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>Mizuki 2.0</div>
+                              <div>Creator: <a href="https://hub.vroid.com/en/users/121822769" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>googoogaga496</a></div>
+                              <div>Model: <a href="https://hub.vroid.com/en/characters/147433999399938929/models/4488526919145096128" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>VRoid Hub</a></div>
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>Mixup, Mixup with Hat, Trial, Whai</div>
+                              <div>Creator: <a href="https://hub.vroid.com/en/users/60415018" target="_blank" rel="noopener" style={{ color: '#6c5ce7', textDecoration: 'none' }}>opinion</a></div>
+                            </div>
+                          </div>
+                        </details>
+                        
                         {/* Rendering Resolution (DPR) & FPS Limit */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
                           <div>
