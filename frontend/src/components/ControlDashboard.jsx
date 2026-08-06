@@ -720,28 +720,26 @@ const ControlDashboard = ({
     no_llm_mode: false
   });
 
-  // Local Character States
+  // Local Character & Persona States
   const [charName, setCharName] = useState('Yuki');
   const [charPersona, setCharPersona] = useState('');
+  const [personaPreset, setPersonaPreset] = useState('sassy_girlfriend');
+  const [executionRules, setExecutionRules] = useState('');
+  const [presetsRegistry, setPresetsRegistry] = useState({});
 
-  const [crawlerStatus, setCrawlerStatus] = useState({
-    paused: false,
-    tagger_paused: false,
-    current_path: 'Idle',
-    current_tagger_path: 'Idle',
-    total_files: 0,
-    pending_enrichment: 0,
-    initial_crawl_completed: false,
-    first_time_priority_done: false,
-    first_cycle_done: false,
-    completed_roots: [],
-    remaining_roots: [],
-    roots_total: 0,
-    roots_current: 0,
-    current_root_path: 'Idle',
-    watchdog_active: false
-  });
-  const [gpuMemData, setGpuMemData] = useState({ gpus: [], top5: {} });
+  useEffect(() => {
+    fetch(`${API_BASE}/api/personas/presets`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.presets) {
+          setPresetsRegistry(data.presets);
+          if (!executionRules && data.default_execution_rules) {
+            setExecutionRules(data.default_execution_rules);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Sync character local states when settings change
   useEffect(() => {
@@ -751,7 +749,14 @@ const ControlDashboard = ({
     if (settings.character_persona) {
       setCharPersona(settings.character_persona);
     }
+    if (settings.persona_preset) {
+      setPersonaPreset(settings.persona_preset);
+    }
+    if (settings.execution_rules) {
+      setExecutionRules(settings.execution_rules);
+    }
   }, [settings]);
+
 
   // Profile Edit State
   const [isEditingName, setIsEditingName] = useState(false);
@@ -2716,17 +2721,45 @@ const ControlDashboard = ({
                   />
                 </div>
 
-                <div className="identity-field" style={{ marginTop: '4px' }}>
-                  <span className="field-label">Persona Prompt Instructions</span>
+                {/* Section 1: Persona Preset Dropdown */}
+                <div className="identity-field" style={{ marginTop: '8px' }}>
+                  <span className="field-label" style={{ fontWeight: 600, color: '#2dd4bf' }}>
+                    Section 1: Persona Preset & Core Archetype
+                  </span>
+                  <select
+                    value={personaPreset}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPersonaPreset(val);
+                      if (presetsRegistry[val] && val !== 'custom') {
+                        setCharPersona(presetsRegistry[val].prompt);
+                      }
+                    }}
+                    className="glass-input"
+                    style={{ padding: '6px 10px', fontSize: '0.78rem', marginTop: '4px', background: 'rgba(15,23,42,0.6)' }}
+                  >
+                    {Object.entries(presetsRegistry).map(([key, item]) => (
+                      <option key={key} value={key} style={{ background: '#0f172a', color: '#f8fafc' }}>
+                        {item.name} — {item.description}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="identity-field" style={{ marginTop: '6px' }}>
+                  <span className="field-label">Core Character Prompt (Section 1)</span>
                   <textarea
                     value={charPersona}
-                    onChange={(e) => setCharPersona(e.target.value)}
+                    onChange={(e) => {
+                      setCharPersona(e.target.value);
+                      setPersonaPreset('custom');
+                    }}
                     className="glass-input"
                     style={{
                       padding: '8px 10px',
                       fontSize: '0.75rem',
                       fontFamily: 'monospace',
-                      minHeight: '120px',
+                      minHeight: '100px',
                       resize: 'vertical',
                       marginTop: '2px',
                       lineHeight: '1.4'
@@ -2734,7 +2767,30 @@ const ControlDashboard = ({
                   />
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                {/* Section 2: Execution Rules & Guardrails */}
+                <div className="identity-field" style={{ marginTop: '10px' }}>
+                  <span className="field-label" style={{ fontWeight: 600, color: '#f43f5e' }}>
+                    Section 2: System Execution Rules & Guardrails
+                  </span>
+                  <textarea
+                    value={executionRules}
+                    onChange={(e) => setExecutionRules(e.target.value)}
+                    className="glass-input"
+                    placeholder="Strict formatting and behavior rules..."
+                    style={{
+                      padding: '8px 10px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'monospace',
+                      minHeight: '100px',
+                      resize: 'vertical',
+                      marginTop: '4px',
+                      lineHeight: '1.4',
+                      borderColor: 'rgba(244,63,94,0.3)'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                   <button
                     onClick={async (e) => {
                       const btn = e.currentTarget;
@@ -2742,8 +2798,10 @@ const ControlDashboard = ({
                       const originalBg = btn.style.background;
                       btn.innerText = "Saving...";
                       await handleUpdateSetting('character_name', charName);
+                      await handleUpdateSetting('persona_preset', personaPreset);
                       await handleUpdateSetting('character_persona', charPersona);
-                      btn.innerText = "✓ Saved";
+                      await handleUpdateSetting('execution_rules', executionRules);
+                      btn.innerText = "✓ Saved Specs";
                       btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
                       setTimeout(() => {
                         btn.innerText = originalText;
@@ -2764,6 +2822,7 @@ const ControlDashboard = ({
                   >
                     Save Specs
                   </button>
+
 
                   <button
                     onClick={handleExportPersona}

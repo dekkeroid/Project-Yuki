@@ -835,3 +835,43 @@ class MoodEngine:
             "voice": self.voice_scale(),
             "baselines": self._baselines(),
         }
+
+
+def calculate_active_route(romance_val: float, affection_val: float, control_val: float, obsession_val: float) -> str:
+    """
+    Determines active relationship route based on 4-vector matrix:
+    - YANDERE: High obsession (>= 70)
+    - NEMESIS: High hostility / negative affection (<= -30)
+    - MENTOR: High control (>= 40) with low romance (< 20)
+    - ROMANTIC: High romance (>= 40) and high affection (>= 30)
+    - TSUNDERE: Moderate romance (>= 20), moderate control (>= 15), and high playfulness/anger
+    - PLATONIC: Default bestie / co-pilot path
+    """
+    if obsession_val >= 70:
+        return "YANDERE"
+    elif affection_val <= -30:
+        return "NEMESIS"
+    elif control_val >= 40 and romance_val < 20:
+        return "MENTOR"
+    elif romance_val >= 40 and affection_val >= 30:
+        return "ROMANTIC"
+    elif romance_val >= 20 and control_val >= 15:
+        return "TSUNDERE"
+    else:
+        return "PLATONIC"
+
+
+def calculate_stage_from_xp(xp: int) -> int:
+    """Calculates relationship stage (Level 0 - 5) from affinity XP."""
+    if xp >= 1500:
+        return 5
+    elif xp >= 1000:
+        return 4
+    elif xp >= 600:
+        return 3
+    elif xp >= 300:
+        return 2
+    elif xp >= 100:
+        return 1
+    return 0
+

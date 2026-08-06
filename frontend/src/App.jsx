@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Suspense, lazy } from 'react';
 import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
@@ -17,7 +17,10 @@ import AskUserDialog from './components/AskUserDialog';
 const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
+import RelationshipCard from './components/RelationshipCard';
+import YukiShopModal from './components/YukiShopModal';
 import { SearchableVrmSelect } from './components/ControlDashboard';
+
 import { RenderMessageContent, AgenticToolTimelineItem, renderMessageAttachments } from './components/ChatOverlay';
 
 let stream_end_exception = false;
@@ -131,6 +134,24 @@ const App = () => {
   const [desktopSearchMode, setDesktopSearchMode] = useState(null); // 'open' | 'play' | null
   const [desktopSearchQuery, setDesktopSearchQuery] = useState('');
   const [isDesktopLoadingSuggestions, setIsDesktopLoadingSuggestions] = useState(false);
+
+  // Relationship & Dating Sim Modals state
+  const [showRelationshipCard, setShowRelationshipCard] = useState(false);
+  const [showShopModal, setShowShopModal] = useState(false);
+  const [relationshipData, setRelationshipData] = useState(null);
+
+  const fetchRelationshipStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/relationship/status`);
+      const data = await res.json();
+      setRelationshipData(data);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchRelationshipStatus();
+  }, [fetchRelationshipStatus]);
+
 
   // Parse command suggestions query
   const parsedDesktopSearch = useMemo(() => {
@@ -5079,6 +5100,27 @@ const App = () => {
         onSubmit={handleAskUserSubmit}
         onClose={handleAskUserClose}
       />
+
+      {/* Relationship & Dating Sim Modals */}
+      {showRelationshipCard && relationshipData && (
+        <RelationshipCard
+          relationshipStatus={relationshipData}
+          onOpenShop={() => {
+            setShowRelationshipCard(false);
+            setShowShopModal(true);
+          }}
+          onClose={() => setShowRelationshipCard(false)}
+        />
+      )}
+
+      {showShopModal && (
+        <YukiShopModal
+          starHearts={relationshipData?.star_hearts || 100}
+          onPurchaseComplete={() => fetchRelationshipStatus()}
+          onClose={() => setShowShopModal(false)}
+        />
+      )}
+
 
     </div>
   );
