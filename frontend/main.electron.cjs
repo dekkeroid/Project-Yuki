@@ -616,6 +616,69 @@ function requestBackendMemoryOptimization() {
   req.end();
 }
 
+function notifyBackendPowerState(state) {
+  const data = JSON.stringify({ state });
+  const req = http.request({
+    hostname: '127.0.0.1',
+    port: BACKEND_PORT,
+    path: '/api/system/power_state',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(data)
+    }
+  }, (res) => {
+    res.on('data', () => {});
+  });
+  req.on('error', (e) => {
+    console.warn(`[Electron] Failed to notify backend of power state '${state}':`, e.message);
+  });
+  req.write(data);
+  req.end();
+}
+
+powerMonitor.on('suspend', () => {
+  console.log('[Electron] OS Suspending -> unloading models & purging memory');
+  notifyBackendPowerState('suspend');
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('yuki-power-state', { state: 'suspend' });
+    mainWindow.webContents.send('yuki-optimize-memory');
+  }
+  optimizeElectronMemory();
+  requestBackendMemoryOptimization();
+});
+
+powerMonitor.on('resume', () => {
+  console.log('[Electron] OS Resumed -> warming models');
+  notifyBackendPowerState('resume');
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('yuki-power-state', { state: 'resume' });
+    }
+  }, 500);
+});
+
+powerMonitor.on('lock-screen', () => {
+  console.log('[Electron] OS Locked -> unloading models & purging memory');
+  notifyBackendPowerState('lock');
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('yuki-power-state', { state: 'lock' });
+    mainWindow.webContents.send('yuki-optimize-memory');
+  }
+  optimizeElectronMemory();
+  requestBackendMemoryOptimization();
+});
+
+powerMonitor.on('unlock-screen', () => {
+  console.log('[Electron] OS Unlocked -> warming models');
+  notifyBackendPowerState('unlock');
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('yuki-power-state', { state: 'unlock' });
+    }
+  }, 500);
+});
+
 function hideYuki() {
   if (!yukiVisible) return;
   yukiVisible = false;

@@ -342,8 +342,12 @@ async def lifespan(app: FastAPI):
         print("[Startup] NO_LLM_MODE enabled — skipping LLM auto-load.")
         llm_loaded_event.set()
 
-    asyncio.create_task(_warmup_tts())
-    asyncio.create_task(_warmup_whisper())
+    tts_preload = memory_manager.profile.get("settings", {}).get("tts_preload", getattr(config, 'TTS_PRELOAD', True))
+    stt_preload = memory_manager.profile.get("settings", {}).get("stt_preload", getattr(config, 'STT_PRELOAD', True))
+    if tts_preload:
+        asyncio.create_task(_warmup_tts())
+    if stt_preload:
+        asyncio.create_task(_warmup_whisper())
     asyncio.create_task(_coordinate_startup_optimization())
     asyncio.create_task(_start_crawler_bg())
     asyncio.create_task(_run_memory_optimizer_bg())
@@ -2904,6 +2908,70 @@ def optimize_memory_endpoint():
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+class PowerStateRequest(BaseModel):
+    state: str  # "suspend", "lock", "resume", "unlock"
+
+
+@app.post("/api/system/power_state")
+async def handle_power_state_endpoint(req: PowerStateRequest):
+    """
+    Handles OS system power events (lock, unlock, suspend, resume).
+    Unloads AI/voice models to free VRAM & RAM on lock/suspend, and reloads them on unlock/resume.
+    """
+    st = req.state.strip().lower()
+    print(f"[PowerManager] OS Power Event received: '{st}'")
+
+    if st in ("suspend", "lock"):
+        # 1. Unload Whisper STT model from VRAM/RAM
+        try:
+            from app.voice.stt import unload_whisper_if_idle
+            unload_whisper_if_idle(force=True)
+        except Exception as e:
+            print(f"[PowerManager] Whisper unload failed: {e}")
+
+        # 2. Reset Kokoro TTS engine session
+        try:
+            from app.voice.tts import reset_kokoro
+            reset_kokoro()
+        except Exception as e:
+            print(f"[PowerManager] Kokoro reset failed: {e}")
+
+        # 3. Force Python GC and CUDA VRAM cache clear
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+        # 4. Trim Windows Working Set RAM
+        try:
+            from app.memory.optimizer import optimize_all_processes
+            optimize_all_processes(force=True)
+        except Exception:
+            pass
+
+        print(f"[PowerManager] Unloaded STT & TTS models and purged VRAM/RAM for state '{st}'.")
+        return {"status": "unloaded", "state": st}
+
+    elif st in ("resume", "unlock"):
+        # Re-warm models if preloading is configured
+        stt_preload = memory_manager.profile.get("settings", {}).get("stt_preload", getattr(config, 'STT_PRELOAD', True))
+        tts_preload = memory_manager.profile.get("settings", {}).get("tts_preload", getattr(config, 'TTS_PRELOAD', True))
+
+        if stt_preload:
+            asyncio.create_task(_warmup_whisper())
+        if tts_preload:
+            asyncio.create_task(_warmup_tts())
+
+        print(f"[PowerManager] Re-initiated STT/TTS model warm-up for state '{st}'.")
+        return {"status": "reloading", "state": st}
+
+    return {"status": "ignored", "state": st}
 
 
 @app.get("/api/system/suggestions")
