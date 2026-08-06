@@ -7,7 +7,7 @@ import { useSpeechRecognition } from './hooks/useSpeechRecognition';
 import { useAudioPlayback } from './hooks/useAudioPlayback';
 import { useSystemMonitor } from './hooks/useSystemMonitor';
 import { SLASH_COMMANDS } from './constants';
-import { parseResponseTags } from './utils/responseParser';
+import { parseResponseTags, stripAnimationTags } from './utils/responseParser';
 
 import AlarmOverlay from './components/AlarmOverlay';
 import StopwatchOverlay from './components/StopwatchOverlay';
@@ -926,7 +926,7 @@ const App = () => {
       try {
         console.log(`[TTS] audio_chunk received idx=${msg.index} backend=${msg.tts_backend || 'unknown'} time_ms=${msg.tts_time_ms || 0} text="${(msg.text || '').slice(0, 80)}"`);
       } catch (e) { /* ignore logging errors */ }
-      queueAudioChunk(msg.audio_url, msg.text, msg.index);
+      queueAudioChunk(msg.audio_url, stripAnimationTags(msg.text), msg.index);
     } else if (msg.type === 'stream_done') {
       setIsThinking(false);
       setTtsStreamActive(false);
@@ -2535,7 +2535,7 @@ const App = () => {
         {currentSpeechText && (
           <div className="desktop-speech-bubble interactive-element">
             <span className="desktop-bubble-tag">Yuki</span>
-            <p className="desktop-bubble-text">{currentSpeechText}</p>
+            <p className="desktop-bubble-text">{stripAnimationTags(currentSpeechText)}</p>
           </div>
         )}
         {(isThinking || ttsStreamActive) && !currentSpeechText && (

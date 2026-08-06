@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { cleanTextForTTS, getSpeechFriendlyText, detectExpression } from '../constants';
+import { stripAnimationTags } from '../utils/responseParser';
 
 export function useAudioPlayback(options = {}) {
   const {
@@ -195,7 +196,7 @@ export function useAudioPlayback(options = {}) {
     };
 
     if (muteVoiceRef.current || !audioRef.current) {
-      setCurrentSpeechText(speechText);
+      setCurrentSpeechText(stripAnimationTags(speechText));
       if (setIsThinking) setIsThinking(false);
 
       const readingDelay = Math.max(2000, speechText.length * 60);
@@ -224,7 +225,7 @@ export function useAudioPlayback(options = {}) {
         if (audioRef.current) {
           audioRef.current.playbackRate = 1.0;
         }
-        setCurrentSpeechText(speechText);
+        setCurrentSpeechText(stripAnimationTags(speechText));
         if (setIsThinking) setIsThinking(false);
         if (updateListeningStateGlobal) updateListeningStateGlobal();
       };
@@ -338,7 +339,7 @@ export function useAudioPlayback(options = {}) {
       bubbleTimeoutRef.current = null;
     }
 
-    const cleanText = cleanTextForTTS(getSpeechFriendlyText(text));
+    const cleanText = cleanTextForTTS(stripAnimationTags(getSpeechFriendlyText(text)));
     if (!cleanText) {
       if (setAudioLevel) setAudioLevel(0);
       isNativeSpeakingRef.current = false;
@@ -375,7 +376,7 @@ export function useAudioPlayback(options = {}) {
 
     utterance.onstart = () => {
       isNativeSpeakingRef.current = true;
-      setCurrentSpeechText(text);
+      setCurrentSpeechText(stripAnimationTags(text));
       if (setIsThinking) setIsThinking(false);
       setTtsStreamActive(false);
       if (updateListeningStateGlobal) updateListeningStateGlobal();

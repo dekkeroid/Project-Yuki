@@ -3,6 +3,7 @@ import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles
 import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
 import { SLASH_COMMANDS } from '../constants';
+import { stripAnimationTags } from '../utils/responseParser';
 
 const getFileIcon = (fileNameOrPath) => {
   if (!fileNameOrPath) return <FileText style={{ width: '12px', height: '12px', color: '#94a3b8' }} />;
@@ -1311,7 +1312,7 @@ const ChatOverlay = ({
           <div className="bubble-arrow"></div>
 
           <span className="bubble-tag">Yuki</span>
-          <p className="bubble-text">{formatMessageText(currentSpeechText)}</p>
+          <p className="bubble-text">{formatMessageText(stripAnimationTags(currentSpeechText))}</p>
         </div>
       )}
 
