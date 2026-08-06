@@ -94,7 +94,7 @@ Current State (0 - 100 Scale):
 • Stress Level: {stress}/100 ({str_desc})
 • Doomer Index: {doomer}/100 ({doo_desc})
 • Hunger: {hunger}/100 ({hng_desc})
-• Intimacy / Horniness: {horniness}/100 ({hrn_desc})
+• Intimacy: {horniness}/100 ({hrn_desc})
 • Playfulness: {playfulness}/100 ({plf_desc})
 • Anger: {anger}/100 ({ang_desc})"""
 
