@@ -892,8 +892,10 @@ const App = () => {
 
       const { cleanText, animations, emotions } = parseResponseTags(currentResponseTextRef.current, {
         onAnimation: (animName) => {
-          setCustomAnimation(animName);
-          setTimeout(() => setCustomAnimation(''), 100);
+          if (!disabledAnimations.includes(animName)) {
+            setCustomAnimation(animName);
+            setTimeout(() => setCustomAnimation(''), 100);
+          }
         },
         onEmotion: (emotionName) => {
           setAvatarExpression(emotionName === 'happy' ? 'relaxed' : emotionName);

@@ -1426,16 +1426,18 @@ const AvatarViewer = ({
           const customName = startCustomAnimationRef.current;
           startCustomAnimationRef.current = null;
 
-          idleAnimState = customName;
-          const matchingAnim = ANIMATIONS.find(a => a.name === customName);
-          if (matchingAnim) {
-            idleAnimDuration = matchingAnim.duration;
-          } else {
-            idleAnimDuration = 4.0;
-          }
+          if (!disabledAnimationsRef.current.includes(customName)) {
+            idleAnimState = customName;
+            const matchingAnim = ANIMATIONS.find(a => a.name === customName);
+            if (matchingAnim) {
+              idleAnimDuration = matchingAnim.duration;
+            } else {
+              idleAnimDuration = 4.0;
+            }
 
-          idleAnimProgress = 0;
-          inactivityTimer = 0;
+            idleAnimProgress = 0;
+            inactivityTimer = 0;
+          }
         }
 
         if (isActive) {
