@@ -1400,7 +1400,7 @@ const App = () => {
         setCustomAnimation('greeting_wave');
         setTimeout(() => setCustomAnimation(''), 100);
         const fallbackMsg = "Welcome back, Master! I'm ready to help you today.";
-        speakSystemMessage(fallbackMsg, 'happy');
+        speakSystemMessage(fallbackMsg, 'relaxed');
       }
     }, 3500);
     return () => clearTimeout(timer);
