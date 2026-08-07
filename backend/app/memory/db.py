@@ -1591,7 +1591,7 @@ def import_crawler_database_json(data: dict) -> dict:
 
 def get_relationship_status() -> dict:
     """Fetch current relationship state, vectors, XP, level, and currency."""
-    conn = get_db_connection()
+    conn = get_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT active_route, relationship_stage, affinity_xp, romance_val, affection_val, control_val, obsession_val, star_hearts, daily_streak, last_interaction_epoch FROM relationship_vectors WHERE id = 1;")
@@ -1627,7 +1627,7 @@ def get_relationship_status() -> dict:
 
 def update_relationship_status(updates: dict) -> dict:
     """Updates fields in relationship_vectors table."""
-    conn = get_db_connection()
+    conn = get_connection()
     try:
         cursor = conn.cursor()
         allowed = ["active_route", "relationship_stage", "affinity_xp", "romance_val", "affection_val", "control_val", "obsession_val", "star_hearts", "daily_streak", "last_interaction_epoch"]
@@ -1648,7 +1648,7 @@ def update_relationship_status(updates: dict) -> dict:
 
 def get_user_inventory() -> list:
     """Fetch user's purchased gifts and cosmetics."""
-    conn = get_db_connection()
+    conn = get_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT id, item_id, name, category, quantity, is_equipped, purchased_at FROM inventory;")
@@ -1671,7 +1671,7 @@ def get_user_inventory() -> list:
 
 def add_inventory_item(item_id: str, name: str, category: str, quantity: int = 1) -> list:
     """Add or increment an item in user's inventory."""
-    conn = get_db_connection()
+    conn = get_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT quantity FROM inventory WHERE item_id = ?;", (item_id,))

@@ -208,7 +208,7 @@ export function useAudioPlayback(options = {}) {
     try {
       audioRef.current.volume = voiceVolumeRef.current;
       if (profile?.settings?.audio_output_device && typeof audioRef.current.setSinkId === 'function') {
-        const targetSink = profile.settings.audio_output_device === 'default' ? '' : profile.settings.audio_output_device;
+        const targetSink = profile?.settings?.audio_output_device === 'default' ? '' : (profile?.settings?.audio_output_device || '');
         audioRef.current.setSinkId(targetSink).catch(() => {});
       }
       audioRef.current.src = audioUrl;

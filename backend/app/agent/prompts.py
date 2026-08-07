@@ -280,14 +280,15 @@ Be warm, helpful, and keep all responses voice-friendly!""")
     return _scrub_blocked_tools("\n\n".join(parts))
 
 
-def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None, mood_meta: dict = None) -> str:
+def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None, mood_meta: dict = None, profile: dict = None) -> str:
     """
     Advanced Jarvis System Prompt for Frontier Cloud LLMs.
     Enables parallel tool execution, iterative multi-step ReAct reasoning, 
     code review, SQLite file database queries, web scraping, and PC troubleshooting.
     """
     mood_block = format_mood_spectrum_prompt(mood, mood_meta) if mood else ""
-    return _scrub_blocked_tools(f"""{app.config.CHARACTER_PERSONA}
+    persona_text = stitch_system_persona(profile)
+    return _scrub_blocked_tools(f"""{persona_text}
 
 {mood_block}
 

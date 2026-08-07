@@ -148,7 +148,8 @@ class MemoryManager:
                 config.LLM_CODER_BASE_URL = data["settings"].get("llm_coder_base_url", getattr(config, "LLM_CODER_BASE_URL", ""))
                 config.LLM_CODER_MODEL = data["settings"].get("llm_coder_model", getattr(config, "LLM_CODER_MODEL", ""))
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
-                config.CHARACTER_PERSONA = data["settings"].get("character_persona", config.CHARACTER_PERSONA)
+                from app.agent.personas import stitch_system_persona
+                config.CHARACTER_PERSONA = stitch_system_persona(data)
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
                 config.NO_LLM_MODE = data["settings"].get("no_llm_mode", False)
                 config.LLM_BACKEND = data["settings"].get("llm_backend", config.LLM_BACKEND)
@@ -179,8 +180,13 @@ class MemoryManager:
                 
                 return data
         except Exception as e:
-            print(f"Error loading profile: {e}. Reinitializing with default profile.")
+            import traceback
+            traceback.print_exc()
+            print(f"Error loading profile: {e}. Backing up corrupted profile and reinitializing.")
             try:
+                import shutil
+                if os.path.exists(self.profile_path):
+                    shutil.copy2(self.profile_path, f"{self.profile_path}.bak")
                 with open(self.profile_path, "w", encoding="utf-8") as f:
                     json.dump(default_profile, f, indent=4, ensure_ascii=False)
             except Exception as save_err:
@@ -296,8 +302,9 @@ class MemoryManager:
             config.TTS_RATE = value
         elif key == "character_name":
             config.CHARACTER_NAME = value
-        elif key == "character_persona":
-            config.CHARACTER_PERSONA = value
+        elif key in ("persona_preset", "character_persona", "auto_evolving_archetype", "archetype_intensity", "execution_rules"):
+            from app.agent.personas import stitch_system_persona
+            config.CHARACTER_PERSONA = stitch_system_persona(self.profile)
         elif key == "llm_model":
             config.LLM_MODEL = value
         elif key == "llm_backend":

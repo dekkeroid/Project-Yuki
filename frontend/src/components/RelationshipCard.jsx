@@ -148,31 +148,7 @@ export default function RelationshipCard({ relationshipStatus, onOpenShop, onClo
         </div>
       </div>
 
-      {/* Action Button */}
-      {onOpenShop && (
-        <button
-          onClick={onOpenShop}
-          style={{
-            width: '100%',
-            padding: '12px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)',
-            color: '#ffffff',
-            border: 'none',
-            fontWeight: 700,
-            fontSize: '0.9rem',
-            cursor: 'pointer',
-            boxShadow: '0 4px 15px rgba(244,63,94,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px'
-          }}
-        >
-          <Gift style={{ width: '18px', height: '18px' }} />
-          Open Gift & Cosmetics Shop
-        </button>
-      )}
+
     </div>
   );
 }
