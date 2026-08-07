@@ -267,6 +267,10 @@ async def _coordinate_startup_optimization():
             whisper_warmed_up_event.wait(),
             return_exceptions=True
         )
+        print("[Startup] All critical models (LLM, TTS, STT) are loaded/warmed up.")
+        from app.memory.network import broadcast_to_clients
+        await broadcast_to_clients({"type": "backend_ready"})
+
         await asyncio.sleep(5)
         print("[Startup] Model warmups complete. Performing initial memory sweep...")
         from app.memory.optimizer import optimize_all_processes
@@ -1126,6 +1130,10 @@ class SettingsUpdateRequest(BaseModel):
     stt_device: Optional[str] = None
     character_name: Optional[str] = None
     character_persona: Optional[str] = None
+    persona_preset: Optional[str] = None
+    execution_rules: Optional[str] = None
+    auto_evolving_archetype: Optional[bool] = None
+    archetype_intensity: Optional[str] = None
     crawler_paused: Optional[bool] = None
     tagger_paused: Optional[bool] = None
     active_vrm_model: Optional[str] = None
@@ -1239,6 +1247,10 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("character_persona", req.character_persona.strip())
     if req.execution_rules is not None:
         memory_manager.update_setting("execution_rules", req.execution_rules.strip())
+    if req.auto_evolving_archetype is not None:
+        memory_manager.update_setting("auto_evolving_archetype", bool(req.auto_evolving_archetype))
+    if req.archetype_intensity is not None:
+        memory_manager.update_setting("archetype_intensity", req.archetype_intensity.strip().lower())
 
     if req.basic_history_token_limit is not None:
         memory_manager.update_setting("basic_history_token_limit", int(req.basic_history_token_limit))
@@ -1316,35 +1328,7 @@ async def get_relationship_status_api():
     return status
 
 
-class GiftPurchaseRequest(BaseModel):
-    item_id: str
-    name: str
-    category: str
-    cost: int
 
-
-@app.post("/api/relationship/gift")
-async def purchase_gift_api(req: GiftPurchaseRequest):
-    """Purchase a gift or item using Star Hearts currency."""
-    from app.memory.db import get_relationship_status, update_relationship_status, add_inventory_item
-    status = get_relationship_status()
-    current_hearts = status.get("star_hearts", 0)
-    if current_hearts < req.cost:
-        raise HTTPException(status_code=400, detail="Not enough Star Hearts currency")
-    
-    new_hearts = current_hearts - req.cost
-    new_xp = status.get("affinity_xp", 0) + 15
-    update_relationship_status({"star_hearts": new_hearts, "affinity_xp": new_xp})
-    inv = add_inventory_item(req.item_id, req.name, req.category, quantity=1)
-    
-    # Direct mood engine affection boost
-    mood_engine.adjust({"affection": 15, "happiness": 10})
-    return {
-        "success": True,
-        "star_hearts": new_hearts,
-        "affinity_xp": new_xp,
-        "inventory": inv
-    }
 
     if req.llm_coder_base_url is not None:
         config.LLM_CODER_BASE_URL = req.llm_coder_base_url.strip()

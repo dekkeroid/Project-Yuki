@@ -183,9 +183,11 @@ TTS_CLOUD_ENDPOINT = ""  # Runtime only — used for "custom" provider
 TTS_CLOUD_VOICE = ""     # Runtime only — voice/model name for cloud TTS
 
 # Character Settings
+CHARACTER_NAME = "Yuki"
 from app.agent.personas import stitch_system_persona, PERSONA_PRESETS, DEFAULT_EXECUTION_RULES
 
 CHARACTER_PERSONA = stitch_system_persona()
+
 
 
 NO_LLM_MODE = False

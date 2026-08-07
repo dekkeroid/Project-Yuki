@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Suspense, lazy } from 'react';
-import { Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText } from 'lucide-react';
+import { Heart, ShoppingBag, Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 import { useBackendSocket } from './hooks/useBackendSocket';
@@ -18,7 +18,6 @@ const AvatarViewer = lazy(() => import('./components/AvatarViewer'));
 const ChatOverlay = lazy(() => import('./components/ChatOverlay'));
 const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
 import RelationshipCard from './components/RelationshipCard';
-import YukiShopModal from './components/YukiShopModal';
 import { SearchableVrmSelect } from './components/ControlDashboard';
 
 import { RenderMessageContent, AgenticToolTimelineItem, renderMessageAttachments } from './components/ChatOverlay';
@@ -139,6 +138,7 @@ const App = () => {
   const [showRelationshipCard, setShowRelationshipCard] = useState(false);
   const [showShopModal, setShowShopModal] = useState(false);
   const [relationshipData, setRelationshipData] = useState(null);
+  const [isBackendFullyReady, setIsBackendFullyReady] = useState(false);
 
   const fetchRelationshipStatus = useCallback(async () => {
     try {
@@ -334,7 +334,7 @@ const App = () => {
 
   // Sync companion local states when profile changes
   useEffect(() => {
-    if (profile.settings) {
+    if (profile?.settings) {
       if (profile.settings.character_name) {
         setLocalCharName(profile.settings.character_name);
       }
@@ -342,7 +342,7 @@ const App = () => {
         setLocalCharPersona(profile.settings.character_persona);
       }
     }
-  }, [profile.settings]);
+  }, [profile?.settings]);
 
   const [audioLevel, setAudioLevel] = useState(0);
   const [isThinking, setIsThinkingState] = useState(false);
@@ -803,15 +803,20 @@ const App = () => {
       return; // mood_update is fully handled here
     }
 
+    if (msg.type === 'backend_ready') {
+      setIsBackendFullyReady(true);
+      return;
+    }
+
     if (msg.type === 'profile_update') {
       setProfile(msg.profile);
-      if (msg.profile.settings && msg.profile.settings.llm_model) {
+      if (msg?.profile?.settings?.llm_model) {
         setModelName(msg.profile.settings.llm_model);
       }
-      if (msg.profile.settings && msg.profile.settings.crawler_paused !== undefined) {
+      if (msg?.profile?.settings?.crawler_paused !== undefined) {
         setCrawlerPaused(msg.profile.settings.crawler_paused);
       }
-      if (msg.profile.settings && msg.profile.settings.tagger_paused !== undefined) {
+      if (msg?.profile?.settings?.tagger_paused !== undefined) {
         setTaggerPaused(msg.profile.settings.tagger_paused);
       }
     } else if (msg.type === 'status') {
@@ -1404,30 +1409,28 @@ const App = () => {
     };
   }, []);
 
-  // On startup (after 3.5 seconds), trigger LLM mood-driven greeting (non-coder mode)
+  // On startup: Wait until backend (Kokoro TTS, etc.) is fully ready before triggering greeting
   const hasSentStartupGreetingRef = useRef(false);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (hasSentStartupGreetingRef.current) return;
-      hasSentStartupGreetingRef.current = true;
+    if (!isBackendFullyReady) return;
+    if (hasSentStartupGreetingRef.current) return;
+    hasSentStartupGreetingRef.current = true;
 
-      // Check if WebSocket is connected & LLM is enabled (non-coder companion mode)
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && !profile?.settings?.no_llm_mode) {
-        console.log('[Startup] Requesting mood-driven LLM startup greeting...');
-        setTtsStreamActive(true);
-        setIsThinking(true);
-        const greetingPrompt = "[SYSTEM EVENT: User just opened Project Yuki. Give a brief, warm 1-sentence greeting (under 12 words) reflecting your current mood state. Include <yuki_anim:wave/> or a mood emotion tag at the start.]";
-        socketRef.current.send(JSON.stringify({ type: 'chat', message: greetingPrompt, is_startup_greeting: true }));
-      } else {
-        // Fallback offline TTS voice greeting + wave motion
-        setCustomAnimation('greeting_wave');
-        setTimeout(() => setCustomAnimation(''), 100);
-        const fallbackMsg = "Welcome back, Master! I'm ready to help you today.";
-        speakSystemMessage(fallbackMsg, 'relaxed');
-      }
-    }, 3500);
-    return () => clearTimeout(timer);
-  }, [profile?.settings?.no_llm_mode]);
+    // Check if WebSocket is connected & LLM is enabled (non-coder companion mode)
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && !profile?.settings?.no_llm_mode) {
+      console.log('[Startup] Requesting mood-driven LLM startup greeting...');
+      setTtsStreamActive(true);
+      setIsThinking(true);
+      const greetingPrompt = "[SYSTEM EVENT: User just opened Project Yuki. Give a brief, warm 1-sentence greeting (under 12 words) reflecting your current mood state. Include <yuki_anim:wave/> or a mood emotion tag at the start.]";
+      socketRef.current.send(JSON.stringify({ type: 'chat', message: greetingPrompt, is_startup_greeting: true }));
+    } else {
+      // Fallback offline TTS voice greeting + wave motion
+      setCustomAnimation('greeting_wave');
+      setTimeout(() => setCustomAnimation(''), 100);
+      const fallbackMsg = "Welcome back, Master! I'm ready to help you today.";
+      speakSystemMessage(fallbackMsg, 'relaxed');
+    }
+  }, [isBackendFullyReady, profile?.settings?.no_llm_mode]);
 
   // AFK Welcoming Detector hook
   const isAfkRef = useRef(false);
@@ -1618,7 +1621,7 @@ const App = () => {
           setProfile((prev) => ({
             ...prev,
             settings: {
-              ...prev.settings,
+              ...(prev?.settings || {}),
               ...data.settings
             }
           }));
@@ -2475,7 +2478,7 @@ const App = () => {
               customAnimation={customAnimation}
               disabledAnimations={disabledAnimations}
               activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
-              enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
+              enableRotation={profile?.settings?.enable_rotation ?? true}
               autoResetRotation={profile.settings?.auto_reset_rotation || false}
               visible={isVisible}
               isBackendOnline={backendStatus === 'online'}
@@ -4302,7 +4305,7 @@ const App = () => {
                         <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
                           <input
                             type="checkbox"
-                            checked={profile.settings?.dynamic_tool_calling !== undefined ? profile.settings.dynamic_tool_calling : true}
+                            checked={profile?.settings?.dynamic_tool_calling ?? true}
                             onChange={(e) => handleUpdateSetting('dynamic_tool_calling', e.target.checked)}
                             style={{ accentColor: '#a855f7', width: '13px', height: '13px', cursor: 'pointer' }}
                           />
@@ -4473,7 +4476,7 @@ const App = () => {
                         <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', userSelect: 'none' }}>
                           <input
                             type="checkbox"
-                            checked={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
+                            checked={profile?.settings?.enable_rotation ?? true}
                             onChange={(e) => handleUpdateSetting('enable_rotation', e.target.checked)}
                             style={{ accentColor: '#2dd4bf', width: '13px', height: '13px', cursor: 'pointer' }}
                           />
@@ -4482,7 +4485,7 @@ const App = () => {
                           </span>
                         </label>
 
-                        {(profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true) && (
+                        {(profile?.settings?.enable_rotation ?? true) && (
                           <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', marginLeft: '16px', cursor: 'pointer', userSelect: 'none' }}>
                             <input
                               type="checkbox"
@@ -4496,7 +4499,7 @@ const App = () => {
                           </label>
                         )}
 
-                        {(profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true) && (
+                        {(profile?.settings?.enable_rotation ?? true) && (
                           <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', marginLeft: '16px', cursor: 'pointer', userSelect: 'none' }}>
                             <input
                               type="checkbox"
@@ -4940,7 +4943,7 @@ const App = () => {
             customAnimation={customAnimation}
             disabledAnimations={disabledAnimations}
             activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
-            enableRotation={profile.settings?.enable_rotation !== undefined ? profile.settings.enable_rotation : true}
+            enableRotation={profile?.settings?.enable_rotation ?? true}
             autoResetRotation={profile.settings?.auto_reset_rotation || false}
             visible={isVisible}
             isBackendOnline={backendStatus === 'online'}
@@ -4983,6 +4986,14 @@ const App = () => {
           onResetProfile={handleReset}
           modelName={modelName}
           lmstudioUrl={lmstudioUrl}
+          onOpenRelationshipCard={() => {
+            fetchRelationshipStatus();
+            setShowRelationshipCard(true);
+          }}
+          onOpenShop={() => {
+            fetchRelationshipStatus();
+            setShowShopModal(true);
+          }}
           onProfileUpdate={(updatedProfile) => {
             if (updatedProfile) {
               setProfile(updatedProfile);
@@ -5105,19 +5116,7 @@ const App = () => {
       {showRelationshipCard && relationshipData && (
         <RelationshipCard
           relationshipStatus={relationshipData}
-          onOpenShop={() => {
-            setShowRelationshipCard(false);
-            setShowShopModal(true);
-          }}
           onClose={() => setShowRelationshipCard(false)}
-        />
-      )}
-
-      {showShopModal && (
-        <YukiShopModal
-          starHearts={relationshipData?.star_hearts || 100}
-          onPurchaseComplete={() => fetchRelationshipStatus()}
-          onClose={() => setShowShopModal(false)}
         />
       )}
 

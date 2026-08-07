@@ -4,6 +4,8 @@ import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
 import MicLevelMeter from './MicLevelMeter';
+import RelationshipCard from './RelationshipCard';
+import MilestoneJournalModal from './MilestoneJournalModal';
 
 const SKIN_PRESETS = [
   { name: 'Original', value: '#ffffff' },
@@ -476,6 +478,8 @@ const ControlDashboard = ({
   modelName,
   lmstudioUrl,
   onProfileUpdate,
+  onOpenRelationshipCard,
+  onOpenShop,
   skinToneColor = '#FFE5E5',
   onSkinToneChange,
   cameraTracking = true,
@@ -509,6 +513,26 @@ const ControlDashboard = ({
   const [settingsSubTab, setSettingsSubTab] = useState('general'); // 'general' | 'avatar' | 'voice' | 'brain'
   const refreshTimerRef = useRef(null);
   const refreshSimpleTimerRef = useRef(null);
+
+  const [showRelationshipCard, setShowRelationshipCard] = useState(false);
+  const [showJournalModal, setShowJournalModal] = useState(false);
+  const [relationshipData, setRelationshipData] = useState(null);
+  const [autoEvolveArchetype, setAutoEvolveArchetype] = useState(profile?.settings?.auto_evolving_archetype ?? true);
+  const [archetypeIntensity, setArchetypeIntensity] = useState(profile?.settings?.archetype_intensity || 'moderate');
+
+  const fetchRelationshipStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/relationship/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setRelationshipData(data);
+        return data;
+      }
+    } catch (e) {
+      console.error('Failed to fetch relationship status:', e);
+    }
+    return null;
+  };
 
   const [audioOutputDevices, setAudioOutputDevices] = useState([]);
 
@@ -727,6 +751,26 @@ const ControlDashboard = ({
   const [executionRules, setExecutionRules] = useState('');
   const [presetsRegistry, setPresetsRegistry] = useState({});
 
+  const [crawlerStatus, setCrawlerStatus] = useState({
+    paused: false,
+    tagger_paused: false,
+    current_path: 'Idle',
+    current_tagger_path: 'Idle',
+    total_files: 0,
+    pending_enrichment: 0,
+    initial_crawl_completed: false,
+    first_time_priority_done: false,
+    first_cycle_done: false,
+    completed_roots: [],
+    remaining_roots: [],
+    roots_total: 0,
+    roots_current: 0,
+    current_root_path: 'Idle',
+    watchdog_active: false
+  });
+  const [gpuMemData, setGpuMemData] = useState({ gpus: [], top5: {} });
+
+
   useEffect(() => {
     fetch(`${API_BASE}/api/personas/presets`)
       .then(res => res.json())
@@ -743,16 +787,16 @@ const ControlDashboard = ({
 
   // Sync character local states when settings change
   useEffect(() => {
-    if (settings.character_name) {
+    if (settings?.character_name) {
       setCharName(settings.character_name);
     }
-    if (settings.character_persona) {
+    if (settings?.character_persona) {
       setCharPersona(settings.character_persona);
     }
-    if (settings.persona_preset) {
+    if (settings?.persona_preset) {
       setPersonaPreset(settings.persona_preset);
     }
-    if (settings.execution_rules) {
+    if (settings?.execution_rules) {
       setExecutionRules(settings.execution_rules);
     }
   }, [settings]);
@@ -1791,10 +1835,10 @@ const ControlDashboard = ({
         const data = await res.json();
         setCrawlerStatus(prev => ({
           ...prev,
-          paused: data.settings.crawler_paused,
-          tagger_paused: data.settings.tagger_paused
+          paused: data?.settings?.crawler_paused ?? prev.paused,
+          tagger_paused: data?.settings?.tagger_paused ?? prev.tagger_paused
         }));
-        setSettings(data.settings);
+        if (data?.settings) setSettings(data.settings);
       }
     } catch (e) {
       console.error('Failed to update crawler pause state:', e);
@@ -1814,10 +1858,10 @@ const ControlDashboard = ({
         const data = await res.json();
         setCrawlerStatus(prev => ({
           ...prev,
-          paused: data.settings.crawler_paused,
-          tagger_paused: data.settings.tagger_paused
+          paused: data?.settings?.crawler_paused ?? prev.paused,
+          tagger_paused: data?.settings?.tagger_paused ?? prev.tagger_paused
         }));
-        setSettings(data.settings);
+        if (data?.settings) setSettings(data.settings);
       }
     } catch (e) {
       console.error('Failed to update tagger pause state:', e);
@@ -2721,10 +2765,10 @@ const ControlDashboard = ({
                   />
                 </div>
 
-                {/* Section 1: Persona Preset Dropdown */}
+                {/* Section 1: Core Character Identity & Backstory Dropdown */}
                 <div className="identity-field" style={{ marginTop: '8px' }}>
                   <span className="field-label" style={{ fontWeight: 600, color: '#2dd4bf' }}>
-                    Section 1: Persona Preset & Core Archetype
+                    Section 1: Core Character Identity & Backstory
                   </span>
                   <select
                     value={personaPreset}
@@ -2740,10 +2784,125 @@ const ControlDashboard = ({
                   >
                     {Object.entries(presetsRegistry).map(([key, item]) => (
                       <option key={key} value={key} style={{ background: '#0f172a', color: '#f8fafc' }}>
-                        {item.name} — {item.description}
+                        {item.name}
                       </option>
                     ))}
                   </select>
+                  {presetsRegistry[personaPreset]?.description && (
+                    <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '4px', fontStyle: 'italic', lineHeight: '1.3' }}>
+                      {presetsRegistry[personaPreset].description}
+                    </div>
+                  )}
+
+                  {/* Auto-Evolving Archetype Toggle Switch */}
+                  <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '8px', background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#e2e8f0' }}>Auto-Evolving Behavioral Archetype</div>
+                      <div style={{ fontSize: '0.65rem', color: '#94a3b8' }}>Dynamic behavioral traits (Romantic, Tsundere, Yandere, etc.) overlay her identity over time</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={autoEvolveArchetype}
+                      onChange={(e) => {
+                        setAutoEvolveArchetype(e.target.checked);
+                        handleUpdateSetting('auto_evolving_archetype', e.target.checked);
+                      }}
+                      style={{ accentColor: '#2dd4bf', width: '16px', height: '16px', cursor: 'pointer' }}
+                    />
+                  </div>
+
+                  {/* Flavor Intensity Selector */}
+                  {autoEvolveArchetype && (
+                    <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '8px', background: 'rgba(15,23,42,0.4)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>Behavioral Flavor Intensity</span>
+                      <select
+                        value={archetypeIntensity}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setArchetypeIntensity(val);
+                          handleUpdateSetting('archetype_intensity', val);
+                        }}
+                        className="glass-input"
+                        style={{ padding: '4px 8px', fontSize: '0.72rem', background: '#0f172a', color: '#f8fafc', borderRadius: '6px' }}
+                      >
+                        <option value="subtle">Subtle (Realistic)</option>
+                        <option value="moderate">Moderate (Balanced)</option>
+                        <option value="full_drama">Full Anime Drama</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Dedicated Relationship Dynamics & Logbook Panel */}
+                  <div style={{
+                    marginTop: '10px',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    background: 'linear-gradient(135deg, rgba(168,85,247,0.1) 0%, rgba(147,51,234,0.08) 100%)',
+                    border: '1px solid rgba(168,85,247,0.25)'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#e9d5ff' }}>
+                        Relationship Dynamics & Memory Log
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (onOpenRelationshipCard) {
+                            onOpenRelationshipCard();
+                          } else {
+                            await fetchRelationshipStatus();
+                            setShowRelationshipCard(true);
+                          }
+                        }}
+                        className="glass-button"
+                        style={{
+                          flex: 1,
+                          padding: '7px 10px',
+                          fontSize: '0.72rem',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, rgba(244,63,94,0.25) 0%, rgba(225,29,72,0.3) 100%)',
+                          border: '1px solid rgba(244,63,94,0.5)',
+                          color: '#fff',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 2px 8px rgba(244,63,94,0.2)'
+                        }}
+                      >
+                        Open Relationship HUD
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await fetchRelationshipStatus();
+                          setShowJournalModal(true);
+                        }}
+                        className="glass-button"
+                        style={{
+                          flex: 1,
+                          padding: '7px 10px',
+                          fontSize: '0.72rem',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, rgba(168,85,247,0.25) 0%, rgba(147,51,234,0.3) 100%)',
+                          border: '1px solid rgba(168,85,247,0.5)',
+                          color: '#fff',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 2px 8px rgba(168,85,247,0.2)'
+                        }}
+                      >
+                        Open Milestone Journal
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="identity-field" style={{ marginTop: '6px' }}>
@@ -6771,6 +6930,24 @@ const ControlDashboard = ({
           Yuki Desktop Companion v1.0.0 (Agentic Node)
         </div>
       </div>
+
+      {showRelationshipCard && relationshipData && (
+        <RelationshipCard
+          relationshipStatus={relationshipData}
+          onOpenShop={() => {
+            setShowRelationshipCard(false);
+            setShowJournalModal(true);
+          }}
+          onClose={() => setShowRelationshipCard(false)}
+        />
+      )}
+
+      {showJournalModal && (
+        <MilestoneJournalModal
+          relationshipStatus={relationshipData}
+          onClose={() => setShowJournalModal(false)}
+        />
+      )}
     </>
   );
 };
