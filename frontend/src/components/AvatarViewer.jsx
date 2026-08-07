@@ -954,6 +954,9 @@ const AvatarViewer = ({
     let dragPitchAngle = 0;
     let dragDangleTimer = 0;
     let dragStateProgress = 0;
+    let orbitSwayAngle = 0;
+    let orbitVelX = 0;
+    let lastCameraAzimuth = undefined;
 
     let startX = 0;
     let startY = 0;
@@ -1313,6 +1316,30 @@ const AvatarViewer = ({
       // Only run physics calculations and render the frame if our threshold is met
       if (accumulatedTime >= frameDelay) {
         const time = clock.getElapsedTime();
+
+        // Track subtle camera rotation speed for hair, chest, and wrist inertia (WITHOUT triggering pick-up ragdoll state)
+        let curOrbitVelX = 0;
+        if (camera && controls) {
+          const dxCam = camera.position.x - controls.target.x;
+          const dzCam = camera.position.z - controls.target.z;
+          const curAzimuth = Math.atan2(dxCam, dzCam);
+
+          if (lastCameraAzimuth !== undefined && delta > 0) {
+            let deltaAz = curAzimuth - lastCameraAzimuth;
+            if (deltaAz > Math.PI) deltaAz -= Math.PI * 2;
+            if (deltaAz < -Math.PI) deltaAz += Math.PI * 2;
+
+            if (Math.abs(deltaAz) > 0.0001) {
+              curOrbitVelX = (deltaAz / delta);
+            }
+          }
+          lastCameraAzimuth = curAzimuth;
+        }
+
+        // Smoothly decay orbit velocity and calculate subtle sway angle
+        orbitVelX = orbitVelX * 0.82 + curOrbitVelX * 0.18;
+        const targetOrbitSway = -orbitVelX * 0.035; // subtle rotational inertia angle
+        orbitSwayAngle += (targetOrbitSway - orbitSwayAngle) * Math.min(1.0, delta * 10.0);
 
         // Drag state update and physics calculation
         const enableDragPhysics = window.yukiDebugToggles ? window.yukiDebugToggles.dragPhysics : true;
@@ -1940,7 +1967,7 @@ const AvatarViewer = ({
                 chest.rotation.z = dragSwayAngle * 0.3 * zMult;
               } else {
                 chest.rotation.x = (chestOffsetX + 0.015 + Math.sin(time * breathingSpeed) * breathingDepth + Math.sin(time * breathingSpeed * 2) * (breathingDepth * 0.25)) * xMult;
-                chest.rotation.y = Math.sin(time * 0.3) * 0.01 * yMult;       // slow sway
+                chest.rotation.y = (Math.sin(time * 0.3) * 0.01 + orbitSwayAngle * 0.3) * yMult;       // slow sway + orbit inertia
               }
             }
 
@@ -1952,7 +1979,7 @@ const AvatarViewer = ({
                 spine.rotation.z = dragSwayAngle * 0.45 * zMult;
               } else {
                 spine.rotation.x = spineOffsetX * xMult;                      // stretch bend back
-                spine.rotation.y = Math.sin(time * 0.25) * 0.012 * yMult;     // spine sway
+                spine.rotation.y = (Math.sin(time * 0.25) * 0.012 + orbitSwayAngle * 0.2) * yMult;     // spine sway + orbit inertia
                 spine.rotation.z = Math.cos(time * 0.2) * 0.006 * zMult;
               }
             }
@@ -2275,9 +2302,12 @@ const AvatarViewer = ({
                   awakeShoulderY = 0.08 * yMult;
                   awakeShoulderZ = (0.1 * easeVal + 1.25 * (1 - easeVal)) * zMult;
                 } else {
-                  awakeShoulderX = (0.15 + Math.sin(time * 1.4) * 0.008) * xMult;
-                  awakeShoulderY = 0.08 * yMult;
-                  awakeShoulderZ = (leftArmOffsetZ + 1.25 + Math.sin(time * 1.4) * 0.012 - shiftCycle * 0.01) * zMult;
+                  const upperArmTime = time * 1.2;
+                  const multiSwayX = (Math.sin(upperArmTime) * 0.012 + Math.cos(upperArmTime * 2.3 + 0.4) * 0.006);
+                  const multiSwayZ = (Math.sin(upperArmTime * 0.9 + 0.5) * 0.016 + Math.cos(upperArmTime * 2.1) * 0.008);
+                  awakeShoulderX = (0.15 + multiSwayX) * xMult;
+                  awakeShoulderY = (0.08 + Math.sin(upperArmTime * 0.7) * 0.008 + orbitSwayAngle * 0.3) * yMult;
+                  awakeShoulderZ = (leftArmOffsetZ + 1.25 + multiSwayZ - shiftCycle * 0.01) * zMult;
                 }
 
                 const asleepShoulderX = 0.06 * xMult;
@@ -2373,9 +2403,12 @@ const AvatarViewer = ({
                   awakeShoulderY = (-0.45 * easeVal - 0.08 * (1 - easeVal)) * yMult;
                   awakeShoulderZ = (-1.05 * easeVal - 1.25 * (1 - easeVal)) * zMult;
                 } else {
-                  awakeShoulderX = (0.15 + Math.sin(time * 1.4) * 0.008) * xMult;
-                  awakeShoulderY = -0.08 * yMult;
-                  awakeShoulderZ = (rightArmOffsetZ - 1.25 - Math.sin(time * 1.4) * 0.012 + shiftCycle * 0.01) * zMult;
+                  const upperArmTime = time * 1.2 + 0.5;
+                  const multiSwayX = (Math.sin(upperArmTime) * 0.012 + Math.cos(upperArmTime * 2.3 + 0.8) * 0.006);
+                  const multiSwayZ = (Math.sin(upperArmTime * 0.9 + 0.2) * 0.016 + Math.cos(upperArmTime * 2.1) * 0.008);
+                  awakeShoulderX = (0.15 + multiSwayX) * xMult;
+                  awakeShoulderY = (-0.08 - Math.sin(upperArmTime * 0.7) * 0.008 + orbitSwayAngle * 0.3) * yMult;
+                  awakeShoulderZ = (rightArmOffsetZ - 1.25 - multiSwayZ + shiftCycle * 0.01) * zMult;
                 }
 
                 const asleepShoulderX = 0.06 * xMult;
@@ -2427,6 +2460,7 @@ const AvatarViewer = ({
             const leftElbow = getBoneNode(vrm, 'leftLowerArm');
             const rightElbow = getBoneNode(vrm, 'rightLowerArm');
             if (leftElbow) {
+              let awakeElbowX = 0;
               let awakeElbowY = 0;
               let awakeElbowZ = 0;
 
@@ -2435,18 +2469,27 @@ const AvatarViewer = ({
                 const easeVal = Math.sin(t * Math.PI);
                 awakeElbowZ = (1.25 * easeVal) * zMult;
                 awakeElbowY = -0.4 * yMult;
+                awakeElbowX = 0.2 * easeVal * xMult;
               } else {
-                awakeElbowY = (leftElbowOffsetY - 0.4 + (isWalkingRef.current ? 0 : Math.sin(time * 1.4) * 0.008)) * yMult;
-                awakeElbowZ = 0 * zMult;
+                const lowerArmTime = (time - 0.18) * 1.2; // 180ms kinetic phase lag behind upper arm
+                const elbowSwayY = (Math.sin(lowerArmTime * 1.1) * 0.015 + Math.cos(lowerArmTime * 2.4 + 0.3) * 0.008);
+                const elbowFlexX = (0.22 + Math.sin(lowerArmTime * 0.85) * 0.015); // natural relaxed X elbow bend forward
+                const elbowFlexZ = (0.06 + Math.cos(lowerArmTime * 0.7) * 0.008);
+                awakeElbowX = (isWalkingRef.current ? 0.1 : elbowFlexX) * xMult;
+                awakeElbowY = (leftElbowOffsetY - 0.2 + (isWalkingRef.current ? 0 : elbowSwayY)) * yMult;
+                awakeElbowZ = (isWalkingRef.current ? 0 : elbowFlexZ) * zMult;
               }
 
+              const asleepElbowX = 0.08 * xMult;
               const asleepElbowY = -0.15 * yMult;
               const asleepElbowZ = 0 * zMult;
 
+              leftElbow.rotation.x = THREE.MathUtils.lerp(awakeElbowX, asleepElbowX, sleepProgressRef.current);
               leftElbow.rotation.y = THREE.MathUtils.lerp(awakeElbowY, asleepElbowY, sleepProgressRef.current);
               leftElbow.rotation.z = THREE.MathUtils.lerp(awakeElbowZ, asleepElbowZ, sleepProgressRef.current);
             }
             if (rightElbow) {
+              let awakeElbowX = 0;
               let awakeElbowY = 0;
               let awakeElbowZ = 0;
 
@@ -2455,35 +2498,68 @@ const AvatarViewer = ({
                 const tapOffset = knockTimer < 0.45 ? Math.sin(knockTimer * Math.PI * 14) * 0.14 : 0;
                 awakeElbowZ = ((-1.3 + tapOffset) * easeVal) * zMult;
                 awakeElbowY = (rightElbowOffsetY + 0.2 * easeVal) * yMult;
+                awakeElbowX = 0.3 * easeVal * xMult;
               } else if (idleAnimState === 'greeting_wave') {
                 const t = idleAnimProgress / idleAnimDuration;
                 const easeVal = Math.sin(t * Math.PI);
                 awakeElbowZ = (1.4 * easeVal) * zMult;
                 awakeElbowY = (rightElbowOffsetY + 1.6 * easeVal) * yMult;
+                awakeElbowX = 0.4 * easeVal * xMult;
               } else if (idleAnimState === 'pouting') {
                 const t = idleAnimProgress / idleAnimDuration;
                 const easeVal = Math.sin(t * Math.PI);
                 awakeElbowZ = (-1.25 * easeVal) * zMult;
-                awakeElbowY = (rightElbowOffsetY + 0.4) * yMult;
+                awakeElbowY = (rightElbowOffsetY + 0.2) * yMult;
+                awakeElbowX = 0.2 * easeVal * xMult;
               } else {
-                awakeElbowY = (rightElbowOffsetY + 0.4 + (isWalkingRef.current ? 0 : Math.sin(time * 1.4) * 0.008)) * yMult;
-                awakeElbowZ = 0 * zMult;
+                const lowerArmTime = (time - 0.18) * 1.2 + 0.5; // 180ms kinetic phase lag behind upper arm
+                const elbowSwayY = (Math.sin(lowerArmTime * 1.1) * 0.015 + Math.cos(lowerArmTime * 2.4 + 0.6) * 0.008);
+                const elbowFlexX = (0.22 + Math.sin(lowerArmTime * 0.85 + 0.5) * 0.015); // natural relaxed X elbow bend forward
+                const elbowFlexZ = (-0.06 - Math.cos(lowerArmTime * 0.7 + 0.5) * 0.008);
+                awakeElbowX = (isWalkingRef.current ? 0.1 : elbowFlexX) * xMult;
+                awakeElbowY = (rightElbowOffsetY + 0.2 + (isWalkingRef.current ? 0 : elbowSwayY)) * yMult;
+                awakeElbowZ = (isWalkingRef.current ? 0 : elbowFlexZ) * zMult;
               }
 
+              const asleepElbowX = 0.08 * xMult;
               const asleepElbowY = 0.15 * yMult;
               const asleepElbowZ = 0 * zMult;
 
+              rightElbow.rotation.x = THREE.MathUtils.lerp(awakeElbowX, asleepElbowX, sleepProgressRef.current);
               rightElbow.rotation.y = THREE.MathUtils.lerp(awakeElbowY, asleepElbowY, sleepProgressRef.current);
               rightElbow.rotation.z = THREE.MathUtils.lerp(awakeElbowZ, asleepElbowZ, sleepProgressRef.current);
             }
 
             const leftHand = getBoneNode(vrm, 'leftHand');
             const rightHand = getBoneNode(vrm, 'rightHand');
+
+            // Kinetic drag time with ~350ms phase lag behind shoulders
+            const handTimeL = (time - 0.35) * 1.2;
+            const handTimeR = (time - 0.35) * 1.2 + 0.5;
+
+            // Micro-fidget impulse generator for wrists (spikes periodically every ~4-6s)
+            const fidgetTriggerL = Math.max(0, Math.sin(time * 0.75) - 0.80) * 5.0;
+            const fidgetTriggerR = Math.max(0, Math.sin(time * 0.75 + 1.8) - 0.80) * 5.0;
+
+            const fidgetWristXL = Math.sin(time * 4.3) * 0.035 * fidgetTriggerL;
+            const fidgetWristYL = Math.cos(time * 3.7) * 0.045 * fidgetTriggerL;
+            const fidgetWristZL = Math.sin(time * 5.2) * 0.030 * fidgetTriggerL;
+
+            const fidgetWristXR = Math.sin(time * 4.1 + 0.5) * 0.035 * fidgetTriggerR;
+            const fidgetWristYR = Math.cos(time * 3.9 + 0.5) * 0.045 * fidgetTriggerR;
+            const fidgetWristZR = Math.sin(time * 4.9 + 0.5) * 0.030 * fidgetTriggerR;
+
             if (leftHand && !isWalkingRef.current) {
-              const awakeY = Math.sin(time * 1.4) * 0.004 * yMult;
+              let awakeX = (Math.sin(handTimeL * 1.3) * 0.020 + Math.cos(handTimeL * 2.7) * 0.008 + fidgetWristXL) * xMult;
+              let awakeY = (Math.sin(handTimeL * 0.95 + 0.4) * 0.030 + Math.cos(handTimeL * 1.8) * 0.012 + fidgetWristYL + orbitSwayAngle * 0.5) * yMult;
+              let awakeZ = (Math.cos(handTimeL * 1.1) * 0.018 + Math.sin(handTimeL * 2.2) * 0.007 + fidgetWristZL) * zMult;
+
+              leftHand.rotation.x = THREE.MathUtils.lerp(awakeX, 0.0, sleepProgressRef.current);
               leftHand.rotation.y = THREE.MathUtils.lerp(awakeY, 0.0, sleepProgressRef.current);
+              leftHand.rotation.z = THREE.MathUtils.lerp(awakeZ, 0.0, sleepProgressRef.current);
             }
             if (rightHand && !isWalkingRef.current) {
+              let awakeX = 0;
               let awakeY = 0;
               let awakeZ = 0;
               if (idleAnimState === 'greeting_wave') {
@@ -2493,10 +2569,12 @@ const AvatarViewer = ({
                   const waveEase = Math.sin((t - 0.15) / 0.7 * Math.PI);
                   awakeY = Math.sin(time * 17) * 0.25 * waveEase * yMult;
                 }
-                //awakeY = -Math.sin(time * 1.4) * 0.004 * yMult;
               } else {
-                awakeY = -Math.sin(time * 1.4) * 0.004 * yMult;
+                awakeX = (Math.sin(handTimeR * 1.3) * 0.020 + Math.cos(handTimeR * 2.7) * 0.008 + fidgetWristXR) * xMult;
+                awakeY = (-Math.sin(handTimeR * 0.95 + 0.4) * 0.030 - Math.cos(handTimeR * 1.8) * 0.012 + fidgetWristYR + orbitSwayAngle * 0.5) * yMult;
+                awakeZ = (-Math.cos(handTimeR * 1.1) * 0.018 - Math.sin(handTimeR * 2.2) * 0.007 + fidgetWristZR) * zMult;
               }
+              rightHand.rotation.x = THREE.MathUtils.lerp(awakeX, 0.0, sleepProgressRef.current);
               rightHand.rotation.y = THREE.MathUtils.lerp(awakeY, 0.0, sleepProgressRef.current);
               rightHand.rotation.z = THREE.MathUtils.lerp(awakeZ, 0.0, sleepProgressRef.current);
             }
@@ -2526,20 +2604,25 @@ const AvatarViewer = ({
 
                   // Base curl angles for a natural, relaxed cup shape
                   let baseCurl = 0.12;
-                  if (finger === 'index') baseCurl = 0.08;
-                  else if (finger === 'middle') baseCurl = 0.16;
-                  else if (finger === 'ring') baseCurl = 0.24;
-                  else if (finger === 'little') baseCurl = 0.30;
-                  else if (finger === 'thumb') baseCurl = 0.06;
+                  if (finger === 'index') baseCurl = 0.10;
+                  else if (finger === 'middle') baseCurl = 0.18;
+                  else if (finger === 'ring') baseCurl = 0.26;
+                  else if (finger === 'little') baseCurl = 0.34;
+                  else if (finger === 'thumb') baseCurl = 0.08;
 
                   // Calculate target curl bend
                   // Under drag/grab, fingers extend/splay wide (-0.12 rad target)
                   const targetCurl = baseCurl * (1.0 - dragMultiplier) - 0.12 * dragMultiplier + thinkAdd + sleepAdd + speakFlex;
 
-                  // Micro-fidget twitches (using asynchronous prime frequencies)
-                  const fidgetFreq = 1.3 + fIndex * 0.4;
+                  // Micro-fidget twitches (using asynchronous prime frequencies and organic impulses)
+                  const fidgetFreq = 1.3 + fIndex * 0.47 + (side === 'left' ? 0.0 : 0.23);
                   const fidgetMultiplier = THREE.MathUtils.lerp(1.0, 0.15, sleepProgressRef.current);
-                  const fidgetVal = Math.sin(time * fidgetFreq) * 0.02 * (1.0 - dragMultiplier) * fidgetMultiplier;
+
+                  // Organic impulse spike (occasional finger twitch)
+                  const fingerTrigger = Math.max(0, Math.sin(time * 0.6 + fIndex * 1.1 + (side === 'left' ? 0 : 2.0)) - 0.85) * 6.0;
+                  const organicTwitch = Math.sin(time * 6.5 + fIndex * 1.7) * 0.025 * fingerTrigger;
+
+                  const fidgetVal = (Math.sin(time * fidgetFreq) * 0.018 + organicTwitch) * (1.0 - dragMultiplier) * fidgetMultiplier;
 
                   const finalCurl = targetCurl + fidgetVal;
 
@@ -2906,7 +2989,8 @@ const AvatarViewer = ({
               const windZ = Math.cos(time * windSpeedZ) * 0.12 + Math.sin(time * windSpeedZ * 1.7) * 0.06;
 
               const walkingWind = isWalkingRef.current ? (walkDirectionRef.current === -1 ? -0.15 : 0.15) : 0;
-              const finalWindX = windX + walkingWind;
+              const orbitHairWind = -orbitVelX * 0.08; // subtle hair sway in response to camera orbit rotation
+              const finalWindX = windX + walkingWind + orbitHairWind;
 
               vrm.springBoneManager.joints.forEach((joint) => {
                 if (!joint._originalGravityDir) {
