@@ -231,7 +231,8 @@ def get_active_persona_parts(profile: dict = None) -> tuple[str, str]:
     if auto_evolve_enabled:
         try:
             from app.memory.db import get_relationship_status
-            rel_status = get_relationship_status()
+            preset_key = settings.get("persona_preset")
+            rel_status = get_relationship_status(preset_key)
             active_route = rel_status.get("active_route", "ROMANTIC")
             stage = rel_status.get("relationship_stage", 1)
             xp = rel_status.get("affinity_xp", 0)

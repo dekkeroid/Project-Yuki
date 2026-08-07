@@ -129,16 +129,15 @@ def _setup_profile(selected_model: str = "", llm_backend: str = "", llm_base_url
             except Exception:
                 _set_progress("Creating profile", 0.65, "Profile already exists")
         else:
-            # No model selected — update no_llm_mode on existing profile
+            # No model selected — preserve existing profile settings without forcing no_llm_mode = True
             try:
                 data = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
-                data.setdefault("settings", {})["no_llm_mode"] = True
                 if llm_backend:
-                    data["settings"]["llm_backend"] = llm_backend
+                    data.setdefault("settings", {})["llm_backend"] = llm_backend
                 if llm_base_url:
-                    data["settings"]["llm_base_url"] = llm_base_url
+                    data.setdefault("settings", {})["llm_base_url"] = llm_base_url
                 PROFILE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
-                _set_progress("Creating profile", 0.65, "LLM mode disabled")
+                _set_progress("Creating profile", 0.65, "Existing profile preserved")
             except Exception:
                 _set_progress("Creating profile", 0.65, "Profile already exists")
         return
@@ -292,6 +291,44 @@ async def health():
 
 @router.get("/setup/status")
 async def setup_status():
+    return JSONResponse(_progress)
+
+
+@router.get("/setup/existing-profile")
+async def check_existing_profile():
+    """Checks if profile.json exists and returns configured AI settings."""
+    if PROFILE_PATH.exists():
+        try:
+            data = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+            settings = data.get("settings", {})
+            return JSONResponse({
+                "exists": True,
+                "llm_backend": settings.get("llm_backend", "lmstudio"),
+                "llm_model": settings.get("llm_model", ""),
+                "llm_base_url": settings.get("llm_base_url", ""),
+                "no_llm_mode": bool(settings.get("no_llm_mode", False)),
+                "character_name": settings.get("character_name", "Yuki")
+            })
+        except Exception:
+            pass
+    return JSONResponse({"exists": False})
+
+
+@router.post("/setup/skip")
+async def skip_setup():
+    """Skips setup wizard without modifying profile.json and marks system as ready."""
+    try:
+        _setup_database()
+    except Exception as e:
+        print(f"[Setup] Warning initializing database during skip: {e}")
+
+    _create_marker()
+    _progress.update({
+        "step": "Setup skipped - existing settings preserved",
+        "percent": 1.0,
+        "done": True,
+        "error": None
+    })
     return JSONResponse(_progress)
 
 

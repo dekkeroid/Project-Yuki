@@ -1147,6 +1147,9 @@ class SettingsUpdateRequest(BaseModel):
     enable_rotation: Optional[bool] = None
     auto_reset_rotation: Optional[bool] = None
     tts_preload: Optional[bool] = None
+    stt_preload: Optional[bool] = None
+    audio_output_device: Optional[str] = None
+    device_volumes: Optional[dict] = None
     vrm_dpr: Optional[float] = None
     vrm_fps: Optional[int] = None
     chat_mode: Optional[bool] = None
@@ -1303,58 +1306,7 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("llm_coder_backend", req.llm_coder_backend.strip())
 
 
-# ------------------------------------------------------------------ #
-#  Relationship Engine & Persona API Endpoints                      #
-# ------------------------------------------------------------------ #
 
-@app.get("/api/personas/presets")
-async def get_persona_presets():
-    """Returns available persona presets registry and user custom prompt overrides."""
-    from app.agent.personas import PERSONA_PRESETS, DEFAULT_EXECUTION_RULES
-    custom_prompts = memory_manager.profile.get("settings", {}).get("custom_persona_prompts", {})
-    return {
-        "presets": PERSONA_PRESETS,
-        "custom_persona_prompts": custom_prompts,
-        "default_execution_rules": DEFAULT_EXECUTION_RULES
-    }
-
-
-@app.post("/api/personas/reset-prompt")
-async def reset_persona_prompt(preset: Optional[str] = None):
-    """Resets custom prompt override for a persona preset back to built-in backup default."""
-    clean_prompt = memory_manager.reset_custom_persona_prompt(preset)
-    return {
-        "status": "success",
-        "persona_preset": preset or memory_manager.profile.get("settings", {}).get("persona_preset", "sassy_tech_gf"),
-        "character_persona": clean_prompt,
-        "custom_persona_prompts": memory_manager.profile.get("settings", {}).get("custom_persona_prompts", {})
-    }
-
-
-@app.get("/api/relationship/status")
-async def get_relationship_status_api(preset: Optional[str] = None):
-    """Returns current relationship status, level, vectors, inventory, and currency."""
-    from app.memory.db import get_relationship_status, get_user_inventory
-    from app.memory.mood_engine import calculate_stage_from_xp
-    status = get_relationship_status(persona_preset=preset)
-    stage_calc = calculate_stage_from_xp(status.get("affinity_xp", 0))
-    status["calculated_stage"] = stage_calc
-    inventory = get_user_inventory()
-    status["inventory"] = inventory
-    return status
-
-
-@app.post("/api/relationship/reset")
-async def reset_relationship_status_api(preset: Optional[str] = None):
-    """Resets relationship vectors for a persona preset back to baseline."""
-    from app.memory.db import reset_relationship_status, get_user_inventory
-    from app.memory.mood_engine import calculate_stage_from_xp
-    status = reset_relationship_status(persona_preset=preset)
-    stage_calc = calculate_stage_from_xp(status.get("affinity_xp", 0))
-    status["calculated_stage"] = stage_calc
-    inventory = get_user_inventory()
-    status["inventory"] = inventory
-    return status
 
 
 
@@ -1574,6 +1526,13 @@ async def reset_relationship_status_api(preset: Optional[str] = None):
         memory_manager.update_setting("alarm_tone", req.alarm_tone.strip())
     if req.custom_alarm_tone_file is not None:
         memory_manager.update_setting("custom_alarm_tone_file", req.custom_alarm_tone_file.strip())
+    if req.stt_preload is not None:
+        config.STT_PRELOAD = bool(req.stt_preload)
+        memory_manager.update_setting("stt_preload", bool(req.stt_preload))
+    if req.audio_output_device is not None:
+        memory_manager.update_setting("audio_output_device", req.audio_output_device.strip())
+    if req.device_volumes is not None:
+        memory_manager.update_setting("device_volumes", req.device_volumes)
 
     if req.mood_source is not None:
         val = req.mood_source.strip().lower()
@@ -1712,6 +1671,60 @@ async def reset_relationship_status_api(preset: Optional[str] = None):
         "message": "Settings updated successfully.",
         "settings": current_settings
     }
+
+
+# ------------------------------------------------------------------ #
+#  Relationship Engine & Persona API Endpoints                      #
+# ------------------------------------------------------------------ #
+
+@app.get("/api/personas/presets")
+async def get_persona_presets():
+    """Returns available persona presets registry and user custom prompt overrides."""
+    from app.agent.personas import PERSONA_PRESETS, DEFAULT_EXECUTION_RULES
+    custom_prompts = memory_manager.profile.get("settings", {}).get("custom_persona_prompts", {})
+    return {
+        "presets": PERSONA_PRESETS,
+        "custom_persona_prompts": custom_prompts,
+        "default_execution_rules": DEFAULT_EXECUTION_RULES
+    }
+
+
+@app.post("/api/personas/reset-prompt")
+async def reset_persona_prompt(preset: Optional[str] = None):
+    """Resets custom prompt override for a persona preset back to built-in backup default."""
+    clean_prompt = memory_manager.reset_custom_persona_prompt(preset)
+    return {
+        "status": "success",
+        "persona_preset": preset or memory_manager.profile.get("settings", {}).get("persona_preset", "sassy_tech_gf"),
+        "character_persona": clean_prompt,
+        "custom_persona_prompts": memory_manager.profile.get("settings", {}).get("custom_persona_prompts", {})
+    }
+
+
+@app.get("/api/relationship/status")
+async def get_relationship_status_api(preset: Optional[str] = None):
+    """Returns current relationship status, level, vectors, inventory, and currency."""
+    from app.memory.db import get_relationship_status, get_user_inventory
+    from app.memory.mood_engine import calculate_stage_from_xp
+    status = get_relationship_status(persona_preset=preset)
+    stage_calc = calculate_stage_from_xp(status.get("affinity_xp", 0))
+    status["calculated_stage"] = stage_calc
+    inventory = get_user_inventory()
+    status["inventory"] = inventory
+    return status
+
+
+@app.post("/api/relationship/reset")
+async def reset_relationship_status_api(preset: Optional[str] = None):
+    """Resets relationship vectors for a persona preset back to baseline."""
+    from app.memory.db import reset_relationship_status, get_user_inventory
+    from app.memory.mood_engine import calculate_stage_from_xp
+    status = reset_relationship_status(persona_preset=preset)
+    stage_calc = calculate_stage_from_xp(status.get("affinity_xp", 0))
+    status["calculated_stage"] = stage_calc
+    inventory = get_user_inventory()
+    status["inventory"] = inventory
+    return status
 
 
 @app.post("/api/chat/attachments/upload")

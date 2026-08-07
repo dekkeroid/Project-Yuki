@@ -244,6 +244,20 @@
 
   <!-- Setup configuration options (Idle state) -->
   <div id="state-idle">
+    <!-- Existing Setup Banner -->
+    <div id="existing-profile-banner" class="hidden" style="background: rgba(124, 58, 237, 0.12); border: 1px solid rgba(124, 58, 237, 0.35); border-radius: 12px; padding: 14px 16px; margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+        <span style="font-size: 13px; font-weight: 700; color: #c4b5fd;">✨ AI Endpoints Already Set Up</span>
+        <span id="existing-backend-badge" style="font-size: 10px; background: #7c3aed; color: #fff; padding: 2px 8px; border-radius: 10px; font-weight: 600;">ACTIVE</span>
+      </div>
+      <div id="existing-profile-text" style="font-size: 12px; color: #a78bfa; line-height: 1.4;">
+        Detected configured profile settings. You can skip setup to keep your existing backend and model configuration.
+      </div>
+      <button type="button" class="btn" onclick="skipSetup()" style="background: linear-gradient(135deg, #10b981, #059669); color: white; margin-top: 10px; padding: 10px 16px; font-size: 13px; box-shadow: 0 4px 14px rgba(16,185,129,0.25);">
+        🚀 Skip Setup & Launch Yuki (Keep Current Settings)
+      </button>
+    </div>
+
     <ul class="steps">
       <li class="step" data-step="tts">
         <div class="step-icon">1</div>
@@ -602,12 +616,51 @@
     };
   }
 
+  // Check for existing profile on load
+  fetch(`${API}/setup/existing-profile`)
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.exists) {
+        const banner = document.getElementById('existing-profile-banner');
+        const text = document.getElementById('existing-profile-text');
+        const badge = document.getElementById('existing-backend-badge');
+        if (banner && text) {
+          const backendName = (data.llm_backend || 'custom').toUpperCase();
+          const modelName = data.llm_model || (data.no_llm_mode ? 'Voice Commands Only' : 'Configured Model');
+          text.innerHTML = `Your AI settings are already configured on <strong>${backendName}</strong> (Model: <code>${modelName}</code>). Click below to keep your current settings.`;
+          badge.textContent = data.no_llm_mode ? 'NO-LLM MODE' : backendName;
+          banner.classList.remove('hidden');
+        }
+      }
+    })
+    .catch(() => {});
+
   // Trigger initial detection on page load
   detectLMStudio();
 
   async function detectLMStudio() {
     // Proxy function on load
     runDetection();
+  }
+
+  function skipSetup() {
+    document.getElementById('state-idle').classList.add('hidden');
+    document.getElementById('state-running').classList.remove('hidden');
+    document.getElementById('btn-restart').classList.add('hidden');
+    document.getElementById('btn-retry').classList.add('hidden');
+    document.getElementById('error-box').classList.remove('visible');
+
+    const stepsList = document.getElementById('steps-list');
+    stepsList.innerHTML = '';
+
+    fetch(`${API}/setup/skip`, { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        showComplete();
+      })
+      .catch(err => {
+        showError('Could not skip setup: ' + err.message);
+      });
   }
 
   // ── Setup flow execution ─────────────────────────────────────────────

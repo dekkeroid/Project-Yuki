@@ -1713,6 +1713,95 @@ def reset_relationship_status(persona_preset: str = None) -> dict:
         conn.close()
 
 
+def process_relationship_turn_evolution(user_text: str = "", assistant_text: str = "", persona_preset: str = None) -> dict:
+    """
+    Evaluates a chat turn (user message + AI response) to gain Affinity XP
+    and adjust 4-vector matrix (romance, affection, control, obsession).
+    Recalculates relationship_stage & active_route and updates SQLite database.
+    """
+    from app.memory.mood_engine import calculate_active_route, calculate_stage_from_xp
+
+    curr = get_relationship_status(persona_preset)
+
+    xp = int(curr.get("affinity_xp", 50))
+    romance = float(curr.get("romance_val", 20.0))
+    affection = float(curr.get("affection_val", 50.0))
+    control = float(curr.get("control_val", 0.0))
+    obsession = float(curr.get("obsession_val", 10.0))
+
+    u_lower = (user_text or "").lower()
+    a_lower = (assistant_text or "").lower()
+    combined = f"{u_lower} {a_lower}"
+
+    # Base XP gain per interaction turn
+    xp_gain = 10
+
+    # 1. Romantic / Physical Intimacy Triggers (kiss, cuddle, love, babe, etc.)
+    romantic_keywords = [
+        "kiss", "kissing", "smooch", "mwah", "cuddle", "cuddling", "hug", "hugging",
+        "love you", "babe", "sweetheart", "darling", "hold hands", "sexy", "marry",
+        "girlfriend", "gf", "romantic", "affectionate", "touch"
+    ]
+    if any(k in combined for k in romantic_keywords):
+        xp_gain += 15
+        romance += 3.5
+        affection += 2.0
+        obsession += 1.0
+
+    # 2. Warm Affection / Appreciation Triggers
+    affection_keywords = [
+        "thanks", "thank you", "cute", "sweet", "good girl", "good job", "proud of you",
+        "care", "pretty", "beautiful", "helpful", "awesome", "great", "nice"
+    ]
+    if any(k in combined for k in affection_keywords):
+        xp_gain += 5
+        affection += 2.0
+
+    # 3. Control / Dominant / Command Triggers
+    control_keywords = [
+        "obey", "command", "listen to me", "do as i say", "submissive", "master",
+        "rule", "punish", "be good", "obey me"
+    ]
+    if any(k in combined for k in control_keywords):
+        control += 2.5
+        obsession += 0.5
+
+    # 4. Hostility / Insult Triggers
+    hostile_keywords = [
+        "shut up", "stupid", "annoying", "hate you", "useless", "dumb", "idiot", "get lost"
+    ]
+    if any(k in combined for k in hostile_keywords):
+        affection -= 3.0
+        romance -= 1.5
+
+    # Always baseline obsession creep per interaction
+    obsession += 0.2
+
+    # Clamp values
+    new_xp = xp + xp_gain
+    new_romance = max(0.0, min(100.0, romance))
+    new_affection = max(-50.0, min(100.0, affection))
+    new_control = max(0.0, min(100.0, control))
+    new_obsession = max(0.0, min(100.0, obsession))
+
+    # Recalculate Stage & Active Route
+    new_stage = calculate_stage_from_xp(new_xp)
+    new_route = calculate_active_route(new_romance, new_affection, new_control, new_obsession)
+
+    updates = {
+        "affinity_xp": new_xp,
+        "relationship_stage": new_stage,
+        "active_route": new_route,
+        "romance_val": round(new_romance, 1),
+        "affection_val": round(new_affection, 1),
+        "control_val": round(new_control, 1),
+        "obsession_val": round(new_obsession, 1),
+        "last_interaction_epoch": time.time()
+    }
+
+    return update_relationship_status(updates, persona_preset)
+
+
 def get_user_inventory() -> list:
     """Fetch user's purchased gifts and cosmetics."""
     conn = get_connection()
