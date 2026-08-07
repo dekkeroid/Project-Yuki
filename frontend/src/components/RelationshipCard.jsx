@@ -73,7 +73,14 @@ export default function RelationshipCard({ relationshipStatus, onOpenShop, onClo
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, letterSpacing: '0.02em' }}>Yuki Relationship Card</h3>
-            <span style={{ fontSize: '0.75rem', color: routeColor, fontWeight: 600 }}>Route: {active_route}</span>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
+              <span style={{ fontSize: '0.75rem', color: routeColor, fontWeight: 600 }}>Route: {active_route}</span>
+              {relationshipStatus.persona_preset && (
+                <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px', color: '#cbd5e1' }}>
+                  {relationshipStatus.persona_preset}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         {onClose && (

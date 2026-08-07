@@ -2294,6 +2294,27 @@ const App = () => {
     fetchProfileDetails();
   };
 
+  // Start New Session (Archives previous session)
+  const handleStartNewSession = async () => {
+    clearContinuedConversationSession();
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'reset' }));
+    }
+
+    try {
+      await fetch(`${API_BASE}/api/chat/sessions/new`, { method: 'POST' });
+    } catch (e) {
+      console.warn("Failed to start new session:", e);
+    }
+
+    if (stopAllPlaybackRef.current) stopAllPlaybackRef.current();
+    setMessages([]);
+    setCurrentSpeechText('');
+    setAvatarExpression('neutral');
+    setAudioLevel(0);
+    setIsThinking(false);
+  };
+
   const fetchProfileDetails = async () => {
     try {
       const response = await fetch(`${API_BASE}/api/profile`);
@@ -2630,7 +2651,17 @@ const App = () => {
                       Conversation Log
                     </span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={handleStartNewSession}
+                      title="Start New Session"
+                      style={{ background: 'none', border: 'none', color: '#c4b5fd', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', display: 'flex', alignItems: 'center', transition: 'color 0.2s, background 0.2s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = '#c4b5fd'; e.currentTarget.style.background = 'none'; }}
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -2642,14 +2673,19 @@ const App = () => {
                         }
                       }}
                       title="Pop-out into Standalone Workspace Window"
-                      style={{ background: 'none', border: 'none', color: '#c4b5fd', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                      style={{ background: 'none', border: 'none', color: '#c4b5fd', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', display: 'flex', alignItems: 'center', transition: 'color 0.2s, background 0.2s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = '#c4b5fd'; e.currentTarget.style.background = 'none'; }}
                     >
-                      <ExternalLink className="w-3.5 h-3.5" />
+                      <ExternalLink className="w-3 h-3" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setIsPanelOpen(false)}
-                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 0 }}
+                      title="Close Panel"
+                      style={{ background: 'none', border: 'none', color: '#c4b5fd', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', display: 'flex', alignItems: 'center', transition: 'color 0.2s, background 0.2s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = '#c4b5fd'; e.currentTarget.style.background = 'none'; }}
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -4964,6 +5000,7 @@ const App = () => {
           isTalkMode={isTalkMode}
           toggleListening={toggleListening}
           onReset={handleReset}
+          onStartNewSession={handleStartNewSession}
           isThinking={isThinking || ttsStreamActive}
           currentSpeechText={currentSpeechText}
           isPanelOpen={isPanelOpen}

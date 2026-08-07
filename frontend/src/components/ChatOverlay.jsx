@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect, useState, useMemo } from 'react';
-import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, ExternalLink, Copy, Check, Globe, Code, Sliders, Database, Eye, FileText, Folder, Brain, Wrench, Paperclip } from 'lucide-react';
+import { Send, Mic, MicOff, RefreshCw, MessageSquare, X, Terminal, Cpu, Sparkles, Monitor, Music, Film, File, ExternalLink, Copy, Check, Globe, Code, Sliders, Database, Eye, FileText, Folder, Brain, Wrench, Paperclip, Plus } from 'lucide-react';
 import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
 import { SLASH_COMMANDS } from '../constants';
@@ -1098,6 +1098,7 @@ const ChatOverlay = ({
   isTalkMode,
   toggleListening,
   onReset,
+  onStartNewSession,
   isThinking,
   currentSpeechText,
   isPanelOpen,
@@ -1375,6 +1376,14 @@ const ChatOverlay = ({
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
+              onClick={onStartNewSession || onReset}
+              className="panel-close-btn"
+              title="Start New Session"
+              style={{ color: '#c4b5fd', display: 'flex', alignItems: 'center' }}
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+            <button
               onClick={() => {
                 if (window.electronAPI && window.electronAPI.openChatWindow) {
                   window.electronAPI.openChatWindow();
@@ -1385,13 +1394,15 @@ const ChatOverlay = ({
               }}
               className="panel-close-btn"
               title="Open in Standalone Agentic Workspace Window"
+              style={{ color: '#c4b5fd', display: 'flex', alignItems: 'center' }}
             >
-              <ExternalLink className="w-3.5 h-3.5" />
+              <ExternalLink className="w-3 h-3" />
             </button>
             <button
               onClick={() => setIsPanelOpen(false)}
               className="panel-close-btn"
               title="Close Panel"
+              style={{ color: '#c4b5fd', display: 'flex', alignItems: 'center' }}
             >
               <X className="w-3.5 h-3.5" />
             </button>

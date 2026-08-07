@@ -556,7 +556,8 @@ def init_db():
     # 1d3. Multi-Vector Relationship Engine & Economy
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS relationship_vectors (
-        id INTEGER PRIMARY KEY DEFAULT 1,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        persona_preset TEXT DEFAULT 'sassy_tech_gf',
         active_route TEXT DEFAULT 'ROMANTIC',
         relationship_stage INTEGER DEFAULT 1,
         affinity_xp INTEGER DEFAULT 50,
@@ -571,12 +572,17 @@ def init_db():
     );
     """)
 
+    try:
+        cursor.execute("ALTER TABLE relationship_vectors ADD COLUMN persona_preset TEXT DEFAULT 'sassy_tech_gf';")
+    except Exception:
+        pass
+
     # Initialize default relationship vector row if empty
     cursor.execute("SELECT COUNT(*) FROM relationship_vectors;")
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
-        INSERT INTO relationship_vectors (id, active_route, relationship_stage, affinity_xp, romance_val, affection_val, control_val, obsession_val, star_hearts, daily_streak, last_interaction_epoch)
-        VALUES (1, 'ROMANTIC', 1, 50, 20.0, 50.0, 0.0, 10.0, 100, 1, ?);
+        INSERT INTO relationship_vectors (persona_preset, active_route, relationship_stage, affinity_xp, romance_val, affection_val, control_val, obsession_val, star_hearts, daily_streak, last_interaction_epoch)
+        VALUES ('sassy_tech_gf', 'ROMANTIC', 1, 50, 20.0, 50.0, 0.0, 10.0, 100, 1, ?);
         """, (time.time(),))
 
     # 1d4. Dating Sim Inventory & Unlocked Props
@@ -1589,27 +1595,53 @@ def import_crawler_database_json(data: dict) -> dict:
 #  Relationship Engine & Economy Helpers                             #
 # ------------------------------------------------------------------ #
 
-def get_relationship_status() -> dict:
-    """Fetch current relationship state, vectors, XP, level, and currency."""
+def _get_target_persona_preset(preset: str = None) -> str:
+    if preset and str(preset).strip():
+        return str(preset).strip()
+    try:
+        from app.memory.local_mem import MemoryManager
+        return MemoryManager().profile.get("settings", {}).get("persona_preset", "sassy_tech_gf")
+    except Exception:
+        return "sassy_tech_gf"
+
+
+def get_relationship_status(persona_preset: str = None) -> dict:
+    """Fetch relationship state, vectors, XP, level, and currency for a specific persona preset."""
+    preset = _get_target_persona_preset(persona_preset)
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT active_route, relationship_stage, affinity_xp, romance_val, affection_val, control_val, obsession_val, star_hearts, daily_streak, last_interaction_epoch FROM relationship_vectors WHERE id = 1;")
+        cursor.execute("SELECT active_route, relationship_stage, affinity_xp, romance_val, affection_val, control_val, obsession_val, star_hearts, daily_streak, last_interaction_epoch FROM relationship_vectors WHERE persona_preset = ?;", (preset,))
         row = cursor.fetchone()
         if not row:
-            return {
-                "active_route": "ROMANTIC",
-                "relationship_stage": 1,
-                "affinity_xp": 50,
-                "romance_val": 20.0,
-                "affection_val": 50.0,
-                "control_val": 0.0,
-                "obsession_val": 10.0,
-                "star_hearts": 100,
-                "daily_streak": 1,
-                "last_interaction_epoch": time.time()
-            }
+            cursor.execute("SELECT active_route, relationship_stage, affinity_xp, romance_val, affection_val, control_val, obsession_val, star_hearts, daily_streak, last_interaction_epoch FROM relationship_vectors WHERE id = 1 AND (persona_preset IS NULL OR persona_preset = 'sassy_tech_gf');")
+            row1 = cursor.fetchone()
+            if row1 and preset in ("sassy_tech_gf", "sassy_girlfriend"):
+                cursor.execute("UPDATE relationship_vectors SET persona_preset = ? WHERE id = 1;", (preset,))
+                conn.commit()
+                row = row1
+            else:
+                now_epoch = time.time()
+                cursor.execute("""
+                INSERT INTO relationship_vectors (persona_preset, active_route, relationship_stage, affinity_xp, romance_val, affection_val, control_val, obsession_val, star_hearts, daily_streak, last_interaction_epoch)
+                VALUES (?, 'ROMANTIC', 1, 50, 20.0, 50.0, 0.0, 10.0, 100, 1, ?);
+                """, (preset, now_epoch))
+                conn.commit()
+                return {
+                    "persona_preset": preset,
+                    "active_route": "ROMANTIC",
+                    "relationship_stage": 1,
+                    "affinity_xp": 50,
+                    "romance_val": 20.0,
+                    "affection_val": 50.0,
+                    "control_val": 0.0,
+                    "obsession_val": 10.0,
+                    "star_hearts": 100,
+                    "daily_streak": 1,
+                    "last_interaction_epoch": now_epoch
+                }
         return {
+            "persona_preset": preset,
             "active_route": row[0],
             "relationship_stage": row[1],
             "affinity_xp": row[2],
@@ -1625,8 +1657,10 @@ def get_relationship_status() -> dict:
         conn.close()
 
 
-def update_relationship_status(updates: dict) -> dict:
-    """Updates fields in relationship_vectors table."""
+def update_relationship_status(updates: dict, persona_preset: str = None) -> dict:
+    """Updates fields in relationship_vectors table for a specific persona preset."""
+    preset = _get_target_persona_preset(persona_preset)
+    get_relationship_status(preset)
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -1638,10 +1672,43 @@ def update_relationship_status(updates: dict) -> dict:
                 clause_parts.append(f"{k} = ?")
                 params.append(v)
         if clause_parts:
-            query = f"UPDATE relationship_vectors SET {', '.join(clause_parts)} WHERE id = 1;"
+            params.append(preset)
+            query = f"UPDATE relationship_vectors SET {', '.join(clause_parts)} WHERE persona_preset = ?;"
             cursor.execute(query, tuple(params))
             conn.commit()
-        return get_relationship_status()
+        return get_relationship_status(preset)
+    finally:
+        conn.close()
+
+
+def reset_relationship_status(persona_preset: str = None) -> dict:
+    """Resets relationship vectors for a specific persona preset back to baseline."""
+    preset = _get_target_persona_preset(persona_preset)
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        now_epoch = time.time()
+        cursor.execute("""
+        UPDATE relationship_vectors
+        SET active_route = 'ROMANTIC',
+            relationship_stage = 1,
+            affinity_xp = 50,
+            romance_val = 20.0,
+            affection_val = 50.0,
+            control_val = 0.0,
+            obsession_val = 10.0,
+            star_hearts = 100,
+            daily_streak = 1,
+            last_interaction_epoch = ?
+        WHERE persona_preset = ?;
+        """, (now_epoch, preset))
+        if cursor.rowcount == 0:
+            cursor.execute("""
+            INSERT INTO relationship_vectors (persona_preset, active_route, relationship_stage, affinity_xp, romance_val, affection_val, control_val, obsession_val, star_hearts, daily_streak, last_interaction_epoch)
+            VALUES (?, 'ROMANTIC', 1, 50, 20.0, 50.0, 0.0, 10.0, 100, 1, ?);
+            """, (preset, now_epoch))
+        conn.commit()
+        return get_relationship_status(preset)
     finally:
         conn.close()
 
