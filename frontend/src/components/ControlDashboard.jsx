@@ -760,7 +760,8 @@ const ControlDashboard = ({
     tts_cloud_endpoint: '',
     tts_cloud_region: 'eastus',
     tts_cloud_voice: '',
-    no_llm_mode: false
+    no_llm_mode: false,
+    ...(profile?.settings || {})
   });
 
   // Local Character & Persona States
@@ -852,6 +853,13 @@ const ControlDashboard = ({
       setExecutionRules(settings.execution_rules);
     }
   }, [settings]);
+
+  // Sync settings state whenever profile.settings prop updates from parent
+  useEffect(() => {
+    if (profile?.settings) {
+      setSettings(prev => ({ ...prev, ...profile.settings }));
+    }
+  }, [profile?.settings]);
 
 
   // Profile Edit State
@@ -1828,6 +1836,9 @@ const ControlDashboard = ({
           }
           console.log(`[SETTINGS-UPDATE] Server response llm_base_url="${serverUrl}" llm_backend="${data.settings.llm_backend}"`);
           setSettings(prev => ({ ...prev, ...data.settings }));
+          if (onProfileUpdate) {
+            onProfileUpdate({ ...(profile || {}), settings: { ...(profile?.settings || {}), ...data.settings } });
+          }
         }
         if (updates.tool_mode) {
           fetchToolsList();
@@ -2074,14 +2085,13 @@ const ControlDashboard = ({
     let interval = null;
     if (isOpen) {
       fetchVrmModels();
+      fetchSettings();
       if (activeTab === 'crawler') {
         fetchCrawlerStatus();
         interval = setInterval(fetchCrawlerStatus, 2500);
       } else if (activeTab === 'config') {
         fetchGpuMem();
         interval = setInterval(fetchGpuMem, 5000);
-      } else {
-        fetchSettings();
       }
     }
     return () => {
@@ -2827,12 +2837,9 @@ const ControlDashboard = ({
                     onChange={async (e) => {
                       const val = e.target.value;
                       setPersonaPreset(val);
-                      let newPrompt = customPersonaPrompts[val] || presetsRegistry[val]?.prompt || charPersona;
+                      let newPrompt = customPersonaPrompts[val] || presetsRegistry[val]?.prompt || '';
                       setCharPersona(newPrompt);
-                      await handleUpdateSetting({
-                        persona_preset: val,
-                        character_persona: newPrompt
-                      });
+                      await handleUpdateSetting('persona_preset', val);
                       fetchRelationshipStatus(val);
                     }}
                     className="glass-input"

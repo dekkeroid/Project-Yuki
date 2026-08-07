@@ -304,9 +304,15 @@ class MemoryManager:
             config.CHARACTER_NAME = value
         elif key == "character_persona":
             preset_key = self.profile.get("settings", {}).get("persona_preset", "sassy_tech_gf")
+            val_str = str(value).strip()
+            from app.agent.personas import PERSONA_PRESETS
+            builtin_prompt = PERSONA_PRESETS.get(preset_key, {}).get("prompt", "").strip()
             if "custom_persona_prompts" not in self.profile["settings"]:
                 self.profile["settings"]["custom_persona_prompts"] = {}
-            self.profile["settings"]["custom_persona_prompts"][preset_key] = str(value).strip()
+            if builtin_prompt and val_str == builtin_prompt:
+                self.profile["settings"]["custom_persona_prompts"].pop(preset_key, None)
+            else:
+                self.profile["settings"]["custom_persona_prompts"][preset_key] = val_str
             from app.agent.personas import get_clean_character_backstory
             config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
         elif key in ("persona_preset", "auto_evolving_archetype", "archetype_intensity", "execution_rules"):

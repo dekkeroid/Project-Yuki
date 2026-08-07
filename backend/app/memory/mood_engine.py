@@ -843,8 +843,8 @@ def calculate_active_route(romance_val: float, affection_val: float, control_val
     - YANDERE: High obsession (>= 70)
     - NEMESIS: High hostility / negative affection (<= -30)
     - MENTOR: High control (>= 40) with low romance (< 20)
-    - ROMANTIC: High romance (>= 40) and high affection (>= 30)
-    - TSUNDERE: Moderate romance (>= 20), moderate control (>= 15), and high playfulness/anger
+    - ROMANTIC: High romance (>= 35) or (romance >= 20 and affection >= 45)
+    - TSUNDERE: Moderate romance (>= 15), moderate control (>= 15)
     - PLATONIC: Default bestie / co-pilot path
     """
     if obsession_val >= 70:
@@ -853,16 +853,16 @@ def calculate_active_route(romance_val: float, affection_val: float, control_val
         return "NEMESIS"
     elif control_val >= 40 and romance_val < 20:
         return "MENTOR"
-    elif romance_val >= 40 and affection_val >= 30:
+    elif romance_val >= 35 or (romance_val >= 20 and affection_val >= 45):
         return "ROMANTIC"
-    elif romance_val >= 20 and control_val >= 15:
+    elif romance_val >= 15 and control_val >= 15:
         return "TSUNDERE"
     else:
         return "PLATONIC"
 
 
 def calculate_stage_from_xp(xp: int) -> int:
-    """Calculates relationship stage (Level 0 - 5) from affinity XP."""
+    """Calculates relationship stage (Level 1 - 5) from affinity XP."""
     if xp >= 1500:
         return 5
     elif xp >= 1000:
@@ -871,7 +871,5 @@ def calculate_stage_from_xp(xp: int) -> int:
         return 3
     elif xp >= 300:
         return 2
-    elif xp >= 100:
-        return 1
-    return 0
+    return 1
 

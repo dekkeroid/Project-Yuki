@@ -3101,6 +3101,13 @@ class AgentExecutor:
                         self.memory.apply_turn_effects()
                     except Exception:
                         pass
+                    # Relationship Engine turn evolution
+                    try:
+                        from app.memory.db import process_relationship_turn_evolution
+                        preset = self.memory.profile.get("settings", {}).get("persona_preset")
+                        process_relationship_turn_evolution(user_message, assistant_speech, persona_preset=preset)
+                    except Exception as e:
+                        print(f"[RelationshipEngine] Evolution error: {e}")
                     assistant_final_speech = "\n".join(accumulated_response_total)
                     final_history.append({"role": "assistant", "content": assistant_final_speech})
                     yield "final_history", final_history, backend_used
@@ -3144,6 +3151,13 @@ class AgentExecutor:
                 self.memory.apply_turn_effects()
             except Exception:
                 pass
+            # Relationship Engine turn evolution
+            try:
+                from app.memory.db import process_relationship_turn_evolution
+                preset = self.memory.profile.get("settings", {}).get("persona_preset")
+                process_relationship_turn_evolution(user_message, wrap_speech, persona_preset=preset)
+            except Exception as e:
+                print(f"[RelationshipEngine] Evolution error: {e}")
             assistant_final_speech = "\n".join(accumulated_response_total)
             final_history.append({"role": "assistant", "content": assistant_final_speech})
             yield "final_history", final_history, backend_used
