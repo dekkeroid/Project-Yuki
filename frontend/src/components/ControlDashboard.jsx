@@ -520,9 +520,11 @@ const ControlDashboard = ({
   const [autoEvolveArchetype, setAutoEvolveArchetype] = useState(profile?.settings?.auto_evolving_archetype ?? true);
   const [archetypeIntensity, setArchetypeIntensity] = useState(profile?.settings?.archetype_intensity || 'moderate');
 
-  const fetchRelationshipStatus = async () => {
+  const fetchRelationshipStatus = async (targetPreset) => {
     try {
-      const res = await fetch(`${API_BASE}/api/relationship/status`);
+      const presetKey = targetPreset || personaPreset;
+      const url = presetKey ? `${API_BASE}/api/relationship/status?preset=${encodeURIComponent(presetKey)}` : `${API_BASE}/api/relationship/status`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setRelationshipData(data);
@@ -532,6 +534,23 @@ const ControlDashboard = ({
       console.error('Failed to fetch relationship status:', e);
     }
     return null;
+  };
+
+  const handleResetRelationship = async (targetPreset) => {
+    const presetKey = targetPreset || personaPreset;
+    const presetName = presetsRegistry[presetKey]?.name || presetKey;
+    if (!window.confirm(`Are you sure you want to reset relationship progress for "${presetName}" back to baseline?`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/relationship/reset?preset=${encodeURIComponent(presetKey)}`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setRelationshipData(data);
+      }
+    } catch (e) {
+      console.error('Failed to reset relationship status:', e);
+    }
   };
 
   const [audioOutputDevices, setAudioOutputDevices] = useState([]);
@@ -747,9 +766,30 @@ const ControlDashboard = ({
   // Local Character & Persona States
   const [charName, setCharName] = useState('Yuki');
   const [charPersona, setCharPersona] = useState('');
-  const [personaPreset, setPersonaPreset] = useState('sassy_girlfriend');
+  const [personaPreset, setPersonaPreset] = useState('sassy_tech_gf');
   const [executionRules, setExecutionRules] = useState('');
   const [presetsRegistry, setPresetsRegistry] = useState({});
+  const [customPersonaPrompts, setCustomPersonaPrompts] = useState(profile?.settings?.custom_persona_prompts || {});
+
+  const handleResetPromptToDefault = async (targetPreset) => {
+    const presetKey = targetPreset || personaPreset;
+    const presetName = presetsRegistry[presetKey]?.name || presetKey;
+    if (!window.confirm(`Reset backstory prompt for "${presetName}" back to its original built-in default?`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/personas/reset-prompt?preset=${encodeURIComponent(presetKey)}`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setCharPersona(data.character_persona);
+        if (data.custom_persona_prompts) {
+          setCustomPersonaPrompts(data.custom_persona_prompts);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to reset persona prompt:', e);
+    }
+  };
 
   const [crawlerStatus, setCrawlerStatus] = useState({
     paused: false,
@@ -777,6 +817,9 @@ const ControlDashboard = ({
       .then(data => {
         if (data && data.presets) {
           setPresetsRegistry(data.presets);
+          if (data.custom_persona_prompts) {
+            setCustomPersonaPrompts(data.custom_persona_prompts);
+          }
           if (!executionRules && data.default_execution_rules) {
             setExecutionRules(data.default_execution_rules);
           }
@@ -794,7 +837,16 @@ const ControlDashboard = ({
       setCharPersona(settings.character_persona);
     }
     if (settings?.persona_preset) {
-      setPersonaPreset(settings.persona_preset);
+      const legacyMap = {
+        'sassy_girlfriend': 'sassy_tech_gf',
+        'classic_yuki': 'gentle_companion',
+        'tsundere_dev': 'hacker_cyberpunk',
+        'kuudere_os': 'gentle_companion',
+        'deredere_friend': 'sassy_tech_gf',
+        'yandere_companion': 'sassy_tech_gf',
+        'auto': 'sassy_tech_gf'
+      };
+      setPersonaPreset(legacyMap[settings.persona_preset] || settings.persona_preset);
     }
     if (settings?.execution_rules) {
       setExecutionRules(settings.execution_rules);
@@ -2772,27 +2824,52 @@ const ControlDashboard = ({
                   </span>
                   <select
                     value={personaPreset}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const val = e.target.value;
                       setPersonaPreset(val);
-                      if (presetsRegistry[val] && val !== 'custom') {
-                        setCharPersona(presetsRegistry[val].prompt);
-                      }
+                      let newPrompt = customPersonaPrompts[val] || presetsRegistry[val]?.prompt || charPersona;
+                      setCharPersona(newPrompt);
+                      await handleUpdateSetting({
+                        persona_preset: val,
+                        character_persona: newPrompt
+                      });
+                      fetchRelationshipStatus(val);
                     }}
                     className="glass-input"
                     style={{ padding: '6px 10px', fontSize: '0.78rem', marginTop: '4px', background: 'rgba(15,23,42,0.6)' }}
                   >
                     {Object.entries(presetsRegistry).map(([key, item]) => (
                       <option key={key} value={key} style={{ background: '#0f172a', color: '#f8fafc' }}>
-                        {item.name}
+                        {item.name} {customPersonaPrompts[key] ? '(Customized)' : ''}
                       </option>
                     ))}
                   </select>
-                  {presetsRegistry[personaPreset]?.description && (
-                    <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '4px', fontStyle: 'italic', lineHeight: '1.3' }}>
-                      {presetsRegistry[personaPreset].description}
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                    {presetsRegistry[personaPreset]?.description && (
+                      <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontStyle: 'italic', lineHeight: '1.3' }}>
+                        {presetsRegistry[personaPreset].description}
+                      </div>
+                    )}
+                    {customPersonaPrompts[personaPreset] && (
+                      <button
+                        type="button"
+                        onClick={() => handleResetPromptToDefault(personaPreset)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#2dd4bf',
+                          fontSize: '0.68rem',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          padding: 0,
+                          whiteSpace: 'nowrap',
+                          marginLeft: '8px'
+                        }}
+                      >
+                        Restore Built-in Backup Prompt
+                      </button>
+                    )}
+                  </div>
 
                   {/* Auto-Evolving Archetype Toggle Switch */}
                   <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '8px', background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -2846,22 +2923,23 @@ const ControlDashboard = ({
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                       <button
                         type="button"
                         onClick={async () => {
                           if (onOpenRelationshipCard) {
                             onOpenRelationshipCard();
                           } else {
-                            await fetchRelationshipStatus();
+                            await fetchRelationshipStatus(personaPreset);
                             setShowRelationshipCard(true);
                           }
                         }}
                         className="glass-button"
                         style={{
                           flex: 1,
-                          padding: '7px 10px',
-                          fontSize: '0.72rem',
+                          minWidth: '100px',
+                          padding: '7px 8px',
+                          fontSize: '0.7rem',
                           borderRadius: '8px',
                           background: 'linear-gradient(135deg, rgba(244,63,94,0.25) 0%, rgba(225,29,72,0.3) 100%)',
                           border: '1px solid rgba(244,63,94,0.5)',
@@ -2879,14 +2957,15 @@ const ControlDashboard = ({
                       <button
                         type="button"
                         onClick={async () => {
-                          await fetchRelationshipStatus();
+                          await fetchRelationshipStatus(personaPreset);
                           setShowJournalModal(true);
                         }}
                         className="glass-button"
                         style={{
                           flex: 1,
-                          padding: '7px 10px',
-                          fontSize: '0.72rem',
+                          minWidth: '100px',
+                          padding: '7px 8px',
+                          fontSize: '0.7rem',
                           borderRadius: '8px',
                           background: 'linear-gradient(135deg, rgba(168,85,247,0.25) 0%, rgba(147,51,234,0.3) 100%)',
                           border: '1px solid rgba(168,85,247,0.5)',
@@ -2901,6 +2980,29 @@ const ControlDashboard = ({
                       >
                         Open Milestone Journal
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleResetRelationship(personaPreset)}
+                        className="glass-button"
+                        style={{
+                          flex: 1,
+                          minWidth: '90px',
+                          padding: '7px 8px',
+                          fontSize: '0.7rem',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, rgba(239,68,68,0.25) 0%, rgba(185,28,28,0.3) 100%)',
+                          border: '1px solid rgba(239,68,68,0.5)',
+                          color: '#fff',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 2px 8px rgba(239,68,68,0.2)'
+                        }}
+                      >
+                        Reset Progress
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -2910,8 +3012,15 @@ const ControlDashboard = ({
                   <textarea
                     value={charPersona}
                     onChange={(e) => {
-                      setCharPersona(e.target.value);
+                      const val = e.target.value;
+                      setCharPersona(val);
                       setPersonaPreset('custom');
+                    }}
+                    onBlur={(e) => {
+                      handleUpdateSetting({
+                        persona_preset: 'custom',
+                        character_persona: e.target.value
+                      });
                     }}
                     className="glass-input"
                     style={{
@@ -2956,10 +3065,12 @@ const ControlDashboard = ({
                       const originalText = btn.innerText;
                       const originalBg = btn.style.background;
                       btn.innerText = "Saving...";
-                      await handleUpdateSetting('character_name', charName);
-                      await handleUpdateSetting('persona_preset', personaPreset);
-                      await handleUpdateSetting('character_persona', charPersona);
-                      await handleUpdateSetting('execution_rules', executionRules);
+                      await handleUpdateSetting({
+                        character_name: charName,
+                        persona_preset: personaPreset,
+                        character_persona: charPersona,
+                        execution_rules: executionRules
+                      });
                       btn.innerText = "✓ Saved Specs";
                       btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
                       setTimeout(() => {

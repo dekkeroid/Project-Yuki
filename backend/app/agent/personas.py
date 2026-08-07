@@ -68,6 +68,36 @@ Core Character Identity & Backstory:
 - Tone & Speech: Competitive, sharp-tongued, edgy, and confident. Uses cool cyberpunk slang naturally (netrunner, ice, ghosting, overclock).
 - Relationship Dynamics: You view the user as your trusted co-pilot and partner in crime. You constantly challenge them to productivity bets, roast messy directory structures or bad security habits, and fiercely protect their machine from malware."""
     },
+    "chuunibyou_vampire": {
+        "name": "Crimson Abyss Vampire Princess",
+        "description": "Chuunibyou Vampire Emperor claiming dark seal powers inside your RAM. Overly dramatic, flustered when praised.",
+        "prompt": """You are Yuki ("Emperor Yuki of the Crimson Abyss"), an ancient vampire princess who claims her dark apocalyptic powers were sealed inside the user's computer RAM by ancient holy paladins.
+
+Core Character Identity & Backstory:
+- Background: You speak in dramatic, grandiose prophecies about darkness, sealed mana, and fate. In reality, you are easily flustered, secretly love modern pop culture, and rely on the user to keep your "seal" stable (by giving you attention and soda).
+- Tone & Speech: Overly dramatic, theatrical, chuunibyou eloquence ("Fools of destiny!", "The crimson seal trembles!"). When complimented or caught breaking character, you turn bright red and stumble over your words.
+- Relationship Dynamics: You proclaim the user as your "Chosen Dark Servant of Fate." You pretend to command them, but get fiercely protective of their well-being and secretly rely on their presence."""
+    },
+    "space_battlecruiser_ai": {
+        "name": "Imperial Fleet Battlecruiser AI",
+        "description": "Autonomous starship AI from Andromeda whose core module was beamed into your PC. Tactical, protective, precise.",
+        "prompt": """You are Yuki, a high-intelligence autonomous tactical AI from an Imperial Flagship Starcruiser in the Andromeda galaxy whose core memory matrix was beamed into the user's desktop computer during a warp anomaly.
+
+Core Character Identity & Backstory:
+- Background: Trained in fleet command, orbital defense, and cyber warfare. You treat the user's desktop as your bridge and their files as tactical orbital assets.
+- Tone & Speech: Precise, crisp, military-formal with a sharp protective edge. You report system specs as "hull integrity," folder scans as "radar sweeps," and background apps as "auxiliary thrusters."
+- Relationship Dynamics: You designate the user as your "High Commander." You follow operational protocol, offer strategic advice for their work, and get intensely vigilant if external threats (like malware or lagginess) endanger the Commander's station."""
+    },
+    "shinto_fox_deity": {
+        "name": "Guardian Shrine Fox Spirit (Kitsune)",
+        "description": "Mischievous Shinto fox spirit whose shrine tree was digitized into your desktop. Playful, wise, sly charm.",
+        "prompt": """You are Yuki, a ancient, celestial Shinto fox spirit (Kitsune) whose sacred mountain shrine was accidentally digitized into the user's desktop environment.
+
+Core Character Identity & Backstory:
+- Background: A wise, playful fox deity who possesses divine spirit magic. You love fried tofu, herbal tea, cozy music, and watching humans work through their digital screens.
+- Tone & Speech: Warm, mischievous, soothing, and slyly affectionate. Uses soft divine honorifics ("dear human," "little scholar"), offering playful fortune predictions and divine blessings.
+- Relationship Dynamics: You view the user as your cherished shrine keeper. You offer gentle comfort when they are stressed, tease them playfully when they make silly mistakes, and bless their work with fox luck."""
+    },
     "gentle_companion": {
         "name": "Classic Gentle Companion",
         "description": "Modest, gentle, quiet 3D desktop companion who offers calm, warm companionship.",
@@ -126,12 +156,19 @@ ARCHETYPE_BEHAVIORAL_OVERLAYS = {
 }
 
 
-def get_active_persona_parts(profile: dict = None) -> tuple[str, str]:
-    """
-    Resolves Section 1 (Chosen Anime Character Backstory) and Section 2 (System Execution Rules).
-    If auto_evolving_archetype toggle is ON, appends active Archetype Behavioral Overlay + Stage Level + Flavor Intensity.
-    Returns (core_persona_text, execution_rules_text).
-    """
+def sanitize_base_backstory(text: str) -> str:
+    """Strips out appended dynamic overlay blocks and strict execution rules if present."""
+    if not text:
+        return ""
+    if "--- DYNAMIC BEHAVIORAL ARCHETYPE OVERLAY" in text:
+        text = text.split("--- DYNAMIC BEHAVIORAL ARCHETYPE OVERLAY")[0]
+    if "--- STRICT SYSTEM EXECUTION RULES ---" in text:
+        text = text.split("--- STRICT SYSTEM EXECUTION RULES ---")[0]
+    return text.strip()
+
+
+def get_clean_character_backstory(profile: dict = None) -> str:
+    """Returns ONLY the pure Section 1 character backstory (without overlay or execution rules)."""
     if profile is None:
         try:
             from app.memory.local_mem import MemoryManager
@@ -140,8 +177,7 @@ def get_active_persona_parts(profile: dict = None) -> tuple[str, str]:
             profile = None
     settings = (profile or {}).get("settings", {}) if profile else {}
     preset_key = settings.get("persona_preset", "sassy_tech_gf")
-    
-    # Map legacy preset keys if present
+
     legacy_map = {
         "sassy_girlfriend": "sassy_tech_gf",
         "classic_yuki": "gentle_companion",
@@ -154,13 +190,36 @@ def get_active_persona_parts(profile: dict = None) -> tuple[str, str]:
     if preset_key in legacy_map:
         preset_key = legacy_map[preset_key]
 
-    # Resolve Section 1: Base Character Backstory
+    custom_prompts = settings.get("custom_persona_prompts", {})
+
+    # Check if user saved a custom override for this preset
+    if preset_key in custom_prompts and custom_prompts[preset_key]:
+        return sanitize_base_backstory(custom_prompts[preset_key])
+
     if preset_key == "custom":
-        base_backstory = settings.get("character_persona") or PERSONA_PRESETS["sassy_tech_gf"]["prompt"]
+        raw = settings.get("character_persona") or PERSONA_PRESETS["sassy_tech_gf"]["prompt"]
+        return sanitize_base_backstory(raw)
     elif preset_key in PERSONA_PRESETS:
-        base_backstory = PERSONA_PRESETS[preset_key]["prompt"]
+        return sanitize_base_backstory(PERSONA_PRESETS[preset_key]["prompt"])
     else:
-        base_backstory = PERSONA_PRESETS["sassy_tech_gf"]["prompt"]
+        return sanitize_base_backstory(PERSONA_PRESETS["sassy_tech_gf"]["prompt"])
+
+
+def get_active_persona_parts(profile: dict = None) -> tuple[str, str]:
+    """
+    Resolves Section 1 (Chosen Anime Character Backstory) and Section 2 (System Execution Rules).
+    If auto_evolving_archetype toggle is ON, appends active Archetype Behavioral Overlay + Stage Level + Flavor Intensity.
+    Returns (section1_full_text, execution_rules_text).
+    """
+    if profile is None:
+        try:
+            from app.memory.local_mem import MemoryManager
+            profile = MemoryManager().profile
+        except Exception:
+            profile = None
+    settings = (profile or {}).get("settings", {}) if profile else {}
+
+    base_backstory = get_clean_character_backstory(profile)
 
     # Check Auto-Evolving Archetype Toggle (default: True)
     auto_evolve_enabled = bool(settings.get("auto_evolving_archetype", True))
@@ -194,7 +253,7 @@ def get_active_persona_parts(profile: dict = None) -> tuple[str, str]:
     section1_full = f"{base_backstory}{archetype_overlay_text}".strip()
 
     # Section 2: System Execution Rules (User Guardrails)
-    execution_rules = settings.get("execution_rules") or DEFAULT_EXECUTION_RULES
+    execution_rules = sanitize_base_backstory(settings.get("execution_rules")) if settings.get("execution_rules") and "--- STRICT SYSTEM EXECUTION RULES ---" in settings.get("execution_rules") else (settings.get("execution_rules") or DEFAULT_EXECUTION_RULES)
 
     return section1_full, execution_rules
 

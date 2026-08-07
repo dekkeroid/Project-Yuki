@@ -148,8 +148,8 @@ class MemoryManager:
                 config.LLM_CODER_BASE_URL = data["settings"].get("llm_coder_base_url", getattr(config, "LLM_CODER_BASE_URL", ""))
                 config.LLM_CODER_MODEL = data["settings"].get("llm_coder_model", getattr(config, "LLM_CODER_MODEL", ""))
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
-                from app.agent.personas import stitch_system_persona
-                config.CHARACTER_PERSONA = stitch_system_persona(data)
+                from app.agent.personas import get_clean_character_backstory
+                config.CHARACTER_PERSONA = get_clean_character_backstory(data)
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
                 config.NO_LLM_MODE = data["settings"].get("no_llm_mode", False)
                 config.LLM_BACKEND = data["settings"].get("llm_backend", config.LLM_BACKEND)
@@ -302,9 +302,16 @@ class MemoryManager:
             config.TTS_RATE = value
         elif key == "character_name":
             config.CHARACTER_NAME = value
-        elif key in ("persona_preset", "character_persona", "auto_evolving_archetype", "archetype_intensity", "execution_rules"):
-            from app.agent.personas import stitch_system_persona
-            config.CHARACTER_PERSONA = stitch_system_persona(self.profile)
+        elif key == "character_persona":
+            preset_key = self.profile.get("settings", {}).get("persona_preset", "sassy_tech_gf")
+            if "custom_persona_prompts" not in self.profile["settings"]:
+                self.profile["settings"]["custom_persona_prompts"] = {}
+            self.profile["settings"]["custom_persona_prompts"][preset_key] = str(value).strip()
+            from app.agent.personas import get_clean_character_backstory
+            config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+        elif key in ("persona_preset", "auto_evolving_archetype", "archetype_intensity", "execution_rules"):
+            from app.agent.personas import get_clean_character_backstory
+            config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
         elif key == "llm_model":
             config.LLM_MODEL = value
         elif key == "llm_backend":
@@ -332,6 +339,17 @@ class MemoryManager:
             config.CODEGRAPH_ADVANCED_ENABLED = bool(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
+
+    def reset_custom_persona_prompt(self, preset: str = None) -> str:
+        """Deletes custom Section 1 prompt override for preset and restores built-in default backup prompt."""
+        preset_key = preset or self.profile.get("settings", {}).get("persona_preset", "sassy_tech_gf")
+        if "settings" in self.profile and "custom_persona_prompts" in self.profile["settings"]:
+            if preset_key in self.profile["settings"]["custom_persona_prompts"]:
+                del self.profile["settings"]["custom_persona_prompts"][preset_key]
+                self._save_profile()
+        from app.agent.personas import get_clean_character_backstory
+        config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+        return config.CHARACTER_PERSONA
 
     def get_profile_summary(self) -> str:
         """
