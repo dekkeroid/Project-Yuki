@@ -771,6 +771,8 @@ const ControlDashboard = ({
   const [executionRules, setExecutionRules] = useState('');
   const [presetsRegistry, setPresetsRegistry] = useState({});
   const [customPersonaPrompts, setCustomPersonaPrompts] = useState(profile?.settings?.custom_persona_prompts || {});
+  const [whisperActionState, setWhisperActionState] = useState('idle');
+  const [whisperStatusNotice, setWhisperStatusNotice] = useState(null);
 
   const handleResetPromptToDefault = async (targetPreset) => {
     const presetKey = targetPreset || personaPreset;
@@ -5762,29 +5764,142 @@ const ControlDashboard = ({
 
                       {/* Manual Load/Unload Buttons */}
                       {(!settings.stt_provider || settings.stt_provider === 'local') && (
-                        <div className="settings-field" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                          <button
-                            className="settings-button secondary"
-                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                            onClick={async () => {
-                              try {
-                                await fetch(`${API_BASE}/api/speech/whisper/load`, { method: 'POST' });
-                              } catch(e) { console.error(e); }
-                            }}
-                          >
-                            <Mic size={14} /> Load Whisper
-                          </button>
-                          <button
-                            className="settings-button secondary"
-                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                            onClick={async () => {
-                              try {
-                                await fetch(`${API_BASE}/api/speech/whisper/unload`, { method: 'POST' });
-                              } catch(e) { console.error(e); }
-                            }}
-                          >
-                            <MicOff size={14} /> Unload Whisper
-                          </button>
+                        <div style={{
+                          marginTop: '14px',
+                          padding: '12px 14px',
+                          background: 'rgba(15, 23, 42, 0.45)',
+                          borderRadius: '10px',
+                          border: '1px solid rgba(255, 255, 255, 0.07)',
+                          backdropFilter: 'blur(8px)'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#cbd5e1', letterSpacing: '0.02em' }}>
+                              Whisper Model Memory Management
+                            </span>
+                            {whisperStatusNotice && (
+                              <span style={{ fontSize: '0.68rem', color: whisperStatusNotice.type === 'error' ? '#f87171' : '#34d399', fontStyle: 'italic' }}>
+                                {whisperStatusNotice.text}
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button
+                              type="button"
+                              disabled={whisperActionState !== 'idle'}
+                              onClick={async () => {
+                                setWhisperActionState('loading');
+                                setWhisperStatusNotice({ text: 'Loading Whisper model...', type: 'info' });
+                                try {
+                                  const res = await fetch(`${API_BASE}/api/speech/whisper/load`, { method: 'POST' });
+                                  if (res.ok) {
+                                    setWhisperStatusNotice({ text: 'Model loaded successfully!', type: 'success' });
+                                  } else {
+                                    setWhisperStatusNotice({ text: 'Failed to load Whisper.', type: 'error' });
+                                  }
+                                } catch(e) { 
+                                  console.error(e); 
+                                  setWhisperStatusNotice({ text: 'Network error loading Whisper.', type: 'error' });
+                                } finally {
+                                  setWhisperActionState('idle');
+                                  setTimeout(() => setWhisperStatusNotice(null), 4000);
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                cursor: whisperActionState === 'idle' ? 'pointer' : 'wait',
+                                background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.22) 0%, rgba(45, 212, 191, 0.18) 100%)',
+                                border: '1px solid rgba(56, 189, 248, 0.35)',
+                                color: '#38bdf8',
+                                boxShadow: '0 2px 8px rgba(14, 165, 233, 0.15)',
+                                transition: 'all 0.2s ease',
+                                opacity: whisperActionState !== 'idle' ? 0.6 : 1
+                              }}
+                              onMouseEnter={(e) => {
+                                if (whisperActionState === 'idle') {
+                                  e.currentTarget.style.background = 'linear-gradient(135deg, rgba(14, 165, 233, 0.35) 0%, rgba(45, 212, 191, 0.3) 100%)';
+                                  e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.6)';
+                                  e.currentTarget.style.transform = 'translateY(-1px)';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (whisperActionState === 'idle') {
+                                  e.currentTarget.style.background = 'linear-gradient(135deg, rgba(14, 165, 233, 0.22) 0%, rgba(45, 212, 191, 0.18) 100%)';
+                                  e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.35)';
+                                  e.currentTarget.style.transform = 'translateY(0)';
+                                }
+                              }}
+                            >
+                              <Mic size={14} style={{ color: '#38bdf8' }} />
+                              {whisperActionState === 'loading' ? 'Loading Model...' : 'Load Model'}
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={whisperActionState !== 'idle'}
+                              onClick={async () => {
+                                setWhisperActionState('unloading');
+                                setWhisperStatusNotice({ text: 'Unloading Whisper model...', type: 'info' });
+                                try {
+                                  const res = await fetch(`${API_BASE}/api/speech/whisper/unload`, { method: 'POST' });
+                                  if (res.ok) {
+                                    setWhisperStatusNotice({ text: 'Model unloaded & VRAM freed!', type: 'success' });
+                                  } else {
+                                    setWhisperStatusNotice({ text: 'Failed to unload Whisper.', type: 'error' });
+                                  }
+                                } catch(e) { 
+                                  console.error(e);
+                                  setWhisperStatusNotice({ text: 'Network error unloading Whisper.', type: 'error' });
+                                } finally {
+                                  setWhisperActionState('idle');
+                                  setTimeout(() => setWhisperStatusNotice(null), 4000);
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                cursor: whisperActionState === 'idle' ? 'pointer' : 'wait',
+                                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.18) 0%, rgba(244, 63, 94, 0.15) 100%)',
+                                border: '1px solid rgba(244, 63, 94, 0.3)',
+                                color: '#f87171',
+                                boxShadow: '0 2px 8px rgba(239, 68, 68, 0.12)',
+                                transition: 'all 0.2s ease',
+                                opacity: whisperActionState !== 'idle' ? 0.6 : 1
+                              }}
+                              onMouseEnter={(e) => {
+                                if (whisperActionState === 'idle') {
+                                  e.currentTarget.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(244, 63, 94, 0.25) 100%)';
+                                  e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.55)';
+                                  e.currentTarget.style.transform = 'translateY(-1px)';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (whisperActionState === 'idle') {
+                                  e.currentTarget.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.18) 0%, rgba(244, 63, 94, 0.15) 100%)';
+                                  e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.3)';
+                                  e.currentTarget.style.transform = 'translateY(0)';
+                                }
+                              }}
+                            >
+                              <MicOff size={14} style={{ color: '#f87171' }} />
+                              {whisperActionState === 'unloading' ? 'Unloading Model...' : 'Unload Model'}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
