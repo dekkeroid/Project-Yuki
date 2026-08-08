@@ -2129,6 +2129,30 @@ async def tts_test_endpoint(req: SettingsUpdateRequest):
     except Exception as e:
         return Response(status_code=500, content=f"TTS test failed: {e}")
 
+@app.post("/api/speech/whisper/load")
+async def api_load_whisper():
+    if config.STT_PROVIDER != "local":
+        return {"status": "skipped", "message": "STT Provider is not local"}
+    from app.voice.stt import get_whisper_model
+    import asyncio
+    try:
+        await asyncio.to_thread(get_whisper_model, config.WHISPER_MODEL, getattr(config, "WHISPER_COMPUTE_TYPE", "int8_float16"))
+        return {"status": "success", "message": "Whisper model loaded"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/speech/whisper/unload")
+async def api_unload_whisper():
+    if config.STT_PROVIDER != "local":
+        return {"status": "skipped"}
+    from app.voice.stt import unload_whisper_if_idle
+    import asyncio
+    try:
+        await asyncio.to_thread(unload_whisper_if_idle, force=True)
+        return {"status": "success", "message": "Whisper model unloaded"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/api/speech/transcribe")
 async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str] = None):
     """
