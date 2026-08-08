@@ -6023,7 +6023,7 @@ const ControlDashboard = ({
                           <input
                             type="range"
                             min="0.002"
-                            max="0.600"
+                            max="0.800"
                             step="0.005"
                             value={vadThreshold}
                             onChange={(e) => {
