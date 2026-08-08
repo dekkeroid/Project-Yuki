@@ -28,7 +28,7 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
         audioCtx = new AudioContext();
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256;
+        analyser.fftSize = 2048;
         source.connect(analyser);
         const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
@@ -39,9 +39,15 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
           animId = requestAnimationFrame(draw);
           analyser.getByteTimeDomainData(dataArray);
 
+          let mean = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            mean += dataArray[i];
+          }
+          mean /= dataArray.length;
+
           let sum = 0;
           for (let i = 0; i < dataArray.length; i++) {
-            const val = (dataArray[i] - 128) / 128;
+            const val = (dataArray[i] - mean) / 128.0;
             sum += val * val;
           }
           const rms = Math.sqrt(sum / dataArray.length);

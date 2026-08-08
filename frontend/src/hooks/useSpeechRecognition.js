@@ -451,7 +451,7 @@ export function useSpeechRecognition(options = {}) {
 
         const micAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const micAnalyser = micAudioCtx.createAnalyser();
-        micAnalyser.fftSize = 64;
+        micAnalyser.fftSize = 2048;
         const micSource = micAudioCtx.createMediaStreamSource(stream);
         micSource.connect(micAnalyser);
 
@@ -470,9 +470,16 @@ export function useSpeechRecognition(options = {}) {
           if (!vadActiveRef.current || !isRecordingRef.current || !micAnalyserRef.current) return;
 
           micAnalyserRef.current.getByteTimeDomainData(dataArray);
+          
+          let mean = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            mean += dataArray[i];
+          }
+          mean /= bufferLength;
+
           let sum = 0;
           for (let i = 0; i < bufferLength; i++) {
-            const val = (dataArray[i] - 128) / 128;
+            const val = (dataArray[i] - mean) / 128.0;
             sum += val * val;
           }
           const rms = Math.sqrt(sum / bufferLength);
