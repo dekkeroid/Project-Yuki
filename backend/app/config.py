@@ -168,6 +168,8 @@ WHISPER_VRAM_THRESHOLD = float(os.environ.get("WHISPER_VRAM_THRESHOLD", "90"))  
 WHISPER_AUTO_UNLOAD = os.environ.get("WHISPER_AUTO_UNLOAD", "true").strip().lower() in ("1", "true", "yes", "on")
 SILERO_VAD_THRESHOLD = float(os.environ.get("SILERO_VAD_THRESHOLD", "0.5"))
 SILENCE_TIMEOUT_MS = int(os.environ.get("SILENCE_TIMEOUT_MS", "450"))
+WHISPER_NO_SPEECH_THRESHOLD = float(os.environ.get("WHISPER_NO_SPEECH_THRESHOLD", "0.6"))
+CONTINUED_SESSION_TIMEOUT_SEC = int(os.environ.get("CONTINUED_SESSION_TIMEOUT_SEC", "600"))
 
 # ── Cloud/Custom STT provider settings ────────────────────────────────────────
 # Provider IDs: "local" | "google" | "azure" | "assemblyai" | "deepgram" | "custom"

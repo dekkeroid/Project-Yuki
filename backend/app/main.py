@@ -237,6 +237,16 @@ async def _run_memory_optimizer_bg():
             print(f"[Memory] Error in background memory optimizer: {e}")
         await asyncio.sleep(300)
 
+async def _whisper_idle_monitor_bg():
+    """Background task to specifically monitor Whisper idle time and unload it if configured."""
+    while True:
+        try:
+            if config.WHISPER_AUTO_UNLOAD:
+                from app.voice.stt import unload_whisper_if_idle
+                unload_whisper_if_idle(force=False)
+        except Exception:
+            pass
+        await asyncio.sleep(60)
 
 async def _warmup_whisper():
     """Background: preload the faster-whisper model so the first STT use is instant."""
@@ -268,8 +278,7 @@ async def _coordinate_startup_optimization():
             return_exceptions=True
         )
         print("[Startup] All critical models (LLM, TTS, STT) are loaded/warmed up.")
-        from app.memory.network import broadcast_to_clients
-        await broadcast_to_clients({"type": "backend_ready"})
+        await broadcast_ws({"type": "backend_ready"})
 
         await asyncio.sleep(5)
         print("[Startup] Model warmups complete. Performing initial memory sweep...")
@@ -350,11 +359,17 @@ async def lifespan(app: FastAPI):
     stt_preload = memory_manager.profile.get("settings", {}).get("stt_preload", getattr(config, 'STT_PRELOAD', True))
     if tts_preload:
         asyncio.create_task(_warmup_tts())
+    else:
+        tts_warmed_up_event.set()
+        
     if stt_preload:
         asyncio.create_task(_warmup_whisper())
+    else:
+        whisper_warmed_up_event.set()
     asyncio.create_task(_coordinate_startup_optimization())
     asyncio.create_task(_start_crawler_bg())
     asyncio.create_task(_run_memory_optimizer_bg())
+    asyncio.create_task(_whisper_idle_monitor_bg())
 
     from app.tools import time_manager
     time_manager.set_due_callback(broadcast_due_reminders)
@@ -1167,6 +1182,8 @@ class SettingsUpdateRequest(BaseModel):
     whisper_compute_type: Optional[str] = None
     vad_threshold: Optional[float] = None
     silence_timeout_ms: Optional[int] = None
+    continued_session_timeout_sec: Optional[int] = None
+    whisper_no_speech_threshold: Optional[float] = None
     tool_mode: Optional[str] = None
     send_tools_in_simple: Optional[bool] = None
     endpoint_strategy: Optional[str] = None
@@ -1477,6 +1494,12 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.silence_timeout_ms is not None:
         config.SILENCE_TIMEOUT_MS = int(req.silence_timeout_ms)
         memory_manager.update_setting("silence_timeout_ms", int(req.silence_timeout_ms))
+    if req.continued_session_timeout_sec is not None:
+        config.CONTINUED_SESSION_TIMEOUT_SEC = int(req.continued_session_timeout_sec)
+        memory_manager.update_setting("continued_session_timeout_sec", int(req.continued_session_timeout_sec))
+    if req.whisper_no_speech_threshold is not None:
+        config.WHISPER_NO_SPEECH_THRESHOLD = float(req.whisper_no_speech_threshold)
+        memory_manager.update_setting("whisper_no_speech_threshold", float(req.whisper_no_speech_threshold))
     if req.use_local_whisper is not None:
         memory_manager.update_setting("use_local_whisper", req.use_local_whisper)
     if req.stt_language is not None:

@@ -31,6 +31,10 @@ def set_listening_mode(active: bool):
     """Track whether the frontend microphone listening mode is active."""
     global _listening_mode_active
     _listening_mode_active = bool(active)
+    if not active:
+        # Reset the idle timer when listening mode is turned off, 
+        # so the timeout countdown starts exactly from now.
+        update_last_stt_time()
 
 def is_listening_mode_active() -> bool:
     """True when the frontend mic is actively listening (whisper in active use)."""
@@ -51,6 +55,10 @@ def unload_whisper_if_idle(force: bool = False):
     global _whisper_instance, _current_model_size, _current_compute_type, _current_device, _whisper_using_gpu
     if _whisper_instance is None:
         return
+        
+    if _listening_mode_active and not force:
+        return # Never auto-unload while listening mode is active
+        
     idle_time = time.time() - _last_stt_request_time
     if force or idle_time > config.WHISPER_IDLE_TIMEOUT:
         print(f"[STT] Whisper model unloaded ({'forced by memory pressure' if force else f'idle for {int(idle_time)}s'}).")
@@ -150,7 +158,7 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
                 "listing directory, editing a file, deleting a file, system power control, or running a python script."
             )
             vad_params = dict(
-                threshold=0.5,
+                threshold=getattr(config, "SILERO_VAD_THRESHOLD", 0.5),
                 min_speech_duration_ms=150,
                 min_silence_duration_ms=400,
                 speech_pad_ms=100
@@ -160,6 +168,8 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
                 beam_size=1,  # Fast 50% faster greedy decoding for real-time turn taking
                 vad_filter=True,
                 vad_parameters=vad_params,
+                condition_on_previous_text=False,
+                no_speech_threshold=getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.6),
                 language=language if language != 'auto' else None,
                 initial_prompt=whisper_prompt
             )
