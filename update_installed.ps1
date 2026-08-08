@@ -44,7 +44,7 @@ function Get-YukiInstallDir {
 function Confirm-Yes {
     param([string]$Message, [bool]$Default)
     $prompt = if ($Default) { '[Y/n]' } else { '[y/N]' }
-    $answer = Read-Host "$Message $prompt"
+    $answer = "y"
     if ([string]::IsNullOrWhiteSpace($answer)) { return $Default }
     return ($answer -match '^(y|yes)$')
 }
