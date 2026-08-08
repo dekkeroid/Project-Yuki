@@ -152,6 +152,15 @@ class MemoryManager:
                 config.LLM_CODER_BASE_URL = data["settings"].get("llm_coder_base_url", getattr(config, "LLM_CODER_BASE_URL", ""))
                 config.LLM_CODER_MODEL = data["settings"].get("llm_coder_model", getattr(config, "LLM_CODER_MODEL", ""))
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
+                
+                # IMPORTANT FIX FOR PROD:
+                # If a legacy character_persona is saved in settings, but NO custom_persona_prompts exist, 
+                # we should NOT blindly load it for the "sassy_tech_gf" if they are a new user. 
+                # However, to preserve state for old users, we DO load it, but we also ensure 
+                # custom_persona_prompts dictionary is explicitly initialized if missing.
+                if "custom_persona_prompts" not in data["settings"]:
+                    data["settings"]["custom_persona_prompts"] = {}
+                
                 from app.agent.personas import get_clean_character_backstory
                 config.CHARACTER_PERSONA = get_clean_character_backstory(data)
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
@@ -555,5 +564,33 @@ class MemoryManager:
         # Re-apply all settings to runtime config
         self.profile = self._load_profile()
         return self.profile["settings"]
+
+    def reset_custom_persona_prompt(self, preset_key: str = None) -> str:
+        """Removes the custom prompt override for a persona and returns its built-in default."""
+        settings = self.profile.get("settings", {})
+        if preset_key is None:
+            preset_key = settings.get("persona_preset", "sassy_tech_gf")
+            
+        custom_prompts = settings.get("custom_persona_prompts", {})
+        if preset_key in custom_prompts:
+            del custom_prompts[preset_key]
+            
+        self.profile["settings"]["custom_persona_prompts"] = custom_prompts
+        self._save_profile()
+        
+        from app.agent.personas import PERSONA_PRESETS
+        
+        # Also update character_persona if this is the currently active persona
+        default_prompt = PERSONA_PRESETS.get(preset_key, PERSONA_PRESETS["sassy_tech_gf"])["prompt"]
+        if settings.get("persona_preset") == preset_key:
+            from app.agent.personas import sanitize_base_backstory
+            clean = sanitize_base_backstory(default_prompt)
+            self.profile["settings"]["character_persona"] = clean
+            from app import config
+            config.CHARACTER_PERSONA = clean
+            self._save_profile()
+            return clean
+            
+        return default_prompt
 
 
