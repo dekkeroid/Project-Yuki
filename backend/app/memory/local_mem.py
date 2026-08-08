@@ -71,6 +71,8 @@ class MemoryManager:
                 "enable_intent_check": True,
                 "vad_threshold": 0.015,
                 "silence_timeout_ms": 450,
+                "continued_session_timeout_sec": 600,
+                "whisper_no_speech_threshold": 0.6,
                 "llm_mode": 3,
                 "enable_rotation": True,
                 "auto_reset_rotation": False,
@@ -136,6 +138,8 @@ class MemoryManager:
                 config.WHISPER_COMPUTE_TYPE = data["settings"].get("whisper_compute_type", getattr(config, "WHISPER_COMPUTE_TYPE", "int8_float16"))
                 config.SILERO_VAD_THRESHOLD = float(data["settings"].get("vad_threshold", getattr(config, "SILERO_VAD_THRESHOLD", 0.015)))
                 config.SILENCE_TIMEOUT_MS = int(data["settings"].get("silence_timeout_ms", getattr(config, "SILENCE_TIMEOUT_MS", 450)))
+                config.CONTINUED_SESSION_TIMEOUT_SEC = int(data["settings"].get("continued_session_timeout_sec", getattr(config, "CONTINUED_SESSION_TIMEOUT_SEC", 600)))
+                config.WHISPER_NO_SPEECH_THRESHOLD = float(data["settings"].get("whisper_no_speech_threshold", getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.6)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
                 config.SEND_TOOLS_IN_SIMPLE = bool(data["settings"].get("send_tools_in_simple", False))
                 config.CODEGRAPH_CODER_ENABLED = bool(data["settings"].get("codegraph_coder_enabled", getattr(config, "CODEGRAPH_CODER_ENABLED", False)))

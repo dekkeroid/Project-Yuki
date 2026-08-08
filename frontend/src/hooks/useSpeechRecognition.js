@@ -146,11 +146,25 @@ export function useSpeechRecognition(options = {}) {
   const startSessionTimeout = () => {
     if (sessionTimeoutRef.current) clearTimeout(sessionTimeoutRef.current);
     setIsSessionActive(true);
+    
+    // Parse value; default to 600s if null/undefined, but allow 0 to mean 'Never'
+    let timeoutSec = options.continuedSessionTimeoutSec;
+    if (timeoutSec === undefined || timeoutSec === null) {
+      const stored = localStorage.getItem('yuki-continued-session-timeout');
+      timeoutSec = stored !== null ? parseInt(stored, 10) : 600;
+    }
+    
+    if (timeoutSec === 0) {
+      console.log(`[STT] Continued Conversation session set to NEVER timeout.`);
+      return; // Do not start a timer
+    }
+    
+    const timeoutMs = timeoutSec * 1000;
     sessionTimeoutRef.current = setTimeout(() => {
-      console.log("[STT] Continued Conversation session timed out after 10m of silence.");
+      console.log(`[STT] Continued Conversation session timed out after ${timeoutSec}s of silence.`);
       setIsSessionActive(false);
       updateListeningState();
-    }, 600000);
+    }, timeoutMs);
   };
 
   const processSTTTranscript = (transcript, sttTimeMs = null) => {
@@ -455,13 +469,14 @@ export function useSpeechRecognition(options = {}) {
         const checkMicVolume = () => {
           if (!vadActiveRef.current || !isRecordingRef.current || !micAnalyserRef.current) return;
 
-          micAnalyserRef.current.getByteFrequencyData(dataArray);
+          micAnalyserRef.current.getByteTimeDomainData(dataArray);
           let sum = 0;
           for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i];
+            const val = (dataArray[i] - 128) / 128;
+            sum += val * val;
           }
-          const average = sum / bufferLength;
-          const normalized = average / 255.0;
+          const rms = Math.sqrt(sum / bufferLength);
+          const normalized = rms; // True RMS audio volume from 0.0 to 1.0
 
           if (options.updateAudioLevel) {
             options.updateAudioLevel(normalized);

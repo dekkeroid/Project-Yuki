@@ -5984,20 +5984,20 @@ const ControlDashboard = ({
                           </select>
                         </div>
 
-                        {/* Silero VAD Confidence / Sensitivity Threshold */}
+                        {/* Microphone Speech Activation Threshold */}
                         <div className="identity-field" style={{ marginTop: '10px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">VAD Speech Sensitivity Threshold</span>
+                            <span className="field-label">Microphone Speech Activation Threshold (RMS)</span>
                             <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                              {(settings.vad_threshold !== undefined && settings.vad_threshold < 0.2 ? settings.vad_threshold : 0.015).toFixed(3)}
+                              {vadThreshold.toFixed(3)}
                             </span>
                           </div>
                           <input
                             type="range"
-                            min="0.005"
-                            max="0.060"
-                            step="0.002"
-                            value={settings.vad_threshold !== undefined && settings.vad_threshold < 0.2 ? settings.vad_threshold : 0.015}
+                            min="0.002"
+                            max="0.300"
+                            step="0.005"
+                            value={vadThreshold}
                             onChange={(e) => {
                               const val = parseFloat(e.target.value);
                               handleUpdateSetting('vad_threshold', val);
@@ -6006,7 +6006,41 @@ const ControlDashboard = ({
                             style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
                           />
                           <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            Acoustic sensitivity for speech detection. Lower = more sensitive; Higher = ignores noise. (Recommended: 0.015)
+                            Minimum audio volume required to start recording. Increase if fan hum or background noise keeps Yuki listening. (Recommended: 0.015)
+                          </span>
+                        </div>
+
+                        {/* Continued Listening Session Timeout */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <span className="field-label">Continued Listening Silence Timeout</span>
+                          <select
+                            value={settings.continued_session_timeout_sec || 600}
+                            onChange={(e) => handleUpdateSetting('continued_session_timeout_sec', parseInt(e.target.value, 10))}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              marginTop: '4px'
+                            }}
+                          >
+                            <option value={15} style={{ background: '#0b0813', color: 'white' }}>15 seconds (Smart Speaker)</option>
+                            <option value={30} style={{ background: '#0b0813', color: 'white' }}>30 seconds</option>
+                            <option value={60} style={{ background: '#0b0813', color: 'white' }}>1 minute</option>
+                            <option value={120} style={{ background: '#0b0813', color: 'white' }}>2 minutes</option>
+                            <option value={300} style={{ background: '#0b0813', color: 'white' }}>5 minutes</option>
+                            <option value={600} style={{ background: '#0b0813', color: 'white' }}>10 minutes</option>
+                            <option value={1800} style={{ background: '#0b0813', color: 'white' }}>30 minutes</option>
+                            <option value={3600} style={{ background: '#0b0813', color: 'white' }}>1 hour</option>
+                            <option value={0} style={{ background: '#0b0813', color: 'white' }}>Never (Always listen)</option>
+                          </select>
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                            Duration of silence before Yuki stops listening and requires her wake word again.
                           </span>
                         </div>
 

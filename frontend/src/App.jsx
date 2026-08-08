@@ -746,6 +746,7 @@ const App = () => {
     API_BASE,
     whisperModel: profile?.settings?.whisper_model || 'base',
     vadThreshold: profile?.settings?.vad_threshold,
+    continuedSessionTimeoutSec: profile?.settings?.continued_session_timeout_sec,
     isThinkingRef,
     ttsStreamActiveRef,
     hasReceivedAudioRef,
@@ -4268,10 +4269,10 @@ const App = () => {
                             </select>
                           </div>
 
-                          {/* VAD Sensitivity Threshold Slider */}
+                          {/* Microphone Speech Activation Threshold */}
                           <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <label className="desktop-label">VAD Sensitivity Threshold</label>
+                              <label className="desktop-label">Microphone Speech Activation Threshold (RMS)</label>
                               <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a855f7' }}>
                                 {vadThreshold.toFixed(3)}
                               </span>
@@ -4279,7 +4280,7 @@ const App = () => {
                             <input
                               type="range"
                               min="0.002"
-                              max="0.3"
+                              max="0.300"
                               step="0.005"
                               value={vadThreshold}
                               onChange={(e) => {
