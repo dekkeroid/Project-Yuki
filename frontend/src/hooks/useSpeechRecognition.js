@@ -147,10 +147,10 @@ export function useSpeechRecognition(options = {}) {
     if (sessionTimeoutRef.current) clearTimeout(sessionTimeoutRef.current);
     setIsSessionActive(true);
     sessionTimeoutRef.current = setTimeout(() => {
-      console.log("[STT] Continued Conversation session timed out after 8s of silence.");
+      console.log("[STT] Continued Conversation session timed out after 10m of silence.");
       setIsSessionActive(false);
       updateListeningState();
-    }, 8000);
+    }, 600000);
   };
 
   const processSTTTranscript = (transcript, sttTimeMs = null) => {
