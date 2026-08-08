@@ -5759,6 +5759,34 @@ const ControlDashboard = ({
                           }} />
                         </button>
                       </div>
+
+                      {/* Manual Load/Unload Buttons */}
+                      {(!settings.stt_provider || settings.stt_provider === 'local') && (
+                        <div className="settings-field" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                          <button
+                            className="settings-button secondary"
+                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                            onClick={async () => {
+                              try {
+                                await fetch(`${API_BASE}/api/speech/whisper/load`, { method: 'POST' });
+                              } catch(e) { console.error(e); }
+                            }}
+                          >
+                            <Mic size={14} /> Load Whisper
+                          </button>
+                          <button
+                            className="settings-button secondary"
+                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                            onClick={async () => {
+                              try {
+                                await fetch(`${API_BASE}/api/speech/whisper/unload`, { method: 'POST' });
+                              } catch(e) { console.error(e); }
+                            }}
+                          >
+                            <MicOff size={14} /> Unload Whisper
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Microphone Select */}
@@ -5995,7 +6023,7 @@ const ControlDashboard = ({
                           <input
                             type="range"
                             min="0.002"
-                            max="0.300"
+                            max="0.600"
                             step="0.005"
                             value={vadThreshold}
                             onChange={(e) => {
@@ -6006,7 +6034,7 @@ const ControlDashboard = ({
                             style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
                           />
                           <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            Minimum audio volume required to start recording. Increase if fan hum or background noise keeps Yuki listening. (Recommended: 0.015)
+                            Minimum audio volume required to start recording. Increase if fan hum or background noise keeps Yuki listening. (Recommended: 0.300)
                           </span>
                         </div>
 

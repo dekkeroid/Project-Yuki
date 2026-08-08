@@ -176,6 +176,17 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
             
             # Combine segment text into a single transcript
             text = " ".join([segment.text for segment in segments]).strip()
+            
+            # Anti-hallucination post-filter for notorious Whisper YouTube artifacts
+            lower_text = text.lower().strip(' .?!,"\'')
+            hallucinations = [
+                "thank you", "thanks for watching", "thank you for watching", 
+                "thanks", "you", "thank you so much"
+            ]
+            if lower_text in hallucinations:
+                print(f"[STT] Filtered known Whisper hallucination: '{text}'")
+                return ""
+                
             return text
         except Exception as e:
             print(f"[STT] Whisper Transcription Error: {e}")
