@@ -758,6 +758,7 @@ const ControlDashboard = ({
     silero_speech_pad_ms: 100,
     whisper_beam_size: 1,
     whisper_condition_on_previous_text: false,
+    whisper_no_speech_threshold: 0.60,
     vad_threshold: 0.16,
     silence_timeout_ms: 450,
     continued_session_timeout_sec: 120,
@@ -6460,6 +6461,28 @@ const ControlDashboard = ({
                           </div>
                           <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
                             Should Whisper remember the previous sentence to guess the next word (ON) or start fresh (OFF)?
+                          </span>
+                        </div>
+
+                        {/* Whisper No Speech Threshold */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label">Whisper No-Speech Filter Gate</span>
+                            <span style={{ fontSize: '0.72rem', color: '#2dd4bf', fontWeight: 600 }}>
+                              {Math.round((settings.whisper_no_speech_threshold ?? 0.60) * 100)}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.10"
+                            max="0.95"
+                            step="0.05"
+                            value={settings.whisper_no_speech_threshold ?? 0.60}
+                            onChange={(e) => handleUpdateSetting('whisper_no_speech_threshold', parseFloat(e.target.value))}
+                            style={{ width: '100%', accentColor: '#2dd4bf', cursor: 'pointer', marginTop: '4px' }}
+                          />
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            Discards Whisper text if probability of audio being pure silence is above this gate. (Higher = stricter anti-hallucination filter)
                           </span>
                         </div>
 
