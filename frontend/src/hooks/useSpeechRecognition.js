@@ -597,11 +597,11 @@ export function useSpeechRecognition(options = {}) {
         }
         maxRecordingTimeoutRef.current = setTimeout(() => {
           if (isRecordingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-            const reasonStr = "Maximum recording clip duration limit reached (15,000ms safety cap)";
+            const reasonStr = "Maximum recording clip duration limit reached (60,000ms safety cap)";
             logSTTStatus(`[STT] ${reasonStr}`);
             stopSpeechRecognition(false, reasonStr);
           }
-        }, 15000);
+        }, 60000);
 
       } catch (e) {
         console.warn("[STT] Failed to start local Whisper recording:", e);
