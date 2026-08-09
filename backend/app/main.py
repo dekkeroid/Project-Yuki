@@ -1193,6 +1193,8 @@ class SettingsUpdateRequest(BaseModel):
     max_recording_duration_sec: Optional[int] = None
     whisper_no_speech_threshold: Optional[float] = None
     stt_auto_gain_control: Optional[bool] = None
+    stt_echo_cancellation: Optional[bool] = None
+    stt_noise_suppression: Optional[bool] = None
     tool_mode: Optional[str] = None
     send_tools_in_simple: Optional[bool] = None
     endpoint_strategy: Optional[str] = None
@@ -1536,6 +1538,12 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.stt_auto_gain_control is not None:
         config.STT_AUTO_GAIN_CONTROL = bool(req.stt_auto_gain_control)
         memory_manager.update_setting("stt_auto_gain_control", bool(req.stt_auto_gain_control))
+    if req.stt_echo_cancellation is not None:
+        config.STT_ECHO_CANCELLATION = bool(req.stt_echo_cancellation)
+        memory_manager.update_setting("stt_echo_cancellation", bool(req.stt_echo_cancellation))
+    if req.stt_noise_suppression is not None:
+        config.STT_NOISE_SUPPRESSION = bool(req.stt_noise_suppression)
+        memory_manager.update_setting("stt_noise_suppression", bool(req.stt_noise_suppression))
     if req.use_local_whisper is not None:
         memory_manager.update_setting("use_local_whisper", req.use_local_whisper)
     if req.stt_language is not None:

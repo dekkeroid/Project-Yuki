@@ -750,6 +750,8 @@ const App = () => {
     vadThreshold: profile?.settings?.vad_threshold,
     silenceTimeout: profile?.settings?.silence_timeout_ms,
     sttAutoGainControl: profile?.settings?.stt_auto_gain_control,
+    sttEchoCancellation: profile?.settings?.stt_echo_cancellation,
+    sttNoiseSuppression: profile?.settings?.stt_noise_suppression,
     continuedSessionTimeoutSec: profile?.settings?.continued_session_timeout_sec,
     maxRecordingDurationSec: profile?.settings?.max_recording_duration_sec,
     isThinkingRef,
