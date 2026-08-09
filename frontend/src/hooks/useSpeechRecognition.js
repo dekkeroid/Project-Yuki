@@ -589,14 +589,6 @@ export function useSpeechRecognition(options = {}) {
               vadSilenceStartRef.current = null;
             }
           } else {
-            // Keep pre-speech silence buffer trimmed to last 2 chunks (~500ms pre-roll) while silent
-            // MUST PRESERVE chunk [0] which contains the WebM container header!
-            if (!vadSpeakingRef.current && audioChunksRef.current.length > 3) {
-              const headerChunk = audioChunksRef.current[0];
-              const lastTwoChunks = audioChunksRef.current.slice(-2);
-              audioChunksRef.current = [headerChunk, ...lastTwoChunks];
-            }
-
             if (vadSpeakingRef.current) {
               if (vadSilenceStartRef.current === null) {
                 vadSilenceStartRef.current = now;
