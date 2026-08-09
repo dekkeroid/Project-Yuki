@@ -1192,6 +1192,7 @@ class SettingsUpdateRequest(BaseModel):
     continued_session_timeout_sec: Optional[int] = None
     max_recording_duration_sec: Optional[int] = None
     whisper_no_speech_threshold: Optional[float] = None
+    stt_auto_gain_control: Optional[bool] = None
     tool_mode: Optional[str] = None
     send_tools_in_simple: Optional[bool] = None
     endpoint_strategy: Optional[str] = None
@@ -1532,6 +1533,9 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.whisper_no_speech_threshold is not None:
         config.WHISPER_NO_SPEECH_THRESHOLD = float(req.whisper_no_speech_threshold)
         memory_manager.update_setting("whisper_no_speech_threshold", float(req.whisper_no_speech_threshold))
+    if req.stt_auto_gain_control is not None:
+        config.STT_AUTO_GAIN_CONTROL = bool(req.stt_auto_gain_control)
+        memory_manager.update_setting("stt_auto_gain_control", bool(req.stt_auto_gain_control))
     if req.use_local_whisper is not None:
         memory_manager.update_setting("use_local_whisper", req.use_local_whisper)
     if req.stt_language is not None:

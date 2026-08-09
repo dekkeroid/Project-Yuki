@@ -761,6 +761,7 @@ const ControlDashboard = ({
     whisper_no_speech_threshold: 0.70,
     vad_threshold: 0.16,
     silence_timeout_ms: 1000,
+    stt_auto_gain_control: true,
     continued_session_timeout_sec: 120,
     max_recording_duration_sec: 120,
     // Cloud provider settings
@@ -6246,6 +6247,39 @@ const ControlDashboard = ({
                           <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
                             Is the room loud enough to turn the recorder on? (Minimum audio volume required to start recording. Default: 0.16)
                           </span>
+                        </div>
+
+                        {/* Automatic Gain Control (AGC) */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label">Browser Auto Gain Control (AGC)</span>
+                            <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
+                              <input
+                                type="checkbox"
+                                checked={settings.stt_auto_gain_control ?? true}
+                                onChange={(e) => handleUpdateSetting('stt_auto_gain_control', e.target.checked)}
+                              />
+                              <span className="slider round"></span>
+                            </label>
+                          </div>
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            Allows browser WebRTC to dynamically adjust microphone amplification on the fly.
+                          </span>
+                          <div style={{
+                            marginTop: '6px',
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '6px'
+                          }}>
+                            <span style={{ fontSize: '0.75rem', lineHeight: '1.2' }}>⚠️</span>
+                            <span style={{ fontSize: '0.64rem', color: '#fca5a5', lineHeight: '1.3' }}>
+                              <strong>CAUTION:</strong> Disabling AGC prevents volume crushing when speaking loudly, but turns off automatic mic volume boosting for quiet voices. If disabled, manually ensure your mic input volume is loud enough to cross the VAD Threshold gate.
+                            </span>
+                          </div>
                         </div>
 
                         {/* Silence Timeout */}
