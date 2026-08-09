@@ -762,6 +762,7 @@ const ControlDashboard = ({
     vad_threshold: 0.16,
     silence_timeout_ms: 450,
     continued_session_timeout_sec: 120,
+    max_recording_duration_sec: 120,
     // Cloud provider settings
     stt_provider: 'local',
     stt_cloud_api_key: '',
@@ -6315,6 +6316,37 @@ const ControlDashboard = ({
                           </select>
                           <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
                             How long before Yuki puts her mic away and goes back to sleep? (Duration of inactivity before mic turns off)
+                          </span>
+                        </div>
+
+                        {/* Max Audio Clip Length (Speech Safety Cap) */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <span className="field-label">Max Audio Clip Length (Speech Safety Cap)</span>
+                          <select
+                            value={settings.max_recording_duration_sec ?? 120}
+                            onChange={(e) => handleUpdateSetting('max_recording_duration_sec', parseInt(e.target.value, 10))}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '8px',
+                              color: 'white',
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              marginTop: '4px'
+                            }}
+                          >
+                            <option value={30} style={{ background: '#0b0813', color: 'white' }}>30 seconds (Short sentences)</option>
+                            <option value={45} style={{ background: '#0b0813', color: 'white' }}>45 seconds</option>
+                            <option value={60} style={{ background: '#0b0813', color: 'white' }}>60 seconds (1 minute)</option>
+                            <option value={120} style={{ background: '#0b0813', color: 'white' }}>120 seconds / 2 minutes (Recommended Default for Essays)</option>
+                            <option value={180} style={{ background: '#0b0813', color: 'white' }}>180 seconds (3 minutes)</option>
+                            <option value={300} style={{ background: '#0b0813', color: 'white' }}>300 seconds (5 minutes - Long Dictation)</option>
+                          </select>
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            Maximum time you can speak continuously in a single clip before sending audio to Whisper. (Default: 2 mins)
                           </span>
                         </div>
 

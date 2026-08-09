@@ -566,13 +566,15 @@ export function useSpeechRecognition(options = {}) {
                 if (maxRecordingTimeoutRef.current) {
                   clearTimeout(maxRecordingTimeoutRef.current);
                 }
+                const maxDurationSec = options.maxRecordingDurationSec || 120;
+                const maxDurationMs = maxDurationSec * 1000;
                 maxRecordingTimeoutRef.current = setTimeout(() => {
                   if (isRecordingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-                    const reasonStr = "Maximum recording clip duration limit reached (60,000ms speech safety cap)";
+                    const reasonStr = `Maximum recording clip duration limit reached (${maxDurationSec}s speech safety cap)`;
                     logSTTStatus(`[STT] ${reasonStr}`);
                     stopSpeechRecognition(false, reasonStr);
                   }
-                }, 60000);
+                }, maxDurationMs);
 
                 if ((isPlayingRef?.current || ttsStreamActiveRef?.current) && stopAllPlayback) {
                   logSTTStatus("Interrupting active Yuki speech playback (barge-in)");
