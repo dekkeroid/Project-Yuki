@@ -762,6 +762,8 @@ const ControlDashboard = ({
     vad_threshold: 0.16,
     silence_timeout_ms: 1000,
     stt_auto_gain_control: true,
+    stt_echo_cancellation: true,
+    stt_noise_suppression: true,
     continued_session_timeout_sec: 120,
     max_recording_duration_sec: 120,
     // Cloud provider settings
@@ -6280,6 +6282,42 @@ const ControlDashboard = ({
                               <strong>CAUTION:</strong> Disabling AGC prevents volume crushing when speaking loudly, but turns off automatic mic volume boosting for quiet voices. If disabled, manually ensure your mic input volume is loud enough to cross the VAD Threshold gate.
                             </span>
                           </div>
+                        </div>
+
+                        {/* Browser Echo Cancellation */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label">Browser Echo Cancellation</span>
+                            <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
+                              <input
+                                type="checkbox"
+                                checked={settings.stt_echo_cancellation ?? true}
+                                onChange={(e) => handleUpdateSetting('stt_echo_cancellation', e.target.checked)}
+                              />
+                              <span className="slider round"></span>
+                            </label>
+                          </div>
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            Filters out speaker audio bleed from entering your microphone. (Disable if using external DSP or hardware interface).
+                          </span>
+                        </div>
+
+                        {/* Browser Noise Suppression */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label">Browser Noise Suppression</span>
+                            <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
+                              <input
+                                type="checkbox"
+                                checked={settings.stt_noise_suppression ?? true}
+                                onChange={(e) => handleUpdateSetting('stt_noise_suppression', e.target.checked)}
+                              />
+                              <span className="slider round"></span>
+                            </label>
+                          </div>
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            Filters out continuous background noise (fans, air conditioning, hums).
+                          </span>
                         </div>
 
                         {/* Silence Timeout */}

@@ -81,6 +81,8 @@ class MemoryManager:
                 "max_recording_duration_sec": 120,
                 "whisper_no_speech_threshold": 0.70,
                 "stt_auto_gain_control": True,
+                "stt_echo_cancellation": True,
+                "stt_noise_suppression": True,
                 "llm_mode": 3,
                 "enable_rotation": True,
                 "auto_reset_rotation": False,
@@ -155,6 +157,8 @@ class MemoryManager:
                 config.MAX_RECORDING_DURATION_SEC = int(data["settings"].get("max_recording_duration_sec", getattr(config, "MAX_RECORDING_DURATION_SEC", 120)))
                 config.WHISPER_NO_SPEECH_THRESHOLD = float(data["settings"].get("whisper_no_speech_threshold", getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.70)))
                 config.STT_AUTO_GAIN_CONTROL = bool(data["settings"].get("stt_auto_gain_control", getattr(config, "STT_AUTO_GAIN_CONTROL", True)))
+                config.STT_ECHO_CANCELLATION = bool(data["settings"].get("stt_echo_cancellation", getattr(config, "STT_ECHO_CANCELLATION", True)))
+                config.STT_NOISE_SUPPRESSION = bool(data["settings"].get("stt_noise_suppression", getattr(config, "STT_NOISE_SUPPRESSION", True)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
                 config.SEND_TOOLS_IN_SIMPLE = bool(data["settings"].get("send_tools_in_simple", False))
                 config.CODEGRAPH_CODER_ENABLED = bool(data["settings"].get("codegraph_coder_enabled", getattr(config, "CODEGRAPH_CODER_ENABLED", False)))
@@ -395,6 +399,10 @@ class MemoryManager:
             config.WHISPER_NO_SPEECH_THRESHOLD = float(value)
         elif key == "stt_auto_gain_control":
             config.STT_AUTO_GAIN_CONTROL = bool(value)
+        elif key == "stt_echo_cancellation":
+            config.STT_ECHO_CANCELLATION = bool(value)
+        elif key == "stt_noise_suppression":
+            config.STT_NOISE_SUPPRESSION = bool(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

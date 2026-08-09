@@ -386,11 +386,13 @@ export function useSpeechRecognition(options = {}) {
 
         const deviceId = selectedMicDeviceIdRef.current;
         const agcValue = options.sttAutoGainControl ?? true;
+        const ecValue = options.sttEchoCancellation ?? true;
+        const nsValue = options.sttNoiseSuppression ?? true;
         const constraints = {
           audio: {
             deviceId: deviceId ? { exact: deviceId } : undefined,
-            echoCancellation: true,
-            noiseSuppression: true,
+            echoCancellation: ecValue,
+            noiseSuppression: nsValue,
             autoGainControl: agcValue
           }
         };
