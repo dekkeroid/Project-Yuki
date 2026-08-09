@@ -750,6 +750,7 @@ const App = () => {
     vadThreshold: profile?.settings?.vad_threshold,
     silenceTimeout: profile?.settings?.silence_timeout_ms,
     continuedSessionTimeoutSec: profile?.settings?.continued_session_timeout_sec,
+    maxRecordingDurationSec: profile?.settings?.max_recording_duration_sec,
     isThinkingRef,
     ttsStreamActiveRef,
     hasReceivedAudioRef,

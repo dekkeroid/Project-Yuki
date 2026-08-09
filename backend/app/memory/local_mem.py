@@ -78,6 +78,7 @@ class MemoryManager:
                 "whisper_condition_on_previous_text": False,
                 "silence_timeout_ms": 450,
                 "continued_session_timeout_sec": 120,
+                "max_recording_duration_sec": 120,
                 "whisper_no_speech_threshold": 0.6,
                 "llm_mode": 3,
                 "enable_rotation": True,
@@ -150,6 +151,7 @@ class MemoryManager:
                 config.WHISPER_CONDITION_ON_PREVIOUS_TEXT = bool(data["settings"].get("whisper_condition_on_previous_text", getattr(config, "WHISPER_CONDITION_ON_PREVIOUS_TEXT", False)))
                 config.SILENCE_TIMEOUT_MS = int(data["settings"].get("silence_timeout_ms", getattr(config, "SILENCE_TIMEOUT_MS", 450)))
                 config.CONTINUED_SESSION_TIMEOUT_SEC = int(data["settings"].get("continued_session_timeout_sec", getattr(config, "CONTINUED_SESSION_TIMEOUT_SEC", 120)))
+                config.MAX_RECORDING_DURATION_SEC = int(data["settings"].get("max_recording_duration_sec", getattr(config, "MAX_RECORDING_DURATION_SEC", 120)))
                 config.WHISPER_NO_SPEECH_THRESHOLD = float(data["settings"].get("whisper_no_speech_threshold", getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.6)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
                 config.SEND_TOOLS_IN_SIMPLE = bool(data["settings"].get("send_tools_in_simple", False))
@@ -385,6 +387,8 @@ class MemoryManager:
             config.SILENCE_TIMEOUT_MS = int(value)
         elif key == "continued_session_timeout_sec":
             config.CONTINUED_SESSION_TIMEOUT_SEC = int(value)
+        elif key == "max_recording_duration_sec":
+            config.MAX_RECORDING_DURATION_SEC = int(value)
         elif key == "whisper_no_speech_threshold":
             config.WHISPER_NO_SPEECH_THRESHOLD = float(value)
             

@@ -1190,6 +1190,7 @@ class SettingsUpdateRequest(BaseModel):
     whisper_condition_on_previous_text: Optional[bool] = None
     silence_timeout_ms: Optional[int] = None
     continued_session_timeout_sec: Optional[int] = None
+    max_recording_duration_sec: Optional[int] = None
     whisper_no_speech_threshold: Optional[float] = None
     tool_mode: Optional[str] = None
     send_tools_in_simple: Optional[bool] = None
@@ -1525,6 +1526,9 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.continued_session_timeout_sec is not None:
         config.CONTINUED_SESSION_TIMEOUT_SEC = int(req.continued_session_timeout_sec)
         memory_manager.update_setting("continued_session_timeout_sec", int(req.continued_session_timeout_sec))
+    if req.max_recording_duration_sec is not None:
+        config.MAX_RECORDING_DURATION_SEC = int(req.max_recording_duration_sec)
+        memory_manager.update_setting("max_recording_duration_sec", int(req.max_recording_duration_sec))
     if req.whisper_no_speech_threshold is not None:
         config.WHISPER_NO_SPEECH_THRESHOLD = float(req.whisper_no_speech_threshold)
         memory_manager.update_setting("whisper_no_speech_threshold", float(req.whisper_no_speech_threshold))
