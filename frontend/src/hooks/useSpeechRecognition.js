@@ -96,7 +96,7 @@ export function useSpeechRecognition(options = {}) {
     if (stored !== null && !isNaN(parseInt(stored, 10))) return parseInt(stored, 10);
     const optVal = options.silenceTimeout;
     if (optVal !== undefined && typeof optVal === 'number' && optVal > 0) return optVal;
-    return parseInt(localStorage.getItem('yuki-silence-timeout') || '450', 10);
+    return parseInt(localStorage.getItem('yuki-silence-timeout') || '1000', 10);
   });
   const silenceTimeoutRef = useRef(silenceTimeout);
 
@@ -128,7 +128,7 @@ export function useSpeechRecognition(options = {}) {
 
     // Reload Silence Timeout for device
     const storedTimeout = localStorage.getItem(`yuki-silence-timeout-${activeDevice}`);
-    let targetTimeout = 450;
+    let targetTimeout = 1000;
     if (storedTimeout !== null && !isNaN(parseInt(storedTimeout, 10))) {
       targetTimeout = parseInt(storedTimeout, 10);
     } else if (localStorage.getItem('yuki-silence-timeout') !== null && !isNaN(parseInt(localStorage.getItem('yuki-silence-timeout'), 10))) {

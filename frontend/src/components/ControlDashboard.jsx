@@ -755,12 +755,12 @@ const ControlDashboard = ({
     silero_vad_threshold: 0.50,
     silero_min_speech_duration_ms: 150,
     silero_min_silence_duration_ms: 400,
-    silero_speech_pad_ms: 100,
+    silero_speech_pad_ms: 200,
     whisper_beam_size: 1,
     whisper_condition_on_previous_text: false,
-    whisper_no_speech_threshold: 0.60,
+    whisper_no_speech_threshold: 0.70,
     vad_threshold: 0.16,
-    silence_timeout_ms: 450,
+    silence_timeout_ms: 1000,
     continued_session_timeout_sec: 120,
     max_recording_duration_sec: 120,
     // Cloud provider settings
@@ -6252,7 +6252,7 @@ const ControlDashboard = ({
                         <div className="identity-field" style={{ marginTop: '10px' }}>
                           <span className="field-label">Silence Timeout (End of Speech Wait)</span>
                           <select
-                            value={silenceTimeout || settings.silence_timeout_ms || 450}
+                            value={silenceTimeout || settings.silence_timeout_ms || 1000}
                             onChange={(e) => {
                               const val = parseInt(e.target.value, 10);
                               handleUpdateSetting('silence_timeout_ms', val);
@@ -6421,7 +6421,7 @@ const ControlDashboard = ({
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span className="field-label">Speech Boundary Padding (Silero VAD)</span>
                             <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#f472b6' }}>
-                              {settings.silero_speech_pad_ms ?? 100}ms
+                              {settings.silero_speech_pad_ms ?? 200}ms
                             </span>
                           </div>
                           <input
@@ -6429,7 +6429,7 @@ const ControlDashboard = ({
                             min="0"
                             max="300"
                             step="25"
-                            value={settings.silero_speech_pad_ms ?? 100}
+                            value={settings.silero_speech_pad_ms ?? 200}
                             onChange={(e) => handleUpdateSetting('silero_speech_pad_ms', parseInt(e.target.value, 10))}
                             style={{ width: '100%', cursor: 'pointer', accentColor: '#f472b6', marginTop: '4px' }}
                           />
@@ -6505,7 +6505,7 @@ const ControlDashboard = ({
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span className="field-label">Whisper No-Speech Filter Gate</span>
                             <span style={{ fontSize: '0.72rem', color: '#2dd4bf', fontWeight: 600 }}>
-                              {Math.round((settings.whisper_no_speech_threshold ?? 0.60) * 100)}%
+                              {Math.round((settings.whisper_no_speech_threshold ?? 0.70) * 100)}%
                             </span>
                           </div>
                           <input
@@ -6513,7 +6513,7 @@ const ControlDashboard = ({
                             min="0.10"
                             max="0.95"
                             step="0.05"
-                            value={settings.whisper_no_speech_threshold ?? 0.60}
+                            value={settings.whisper_no_speech_threshold ?? 0.70}
                             onChange={(e) => handleUpdateSetting('whisper_no_speech_threshold', parseFloat(e.target.value))}
                             style={{ width: '100%', accentColor: '#2dd4bf', cursor: 'pointer', marginTop: '4px' }}
                           />

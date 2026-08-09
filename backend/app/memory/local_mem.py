@@ -73,13 +73,13 @@ class MemoryManager:
                 "silero_vad_threshold": 0.50,
                 "silero_min_speech_duration_ms": 150,
                 "silero_min_silence_duration_ms": 400,
-                "silero_speech_pad_ms": 100,
+                "silero_speech_pad_ms": 200,
                 "whisper_beam_size": 1,
                 "whisper_condition_on_previous_text": False,
-                "silence_timeout_ms": 450,
+                "silence_timeout_ms": 1000,
                 "continued_session_timeout_sec": 120,
                 "max_recording_duration_sec": 120,
-                "whisper_no_speech_threshold": 0.6,
+                "whisper_no_speech_threshold": 0.70,
                 "llm_mode": 3,
                 "enable_rotation": True,
                 "auto_reset_rotation": False,
@@ -146,13 +146,13 @@ class MemoryManager:
                 config.SILERO_VAD_THRESHOLD = float(data["settings"].get("silero_vad_threshold", getattr(config, "SILERO_VAD_THRESHOLD", 0.50)))
                 config.SILERO_MIN_SPEECH_DURATION_MS = int(data["settings"].get("silero_min_speech_duration_ms", getattr(config, "SILERO_MIN_SPEECH_DURATION_MS", 150)))
                 config.SILERO_MIN_SILENCE_DURATION_MS = int(data["settings"].get("silero_min_silence_duration_ms", getattr(config, "SILERO_MIN_SILENCE_DURATION_MS", 400)))
-                config.SILERO_SPEECH_PAD_MS = int(data["settings"].get("silero_speech_pad_ms", getattr(config, "SILERO_SPEECH_PAD_MS", 100)))
+                config.SILERO_SPEECH_PAD_MS = int(data["settings"].get("silero_speech_pad_ms", getattr(config, "SILERO_SPEECH_PAD_MS", 200)))
                 config.WHISPER_BEAM_SIZE = int(data["settings"].get("whisper_beam_size", getattr(config, "WHISPER_BEAM_SIZE", 1)))
                 config.WHISPER_CONDITION_ON_PREVIOUS_TEXT = bool(data["settings"].get("whisper_condition_on_previous_text", getattr(config, "WHISPER_CONDITION_ON_PREVIOUS_TEXT", False)))
-                config.SILENCE_TIMEOUT_MS = int(data["settings"].get("silence_timeout_ms", getattr(config, "SILENCE_TIMEOUT_MS", 450)))
+                config.SILENCE_TIMEOUT_MS = int(data["settings"].get("silence_timeout_ms", getattr(config, "SILENCE_TIMEOUT_MS", 1000)))
                 config.CONTINUED_SESSION_TIMEOUT_SEC = int(data["settings"].get("continued_session_timeout_sec", getattr(config, "CONTINUED_SESSION_TIMEOUT_SEC", 120)))
                 config.MAX_RECORDING_DURATION_SEC = int(data["settings"].get("max_recording_duration_sec", getattr(config, "MAX_RECORDING_DURATION_SEC", 120)))
-                config.WHISPER_NO_SPEECH_THRESHOLD = float(data["settings"].get("whisper_no_speech_threshold", getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.6)))
+                config.WHISPER_NO_SPEECH_THRESHOLD = float(data["settings"].get("whisper_no_speech_threshold", getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.70)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
                 config.SEND_TOOLS_IN_SIMPLE = bool(data["settings"].get("send_tools_in_simple", False))
                 config.CODEGRAPH_CODER_ENABLED = bool(data["settings"].get("codegraph_coder_enabled", getattr(config, "CODEGRAPH_CODER_ENABLED", False)))
