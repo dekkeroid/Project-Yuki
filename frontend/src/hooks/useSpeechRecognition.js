@@ -561,6 +561,19 @@ export function useSpeechRecognition(options = {}) {
               if (!vadSpeakingRef.current) {
                 logSTTStatus("User speech detected — speech start");
                 vadSpeakingRef.current = true;
+
+                // Start max recording timeout ONLY when speech actually begins
+                if (maxRecordingTimeoutRef.current) {
+                  clearTimeout(maxRecordingTimeoutRef.current);
+                }
+                maxRecordingTimeoutRef.current = setTimeout(() => {
+                  if (isRecordingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+                    const reasonStr = "Maximum recording clip duration limit reached (60,000ms speech safety cap)";
+                    logSTTStatus(`[STT] ${reasonStr}`);
+                    stopSpeechRecognition(false, reasonStr);
+                  }
+                }, 60000);
+
                 if ((isPlayingRef?.current || ttsStreamActiveRef?.current) && stopAllPlayback) {
                   logSTTStatus("Interrupting active Yuki speech playback (barge-in)");
                   if (logToTerminal) logToTerminal("[STT] User speech detected — interrupting playback");
@@ -574,6 +587,11 @@ export function useSpeechRecognition(options = {}) {
               vadSilenceStartRef.current = null;
             }
           } else {
+            // Keep pre-speech silence buffer trimmed to last 2 chunks (~500ms pre-roll) while silent
+            if (!vadSpeakingRef.current && audioChunksRef.current.length > 2) {
+              audioChunksRef.current = audioChunksRef.current.slice(-2);
+            }
+
             if (vadSpeakingRef.current) {
               if (vadSilenceStartRef.current === null) {
                 vadSilenceStartRef.current = now;
@@ -591,17 +609,6 @@ export function useSpeechRecognition(options = {}) {
         };
 
         checkMicVolume();
-
-        if (maxRecordingTimeoutRef.current) {
-          clearTimeout(maxRecordingTimeoutRef.current);
-        }
-        maxRecordingTimeoutRef.current = setTimeout(() => {
-          if (isRecordingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-            const reasonStr = "Maximum recording clip duration limit reached (60,000ms safety cap)";
-            logSTTStatus(`[STT] ${reasonStr}`);
-            stopSpeechRecognition(false, reasonStr);
-          }
-        }, 60000);
 
       } catch (e) {
         console.warn("[STT] Failed to start local Whisper recording:", e);
