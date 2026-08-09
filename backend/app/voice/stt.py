@@ -167,7 +167,7 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
                 threshold=getattr(config, "SILERO_VAD_THRESHOLD", 0.5),
                 min_speech_duration_ms=getattr(config, "SILERO_MIN_SPEECH_DURATION_MS", 150),
                 min_silence_duration_ms=getattr(config, "SILERO_MIN_SILENCE_DURATION_MS", 400),
-                speech_pad_ms=getattr(config, "SILERO_SPEECH_PAD_MS", 100)
+                speech_pad_ms=getattr(config, "SILERO_SPEECH_PAD_MS", 200)
             )
             segments, info = model.transcribe(
                 file_path,
@@ -175,7 +175,7 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
                 vad_filter=True,
                 vad_parameters=vad_params,
                 condition_on_previous_text=getattr(config, "WHISPER_CONDITION_ON_PREVIOUS_TEXT", False),
-                no_speech_threshold=getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.6),
+                no_speech_threshold=getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.70),
                 language=language if language != 'auto' else None,
                 initial_prompt=whisper_prompt
             )
