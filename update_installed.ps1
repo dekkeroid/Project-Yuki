@@ -124,11 +124,12 @@ foreach ($r in $rows) {
     if ($r.Name -eq 'Backend engine' -and $isSelected) {
         $installedExe = Join-Path $installDir 'resources\backend\backend.exe'
         if (Test-Path $installedExe) {
-            $forceRebuild = Confirm-Yes "  Force full PyInstaller rebuild? (Choose 'Yes' if you installed new pip packages/libraries)" $false
-            if ($forceRebuild) {
-                $env:YUKI_FULL_REBUILD = '1'
-            } else {
+            Write-Host "  Note: Fast Sync copies raw .py files instantly. If your changes aren't showing up or the app is failing, choose 'No' below for a Full Rebuild." -ForegroundColor Yellow
+            $fastSync = Confirm-Yes "  Use Fast Sync for Backend? (Choose 'No' for a Full Rebuild)" $true
+            if ($fastSync) {
                 $env:YUKI_FULL_REBUILD = ''
+            } else {
+                $env:YUKI_FULL_REBUILD = '1'
             }
         }
     }

@@ -385,6 +385,8 @@ class MemoryManager:
             config.SILENCE_TIMEOUT_MS = int(value)
         elif key == "continued_session_timeout_sec":
             config.CONTINUED_SESSION_TIMEOUT_SEC = int(value)
+        elif key == "whisper_no_speech_threshold":
+            config.WHISPER_NO_SPEECH_THRESHOLD = float(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

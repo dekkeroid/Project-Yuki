@@ -221,7 +221,9 @@ export function useSpeechRecognition(options = {}) {
     
     const timeoutMs = timeoutSec * 1000;
     sessionTimeoutRef.current = setTimeout(() => {
-      console.log(`[STT] Continued Conversation session timed out after ${timeoutSec}s of silence.`);
+      const reasonStr = `Continuous session timed out after ${timeoutSec}s of idle silence`;
+      console.log(`[STT] ${reasonStr}.`);
+      if (logToTerminal) logToTerminal(`[STT] Continuous listening mode turned OFF (Reason: ${reasonStr})`);
       setIsSessionActive(false);
       if (setMessages) setMessages((prev) => [...prev, { role: 'assistant', content: "Continuous listening is off. Just call my name if you need me again." }]);
       if (speakSystemMessage) speakSystemMessage("Continuous listening is off. Just call my name if you need me again.");
@@ -576,8 +578,10 @@ export function useSpeechRecognition(options = {}) {
               if (vadSilenceStartRef.current === null) {
                 vadSilenceStartRef.current = now;
               } else if (now - vadSilenceStartRef.current > silenceTimeoutMs) {
-                logSTTStatus(`Silence threshold reached (${silenceTimeoutMs}ms). Stopping recording...`);
-                stopSpeechRecognition();
+                const elapsedSilence = Math.round(now - vadSilenceStartRef.current);
+                const reasonStr = `Silence cutoff triggered (${elapsedSilence}ms silence > ${silenceTimeoutMs}ms limit; mic volume was below ${micThreshold.toFixed(3)} gate)`;
+                logSTTStatus(`[STT] ${reasonStr}`);
+                stopSpeechRecognition(false, reasonStr);
                 return;
               }
             }
@@ -593,7 +597,9 @@ export function useSpeechRecognition(options = {}) {
         }
         maxRecordingTimeoutRef.current = setTimeout(() => {
           if (isRecordingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-            stopSpeechRecognition();
+            const reasonStr = "Maximum recording clip duration limit reached (15,000ms safety cap)";
+            logSTTStatus(`[STT] ${reasonStr}`);
+            stopSpeechRecognition(false, reasonStr);
           }
         }, 15000);
 
@@ -623,9 +629,11 @@ export function useSpeechRecognition(options = {}) {
     }
   };
 
-  const stopSpeechRecognition = (forceAbort = false) => {
+  const stopSpeechRecognition = (forceAbort = false, reason = '') => {
     if (!isSpeechRecActiveRef.current && !isRecordingRef.current) return;
-    if (logToTerminal) logToTerminal(`[STT] Microphone listening mode turned OFF${forceAbort ? ' (forced abort)' : ''}`);
+    const reasonDetail = reason ? ` (Reason: ${reason})` : forceAbort ? ' (forced abort)' : '';
+    if (logToTerminal) logToTerminal(`[STT] Microphone listening mode turned OFF${reasonDetail}`);
+    console.log(`[STT] Microphone listening mode turned OFF${reasonDetail}`);
 
     isSpeechRecActiveRef.current = false;
     if (forceAbort) {
