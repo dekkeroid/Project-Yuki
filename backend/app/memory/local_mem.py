@@ -69,9 +69,15 @@ class MemoryManager:
                 "dynamic_tool_calling": True,
                 "blocked_tools": [],
                 "enable_intent_check": True,
-                "vad_threshold": 0.015,
+                "vad_threshold": 0.16,
+                "silero_vad_threshold": 0.50,
+                "silero_min_speech_duration_ms": 150,
+                "silero_min_silence_duration_ms": 400,
+                "silero_speech_pad_ms": 100,
+                "whisper_beam_size": 1,
+                "whisper_condition_on_previous_text": False,
                 "silence_timeout_ms": 450,
-                "continued_session_timeout_sec": 600,
+                "continued_session_timeout_sec": 120,
                 "whisper_no_speech_threshold": 0.6,
                 "llm_mode": 3,
                 "enable_rotation": True,
@@ -136,9 +142,14 @@ class MemoryManager:
                 config.STT_DEVICE = data["settings"].get("stt_device", config.STT_DEVICE)
                 config.WHISPER_MODEL = data["settings"].get("whisper_model", getattr(config, "WHISPER_MODEL", "small"))
                 config.WHISPER_COMPUTE_TYPE = data["settings"].get("whisper_compute_type", getattr(config, "WHISPER_COMPUTE_TYPE", "int8_float16"))
-                config.SILERO_VAD_THRESHOLD = float(data["settings"].get("vad_threshold", getattr(config, "SILERO_VAD_THRESHOLD", 0.015)))
+                config.SILERO_VAD_THRESHOLD = float(data["settings"].get("silero_vad_threshold", getattr(config, "SILERO_VAD_THRESHOLD", 0.50)))
+                config.SILERO_MIN_SPEECH_DURATION_MS = int(data["settings"].get("silero_min_speech_duration_ms", getattr(config, "SILERO_MIN_SPEECH_DURATION_MS", 150)))
+                config.SILERO_MIN_SILENCE_DURATION_MS = int(data["settings"].get("silero_min_silence_duration_ms", getattr(config, "SILERO_MIN_SILENCE_DURATION_MS", 400)))
+                config.SILERO_SPEECH_PAD_MS = int(data["settings"].get("silero_speech_pad_ms", getattr(config, "SILERO_SPEECH_PAD_MS", 100)))
+                config.WHISPER_BEAM_SIZE = int(data["settings"].get("whisper_beam_size", getattr(config, "WHISPER_BEAM_SIZE", 1)))
+                config.WHISPER_CONDITION_ON_PREVIOUS_TEXT = bool(data["settings"].get("whisper_condition_on_previous_text", getattr(config, "WHISPER_CONDITION_ON_PREVIOUS_TEXT", False)))
                 config.SILENCE_TIMEOUT_MS = int(data["settings"].get("silence_timeout_ms", getattr(config, "SILENCE_TIMEOUT_MS", 450)))
-                config.CONTINUED_SESSION_TIMEOUT_SEC = int(data["settings"].get("continued_session_timeout_sec", getattr(config, "CONTINUED_SESSION_TIMEOUT_SEC", 600)))
+                config.CONTINUED_SESSION_TIMEOUT_SEC = int(data["settings"].get("continued_session_timeout_sec", getattr(config, "CONTINUED_SESSION_TIMEOUT_SEC", 120)))
                 config.WHISPER_NO_SPEECH_THRESHOLD = float(data["settings"].get("whisper_no_speech_threshold", getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.6)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
                 config.SEND_TOOLS_IN_SIMPLE = bool(data["settings"].get("send_tools_in_simple", False))
@@ -305,8 +316,10 @@ class MemoryManager:
     def update_setting(self, key: str, value: str):
         if "settings" not in self.profile:
             self.profile["settings"] = {}
+        print(f"[DEBUG] update_setting: Setting {key} to {value}")
         self.profile["settings"][key] = value
         self._save_profile()
+        print(f"[DEBUG] update_setting: Saved profile to disk. Value is now {self.profile['settings'][key]}")
         
         # Apply to config dynamically
         if key == "tts_voice":
@@ -356,6 +369,22 @@ class MemoryManager:
             config.CODEGRAPH_CODER_ENABLED = bool(value)
         elif key == "codegraph_advanced_enabled":
             config.CODEGRAPH_ADVANCED_ENABLED = bool(value)
+        elif key == "silero_vad_threshold":
+            config.SILERO_VAD_THRESHOLD = float(value)
+        elif key == "silero_min_speech_duration_ms":
+            config.SILERO_MIN_SPEECH_DURATION_MS = int(value)
+        elif key == "silero_min_silence_duration_ms":
+            config.SILERO_MIN_SILENCE_DURATION_MS = int(value)
+        elif key == "silero_speech_pad_ms":
+            config.SILERO_SPEECH_PAD_MS = int(value)
+        elif key == "whisper_beam_size":
+            config.WHISPER_BEAM_SIZE = int(value)
+        elif key == "whisper_condition_on_previous_text":
+            config.WHISPER_CONDITION_ON_PREVIOUS_TEXT = bool(value)
+        elif key == "silence_timeout_ms":
+            config.SILENCE_TIMEOUT_MS = int(value)
+        elif key == "continued_session_timeout_sec":
+            config.CONTINUED_SESSION_TIMEOUT_SEC = int(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

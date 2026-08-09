@@ -399,7 +399,9 @@ class AgentExecutor:
                 args=kwargs.get("args")
             ),
             "jarvis_open_or_play_file": lambda **kwargs: open_or_play_file(
-                kwargs.get("file_path_or_query") or kwargs.get("query") or ""
+                kwargs.get("file_path_or_query") or kwargs.get("query") or "",
+                play_mode=bool(kwargs.get("play_mode", False)),
+                confirmed=bool(kwargs.get("confirmed", False))
             ),
             "jarvis_window_control": lambda **kwargs: jarvis_window_control(
                 kwargs.get("action", "list"),
@@ -409,7 +411,8 @@ class AgentExecutor:
                 int(kwargs.get("volume_level") or 0)
             ),
             "jarvis_system_power": lambda **kwargs: system_power_control(
-                kwargs.get("action") or ""
+                kwargs.get("action") or "",
+                confirmed=bool(kwargs.get("confirmed", False))
             ),
             "jarvis_manage_timer_stopwatch_alarms": lambda **kwargs: self._execute_manage_timer_stopwatch_alarms(**kwargs),
             "jarvis_manage_scheduled_task": lambda **kwargs: self._execute_manage_scheduled_task(**kwargs),

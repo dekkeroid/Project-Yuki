@@ -253,11 +253,87 @@ export const detectExpression = (text) => {
   return 'neutral';
 };
 
+/**
+ * Converts LaTeX math expressions into natural spoken English for TTS engines.
+ * Example: "$\frac{W^2l^3}{96EI}$" -> "W squared l cubed over 96 E I"
+ */
+export const convertLatexToSpokenText = (text) => {
+  if (!text || typeof text !== 'string') return text || '';
+  let str = text;
+
+  // 1. Process LaTeX fractions recursively (\frac{num}{den})
+  let prevStr;
+  do {
+    prevStr = str;
+    str = str.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, (m, num, den) => {
+      return `${num} over ${den}`;
+    });
+  } while (str !== prevStr);
+
+  // 2. Square roots and radicals
+  str = str.replace(/\\sqrt\[([^\]]+)\]\{([^{}]+)\}/g, '$1 root of $2');
+  str = str.replace(/\\sqrt\{([^{}]+)\}/g, 'square root of $1');
+
+  // 3. Powers / Exponents
+  // Word^2 -> Word squared, Word^3 -> Word cubed
+  str = str.replace(/([a-zA-Z0-9_\-]+)\^(?:\{2\}|2)/g, '$1 squared');
+  str = str.replace(/([a-zA-Z0-9_\-]+)\^(?:\{3\}|3)/g, '$1 cubed');
+  str = str.replace(/([a-zA-Z0-9_\-]+)\^\{([^{}]+)\}/g, '$1 to the power of $2');
+  str = str.replace(/([a-zA-Z0-9_\-]+)\^([a-zA-Z0-9]+)/g, '$1 to the power of $2');
+
+  // 4. Subscripts
+  str = str.replace(/([a-zA-Z0-9]+)_\{([^{}]+)\}/g, '$1 $2');
+  str = str.replace(/([a-zA-Z0-9]+)_([a-zA-Z0-9])/g, '$1 $2');
+
+  // 5. Greek letters
+  const greekMap = {
+    '\\alpha': 'alpha', '\\beta': 'beta', '\\gamma': 'gamma', '\\delta': 'delta',
+    '\\epsilon': 'epsilon', '\\zeta': 'zeta', '\\eta': 'eta', '\\theta': 'theta',
+    '\\iota': 'iota', '\\kappa': 'kappa', '\\lambda': 'lambda', '\\mu': 'mu',
+    '\\nu': 'nu', '\\xi': 'xi', '\\pi': 'pi', '\\rho': 'rho',
+    '\\sigma': 'sigma', '\\tau': 'tau', '\\phi': 'phi', '\\chi': 'chi',
+    '\\psi': 'psi', '\\omega': 'omega', '\\Delta': 'Delta', '\\Gamma': 'Gamma',
+    '\\Lambda': 'Lambda', '\\Sigma': 'Sigma', '\\Omega': 'Omega'
+  };
+  Object.entries(greekMap).forEach(([symbol, name]) => {
+    str = str.replaceAll(symbol, name);
+  });
+
+  // 6. Operators & Relations
+  const opMap = {
+    '\\times': ' times ', '\\div': ' divided by ', '\\pm': ' plus or minus ',
+    '\\mp': ' minus or plus ', '\\cdot': ' dot ', '\\cdot': ' times ',
+    '\\leq': ' less than or equal to ', '\\le': ' less than or equal to ',
+    '\\geq': ' greater than or equal to ', '\\ge': ' greater than or equal to ',
+    '\\neq': ' is not equal to ', '\\approx': ' approximately equal to ',
+    '\\equiv': ' is equivalent to ', '\\infty': ' infinity ',
+    '\\int': ' integral ', '\\sum': ' sum ', '\\lim': ' limit ', '\\to': ' to '
+  };
+  Object.entries(opMap).forEach(([symbol, name]) => {
+    str = str.replaceAll(symbol, name);
+  });
+
+  // 7. Structural/Text commands
+  str = str.replace(/\\(?:text|mathrm|mathbf|mathsf|mathtt)\{([^{}]+)\}/g, '$1');
+  str = str.replace(/\\left\(|\\right\)|\\left\[|\\right\]|\\left\{|\\right\}|\\left\||\\right\|/g, ' ');
+
+  // 8. Strip remaining isolated backslashes before words
+  str = str.replace(/\\([a-zA-Z]+)/g, '$1');
+
+  // 9. Strip math delimiters: $$, $, \(, \), \[, \]
+  str = str.replace(/\$\$|\$|\\\(|\\\)|\\\[|\\\]/g, ' ');
+
+  return str;
+};
+
 export const cleanTextForTTS = (text) => {
   if (!text) return '';
 
   // 0. Strip unique animation and emotion tags
   let clean = text.replace(/<(?:yuki_)?(?:anim|emotion):[a-zA-Z0-9_\-]+\/?>|\[(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\]/gi, '');
+
+  // 0.5 Convert LaTeX math into spoken English words
+  clean = convertLatexToSpokenText(clean);
 
   // 1. Double asterisks and double underscores -> replace with inner text
   clean = clean.replace(/\*\*(.*?)\*\*/g, '$1').replace(/__(.*?)__/g, '$1');

@@ -2064,9 +2064,7 @@ const AvatarViewer = ({
                 let tiltZ = microFidgetNeckZ + neckAnimZ + currentLookZ;
                 let tiltX = 0;
 
-                if (isListeningRef.current) {
-                  tiltZ += 0.045; // gentle empathy tilt to the left
-                } else if (isThinkingRef.current) {
+                if (isThinkingRef.current) {
                   tiltZ += -0.035; // thoughtful tilt to the right
                   tiltX = -0.07; // look up slightly to think
                 }

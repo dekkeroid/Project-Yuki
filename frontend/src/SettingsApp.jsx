@@ -29,7 +29,16 @@ export default function SettingsApp() {
     return localStorage.getItem('yuki-mic-device-id') || '';
   });
   const [vadThreshold, setVadThreshold] = useState(() => {
-    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.01');
+    const active = localStorage.getItem('yuki-mic-device-id') || 'default';
+    const stored = localStorage.getItem(`yuki-vad-threshold-${active}`);
+    if (stored !== null && !isNaN(parseFloat(stored))) return parseFloat(stored);
+    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.16');
+  });
+  const [silenceTimeout, setSilenceTimeout] = useState(() => {
+    const active = localStorage.getItem('yuki-mic-device-id') || 'default';
+    const stored = localStorage.getItem(`yuki-silence-timeout-${active}`);
+    if (stored !== null && !isNaN(parseInt(stored, 10))) return parseInt(stored, 10);
+    return parseInt(localStorage.getItem('yuki-silence-timeout') || '450', 10);
   });
   const [muteVoice, setMuteVoice] = useState(() => {
     return localStorage.getItem('yuki-mute-voice') === 'true';
@@ -59,6 +68,23 @@ export default function SettingsApp() {
     if (id) localStorage.setItem('yuki-mic-device-id', id);
     else localStorage.removeItem('yuki-mic-device-id');
   }, []);
+
+  useEffect(() => {
+    const active = selectedMicDeviceId || 'default';
+    const storedVad = localStorage.getItem(`yuki-vad-threshold-${active}`);
+    if (storedVad !== null && !isNaN(parseFloat(storedVad))) {
+      setVadThreshold(parseFloat(storedVad));
+    } else {
+      setVadThreshold(parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.16'));
+    }
+
+    const storedTimeout = localStorage.getItem(`yuki-silence-timeout-${active}`);
+    if (storedTimeout !== null && !isNaN(parseInt(storedTimeout, 10))) {
+      setSilenceTimeout(parseInt(storedTimeout, 10));
+    } else {
+      setSilenceTimeout(parseInt(localStorage.getItem('yuki-silence-timeout') || '450', 10));
+    }
+  }, [selectedMicDeviceId]);
 
   useEffect(() => {
     const handleStorage = (e) => {
@@ -240,7 +266,16 @@ export default function SettingsApp() {
         vadThreshold={vadThreshold}
         onVadThresholdChange={(val) => {
           setVadThreshold(val);
+          const active = selectedMicDeviceId || 'default';
+          localStorage.setItem(`yuki-vad-threshold-${active}`, val.toString());
           localStorage.setItem('yuki-vad-threshold', val.toString());
+        }}
+        silenceTimeout={silenceTimeout}
+        onSilenceTimeoutChange={(val) => {
+          setSilenceTimeout(val);
+          const active = selectedMicDeviceId || 'default';
+          localStorage.setItem(`yuki-silence-timeout-${active}`, val.toString());
+          localStorage.setItem('yuki-silence-timeout', val.toString());
         }}
         muteVoice={muteVoice}
         onMuteVoiceChange={(muted) => {
