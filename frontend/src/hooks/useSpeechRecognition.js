@@ -390,7 +390,7 @@ export function useSpeechRecognition(options = {}) {
             deviceId: deviceId ? { exact: deviceId } : undefined,
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true
+            autoGainControl: false
           }
         };
 
