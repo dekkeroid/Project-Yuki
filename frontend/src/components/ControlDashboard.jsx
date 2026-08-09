@@ -6271,9 +6271,13 @@ const ControlDashboard = ({
                             }}
                           >
                             <option value={300} style={{ background: '#0b0813', color: 'white' }}>300ms (Fast Turn-Taking)</option>
-                            <option value={450} style={{ background: '#0b0813', color: 'white' }}>450ms (Recommended - Balanced)</option>
+                            <option value={450} style={{ background: '#0b0813', color: 'white' }}>450ms (Balanced)</option>
                             <option value={600} style={{ background: '#0b0813', color: 'white' }}>600ms (Relaxed)</option>
                             <option value={800} style={{ background: '#0b0813', color: 'white' }}>800ms (Slow)</option>
+                            <option value={1000} style={{ background: '#0b0813', color: 'white' }}>1000ms / 1.0s (Recommended for Dictation & Reading)</option>
+                            <option value={1200} style={{ background: '#0b0813', color: 'white' }}>1200ms / 1.2s (Patient)</option>
+                            <option value={1500} style={{ background: '#0b0813', color: 'white' }}>1500ms / 1.5s (Extra Patient)</option>
+                            <option value={2000} style={{ background: '#0b0813', color: 'white' }}>2000ms / 2.0s (Very Patient - Long Pauses)</option>
                           </select>
                           <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
                             How long can I pause mid-sentence before Yuki takes her turn to reply?
