@@ -176,6 +176,7 @@ SILENCE_TIMEOUT_MS = int(os.environ.get("SILENCE_TIMEOUT_MS", "1000"))
 WHISPER_NO_SPEECH_THRESHOLD = float(os.environ.get("WHISPER_NO_SPEECH_THRESHOLD", "0.70"))
 CONTINUED_SESSION_TIMEOUT_SEC = int(os.environ.get("CONTINUED_SESSION_TIMEOUT_SEC", "120"))
 MAX_RECORDING_DURATION_SEC = int(os.environ.get("MAX_RECORDING_DURATION_SEC", "120"))
+STT_AUTO_GAIN_CONTROL = os.environ.get("STT_AUTO_GAIN_CONTROL", "true").strip().lower() in ("1", "true", "yes", "on")
 
 # ── Cloud/Custom STT provider settings ────────────────────────────────────────
 # Provider IDs: "local" | "google" | "azure" | "assemblyai" | "deepgram" | "custom"

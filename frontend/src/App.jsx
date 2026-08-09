@@ -749,6 +749,7 @@ const App = () => {
     whisperModel: profile?.settings?.whisper_model || 'base',
     vadThreshold: profile?.settings?.vad_threshold,
     silenceTimeout: profile?.settings?.silence_timeout_ms,
+    sttAutoGainControl: profile?.settings?.stt_auto_gain_control,
     continuedSessionTimeoutSec: profile?.settings?.continued_session_timeout_sec,
     maxRecordingDurationSec: profile?.settings?.max_recording_duration_sec,
     isThinkingRef,
