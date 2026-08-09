@@ -28,6 +28,13 @@ if __name__ == "__main__":
     # Determine setup vs full mode
     if getattr(sys, 'frozen', False):
         app_dir = Path(sys.executable).parent
+        # Prioritize loose 'app' directory if updated via Fast Update
+        for candidate in [app_dir / "_internal" / "app", app_dir / "app"]:
+            if (candidate / "main.py").exists() or (candidate / "main_setup.py").exists():
+                parent_dir = str(candidate.parent)
+                if parent_dir not in sys.path:
+                    sys.path.insert(0, parent_dir)
+                break
     else:
         app_dir = Path(__file__).resolve().parent
 

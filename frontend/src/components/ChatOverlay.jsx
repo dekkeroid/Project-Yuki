@@ -4,6 +4,7 @@ import { ANIMATIONS } from '../animationsRegistry';
 import { API_BASE } from '../api';
 import { SLASH_COMMANDS } from '../constants';
 import { stripAnimationTags } from '../utils/responseParser';
+import MathRenderer from './MathRenderer';
 
 const getFileIcon = (fileNameOrPath) => {
   if (!fileNameOrPath) return <FileText style={{ width: '12px', height: '12px', color: '#94a3b8' }} />;
@@ -88,6 +89,55 @@ export const openExternalUrl = (url) => {
   } else {
     window.open(target, '_blank', 'noopener,noreferrer');
   }
+};
+
+export const isMathExpression = (str) => {
+  if (!str || typeof str !== 'string') return false;
+  const trimmed = str.trim();
+  if (!trimmed) return false;
+  if (/\\(frac|sqrt|alpha|beta|gamma|delta|theta|pi|sigma|omega|times|div|pm|le|ge|neq|approx|int|sum|lim|to|cdot|left|right|text|mathrm)\b/.test(trimmed)) {
+    return true;
+  }
+  if (/[\^_{}=+<>/\*\-]/.test(trimmed)) {
+    return true;
+  }
+  if (/^[a-zA-Z]$/.test(trimmed)) {
+    return true;
+  }
+  if (/^\d+([.,]\d+)?\s*(and|or|to|-)?\s*\d*$/i.test(trimmed)) {
+    return false;
+  }
+  return /[a-zA-Z]/.test(trimmed);
+};
+
+export const renderTextWithInlineMath = (text, keyPrefix = 'math') => {
+  if (!text || typeof text !== 'string') return text || '';
+  const mathRegex = /\\\(([\s\S]+?)\\\)|\$([^\$\n]+?)\$/g;
+  const result = [];
+  let lastIdx = 0;
+  let match;
+
+  while ((match = mathRegex.exec(text)) !== null) {
+    const matchIndex = match.index;
+    if (matchIndex > lastIdx) {
+      result.push(text.substring(lastIdx, matchIndex));
+    }
+    const mathContent = match[1] || match[2];
+    if (mathContent && isMathExpression(mathContent)) {
+      result.push(
+        <MathRenderer key={`${keyPrefix}-${matchIndex}`} math={mathContent} displayMode={false} />
+      );
+    } else {
+      result.push(match[0]);
+    }
+    lastIdx = mathRegex.lastIndex;
+  }
+
+  if (lastIdx < text.length) {
+    result.push(text.substring(lastIdx));
+  }
+
+  return result.length > 0 ? result : text;
 };
 
 export const formatMessageText = (text, disableFileLinks = false) => {
@@ -478,11 +528,16 @@ export const formatMessageText = (text, disableFileLinks = false) => {
     }
   }
 
-  if (lastIndex < text.length) {
-    parts.push(text.substring(lastIndex));
-  }
+  const rawParts = parts.length > 0 ? parts : [text];
+  const finalParts = rawParts.flatMap((part, pIdx) => {
+    if (typeof part === 'string') {
+      const mathRendered = renderTextWithInlineMath(part, `inline-${pIdx}`);
+      return Array.isArray(mathRendered) ? mathRendered : [mathRendered];
+    }
+    return [part];
+  });
 
-  return parts.length > 0 ? parts : text;
+  return finalParts;
 };
 
 // Helper to format tool names cleanly
@@ -856,23 +911,28 @@ const renderMarkdownTextLines = (lines, { isSystem = false, disableFileLinks = f
 export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFileLinks = false } = {}) => {
   if (!cleanContent) return null;
 
-  // Split by fenced code blocks: ```lang\ncode\n```
-  const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
+  // Split by fenced code blocks: ```lang\ncode\n``` or block math: $$math$$ / \[math\]
+  const blockRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```|\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]/g;
   const blocks = [];
   let lastIndex = 0;
   let match;
 
-  while ((match = codeBlockRegex.exec(cleanContent)) !== null) {
+  while ((match = blockRegex.exec(cleanContent)) !== null) {
     const matchIndex = match.index;
     if (matchIndex > lastIndex) {
       blocks.push({ type: 'text', content: cleanContent.substring(lastIndex, matchIndex) });
     }
 
-    const lang = match[1] ? match[1].trim() : 'text';
-    const code = match[2];
-    blocks.push({ type: 'code', lang, code });
+    if (match[1] !== undefined || match[2] !== undefined) {
+      const lang = match[1] ? match[1].trim() : 'text';
+      const code = match[2] || '';
+      blocks.push({ type: 'code', lang, code });
+    } else if (match[3] !== undefined || match[4] !== undefined) {
+      const mathCode = match[3] || match[4] || '';
+      blocks.push({ type: 'math', code: mathCode });
+    }
 
-    lastIndex = codeBlockRegex.lastIndex;
+    lastIndex = blockRegex.lastIndex;
   }
 
   if (lastIndex < cleanContent.length) {
@@ -895,6 +955,12 @@ export const renderMarkdownBlocks = (cleanContent, { isSystem = false, disableFi
                 </pre>
               </div>
             </div>
+          );
+        }
+
+        if (block.type === 'math') {
+          return (
+            <MathRenderer key={`math-block-${bIdx}`} math={block.code} displayMode={true} />
           );
         }
 

@@ -1,10 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 
-const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
+const MicLevelMeter = ({ deviceId, deviceName = '' }) => {
   const canvasRef = useRef(null);
   const dbRef = useRef(null);
-  const vadLineRef = useRef(null);
-  const vadLabelRef = useRef(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -110,26 +108,6 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
     };
   }, [deviceId]);
 
-  useEffect(() => {
-    const line = vadLineRef.current;
-    const label = vadLabelRef.current;
-    if (!line) return;
-    
-    // Convert linear RMS vadThreshold to exact same -60dB to 0dB scale as audio meter
-    const vadDb = 20 * Math.log10(Math.max(vadThreshold, 0.0001));
-    const vadNormalized = Math.max(0, Math.min(1, (vadDb + 60) / 60));
-    const pct = Math.max(0, Math.min(100, vadNormalized * 100));
-    
-    line.style.left = `${pct}%`;
-    if (pct > 80) {
-      label.style.left = `${pct - 20}%`;
-      label.style.textAlign = 'right';
-    } else {
-      label.style.left = `${pct + 1.5}%`;
-      label.style.textAlign = 'left';
-    }
-  }, [vadThreshold]);
-
   if (error) {
     return (
       <div style={{ marginTop: '8px', fontSize: '0.68rem', color: 'rgba(239,68,68,0.7)' }}>
@@ -145,16 +123,6 @@ const MicLevelMeter = ({ deviceId, deviceName = '', vadThreshold = 0.01 }) => {
           ref={canvasRef}
           style={{ width: '100%', height: '8px', borderRadius: '4px', display: 'block' }}
         />
-        <div ref={vadLineRef} style={{
-          position: 'absolute', top: '-6px', bottom: '-6px', width: '3px',
-          background: '#ffffff', borderRadius: '2px', pointerEvents: 'none',
-          transform: 'translateX(-50%)'
-        }} />
-        <div ref={vadLabelRef} style={{
-          position: 'absolute', bottom: '-10px', fontSize: '8px',
-          color: '#ffffff', fontFamily: 'monospace', fontWeight: 'bold',
-          whiteSpace: 'nowrap', pointerEvents: 'none'
-        }}>VAD</div>
       </div>
       <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}>
         Mic Signal — <span ref={dbRef} style={{ fontVariantNumeric: 'tabular-nums', fontWeight: '600', color: '#c4b5fd' }}>0% (— dBFS)</span>

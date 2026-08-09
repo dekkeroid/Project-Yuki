@@ -48,6 +48,7 @@ export function useAudioPlayback(options = {}) {
   const audioRef = useRef(null);
   const analyserRef = useRef(null);
   const isNativeSpeakingRef = useRef(false);
+  const systemMessageActiveRef = useRef(false);
   const nativeSpeechIntervalRef = useRef(null);
   const speakTextNativelyRef = useRef(null); // Forward ref to break circular dep with queueAudioChunk
   const bubbleTimeoutRef = useRef(null);
@@ -277,7 +278,11 @@ export function useAudioPlayback(options = {}) {
         }, 2000);
 
         if (isVoiceCommandModeRef && isVoiceCommandModeRef.current && startSessionTimeout) {
-          startSessionTimeout();
+          if (systemMessageActiveRef.current) {
+            systemMessageActiveRef.current = false;
+          } else {
+            startSessionTimeout();
+          }
         }
 
         if (micActivationTimeoutRef.current) clearTimeout(micActivationTimeoutRef.current);
@@ -392,6 +397,7 @@ export function useAudioPlayback(options = {}) {
 
     utterance.onend = () => {
       isNativeSpeakingRef.current = false;
+      if (systemMessageActiveRef.current) systemMessageActiveRef.current = false;
       if (setAudioLevel) setAudioLevel(0);
       if (setIsThinking) setIsThinking(false);
       setTtsStreamActive(false);
@@ -410,6 +416,7 @@ export function useAudioPlayback(options = {}) {
     utterance.onerror = (e) => {
       console.warn("[Native TTS] utterance error:", e);
       isNativeSpeakingRef.current = false;
+      if (systemMessageActiveRef.current) systemMessageActiveRef.current = false;
       if (setAudioLevel) setAudioLevel(0);
       if (setIsThinking) setIsThinking(false);
       setTtsStreamActive(false);
@@ -428,6 +435,7 @@ export function useAudioPlayback(options = {}) {
   speakTextNativelyRef.current = speakTextNatively;
 
   const speakSystemMessage = useCallback((text, expression = null) => {
+    systemMessageActiveRef.current = true;
     if (muteVoiceRef.current) {
       if (expression && setAvatarExpression) setAvatarExpression(expression);
       if (setIsThinking) setIsThinking(false);

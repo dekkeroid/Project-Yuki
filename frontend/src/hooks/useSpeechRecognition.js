@@ -19,7 +19,8 @@ export function useSpeechRecognition(options = {}) {
     updateListeningStateGlobal, // In case we need to trigger an update outside
     logToTerminal,
     sendMessageText,
-    isSessionActiveRef
+    isSessionActiveRef,
+    speakSystemMessage
   } = options;
 
   const [isTranscribing, setIsTranscribingState] = useState(false);
@@ -69,16 +70,75 @@ export function useSpeechRecognition(options = {}) {
     return localStorage.getItem('yuki-prefer-headset') !== 'false';
   });
 
-  const [vadThreshold, setVadThreshold] = useState(() => {
+  const [vadThreshold, setVadThresholdState] = useState(() => {
+    const activeDevice = selectedMicDeviceIdRef.current || 'default';
+    const stored = localStorage.getItem(`yuki-vad-threshold-${activeDevice}`);
+    if (stored !== null && !isNaN(parseFloat(stored))) return parseFloat(stored);
     const optVal = options.vadThreshold;
-    if (optVal !== undefined && optVal < 0.2) return optVal;
-    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.015');
+    if (optVal !== undefined && typeof optVal === 'number' && optVal > 0) return optVal;
+    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.16');
   });
   const vadThresholdRef = useRef(vadThreshold);
-  useEffect(() => {
-    const val = (options.vadThreshold !== undefined && options.vadThreshold < 0.2) ? options.vadThreshold : vadThreshold;
+
+  const setVadThreshold = useCallback((val) => {
     vadThresholdRef.current = val;
-  }, [options.vadThreshold, vadThreshold]);
+    setVadThresholdState(val);
+    const activeDevice = selectedMicDeviceIdRef.current || 'default';
+    try {
+      localStorage.setItem(`yuki-vad-threshold-${activeDevice}`, val.toString());
+      localStorage.setItem('yuki-vad-threshold', val.toString());
+    } catch (e) {}
+  }, []);
+
+  const [silenceTimeout, setSilenceTimeoutState] = useState(() => {
+    const activeDevice = selectedMicDeviceIdRef.current || 'default';
+    const stored = localStorage.getItem(`yuki-silence-timeout-${activeDevice}`);
+    if (stored !== null && !isNaN(parseInt(stored, 10))) return parseInt(stored, 10);
+    const optVal = options.silenceTimeout;
+    if (optVal !== undefined && typeof optVal === 'number' && optVal > 0) return optVal;
+    return parseInt(localStorage.getItem('yuki-silence-timeout') || '450', 10);
+  });
+  const silenceTimeoutRef = useRef(silenceTimeout);
+
+  const setSilenceTimeout = useCallback((val) => {
+    silenceTimeoutRef.current = val;
+    setSilenceTimeoutState(val);
+    const activeDevice = selectedMicDeviceIdRef.current || 'default';
+    try {
+      localStorage.setItem(`yuki-silence-timeout-${activeDevice}`, val.toString());
+      localStorage.setItem('yuki-silence-timeout', val.toString());
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    const activeDevice = selectedMicDeviceId || 'default';
+
+    // Reload VAD threshold for device
+    const storedVad = localStorage.getItem(`yuki-vad-threshold-${activeDevice}`);
+    let targetVad = 0.16;
+    if (storedVad !== null && !isNaN(parseFloat(storedVad))) {
+      targetVad = parseFloat(storedVad);
+    } else if (localStorage.getItem('yuki-vad-threshold') !== null && !isNaN(parseFloat(localStorage.getItem('yuki-vad-threshold')))) {
+      targetVad = parseFloat(localStorage.getItem('yuki-vad-threshold'));
+    } else if (options.vadThreshold !== undefined && typeof options.vadThreshold === 'number' && options.vadThreshold > 0) {
+      targetVad = options.vadThreshold;
+    }
+    vadThresholdRef.current = targetVad;
+    setVadThresholdState(targetVad);
+
+    // Reload Silence Timeout for device
+    const storedTimeout = localStorage.getItem(`yuki-silence-timeout-${activeDevice}`);
+    let targetTimeout = 450;
+    if (storedTimeout !== null && !isNaN(parseInt(storedTimeout, 10))) {
+      targetTimeout = parseInt(storedTimeout, 10);
+    } else if (localStorage.getItem('yuki-silence-timeout') !== null && !isNaN(parseInt(localStorage.getItem('yuki-silence-timeout'), 10))) {
+      targetTimeout = parseInt(localStorage.getItem('yuki-silence-timeout'), 10);
+    } else if (options.silenceTimeout !== undefined && typeof options.silenceTimeout === 'number' && options.silenceTimeout > 0) {
+      targetTimeout = options.silenceTimeout;
+    }
+    silenceTimeoutRef.current = targetTimeout;
+    setSilenceTimeoutState(targetTimeout);
+  }, [selectedMicDeviceId, options.vadThreshold, options.silenceTimeout]);
 
   const [useLocalWhisper, setUseLocalWhisperState] = useState(true);
   const useLocalWhisperRef = useRef(true);
@@ -147,11 +207,11 @@ export function useSpeechRecognition(options = {}) {
     if (sessionTimeoutRef.current) clearTimeout(sessionTimeoutRef.current);
     setIsSessionActive(true);
     
-    // Parse value; default to 600s if null/undefined, but allow 0 to mean 'Never'
+    // Parse value; default to 120s if null/undefined, but allow 0 to mean 'Never'
     let timeoutSec = options.continuedSessionTimeoutSec;
     if (timeoutSec === undefined || timeoutSec === null) {
       const stored = localStorage.getItem('yuki-continued-session-timeout');
-      timeoutSec = stored !== null ? parseInt(stored, 10) : 600;
+      timeoutSec = stored !== null ? parseInt(stored, 10) : 120;
     }
     
     if (timeoutSec === 0) {
@@ -163,14 +223,14 @@ export function useSpeechRecognition(options = {}) {
     sessionTimeoutRef.current = setTimeout(() => {
       console.log(`[STT] Continued Conversation session timed out after ${timeoutSec}s of silence.`);
       setIsSessionActive(false);
+      if (setMessages) setMessages((prev) => [...prev, { role: 'assistant', content: "Continuous listening is off. Just call my name if you need me again." }]);
+      if (speakSystemMessage) speakSystemMessage("Continuous listening is off. Just call my name if you need me again.");
       updateListeningState();
     }, timeoutMs);
   };
 
   const processSTTTranscript = (transcript, sttTimeMs = null) => {
     if (!transcript || !transcript.trim()) {
-      if (options.setIsThinking) options.setIsThinking(false);
-      if (options.setTtsStreamActive) options.setTtsStreamActive(false);
       if (isVoiceCommandModeRef.current && isSessionActiveRef && isSessionActiveRef.current) {
         startSessionTimeout();
       }
@@ -246,6 +306,7 @@ export function useSpeechRecognition(options = {}) {
         logSTTStatus("Voice Command mode: Trigger word heard, but no prompt attached. Opening session.");
         startSessionTimeout();
         if (setMessages) setMessages((prev) => [...prev, { role: 'assistant', content: "yes?" }]);
+        if (speakSystemMessage) speakSystemMessage("yes?");
         updateListeningState();
         return;
       }
@@ -490,7 +551,7 @@ export function useSpeechRecognition(options = {}) {
           }
 
           const micThreshold = vadThresholdRef.current;
-          const silenceTimeoutMs = parseInt(localStorage.getItem('yuki-silence-timeout') || '450', 10);
+          const silenceTimeoutMs = silenceTimeoutRef.current;
           const now = Date.now();
 
           if (normalized > micThreshold) {
@@ -755,6 +816,8 @@ export function useSpeechRecognition(options = {}) {
     setPreferHeadsetMic,
     vadThreshold,
     setVadThreshold,
+    silenceTimeout,
+    setSilenceTimeout,
     useLocalWhisper,
     setUseLocalWhisper,
     whisperModel,

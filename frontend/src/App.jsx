@@ -20,7 +20,7 @@ const ControlDashboard = lazy(() => import('./components/ControlDashboard'));
 import RelationshipCard from './components/RelationshipCard';
 import { SearchableVrmSelect } from './components/ControlDashboard';
 
-import { RenderMessageContent, AgenticToolTimelineItem, renderMessageAttachments } from './components/ChatOverlay';
+import { RenderMessageContent, AgenticToolTimelineItem, renderMessageAttachments, formatMessageText } from './components/ChatOverlay';
 
 let stream_end_exception = false;
 
@@ -718,6 +718,8 @@ const App = () => {
     setPreferHeadsetMic,
     vadThreshold,
     setVadThreshold,
+    silenceTimeout,
+    setSilenceTimeout,
     useLocalWhisper,
     setUseLocalWhisper,
     whisperModel,
@@ -746,6 +748,7 @@ const App = () => {
     API_BASE,
     whisperModel: profile?.settings?.whisper_model || 'base',
     vadThreshold: profile?.settings?.vad_threshold,
+    silenceTimeout: profile?.settings?.silence_timeout_ms,
     continuedSessionTimeoutSec: profile?.settings?.continued_session_timeout_sec,
     isThinkingRef,
     ttsStreamActiveRef,
@@ -768,7 +771,8 @@ const App = () => {
     },
     sendMessageText: (text) => handleSendMessage(null, text, false),
     isSessionActiveRef,
-    toggleMute: () => setMuteVoice(prev => !prev)
+    toggleMute: () => setMuteVoice(prev => !prev),
+    speakSystemMessage
   });
 
   getIsVoiceCommandModeRef.current = () => isVoiceCommandModeRef.current;
@@ -811,6 +815,14 @@ const App = () => {
 
     if (msg.type === 'profile_update') {
       setProfile(msg.profile);
+      if (!hasCheckedListenOnStartupRef.current && msg.profile?.settings) {
+        hasCheckedListenOnStartupRef.current = true;
+        if (msg.profile.settings.listen_on_startup) {
+          if (!getIsVoiceCommandModeRef.current()) {
+            toggleVoiceCommandMode();
+          }
+        }
+      }
       if (msg?.profile?.settings?.llm_model) {
         setModelName(msg.profile.settings.llm_model);
       }
@@ -1412,6 +1424,7 @@ const App = () => {
 
   // On startup: Wait until backend (Kokoro TTS, etc.) is fully ready before triggering greeting
   const hasSentStartupGreetingRef = useRef(false);
+  const hasCheckedListenOnStartupRef = useRef(false);
   useEffect(() => {
     if (!isBackendFullyReady) return;
     if (hasSentStartupGreetingRef.current) return;
@@ -2322,6 +2335,14 @@ const App = () => {
       if (response.ok) {
         const data = await response.json();
         setProfile(data);
+        if (!hasCheckedListenOnStartupRef.current && data.settings) {
+          hasCheckedListenOnStartupRef.current = true;
+          if (data.settings.listen_on_startup) {
+            if (!getIsVoiceCommandModeRef.current()) {
+              toggleVoiceCommandMode();
+            }
+          }
+        }
         if (data.settings && data.settings.crawler_paused !== undefined) {
           setCrawlerPaused(data.settings.crawler_paused);
         }
@@ -2542,15 +2563,17 @@ const App = () => {
           <button
             className={`desktop-menu-btn ${isVoiceCommandMode ? 'active' : ''}`}
             onClick={toggleVoiceCommandMode}
-            title={isVoiceCommandMode ? "Voice Commands: ON (Listening)" : "Voice Commands: OFF"}
+            title={isSessionActive ? "Continuous Session Active (Speak freely)" : (isVoiceCommandMode ? "Voice Commands: ON (Listening)" : "Voice Commands: OFF")}
             style={{
               position: 'relative',
-              background: isVoiceCommandMode ? 'rgba(45, 212, 191, 0.2)' : undefined,
-              border: isVoiceCommandMode ? '1px solid rgba(45, 212, 191, 0.6)' : undefined,
-              boxShadow: isVoiceCommandMode ? '0 0 10px rgba(45, 212, 191, 0.3)' : undefined
+              background: isSessionActive ? 'rgba(249, 115, 22, 0.2)' : (isVoiceCommandMode ? 'rgba(45, 212, 191, 0.2)' : undefined),
+              border: isSessionActive ? '1px solid rgba(249, 115, 22, 0.6)' : (isVoiceCommandMode ? '1px solid rgba(45, 212, 191, 0.6)' : undefined),
+              boxShadow: isSessionActive ? '0 0 12px rgba(249, 115, 22, 0.5)' : (isVoiceCommandMode ? '0 0 10px rgba(45, 212, 191, 0.3)' : undefined)
             }}
           >
-            {isVoiceCommandMode ? (
+            {isSessionActive ? (
+              <Mic className="w-5 h-5 text-orange-400" style={{ animation: 'pulse 1s infinite' }} />
+            ) : isVoiceCommandMode ? (
               <Mic className="w-5 h-5 text-teal-400 breathing" />
             ) : (
               <MicOff className="w-5 h-5 text-gray-400" />
@@ -2583,7 +2606,7 @@ const App = () => {
         {currentSpeechText && (
           <div className="desktop-speech-bubble interactive-element">
             <span className="desktop-bubble-tag">Yuki</span>
-            <p className="desktop-bubble-text">{stripAnimationTags(currentSpeechText)}</p>
+            <p className="desktop-bubble-text">{formatMessageText(stripAnimationTags(currentSpeechText))}</p>
           </div>
         )}
         {(isThinking || ttsStreamActive) && !currentSpeechText && (
@@ -5069,7 +5092,10 @@ const App = () => {
           vadThreshold={vadThreshold}
           onVadThresholdChange={(val) => {
             setVadThreshold(val);
-            localStorage.setItem('yuki-vad-threshold', val.toString());
+          }}
+          silenceTimeout={silenceTimeout}
+          onSilenceTimeoutChange={(val) => {
+            setSilenceTimeout(val);
           }}
           muteVoice={muteVoice}
           onMuteVoiceChange={handleToggleMute}

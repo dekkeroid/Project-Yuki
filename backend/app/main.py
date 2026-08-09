@@ -1171,6 +1171,7 @@ class SettingsUpdateRequest(BaseModel):
     keep_memory_saving: Optional[bool] = None
     os_native_alarms: Optional[bool] = None
     launch_on_startup: Optional[bool] = None
+    listen_on_startup: Optional[bool] = None
     always_on_top: Optional[bool] = None
     close_to_tray: Optional[bool] = None
     default_dashboard_tab: Optional[str] = None
@@ -1181,6 +1182,12 @@ class SettingsUpdateRequest(BaseModel):
     enable_intent_check: Optional[bool] = None
     whisper_compute_type: Optional[str] = None
     vad_threshold: Optional[float] = None
+    silero_vad_threshold: Optional[float] = None
+    silero_min_speech_duration_ms: Optional[int] = None
+    silero_min_silence_duration_ms: Optional[int] = None
+    silero_speech_pad_ms: Optional[int] = None
+    whisper_beam_size: Optional[int] = None
+    whisper_condition_on_previous_text: Optional[bool] = None
     silence_timeout_ms: Optional[int] = None
     continued_session_timeout_sec: Optional[int] = None
     whisper_no_speech_threshold: Optional[float] = None
@@ -1489,8 +1496,29 @@ async def update_settings(req: SettingsUpdateRequest):
         config.WHISPER_AUTO_UNLOAD = req.whisper_auto_unload
         memory_manager.update_setting("whisper_auto_unload", req.whisper_auto_unload)
     if req.vad_threshold is not None:
-        config.SILERO_VAD_THRESHOLD = float(req.vad_threshold)
         memory_manager.update_setting("vad_threshold", float(req.vad_threshold))
+    if req.silero_vad_threshold is not None:
+        config.SILERO_VAD_THRESHOLD = float(req.silero_vad_threshold)
+        memory_manager.update_setting("silero_vad_threshold", float(req.silero_vad_threshold))
+    if req.silero_min_speech_duration_ms is not None:
+        config.SILERO_MIN_SPEECH_DURATION_MS = int(req.silero_min_speech_duration_ms)
+        memory_manager.update_setting("silero_min_speech_duration_ms", int(req.silero_min_speech_duration_ms))
+    if req.silero_min_silence_duration_ms is not None:
+        config.SILERO_MIN_SILENCE_DURATION_MS = int(req.silero_min_silence_duration_ms)
+        memory_manager.update_setting("silero_min_silence_duration_ms", int(req.silero_min_silence_duration_ms))
+    if req.silero_speech_pad_ms is not None:
+        config.SILERO_SPEECH_PAD_MS = int(req.silero_speech_pad_ms)
+        memory_manager.update_setting("silero_speech_pad_ms", int(req.silero_speech_pad_ms))
+    if req.whisper_beam_size is not None:
+        print(f"[DEBUG] Updating whisper_beam_size to {req.whisper_beam_size}")
+        config.WHISPER_BEAM_SIZE = int(req.whisper_beam_size)
+        memory_manager.update_setting("whisper_beam_size", int(req.whisper_beam_size))
+        print(f"[DEBUG] Finished updating whisper_beam_size")
+    if req.whisper_condition_on_previous_text is not None:
+        print(f"[DEBUG] Updating whisper_condition_on_previous_text to {req.whisper_condition_on_previous_text}")
+        config.WHISPER_CONDITION_ON_PREVIOUS_TEXT = bool(req.whisper_condition_on_previous_text)
+        memory_manager.update_setting("whisper_condition_on_previous_text", bool(req.whisper_condition_on_previous_text))
+        print(f"[DEBUG] Finished updating whisper_condition_on_previous_text")
     if req.silence_timeout_ms is not None:
         config.SILENCE_TIMEOUT_MS = int(req.silence_timeout_ms)
         memory_manager.update_setting("silence_timeout_ms", int(req.silence_timeout_ms))
@@ -1537,6 +1565,8 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("os_native_alarms", req.os_native_alarms)
     if req.launch_on_startup is not None:
         memory_manager.update_setting("launch_on_startup", req.launch_on_startup)
+    if req.listen_on_startup is not None:
+        memory_manager.update_setting("listen_on_startup", req.listen_on_startup)
     if req.always_on_top is not None:
         memory_manager.update_setting("always_on_top", req.always_on_top)
     if req.close_to_tray is not None:

@@ -774,12 +774,33 @@ def jarvis_grep_files(pattern: str, file_pattern: str = "*", search_dir: str = N
 
     clean_file_pat = str(file_pattern or "*").strip()
 
+    def _match_file_pattern(filepath: str, fname: str, pat: str) -> bool:
+        if not pat or pat == "*":
+            return True
+        # Expand curly braces like *.{js,jsx,html} or *.js,*.jsx
+        sub_patterns = []
+        if "{" in pat and "}" in pat:
+            prefix, rest = pat.split("{", 1)
+            body, suffix = rest.split("}", 1)
+            for choice in body.split(","):
+                sub_patterns.append(f"{prefix}{choice.strip()}{suffix}")
+        elif "," in pat:
+            sub_patterns = [p.strip() for p in pat.split(",") if p.strip()]
+        else:
+            sub_patterns = [pat]
+
+        for p in sub_patterns:
+            if _fnmatch.fnmatch(fname, p) or _fnmatch.fnmatch(filepath, p):
+                return True
+        return False
+
     hits = []
     try:
         for root, dirs, files in os.walk(final_dir):
             dirs[:] = [d for d in dirs if not _is_ignored_dir(d)]
             for fname in files:
-                if not _fnmatch.fnmatch(fname, clean_file_pat) and not _fnmatch.fnmatch(os.path.relpath(os.path.join(root, fname), final_dir), clean_file_pat):
+                rel_file_path = os.path.relpath(os.path.join(root, fname), final_dir)
+                if not _match_file_pattern(rel_file_path, fname, clean_file_pat):
                     continue
                 full_path = os.path.join(root, fname)
                 if not _is_safe_path(full_path):

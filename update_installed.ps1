@@ -44,7 +44,7 @@ function Get-YukiInstallDir {
 function Confirm-Yes {
     param([string]$Message, [bool]$Default)
     $prompt = if ($Default) { '[Y/n]' } else { '[y/N]' }
-    $answer = "y"
+    $answer = Read-Host -Prompt "$Message $prompt"
     if ([string]::IsNullOrWhiteSpace($answer)) { return $Default }
     return ($answer -match '^(y|yes)$')
 }
@@ -118,7 +118,20 @@ if (-not $anyChanged) {
 Write-Host ""
 Write-Host "Choose which parts to include in THIS update:"
 foreach ($r in $rows) {
-    $r | Add-Member -NotePropertyName Selected -NotePropertyValue (Confirm-Yes "Include $($r.Name)?" $r.Changed)
+    $isSelected = Confirm-Yes "Include $($r.Name)?" $r.Changed
+    $r | Add-Member -NotePropertyName Selected -NotePropertyValue $isSelected
+    
+    if ($r.Name -eq 'Backend engine' -and $isSelected) {
+        $installedExe = Join-Path $installDir 'resources\backend\backend.exe'
+        if (Test-Path $installedExe) {
+            $forceRebuild = Confirm-Yes "  Force full PyInstaller rebuild? (Choose 'Yes' if you installed new pip packages/libraries)" $false
+            if ($forceRebuild) {
+                $env:YUKI_FULL_REBUILD = '1'
+            } else {
+                $env:YUKI_FULL_REBUILD = ''
+            }
+        }
+    }
 }
 
 $selected = @($rows | Where-Object { $_.Selected })
@@ -134,7 +147,14 @@ Write-Host "Will run:"
 foreach ($r in $selected) {
     $step = switch ($r.Name) {
         'Frontend UI'    { "npm run build:frontend, then copy dist" }
-        'Backend engine' { "pyinstaller yuki-backend.spec, then copy backend" }
+        'Backend engine' { 
+            $installedExe = Join-Path $installDir 'resources\backend\backend.exe'
+            if ((Test-Path $installedExe) -and (-not $env:YUKI_FULL_REBUILD)) {
+                "Fast sync app source files (sub-second)"
+            } else {
+                "pyinstaller yuki-backend.spec, then copy backend (full rebuild)"
+            }
+        }
         'Electron shell' { "npm run build:electron, then copy shell + asar" }
     }
     Write-Host ("  - {0}: {1}" -f $r.Name, $step)
@@ -181,15 +201,34 @@ if ($selFrontend) {
 
 if ($selBackend) {
     Write-Host ""
-    Write-Host "--- Backend engine: rebuilding (PyInstaller) ---"
-    Push-Location "$root\$backendDir"
-    .\venv\Scripts\pyinstaller.exe yuki-backend.spec --noconfirm
-    if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host ""; Write-Host "BUILD FAILED."; exit 1 }
-    Pop-Location
+    $installedExe = Join-Path $installDir 'resources\backend\backend.exe'
+    $localDistExe = "$root\$backendDir\dist\backend\backend.exe"
+    
+    if ((Test-Path $installedExe) -and (Test-Path $localDistExe) -and (-not $env:YUKI_FULL_REBUILD)) {
+        Write-Host "--- Backend engine: Fast Syncing app source files ---"
+        $destInternalApp = Join-Path $installDir 'resources\backend\_internal\app'
+        $destRootApp     = Join-Path $installDir 'resources\backend\app'
+        $localDistApp    = "$root\$backendDir\dist\backend\_internal\app"
+        
+        $rc1 = robocopy "$root\$backendDir\app" $destInternalApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+        $rc2 = robocopy "$root\$backendDir\app" $destRootApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+        if (Test-Path "$root\$backendDir\dist\backend\_internal") {
+            $rc3 = robocopy "$root\$backendDir\app" $localDistApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+        }
+        
+        if ($rc1 -ge 8) { Write-Host ""; Write-Host "FAST COPY FAILED (robocopy code $rc1)."; exit 1 }
+        Write-Host "[OK] Backend app source files updated in ~0.5s!"
+    } else {
+        Write-Host "--- Backend engine: full rebuild (PyInstaller) ---"
+        Push-Location "$root\$backendDir"
+        .\venv\Scripts\pyinstaller.exe yuki-backend.spec --noconfirm
+        if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host ""; Write-Host "BUILD FAILED."; exit 1 }
+        Pop-Location
 
-    Write-Host "--- Backend engine: copying (preserving your .env / data) ---"
-    $rc = robocopy "$root\$backendDir\dist\backend" (Join-Path $installDir 'resources\backend') /E /XF .env /NFL /NDL /NJH /NJS
-    if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
+        Write-Host "--- Backend engine: copying (preserving your .env / data) ---"
+        $rc = robocopy "$root\$backendDir\dist\backend" (Join-Path $installDir 'resources\backend') /E /XF .env /NFL /NDL /NJH /NJS
+        if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
+    }
 }
 
 if ($selElectron) {

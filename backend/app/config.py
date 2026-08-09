@@ -166,10 +166,15 @@ WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8_float16")
 WHISPER_IDLE_TIMEOUT = int(os.environ.get("WHISPER_IDLE_TIMEOUT", "300"))  # seconds before auto-unload when idle
 WHISPER_VRAM_THRESHOLD = float(os.environ.get("WHISPER_VRAM_THRESHOLD", "90"))  # % VRAM to trigger force-unload
 WHISPER_AUTO_UNLOAD = os.environ.get("WHISPER_AUTO_UNLOAD", "true").strip().lower() in ("1", "true", "yes", "on")
-SILERO_VAD_THRESHOLD = float(os.environ.get("SILERO_VAD_THRESHOLD", "0.5"))
+SILERO_VAD_THRESHOLD = float(os.environ.get("SILERO_VAD_THRESHOLD", "0.50"))
+SILERO_MIN_SPEECH_DURATION_MS = int(os.environ.get("SILERO_MIN_SPEECH_DURATION_MS", "150"))
+SILERO_MIN_SILENCE_DURATION_MS = int(os.environ.get("SILERO_MIN_SILENCE_DURATION_MS", "400"))
+SILERO_SPEECH_PAD_MS = int(os.environ.get("SILERO_SPEECH_PAD_MS", "100"))
+WHISPER_BEAM_SIZE = int(os.environ.get("WHISPER_BEAM_SIZE", "1"))
+WHISPER_CONDITION_ON_PREVIOUS_TEXT = os.environ.get("WHISPER_CONDITION_ON_PREVIOUS_TEXT", "false").strip().lower() in ("1", "true", "yes", "on")
 SILENCE_TIMEOUT_MS = int(os.environ.get("SILENCE_TIMEOUT_MS", "450"))
 WHISPER_NO_SPEECH_THRESHOLD = float(os.environ.get("WHISPER_NO_SPEECH_THRESHOLD", "0.6"))
-CONTINUED_SESSION_TIMEOUT_SEC = int(os.environ.get("CONTINUED_SESSION_TIMEOUT_SEC", "600"))
+CONTINUED_SESSION_TIMEOUT_SEC = int(os.environ.get("CONTINUED_SESSION_TIMEOUT_SEC", "120"))
 
 # ── Cloud/Custom STT provider settings ────────────────────────────────────────
 # Provider IDs: "local" | "google" | "azure" | "assemblyai" | "deepgram" | "custom"

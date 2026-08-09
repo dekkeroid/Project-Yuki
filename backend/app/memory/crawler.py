@@ -736,17 +736,20 @@ def should_handle_orphan(file_path: str, current_root: str, all_targets: List[st
     """
     fp_lower = file_path.lower()
     cr_lower = current_root.lower()
+    cr_prefix = cr_lower if cr_lower.endswith(os.sep) else cr_lower + os.sep
     
     # Must start with current_root
-    if not fp_lower.startswith(cr_lower):
+    if not fp_lower.startswith(cr_prefix):
         return False
         
     # Check if there is a more specific target root
     for target in all_targets:
         t_lower = target.lower()
-        if t_lower != cr_lower and fp_lower.startswith(t_lower):
+        t_prefix = t_lower if t_lower.endswith(os.sep) else t_lower + os.sep
+        
+        if t_prefix != cr_prefix and fp_lower.startswith(t_prefix):
             # If target is longer than current_root, it is more specific
-            if len(t_lower) > len(cr_lower):
+            if len(t_prefix) > len(cr_prefix):
                 return False
                 
     return True
@@ -786,6 +789,8 @@ def scan_target_root(root_dir: str, all_targets: List[str]) -> bool:
         
     excluded_lower = [e.lower() for e in EXCLUDED_DIRS]
 
+    all_targets_lower = {t.lower() for t in all_targets}
+    
     # Single connection for entire scan
     conn = db.get_connection()
     try:
@@ -799,11 +804,8 @@ def scan_target_root(root_dir: str, all_targets: List[str]) -> bool:
                 dirs[:] = []  # Don't recurse into it
                 continue
 
-            # Exclude priority folders from other roots to avoid duplicate scans
-            dirs[:] = [d for d in dirs if not any(
-                root_dir.lower() != pf.lower() and os.path.join(root, d).lower() == pf.lower()
-                for pf in PRIORITY_FOLDERS
-            )]
+            # Exclude other targets to avoid duplicate scans (prevents full-drive re-scans)
+            dirs[:] = [d for d in dirs if os.path.join(root, d).lower() not in all_targets_lower]
 
             # Filter out excluded directories before recursing
             dirs[:] = [d for d in dirs if not any(

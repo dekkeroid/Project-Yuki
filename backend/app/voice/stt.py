@@ -165,16 +165,16 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
             )
             vad_params = dict(
                 threshold=getattr(config, "SILERO_VAD_THRESHOLD", 0.5),
-                min_speech_duration_ms=150,
-                min_silence_duration_ms=400,
-                speech_pad_ms=100
+                min_speech_duration_ms=getattr(config, "SILERO_MIN_SPEECH_DURATION_MS", 150),
+                min_silence_duration_ms=getattr(config, "SILERO_MIN_SILENCE_DURATION_MS", 400),
+                speech_pad_ms=getattr(config, "SILERO_SPEECH_PAD_MS", 100)
             )
             segments, info = model.transcribe(
                 file_path,
-                beam_size=1,  # Fast 50% faster greedy decoding for real-time turn taking
+                beam_size=getattr(config, "WHISPER_BEAM_SIZE", 1),
                 vad_filter=True,
                 vad_parameters=vad_params,
-                condition_on_previous_text=False,
+                condition_on_previous_text=getattr(config, "WHISPER_CONDITION_ON_PREVIOUS_TEXT", False),
                 no_speech_threshold=getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.6),
                 language=language if language != 'auto' else None,
                 initial_prompt=whisper_prompt
