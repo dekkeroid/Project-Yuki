@@ -440,7 +440,7 @@ export function useSpeechRecognition(options = {}) {
           isSpeechRecActiveRef.current = false;
 
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          if (audioChunksRef.current.length === 0 || audioBlob.size < 1200) {
+          if (audioChunksRef.current.length === 0 || audioBlob.size < 4000) {
             logSTTStatus(`[STT] Ignored short clip (${audioBlob.size} bytes).`);
             updateListeningState();
             return;
@@ -557,7 +557,7 @@ export function useSpeechRecognition(options = {}) {
           const now = Date.now();
 
           if (normalized > micThreshold) {
-            if (now - vadActivationTimeRef.current > 150) {
+            if (now - vadActivationTimeRef.current > 600) {
               if (!vadSpeakingRef.current) {
                 logSTTStatus("User speech detected — speech start");
                 vadSpeakingRef.current = true;
