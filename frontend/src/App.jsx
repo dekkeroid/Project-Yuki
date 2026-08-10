@@ -1459,11 +1459,11 @@ const App = () => {
       }
 
       // 3. Turn on listening mode
-      // - If checked (shouldTurnOnListening === true): turn on listening mode; if already active, DO NOT toggle off!
+      // - If checked (shouldTurnOnListening === true): turn on listening mode (same as mic button); if already active, DO NOT toggle off!
       // - If unchecked (shouldTurnOnListening === false): do NOT turn off listening mode—leave it as it is!
       if (shouldTurnOnListening) {
-        if (!isTalkModeRef.current) {
-          toggleListening();
+        if (!isVoiceCommandModeRef.current && !isTalkModeRef.current) {
+          toggleVoiceCommandMode();
         }
       }
     };
