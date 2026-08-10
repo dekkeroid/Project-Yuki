@@ -522,6 +522,7 @@ const ControlDashboard = ({
   const [autoEvolveArchetype, setAutoEvolveArchetype] = useState(profile?.settings?.auto_evolving_archetype ?? true);
   const [archetypeIntensity, setArchetypeIntensity] = useState(profile?.settings?.archetype_intensity || 'moderate');
 
+
   const fetchRelationshipStatus = async (targetPreset) => {
     try {
       const presetKey = targetPreset || personaPreset;
@@ -785,8 +786,79 @@ const ControlDashboard = ({
     tts_cloud_region: 'eastus',
     tts_cloud_voice: '',
     no_llm_mode: false,
+    hotkey_shortcut: 'Alt+S',
+    hotkey_focus_chat: true,
+    hotkey_open_logs: false,
+    hotkey_turn_on_listening: true,
     ...(profile?.settings || {})
   });
+
+  // Wake-Up Hotkey Key Combination Recorder State
+  const [isRecordingHotkey, setIsRecordingHotkey] = useState(false);
+  const [draftHotkey, setDraftHotkey] = useState(profile?.settings?.hotkey_shortcut || 'Alt+S');
+
+  useEffect(() => {
+    if (settings?.hotkey_shortcut && !isRecordingHotkey) {
+      setDraftHotkey(settings.hotkey_shortcut);
+    }
+  }, [settings?.hotkey_shortcut, isRecordingHotkey]);
+
+  useEffect(() => {
+    if (!isRecordingHotkey) return;
+
+    const handleKeyDown = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === 'Escape') {
+        setIsRecordingHotkey(false);
+        return;
+      }
+
+      const modifiers = [];
+      if (e.ctrlKey || e.metaKey) modifiers.push('Ctrl');
+      if (e.altKey) modifiers.push('Alt');
+      if (e.shiftKey) modifiers.push('Shift');
+
+      let key = e.key;
+      if (['Control', 'Alt', 'Shift', 'Meta'].includes(key)) {
+        if (modifiers.length > 0) {
+          setDraftHotkey(modifiers.join('+'));
+        }
+        return;
+      }
+
+      if (key === ' ') key = 'Space';
+      else if (key.length === 1) key = key.toUpperCase();
+
+      const combo = modifiers.length > 0 ? `${modifiers.join('+')}+${key}` : key;
+      setDraftHotkey(combo);
+      setIsRecordingHotkey(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isRecordingHotkey]);
+
+  const handleSaveHotkey = (valToSave) => {
+    const target = valToSave !== undefined ? valToSave : draftHotkey;
+    const finalVal = (target && target.trim()) ? target.trim() : 'Alt+S';
+    setDraftHotkey(finalVal);
+    handleUpdateSetting('hotkey_shortcut', finalVal);
+    if (window.electronAPI && window.electronAPI.updateGlobalShortcut) {
+      window.electronAPI.updateGlobalShortcut(finalVal);
+    }
+    setIsRecordingHotkey(false);
+  };
+
+  const handleResetHotkey = () => {
+    setDraftHotkey('Alt+S');
+    handleUpdateSetting('hotkey_shortcut', 'Alt+S');
+    if (window.electronAPI && window.electronAPI.updateGlobalShortcut) {
+      window.electronAPI.updateGlobalShortcut('Alt+S');
+    }
+    setIsRecordingHotkey(false);
+  };
 
   // Local Character & Persona States
   const [charName, setCharName] = useState('Yuki');
@@ -3936,49 +4008,102 @@ const ControlDashboard = ({
                   {/* Wake-Up Hotkey & Behavior Settings Card */}
                   <div style={{
                     background: 'linear-gradient(135deg, rgba(168,85,247,0.12) 0%, rgba(99,102,241,0.1) 100%)',
-                    border: '1px solid rgba(168,85,247,0.3)',
+                    border: isRecordingHotkey ? '1px solid rgba(168,85,247,0.8)' : '1px solid rgba(168,85,247,0.3)',
                     borderRadius: '14px',
                     padding: '14px 16px',
                     marginBottom: '12px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '12px'
+                    gap: '12px',
+                    boxShadow: isRecordingHotkey ? '0 0 15px rgba(168,85,247,0.35)' : 'none',
+                    transition: 'all 0.2s ease'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <Command className="w-5 h-5 text-purple-400" />
                         <div>
-                          <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>
-                            Wake-Up Hotkey
+                          <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>Wake-Up Hotkey</span>
+                            {isRecordingHotkey && (
+                              <span style={{ fontSize: '0.62rem', background: '#a855f7', color: '#fff', padding: '1px 6px', borderRadius: '4px', animation: 'pulse 1.5s infinite' }}>
+                                PRESS KEYS NOW...
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
                             Global keyboard shortcut to wake up Yuki and trigger action options.
                           </div>
                         </div>
                       </div>
-                      <input
-                        type="text"
-                        value={settings.hotkey_shortcut ?? 'Alt+S'}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          handleUpdateSetting('hotkey_shortcut', val);
-                          if (window.electronAPI && window.electronAPI.updateGlobalShortcut) {
-                            window.electronAPI.updateGlobalShortcut(val);
-                          }
-                        }}
-                        placeholder="Alt+S"
-                        style={{
-                          background: 'rgba(0,0,0,0.4)',
-                          border: '1px solid rgba(168,85,247,0.5)',
-                          borderRadius: '8px',
-                          color: '#e9d5ff',
-                          padding: '4px 10px',
-                          fontSize: '0.8rem',
-                          fontWeight: 600,
-                          width: '100px',
-                          textAlign: 'center'
-                        }}
-                      />
+
+                      {/* Interactive Key Combo Input & Actions */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setIsRecordingHotkey(!isRecordingHotkey)}
+                          title="Click to record hotkey combination (Press Esc to cancel)"
+                          style={{
+                            background: isRecordingHotkey ? 'rgba(168,85,247,0.35)' : 'rgba(0,0,0,0.5)',
+                            border: `1px solid ${isRecordingHotkey ? '#a855f7' : 'rgba(168,85,247,0.4)'}`,
+                            borderRadius: '8px',
+                            color: isRecordingHotkey ? '#fff' : '#e9d5ff',
+                            padding: '5px 12px',
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            minWidth: '115px',
+                            textAlign: 'center',
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          <Keyboard className="w-3.5 h-3.5" />
+                          <span>{isRecordingHotkey ? 'Press keys...' : (draftHotkey || 'Alt+S')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSaveHotkey()}
+                          disabled={draftHotkey === (settings.hotkey_shortcut ?? 'Alt+S') && !isRecordingHotkey}
+                          style={{
+                            background: draftHotkey !== (settings.hotkey_shortcut ?? 'Alt+S')
+                              ? 'linear-gradient(135deg, #10b981, #059669)'
+                              : 'rgba(255,255,255,0.06)',
+                            border: '1px solid ' + (draftHotkey !== (settings.hotkey_shortcut ?? 'Alt+S') ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.1)'),
+                            color: draftHotkey !== (settings.hotkey_shortcut ?? 'Alt+S') ? '#fff' : 'rgba(255,255,255,0.4)',
+                            borderRadius: '8px',
+                            padding: '5px 10px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: draftHotkey !== (settings.hotkey_shortcut ?? 'Alt+S') ? 'pointer' : 'default',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          Save
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleResetHotkey}
+                          title="Reset to default hotkey (Alt+S)"
+                          style={{
+                            background: 'rgba(255,255,255,0.06)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            color: 'rgba(255,255,255,0.7)',
+                            borderRadius: '8px',
+                            padding: '5px 10px',
+                            fontSize: '0.75rem',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          Reset
+                        </button>
+                      </div>
                     </div>
 
                     <div style={{
