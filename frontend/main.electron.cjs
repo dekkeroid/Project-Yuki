@@ -1590,15 +1590,42 @@ app.whenReady().then(async () => {
   createTray();
   startElectronMemoryOptimizer();
 
-  globalShortcut.register('Alt+S', () => {
-    console.log('[Electron] Alt+S — toggling chat overlay window & instant input focus.');
-    showYuki();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-      mainWindow.webContents.send('trigger-listening');
+  let currentRegisteredShortcut = 'Alt+S';
+
+  function registerWakeHotkey(shortcutStr) {
+    if (currentRegisteredShortcut) {
+      try {
+        globalShortcut.unregister(currentRegisteredShortcut);
+      } catch (e) {}
     }
+    const targetShortcut = (shortcutStr && String(shortcutStr).trim()) ? String(shortcutStr).trim() : 'Alt+S';
+    try {
+      const success = globalShortcut.register(targetShortcut, () => {
+        console.log(`[Electron] ${targetShortcut} — toggling chat overlay window & hotkey trigger.`);
+        showYuki();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+          mainWindow.webContents.send('trigger-listening');
+        }
+      });
+      if (success) {
+        currentRegisteredShortcut = targetShortcut;
+        console.log(`[Electron] Successfully registered global shortcut: ${targetShortcut}`);
+      } else {
+        console.warn(`[Electron] Failed to register global shortcut: ${targetShortcut}`);
+      }
+    } catch (err) {
+      console.error(`[Electron] Error registering global shortcut ${targetShortcut}:`, err);
+    }
+  }
+
+  registerWakeHotkey('Alt+S');
+
+  ipcMain.on('update-global-shortcut', (event, newShortcut) => {
+    console.log(`[Electron] Received update-global-shortcut IPC request: ${newShortcut}`);
+    registerWakeHotkey(newShortcut);
   });
 
   app.on('activate', () => {

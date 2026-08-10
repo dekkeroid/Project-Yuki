@@ -49,6 +49,9 @@ LLM_MODE = int(os.environ.get("LLM_MODE", "3"))
 # Send all tools even at simple prompts
 SEND_TOOLS_IN_SIMPLE = os.environ.get("SEND_TOOLS_IN_SIMPLE", "false").strip().lower() in ("1", "true", "yes", "on")
 
+# Allow voice barge-in
+ALLOW_VOICE_BARGE_IN = os.environ.get("ALLOW_VOICE_BARGE_IN", "false").strip().lower() in ("1", "true", "yes", "on")
+
 # Dual Endpoint Strategy Configuration
 ENDPOINT_STRATEGY = os.environ.get("ENDPOINT_STRATEGY", "single").strip().lower()  # "single" or "dual"
 LLM_SIMPLE_BACKEND = os.environ.get("LLM_SIMPLE_BACKEND", "lmstudio")
@@ -65,6 +68,9 @@ LLM_VISION_MODEL = os.environ.get("LLM_VISION_MODEL", "gemini-3.6-flash")
 
 # Tool Operating Mode — "basic" (weak/local LLMs) vs "advanced" (frontier cloud LLMs with parallel multi-step execution)
 TOOL_MODE = os.environ.get("TOOL_MODE", "basic").strip().lower()
+
+# User Location / Country setting ("Auto" for system detection, or custom country string)
+USER_COUNTRY = os.environ.get("USER_COUNTRY", "Auto")
 
 # User-configurable list of tools ALWAYS included when dynamic tool calling is active.
 # None = not configured -> selector falls back to its hardcoded defaults.
@@ -208,6 +214,12 @@ CHARACTER_PERSONA = stitch_system_persona()
 
 
 NO_LLM_MODE = False
+
+# Hotkey & Wake-up Settings
+HOTKEY_SHORTCUT = os.environ.get("HOTKEY_SHORTCUT", "Alt+S")
+HOTKEY_FOCUS_CHAT = os.environ.get("HOTKEY_FOCUS_CHAT", "true").strip().lower() in ("1", "true", "yes", "on")
+HOTKEY_OPEN_LOGS = os.environ.get("HOTKEY_OPEN_LOGS", "false").strip().lower() in ("1", "true", "yes", "on")
+HOTKEY_TURN_ON_LISTENING = os.environ.get("HOTKEY_TURN_ON_LISTENING", "true").strip().lower() in ("1", "true", "yes", "on")
 
 
 def get_effective_base_url() -> str:

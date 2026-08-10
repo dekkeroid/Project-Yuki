@@ -751,6 +751,7 @@ const App = () => {
     vadThreshold: profile?.settings?.vad_threshold,
     silenceTimeout: profile?.settings?.silence_timeout_ms,
     sttAutoGainControl: profile?.settings?.stt_auto_gain_control,
+    allowVoiceBargeIn: profile?.settings?.allow_voice_barge_in,
     sttEchoCancellation: profile?.settings?.stt_echo_cancellation,
     sttNoiseSuppression: profile?.settings?.stt_noise_suppression,
     sttTransportMode: profile?.settings?.stt_transport_mode,
@@ -1401,36 +1402,90 @@ const App = () => {
     }
   }, []);
 
-  // Alt+S hotkey: open/toggle floating chat overlay window and instantly focus chat input
+  // Wake-up hotkey settings refs
+  const hotkeyShortcutRef = useRef(profile?.settings?.hotkey_shortcut || 'Alt+S');
+  const hotkeyFocusChatRef = useRef(profile?.settings?.hotkey_focus_chat ?? true);
+  const hotkeyOpenLogsRef = useRef(profile?.settings?.hotkey_open_logs ?? false);
+  const hotkeyTurnOnListeningRef = useRef(profile?.settings?.hotkey_turn_on_listening ?? true);
+
   useEffect(() => {
-    const handleToggleChat = () => {
-      setIsChatOpen((prev) => {
-        const nextState = !prev;
-        if (nextState) {
-          setIsPanelOpen(true);
-          const focusInput = () => {
-            window.dispatchEvent(new CustomEvent('yuki-focus-chat-input'));
-            if (desktopInputRef.current) {
-              desktopInputRef.current.focus();
-            }
-          };
-          requestAnimationFrame(focusInput);
-          setTimeout(focusInput, 50);
-          setTimeout(focusInput, 150);
+    if (profile?.settings) {
+      if (profile.settings.hotkey_shortcut !== undefined) {
+        hotkeyShortcutRef.current = profile.settings.hotkey_shortcut || 'Alt+S';
+        if (window.electronAPI && window.electronAPI.updateGlobalShortcut) {
+          window.electronAPI.updateGlobalShortcut(hotkeyShortcutRef.current);
         }
-        return nextState;
-      });
+      }
+      if (profile.settings.hotkey_focus_chat !== undefined) {
+        hotkeyFocusChatRef.current = profile.settings.hotkey_focus_chat !== false;
+      }
+      if (profile.settings.hotkey_open_logs !== undefined) {
+        hotkeyOpenLogsRef.current = profile.settings.hotkey_open_logs === true;
+      }
+      if (profile.settings.hotkey_turn_on_listening !== undefined) {
+        hotkeyTurnOnListeningRef.current = profile.settings.hotkey_turn_on_listening !== false;
+      }
+    }
+  }, [profile?.settings]);
+
+  // Customizable wake-up hotkey trigger handler & listeners
+  useEffect(() => {
+    const handleHotkeyTrigger = () => {
+      const shouldFocusChat = hotkeyFocusChatRef.current !== false;
+      const shouldOpenLogs = hotkeyOpenLogsRef.current === true;
+      const shouldTurnOnListening = hotkeyTurnOnListeningRef.current !== false;
+
+      // 1. Focus on chat input
+      if (shouldFocusChat) {
+        setIsChatOpen(true);
+        const focusInput = () => {
+          window.dispatchEvent(new CustomEvent('yuki-focus-chat-input'));
+          if (desktopInputRef.current) {
+            desktopInputRef.current.focus();
+          }
+        };
+        requestAnimationFrame(focusInput);
+        setTimeout(focusInput, 50);
+        setTimeout(focusInput, 150);
+      }
+
+      // 2. Open conversation logs
+      // - If checked (shouldOpenLogs === true): open conversation logs; if already open, DO NOT toggle off!
+      // - If unchecked (shouldOpenLogs === false): close conversation logs if currently open!
+      if (shouldOpenLogs) {
+        setIsPanelOpen(true);
+      } else {
+        setIsPanelOpen(false);
+      }
+
+      // 3. Turn on listening mode
+      // - If checked (shouldTurnOnListening === true): turn on listening mode; if already active, DO NOT toggle off!
+      // - If unchecked (shouldTurnOnListening === false): do NOT turn off listening mode—leave it as it is!
+      if (shouldTurnOnListening) {
+        if (!isTalkModeRef.current) {
+          toggleListening();
+        }
+      }
     };
 
     let unsub = null;
     if (window.electronAPI && window.electronAPI.onTriggerListening) {
-      unsub = window.electronAPI.onTriggerListening(handleToggleChat);
+      unsub = window.electronAPI.onTriggerListening(handleHotkeyTrigger);
     }
 
     const handleWebKeyDown = (e) => {
-      if (e.altKey && (e.key === 's' || e.key === 'S')) {
-        e.preventDefault();
-        handleToggleChat();
+      const shortcutStr = (hotkeyShortcutRef.current || 'Alt+S').toLowerCase();
+      const parts = shortcutStr.split('+').map((p) => p.trim());
+      const needAlt = parts.includes('alt');
+      const needCtrl = parts.includes('ctrl') || parts.includes('control');
+      const needShift = parts.includes('shift');
+      const mainKey = parts.find((p) => !['alt', 'ctrl', 'control', 'shift', 'meta', 'command'].includes(p));
+
+      if (needAlt === e.altKey && needCtrl === (e.ctrlKey || e.metaKey) && needShift === e.shiftKey) {
+        if (!mainKey || e.key.toLowerCase() === mainKey) {
+          e.preventDefault();
+          handleHotkeyTrigger();
+        }
       }
     };
     window.addEventListener('keydown', handleWebKeyDown);

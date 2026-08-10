@@ -81,6 +81,7 @@ class MemoryManager:
                 "max_recording_duration_sec": 120,
                 "whisper_no_speech_threshold": 0.70,
                 "stt_auto_gain_control": True,
+                "allow_voice_barge_in": False,
                 "stt_echo_cancellation": True,
                 "stt_noise_suppression": True,
                 "stt_transport_mode": "websocket_stream",
@@ -97,6 +98,10 @@ class MemoryManager:
                 "chat_mode": False,
                 "keep_memory_saving": True,
                 "tool_mode": "basic",
+                "hotkey_shortcut": "Alt+S",
+                "hotkey_focus_chat": True,
+                "hotkey_open_logs": False,
+                "hotkey_turn_on_listening": True,
                 "send_tools_in_simple": False,
                 "endpoint_strategy": "single",
                 "llm_simple_backend": "lmstudio",
@@ -114,7 +119,8 @@ class MemoryManager:
                 "advanced_history_keep_turns": 16,
                 "history_summary_percent": 50,
                 "history_summary_position": "oldest",
-                "llm_summary_model": ""
+                "llm_summary_model": "",
+                "user_country": "Auto"
             }
         }
         if not os.path.exists(self.profile_path):
@@ -161,6 +167,7 @@ class MemoryManager:
                 config.MAX_RECORDING_DURATION_SEC = int(data["settings"].get("max_recording_duration_sec", getattr(config, "MAX_RECORDING_DURATION_SEC", 120)))
                 config.WHISPER_NO_SPEECH_THRESHOLD = float(data["settings"].get("whisper_no_speech_threshold", getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.70)))
                 config.STT_AUTO_GAIN_CONTROL = bool(data["settings"].get("stt_auto_gain_control", getattr(config, "STT_AUTO_GAIN_CONTROL", True)))
+                config.ALLOW_VOICE_BARGE_IN = bool(data["settings"].get("allow_voice_barge_in", getattr(config, "ALLOW_VOICE_BARGE_IN", False)))
                 config.STT_ECHO_CANCELLATION = bool(data["settings"].get("stt_echo_cancellation", getattr(config, "STT_ECHO_CANCELLATION", True)))
                 config.STT_NOISE_SUPPRESSION = bool(data["settings"].get("stt_noise_suppression", getattr(config, "STT_NOISE_SUPPRESSION", True)))
                 config.STT_TRANSPORT_MODE = data["settings"].get("stt_transport_mode", getattr(config, "STT_TRANSPORT_MODE", "websocket_stream"))
@@ -168,7 +175,12 @@ class MemoryManager:
                 config.BROWSER_NEURAL_VAD_CONFIDENCE = float(data["settings"].get("browser_neural_vad_confidence", getattr(config, "BROWSER_NEURAL_VAD_CONFIDENCE", 0.60)))
                 config.ADAPTIVE_SILENCE_CUTOFF = bool(data["settings"].get("adaptive_silence_cutoff", getattr(config, "ADAPTIVE_SILENCE_CUTOFF", True)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
+                config.USER_COUNTRY = data["settings"].get("user_country", getattr(config, "USER_COUNTRY", "Auto"))
                 config.SEND_TOOLS_IN_SIMPLE = bool(data["settings"].get("send_tools_in_simple", False))
+                config.HOTKEY_SHORTCUT = data["settings"].get("hotkey_shortcut", getattr(config, "HOTKEY_SHORTCUT", "Alt+S"))
+                config.HOTKEY_FOCUS_CHAT = bool(data["settings"].get("hotkey_focus_chat", getattr(config, "HOTKEY_FOCUS_CHAT", True)))
+                config.HOTKEY_OPEN_LOGS = bool(data["settings"].get("hotkey_open_logs", getattr(config, "HOTKEY_OPEN_LOGS", False)))
+                config.HOTKEY_TURN_ON_LISTENING = bool(data["settings"].get("hotkey_turn_on_listening", getattr(config, "HOTKEY_TURN_ON_LISTENING", True)))
                 config.CODEGRAPH_CODER_ENABLED = bool(data["settings"].get("codegraph_coder_enabled", getattr(config, "CODEGRAPH_CODER_ENABLED", False)))
                 config.CODEGRAPH_ADVANCED_ENABLED = bool(data["settings"].get("codegraph_advanced_enabled", getattr(config, "CODEGRAPH_ADVANCED_ENABLED", False)))
                 config.ENDPOINT_STRATEGY = data["settings"].get("endpoint_strategy", "single").strip().lower()
@@ -389,6 +401,14 @@ class MemoryManager:
             config.CODEGRAPH_CODER_ENABLED = bool(value)
         elif key == "codegraph_advanced_enabled":
             config.CODEGRAPH_ADVANCED_ENABLED = bool(value)
+        elif key == "hotkey_shortcut":
+            config.HOTKEY_SHORTCUT = str(value)
+        elif key == "hotkey_focus_chat":
+            config.HOTKEY_FOCUS_CHAT = bool(value)
+        elif key == "hotkey_open_logs":
+            config.HOTKEY_OPEN_LOGS = bool(value)
+        elif key == "hotkey_turn_on_listening":
+            config.HOTKEY_TURN_ON_LISTENING = bool(value)
         elif key == "silero_vad_threshold":
             config.SILERO_VAD_THRESHOLD = float(value)
         elif key == "silero_min_speech_duration_ms":
@@ -411,6 +431,8 @@ class MemoryManager:
             config.WHISPER_NO_SPEECH_THRESHOLD = float(value)
         elif key == "stt_auto_gain_control":
             config.STT_AUTO_GAIN_CONTROL = bool(value)
+        elif key == "allow_voice_barge_in":
+            config.ALLOW_VOICE_BARGE_IN = bool(value)
         elif key == "stt_echo_cancellation":
             config.STT_ECHO_CANCELLATION = bool(value)
         elif key == "stt_noise_suppression":
