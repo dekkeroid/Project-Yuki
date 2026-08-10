@@ -648,6 +648,7 @@ const App = () => {
   const startSessionTimeoutRef = useRef(null);
   const updateListeningStateRef = useRef(null);
   const getIsVoiceCommandModeRef = useRef(() => false);
+  const sessionTimeoutRef = useRef(null);
 
   const {
     socket,
@@ -752,6 +753,10 @@ const App = () => {
     sttAutoGainControl: profile?.settings?.stt_auto_gain_control,
     sttEchoCancellation: profile?.settings?.stt_echo_cancellation,
     sttNoiseSuppression: profile?.settings?.stt_noise_suppression,
+    sttTransportMode: profile?.settings?.stt_transport_mode,
+    useNeuralBrowserVad: profile?.settings?.use_neural_browser_vad,
+    browserNeuralVadConfidence: profile?.settings?.browser_neural_vad_confidence,
+    adaptiveSilenceCutoff: profile?.settings?.adaptive_silence_cutoff,
     continuedSessionTimeoutSec: profile?.settings?.continued_session_timeout_sec,
     maxRecordingDurationSec: profile?.settings?.max_recording_duration_sec,
     isThinkingRef,
@@ -759,7 +764,7 @@ const App = () => {
     hasReceivedAudioRef,
     isNativeSpeakingRef,
     isPlayingRef,
-    sessionTimeoutRef: useRef(null),
+    sessionTimeoutRef,
     setIsSessionActive,
     muteVoice,
     setMessages,
@@ -773,7 +778,17 @@ const App = () => {
         socketRef.current.send(JSON.stringify({ type: 'log', message: msg }));
       }
     },
-    sendMessageText: (text) => handleSendMessage(null, text, false),
+    sendMessageText: (text, sttInfo = null) => {
+      let sttMs = null;
+      let sttTiming = null;
+      if (sttInfo && typeof sttInfo === 'object') {
+        sttMs = sttInfo.stt_time_ms || sttInfo.total_stt_ms || null;
+        sttTiming = sttInfo.stt_timing || sttInfo;
+      } else if (typeof sttInfo === 'number') {
+        sttMs = sttInfo;
+      }
+      sendMessageText(text, sttMs, false, [], { stt_timing: sttTiming });
+    },
     isSessionActiveRef,
     toggleMute: () => setMuteVoice(prev => !prev),
     speakSystemMessage
@@ -1776,10 +1791,17 @@ const App = () => {
     }
   }, [isPanelOpen, messages]);
 
-  const sendMessageText = (text, sttTimeMs = null, fromSuggestion = false, attachmentsList = []) => {
+  const sendMessageText = (text, sttTimeMs = null, fromSuggestion = false, attachmentsList = [], extraOpts = {}) => {
     if (!text.trim()) return;
 
-    console.log(`sendMessageText: "${text}" (sttTimeMs: ${sttTimeMs})`);
+    let sttMs = sttTimeMs;
+    let sttTiming = extraOpts.stt_timing || null;
+    if (sttTimeMs && typeof sttTimeMs === 'object') {
+      sttMs = sttTimeMs.stt_time_ms || sttTimeMs.total_stt_ms || null;
+      sttTiming = sttTimeMs.stt_timing || sttTimeMs;
+    }
+
+    console.log(`sendMessageText: "${text}" (sttTimeMs: ${sttMs})`);
     initAudioAnalyser();
 
     // Clean interruption
@@ -2173,8 +2195,11 @@ const App = () => {
 
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       const payload = { type: 'chat', message: text };
-      if (sttTimeMs !== null) {
-        payload.stt_time_ms = sttTimeMs;
+      if (sttMs !== null && sttMs !== undefined) {
+        payload.stt_time_ms = sttMs;
+      }
+      if (sttTiming) {
+        payload.stt_timing = sttTiming;
       }
       if (attachmentsList && attachmentsList.length > 0) {
         payload.attachments = attachmentsList;

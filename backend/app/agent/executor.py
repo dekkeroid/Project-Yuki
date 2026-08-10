@@ -1939,8 +1939,10 @@ class AgentExecutor:
         user_message = ""
         for msg in reversed(messages):
             if msg.get("role") == "user":
-                user_message = _message_text(msg.get("content", ""))
-                break
+                content = _message_text(msg.get("content", ""))
+                if not content.strip().startswith("[SYSTEM]"):
+                    user_message = content
+                    break
 
         filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic)
 
@@ -3003,24 +3005,28 @@ class AgentExecutor:
                         _orig = user_message.strip()
                         _iter_note = f"(tool call {iteration} of {max_iterations} allowed this turn)"
 
+                        is_advanced_mode = effective_tool_mode == "advanced"
                         is_coder_mode = bool(overrides.get("coding_mode")) or resolved_backend in ("coder", "complex_coder")
 
-                        if is_coder_mode:
-                            # Autonomous Coder Mode: Keep coder backend active & encourage continuous tool execution until goal is complete!
-                            resolved_backend = "coder"
+                        if is_coder_mode or is_advanced_mode:
+                            mode_name = "Autonomous Coder Mode" if is_coder_mode else "Autonomous Jarvis Mode"
+                            # Keep backend active & encourage continuous tool execution until goal is complete!
+                            if is_coder_mode:
+                                resolved_backend = "coder"
+                            
                             loop_nudge = ""
                             if consecutive_count >= 5:
                                 loop_nudge = (
                                     " ⚠️ NOTE: You have executed the exact same tool call 5 or more times in a row. "
-                                    "If you are re-verifying after file changes, that's fine — but if the result has not "
+                                    "If you are re-verifying, that's fine — but if the result has not "
                                     "changed, stop repeating this identical call, read the existing output above, and either "
-                                    "take a NEW distinct step or write your final summary."
+                                    "take a NEW distinct step or write your final response."
                                 )
                             reminder = (
                                 f"[SYSTEM] {_iter_note} Tool '{tool_name}' completed with result above. "
                                 f"User's overall goal: \"{_orig}\". "
-                                "You are in Autonomous Coder Mode. If additional steps, file creations, refactors, or terminal/python commands are needed to fully build and verify the user's goal, execute the next tool call immediately. "
-                                "Only write your final summary when the entire task is fully built and verified."
+                                f"You are in {mode_name}. If additional steps, commands, or tool calls are needed to fully achieve the user's goal, execute the next tool call immediately. "
+                                "Only write your final natural language response when the entire task is fully complete."
                                 f"{loop_nudge}"
                             )
                         elif tool_name in _INFO_TOOLS:

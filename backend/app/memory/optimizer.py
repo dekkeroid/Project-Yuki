@@ -174,13 +174,13 @@ def optimize_all_processes(force=False, skip_own_process=False):
         return
     LAST_OPTIMIZATION_TIME = now
 
-    # Hold off trimming while the Whisper model is loading - EmptyWorkingSet would
-    # page out the model pages as they're being read, massively slowing STT startup.
+    # Hold off trimming while the Whisper model is loading or listening mode is active — EmptyWorkingSet would
+    # page out the model pages, massively slowing STT turnaround.
     try:
-        from app.voice.stt import is_whisper_loading
-        if is_whisper_loading():
+        from app.voice.stt import is_whisper_loading, is_listening_mode_active
+        if is_whisper_loading() or is_listening_mode_active():
             try:
-                print('[Memory] Whisper model is still loading - holding off memory optimization until it completes.')
+                print('[Memory] Listening mode is active or Whisper is loading - holding off memory optimization.')
             except Exception:
                 pass
             return

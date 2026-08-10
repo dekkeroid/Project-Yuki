@@ -38,7 +38,7 @@ export default function SettingsApp() {
     const active = localStorage.getItem('yuki-mic-device-id') || 'default';
     const stored = localStorage.getItem(`yuki-silence-timeout-${active}`);
     if (stored !== null && !isNaN(parseInt(stored, 10))) return parseInt(stored, 10);
-    return parseInt(localStorage.getItem('yuki-silence-timeout') || '450', 10);
+    return parseInt(localStorage.getItem('yuki-silence-timeout') || '1000', 10);
   });
   const [muteVoice, setMuteVoice] = useState(() => {
     return localStorage.getItem('yuki-mute-voice') === 'true';
@@ -82,7 +82,7 @@ export default function SettingsApp() {
     if (storedTimeout !== null && !isNaN(parseInt(storedTimeout, 10))) {
       setSilenceTimeout(parseInt(storedTimeout, 10));
     } else {
-      setSilenceTimeout(parseInt(localStorage.getItem('yuki-silence-timeout') || '450', 10));
+      setSilenceTimeout(parseInt(localStorage.getItem('yuki-silence-timeout') || '1000', 10));
     }
   }, [selectedMicDeviceId]);
 

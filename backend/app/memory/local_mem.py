@@ -69,20 +69,24 @@ class MemoryManager:
                 "dynamic_tool_calling": True,
                 "blocked_tools": [],
                 "enable_intent_check": True,
-                "vad_threshold": 0.16,
+                "vad_threshold": 0.03,
                 "silero_vad_threshold": 0.50,
                 "silero_min_speech_duration_ms": 150,
                 "silero_min_silence_duration_ms": 400,
                 "silero_speech_pad_ms": 200,
                 "whisper_beam_size": 1,
                 "whisper_condition_on_previous_text": False,
-                "silence_timeout_ms": 1000,
+                "silence_timeout_ms": 800,
                 "continued_session_timeout_sec": 120,
                 "max_recording_duration_sec": 120,
                 "whisper_no_speech_threshold": 0.70,
                 "stt_auto_gain_control": True,
                 "stt_echo_cancellation": True,
                 "stt_noise_suppression": True,
+                "stt_transport_mode": "websocket_stream",
+                "use_neural_browser_vad": True,
+                "browser_neural_vad_confidence": 0.60,
+                "adaptive_silence_cutoff": True,
                 "llm_mode": 3,
                 "enable_rotation": True,
                 "auto_reset_rotation": False,
@@ -159,6 +163,10 @@ class MemoryManager:
                 config.STT_AUTO_GAIN_CONTROL = bool(data["settings"].get("stt_auto_gain_control", getattr(config, "STT_AUTO_GAIN_CONTROL", True)))
                 config.STT_ECHO_CANCELLATION = bool(data["settings"].get("stt_echo_cancellation", getattr(config, "STT_ECHO_CANCELLATION", True)))
                 config.STT_NOISE_SUPPRESSION = bool(data["settings"].get("stt_noise_suppression", getattr(config, "STT_NOISE_SUPPRESSION", True)))
+                config.STT_TRANSPORT_MODE = data["settings"].get("stt_transport_mode", getattr(config, "STT_TRANSPORT_MODE", "websocket_stream"))
+                config.USE_NEURAL_BROWSER_VAD = bool(data["settings"].get("use_neural_browser_vad", getattr(config, "USE_NEURAL_BROWSER_VAD", True)))
+                config.BROWSER_NEURAL_VAD_CONFIDENCE = float(data["settings"].get("browser_neural_vad_confidence", getattr(config, "BROWSER_NEURAL_VAD_CONFIDENCE", 0.60)))
+                config.ADAPTIVE_SILENCE_CUTOFF = bool(data["settings"].get("adaptive_silence_cutoff", getattr(config, "ADAPTIVE_SILENCE_CUTOFF", True)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
                 config.SEND_TOOLS_IN_SIMPLE = bool(data["settings"].get("send_tools_in_simple", False))
                 config.CODEGRAPH_CODER_ENABLED = bool(data["settings"].get("codegraph_coder_enabled", getattr(config, "CODEGRAPH_CODER_ENABLED", False)))
@@ -349,9 +357,13 @@ class MemoryManager:
                 self.profile["settings"]["custom_persona_prompts"][preset_key] = val_str
             from app.agent.personas import get_clean_character_backstory
             config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+            self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
+            self._save_profile()
         elif key in ("persona_preset", "auto_evolving_archetype", "archetype_intensity", "execution_rules"):
             from app.agent.personas import get_clean_character_backstory
             config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+            self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
+            self._save_profile()
         elif key == "llm_model":
             config.LLM_MODEL = value
         elif key == "llm_backend":
@@ -403,6 +415,14 @@ class MemoryManager:
             config.STT_ECHO_CANCELLATION = bool(value)
         elif key == "stt_noise_suppression":
             config.STT_NOISE_SUPPRESSION = bool(value)
+        elif key == "stt_transport_mode":
+            config.STT_TRANSPORT_MODE = str(value)
+        elif key == "use_neural_browser_vad":
+            config.USE_NEURAL_BROWSER_VAD = bool(value)
+        elif key == "browser_neural_vad_confidence":
+            config.BROWSER_NEURAL_VAD_CONFIDENCE = float(value)
+        elif key == "adaptive_silence_cutoff":
+            config.ADAPTIVE_SILENCE_CUTOFF = bool(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

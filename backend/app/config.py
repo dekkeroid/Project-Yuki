@@ -172,13 +172,19 @@ SILERO_MIN_SILENCE_DURATION_MS = int(os.environ.get("SILERO_MIN_SILENCE_DURATION
 SILERO_SPEECH_PAD_MS = int(os.environ.get("SILERO_SPEECH_PAD_MS", "200"))
 WHISPER_BEAM_SIZE = int(os.environ.get("WHISPER_BEAM_SIZE", "1"))
 WHISPER_CONDITION_ON_PREVIOUS_TEXT = os.environ.get("WHISPER_CONDITION_ON_PREVIOUS_TEXT", "false").strip().lower() in ("1", "true", "yes", "on")
-SILENCE_TIMEOUT_MS = int(os.environ.get("SILENCE_TIMEOUT_MS", "1000"))
+SILENCE_TIMEOUT_MS = int(os.environ.get("SILENCE_TIMEOUT_MS", "800"))
+VAD_THRESHOLD = float(os.environ.get("VAD_THRESHOLD", "0.03"))
 WHISPER_NO_SPEECH_THRESHOLD = float(os.environ.get("WHISPER_NO_SPEECH_THRESHOLD", "0.70"))
 CONTINUED_SESSION_TIMEOUT_SEC = int(os.environ.get("CONTINUED_SESSION_TIMEOUT_SEC", "120"))
 MAX_RECORDING_DURATION_SEC = int(os.environ.get("MAX_RECORDING_DURATION_SEC", "120"))
 STT_AUTO_GAIN_CONTROL = os.environ.get("STT_AUTO_GAIN_CONTROL", "true").strip().lower() in ("1", "true", "yes", "on")
 STT_ECHO_CANCELLATION = os.environ.get("STT_ECHO_CANCELLATION", "true").strip().lower() in ("1", "true", "yes", "on")
 STT_NOISE_SUPPRESSION = os.environ.get("STT_NOISE_SUPPRESSION", "true").strip().lower() in ("1", "true", "yes", "on")
+STT_TRANSPORT_MODE = os.environ.get("STT_TRANSPORT_MODE", "websocket_stream")
+USE_NEURAL_BROWSER_VAD = os.environ.get("USE_NEURAL_BROWSER_VAD", "true").strip().lower() in ("1", "true", "yes", "on")
+BROWSER_NEURAL_VAD_CONFIDENCE = float(os.environ.get("BROWSER_NEURAL_VAD_CONFIDENCE", "0.60"))
+ADAPTIVE_SILENCE_CUTOFF = os.environ.get("ADAPTIVE_SILENCE_CUTOFF", "true").strip().lower() in ("1", "true", "yes", "on")
+
 
 # ── Cloud/Custom STT provider settings ────────────────────────────────────────
 # Provider IDs: "local" | "google" | "azure" | "assemblyai" | "deepgram" | "custom"
