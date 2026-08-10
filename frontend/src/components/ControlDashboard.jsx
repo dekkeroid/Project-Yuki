@@ -798,10 +798,10 @@ const ControlDashboard = ({
   const [draftHotkey, setDraftHotkey] = useState(profile?.settings?.hotkey_shortcut || 'Alt+S');
 
   useEffect(() => {
-    if (settings?.hotkey_shortcut && !isRecordingHotkey) {
+    if (settings?.hotkey_shortcut) {
       setDraftHotkey(settings.hotkey_shortcut);
     }
-  }, [settings?.hotkey_shortcut, isRecordingHotkey]);
+  }, [settings?.hotkey_shortcut]);
 
   useEffect(() => {
     if (!isRecordingHotkey) return;
