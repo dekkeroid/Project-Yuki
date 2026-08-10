@@ -766,7 +766,8 @@ const ControlDashboard = ({
     vad_threshold: 0.03,
     silence_timeout_ms: 800,
     stt_auto_gain_control: true,
-    allow_voice_barge_in: false,
+    allow_voice_barge_in: true,
+    barge_in_sensitivity: 1.0,
     stt_echo_cancellation: true,
     stt_noise_suppression: true,
     stt_transport_mode: 'websocket_stream',
@@ -6814,6 +6815,30 @@ const ControlDashboard = ({
                                   <span className="slider round"></span>
                                 </label>
                               </div>
+
+                             {/* Barge-in Sensitivity Slider */}
+                             {settings.allow_voice_barge_in && (
+                               <div className="identity-field" style={{ marginTop: '8px', paddingLeft: '8px', borderLeft: '2px solid rgba(168,85,247,0.4)' }}>
+                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                   <span className="field-label">Barge-in Sensitivity Threshold Multiplier</span>
+                                   <span style={{ fontSize: '0.72rem', color: '#a855f7', fontWeight: 600 }}>
+                                     {Number(settings.barge_in_sensitivity ?? 1.0).toFixed(1)}x
+                                   </span>
+                                 </div>
+                                 <input
+                                   type="range"
+                                   min="0.5"
+                                   max="2.5"
+                                   step="0.1"
+                                   value={settings.barge_in_sensitivity ?? 1.0}
+                                   onChange={(e) => handleUpdateSetting('barge_in_sensitivity', parseFloat(e.target.value))}
+                                   style={{ width: '100%', marginTop: '4px', accentColor: '#a855f7' }}
+                                 />
+                                 <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                   Higher multiplier (e.g. 1.5x - 2.0x) prevents speaker echo self-interruption; lower multiplier increases sensitivity.
+                                 </span>
+                               </div>
+                             )}
                               <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
                                 Keeps mic active while Yuki speaks so speaking over her immediately cuts off her audio.
                               </span>

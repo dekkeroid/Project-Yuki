@@ -199,17 +199,26 @@ export function useSpeechRecognition(options = {}) {
   const maxRecordingTimeoutRef = useRef(null);
   const recognitionRef = useRef(null);
   const sttTransportModeRef = useRef(options.sttTransportMode || 'websocket_stream');
-  const allowVoiceBargeInRef = useRef(options.allowVoiceBargeIn || false);
-
+  
   useEffect(() => {
     if (options.sttTransportMode) {
       sttTransportModeRef.current = options.sttTransportMode;
     }
   }, [options.sttTransportMode]);
 
+  const bargeInSensitivityRef = useRef(options.bargeInSensitivity ?? 1.0);
   useEffect(() => {
-    allowVoiceBargeInRef.current = !!options.allowVoiceBargeIn;
+    if (options.bargeInSensitivity !== undefined && typeof options.bargeInSensitivity === 'number') {
+      bargeInSensitivityRef.current = options.bargeInSensitivity;
+    }
+  }, [options.bargeInSensitivity]);
+
+  const allowVoiceBargeInRef = useRef(options.allowVoiceBargeIn ?? false);
+  useEffect(() => {
+    allowVoiceBargeInRef.current = options.allowVoiceBargeIn ?? false;
   }, [options.allowVoiceBargeIn]);
+
+  const wasBargeInRef = useRef(false);
 
   const logSTTStatus = (message) => {
     console.log(`[STT Coordinator] ${message}`);
@@ -260,7 +269,7 @@ export function useSpeechRecognition(options = {}) {
     }, timeoutMs);
   };
 
-  const processSTTTranscript = (transcript, sttTimeMs = null, sttTiming = null) => {
+  const processSTTTranscript = (transcript, sttTimeMs = null, sttTiming = null, isBargeIn = false) => {
     if (!transcript || !transcript.trim()) {
       if (isVoiceCommandModeRef.current && isSessionActiveRef && isSessionActiveRef.current) {
         startSessionTimeout();
@@ -272,11 +281,11 @@ export function useSpeechRecognition(options = {}) {
     // Clean punctuation for command checks
     const cleaned = transcript.trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "");
     const lower = cleaned.toLowerCase().trim();
-    logSTTStatus(`Processing transcript: "${transcript}" (cleaned: "${cleaned}", isVoiceCommandMode=${isVoiceCommandModeRef.current}, isTalkMode=${isTalkModeRef.current})`);
+    logSTTStatus(`Processing transcript: "${transcript}" (cleaned: "${cleaned}", isVoiceCommandMode=${isVoiceCommandModeRef.current}, isTalkMode=${isTalkModeRef.current}, isBargeIn=${isBargeIn})`);
 
     // If voice command mode is active
     if (isVoiceCommandModeRef.current) {
-      const isSession = isSessionActiveRef ? isSessionActiveRef.current : false;
+      const isSession = (isSessionActiveRef ? isSessionActiveRef.current : false) || isBargeIn;
 
       // ─── Extensible Voice Commands List ───
       const voiceCommands = [
@@ -527,14 +536,23 @@ export function useSpeechRecognition(options = {}) {
             if (logToTerminal) logToTerminal(`[STT] Transcribed: "${data.text}" (${sttDurationMs}ms)`);
 
             setIsTranscribing(false);
+            const isBargeInTarget = wasBargeInRef.current || isPlayingRef?.current || ttsStreamActiveRef?.current;
+            wasBargeInRef.current = false;
+
             if (data.text && data.text.trim()) {
+              if ((isPlayingRef?.current || ttsStreamActiveRef?.current) && stopAllPlayback) {
+                logSTTStatus("Whisper confirmed valid speech transcript — interrupting active Yuki speech playback (barge-in)");
+                if (logToTerminal) logToTerminal(`[STT] Barge-in verified: "${data.text.trim()}" — interrupting playback`);
+                stopAllPlayback();
+              }
               const sttTimingStats = {
                 total_stt_ms: sttDurationMs,
                 whisper_ms: data.timing?.whisper_ms || sttDurationMs,
                 browser_vad_ms: silenceTimeoutRef.current || 350
               };
-              processSTTTranscript(data.text, sttDurationMs, sttTimingStats);
+              processSTTTranscript(data.text, sttDurationMs, sttTimingStats, isBargeInTarget);
             } else {
+              logSTTStatus("Whisper returned empty transcript — ignoring noise/barge-in trigger");
               updateListeningState();
             }
           } catch (e) {
@@ -559,6 +577,15 @@ export function useSpeechRecognition(options = {}) {
         const micAnalyser = micAudioCtx.createAnalyser();
         micAnalyser.fftSize = 2048;
         const micSource = micAudioCtx.createMediaStreamSource(stream);
+
+        // Web Audio API Voice Bandpass Filter (300Hz - 3400Hz) — commented out for now
+        // const voiceBandpass = micAudioCtx.createBiquadFilter();
+        // voiceBandpass.type = 'bandpass';
+        // voiceBandpass.frequency.value = 1850;
+        // voiceBandpass.Q.value = 0.65;
+        // micSource.connect(voiceBandpass);
+        // voiceBandpass.connect(micAnalyser);
+
         micSource.connect(micAnalyser);
 
         micAudioContextRef.current = micAudioCtx;
@@ -568,6 +595,7 @@ export function useSpeechRecognition(options = {}) {
         vadSilenceStartRef.current = null;
         vadActivationTimeRef.current = Date.now();
         vadActiveRef.current = true;
+        let vadSustainedStart = null;
 
         const bufferLength = micAnalyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
@@ -595,16 +623,31 @@ export function useSpeechRecognition(options = {}) {
             options.updateAudioLevel(normalized);
           }
 
-          const micThreshold = vadThresholdRef.current;
+          const baseThreshold = vadThresholdRef.current;
+          const sensitivityMult = bargeInSensitivityRef.current || 1.0;
+          const isYukiSpeaking = (isPlayingRef?.current || ttsStreamActiveRef?.current);
+          
+          // Dynamic playback threshold boosting: raise threshold when Yuki is speaking to prevent speaker echo
+          const micThreshold = isYukiSpeaking ? baseThreshold * 1.5 * sensitivityMult : baseThreshold;
+
           const silenceTimeoutMs = silenceTimeoutRef.current || 1000;
           const now = Date.now();
 
           if (normalized > micThreshold) {
             vadSilenceStartRef.current = null;
-            if (now - vadActivationTimeRef.current > 150) {
+            if (vadSustainedStart === null) {
+              vadSustainedStart = now;
+            }
+
+            // Require 250ms of sustained speech energy to reject clicks, coughs, and transient noise
+            if (now - vadActivationTimeRef.current > 150 && now - vadSustainedStart >= 250) {
               if (!vadSpeakingRef.current) {
-                logSTTStatus("User speech detected — speech start (barge-in active)");
+                logSTTStatus("Sustained user speech detected (250ms verified)");
                 vadSpeakingRef.current = true;
+                if (isPlayingRef?.current || ttsStreamActiveRef?.current) {
+                  wasBargeInRef.current = true;
+                  logSTTStatus("[STT] User speech started while Yuki was speaking — barge-in flagged");
+                }
 
                 // Start max recording timeout ONLY when speech actually begins
                 if (maxRecordingTimeoutRef.current) {
@@ -620,11 +663,6 @@ export function useSpeechRecognition(options = {}) {
                   }
                 }, maxDurationMs);
 
-                if ((isPlayingRef?.current || ttsStreamActiveRef?.current) && stopAllPlayback) {
-                  logSTTStatus("Interrupting active Yuki speech playback (barge-in)");
-                  if (logToTerminal) logToTerminal("[STT] User speech detected — interrupting playback");
-                  stopAllPlayback();
-                }
                 if (sessionTimeoutRef.current) {
                   clearTimeout(sessionTimeoutRef.current);
                   sessionTimeoutRef.current = null;
@@ -632,6 +670,7 @@ export function useSpeechRecognition(options = {}) {
               }
             }
           } else {
+            vadSustainedStart = null;
             if (vadSpeakingRef.current) {
               if (vadSilenceStartRef.current === null) {
                 vadSilenceStartRef.current = now;
