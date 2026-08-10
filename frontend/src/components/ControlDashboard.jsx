@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -730,6 +730,7 @@ const ControlDashboard = ({
     llm_backend: 'lmstudio',
     llm_base_url: '',
     llm_api_key: '',
+    user_country: 'Auto',
     send_tools_in_simple: false,
     endpoint_strategy: 'single',
     llm_simple_backend: 'lmstudio',
@@ -764,6 +765,7 @@ const ControlDashboard = ({
     vad_threshold: 0.03,
     silence_timeout_ms: 800,
     stt_auto_gain_control: true,
+    allow_voice_barge_in: false,
     stt_echo_cancellation: true,
     stt_noise_suppression: true,
     stt_transport_mode: 'websocket_stream',
@@ -3931,6 +3933,106 @@ const ControlDashboard = ({
                     </button>
                   </div>
 
+                  {/* Wake-Up Hotkey & Behavior Settings Card */}
+                  <div style={{
+                    background: 'linear-gradient(135deg, rgba(168,85,247,0.12) 0%, rgba(99,102,241,0.1) 100%)',
+                    border: '1px solid rgba(168,85,247,0.3)',
+                    borderRadius: '14px',
+                    padding: '14px 16px',
+                    marginBottom: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Command className="w-5 h-5 text-purple-400" />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>
+                            Wake-Up Hotkey
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
+                            Global keyboard shortcut to wake up Yuki and trigger action options.
+                          </div>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        value={settings.hotkey_shortcut ?? 'Alt+S'}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          handleUpdateSetting('hotkey_shortcut', val);
+                          if (window.electronAPI && window.electronAPI.updateGlobalShortcut) {
+                            window.electronAPI.updateGlobalShortcut(val);
+                          }
+                        }}
+                        placeholder="Alt+S"
+                        style={{
+                          background: 'rgba(0,0,0,0.4)',
+                          border: '1px solid rgba(168,85,247,0.5)',
+                          borderRadius: '8px',
+                          color: '#e9d5ff',
+                          padding: '4px 10px',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          width: '100px',
+                          textAlign: 'center'
+                        }}
+                      />
+                    </div>
+
+                    <div style={{
+                      borderTop: '1px solid rgba(255,255,255,0.08)',
+                      paddingTop: '10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}>
+                      <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: '2px' }}>
+                        Hotkey Actions & Behaviors:
+                      </div>
+
+                      {/* Checkbox 1: Focus on chat */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={settings.hotkey_focus_chat ?? true}
+                          onChange={(e) => handleUpdateSetting('hotkey_focus_chat', e.target.checked)}
+                          style={{ accentColor: '#a855f7', width: '14px', height: '14px', cursor: 'pointer' }}
+                        />
+                        <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.85)' }}>
+                          Focus on chat input
+                        </span>
+                      </label>
+
+                      {/* Checkbox 2: Open conversation logs */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={settings.hotkey_open_logs ?? false}
+                          onChange={(e) => handleUpdateSetting('hotkey_open_logs', e.target.checked)}
+                          style={{ accentColor: '#a855f7', width: '14px', height: '14px', cursor: 'pointer' }}
+                        />
+                        <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.85)' }}>
+                          Open conversation logs
+                        </span>
+                      </label>
+
+                      {/* Checkbox 3: Turn on listening mode */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={settings.hotkey_turn_on_listening ?? true}
+                          onChange={(e) => handleUpdateSetting('hotkey_turn_on_listening', e.target.checked)}
+                          style={{ accentColor: '#a855f7', width: '14px', height: '14px', cursor: 'pointer' }}
+                        />
+                        <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.85)' }}>
+                          Turn on listening mode
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
                   {/* Featured Chat Mode Toggle Banner */}
                   <div style={{
                     background: settings.chat_mode ? 'linear-gradient(135deg, rgba(139,92,246,0.2) 0%, rgba(217,70,239,0.15) 100%)' : 'rgba(255,255,255,0.03)',
@@ -4060,6 +4162,37 @@ const ControlDashboard = ({
 
                     <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.5)', background: 'rgba(0,0,0,0.2)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', lineHeight: '1.4' }}>
                       ℹ️ <strong>Storage & Pruning Note:</strong> When enabled, chat history is saved to <code>backend/chat_history.json</code>. When the token budget is hit, the oldest/middle share of older turns is compressed into an LLM summary (or a snippet recap if the summary model is unavailable), so the whole prompt stays within the configured limits (2,500 tokens for local models, 40,000 tokens for cloud APIs).
+                    </div>
+                  </div>
+
+                  {/* User Location & Country Card */}
+                  <div className="card-group" style={{ marginBottom: '12px' }}>
+                    <div className="card-group-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Globe className="w-4 h-4 text-emerald-400" />
+                      <span className="card-group-title">User Location & Country Context</span>
+                    </div>
+                    <div style={{ marginTop: '10px' }}>
+                      <label style={{ fontSize: '0.72rem', color: '#cbd5e1', display: 'block', marginBottom: '4px' }}>
+                        Country / Location Name (Set "Auto" for automatic OS detection):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Auto (e.g. India, United States, Japan)"
+                        value={settings.user_country ?? 'Auto'}
+                        onChange={(e) => handleUpdateSetting('user_country', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          fontSize: '0.8rem',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: '#fff'
+                        }}
+                      />
+                      <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.45)', marginTop: '4px' }}>
+                        Injected into Yuki's system environment prompt so she is aware of your location.
+                      </div>
                     </div>
                   </div>
 
@@ -6541,6 +6674,24 @@ const ControlDashboard = ({
                                   <strong>CAUTION:</strong> Disabling AGC prevents volume crushing when speaking loudly, but turns off automatic mic volume boosting for quiet voices.
                                 </span>
                               </div>
+                            </div>
+
+                            {/* Voice Barge-in / Interrupt Toggle */}
+                            <div className="identity-field">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span className="field-label">Allow Voice Interruption (Barge-in)</span>
+                                <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={settings.allow_voice_barge_in ?? false}
+                                    onChange={(e) => handleUpdateSetting('allow_voice_barge_in', e.target.checked)}
+                                  />
+                                  <span className="slider round"></span>
+                                </label>
+                              </div>
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                Keeps mic active while Yuki speaks so speaking over her immediately cuts off her audio.
+                              </span>
                             </div>
 
                             {/* Browser Echo Cancellation */}

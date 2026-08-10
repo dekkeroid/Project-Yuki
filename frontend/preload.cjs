@@ -90,6 +90,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartApp: () => {
     ipcRenderer.send('restart-app');
   },
+  updateGlobalShortcut: (shortcut) => {
+    ipcRenderer.send('update-global-shortcut', shortcut);
+  },
   onBackendStatus: (callback) => {
     const handler = (event, data) => callback(data);
     ipcRenderer.on('backend-status', handler);

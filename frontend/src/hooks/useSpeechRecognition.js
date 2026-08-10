@@ -199,6 +199,7 @@ export function useSpeechRecognition(options = {}) {
   const maxRecordingTimeoutRef = useRef(null);
   const recognitionRef = useRef(null);
   const sttTransportModeRef = useRef(options.sttTransportMode || 'websocket_stream');
+  const allowVoiceBargeInRef = useRef(options.allowVoiceBargeIn || false);
 
   useEffect(() => {
     if (options.sttTransportMode) {
@@ -206,13 +207,20 @@ export function useSpeechRecognition(options = {}) {
     }
   }, [options.sttTransportMode]);
 
+  useEffect(() => {
+    allowVoiceBargeInRef.current = !!options.allowVoiceBargeIn;
+  }, [options.allowVoiceBargeIn]);
+
   const logSTTStatus = (message) => {
     console.log(`[STT Coordinator] ${message}`);
   };
 
   const shouldListen = () => {
     const modeActive = isTalkModeRef.current || isVoiceCommandModeRef.current;
-    const yukiBusy = isPlayingRef.current || isThinkingRef.current || ttsStreamActiveRef.current || isNativeSpeakingRef.current || isTranscribingRef.current || hasReceivedAudioRef.current;
+    let yukiBusy = isThinkingRef.current || isTranscribingRef.current;
+    if (!allowVoiceBargeInRef.current) {
+      yukiBusy = yukiBusy || isPlayingRef.current || ttsStreamActiveRef.current || isNativeSpeakingRef.current || hasReceivedAudioRef.current;
+    }
     return modeActive && !yukiBusy;
   };
 
@@ -314,7 +322,9 @@ export function useSpeechRecognition(options = {}) {
         const regex = new RegExp(`\\b${word}\\b`, 'i');
         if (regex.test(prompt)) {
           hasTriggerWord = true;
-          prompt = prompt.replace(regex, "").trim();
+          if (!isSession) {
+            prompt = prompt.replace(regex, "").trim();
+          }
           break;
         }
       }

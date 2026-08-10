@@ -528,11 +528,6 @@ active_websockets: List[WebSocket] = []
 def make_speech_friendly(text: str) -> str:
     if not text:
         return ""
-    # Strip thought/think/reasoning blocks
-    text = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'<(thought|think|reasoning)>[\s\S]*$', '', text, flags=re.IGNORECASE)
-    # Strip unique animation and emotion tags (<yuki_anim:.../>, <yuki_emotion:.../>, [anim:...], [emotion:...])
-    text = re.sub(r'<(?:yuki_)?(?:anim|emotion):[a-zA-Z0-9_\-]+\/?>|\[(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\]', '', text, flags=re.IGNORECASE)
     normalized = text.strip()
     lower = normalized.lower()
 
@@ -547,14 +542,8 @@ def make_speech_friendly(text: str) -> str:
             return normalized.split(":", 1)[0].strip() + "."
         return normalized
 
-    # Replace raw IP addresses with localhost for speech clarity.
-    normalized = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "localhost", normalized)
-    # Strip full URLs (cloud backends like api.groq.com, api.openai.com, etc.)
-    normalized = re.sub(r"https?://[^\s,;\"']+", "", normalized)
-    # Remove parenthesized and bracketed details that are usually technical noise.
-    normalized = re.sub(r"\s*[\(\[][^)\]]*[\)\]]", "", normalized)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    return normalized
+    from app.voice.tts import clean_text_for_tts
+    return clean_text_for_tts(normalized)
 
 async def broadcast_profile_update():
     payload = {
@@ -1193,6 +1182,7 @@ class SettingsUpdateRequest(BaseModel):
     max_recording_duration_sec: Optional[int] = None
     whisper_no_speech_threshold: Optional[float] = None
     stt_auto_gain_control: Optional[bool] = None
+    allow_voice_barge_in: Optional[bool] = None
     stt_echo_cancellation: Optional[bool] = None
     stt_noise_suppression: Optional[bool] = None
     stt_transport_mode: Optional[str] = None
@@ -1200,6 +1190,7 @@ class SettingsUpdateRequest(BaseModel):
     browser_neural_vad_confidence: Optional[float] = None
     adaptive_silence_cutoff: Optional[bool] = None
     tool_mode: Optional[str] = None
+    user_country: Optional[str] = None
     send_tools_in_simple: Optional[bool] = None
     endpoint_strategy: Optional[str] = None
     llm_simple_backend: Optional[str] = None
@@ -1245,6 +1236,10 @@ class SettingsUpdateRequest(BaseModel):
     persona_preset: Optional[str] = None        # Preset key
     character_persona: Optional[str] = None     # Section 1 prompt override
     execution_rules: Optional[str] = None       # Section 2 guardrail rules
+    hotkey_shortcut: Optional[str] = None
+    hotkey_focus_chat: Optional[bool] = None
+    hotkey_open_logs: Optional[bool] = None
+    hotkey_turn_on_listening: Optional[bool] = None
 
 
 
@@ -1287,6 +1282,22 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("auto_evolving_archetype", bool(req.auto_evolving_archetype))
     if req.archetype_intensity is not None:
         memory_manager.update_setting("archetype_intensity", req.archetype_intensity.strip().lower())
+    if req.hotkey_shortcut is not None:
+        val_str = str(req.hotkey_shortcut).strip()
+        config.HOTKEY_SHORTCUT = val_str
+        memory_manager.update_setting("hotkey_shortcut", val_str)
+    if req.hotkey_focus_chat is not None:
+        val_bool = bool(req.hotkey_focus_chat)
+        config.HOTKEY_FOCUS_CHAT = val_bool
+        memory_manager.update_setting("hotkey_focus_chat", val_bool)
+    if req.hotkey_open_logs is not None:
+        val_bool = bool(req.hotkey_open_logs)
+        config.HOTKEY_OPEN_LOGS = val_bool
+        memory_manager.update_setting("hotkey_open_logs", val_bool)
+    if req.hotkey_turn_on_listening is not None:
+        val_bool = bool(req.hotkey_turn_on_listening)
+        config.HOTKEY_TURN_ON_LISTENING = val_bool
+        memory_manager.update_setting("hotkey_turn_on_listening", val_bool)
 
     if req.basic_history_token_limit is not None:
         memory_manager.update_setting("basic_history_token_limit", int(req.basic_history_token_limit))
@@ -1374,6 +1385,11 @@ async def update_settings(req: SettingsUpdateRequest):
             config.TOOL_MODE = mode_val
             memory_manager.update_setting("tool_mode", mode_val)
             print(f"[Settings] Tool Operating Mode updated to '{mode_val}'")
+    if req.user_country is not None:
+        country_val = req.user_country.strip()
+        config.USER_COUNTRY = country_val if country_val else "Auto"
+        memory_manager.update_setting("user_country", config.USER_COUNTRY)
+        print(f"[Settings] User Country updated to '{config.USER_COUNTRY}'")
     if req.llm_backend is not None:
         old_backend_type = memory_manager.profile["settings"].get("llm_backend")
         new_backend = req.llm_backend.strip()
@@ -1542,6 +1558,9 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.stt_auto_gain_control is not None:
         config.STT_AUTO_GAIN_CONTROL = bool(req.stt_auto_gain_control)
         memory_manager.update_setting("stt_auto_gain_control", bool(req.stt_auto_gain_control))
+    if req.allow_voice_barge_in is not None:
+        config.ALLOW_VOICE_BARGE_IN = bool(req.allow_voice_barge_in)
+        memory_manager.update_setting("allow_voice_barge_in", bool(req.allow_voice_barge_in))
     if req.stt_echo_cancellation is not None:
         config.STT_ECHO_CANCELLATION = bool(req.stt_echo_cancellation)
         memory_manager.update_setting("stt_echo_cancellation", bool(req.stt_echo_cancellation))

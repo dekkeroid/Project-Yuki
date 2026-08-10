@@ -2,10 +2,93 @@ import re
 import app.config
 from datetime import datetime
 
-def get_time_block() -> str:
+_COUNTRY_MAP = {
+    "IN": "India", "US": "United States", "GB": "United Kingdom", "CA": "Canada",
+    "AU": "Australia", "DE": "Germany", "FR": "France", "JP": "Japan", "CN": "China",
+    "KR": "South Korea", "BR": "Brazil", "RU": "Russia", "SG": "Singapore", "AE": "UAE"
+}
+
+_LAST_NON_YUKI_WINDOW: str = ""
+
+def _get_active_window_title() -> str:
+    global _LAST_NON_YUKI_WINDOW
+    try:
+        import ctypes
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if not hwnd:
+            return _LAST_NON_YUKI_WINDOW or "Desktop"
+        buf = ctypes.create_unicode_buffer(256)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, 256)
+        title = buf.value.strip()
+        
+        if not title:
+            return _LAST_NON_YUKI_WINDOW or "Desktop"
+
+        # Ignore Yuki's own application windows so clicking Yuki doesn't erase the user's active work app context
+        yuki_keywords = ("yuki", "project yuki", "control dashboard", "vrm viewer", "electron")
+        title_lower = title.lower()
+        if any(k in title_lower for k in yuki_keywords):
+            return _LAST_NON_YUKI_WINDOW or title
+            
+        _LAST_NON_YUKI_WINDOW = title
+        return title
+    except Exception:
+        return _LAST_NON_YUKI_WINDOW or ""
+
+def _get_day_part(hour: int) -> str:
+    if 5 <= hour < 12:
+        return "Morning"
+    elif 12 <= hour < 17:
+        return "Afternoon"
+    elif 17 <= hour < 21:
+        return "Evening"
+    elif 21 <= hour < 23:
+        return "Night"
+    else:
+        return "Late Night"
+
+def _get_user_country(profile: dict = None) -> str:
+    if profile and isinstance(profile, dict):
+        settings = profile.get("settings", {})
+        custom = settings.get("user_country")
+        if custom and str(custom).strip() and str(custom).strip().lower() != "auto":
+            return str(custom).strip()
+    
+    config_country = getattr(app.config, "USER_COUNTRY", "Auto")
+    if config_country and str(config_country).strip() and str(config_country).strip().lower() != "auto":
+        return str(config_country).strip()
+
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(10)
+        res = ctypes.windll.kernel32.GetUserDefaultGeoName(buf, 10)
+        if res > 0:
+            code = buf.value.strip().upper()
+            return _COUNTRY_MAP.get(code, code)
+    except Exception:
+        pass
+    return ""
+
+def get_time_block(profile: dict = None) -> str:
     now = datetime.now()
     time_str = now.strftime("%A, %B %d, %Y - %I:%M %p")
-    return f"--- SYSTEM ENVIRONMENT ---\nCurrent Local Time: {time_str}\n--------------------------"
+    day_part = _get_day_part(now.hour)
+    
+    lines = [
+        "--- SYSTEM ENVIRONMENT ---",
+        f"Current Local Time: {time_str} ({day_part})"
+    ]
+    
+    country = _get_user_country(profile)
+    if country:
+        lines.append(f"User Location     : {country}")
+
+    active_win = _get_active_window_title()
+    if active_win:
+        lines.append(f"Active Window     : {active_win}")
+        
+    lines.append("--------------------------")
+    return "\n".join(lines)
 
 ANIMATION_TAG_REGEX = re.compile(r'<(?:yuki_)?anim:([a-zA-Z0-9_\-]+)/?>|\[anim:\s*([a-zA-Z0-9_\-]+)\]', re.IGNORECASE)
 EMOTION_TAG_REGEX = re.compile(r'<(?:yuki_)?emotion:([a-zA-Z0-9_\-]+)/?>|\[emotion:\s*([a-zA-Z0-9_\-]+)\]', re.IGNORECASE)
@@ -175,6 +258,7 @@ Messages may carry attachment references like `[Attached image #1: name at 'path
 When the user asks you to look at, describe, check, or read what is currently on their screen (e.g. "what's on my screen", "look at my screen", "see this window", "what error is showing"), call `jarvis_see_screen`.
 • ALWAYS pass a VERY DETAILED `prompt` instructing the vision model to (1) describe every visible element in depth — layout, windows, panels, icons, buttons, menus, dialog boxes, colors, and state — and (2) transcribe ALL visible text VERBATIM, including titles, labels, error messages, code, menu items, status bars, and any on-screen numbers. Pass the raw user message plus these instructions so no detail is missed.
 • Use `window_title` to target a specific app window when the user names one (e.g. "look at the VSCode window" → window_title="Code", "look at my browser" → window_title="Chrome", "look at the error dialog" → window_title="error").
+• GUI INTERACTION & VISION: For any task involving GUI interaction (clicking on-screen buttons, thumbnails, links, search bars, or typing text), call `jarvis_see_screen` first to inspect the target window and get the exact coordinates of the element where you need to click and, if needed, type.
 • After calling `jarvis_see_screen`, the text you get back lets you answer any follow-up about the screen content — keep it in context so you can reference it later.
 • Do NOT use `take_screenshot` (that only opens the Snipping Tool overlay for the user). Use `jarvis_see_screen` whenever YOU need to see the screen.
 ---------------------------------------"""
@@ -192,7 +276,7 @@ def get_simple_system_prompt(memory_summary: str, mood: dict = None, mood_meta: 
 
 {mood_block}
 
-{get_time_block()}
+{get_time_block(profile)}
 
 {ANIMATION_EXPRESSION_PROMPT_BLOCK}
 
@@ -223,7 +307,7 @@ def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = 
 
     session_facts = overrides.get("session_facts") or []
 
-    parts = [get_time_block()]
+    parts = [get_time_block(profile)]
 
     if toggle_persona:
         persona_text = stitch_system_persona(profile)
@@ -278,6 +362,8 @@ RULE 8 — NO PATH HALLUCINATION: Never construct or guess file paths. Never inv
 RULE 9 — VOICE OUTPUT: Keep all spoken responses concise. Round numbers (e.g. "32%" not "31.847%"). Never output markdown lists when speaking.
 
 RULE 10 - FOR STOPWATCHES, TIMERS, ALARMS AND REMINDERS STRICTLY USE manage_timer_stopwatch_alarms or jarvis_manage_timer_stopwatch_alarms TOOL. I REPEAT STRICTLY USE manage_timer_stopwatch_alarms TOOL. manage_scheduled_task is only for future tasks do not use it for timers, stopwatches, alarms or reminders. DONT USE PYTHON.
+
+RULE 11 — FALLBACK TO PYTHON: In the absence of a specialized tool (or if a specific action tool is not in your active tools schema), write and execute Python code via `jarvis_run_python` / `run_python_script` to accomplish the task autonomously if possible.
 ---
 
 Be warm, helpful, and keep all responses voice-friendly!""")
@@ -300,7 +386,7 @@ def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, ov
 
 {mood_block}
 
-{get_time_block()}
+{get_time_block(profile)}
 
 --- USER MEMORY CARD ---
 {memory_summary}
@@ -314,6 +400,8 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
    • You can invoke MULTIPLE tools simultaneously in a single turn if needed.
    • When a tool returns output, inspect the result carefully. If you need more information (e.g. searching the database, then reading the specific file you located), invoke the next tool autonomously.
    • Continue investigating until you have all the facts required to solve the user's request.
+   • GUI INTERACTION & VISION: For any task involving GUI interaction (clicking on-screen buttons, thumbnails, links, search bars, or typing text), use vision (`jarvis_see_screen`) first to get the exact coordinates of the target window/element where you need to click and, if needed, type.
+   • FALLBACK TO PYTHON: In the absence of a specialized tool (or if a specific automation/GUI tool is missing from your active tools schema), write and execute standalone Python code via `jarvis_run_python` to accomplish the task autonomously (e.g., using `pyautogui`, `ctypes`, `win32gui`, `urllib`, `sqlite3`, etc.).
 
 2. JARVIS TOOLSET GUIDELINES:
    • SEARCH TOOL SELECTION (pick exactly one):
@@ -350,7 +438,7 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
      - NEVER assume a file does not exist on the user's PC after just 1 failed query!
      - Step 1 (Broad Query): If a query with specific numbers/episodes fails (e.g. `query='fate stay night ep 1'`), search for the core title alone (e.g. `query='fate stay night'`, `category='video'`).
      - Step 2 (Folder Scope): Search by folder path or parent directory using `search_scope='folder_only'` or `path_hint='Anime'`.
-     - Step 3 (Inspect Directory): Once a parent folder is located (e.g. `D:\Anime\Fate Stay Night`), use `list_directory_tree` or `jarvis_query_file_db` to inspect folder contents and find the exact episode file (`01.mkv`, `S01E01.mkv`).
+     - Step 3 (Inspect Directory): Once a parent folder is located (e.g. `D:\\Anime\\Fate Stay Night`), use `list_directory_tree` or `jarvis_query_file_db` to inspect folder contents and find the exact episode file (`01.mkv`, `S01E01.mkv`).
 
 4. DATABASE QUERY ETIQUETTE & DESTRUCTIVE ACTION SAFETY:
    • TOKEN EFFICIENCY: When manually querying databases (SQLite, MySQL, PostgreSQL) via Python or terminal, NEVER query entire large tables at once (`SELECT * FROM table`). Always use `LIMIT` clauses (e.g. `LIMIT 10` or `LIMIT 25`), select specific columns, or check table schema (`SHOW TABLES`, `DESCRIBE table`) and row counts (`SELECT COUNT(*)`) first to prevent dumping thousands of rows and wasting tokens.
@@ -381,7 +469,7 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
 {ATTACHMENT_REINSPECTION_GUIDE}""")
 
 
-def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, overrides: dict = None) -> str:
+def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, overrides: dict = None, profile: dict = None) -> str:
     """
     Dedicated System Prompt for Coding Mode — zero persona fluff, pure technical agentic coding rules.
     Appends session custom facts and active workspace directories, while respecting prompt section toggles.
@@ -390,7 +478,7 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
     
     header = "You are an Elite Agentic AI Coding Assistant and Senior Software Architect.\nYou are pair programming with the user to analyze codebases, debug runtime errors, implement feature requests, perform code reviews, and execute build/test workflows.\n\n--- STACK & ARCHITECTURE BEST PRACTICES ---\n1. ZERO FLUFF & DIRECT TECHNICAL RESPONSE:\n   • Omit all character persona, roleplay, anime greetings, and casual conversational chatter.\n   • Provide concise, precise technical explanations, clean code implementations, exact error tracebacks, and actionable steps."
     
-    sections = [header, get_time_block()]
+    sections = [header, get_time_block(profile)]
 
     if overrides.get("prompt_directives", True):
         directives = """2. AUTHORITATIVE CODE INSPECTION:

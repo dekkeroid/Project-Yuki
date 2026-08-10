@@ -256,76 +256,124 @@ def transliterate_for_tts(text: str) -> str:
 
 def clean_text_for_tts(text: str) -> str:
     import re
+    if not text:
+        return ""
 
-    # 0. Strip thought / reasoning / think blocks (including unclosed tags)
+    # 1. Strip thought / reasoning / think blocks (including unclosed tags)
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*$', '', text, flags=re.IGNORECASE)
 
-    # 0b. Strip unique animation and emotion tags (<yuki_anim:.../>, <yuki_emotion:.../>, [anim:...], [emotion:...])
+    # 2. Strip unique animation and emotion tags (<yuki_anim:.../>, <yuki_emotion:.../>, [anim:...], [emotion:...])
     text = re.sub(r'<(?:yuki_)?(?:anim|emotion):[a-zA-Z0-9_\-]+\/?>|\[(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\]', '', text, flags=re.IGNORECASE)
 
-    # 1. Clean URLs/web links: e.g. "https://dsad.com/dsad/last" -> "dsad.com"
+    # 3. Strip HTML / XML tags (e.g. <div>, <span ...>, <br/>, <b>, <code>) leaving inner text
+    text = re.sub(r'</?[a-zA-Z][^>]*>', ' ', text)
+
+    # 4. Code Block Speech Filtering (Replace multi-line code blocks with clean spoken summary)
+    text = re.sub(r'```[a-zA-Z0-9_\-]*\n[\s\S]*?```', ' I have provided the code on your screen. ', text)
+    text = re.sub(r'```[\s\S]*?```', ' I have provided the code on your screen. ', text)
+
+    # 5. Strip URLs, File Paths, and IP addresses BEFORE numeric ITN runs
     text = re.sub(r'\bhttps?://(?:www\.)?([^/\s]+)(?:/[^\s]*)?', r'\1', text)
     text = re.sub(r'(?<!http://)(?<!https://)\bwww\.([^/\s]+)(?:/[^\s]*)?', r'\1', text)
-
-    # 2. Clean file paths:
-    # Match file:// URLs (handling path part after file://)
     text = re.sub(r'\bfile://(?:[^/\n]*/)+([^/\n\'"]+)', r'\1', text)
-    # Match simple file:// with one level like file://c:/dssds
     text = re.sub(r'\bfile://([^/\n\'"]+)', r'\1', text)
-    # Match Windows absolute paths (with \ or /), e.g. D:\video songs\file.mp4
     text = re.sub(r'\b[A-Za-z]:[\\/](?:[^\\/\n]+[\\/])+([^\\/\n\'"]+)', r'\1', text)
-    # Match Windows paths with just one level, e.g. D:\dssds
     text = re.sub(r'\b[A-Za-z]:[\\/]([^\\/\n\'"]+)', r'\1', text)
-    # Match Unix absolute paths (starting with /), e.g. /usr/local/bin/file.txt
     text = re.sub(r'(^|\s)/(?:[^/\s]+/)+([^/\s]+)', r'\1\2', text)
+    text = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "localhost", text)
 
-    # 3. Transliterate foreign characters (Japanese, Chinese, Hindi Devanagari) to English Romaji/Pinyin
+    # 6. Strip Markdown Headers (#, ##), Bullet Lists (- , * , 1. ), & Blockquotes (>)
+    text = re.sub(r'^[#>\-\*]+\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+
+    # 7. KaTeX Math Formulas & Decimal ITN
+    text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'\1 over \2', text)
+    text = re.sub(r'\\sqrt\{([^}]+)\}', r'square root of \1', text)
+    text = re.sub(r'\\sqrt\s+([a-zA-Z0-9]+)', r'square root of \1', text)
+    text = text.replace(r'\times', ' times ').replace(r'\cdot', ' times ')
+    text = text.replace(r'\neq', ' is not equal to ').replace(r'\approx', ' is approximately ')
+    text = text.replace(r'\leq', ' is less than or equal to ').replace(r'\geq', ' is greater than or equal to ')
+    text = text.replace(r'\infty', ' infinity ').replace(r'\pi', ' pi ')
+    text = text.replace(r'\sum', ' sum ').replace(r'\prod', ' product ')
+    text = re.sub(r'([a-zA-Z0-9)]+)\^2', r'\1 squared', text)
+    text = re.sub(r'([a-zA-Z0-9)]+)\^3', r'\1 cubed', text)
+    text = re.sub(r'([a-zA-Z0-9)]+)\^\{([^}]+)\}', r'\1 to the power of \2', text)
+    text = re.sub(r'([a-zA-Z0-9)]+)\^([a-zA-Z0-9]+)', r'\1 to the power of \2', text)
+    text = re.sub(r'\$\$(.*?)\$\$|\\\[(.*?)\\\]', lambda m: m.group(1) or m.group(2) or "", text, flags=re.DOTALL)
+    text = re.sub(r'\\\((.*?)\\\)|\$(.*?)\$', lambda m: m.group(1) or m.group(2) or "", text, flags=re.DOTALL)
+    text = re.sub(r'(\d+)\.(\d+)', r'\1 point \2', text)
+
+    # 8. Industry-Standard ITN: Currency & Unit Symbols
+    text = re.sub(r'\$(\d+(?:\.\d+)?)', r'\1 dollars', text)
+    text = re.sub(r'£(\d+(?:\.\d+)?)', r'\1 pounds', text)
+    text = re.sub(r'€(\d+(?:\.\d+)?)', r'\1 euros', text)
+    text = re.sub(r'₹(\d+(?:\.\d+)?)', r'\1 rupees', text)
+    text = re.sub(r'¥(\d+(?:\.\d+)?)', r'\1 yen', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*yuan\b', r'\1 yuan', text, flags=re.IGNORECASE)
+
+    text = re.sub(r'(\d+)\s*%', r'\1 percent', text)
+    text = re.sub(r'(\d+)\s*°[CC]', r'\1 degrees Celsius', text)
+    text = re.sub(r'(\d+)\s*°[FF]', r'\1 degrees Fahrenheit', text)
+    text = re.sub(r'(\d+)\s*km/h\b', r'\1 kilometers per hour', text, flags=re.IGNORECASE)
+    text = re.sub(r'(\d+)\s*mph\b', r'\1 miles per hour', text, flags=re.IGNORECASE)
+    text = re.sub(r'(\d+)\s*GB\b', r'\1 gigabytes', text)
+    text = re.sub(r'(\d+)\s*Gb\b', r'\1 gigabits', text)
+    text = re.sub(r'(\d+)\s*gb\b', r'\1 gigabytes', text)
+    text = re.sub(r'(\d+)\s*MB\b', r'\1 megabytes', text)
+    text = re.sub(r'(\d+)\s*Mb\b', r'\1 megabits', text)
+    text = re.sub(r'(\d+)\s*mb\b', r'\1 megabytes', text)
+    text = re.sub(r'(\d+)\s*TB\b', r'\1 terabytes', text)
+    text = re.sub(r'(\d+)\s*Tb\b', r'\1 terabits', text)
+    text = re.sub(r'(\d+)\s*tb\b', r'\1 terabytes', text)
+    text = re.sub(r'(\d+)\s*KB\b', r'\1 kilobytes', text)
+    text = re.sub(r'(\d+)\s*Kb\b', r'\1 kilobits', text)
+    text = re.sub(r'(\d+)\s*kb\b', r'\1 kilobytes', text)
+
+    abbreviations = [
+        (r'\be\.g\.\b', 'for example'),
+        (r'\bi\.e\.\b', 'that is'),
+        (r'\betc\.\b', 'etcetera'),
+        (r'\bapprox\.\b', 'approximately'),
+        (r'\bvs\.\b', 'versus'),
+        (r'\bdr\.\b', 'Doctor'),
+        (r'\bmr\.\b', 'Mister'),
+        (r'\bmrs\.\b', 'Missus'),
+        (r'\bms\.\b', 'Miss'),
+        (r'\bprof\.\b', 'Professor'),
+    ]
+    for pattern, replacement in abbreviations:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+    # 9. Foreign Character Transliteration
     text = transliterate_for_tts(text)
 
-    # 4. Remove annoying punctuation characters: *, \, / (replace with spaces)
-    text = text.replace('*', ' ').replace('\\', ' ').replace('/', ' ')
-
-    # 5. Double asterisks and double underscores -> replace with inner text
+    # 10. Roleplay Actions in Asterisks (*giggles*, *smiles softly*) vs Double Asterisk Emphasis
     text = re.sub(r'\*\*(.*?)\*\*|__(.*?)__', lambda m: m.group(1) or m.group(2) or "", text)
-    
-    # 6. Single asterisks and single underscores -> filter out actions, keep emphasis
-    action_stems = [
-        'wink', 'smile', 'giggle', 'laugh', 'sigh', 'pout', 'wave', 'nod', 
-        'shrug', 'chuckle', 'blush', 'cry', 'gasp', 'yawn', 'look', 'reset', 
-        'facepalm', 'point', 'cough', 'scream', 'whisper'
-    ]
-    
-    def replace_single(match):
-        inner = (match.group(1) or match.group(2) or "").strip()
-        if not inner:
-            return ""
-        inner_lower = inner.lower()
-        if any(stem in inner_lower for stem in action_stems):
-            return ""  # strip the gesture action description entirely
-        return inner   # keep text for emphasis
-        
-    text = re.sub(r'\*(.*?)\*|_(.*?)_', replace_single, text)
-    
-    # 7. Remove backticks but keep their inner text
-    text = text.replace('`', '')
-    
-    # 8. Remove emojis
+    text = re.sub(r'\*([^*]+)\*|_([^_]+)_', '', text)
+
+    # 11. Technical Noise & Symbol Cleanup
+    text = re.sub(r"\s*\[(?:tool call|AppID|truncated|SYSTEM)[^\]]*\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*\((?:AppID:\s*\d+|file_path=[^\)]+|tool_call_id=[^\)]+)\)", "", text, flags=re.IGNORECASE)
+    text = text.replace('$', '').replace('{', '').replace('}', '').replace('`', '').replace('~', '').replace('^', '')
+    text = text.replace('*', ' ').replace('\\', ' ').replace('/', ' ').replace('|', ' ')
+
+    # 12. Emoji Removal
     emoji_pattern = re.compile(
         '['
-        '\U0001f600-\U0001f64f'  # emoticons
-        '\U0001f300-\U0001f5ff'  # symbols & pictographs
-        '\U0001f680-\U0001f6ff'  # transport & map symbols
-        '\U0001f1e0-\U0001f1ff'  # flags
-        '\u2702-\u27b0'          # dingbats
-        '\u24c2-\U0001f251'      # CJK symbols
-        '\u2600-\u27BF'          # miscellaneous symbols
-        '\uE000-\uF8FF'          # private use
+        '\U0001f600-\U0001f64f'
+        '\U0001f300-\U0001f5ff'
+        '\U0001f680-\U0001f6ff'
+        '\U0001f1e0-\U0001f1ff'
+        '\u2702-\u27b0'
+        '\u24c2-\U0001f251'
+        '\u2600-\u27BF'
+        '\uE000-\uF8FF'
         ']+', flags=re.UNICODE
     )
     text = emoji_pattern.sub('', text)
-    
-    # 9. Replace multiple spaces with a single space
+
+    # 13. Whitespace Normalization
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
