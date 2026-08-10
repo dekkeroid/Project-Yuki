@@ -1240,6 +1240,8 @@ class SettingsUpdateRequest(BaseModel):
     hotkey_focus_chat: Optional[bool] = None
     hotkey_open_logs: Optional[bool] = None
     hotkey_turn_on_listening: Optional[bool] = None
+    allow_voice_barge_in: Optional[bool] = None
+    barge_in_sensitivity: Optional[float] = None
 
 
 
@@ -1298,6 +1300,14 @@ async def update_settings(req: SettingsUpdateRequest):
         val_bool = bool(req.hotkey_turn_on_listening)
         config.HOTKEY_TURN_ON_LISTENING = val_bool
         memory_manager.update_setting("hotkey_turn_on_listening", val_bool)
+    if req.allow_voice_barge_in is not None:
+        val_bool = bool(req.allow_voice_barge_in)
+        config.ALLOW_VOICE_BARGE_IN = val_bool
+        memory_manager.update_setting("allow_voice_barge_in", val_bool)
+    if req.barge_in_sensitivity is not None:
+        val_float = float(req.barge_in_sensitivity)
+        config.BARGE_IN_SENSITIVITY = val_float
+        memory_manager.update_setting("barge_in_sensitivity", val_float)
 
     if req.basic_history_token_limit is not None:
         memory_manager.update_setting("basic_history_token_limit", int(req.basic_history_token_limit))

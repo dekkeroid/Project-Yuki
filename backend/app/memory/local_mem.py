@@ -120,7 +120,9 @@ class MemoryManager:
                 "history_summary_percent": 50,
                 "history_summary_position": "oldest",
                 "llm_summary_model": "",
-                "user_country": "Auto"
+                "user_country": "Auto",
+                "allow_voice_barge_in": True,
+                "barge_in_sensitivity": 1.0
             }
         }
         if not os.path.exists(self.profile_path):
@@ -167,7 +169,8 @@ class MemoryManager:
                 config.MAX_RECORDING_DURATION_SEC = int(data["settings"].get("max_recording_duration_sec", getattr(config, "MAX_RECORDING_DURATION_SEC", 120)))
                 config.WHISPER_NO_SPEECH_THRESHOLD = float(data["settings"].get("whisper_no_speech_threshold", getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.70)))
                 config.STT_AUTO_GAIN_CONTROL = bool(data["settings"].get("stt_auto_gain_control", getattr(config, "STT_AUTO_GAIN_CONTROL", True)))
-                config.ALLOW_VOICE_BARGE_IN = bool(data["settings"].get("allow_voice_barge_in", getattr(config, "ALLOW_VOICE_BARGE_IN", False)))
+                config.ALLOW_VOICE_BARGE_IN = bool(data["settings"].get("allow_voice_barge_in", getattr(config, "ALLOW_VOICE_BARGE_IN", True)))
+                config.BARGE_IN_SENSITIVITY = float(data["settings"].get("barge_in_sensitivity", getattr(config, "BARGE_IN_SENSITIVITY", 1.0)))
                 config.STT_ECHO_CANCELLATION = bool(data["settings"].get("stt_echo_cancellation", getattr(config, "STT_ECHO_CANCELLATION", True)))
                 config.STT_NOISE_SUPPRESSION = bool(data["settings"].get("stt_noise_suppression", getattr(config, "STT_NOISE_SUPPRESSION", True)))
                 config.STT_TRANSPORT_MODE = data["settings"].get("stt_transport_mode", getattr(config, "STT_TRANSPORT_MODE", "websocket_stream"))
@@ -409,6 +412,10 @@ class MemoryManager:
             config.HOTKEY_OPEN_LOGS = bool(value)
         elif key == "hotkey_turn_on_listening":
             config.HOTKEY_TURN_ON_LISTENING = bool(value)
+        elif key == "allow_voice_barge_in":
+            config.ALLOW_VOICE_BARGE_IN = bool(value)
+        elif key == "barge_in_sensitivity":
+            config.BARGE_IN_SENSITIVITY = float(value)
         elif key == "silero_vad_threshold":
             config.SILERO_VAD_THRESHOLD = float(value)
         elif key == "silero_min_speech_duration_ms":

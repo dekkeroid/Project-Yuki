@@ -215,6 +215,10 @@ CHARACTER_PERSONA = stitch_system_persona()
 
 NO_LLM_MODE = False
 
+# Voice Interruption / Barge-in Settings
+ALLOW_VOICE_BARGE_IN = os.environ.get("ALLOW_VOICE_BARGE_IN", "true").strip().lower() in ("1", "true", "yes", "on")
+BARGE_IN_SENSITIVITY = float(os.environ.get("BARGE_IN_SENSITIVITY", "1.0"))
+
 # Hotkey & Wake-up Settings
 HOTKEY_SHORTCUT = os.environ.get("HOTKEY_SHORTCUT", "Alt+S")
 HOTKEY_FOCUS_CHAT = os.environ.get("HOTKEY_FOCUS_CHAT", "true").strip().lower() in ("1", "true", "yes", "on")

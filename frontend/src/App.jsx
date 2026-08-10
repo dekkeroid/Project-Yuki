@@ -752,6 +752,7 @@ const App = () => {
     silenceTimeout: profile?.settings?.silence_timeout_ms,
     sttAutoGainControl: profile?.settings?.stt_auto_gain_control,
     allowVoiceBargeIn: profile?.settings?.allow_voice_barge_in,
+    bargeInSensitivity: profile?.settings?.barge_in_sensitivity,
     sttEchoCancellation: profile?.settings?.stt_echo_cancellation,
     sttNoiseSuppression: profile?.settings?.stt_noise_suppression,
     sttTransportMode: profile?.settings?.stt_transport_mode,
