@@ -722,6 +722,8 @@ const ControlDashboard = ({
 
   // Model selector state removed
 
+  const [showAdvancedStt, setShowAdvancedStt] = useState(false);
+
   // Settings State
   const [settings, setSettings] = useState({
     llm_model: '',
@@ -759,11 +761,15 @@ const ControlDashboard = ({
     whisper_beam_size: 1,
     whisper_condition_on_previous_text: false,
     whisper_no_speech_threshold: 0.70,
-    vad_threshold: 0.16,
-    silence_timeout_ms: 1000,
+    vad_threshold: 0.03,
+    silence_timeout_ms: 800,
     stt_auto_gain_control: true,
     stt_echo_cancellation: true,
     stt_noise_suppression: true,
+    stt_transport_mode: 'websocket_stream',
+    use_neural_browser_vad: true,
+    browser_neural_vad_confidence: 0.60,
+    adaptive_silence_cutoff: true,
     continued_session_timeout_sec: 120,
     max_recording_duration_sec: 120,
     // Cloud provider settings
@@ -6218,105 +6224,38 @@ const ControlDashboard = ({
                           </select>
                         </div>
 
-                        {/* VAD & SILENCE TIMING TUNING Header */}
+                        {/* STT Transport Mode Header */}
                         <div style={{ marginTop: '16px', marginBottom: '4px', paddingTop: '12px', borderTop: '1px solid rgba(167, 139, 250, 0.15)' }}>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            VAD & Silence Timing Tuning
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Audio Streaming & Response Latency
                           </span>
                         </div>
 
-                        {/* Microphone Speech Activation Threshold */}
+                        {/* Transport Mode Choice */}
                         <div className="identity-field" style={{ marginTop: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">Microphone Speech Activation Threshold (RMS)</span>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#34d399' }}>
-                              {vadThreshold.toFixed(3)}
-                            </span>
-                          </div>
-                          <input
-                            type="range"
-                            min="0.002"
-                            max="0.800"
-                            step="0.005"
-                            value={vadThreshold}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value);
-                              handleUpdateSetting('vad_threshold', val);
-                              if (onVadThresholdChange) onVadThresholdChange(val);
+                          <span className="field-label">Audio Transport Protocol</span>
+                          <select
+                            value={settings.stt_transport_mode ?? 'websocket_stream'}
+                            onChange={(e) => handleUpdateSetting('stt_transport_mode', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(56,189,248,0.3)',
+                              borderRadius: '8px',
+                              color: '#38bdf8',
+                              fontWeight: 600,
+                              fontSize: '0.78rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              marginTop: '4px'
                             }}
-                            style={{ width: '100%', cursor: 'pointer', accentColor: '#34d399', marginTop: '4px' }}
-                          />
+                          >
+                            <option value="websocket_stream" style={{ background: '#0b0813', color: '#38bdf8' }}>WebSocket Real-Time Stream (~450ms Latency)</option>
+                            <option value="http_blob" style={{ background: '#0b0813', color: 'white' }}>HTTP Audio Chunking (Legacy - ~2.5s Latency)</option>
+                          </select>
                           <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            Is the room loud enough to turn the recorder on? (Minimum audio volume required to start recording. Default: 0.16)
-                          </span>
-                        </div>
-
-                        {/* Automatic Gain Control (AGC) */}
-                        <div className="identity-field" style={{ marginTop: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">Browser Auto Gain Control (AGC)</span>
-                            <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
-                              <input
-                                type="checkbox"
-                                checked={settings.stt_auto_gain_control ?? true}
-                                onChange={(e) => handleUpdateSetting('stt_auto_gain_control', e.target.checked)}
-                              />
-                              <span className="slider round"></span>
-                            </label>
-                          </div>
-                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            Allows browser WebRTC to dynamically adjust microphone amplification on the fly.
-                          </span>
-                          <div style={{
-                            marginTop: '6px',
-                            padding: '6px 8px',
-                            borderRadius: '6px',
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: '6px'
-                          }}>
-                            <span style={{ fontSize: '0.75rem', lineHeight: '1.2' }}>⚠️</span>
-                            <span style={{ fontSize: '0.64rem', color: '#fca5a5', lineHeight: '1.3' }}>
-                              <strong>CAUTION:</strong> Disabling AGC prevents volume crushing when speaking loudly, but turns off automatic mic volume boosting for quiet voices. If disabled, manually ensure your mic input volume is loud enough to cross the VAD Threshold gate.
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Browser Echo Cancellation */}
-                        <div className="identity-field" style={{ marginTop: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">Browser Echo Cancellation</span>
-                            <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
-                              <input
-                                type="checkbox"
-                                checked={settings.stt_echo_cancellation ?? true}
-                                onChange={(e) => handleUpdateSetting('stt_echo_cancellation', e.target.checked)}
-                              />
-                              <span className="slider round"></span>
-                            </label>
-                          </div>
-                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            Filters out speaker audio bleed from entering your microphone. (Disable if using external DSP or hardware interface).
-                          </span>
-                        </div>
-
-                        {/* Browser Noise Suppression */}
-                        <div className="identity-field" style={{ marginTop: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">Browser Noise Suppression</span>
-                            <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
-                              <input
-                                type="checkbox"
-                                checked={settings.stt_noise_suppression ?? true}
-                                onChange={(e) => handleUpdateSetting('stt_noise_suppression', e.target.checked)}
-                              />
-                              <span className="slider round"></span>
-                            </label>
-                          </div>
-                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            Filters out continuous background noise (fans, air conditioning, hums).
+                            WebSocket streaming sends PCM audio continuously in memory for sub-500ms turn-around latency.
                           </span>
                         </div>
 
@@ -6324,7 +6263,7 @@ const ControlDashboard = ({
                         <div className="identity-field" style={{ marginTop: '10px' }}>
                           <span className="field-label">Silence Timeout (End of Speech Wait)</span>
                           <select
-                            value={silenceTimeout || settings.silence_timeout_ms || 1000}
+                            value={silenceTimeout || settings.silence_timeout_ms || 800}
                             onChange={(e) => {
                               const val = parseInt(e.target.value, 10);
                               handleUpdateSetting('silence_timeout_ms', val);
@@ -6346,169 +6285,366 @@ const ControlDashboard = ({
                             <option value={300} style={{ background: '#0b0813', color: 'white' }}>300ms (Fast Turn-Taking)</option>
                             <option value={450} style={{ background: '#0b0813', color: 'white' }}>450ms (Balanced)</option>
                             <option value={600} style={{ background: '#0b0813', color: 'white' }}>600ms (Relaxed)</option>
-                            <option value={800} style={{ background: '#0b0813', color: 'white' }}>800ms (Slow)</option>
-                            <option value={1000} style={{ background: '#0b0813', color: 'white' }}>1000ms / 1.0s (Recommended for Dictation & Reading)</option>
-                            <option value={1200} style={{ background: '#0b0813', color: 'white' }}>1200ms / 1.2s (Patient)</option>
-                            <option value={1500} style={{ background: '#0b0813', color: 'white' }}>1500ms / 1.5s (Extra Patient)</option>
-                            <option value={2000} style={{ background: '#0b0813', color: 'white' }}>2000ms / 2.0s (Very Patient - Long Pauses)</option>
+                            <option value={800} style={{ background: '#0b0813', color: 'white' }}>800ms (Slow - Recommended Ceiling)</option>
+                            <option value={1000} style={{ background: '#0b0813', color: 'white' }}>1000ms / 1.0s (Standard Turn-Taking)</option>
+                            <option value={1500} style={{ background: '#0b0813', color: 'white' }}>1500ms / 1.5s (Patient - Short Pauses)</option>
+                            <option value={2000} style={{ background: '#0b0813', color: 'white' }}>2000ms / 2.0s (Reading Aloud & Multi-Sentence)</option>
+                            <option value={2500} style={{ background: '#0b0813', color: 'white' }}>2500ms / 2.5s (Reading Paragraphs & Books)</option>
+                            <option value={3000} style={{ background: '#0b0813', color: 'white' }}>3000ms / 3.0s (Extended Dictation & Reading)</option>
+                            <option value={4000} style={{ background: '#0b0813', color: 'white' }}>4000ms / 4.0s (Max Uninterrupted Reading)</option>
                           </select>
                           <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            How long can I pause mid-sentence before Yuki takes her turn to reply?
+                            Maximum time you can pause mid-sentence before Yuki takes her turn to reply.
                           </span>
                         </div>
 
-                        {/* Continued Listening Session Timeout */}
+                        {/* Adaptive Silence Cutoff Toggle */}
+                        <div className="identity-field" style={{ marginTop: '10px', padding: '10px', background: 'rgba(56, 189, 248, 0.04)', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.15)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label" style={{ fontWeight: 600, color: '#38bdf8' }}>Adaptive Silence Cutoff</span>
+                            <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
+                              <input
+                                type="checkbox"
+                                checked={settings.adaptive_silence_cutoff ?? true}
+                                onChange={(e) => handleUpdateSetting('adaptive_silence_cutoff', e.target.checked)}
+                              />
+                              <span className="slider round"></span>
+                            </label>
+                          </div>
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            Dynamically cuts off early (~350ms) for short complete commands while allowing up to the full Silence Timeout ceiling when pausing to think mid-sentence.
+                          </span>
+                        </div>
+
+                        {/* Microphone Speech Activation Threshold (RMS) */}
                         <div className="identity-field" style={{ marginTop: '10px' }}>
-                          <span className="field-label">Continued Listening Silence Timeout</span>
-                          <select
-                            value={settings.continued_session_timeout_sec ?? 120}
-                            onChange={(e) => handleUpdateSetting('continued_session_timeout_sec', parseInt(e.target.value, 10))}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label">Microphone Speech Activation Threshold (RMS)</span>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#34d399' }}>
+                              {vadThreshold.toFixed(3)}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.002"
+                            max="0.800"
+                            step="0.005"
+                            value={vadThreshold}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value);
+                              handleUpdateSetting('vad_threshold', val);
+                              if (onVadThresholdChange) onVadThresholdChange(val);
+                            }}
+                            style={{ width: '100%', cursor: 'pointer', accentColor: '#34d399', marginTop: '4px' }}
+                          />
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            Minimum audio volume required to start recording. (Default: 0.03 for soft speech sensitivity)
+                          </span>
+                        </div>
+
+                        {/* Browser Neural VAD (Silero Wasm) Toggle */}
+                        <div className="identity-field" style={{ marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="field-label" style={{ fontWeight: 600, color: '#e0e7ff' }}>Browser Neural AI VAD (WebAssembly)</span>
+                            <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
+                              <input
+                                type="checkbox"
+                                checked={settings.use_neural_browser_vad ?? true}
+                                onChange={(e) => handleUpdateSetting('use_neural_browser_vad', e.target.checked)}
+                              />
+                              <span className="slider round"></span>
+                            </label>
+                          </div>
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            Uses AI inside WebAssembly to distinguish human vocal chords from mechanical keyboard clicks and fan noise.
+                          </span>
+                        </div>
+
+                        {/* Collapsible Advanced Options Toggle Button */}
+                        <div style={{ marginTop: '14px', marginBottom: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setShowAdvancedStt(prev => !prev)}
                             style={{
                               width: '100%',
-                              padding: '7px 10px',
-                              background: 'rgba(0,0,0,0.3)',
-                              border: '1px solid rgba(255,255,255,0.1)',
+                              padding: '8px 12px',
+                              background: 'rgba(167, 139, 250, 0.08)',
+                              border: '1px solid rgba(167, 139, 250, 0.25)',
                               borderRadius: '8px',
-                              color: 'white',
-                              fontSize: '0.78rem',
-                              outline: 'none',
+                              color: '#a78bfa',
+                              fontSize: '0.76rem',
+                              fontWeight: 600,
+                              display: 'flex',
+                              justify: 'space-between',
+                              alignItems: 'center',
                               cursor: 'pointer',
-                              marginTop: '4px'
+                              transition: 'all 0.2s ease'
                             }}
                           >
-                            <option value={15} style={{ background: '#0b0813', color: 'white' }}>15 seconds (Smart Speaker)</option>
-                            <option value={30} style={{ background: '#0b0813', color: 'white' }}>30 seconds</option>
-                            <option value={60} style={{ background: '#0b0813', color: 'white' }}>1 minute</option>
-                            <option value={120} style={{ background: '#0b0813', color: 'white' }}>2 minutes (Recommended - Balanced)</option>
-                            <option value={300} style={{ background: '#0b0813', color: 'white' }}>5 minutes</option>
-                            <option value={600} style={{ background: '#0b0813', color: 'white' }}>10 minutes</option>
-                            <option value={1800} style={{ background: '#0b0813', color: 'white' }}>30 minutes</option>
-                            <option value={3600} style={{ background: '#0b0813', color: 'white' }}>1 hour</option>
-                            <option value={0} style={{ background: '#0b0813', color: 'white' }}>Never (Always listen)</option>
-                          </select>
-                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                            How long before Yuki puts her mic away and goes back to sleep? (Duration of inactivity before mic turns off)
-                          </span>
+                            <span>{showAdvancedStt ? '▲ Hide Advanced VAD & Audio Tuning' : '▼ Show Advanced VAD & Audio Tuning'}</span>
+                            <span style={{ fontSize: '0.66rem', opacity: 0.8 }}>({showAdvancedStt ? 'Collapse' : 'Expand 10 fine-tuning controls'})</span>
+                          </button>
                         </div>
 
-                        {/* Max Audio Clip Length (Speech Safety Cap) */}
-                        <div className="identity-field" style={{ marginTop: '10px' }}>
-                          <span className="field-label">Max Audio Clip Length (Speech Safety Cap)</span>
-                          <select
-                            value={settings.max_recording_duration_sec ?? 120}
-                            onChange={(e) => handleUpdateSetting('max_recording_duration_sec', parseInt(e.target.value, 10))}
-                            style={{
-                              width: '100%',
-                              padding: '7px 10px',
-                              background: 'rgba(0,0,0,0.3)',
-                              border: '1px solid rgba(255,255,255,0.1)',
-                              borderRadius: '8px',
-                              color: 'white',
-                              fontSize: '0.78rem',
-                              outline: 'none',
-                              cursor: 'pointer',
-                              marginTop: '4px'
-                            }}
-                          >
-                            <option value={30} style={{ background: '#0b0813', color: 'white' }}>30 seconds (Short sentences)</option>
-                            <option value={45} style={{ background: '#0b0813', color: 'white' }}>45 seconds</option>
-                            <option value={60} style={{ background: '#0b0813', color: 'white' }}>60 seconds (1 minute)</option>
-                            <option value={120} style={{ background: '#0b0813', color: 'white' }}>120 seconds / 2 minutes (Recommended Default for Essays)</option>
-                            <option value={180} style={{ background: '#0b0813', color: 'white' }}>180 seconds (3 minutes)</option>
-                            <option value={300} style={{ background: '#0b0813', color: 'white' }}>300 seconds (5 minutes - Long Dictation)</option>
-                          </select>
-                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            Maximum time you can speak continuously in a single clip before sending audio to Whisper. (Default: 2 mins)
-                          </span>
-                        </div>
+                        {/* Collapsible Advanced STT & VAD Settings Container */}
+                        {showAdvancedStt && (
+                          <div style={{
+                            padding: '12px',
+                            background: 'rgba(0, 0, 0, 0.25)',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(167, 139, 250, 0.15)',
+                            marginTop: '8px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px'
+                          }}>
+                            {/* Neural VAD Confidence Threshold Slider */}
+                            {(settings.use_neural_browser_vad ?? true) && (
+                              <div className="identity-field" style={{ padding: '10px', background: 'rgba(167, 139, 250, 0.05)', borderRadius: '8px', border: '1px solid rgba(167, 139, 250, 0.2)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span className="field-label" style={{ color: '#a78bfa', fontWeight: 600 }}>1. Browser Neural Speech Confidence Threshold</span>
+                                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#a78bfa' }}>
+                                    {(settings.browser_neural_vad_confidence ?? 0.60).toFixed(2)}
+                                  </span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0.20"
+                                  max="0.90"
+                                  step="0.05"
+                                  value={settings.browser_neural_vad_confidence ?? 0.60}
+                                  onChange={(e) => handleUpdateSetting('browser_neural_vad_confidence', parseFloat(e.target.value))}
+                                  style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
+                                />
+                                <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                  Determines how strictly browser AI checks for human vocal chords. (0.60 = Ignores keyboard typing).
+                                </span>
+                              </div>
+                            )}
 
-                        {/* Silero VAD Sensitivity Threshold */}
-                        <div className="identity-field" style={{ marginTop: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">Silero VAD Sensitivity Threshold (AI backend)</span>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#a78bfa' }}>
-                              {(settings.silero_vad_threshold ?? 0.50).toFixed(2)}
-                            </span>
+                            {/* Silero VAD Sensitivity Threshold (AI backend) */}
+                            <div className="identity-field" style={{ padding: '10px', background: 'rgba(56, 189, 248, 0.05)', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span className="field-label" style={{ color: '#38bdf8', fontWeight: 600 }}>2. Backend Whisper Anti-Noise Filter (PyTorch Silero)</span>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#38bdf8' }}>
+                                  {(settings.silero_vad_threshold ?? 0.50).toFixed(2)}
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0.10"
+                                max="0.90"
+                                step="0.05"
+                                value={settings.silero_vad_threshold ?? 0.50}
+                                onChange={(e) => handleUpdateSetting('silero_vad_threshold', parseFloat(e.target.value))}
+                                style={{ width: '100%', cursor: 'pointer', accentColor: '#38bdf8', marginTop: '4px' }}
+                              />
+                              <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                Python server-side filter that strips non-voice audio segments before feeding them into Whisper. (Default: 0.50)
+                              </span>
+                            </div>
+
+                            {/* Min Speech Duration */}
+                            <div className="identity-field">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span className="field-label">Min Speech Duration (Silero VAD)</span>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#38bdf8' }}>
+                                  {settings.silero_min_speech_duration_ms ?? 150}ms
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="50"
+                                max="500"
+                                step="25"
+                                value={settings.silero_min_speech_duration_ms ?? 150}
+                                onChange={(e) => handleUpdateSetting('silero_min_speech_duration_ms', parseInt(e.target.value, 10))}
+                                style={{ width: '100%', cursor: 'pointer', accentColor: '#38bdf8', marginTop: '4px' }}
+                              />
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                How long must a noise last to count as a word? (Prevents short 50ms coughs or clicks from triggering STT)
+                              </span>
+                            </div>
+
+                            {/* Min Silence Duration */}
+                            <div className="identity-field">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span className="field-label">Min Silence Duration (Silero VAD)</span>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#fbbf24' }}>
+                                  {settings.silero_min_silence_duration_ms ?? 400}ms
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="100"
+                                max="1000"
+                                step="50"
+                                value={settings.silero_min_silence_duration_ms ?? 400}
+                                onChange={(e) => handleUpdateSetting('silero_min_silence_duration_ms', parseInt(e.target.value, 10))}
+                                style={{ width: '100%', cursor: 'pointer', accentColor: '#fbbf24', marginTop: '4px' }}
+                              />
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                Inside a recorded audio clip, how long of a gap is needed to split it into two separate sentences? (Internal AI audio cutter)
+                              </span>
+                            </div>
+
+                            {/* Speech Boundary Padding */}
+                            <div className="identity-field">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span className="field-label">Speech Boundary Padding (Silero VAD)</span>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#f472b6' }}>
+                                  {settings.silero_speech_pad_ms ?? 200}ms
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="300"
+                                step="25"
+                                value={settings.silero_speech_pad_ms ?? 200}
+                                onChange={(e) => handleUpdateSetting('silero_speech_pad_ms', parseInt(e.target.value, 10))}
+                                style={{ width: '100%', cursor: 'pointer', accentColor: '#f472b6', marginTop: '4px' }}
+                              />
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                How much buffer audio should we add to the start/end of words? (Prevents "Hello" from getting cut off into "...ello")
+                              </span>
+                            </div>
+
+                            {/* Automatic Gain Control (AGC) */}
+                            <div className="identity-field">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span className="field-label">Browser Auto Gain Control (AGC)</span>
+                                <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={settings.stt_auto_gain_control ?? true}
+                                    onChange={(e) => handleUpdateSetting('stt_auto_gain_control', e.target.checked)}
+                                  />
+                                  <span className="slider round"></span>
+                                </label>
+                              </div>
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                Allows browser WebRTC to dynamically adjust microphone amplification on the fly.
+                              </span>
+                              <div style={{
+                                marginTop: '6px',
+                                padding: '6px 8px',
+                                borderRadius: '6px',
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '6px'
+                              }}>
+                                <span style={{ fontSize: '0.75rem', lineHeight: '1.2' }}>⚠️</span>
+                                <span style={{ fontSize: '0.64rem', color: '#fca5a5', lineHeight: '1.3' }}>
+                                  <strong>CAUTION:</strong> Disabling AGC prevents volume crushing when speaking loudly, but turns off automatic mic volume boosting for quiet voices.
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Browser Echo Cancellation */}
+                            <div className="identity-field">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span className="field-label">Browser Echo Cancellation</span>
+                                <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={settings.stt_echo_cancellation ?? true}
+                                    onChange={(e) => handleUpdateSetting('stt_echo_cancellation', e.target.checked)}
+                                  />
+                                  <span className="slider round"></span>
+                                </label>
+                              </div>
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                Filters out speaker audio bleed from entering your microphone. (Disable if using external hardware interface).
+                              </span>
+                            </div>
+
+                            {/* Browser Noise Suppression */}
+                            <div className="identity-field">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span className="field-label">Browser Noise Suppression</span>
+                                <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={settings.stt_noise_suppression ?? true}
+                                    onChange={(e) => handleUpdateSetting('stt_noise_suppression', e.target.checked)}
+                                  />
+                                  <span className="slider round"></span>
+                                </label>
+                              </div>
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                Filters out continuous background noise (fans, air conditioning, hums).
+                              </span>
+                            </div>
+
+                            {/* Continued Listening Session Timeout */}
+                            <div className="identity-field">
+                              <span className="field-label">Continued Listening Silence Timeout</span>
+                              <select
+                                value={settings.continued_session_timeout_sec ?? 120}
+                                onChange={(e) => handleUpdateSetting('continued_session_timeout_sec', parseInt(e.target.value, 10))}
+                                style={{
+                                  width: '100%',
+                                  padding: '7px 10px',
+                                  background: 'rgba(0,0,0,0.3)',
+                                  border: '1px solid rgba(255,255,255,0.1)',
+                                  borderRadius: '8px',
+                                  color: 'white',
+                                  fontSize: '0.78rem',
+                                  outline: 'none',
+                                  cursor: 'pointer',
+                                  marginTop: '4px'
+                                }}
+                              >
+                                <option value={15} style={{ background: '#0b0813', color: 'white' }}>15 seconds (Smart Speaker)</option>
+                                <option value={30} style={{ background: '#0b0813', color: 'white' }}>30 seconds</option>
+                                <option value={60} style={{ background: '#0b0813', color: 'white' }}>1 minute</option>
+                                <option value={120} style={{ background: '#0b0813', color: 'white' }}>2 minutes (Recommended - Balanced)</option>
+                                <option value={300} style={{ background: '#0b0813', color: 'white' }}>5 minutes</option>
+                                <option value={600} style={{ background: '#0b0813', color: 'white' }}>10 minutes</option>
+                                <option value={1800} style={{ background: '#0b0813', color: 'white' }}>30 minutes</option>
+                                <option value={3600} style={{ background: '#0b0813', color: 'white' }}>1 hour</option>
+                                <option value={0} style={{ background: '#0b0813', color: 'white' }}>Never (Always listen)</option>
+                              </select>
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                How long before Yuki puts her mic away and goes back to sleep? (Inactivity timeout)
+                              </span>
+                            </div>
+
+                            {/* Max Audio Clip Length (Speech Safety Cap) */}
+                            <div className="identity-field">
+                              <span className="field-label">Max Audio Clip Length (Speech Safety Cap)</span>
+                              <select
+                                value={settings.max_recording_duration_sec ?? 120}
+                                onChange={(e) => handleUpdateSetting('max_recording_duration_sec', parseInt(e.target.value, 10))}
+                                style={{
+                                  width: '100%',
+                                  padding: '7px 10px',
+                                  background: 'rgba(0,0,0,0.3)',
+                                  border: '1px solid rgba(255,255,255,0.1)',
+                                  borderRadius: '8px',
+                                  color: 'white',
+                                  fontSize: '0.78rem',
+                                  outline: 'none',
+                                  cursor: 'pointer',
+                                  marginTop: '4px'
+                                }}
+                              >
+                                <option value={30} style={{ background: '#0b0813', color: 'white' }}>30 seconds (Short sentences)</option>
+                                <option value={45} style={{ background: '#0b0813', color: 'white' }}>45 seconds</option>
+                                <option value={60} style={{ background: '#0b0813', color: 'white' }}>60 seconds (1 minute)</option>
+                                <option value={120} style={{ background: '#0b0813', color: 'white' }}>120 seconds / 2 minutes (Default)</option>
+                                <option value={180} style={{ background: '#0b0813', color: 'white' }}>180 seconds (3 minutes)</option>
+                                <option value={300} style={{ background: '#0b0813', color: 'white' }}>300 seconds (5 minutes - Long Dictation)</option>
+                              </select>
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                Maximum time you can speak continuously in a single clip before sending audio to Whisper.
+                              </span>
+                            </div>
                           </div>
-                          <input
-                            type="range"
-                            min="0.10"
-                            max="0.90"
-                            step="0.05"
-                            value={settings.silero_vad_threshold ?? 0.50}
-                            onChange={(e) => handleUpdateSetting('silero_vad_threshold', parseFloat(e.target.value))}
-                            style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
-                          />
-                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            Is that sound an actual human voice or a dog bark / keyboard click? (Uses AI in Python to check voice frequencies)
-                          </span>
-                        </div>
-
-                        {/* Min Speech Duration */}
-                        <div className="identity-field" style={{ marginTop: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">Min Speech Duration (Silero VAD)</span>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#38bdf8' }}>
-                              {settings.silero_min_speech_duration_ms ?? 150}ms
-                            </span>
-                          </div>
-                          <input
-                            type="range"
-                            min="50"
-                            max="500"
-                            step="25"
-                            value={settings.silero_min_speech_duration_ms ?? 150}
-                            onChange={(e) => handleUpdateSetting('silero_min_speech_duration_ms', parseInt(e.target.value, 10))}
-                            style={{ width: '100%', cursor: 'pointer', accentColor: '#38bdf8', marginTop: '4px' }}
-                          />
-                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            How long must a noise last to count as a word? (Prevents short 50ms coughs or clicks from triggering STT)
-                          </span>
-                        </div>
-
-                        {/* Min Silence Duration */}
-                        <div className="identity-field" style={{ marginTop: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">Min Silence Duration (Silero VAD)</span>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#fbbf24' }}>
-                              {settings.silero_min_silence_duration_ms ?? 400}ms
-                            </span>
-                          </div>
-                          <input
-                            type="range"
-                            min="100"
-                            max="1000"
-                            step="50"
-                            value={settings.silero_min_silence_duration_ms ?? 400}
-                            onChange={(e) => handleUpdateSetting('silero_min_silence_duration_ms', parseInt(e.target.value, 10))}
-                            style={{ width: '100%', cursor: 'pointer', accentColor: '#fbbf24', marginTop: '4px' }}
-                          />
-                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            Inside a recorded audio clip, how long of a gap is needed to split it into two separate sentences? (Internal AI audio cutter)
-                          </span>
-                        </div>
-
-                        {/* Speech Boundary Padding */}
-                        <div className="identity-field" style={{ marginTop: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="field-label">Speech Boundary Padding (Silero VAD)</span>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#f472b6' }}>
-                              {settings.silero_speech_pad_ms ?? 200}ms
-                            </span>
-                          </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="300"
-                            step="25"
-                            value={settings.silero_speech_pad_ms ?? 200}
-                            onChange={(e) => handleUpdateSetting('silero_speech_pad_ms', parseInt(e.target.value, 10))}
-                            style={{ width: '100%', cursor: 'pointer', accentColor: '#f472b6', marginTop: '4px' }}
-                          />
-                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                            How much buffer audio should we add to the start/end of words? (Prevents "Hello" from getting cut off into "...ello")
-                          </span>
-                        </div>
+                        )}
 
                         {/* WHISPER DECODING & MEMORY MANAGEMENT Header */}
                         <div style={{ marginTop: '16px', marginBottom: '4px', paddingTop: '12px', borderTop: '1px solid rgba(167, 139, 250, 0.15)' }}>

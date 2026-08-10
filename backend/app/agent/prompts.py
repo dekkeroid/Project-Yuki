@@ -1,5 +1,11 @@
 import re
 import app.config
+from datetime import datetime
+
+def get_time_block() -> str:
+    now = datetime.now()
+    time_str = now.strftime("%A, %B %d, %Y - %I:%M %p")
+    return f"--- SYSTEM ENVIRONMENT ---\nCurrent Local Time: {time_str}\n--------------------------"
 
 ANIMATION_TAG_REGEX = re.compile(r'<(?:yuki_)?anim:([a-zA-Z0-9_\-]+)/?>|\[anim:\s*([a-zA-Z0-9_\-]+)\]', re.IGNORECASE)
 EMOTION_TAG_REGEX = re.compile(r'<(?:yuki_)?emotion:([a-zA-Z0-9_\-]+)/?>|\[emotion:\s*([a-zA-Z0-9_\-]+)\]', re.IGNORECASE)
@@ -186,6 +192,8 @@ def get_simple_system_prompt(memory_summary: str, mood: dict = None, mood_meta: 
 
 {mood_block}
 
+{get_time_block()}
+
 {ANIMATION_EXPRESSION_PROMPT_BLOCK}
 
 --- USER MEMORY CARD ---
@@ -215,7 +223,7 @@ def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = 
 
     session_facts = overrides.get("session_facts") or []
 
-    parts = []
+    parts = [get_time_block()]
 
     if toggle_persona:
         persona_text = stitch_system_persona(profile)
@@ -291,6 +299,8 @@ def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, ov
     return _scrub_blocked_tools(f"""{persona_text}
 
 {mood_block}
+
+{get_time_block()}
 
 --- USER MEMORY CARD ---
 {memory_summary}
@@ -380,7 +390,7 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
     
     header = "You are an Elite Agentic AI Coding Assistant and Senior Software Architect.\nYou are pair programming with the user to analyze codebases, debug runtime errors, implement feature requests, perform code reviews, and execute build/test workflows.\n\n--- STACK & ARCHITECTURE BEST PRACTICES ---\n1. ZERO FLUFF & DIRECT TECHNICAL RESPONSE:\n   • Omit all character persona, roleplay, anime greetings, and casual conversational chatter.\n   • Provide concise, precise technical explanations, clean code implementations, exact error tracebacks, and actionable steps."
     
-    sections = [header]
+    sections = [header, get_time_block()]
 
     if overrides.get("prompt_directives", True):
         directives = """2. AUTHORITATIVE CODE INSPECTION:

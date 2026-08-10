@@ -76,7 +76,7 @@ export function useSpeechRecognition(options = {}) {
     if (stored !== null && !isNaN(parseFloat(stored))) return parseFloat(stored);
     const optVal = options.vadThreshold;
     if (optVal !== undefined && typeof optVal === 'number' && optVal > 0) return optVal;
-    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.16');
+    return parseFloat(localStorage.getItem('yuki-vad-threshold') || '0.03');
   });
   const vadThresholdRef = useRef(vadThreshold);
 
@@ -96,7 +96,7 @@ export function useSpeechRecognition(options = {}) {
     if (stored !== null && !isNaN(parseInt(stored, 10))) return parseInt(stored, 10);
     const optVal = options.silenceTimeout;
     if (optVal !== undefined && typeof optVal === 'number' && optVal > 0) return optVal;
-    return parseInt(localStorage.getItem('yuki-silence-timeout') || '1000', 10);
+    return parseInt(localStorage.getItem('yuki-silence-timeout') || '800', 10);
   });
   const silenceTimeoutRef = useRef(silenceTimeout);
 
@@ -112,33 +112,47 @@ export function useSpeechRecognition(options = {}) {
 
   useEffect(() => {
     const activeDevice = selectedMicDeviceId || 'default';
-
-    // Reload VAD threshold for device
     const storedVad = localStorage.getItem(`yuki-vad-threshold-${activeDevice}`);
-    let targetVad = 0.16;
-    if (storedVad !== null && !isNaN(parseFloat(storedVad))) {
+    const storedTimeout = localStorage.getItem(`yuki-silence-timeout-${activeDevice}`);
+
+    // Reload VAD threshold for device (profile setting takes precedence over localStorage)
+    let targetVad = 0.03;
+    if (options.vadThreshold !== undefined && typeof options.vadThreshold === 'number' && options.vadThreshold > 0) {
+      targetVad = options.vadThreshold;
+    } else if (storedVad !== null && !isNaN(parseFloat(storedVad))) {
       targetVad = parseFloat(storedVad);
     } else if (localStorage.getItem('yuki-vad-threshold') !== null && !isNaN(parseFloat(localStorage.getItem('yuki-vad-threshold')))) {
       targetVad = parseFloat(localStorage.getItem('yuki-vad-threshold'));
-    } else if (options.vadThreshold !== undefined && typeof options.vadThreshold === 'number' && options.vadThreshold > 0) {
-      targetVad = options.vadThreshold;
     }
     vadThresholdRef.current = targetVad;
     setVadThresholdState(targetVad);
 
-    // Reload Silence Timeout for device
-    const storedTimeout = localStorage.getItem(`yuki-silence-timeout-${activeDevice}`);
-    let targetTimeout = 1000;
-    if (storedTimeout !== null && !isNaN(parseInt(storedTimeout, 10))) {
+    // Reload Silence Timeout for device (profile setting takes precedence over localStorage)
+    let targetTimeout = 800;
+    if (options.silenceTimeout !== undefined && typeof options.silenceTimeout === 'number' && options.silenceTimeout > 0) {
+      targetTimeout = options.silenceTimeout;
+    } else if (storedTimeout !== null && !isNaN(parseInt(storedTimeout, 10))) {
       targetTimeout = parseInt(storedTimeout, 10);
     } else if (localStorage.getItem('yuki-silence-timeout') !== null && !isNaN(parseInt(localStorage.getItem('yuki-silence-timeout'), 10))) {
       targetTimeout = parseInt(localStorage.getItem('yuki-silence-timeout'), 10);
-    } else if (options.silenceTimeout !== undefined && typeof options.silenceTimeout === 'number' && options.silenceTimeout > 0) {
-      targetTimeout = options.silenceTimeout;
     }
     silenceTimeoutRef.current = targetTimeout;
     setSilenceTimeoutState(targetTimeout);
   }, [selectedMicDeviceId, options.vadThreshold, options.silenceTimeout]);
+
+  // Dynamically update active microphone hardware constraints when AGC, Echo Cancellation, or Noise Suppression change
+  useEffect(() => {
+    if (micStreamRef.current) {
+      const audioTrack = micStreamRef.current.getAudioTracks()[0];
+      if (audioTrack && audioTrack.applyConstraints) {
+        audioTrack.applyConstraints({
+          autoGainControl: options.sttAutoGainControl ?? true,
+          echoCancellation: options.sttEchoCancellation ?? true,
+          noiseSuppression: options.sttNoiseSuppression ?? true
+        }).catch(e => console.warn('[STT] Dynamic mic constraints update skipped:', e));
+      }
+    }
+  }, [options.sttAutoGainControl, options.sttEchoCancellation, options.sttNoiseSuppression]);
 
   const [useLocalWhisper, setUseLocalWhisperState] = useState(true);
   const useLocalWhisperRef = useRef(true);
@@ -184,6 +198,13 @@ export function useSpeechRecognition(options = {}) {
   const vadSilenceStartRef = useRef(null);
   const maxRecordingTimeoutRef = useRef(null);
   const recognitionRef = useRef(null);
+  const sttTransportModeRef = useRef(options.sttTransportMode || 'websocket_stream');
+
+  useEffect(() => {
+    if (options.sttTransportMode) {
+      sttTransportModeRef.current = options.sttTransportMode;
+    }
+  }, [options.sttTransportMode]);
 
   const logSTTStatus = (message) => {
     console.log(`[STT Coordinator] ${message}`);
@@ -231,7 +252,7 @@ export function useSpeechRecognition(options = {}) {
     }, timeoutMs);
   };
 
-  const processSTTTranscript = (transcript, sttTimeMs = null) => {
+  const processSTTTranscript = (transcript, sttTimeMs = null, sttTiming = null) => {
     if (!transcript || !transcript.trim()) {
       if (isVoiceCommandModeRef.current && isSessionActiveRef && isSessionActiveRef.current) {
         startSessionTimeout();
@@ -314,13 +335,13 @@ export function useSpeechRecognition(options = {}) {
       }
 
       clearContinuedConversationSession();
-      if (sendMessageText) sendMessageText(prompt);
+      if (sendMessageText) sendMessageText(prompt, { stt_time_ms: sttTimeMs, stt_timing: sttTiming });
       return;
     }
 
     // Default Talk Mode
     logSTTStatus(`Talk Mode normal transcript: "${transcript}"`);
-    if (sendMessageText) sendMessageText(transcript);
+    if (sendMessageText) sendMessageText(transcript, { stt_time_ms: sttTimeMs, stt_timing: sttTiming });
   };
 
   const primeSelectedMicDevice = async () => {
@@ -376,7 +397,10 @@ export function useSpeechRecognition(options = {}) {
 
   const startSpeechRecognition = async () => {
     if (isSpeechRecActiveRef.current) return;
-    if (logToTerminal) logToTerminal("[STT] Microphone listening mode turned ON");
+    const transportMode = sttTransportModeRef.current || 'websocket_stream';
+    const transportDesc = transportMode === 'websocket_stream' ? 'WebSocket Real-Time Stream (~450ms)' : 'HTTP Audio Chunking (~2.5s)';
+    if (logToTerminal) logToTerminal(`[STT] Microphone listening mode turned ON [Protocol: ${transportDesc}]`);
+    logSTTStatus(`Microphone listening mode turned ON [Protocol: ${transportDesc}]`);
 
     if (useLocalWhisperRef.current) {
       try {
@@ -438,6 +462,7 @@ export function useSpeechRecognition(options = {}) {
             return;
           }
 
+          setIsTranscribing(true);
           isRecordingRef.current = false;
           setIsListening(false);
           isSpeechRecActiveRef.current = false;
@@ -445,11 +470,11 @@ export function useSpeechRecognition(options = {}) {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           if (audioChunksRef.current.length === 0 || audioBlob.size < 4000) {
             logSTTStatus(`[STT] Ignored short clip (${audioBlob.size} bytes).`);
+            setIsTranscribing(false);
             updateListeningState();
             return;
           }
 
-          setIsTranscribing(true);
           if (stopAllPlayback) stopAllPlayback();
 
           const sttStartTime = Date.now();
@@ -493,7 +518,12 @@ export function useSpeechRecognition(options = {}) {
 
             setIsTranscribing(false);
             if (data.text && data.text.trim()) {
-              processSTTTranscript(data.text, sttDurationMs);
+              const sttTimingStats = {
+                total_stt_ms: sttDurationMs,
+                whisper_ms: data.timing?.whisper_ms || sttDurationMs,
+                browser_vad_ms: silenceTimeoutRef.current || 350
+              };
+              processSTTTranscript(data.text, sttDurationMs, sttTimingStats);
             } else {
               updateListeningState();
             }
@@ -556,13 +586,14 @@ export function useSpeechRecognition(options = {}) {
           }
 
           const micThreshold = vadThresholdRef.current;
-          const silenceTimeoutMs = silenceTimeoutRef.current;
+          const silenceTimeoutMs = silenceTimeoutRef.current || 1000;
           const now = Date.now();
 
           if (normalized > micThreshold) {
-            if (now - vadActivationTimeRef.current > 600) {
+            vadSilenceStartRef.current = null;
+            if (now - vadActivationTimeRef.current > 150) {
               if (!vadSpeakingRef.current) {
-                logSTTStatus("User speech detected — speech start");
+                logSTTStatus("User speech detected — speech start (barge-in active)");
                 vadSpeakingRef.current = true;
 
                 // Start max recording timeout ONLY when speech actually begins
@@ -589,7 +620,6 @@ export function useSpeechRecognition(options = {}) {
                   sessionTimeoutRef.current = null;
                 }
               }
-              vadSilenceStartRef.current = null;
             }
           } else {
             if (vadSpeakingRef.current) {
@@ -597,7 +627,7 @@ export function useSpeechRecognition(options = {}) {
                 vadSilenceStartRef.current = now;
               } else if (now - vadSilenceStartRef.current > silenceTimeoutMs) {
                 const elapsedSilence = Math.round(now - vadSilenceStartRef.current);
-                const reasonStr = `Silence cutoff triggered (${elapsedSilence}ms silence > ${silenceTimeoutMs}ms limit; mic volume was below ${micThreshold.toFixed(3)} gate)`;
+                const reasonStr = `Silence Cutoff triggered (${elapsedSilence}ms silence > ${silenceTimeoutMs}ms limit)`;
                 logSTTStatus(`[STT] ${reasonStr}`);
                 stopSpeechRecognition(false, reasonStr);
                 return;

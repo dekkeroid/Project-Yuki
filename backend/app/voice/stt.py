@@ -144,17 +144,33 @@ def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16"
             
         return _whisper_instance
 
-async def transcribe_audio_file(file_path: str, model_size: str = "base", compute_type: str = "int8_float16", language: str = "en") -> str:
+import io
+from typing import Union, BinaryIO
+
+async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], model_size: str = "base", compute_type: str = "int8_float16", language: str = "en") -> str:
     """
-    Transcribes an audio file on a separate worker thread with low-latency beam_size=1 greedy decoding and Silero VAD.
+    Transcribes an audio file path or in-memory byte stream on a separate worker thread with low-latency beam_size=1 greedy decoding and Silero VAD.
     """
     update_last_stt_time()
-    if not os.path.exists(file_path):
-        print(f"[STT] Audio file path does not exist: {file_path}")
-        return ""
+    
+    # Prepare input for faster-whisper (supports file_path string or binary BytesIO object)
+    if isinstance(audio_input, str):
+        if not os.path.exists(audio_input):
+            print(f"[STT] Audio file path does not exist: {audio_input}")
+            return ""
+        whisper_input = audio_input
+    elif isinstance(audio_input, bytes):
+        if len(audio_input) < 1000:
+            return ""
+        whisper_input = io.BytesIO(audio_input)
+    elif isinstance(audio_input, io.BytesIO):
+        whisper_input = audio_input
+    else:
+        whisper_input = audio_input
         
     def run_inference():
         try:
+            t0 = time.time()
             active_compute = getattr(config, "WHISPER_COMPUTE_TYPE", compute_type) or compute_type
             active_model_size = getattr(config, "WHISPER_MODEL", model_size) or model_size
             model = get_whisper_model(active_model_size, active_compute)
@@ -170,7 +186,7 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
                 speech_pad_ms=getattr(config, "SILERO_SPEECH_PAD_MS", 200)
             )
             segments, info = model.transcribe(
-                file_path,
+                whisper_input,
                 beam_size=getattr(config, "WHISPER_BEAM_SIZE", 1),
                 vad_filter=True,
                 vad_parameters=vad_params,
@@ -182,6 +198,7 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
             
             # Combine segment text into a single transcript
             text = " ".join([segment.text for segment in segments]).strip()
+            inference_ms = round((time.time() - t0) * 1000, 2)
             
             # Anti-hallucination post-filter for notorious Whisper YouTube artifacts
             lower_text = text.lower().strip(' .?!,"\'')
@@ -191,11 +208,12 @@ async def transcribe_audio_file(file_path: str, model_size: str = "base", comput
             ]
             if lower_text in hallucinations:
                 print(f"[STT] Filtered known Whisper hallucination: '{text}'")
-                return ""
+                return {"text": "", "timing": {"whisper_ms": inference_ms}}
                 
-            return text
+            return {"text": text, "timing": {"whisper_ms": inference_ms}}
         except Exception as e:
             print(f"[STT] Whisper Transcription Error: {e}")
-            return ""
+            return {"text": "", "timing": {}}
             
     return await asyncio.to_thread(run_inference)
+

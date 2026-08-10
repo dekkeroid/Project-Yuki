@@ -1195,6 +1195,10 @@ class SettingsUpdateRequest(BaseModel):
     stt_auto_gain_control: Optional[bool] = None
     stt_echo_cancellation: Optional[bool] = None
     stt_noise_suppression: Optional[bool] = None
+    stt_transport_mode: Optional[str] = None
+    use_neural_browser_vad: Optional[bool] = None
+    browser_neural_vad_confidence: Optional[float] = None
+    adaptive_silence_cutoff: Optional[bool] = None
     tool_mode: Optional[str] = None
     send_tools_in_simple: Optional[bool] = None
     endpoint_strategy: Optional[str] = None
@@ -1544,6 +1548,18 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.stt_noise_suppression is not None:
         config.STT_NOISE_SUPPRESSION = bool(req.stt_noise_suppression)
         memory_manager.update_setting("stt_noise_suppression", bool(req.stt_noise_suppression))
+    if req.stt_transport_mode is not None:
+        config.STT_TRANSPORT_MODE = str(req.stt_transport_mode)
+        memory_manager.update_setting("stt_transport_mode", str(req.stt_transport_mode))
+    if req.use_neural_browser_vad is not None:
+        config.USE_NEURAL_BROWSER_VAD = bool(req.use_neural_browser_vad)
+        memory_manager.update_setting("use_neural_browser_vad", bool(req.use_neural_browser_vad))
+    if req.browser_neural_vad_confidence is not None:
+        config.BROWSER_NEURAL_VAD_CONFIDENCE = float(req.browser_neural_vad_confidence)
+        memory_manager.update_setting("browser_neural_vad_confidence", float(req.browser_neural_vad_confidence))
+    if req.adaptive_silence_cutoff is not None:
+        config.ADAPTIVE_SILENCE_CUTOFF = bool(req.adaptive_silence_cutoff)
+        memory_manager.update_setting("adaptive_silence_cutoff", bool(req.adaptive_silence_cutoff))
     if req.use_local_whisper is not None:
         memory_manager.update_setting("use_local_whisper", req.use_local_whisper)
     if req.stt_language is not None:
@@ -2259,29 +2275,26 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
         active_model = saved_model or getattr(config, "WHISPER_MODEL", None) or model or "base"
         active_compute = settings.get("whisper_compute_type", "int8_float16")
 
-        temp_dir  = tempfile.gettempdir()
-        temp_path = os.path.join(temp_dir, f"yuki_voice_{uuid.uuid4().hex}.webm")
         try:
-            with open(temp_path, "wb") as f:
-                f.write(content)
-            transcript = await transcribe_audio_file(
-                temp_path,
+            stt_res = await transcribe_audio_file(
+                content,
                 model_size=active_model,
                 compute_type=active_compute,
                 language=active_lang
             )
+            if isinstance(stt_res, dict):
+                transcript = stt_res.get("text", "")
+                timing_info = stt_res.get("timing", {})
+            else:
+                transcript = stt_res
+                timing_info = {}
+
             if transcript and transcript.strip():
-                print(f"[STT] Transcribed ({len(content)} bytes) using model '{active_model}' ({active_compute}) → '{transcript}'")
-            return {"text": transcript or ""}
+                print(f"[STT] Transcribed ({len(content)} bytes in RAM) using model '{active_model}' ({active_compute}) → '{transcript}'")
+            return {"text": transcript or "", "timing": timing_info}
         except Exception as e:
-            print(f"[STT] Audio file transcription skipped: {e}")
-            return {"text": ""}
-        finally:
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except Exception:
-                    pass
+            print(f"[STT] Audio in-memory transcription skipped: {e}")
+            return {"text": "", "timing": {}}
 
     except Exception as e:
         print(f"[STT] Unexpected error in transcribe endpoint: {e}")
@@ -3893,10 +3906,22 @@ async def websocket_endpoint(websocket: WebSocket):
                             llm_gen_str = f"{llm_generation_duration:.2f}s"
                             tool_str = f"{tool_duration:.2f}s"
 
+                            stt_timing = payload_data.get("stt_timing", None)
                             print(f"\n================ CHAT TURN TIMING BREAKDOWN ================")
-                            if stt_time_ms is not None:
-                                print(f"Overall End-to-End Latency: {elapsed_time + (stt_time_ms / 1000.0):.2f}s")
-                                print(f"  - Speech-to-Text (STT):       {stt_time_ms / 1000.0:.2f}s")
+                            if stt_timing or stt_time_ms is not None:
+                                total_stt_sec = (stt_timing.get("total_stt_ms", stt_time_ms or 0) / 1000.0) if isinstance(stt_timing, dict) else ((stt_time_ms or 0) / 1000.0)
+                                print(f"Overall End-to-End Latency: {elapsed_time + total_stt_sec:.2f}s")
+                                print(f"  - Speech-to-Text (STT Total):  {total_stt_sec:.2f}s")
+                                if isinstance(stt_timing, dict):
+                                    whisper_sec = stt_timing.get("whisper_ms", 0) / 1000.0
+                                    if whisper_sec > 0:
+                                        print(f"    ├─ Whisper STT (incl. Silero VAD): {whisper_sec:.2f}s")
+                                    silero_sec = stt_timing.get("silero_vad_ms", 0) / 1000.0
+                                    if silero_sec > 0:
+                                        print(f"    ├─ Silero PyTorch VAD Filter:    {silero_sec:.2f}s")
+                                    browser_vad_sec = stt_timing.get("browser_vad_ms", 0) / 1000.0
+                                    if browser_vad_sec > 0:
+                                        print(f"    └─ Browser Neural VAD Latency:   {browser_vad_sec:.2f}s")
                                 print(f"  - Processing (LLM + TTS):     {elapsed_time:.2f}s")
                             else:
                                 print(f"Total Turn Time: {elapsed_time:.2f}s")
