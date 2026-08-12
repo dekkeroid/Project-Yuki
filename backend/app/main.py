@@ -4064,6 +4064,8 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
     finally:
+        from app.voice.stt import set_listening_mode
+        set_listening_mode(False)
         if chat_task and not chat_task.done():
             chat_task.cancel()
         if websocket in active_websockets:

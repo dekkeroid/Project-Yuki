@@ -528,6 +528,10 @@ export const formatMessageText = (text, disableFileLinks = false) => {
     }
   }
 
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
   const rawParts = parts.length > 0 ? parts : [text];
   const finalParts = rawParts.flatMap((part, pIdx) => {
     if (typeof part === 'string') {

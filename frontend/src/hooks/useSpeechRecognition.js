@@ -778,16 +778,19 @@ export function useSpeechRecognition(options = {}) {
     if (isVoiceCommandModeRef.current) {
       isVoiceCommandModeRef.current = false;
       setIsVoiceCommandMode(false);
+      localStorage.removeItem('yuki-voice-command-active');
       clearContinuedConversationSession();
       stopSpeechRecognition(true);
     }
     if (isTalkModeRef.current) {
       isTalkModeRef.current = false;
       setIsTalkMode(false);
+      localStorage.removeItem('yuki-talk-mode-active');
       stopSpeechRecognition(true);
     } else {
       isTalkModeRef.current = true;
       setIsTalkMode(true);
+      localStorage.setItem('yuki-talk-mode-active', 'true');
       await startSpeechRecognition();
     }
   };
@@ -798,16 +801,19 @@ export function useSpeechRecognition(options = {}) {
     if (isTalkModeRef.current) {
       isTalkModeRef.current = false;
       setIsTalkMode(false);
+      localStorage.removeItem('yuki-talk-mode-active');
       stopSpeechRecognition(true);
     }
     if (isVoiceCommandModeRef.current) {
       isVoiceCommandModeRef.current = false;
       setIsVoiceCommandMode(false);
+      localStorage.removeItem('yuki-voice-command-active');
       clearContinuedConversationSession();
       stopSpeechRecognition(true);
     } else {
       isVoiceCommandModeRef.current = true;
       setIsVoiceCommandMode(true);
+      localStorage.setItem('yuki-voice-command-active', 'true');
       await startSpeechRecognition();
     }
   };
