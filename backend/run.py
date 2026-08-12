@@ -16,6 +16,27 @@ if __name__ == "__main__":
         runpy.run_path(script, run_name="__main__")
         raise SystemExit(0)
 
+    if len(sys.argv) >= 2 and sys.argv[1] == "-m":
+        import subprocess, shutil
+        py_cmd = shutil.which("python") or shutil.which("py")
+        if py_cmd and os.path.abspath(py_cmd).lower() != os.path.abspath(sys.executable).lower():
+            res = subprocess.run([py_cmd] + sys.argv[1:])
+            raise SystemExit(res.returncode)
+        else:
+            try:
+                import runpy
+                mod = sys.argv[2]
+                sys.argv = [mod] + sys.argv[3:]
+                runpy.run_module(mod, run_name="__main__", alter_sys=True)
+                raise SystemExit(0)
+            except Exception as e:
+                print(f"Error executing module -m {sys.argv[2] if len(sys.argv)>2 else ''}: {e}", file=sys.stderr)
+                raise SystemExit(1)
+
+    if getattr(sys, "frozen", False) and len(sys.argv) > 1 and sys.argv[1].startswith("-"):
+        print(f"Error: Packaged executable does not support arbitrary Python CLI flag '{sys.argv[1]}'.", file=sys.stderr)
+        raise SystemExit(1)
+
     import uvicorn
 
     print("Launching Yuki Desktop Assistant Backend...")

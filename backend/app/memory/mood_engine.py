@@ -309,10 +309,14 @@ class MoodTagScrubber:
 
         idx = tail.find("<mood_update>")
         if idx != -1:
-            # An unfinished opening tag is buffered until it closes (or the
-            # stream ends / a tool boundary forces us to drop it).
             emit += tail[:idx]
-            tail = "" if force else tail[idx:]
+            if force:
+                rest = tail[idx:]
+                cleaned_rest = re.sub(r'<mood_update>[\s\S]*?(?:</mood_update>|$)', '', rest, flags=re.IGNORECASE)
+                emit += cleaned_rest
+                tail = ""
+            else:
+                tail = tail[idx:]
         else:
             partial = self._trailing_tag_prefix_len(tail)
             if partial:

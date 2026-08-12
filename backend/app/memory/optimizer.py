@@ -174,16 +174,22 @@ def optimize_all_processes(force=False, skip_own_process=False):
         return
     LAST_OPTIMIZATION_TIME = now
 
-    # Hold off trimming while the Whisper model is loading or listening mode is active — EmptyWorkingSet would
-    # page out the model pages, massively slowing STT turnaround.
+    # We skip trimming our own process to protect the loaded Whisper/Kokoro model pages
+    # only if Whisper is actively loading, or if listening mode is active AND the user
+    # has spoken within the last 120 seconds (active conversation).
+    # If they are in idle listening (no speech for >120s), we allow own process trimming.
     try:
-        from app.voice.stt import is_whisper_loading, is_listening_mode_active
-        if is_whisper_loading() or is_listening_mode_active():
-            try:
-                print('[Memory] Listening mode is active or Whisper is loading - holding off memory optimization.')
-            except Exception:
-                pass
-            return
+        from app.voice.stt import is_whisper_loading, is_listening_mode_active, get_last_stt_time
+        should_skip_own = False
+        if is_whisper_loading():
+            should_skip_own = True
+        elif is_listening_mode_active():
+            time_since_last_speech = time.time() - get_last_stt_time()
+            if time_since_last_speech < 120.0:
+                should_skip_own = True
+        
+        if should_skip_own:
+            skip_own_process = True
     except Exception:
         pass
 

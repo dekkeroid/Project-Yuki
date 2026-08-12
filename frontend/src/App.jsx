@@ -648,6 +648,7 @@ const App = () => {
   const startSessionTimeoutRef = useRef(null);
   const updateListeningStateRef = useRef(null);
   const getIsVoiceCommandModeRef = useRef(() => false);
+  const getIsTalkModeRef = useRef(() => false);
   const sessionTimeoutRef = useRef(null);
 
   const {
@@ -797,6 +798,7 @@ const App = () => {
   });
 
   getIsVoiceCommandModeRef.current = () => isVoiceCommandModeRef.current;
+  getIsTalkModeRef.current = () => isTalkModeRef.current;
   stopSpeechRecognitionRef.current = stopSpeechRecognition;
   startSessionTimeoutRef.current = startSessionTimeout;
   updateListeningStateRef.current = updateListeningState;
@@ -838,7 +840,14 @@ const App = () => {
       setProfile(msg.profile);
       if (!hasCheckedListenOnStartupRef.current && msg.profile?.settings) {
         hasCheckedListenOnStartupRef.current = true;
-        if (msg.profile.settings.listen_on_startup) {
+        const savedTalk = localStorage.getItem('yuki-talk-mode-active') === 'true';
+        const savedVoiceCmd = localStorage.getItem('yuki-voice-command-active') === 'true';
+        
+        if (savedTalk) {
+          if (!getIsTalkModeRef.current()) {
+            toggleTalkMode();
+          }
+        } else if (savedVoiceCmd || msg.profile.settings.listen_on_startup) {
           if (!getIsVoiceCommandModeRef.current()) {
             toggleVoiceCommandMode();
           }

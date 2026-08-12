@@ -1104,6 +1104,7 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     env["CI"] = "true"
+    env["YUKI_SCRIPT_RUNNER"] = "1"
 
     start_time = time.time()
     try:
