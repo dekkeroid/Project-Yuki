@@ -163,7 +163,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
       } else if (match[2]) {
         parts.push(
           <strong key={match.index} style={{ fontWeight: '700', color: '#e2e8f0' }}>
-            {match[2]}
+            {renderTextWithInlineMath(match[2], `disable-bold-math-${match.index}`)}
           </strong>
         );
       }
@@ -522,7 +522,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
             color: '#e2e8f0'
           }}
         >
-          {match[8]}
+          {renderTextWithInlineMath(match[8], `bold-math-${matchIndex}`)}
         </strong>
       );
     }
