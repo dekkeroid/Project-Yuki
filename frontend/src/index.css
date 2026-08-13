@@ -2036,3 +2036,9 @@ body.desktop-overlay .interactive-element {
   border-color: #8b5cf6 !important;
   box-shadow: 0 0 10px rgba(139, 92, 246, 0.25) !important;
 }
+
+/* Make KaTeX math elements automatically adapt to the font-weight of their parent container (bold text, headings, etc.) */
+.katex,
+.katex * {
+  font-weight: inherit !important;
+}

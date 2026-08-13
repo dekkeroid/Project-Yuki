@@ -259,6 +259,13 @@ def clean_text_for_tts(text: str) -> str:
     if not text:
         return ""
 
+    # 0. Pre-decode HTML entities
+    text = text.replace('&lt;', '<').replace('&gt;', '>')
+
+    # 0.5 Strip common text emoticons / kaomojis to prevent voice engine noise
+    emoticon_pattern = r'(?::[-~]?[)DPOopd(\[\]\\/|]|;[-~]?[)D]|<3|>_<|>_>|<_<|>_~|T_T|o_O|O_o|>\.<)'
+    text = re.sub(emoticon_pattern, ' ', text)
+
     # 1. Strip thought / reasoning / think blocks (including unclosed tags)
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*$', '', text, flags=re.IGNORECASE)
@@ -266,8 +273,16 @@ def clean_text_for_tts(text: str) -> str:
     # 2. Strip unique animation and emotion tags (<yuki_anim:.../>, <yuki_emotion:.../>, [anim:...], [emotion:...])
     text = re.sub(r'<(?:yuki_)?(?:anim|emotion):[a-zA-Z0-9_\-]+\/?>|\[(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\]', '', text, flags=re.IGNORECASE)
 
-    # 3. Strip HTML / XML tags (e.g. <div>, <span ...>, <br/>, <b>, <code>) leaving inner text
-    text = re.sub(r'</?[a-zA-Z][^>]*>', ' ', text)
+    # 3. Selective Tag Stripping (only structural elements)
+    # Replaces actual HTML tags (e.g. <div>, <br/>, <span ...>) but preserves <Enter>, <Ctrl>, etc.
+    structural_tags = r'</?(?:div|span|p|br|b|i|strong|em|code|pre|a|li|ul|ol|table|tr|td|th)(?:\s+[^>]*)?>'
+    text = re.sub(structural_tags, ' ', text, flags=re.IGNORECASE)
+    # Strip any remaining unclosed angle brackets only if they look like HTML (e.g. <div)
+    text = re.sub(r'<[a-zA-Z]+(?:\s+[^>]*)?$', '', text)
+
+    # Convert bracket-enclosed key names (e.g. <Enter> -> Enter, <Ctrl> -> Ctrl)
+    # This must run before comparison symbol normalization to prevent them from matching as math comparison.
+    text = re.sub(r'<([a-zA-Z0-9_\-+]+)>', r' \1 ', text)
 
     # 4. Code Block Speech Filtering (Replace multi-line code blocks with clean spoken summary)
     text = re.sub(r'```[a-zA-Z0-9_\-]*\n[\s\S]*?```', ' I have provided the code on your screen. ', text)
@@ -287,13 +302,12 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'^[#>\-\*]+\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
 
-    # 7. KaTeX Math Formulas & Decimal ITN
+    # 7. KaTeX Math Formulas & Delimiter Cleanup
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'\1 over \2', text)
     text = re.sub(r'\\sqrt\{([^}]+)\}', r'square root of \1', text)
     text = re.sub(r'\\sqrt\s+([a-zA-Z0-9]+)', r'square root of \1', text)
     text = text.replace(r'\times', ' times ').replace(r'\cdot', ' times ')
     text = text.replace(r'\neq', ' is not equal to ').replace(r'\approx', ' is approximately ')
-    text = text.replace(r'\leq', ' is less than or equal to ').replace(r'\geq', ' is greater than or equal to ')
     text = text.replace(r'\infty', ' infinity ').replace(r'\pi', ' pi ')
     text = text.replace(r'\sum', ' sum ').replace(r'\prod', ' product ')
     text = re.sub(r'([a-zA-Z0-9)]+)\^2', r'\1 squared', text)
@@ -302,9 +316,67 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'([a-zA-Z0-9)]+)\^([a-zA-Z0-9]+)', r'\1 to the power of \2', text)
     text = re.sub(r'\$\$(.*?)\$\$|\\\[(.*?)\\\]', lambda m: m.group(1) or m.group(2) or "", text, flags=re.DOTALL)
     text = re.sub(r'\\\((.*?)\\\)|\$(.*?)\$', lambda m: m.group(1) or m.group(2) or "", text, flags=re.DOTALL)
+
+    # --- ADVANCED MATH COMPARISON SYMBOL RESOLUTIONS ---
+    # Convert arrows (-> / <-)
+    text = re.sub(r'->|-->', ' to ', text)
+    text = re.sub(r'<-|<--', ' from ', text)
+
+    # Much less/greater than (<< / >>)
+    text = re.sub(r'<<', ' much less than ', text)
+    text = re.sub(r'>>', ' much greater than ', text)
+
+    # Less/greater than or equal to (<= / >= / =< / =>)
+    text = re.sub(r'<=\s*|==<\s*|=<\s*', ' is less than or equal to ', text)
+    text = re.sub(r'>=\s*|==>\s*|=>\s*', ' is greater than or equal to ', text)
+
+    # Standalone inequalities adjacent to numbers, decimals, or variables
+    # Exclude common emoticons like >_<, >_>, <_<, etc. by requiring variables or digits
+    digit_or_var = r'(?:[a-zA-Z0-9\-+]+(?:\.\d+)?(?:e-?\d+)?)'
+
+    # Left-operand comparisons: x < y
+    text = re.sub(rf'({digit_or_var})\s*<\s*({digit_or_var})', r'\1 is less than \2', text)
+    text = re.sub(rf'({digit_or_var})\s*>\s*({digit_or_var})', r'\1 is greater than \2', text)
+
+    # Prefix comparisons: < 10 (excluding emoticons like <3, so we verify digit/minus context)
+    text = re.sub(r'<\s*(-?(?:[0-24-9]\d*(?:\.\d+)?|3\d+\.?\d*|3\.\d+))(?![a-zA-Z0-9_]*>)', r'less than \1', text)
+    text = re.sub(r'>\s*(\d+(?:\.\d+)?)', r'greater than \1', text)
+
+    # Code equality / inequality logical operators
+    text = re.sub(r'==', ' equals ', text)
+    text = re.sub(r'!=', ' is not equal to ', text)
+
+    # Slashes Fraction Division (only matches A/B if not preceded by a slash and not followed by "/number")
+    text = re.sub(r'(?<!/)\b(\d+)/([1-9]\d*)\b(?!/\d)', r'\1 over \2', text)
+
+    # Range dashes (matches positive ranges like 10-20, excluding negative bounds lookbehind)
+    text = re.sub(r'\b(\d+(?:\.\d+)?)\s*[-–—]\s*(?!\s*-)(\d+(?:\.\d+)?)\b', r'\1 to \2', text)
+
+    # Metric unit abbreviations when following digits
+    text = re.sub(r'\b(\d+(?:\.\d+)?)\s*μm\b', r'\1 micrometers', text)
+    text = re.sub(r'\b(\d+(?:\.\d+)?)\s*μs\b', r'\1 microseconds', text)
+    text = re.sub(r'\b(\d+(?:\.\d+)?)\s*m/s²\b|\b(\d+(?:\.\d+)?)\s*m/s\^2\b', r'\1 meters per second squared', text)
+    text = re.sub(r'\b(\d+(?:\.\d+)?)\s*m/s\b', r'\1 meters per second', text)
+
+    # Unicode Greek letters, math symbols & superscripts (pre-transliteration conversion)
+    text = re.sub(r'\b(\d+(?:\.\d+)?)\s*μ\b', r'\1 micro', text)
+    text = text.replace('μ', ' mu ').replace('π', ' pi ').replace('Ω', ' ohms ')
+    text = text.replace('²', ' squared').replace('³', ' cubed')
+
+    # Spelled-out file extensions
+    text = re.sub(r'\b\.py\b', ' dot p y ', text)
+    text = re.sub(r'\b\.js\b', ' dot j s ', text)
+    text = re.sub(r'\b\.json\b', ' dot jay son ', text)
+    text = re.sub(r'\b\.css\b', ' dot c s s ', text)
+    text = re.sub(r'\b\.html\b', ' dot h t m l ', text)
+    text = re.sub(r'\b\.md\b', ' dot m d ', text)
+    # ---------------------------------------------------
+
+    # Decimals ITN (e.g. 0.1 -> 0 point 1)
     text = re.sub(r'(\d+)\.(\d+)', r'\1 point \2', text)
 
     # 8. Industry-Standard ITN: Currency & Unit Symbols
+    text = re.sub(r'\$', ' dollars', text) # Safe fallback for remaining dollar signs
     text = re.sub(r'\$(\d+(?:\.\d+)?)', r'\1 dollars', text)
     text = re.sub(r'£(\d+(?:\.\d+)?)', r'\1 pounds', text)
     text = re.sub(r'€(\d+(?:\.\d+)?)', r'\1 euros', text)
@@ -348,13 +420,28 @@ def clean_text_for_tts(text: str) -> str:
     # 9. Foreign Character Transliteration
     text = transliterate_for_tts(text)
 
-    # 10. Roleplay Actions in Asterisks (*giggles*, *smiles softly*) vs Double Asterisk Emphasis
+    # 10. Roleplay Actions in Asterisks (strip gesture actions, preserve emphasis text)
     text = re.sub(r'\*\*(.*?)\*\*|__(.*?)__', lambda m: m.group(1) or m.group(2) or "", text)
-    text = re.sub(r'\*([^*]+)\*|_([^_]+)_', '', text)
+    action_stems = [
+        'wink', 'smile', 'giggle', 'laugh', 'sigh', 'pout', 'wave', 'nod',
+        'shrug', 'chuckle', 'blush', 'cry', 'gasp', 'yawn', 'look', 'reset',
+        'facepalm', 'point', 'cough', 'scream', 'whisper'
+    ]
+    def replace_single(m):
+        inner = (m.group(1) or m.group(2) or "").strip()
+        if not inner:
+            return ""
+        inner_lower = inner.lower()
+        if any(stem in inner_lower for stem in action_stems):
+            return ""
+        return inner
+    text = re.sub(r'\*([^*]+)\*|_([^_]+)_', replace_single, text)
 
     # 11. Technical Noise & Symbol Cleanup
     text = re.sub(r"\s*\[(?:tool call|AppID|truncated|SYSTEM)[^\]]*\]", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*\((?:AppID:\s*\d+|file_path=[^\)]+|tool_call_id=[^\)]+)\)", "", text, flags=re.IGNORECASE)
+    text = re.sub(r'\(\s*\)', '', text)  # Clean up empty parenthesis left behind by emoticons
+
     text = text.replace('$', '').replace('{', '').replace('}', '').replace('`', '').replace('~', '').replace('^', '')
     text = text.replace('*', ' ').replace('\\', ' ').replace('/', ' ').replace('|', ' ')
 
