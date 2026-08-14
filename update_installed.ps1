@@ -235,6 +235,10 @@ if ($selBackend) {
         Pop-Location
 
         Write-Host "--- Backend engine: copying (preserving your .env / data) ---"
+        # Clean loose app Python folders so the new PyInstaller build is 100% fresh (preserves .env, db, profile, etc.)
+        Remove-Item (Join-Path $installDir 'resources\backend\_internal\app') -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $installDir 'resources\backend\app') -Recurse -Force -ErrorAction SilentlyContinue
+
         $rc = robocopy "$root\$backendDir\dist\backend" (Join-Path $installDir 'resources\backend') /E /XF .env /NFL /NDL /NJH /NJS
         if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
     }
