@@ -236,6 +236,7 @@ class AgentExecutor:
         self.memory = memory_manager
         self._active_turn_id = None
         self._active_session_id = None
+        self._session_summary_cache = {}
         
         async def _async_web_search(**kwargs):
             from app.tools.web import web_search
@@ -1138,6 +1139,7 @@ class AgentExecutor:
         settings = self.memory.profile.get("settings", {}) if hasattr(self, "memory") and hasattr(self.memory, "profile") else {}
 
         is_advanced = effective_tool_mode == "advanced"
+        is_coder_mode = bool(overrides.get("coding_mode") or overrides.get("is_coder_mode") or backend in ("coder", "complex_coder"))
         if is_advanced:
             user_token_limit = int(settings.get("advanced_history_token_limit", 40000))
             min_keep_turns = int(settings.get("advanced_history_keep_turns", 16))
@@ -1169,19 +1171,48 @@ class AgentExecutor:
         history_tokens = _count_messages_tokens(pruned_history)
 
         recap_msg = None
-        if history_tokens + overhead > user_token_limit:
+        session_id = overrides.get("session_id") or getattr(self, "_active_session_id", None) or "active"
+
+        # Check if we can reuse an active rolling summary cache for this session
+        cache_entry = getattr(self, "_session_summary_cache", {}).get(session_id)
+        if cache_entry and summary_percent > 0:
+            cached_count = cache_entry.get("summarized_count", 0)
+            cached_text = cache_entry.get("summary_text", "")
+            if cached_text and 0 < cached_count <= len(chat_history) - min_keep_msgs:
+                candidate_history = list(chat_history[cached_count:])
+                candidate_tokens = _count_messages_tokens(candidate_history)
+                cached_recap = {"role": "system", "content": f"[CONVERSATION SUMMARY]\n{cached_text}"}
+                recap_tokens = _count_tokens(cached_recap["content"])
+
+                # If cached summary + remaining messages fit within budget, reuse it instantly (0ms latency)!
+                if candidate_tokens + overhead + recap_tokens <= user_token_limit:
+                    pruned_history = candidate_history
+                    recap_msg = cached_recap
+                    history_tokens = candidate_tokens
+                    print(f"[History] Reusing rolling summary cache for oldest {cached_count} messages (0ms latency, saved ~{recap_tokens} tokens).")
+
+        if recap_msg is None and history_tokens + overhead > user_token_limit:
             print(f"[History] Chat history ({history_tokens} tokens) + prompt overhead ({overhead} tokens) exceeds budget ({user_token_limit} tokens). Condensing older turns...")
 
             if summary_percent > 0:
                 chunk, rest = self._select_summary_chunk(pruned_history, summary_percent, summary_position, min_keep_msgs)
                 if chunk:
-                    summary_text = self._summarize_history_chunk(chunk, summary_model)
+                    summary_text = self._summarize_history_chunk(chunk, is_coder_mode=is_coder_mode, overrides=overrides)
                     if summary_text:
                         summary_msg = {"role": "system", "content": f"[CONVERSATION SUMMARY]\n{summary_text}"}
                         pruned_history = rest
                         recap_msg = summary_msg
                         history_tokens = _count_messages_tokens(pruned_history)
-                        print(f"[History] Summarized {len(chunk)} messages ({summary_position} {summary_percent}%) into a compact recap.")
+
+                        # Update session summary cache
+                        if not hasattr(self, "_session_summary_cache"):
+                            self._session_summary_cache = {}
+                        self._session_summary_cache[session_id] = {
+                            "summary_text": summary_text,
+                            "summarized_count": len(chunk),
+                            "timestamp": time.time(),
+                        }
+                        print(f"[History] Summarized {len(chunk)} messages ({summary_position} {summary_percent}%) into a compact recap (cached for session).")
                     else:
                         print("[History] Summary unavailable - falling back to snippet recap + trim.")
 
@@ -1361,10 +1392,11 @@ class AgentExecutor:
             chunk = chunk[1:]
         return chunk, rest
 
-    def _summarize_history_chunk(self, chunk: List[Dict], summary_model: str = "") -> str:
+    def _summarize_history_chunk(self, chunk: List[Dict], is_coder_mode: bool = False, overrides: Optional[Dict[str, Any]] = None) -> str:
         """
-        Compresses `chunk` into a short factual summary using the configured
-        summary model (llm_summary_model → coder model → main model).
+        Compresses `chunk` into a short factual summary using the context-aware
+        routed summary model (Coder Synthesizer in Coder Mode, Simple Suite in Dual Mode,
+        or Main/Complex Suite in Single Mode).
         Returns "" on any failure so callers can fall back to truncation.
         """
         if not chunk:
@@ -1392,8 +1424,10 @@ class AgentExecutor:
             {"role": "user", "content": "Summarize this earlier conversation:\n\n" + transcript[-16000:]},
         ]
         try:
+            task_overrides = dict(overrides or {})
+            task_overrides["is_coder_mode"] = is_coder_mode
             summary_backend, summary_model_name = self._get_backend_and_model_for_task(
-                "synthesizer", overrides={"llm_summary_model": summary_model}
+                "synthesizer", overrides=task_overrides
             )
             content, _, _ = self._query_lmstudio_model(
                 summary_messages, summary_model_name, temperature=0.2, backend=summary_backend, max_tokens=400
@@ -1671,13 +1705,48 @@ class AgentExecutor:
             return backend, reviewer_model
 
         if task == "synthesizer":
-            summary_model = overrides.get("llm_summary_model") or overrides.get("llm_coder_model") or config.LLM_MODEL
-            api_key = overrides.get("llm_coder_api_key") or config.LLM_API_KEY
-            coder_base_url = overrides.get("llm_coder_base_url") or getattr(config, "LLM_CODER_BASE_URL", "")
-            from app.agent.llm_backend import OpenAICompatibleBackend
-            backend = OpenAICompatibleBackend(base_url_override=coder_base_url, api_key_override=api_key)
-            print(f"[Router] Specialized Response Synthesizer Engine -> {backend.name} @ {summary_model}")
-            return backend, summary_model
+            is_coder = bool(overrides.get("is_coder_mode")) or (isinstance(task, str) and "coder" in task.lower())
+            
+            # 1. Coder Mode: Use Role 3 Synthesizer model preference or fallback to Primary Coder model
+            if is_coder:
+                summary_model = overrides.get("llm_summary_model") or overrides.get("llm_coder_model") or getattr(config, "LLM_CODER_MODEL", "") or config.LLM_MODEL
+                coder_key = overrides.get("llm_coder_api_key") or getattr(config, "LLM_CODER_API_KEY", "") or config.LLM_API_KEY
+                coder_base_url = overrides.get("llm_coder_base_url") or getattr(config, "LLM_CODER_BASE_URL", "")
+                coder_backend_type = overrides.get("llm_coder_backend") or getattr(config, "LLM_CODER_BACKEND", "").strip().lower() or "custom"
+
+                from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
+                if coder_backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
+                    backend = OpenAICompatibleBackend(base_url_override=coder_base_url, api_key_override=coder_key)
+                elif coder_backend_type == "ollama":
+                    backend = OllamaBackend(base_url_override=coder_base_url)
+                else:
+                    backend = LMStudioBackend(base_url_override=coder_base_url)
+                print(f"[Router] Coder Mode Synthesizer Engine -> {backend.name} @ {summary_model}")
+                return backend, summary_model
+
+            # 2. Non-Coder Mode:
+            # If Dual Strategy is ON and Simple Backend is active -> Use Simple Section
+            if getattr(config, "ENDPOINT_STRATEGY", "single") == "dual":
+                backend_type = getattr(config, "LLM_SIMPLE_BACKEND", "").strip().lower()
+                simple_model = getattr(config, "LLM_SIMPLE_MODEL", "")
+                if backend_type and backend_type != "none" and simple_model:
+                    base_url = getattr(config, "LLM_SIMPLE_BASE_URL", "")
+                    api_key = getattr(config, "LLM_SIMPLE_API_KEY", "")
+                    from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
+                    if backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
+                        backend = OpenAICompatibleBackend(base_url_override=base_url, api_key_override=api_key)
+                    elif backend_type == "ollama":
+                        backend = OllamaBackend(base_url_override=base_url)
+                    else:
+                        backend = LMStudioBackend(base_url_override=base_url)
+                    print(f"[Router] Context Summarizer (Dual Mode Simple Suite) -> {backend.name} @ {simple_model}")
+                    return backend, simple_model
+
+            # 3. Non-Coder Default / Single Strategy -> Use Main/Complex Section
+            main_backend = get_backend()
+            main_model = config.LLM_MODEL
+            print(f"[Router] Context Summarizer (Default/Main Suite) -> {main_backend.name} @ {main_model}")
+            return main_backend, main_model
 
         if task == "simple" and getattr(config, "ENDPOINT_STRATEGY", "single") == "dual":
             backend_type = getattr(config, "LLM_SIMPLE_BACKEND", "lmstudio").lower()
