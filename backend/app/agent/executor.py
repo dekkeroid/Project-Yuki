@@ -1173,24 +1173,45 @@ class AgentExecutor:
         recap_msg = None
         session_id = overrides.get("session_id") or getattr(self, "_active_session_id", None) or "active"
 
-        # Check if we can reuse an active rolling summary cache for this session
+        # Check if we can reuse or incrementally extend an active rolling summary cache
         cache_entry = getattr(self, "_session_summary_cache", {}).get(session_id)
-        if cache_entry and summary_percent > 0:
-            cached_count = cache_entry.get("summarized_count", 0)
-            cached_text = cache_entry.get("summary_text", "")
-            if cached_text and 0 < cached_count <= len(chat_history) - min_keep_msgs:
-                candidate_history = list(chat_history[cached_count:])
-                candidate_tokens = _count_messages_tokens(candidate_history)
-                cached_recap = {"role": "system", "content": f"[CONVERSATION SUMMARY]\n{cached_text}"}
-                recap_tokens = _count_tokens(cached_recap["content"])
+        cached_count = cache_entry.get("summarized_count", 0) if cache_entry else 0
+        cached_text = cache_entry.get("summary_text", "") if cache_entry else ""
 
-                # If cached summary + remaining messages fit within budget, reuse it instantly (0ms latency)!
-                if candidate_tokens + overhead + recap_tokens <= user_token_limit:
-                    pruned_history = candidate_history
-                    recap_msg = cached_recap
-                    history_tokens = candidate_tokens
-                    print(f"[History] Reusing rolling summary cache for oldest {cached_count} messages (0ms latency, saved ~{recap_tokens} tokens).")
+        if cache_entry and summary_percent > 0 and cached_text and 0 < cached_count <= len(chat_history) - min_keep_msgs:
+            candidate_history = list(chat_history[cached_count:])
+            candidate_tokens = _count_messages_tokens(candidate_history)
+            cached_recap = {"role": "system", "content": f"[CONVERSATION SUMMARY]\n{cached_text}"}
+            recap_tokens = _count_tokens(cached_recap["content"])
 
+            # Fast Path: If cached summary + remaining messages fit within budget, reuse it instantly (0ms latency)!
+            if candidate_tokens + overhead + recap_tokens <= user_token_limit:
+                pruned_history = candidate_history
+                recap_msg = cached_recap
+                history_tokens = candidate_tokens
+                print(f"[History] Reusing rolling summary cache for oldest {cached_count} messages (0ms latency, saved ~{recap_tokens} tokens).")
+            else:
+                # Incremental Consolidation Path: Remaining messages grew beyond token limit.
+                # Take next older chunk from candidate_history and merge it with the existing summary!
+                chunk, rest = self._select_summary_chunk(candidate_history, summary_percent, summary_position, min_keep_msgs)
+                if chunk:
+                    print(f"[History] Incremental summary trigger: consolidating previous summary + {len(chunk)} new turns...")
+                    new_summary_text = self._summarize_history_chunk(
+                        chunk, existing_summary=cached_text, is_coder_mode=is_coder_mode, overrides=overrides
+                    )
+                    if new_summary_text:
+                        recap_msg = {"role": "system", "content": f"[CONVERSATION SUMMARY]\n{new_summary_text}"}
+                        pruned_history = rest
+                        history_tokens = _count_messages_tokens(pruned_history)
+                        new_count = cached_count + len(chunk)
+                        self._session_summary_cache[session_id] = {
+                            "summary_text": new_summary_text,
+                            "summarized_count": new_count,
+                            "timestamp": time.time(),
+                        }
+                        print(f"[History] Consolidated rolling summary updated (now covering {new_count} total messages).")
+
+        # Initial summarization path (when no valid cache exists and full history exceeds budget)
         if recap_msg is None and history_tokens + overhead > user_token_limit:
             print(f"[History] Chat history ({history_tokens} tokens) + prompt overhead ({overhead} tokens) exceeds budget ({user_token_limit} tokens). Condensing older turns...")
 
@@ -1392,14 +1413,21 @@ class AgentExecutor:
             chunk = chunk[1:]
         return chunk, rest
 
-    def _summarize_history_chunk(self, chunk: List[Dict], is_coder_mode: bool = False, overrides: Optional[Dict[str, Any]] = None) -> str:
+    def _summarize_history_chunk(
+        self,
+        chunk: List[Dict],
+        existing_summary: str = "",
+        is_coder_mode: bool = False,
+        overrides: Optional[Dict[str, Any]] = None
+    ) -> str:
         """
         Compresses `chunk` into a short factual summary using the context-aware
         routed summary model (Coder Synthesizer in Coder Mode, Simple Suite in Dual Mode,
         or Main/Complex Suite in Single Mode).
+        If `existing_summary` is provided, merges and consolidates it with the new chunk.
         Returns "" on any failure so callers can fall back to truncation.
         """
-        if not chunk:
+        if not chunk and not existing_summary:
             return ""
         text_parts = []
         for m in chunk:
@@ -1410,18 +1438,29 @@ class AgentExecutor:
                 continue
             speaker = "User" if role == "user" else ("Yuki" if role == "assistant" else "Tool result")
             text_parts.append(f"{speaker}: {content}")
-        if not text_parts:
+        if not text_parts and not existing_summary:
             return ""
         transcript = "\n".join(text_parts)
         system_guide = (
-            "You are a conversation condensing engine. Compress the OLDER part of a chat "
-            "history into a concise factual summary. Preserve important names, preferences, "
+            "You are a conversation condensing engine. Compress earlier chat history into "
+            "a concise, factual, coherent rolling summary. Preserve important names, preferences, "
             "facts, decisions, file paths, actions, and any pending tasks. "
-            "Output ONLY the plain summary text with no preamble, under 150 words."
+            "Output ONLY the plain summary text with no preamble, under 180 words."
         )
+        if existing_summary and transcript:
+            user_prompt = (
+                f"Existing Conversation Summary (from earlier in the session):\n{existing_summary}\n\n"
+                f"New Conversation Turns to Integrate:\n{transcript[-16000:]}\n\n"
+                "Please update and combine the existing summary with these new turns into a single unified summary under 180 words."
+            )
+        elif existing_summary and not transcript:
+            return existing_summary
+        else:
+            user_prompt = "Summarize this earlier conversation:\n\n" + transcript[-16000:]
+
         summary_messages = [
             {"role": "system", "content": system_guide},
-            {"role": "user", "content": "Summarize this earlier conversation:\n\n" + transcript[-16000:]},
+            {"role": "user", "content": user_prompt},
         ]
         try:
             task_overrides = dict(overrides or {})
