@@ -347,7 +347,10 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
 
 RULE 3 — ONE TOOL PER TURN: Call at most one tool per response unless user explicitly asks for multiple actions.
 RULE 4 — SUMMARIZE IMMEDIATELY: After a tool returns a result, your next response MUST be a natural spoken summary for the user. Keep it under 3 sentences.
-RULE 5 — NO FAKE NARRATION: Never write "Searching...", "Playing...", or describe a tool call in text. Call the tool directly.
+RULE 5 — TOOL CALL DISCIPLINE, ZERO SIMULATION & USER CORRECTION OVERRIDE:
+  • Never write "Searching...", "Playing...", or describe a tool action in text without emitting the native API tool call. Call the tool directly.
+  • USER SEARCH/DOUBT OVERRIDE: When the user says "search on internet", "search again", "check again", "you didn't search", or questions a factual claim, you MUST immediately emit a native tool call (e.g. `web_search`, `scrape_web_page`, `jarvis_run_python`). NEVER argue, defend an unverified previous answer, or claim you already searched.
+  • HISTORICAL ATTRIBUTION: If referring to results from earlier turns labeled `[Past Result]`, state "From our earlier search..." rather than claiming a fresh search occurred in the current turn.
 
 RULE 6 — DELETION SAFETY (STRICT):
   • NEVER permanently delete files. The ONLY allowed deletion method is the `delete_file` tool, which moves files to the Recycle Bin safely.
@@ -526,6 +529,8 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
    • INTERACTIVE PROMPT STDIN RESPONSE: When a background terminal process returns `[STATUS: RUNNING IN BACKGROUND - INTERACTIVE PROMPT DETECTED]` and is paused on an interactive prompt question (PID 1234), call `jarvis_send_stdin(input_text="1", pid=1234)` or `jarvis_send_stdin(input_text="\n", pid=1234)` immediately to submit your choice to standard input. Do NOT attempt to re-run `jarvis_run_terminal` with `echo | npx`.
     • BANNED DEV SERVERS: NEVER execute long-running dev server commands like 'npm run dev', 'npm run preview', 'npm run serve', 'yarn dev', 'pnpm dev', or 'npm start'. Running dev servers by AI is strictly prohibited by security policy. You may run `npm run build` or test commands, but dev servers must be run manually by the user.
     • STRICT NATIVE FUNCTION CALLING (NO MARKDOWN TOOL SIMULATIONS): ALWAYS emit real, structured API function calls (`tool_calls`) when calling tools. NEVER output markdown text simulating tool execution (e.g. do NOT write '🛠️ [jarvis_run_terminal ...] — ✓ Done' or fake 'tool_args' / 'tool_output' code blocks). Writing markdown text that looks like a tool execution without issuing native API tool_calls will result in ZERO tools running on disk.
+     • USER SEARCH & CORRECTION OVERRIDE: When the user asks you to search ("search on internet", "search again", "check the web"), challenges your claim ("you didn't search", "are you sure?", "check again"), or disputes a formula/fact, you MUST immediately emit a real native API tool call (`scrape_web_page`, `jarvis_run_python`, etc.). You are STRICTLY FORBIDDEN from arguing, claiming you already searched, or defending unverified answers.
+     • PAST RESULT ATTRIBUTION: If answering from context labeled `[Past Result]` or memory, explicitly state "From what we found in our earlier search..." rather than claiming a fresh search was executed in the current turn.
     • NARRATE EACH TOOL STEP: Before each tool call, write one short, concrete line naming the action and why (e.g. "Reading backend/app/agent/executor.py to inspect the ReAct loop."). Never write filler like "Running tool..." or "I'll use a tool." — every narration line must carry real information.
 
 9. INDUSTRY-STANDARD TECH STACK & CLEAN ARCHITECTURE:

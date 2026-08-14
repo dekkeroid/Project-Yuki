@@ -1220,7 +1220,7 @@ class AgentExecutor:
                 tool_name = m.get("name", "Tool")
                 sanitized_history.append({
                     "role": "user",
-                    "content": f"[Previous Tool Result ({tool_name})]: {content}"
+                    "content": f"[Past Result ({tool_name})]: {content}"
                 })
             elif role == "assistant":
                 # Strip visual UI tool badges from LLM prompt context to prevent prompt
@@ -1234,7 +1234,7 @@ class AgentExecutor:
                     if len(snippet) > 400:
                         snippet = snippet[:400] + "..."
                     if snippet:
-                        preserved.append(f"[Previous Tool Result]: {snippet}")
+                        preserved.append(f"[Past Result]: {snippet}")
                 if preserved:
                     preserved = preserved[-4:]
                     if clean_content:
@@ -2417,7 +2417,7 @@ class AgentExecutor:
                     for extra in tool_msgs[keep_count:]:
                         repaired.append({
                             "role": "user",
-                            "content": f"[Previous Tool Result ({extra.get('name', 'Tool')})]: {str(extra.get('content') or '').strip()}"
+                            "content": f"[Past Result ({extra.get('name', 'Tool')})]: {str(extra.get('content') or '').strip()}"
                         })
                     i = j
                     continue
@@ -2429,7 +2429,7 @@ class AgentExecutor:
                 print(f"[Executor] Repairing orphaned tool response for '{msg.get('name', 'Tool')}' -> text context.")
                 repaired.append({
                     "role": "user",
-                    "content": f"[Previous Tool Result ({msg.get('name', 'Tool')})]: {str(msg.get('content') or '').strip()}"
+                    "content": f"[Past Result ({msg.get('name', 'Tool')})]: {str(msg.get('content') or '').strip()}"
                 })
                 i += 1
             else:
