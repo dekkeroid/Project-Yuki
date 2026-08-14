@@ -2,6 +2,10 @@ import os
 import sys
 from pathlib import Path
 
+# Disable global Python user site-packages to prevent version clashes with bundled GPU packages
+os.environ["PYTHONNOUSERSITE"] = "1"
+sys.path = [p for p in sys.path if "appdata\\roaming\\python" not in p.lower()]
+
 if sys.stdout:
     sys.stdout.reconfigure(encoding='utf-8')
 if sys.stderr:
@@ -62,17 +66,26 @@ if getattr(sys, "frozen", False):
             return None
 
     _app_base_dir = Path(sys.executable).parent
+    _internal_dir = _app_base_dir / "_internal"
     _appdata = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
     _user_pkg_dir = _appdata / "Yuki AI" / "packages"
-    _py_ver = f"Python{sys.version_info.major}{sys.version_info.minor}"
-    _user_site_dir = _appdata / "Python" / _py_ver / "site-packages"
 
     try:
         _user_pkg_dir.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
 
-    _loose_search_dirs = [_user_pkg_dir, _user_site_dir, _app_base_dir / "_internal", _app_base_dir]
+    # Priority order:
+    # 1. Loose app code (for instant Fast Sync updates)
+    # 2. Bundled GPU packages in _internal (onnxruntime-gpu, ctranslate2, torch, etc.)
+    # 3. Yuki's isolated packages in APPDATA/Yuki AI/packages
+    _loose_search_dirs = [
+        _app_base_dir / "app",
+        _internal_dir / "app",
+        _internal_dir,
+        _app_base_dir,
+        _user_pkg_dir,
+    ]
 
     # Optional local development venv fallback
     if "YUKI_DEV_SITE_PACKAGES" in os.environ:
@@ -80,12 +93,22 @@ if getattr(sys, "frozen", False):
         if _dev_sp.is_dir():
             _loose_search_dirs.append(_dev_sp)
 
-    # Ensure paths are also on sys.path for C extensions and standard importlib lookups
-    for _p in [_user_pkg_dir, _user_site_dir]:
-        if _p.is_dir() and str(_p) not in sys.path:
-            sys.path.insert(0, str(_p))
+    # Append Yuki package dir to sys.path
+    if _user_pkg_dir.is_dir() and str(_user_pkg_dir) not in sys.path:
+        sys.path.append(str(_user_pkg_dir))
 
-    # Register DLL directories for C-extension .pyd libraries
+    # Register bundled NVIDIA CUDA & cuDNN DLL directories early
+    _nvidia_base = _internal_dir / "nvidia"
+    if _nvidia_base.is_dir():
+        for _bin in _nvidia_base.rglob("bin"):
+            if _bin.is_dir():
+                try:
+                    os.add_dll_directory(str(_bin))
+                    os.environ["PATH"] = str(_bin) + os.pathsep + os.environ.get("PATH", "")
+                except Exception:
+                    pass
+
+    # Register all other DLL directories in loose search dirs
     for _sp in _loose_search_dirs:
         if _sp.is_dir():
             try:
