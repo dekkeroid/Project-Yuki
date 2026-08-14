@@ -51,17 +51,17 @@ if getattr(sys, "frozen", False):
                             submodule_search_locations=[str(dir_candidate)]
                         )
 
-                # Single module (.py or .pyd)
+                # Single module (.pyd binary extension takes priority over .py source stub)
                 parent_dir = base.joinpath(*parts[:-1]) if len(parts) > 1 else base
                 if parent_dir.is_dir():
-                    py_file = parent_dir / f"{parts[-1]}.py"
-                    if py_file.is_file():
-                        return importlib.util.spec_from_file_location(fullname, str(py_file))
                     pyd_file = parent_dir / f"{parts[-1]}.pyd"
                     if pyd_file.is_file():
                         return importlib.util.spec_from_file_location(fullname, str(pyd_file))
                     for tagged in parent_dir.glob(f"{parts[-1]}.*.pyd"):
                         return importlib.util.spec_from_file_location(fullname, str(tagged))
+                    py_file = parent_dir / f"{parts[-1]}.py"
+                    if py_file.is_file():
+                        return importlib.util.spec_from_file_location(fullname, str(py_file))
 
             return None
 

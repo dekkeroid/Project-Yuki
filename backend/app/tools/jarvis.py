@@ -370,29 +370,80 @@ def jarvis_network_status(host: str = "8.8.8.8") -> str:
 
 def jarvis_web_scrape(url: str, max_chars: int = 4000) -> str:
     """
-    Fetches a web page URL over HTTP and returns clean readable markdown text.
+    Fetches a web page URL over HTTP and returns clean readable text.
+    Uses modern Chrome headers, DOM cleaning via BeautifulSoup, and a fallback reader
+    to prevent HTTP 403 Forbidden / bot-protection errors.
     """
+    if not url or not isinstance(url, str):
+        return "Web Scraper Error: URL cannot be empty."
+
+    url = url.strip()
     if not url.startswith(('http://', 'https://')):
         url = 'https://' + url
 
-    try:
-        req = urllib.request.Request(
-            url, 
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        )
-        with urllib.request.urlopen(req, timeout=8) as response:
-            html = response.read().decode('utf-8', errors='replace')
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Upgrade-Insecure-Requests': '1'
+    }
 
-        clean_html = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    raw_html = ""
+    fetch_error = None
+
+    try:
+        import httpx
+        with httpx.Client(follow_redirects=True, timeout=10.0, headers=headers) as client:
+            resp = client.get(url)
+            if resp.status_code == 200:
+                raw_html = resp.text
+            elif resp.status_code in (401, 403, 429, 503):
+                fetch_error = f"HTTP {resp.status_code}"
+    except Exception as e:
+        fetch_error = str(e)
+
+    # If direct fetch failed or was blocked (e.g. 403 Forbidden / Cloudflare), attempt fallback via reader proxy
+    if not raw_html:
+        try:
+            import httpx
+            jina_url = f"https://r.jina.ai/{url}"
+            with httpx.Client(follow_redirects=True, timeout=12.0) as client:
+                resp = client.get(jina_url)
+                if resp.status_code == 200 and resp.text.strip():
+                    text = resp.text.strip()
+                    if len(text) > max_chars:
+                        text = text[:max_chars] + f"\n... [Truncated at {max_chars} characters]"
+                    return f"=== Scraped Content ({url}) ===\n{text}"
+        except Exception:
+            pass
+
+    if not raw_html:
+        return f"Web Scraper Notice: Could not access '{url}' ({fetch_error or 'Forbidden/Blocked'}). The site may require authentication or block automated scraping. Try searching for alternative sources using jarvis_web_search."
+
+    # Parse and clean HTML using BeautifulSoup
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(raw_html, "html.parser")
+        for tag in soup(["script", "style", "header", "footer", "nav", "aside", "noscript", "svg", "form", "button"]):
+            tag.decompose()
+        text = soup.get_text(separator=" ")
+        text = re.sub(r'\s+', ' ', text).strip()
+    except Exception:
+        # Fallback to regex cleaning if bs4 is unavailable
+        clean_html = re.sub(r'<(script|style|header|footer|nav|aside)[^>]*>.*?</\1>', '', raw_html, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<[^>]+>', ' ', clean_html)
         text = re.sub(r'\s+', ' ', text).strip()
 
-        if len(text) > max_chars:
-            text = text[:max_chars] + f"\n... [Truncated at {max_chars} characters]"
+    if not text:
+        return f"Web Scraper Notice: '{url}' returned no readable text content."
 
-        return f"=== Scraped Content ({url}) ===\n{text}"
-    except Exception as e:
-        return f"Web Scraper Error: {str(e)}"
+    if len(text) > max_chars:
+        text = text[:max_chars] + f"\n... [Truncated at {max_chars} characters]"
+
+    return f"=== Scraped Content ({url}) ===\n{text}"
 
 
 def jarvis_window_control(action: str = "list", title_query: str = None) -> str:
