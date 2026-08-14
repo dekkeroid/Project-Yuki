@@ -1190,7 +1190,7 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
             if r == "tool":
                 r = "user"
                 tool_name = m.get("name", "Tool")
-                c = f"[Previous Tool Result ({tool_name})]: {c}"
+                c = f"[Past Result ({tool_name})]: {c}"
             if c:
                 atts = m.get("attachments")
                 atts_json = None
@@ -1244,7 +1244,7 @@ def save_incomplete_turn(turn_id: str, messages: List[Dict[str, str]]):
             if r == "tool":
                 r = "user"
                 tool_name = m.get("name", "Tool")
-                c = f"[Previous Tool Result ({tool_name})]: {c}"
+                c = f"[Past Result ({tool_name})]: {c}"
             if c:
                 atts = m.get("attachments")
                 atts_json = None
