@@ -276,7 +276,8 @@ class AgentExecutor:
             "launch_app": lambda **kwargs: launch_app(
                 kwargs.get("app_name") or kwargs.get("name") or kwargs.get("app") or (list(kwargs.values())[0] if kwargs else ""),
                 args=kwargs.get("args"),
-                run_as_admin=bool(kwargs.get("run_as_admin", False))
+                run_as_admin=bool(kwargs.get("run_as_admin", False)),
+                new_window=bool(kwargs.get("new_window", False))
             ),
             "set_system_volume": lambda **kwargs: set_system_volume(
                 int(kwargs.get("volume_level") or kwargs.get("volume") or kwargs.get("level") or (list(kwargs.values())[0] if kwargs else 0))
@@ -396,7 +397,8 @@ class AgentExecutor:
             ),
             "jarvis_launch_app": lambda **kwargs: launch_app(
                 kwargs.get("app_name") or kwargs.get("name") or "",
-                args=kwargs.get("args")
+                args=kwargs.get("args"),
+                new_window=bool(kwargs.get("new_window", False))
             ),
             "jarvis_open_or_play_file": lambda **kwargs: open_or_play_file(
                 kwargs.get("file_path_or_query") or kwargs.get("query") or "",

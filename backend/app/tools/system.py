@@ -345,9 +345,155 @@ def _find_app_path(app_name: str):
 
     return None
 
-def launch_app(app_name: str, args: str = None, run_as_admin: bool = False) -> str:
+def _find_and_focus_running_app(app_name: str, app_path: str = None) -> tuple[bool, str]:
     """
-    Launches an application, URL, or file link on the user's PC. Supports arguments and admin privilege execution.
+    Checks if a top-level window for the given application is already running.
+    If found, brings it to the foreground (restoring if minimized) and returns (True, window_title).
+    Otherwise returns (False, "").
+    """
+    if platform.system() != "Windows":
+        return False, ""
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    dwmapi = getattr(ctypes.windll, "dwmapi", None)
+
+    target_clean = app_name.lower().strip()
+    target_exes = set()
+    if target_clean.endswith(".exe"):
+        target_exes.add(target_clean)
+    else:
+        target_exes.add(f"{target_clean}.exe")
+        target_exes.add(target_clean)
+
+    if app_path:
+        base_exe = os.path.basename(app_path).lower()
+        target_exes.add(base_exe)
+        if base_exe.endswith(".exe"):
+            target_exes.add(base_exe[:-4])
+
+    # Common alias mappings for fast process name matching
+    aliases = {
+        "chrome": "chrome.exe",
+        "google chrome": "chrome.exe",
+        "firefox": "firefox.exe",
+        "mozilla firefox": "firefox.exe",
+        "edge": "msedge.exe",
+        "msedge": "msedge.exe",
+        "microsoft edge": "msedge.exe",
+        "brave": "brave.exe",
+        "opera": "opera.exe",
+        "code": "code.exe",
+        "vscode": "code.exe",
+        "visual studio code": "code.exe",
+        "spotify": "spotify.exe",
+        "discord": "discord.exe",
+        "notepad": "notepad.exe",
+        "calc": "calculatorapp.exe",
+        "calculator": "calculatorapp.exe",
+        "word": "winword.exe",
+        "excel": "excel.exe",
+        "powerpoint": "powerpnt.exe",
+        "steam": "steam.exe",
+        "obs": "obs64.exe",
+        "obsidian": "obsidian.exe",
+        "vlc": "vlc.exe",
+        "terminal": "windowsterminal.exe",
+        "windows terminal": "windowsterminal.exe",
+    }
+    if target_clean in aliases:
+        target_exes.add(aliases[target_clean].lower())
+
+    EnumWindows = user32.EnumWindows
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
+    GetWindowText = user32.GetWindowTextW
+    GetWindowTextLength = user32.GetWindowTextLengthW
+    IsWindowVisible = user32.IsWindowVisible
+    GetWindowThreadProcessId = user32.GetWindowThreadProcessId
+
+    found_hwnd = None
+    found_title = ""
+
+    system_titles = {"program manager", "windows input experience", "taskbar", "yuki ai", "yuki"}
+
+    def enum_cb(hwnd, lParam):
+        nonlocal found_hwnd, found_title
+        if not IsWindowVisible(hwnd):
+            return True
+
+        length = GetWindowTextLength(hwnd)
+        if length == 0:
+            return True
+
+        # Check cloaked status (UWP background / virtual desktop cloaking)
+        if dwmapi:
+            cloaked = ctypes.c_int(0)
+            try:
+                dwmapi.DwmGetWindowAttribute(hwnd, 14, ctypes.byref(cloaked), ctypes.sizeof(cloaked))
+                if cloaked.value != 0:
+                    return True
+            except Exception:
+                pass
+
+        buff = ctypes.create_unicode_buffer(length + 1)
+        GetWindowText(hwnd, buff, length + 1)
+        title = buff.value.strip()
+        title_lower = title.lower()
+
+        if any(st == title_lower or st in title_lower for st in system_titles):
+            return True
+
+        # 1. Match by Process Name (PID)
+        pid = wintypes.DWORD()
+        GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value:
+            try:
+                proc = psutil.Process(pid.value)
+                proc_name = proc.name().lower()
+                if proc_name in target_exes:
+                    found_hwnd = hwnd
+                    found_title = title
+                    return False  # Stop enumeration on first (most active) match
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        # 2. Fallback: match by Window Title substring
+        if target_clean in title_lower or any(t in title_lower for t in target_exes if not t.endswith(".exe")):
+            found_hwnd = hwnd
+            found_title = title
+            return False
+
+        return True
+
+    EnumWindows(EnumWindowsProc(enum_cb), 0)
+
+    if found_hwnd:
+        try:
+            # If minimized, restore window
+            if user32.IsIconic(found_hwnd):
+                user32.ShowWindow(found_hwnd, 9)  # SW_RESTORE
+            else:
+                user32.ShowWindow(found_hwnd, 5)  # SW_SHOW
+
+            # Windows foreground focus bypass
+            user32.keybd_event(0x12, 0, 0, 0)       # ALT down
+            user32.SetForegroundWindow(found_hwnd)
+            user32.keybd_event(0x12, 0, 2, 0)       # ALT up
+            user32.BringWindowToTop(found_hwnd)
+            return True, found_title
+        except Exception as e:
+            print(f"[launch_app] Error focusing existing window: {e}")
+            return False, ""
+
+    return False, ""
+
+def launch_app(app_name: str, args: str = None, run_as_admin: bool = False, new_window: bool = False) -> str:
+    """
+    Launches an application, URL, or file link on the user's PC.
+    If the app is already running and new_window is False, brings the active window to the front.
+    Supports arguments and admin privilege execution.
     """
     if not app_name or not app_name.strip():
         return "Error: Application name must not be empty."
@@ -366,8 +512,13 @@ def launch_app(app_name: str, args: str = None, run_as_admin: bool = False) -> s
             return f"Error opening URL/Link '{target}': {str(e)}"
 
     app_path = _find_app_path(target)
-    
     executable = app_path if app_path else target
+
+    # Focus existing instance if already open (unless user requested new window, admin, or special args)
+    if not new_window and not run_as_admin and not args:
+        focused, title = _find_and_focus_running_app(target, app_path)
+        if focused:
+            return f"Success: Switched to already open '{app_name}' ({title})!"
     
     try:
         if run_as_admin:

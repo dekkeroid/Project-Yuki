@@ -25,6 +25,7 @@ _faster_datas, _faster_bins, _faster_hidden = collect_all('faster_whisper')
 _ct2_datas, _ct2_bins, _ct2_hidden = collect_all('ctranslate2')
 _ort_datas, _ort_bins, _ort_hidden = collect_all('onnxruntime')
 _hf_datas, _hf_bins, _hf_hidden = collect_all('huggingface_hub')
+_pip_datas, _pip_bins, _pip_hidden = collect_all('pip')
 
 # NVIDIA CUDA DLLs only (skip headers, .lib, Python files to save ~2GB)
 # Only CUDA 12 components are bundled — cublas/cudart/cudnn/cufft are required by BOTH
@@ -145,21 +146,21 @@ all_datas = (
     + _kokoro_datas + _espeak_datas + _phonemizer_datas
     + _segments_datas + _csvw_datas + _langtags_datas
     + _faster_datas + _ct2_datas + _ort_datas
-    + _nvidia_datas + _hf_datas
+    + _nvidia_datas + _hf_datas + _pip_datas
 )
 all_binaries = (
     manual_binaries
     + _kokoro_bins + _espeak_bins + _phonemizer_bins
     + _segments_bins + _csvw_bins + _langtags_bins
     + _faster_bins + _ct2_bins + _ort_bins
-    + _nvidia_bins + _hf_bins
+    + _nvidia_bins + _hf_bins + _pip_bins
 )
 all_hidden = (
     manual_hidden
     + _kokoro_hidden + _espeak_hidden + _phonemizer_hidden
     + _segments_hidden + _csvw_hidden + _langtags_hidden
     + _faster_hidden + _ct2_hidden + _ort_hidden
-    + _nvidia_hidden + _hf_hidden
+    + _nvidia_hidden + _hf_hidden + _pip_hidden
 )
 
 a = Analysis(

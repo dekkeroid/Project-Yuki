@@ -66,13 +66,14 @@ def get_basic_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "launch_app",
-                "description": "Launch a desktop application or open a URL.",
+                "description": "Launch a desktop application or open a URL. By default, if the app is already open, it brings the existing window to the front.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "app_name": {"type": "string", "description": "App name to launch or browser to open URL."},
+                        "app_name": {"type": "string", "description": "App name to launch/switch to, or URL to open."},
                         "args": {"type": "string", "description": "Optional CLI arguments or URL."},
-                        "run_as_admin": {"type": "boolean", "description": "Run as administrator."}
+                        "run_as_admin": {"type": "boolean", "description": "Run as administrator."},
+                        "new_window": {"type": "boolean", "description": "Set to true ONLY if the user explicitly asks for a new or separate window instance of an already running app. Defaults to false."}
                     },
                     "required": ["app_name"]
                 }
@@ -363,12 +364,13 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_launch_app",
-                "description": "Launch a desktop application or open a web URL.",
+                "description": "Launch a desktop application or open a web URL. By default, if the app is already open, it brings the existing window to the front.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "app_name": {"type": "string", "description": "Application name or URL to launch."},
-                        "args": {"type": "string", "description": "Optional CLI arguments or URL parameters."}
+                        "app_name": {"type": "string", "description": "Application name or URL to launch/switch to."},
+                        "args": {"type": "string", "description": "Optional CLI arguments or URL parameters."},
+                        "new_window": {"type": "boolean", "description": "Set to true ONLY if the user explicitly asks for a new or separate window instance. Defaults to false."}
                     },
                     "required": ["app_name"]
                 }
@@ -673,7 +675,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_run_python",
-                "description": "Execute Python code for calculations, math, stats, data processing (CSV/JSON/XML), file operations (batch rename, find duplicates, hash), text processing, format conversion, system interrogation, web API calls, encryption/hashing, code analysis/lint, and any custom logic. Full Python stdlib + numpy/pandas available. Returns stdout output.",
+                "description": "Execute Python code for calculations, math, stats, data processing (CSV/JSON/XML), file operations (batch rename, find duplicates, hash), text processing, format conversion, system interrogation, web API calls, encryption/hashing, code analysis/lint, and any custom logic. Full Python stdlib + numpy/pandas available. Supports on-the-fly package self-healing via [sys.executable, '-m', 'pip', 'install', 'pkg']. Returns stdout output.",
                 "parameters": {
                     "type": "object",
                     "properties": {
