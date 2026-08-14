@@ -1256,6 +1256,20 @@ class AgentExecutor:
                             # Keep the LLM summary AND append the detail recap of what was trimmed off.
                             recap_msg["content"] += "\n\n" + snippet_recap["content"]
 
+                # Synchronize the session cache with the total messages absorbed/trimmed so far
+                if removed and recap_msg:
+                    total_absorbed = len(chat_history) - len(pruned_history)
+                    clean_cached_summary = recap_msg.get("content", "")
+                    if clean_cached_summary.startswith("[CONVERSATION SUMMARY]\n"):
+                        clean_cached_summary = clean_cached_summary[len("[CONVERSATION SUMMARY]\n"):].strip()
+                    if not hasattr(self, "_session_summary_cache"):
+                        self._session_summary_cache = {}
+                    self._session_summary_cache[session_id] = {
+                        "summary_text": clean_cached_summary,
+                        "summarized_count": total_absorbed,
+                        "timestamp": time.time(),
+                    }
+
             history_tokens = _count_messages_tokens(pruned_history)
             recap_tokens = _count_tokens(recap_msg["content"]) if recap_msg else 0
             if history_tokens + overhead + recap_tokens > user_token_limit:
