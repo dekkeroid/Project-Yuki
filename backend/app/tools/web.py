@@ -76,7 +76,7 @@ async def web_search(query: str) -> str:
             resp = await client.get(ddg_url, headers=headers, timeout=5.0)
             if resp.status_code == 200 and "captcha" not in resp.text.lower() and "anomaly" not in resp.text.lower():
                 soup = BeautifulSoup(resp.text, "html.parser")
-                for result in soup.find_all(class_="result")[:4]:
+                for result in soup.find_all(class_="result")[:8]:
                     link_el = result.find("a", class_="result__a")
                     desc_el = result.find(class_="result__snippet")
                     if link_el and desc_el:
@@ -106,7 +106,7 @@ async def web_search(query: str) -> str:
                 resp = await client.get(yahoo_url, headers=headers, timeout=5.0)
                 if resp.status_code == 200:
                     soup = BeautifulSoup(resp.text, "html.parser")
-                    for algo in soup.find_all("div", class_=lambda c: c and "algo" in c)[:4]:
+                    for algo in soup.find_all("div", class_=lambda c: c and "algo" in c)[:8]:
                         link_el = algo.find("a")
                         desc_el = algo.find("div", class_=lambda c: c and "compText" in c)
                         if link_el and desc_el:

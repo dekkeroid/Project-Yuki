@@ -83,7 +83,7 @@ def get_basic_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "web_search",
-                "description": "Search the internet for real-time or unknown information.",
+                "description": "Search the internet for real-time information, facts, documentation, or news. Returns 8 search result snippets and automatically deep-scrapes the top 2 pages.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -335,7 +335,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_web_search",
-                "description": "Perform web search for news, real-time facts, documentation, or prices.",
+                "description": "Perform web search for news, real-time facts, documentation, or solutions. Returns 8 organic search snippets with URLs and automatically deep-scrapes the top 2 pages. If a specific URL snippet looks promising for deeper details, follow up by calling jarvis_web_scrape with that URL.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -349,7 +349,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_web_scrape",
-                "description": "Fetch a web page URL and extract clean text/markdown content for deep reading.",
+                "description": "Fetch a web page URL and extract clean text/markdown content for deep reading (up to max_chars, default 4000). Use this for deep reading of articles, documentation, or promising URLs found via jarvis_web_search.",
                 "parameters": {
                     "type": "object",
                     "properties": {
