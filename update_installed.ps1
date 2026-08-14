@@ -206,7 +206,7 @@ if ($selBackend) {
     $localDistExe = "$root\$backendDir\dist\backend\backend.exe"
     
     if ((Test-Path $installedExe) -and (Test-Path $localDistExe) -and (-not $env:YUKI_FULL_REBUILD)) {
-        Write-Host "--- Backend engine: Fast Syncing app source files ---"
+        Write-Host "--- Backend engine: Fast Syncing app source files & pip packages ---"
         $destInternalApp = Join-Path $installDir 'resources\backend\_internal\app'
         $destRootApp     = Join-Path $installDir 'resources\backend\app'
         $localDistApp    = "$root\$backendDir\dist\backend\_internal\app"
@@ -216,9 +216,17 @@ if ($selBackend) {
         if (Test-Path "$root\$backendDir\dist\backend\_internal") {
             $rc3 = robocopy "$root\$backendDir\app" $localDistApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
         }
+
+        # Sync any newly installed pip packages from local venv into _internal
+        $localVenvSite = "$root\$backendDir\venv\Lib\site-packages"
+        if (Test-Path $localVenvSite) {
+            $destInternal = Join-Path $installDir 'resources\backend\_internal'
+            # Copy new/changed packages (excluding __pycache__)
+            robocopy $localVenvSite $destInternal /E /XO /XN /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__ | Out-Null
+        }
         
         if ($rc1 -ge 8) { Write-Host ""; Write-Host "FAST COPY FAILED (robocopy code $rc1)."; exit 1 }
-        Write-Host "[OK] Backend app source files updated in ~0.5s!"
+        Write-Host "[OK] Backend app source files and packages updated in ~0.5s!"
     } else {
         Write-Host "--- Backend engine: full rebuild (PyInstaller) ---"
         Push-Location "$root\$backendDir"

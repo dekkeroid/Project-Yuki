@@ -69,9 +69,10 @@ async def launch_app(
     app_name: str,
     args: str | None = None,
     run_as_admin: bool = False,
+    new_window: bool = False,
     confirmation_grant_id: str | None = None,
 ) -> str:
-    """Launch a desktop app or open a URL in the browser. Requires backend confirmation."""
+    """Launch a desktop app, switch to an existing open window, or open a URL in the browser. Requires backend confirmation."""
     return await _guarded_tool_call(
         "launch_app",
         system_tools.launch_app,
@@ -79,6 +80,7 @@ async def launch_app(
             "app_name": app_name,
             "args": args,
             "run_as_admin": run_as_admin,
+            "new_window": new_window,
             "confirmation_grant_id": confirmation_grant_id,
         },
     )
