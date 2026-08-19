@@ -512,8 +512,6 @@ export function useSpeechRecognition(options = {}) {
             return;
           }
 
-          if (stopAllPlayback) stopAllPlayback();
-
           const sttStartTime = Date.now();
           let res;
           try {
