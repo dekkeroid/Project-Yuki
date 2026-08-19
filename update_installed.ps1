@@ -285,7 +285,7 @@ Write-Host "============================================"
 
 $installedAppExe = Join-Path $installDir 'Yuki AI.exe'
 if (Test-Path $installedAppExe) {
-    Start-Process powershell -WorkingDirectory $installDir -ArgumentList @('-NoExit', '-Command', '& ".\yuki ai.exe"')
+    Start-Process powershell -WorkingDirectory $installDir -ArgumentList @('-NoExit', '-Command', "& '.\Yuki AI.exe'")
 }
 
 exit 0
