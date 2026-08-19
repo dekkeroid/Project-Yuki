@@ -895,7 +895,18 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
     file_path.write_bytes(image_bytes)
     print(f"[ImageGen] Image saved successfully to '{file_path}' ({len(image_bytes)} bytes) using engine '{engine_used}'.")
 
-    # 4. Open in Canvas / Image Viewer
+    # 4. Open in native system default Image Viewer (Windows Photos, IrfanView, Honeyview, etc.)
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile(str(file_path))
+        else:
+            import subprocess
+            subprocess.Popen(["start", "", str(file_path)], shell=True)
+        print(f"[ImageGen] Opened '{file_path}' in system image viewer.")
+    except Exception as e:
+        print(f"[ImageGen] System image viewer open warning: {e}")
+
+    # 5. Broadcast to Canvas window as well
     clean_path_str = str(file_path).replace("\\", "/")
     encoded_path = urllib.parse.quote(clean_path_str, safe="/:")
     serve_url = f"serve-file?path={encoded_path}"
@@ -905,5 +916,5 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
     except Exception as e:
         print(f"[ImageGen] Canvas broadcast warning: {e}")
 
-    return f"Successfully generated image using {engine_used} for: \"{prompt}\"\n\n- File Path: {clean_path_str}\n- Displayed on Canvas window."
+    return f"Successfully generated image using {engine_used} for: \"{prompt}\"\n\n- File Path: {clean_path_str}\n- Opened in default image viewer."
 
