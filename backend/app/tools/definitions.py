@@ -102,7 +102,8 @@ def get_basic_tools_definition() -> list:
                     "type": "object",
                     "properties": {
                         "prompt": {"type": "string", "description": "Detailed text prompt describing the image."},
-                        "aspect_ratio": {"type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"], "description": "Aspect ratio for the generated image. Defaults to '1:1'."}
+                        "aspect_ratio": {"type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"], "description": "Aspect ratio for the generated image. Defaults to '1:1'."},
+                        "style": {"type": "string", "enum": ["auto", "flux", "flux-anime", "flux-realism", "flux-3d", "turbo"], "description": "Visual style preset. Defaults to 'auto'."}
                     },
                     "required": ["prompt"]
                 }
@@ -695,7 +696,8 @@ def get_advanced_jarvis_tools_definition() -> list:
                     "type": "object",
                     "properties": {
                         "prompt": {"type": "string", "description": "Detailed text prompt describing the image, scene, subject, style, lighting, and composition."},
-                        "aspect_ratio": {"type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"], "description": "Aspect ratio for the generated image. Defaults to '1:1'."}
+                        "aspect_ratio": {"type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"], "description": "Aspect ratio for the generated image. Defaults to '1:1'."},
+                        "style": {"type": "string", "enum": ["auto", "flux", "flux-anime", "flux-realism", "flux-3d", "turbo"], "description": "Visual style preset ('flux-anime' for Japanese anime/manga, 'flux-realism' for photorealistic portraits/photos, 'flux-3d' for 3D CGI/Pixar/Unreal renders, 'turbo' for 1-second generation, 'flux' for general artwork, or 'auto'). Defaults to 'auto'."}
                     },
                     "required": ["prompt"]
                 }
