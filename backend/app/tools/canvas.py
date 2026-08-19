@@ -74,19 +74,97 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body {
-    background:#1a1a2e;
+    background:#121220;
     width:100vw;
     height:100vh;
     overflow:hidden;
-    font-family:system-ui,sans-serif;
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     user-select:none;
     margin:0;
     padding:0;
     position:relative;
   }
+  .canvas-top-bar {
+    position:fixed;
+    top:0;
+    left:0;
+    right:0;
+    height:38px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 10px;
+    background:rgba(18, 18, 32, 0.88);
+    backdrop-filter:blur(12px);
+    border-bottom:1px solid rgba(255, 255, 255, 0.08);
+    z-index:9999;
+    -webkit-app-region:drag;
+  }
+  .canvas-brand {
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+    font-weight:600;
+    color:rgba(255, 255, 255, 0.75);
+    letter-spacing:0.4px;
+    pointer-events:none;
+  }
+  .canvas-brand-icon {
+    color:#ec4899;
+    font-size:13px;
+  }
+  .canvas-drag-grip {
+    color:rgba(56, 189, 248, 0.75);
+    font-size:14px;
+    margin-right:2px;
+  }
+  .canvas-controls {
+    display:flex;
+    gap:5px;
+    align-items:center;
+    -webkit-app-region:no-drag;
+  }
+  .canvas-btn {
+    width:26px;
+    height:26px;
+    border-radius:6px;
+    border:none;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:13px;
+    font-weight:bold;
+    color:#ccc;
+    background:rgba(255, 255, 255, 0.07);
+    transition:all 0.15s ease;
+    -webkit-app-region:no-drag;
+  }
+  .canvas-btn:hover {
+    background:rgba(255, 255, 255, 0.16);
+    color:#fff;
+    transform:translateY(-1px);
+  }
+  .canvas-btn.close:hover {
+    background:rgba(239, 68, 68, 0.85);
+    color:#fff;
+  }
+  #zoom-label {
+    font-size:11px;
+    color:rgba(255, 255, 255, 0.75);
+    background:rgba(0, 0, 0, 0.4);
+    padding:2px 8px;
+    border-radius:6px;
+    pointer-events:none;
+    min-width:44px;
+    text-align:center;
+    font-weight:600;
+  }
   #viewport-wrapper {
     width:100%;
-    height:100%;
+    height:calc(100% - 38px);
+    margin-top:38px;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -103,84 +181,47 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
     transition:transform 0.05s ease-out;
     display:inline-block;
   }
-  .canvas-overlay {
-    position:fixed;
-    top:8px;
-    right:8px;
-    display:flex;
-    gap:5px;
-    z-index:9999;
-    opacity:0.65;
-    transition:opacity 0.2s;
-    align-items:center;
-    background:rgba(20,20,35,0.75);
-    padding:4px 8px;
-    border-radius:20px;
-    backdrop-filter:blur(6px);
-  }
-  .canvas-overlay:hover { opacity:1; }
-  .canvas-btn {
-    width:28px;
-    height:28px;
-    border-radius:50%;
-    border:none;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:14px;
-    font-weight:bold;
-    color:#ddd;
-    background:rgba(40,40,65,0.85);
-    box-shadow:0 1px 4px rgba(0,0,0,0.4);
-    transition:all 0.15s;
-  }
-  .canvas-btn:hover { background:rgba(80,80,130,0.95); transform:scale(1.05); }
-  .canvas-btn.close:hover { background:rgba(200,60,60,0.9); color:#fff; }
-  #zoom-label {
-    font-size:11px;
-    color:rgba(255,255,255,0.75);
-    background:rgba(0,0,0,0.4);
-    padding:2px 8px;
-    border-radius:10px;
-    pointer-events:none;
-    min-width:42px;
-    text-align:center;
-    font-weight:600;
-  }
   .drag-hint {
     position:fixed;
     bottom:8px;
     left:50%;
     transform:translateX(-50%);
     font-size:10px;
-    color:rgba(255,255,255,0.35);
+    color:rgba(255, 255, 255, 0.35);
     pointer-events:none;
     opacity:0;
     transition:opacity 0.3s;
-    background:rgba(0,0,0,0.4);
-    padding:3px 10px;
+    background:rgba(0, 0, 0, 0.5);
+    padding:3px 12px;
     border-radius:10px;
+    backdrop-filter:blur(6px);
   }
   body:hover .drag-hint { opacity:1; }
 </style>
 </head>
 <body>
-<div class="canvas-overlay">
-  <button class="canvas-btn" onclick="zoomOut()" title="Zoom Out (- or Ctrl+Scroll)">−</button>
-  <span id="zoom-label">100%</span>
-  <button class="canvas-btn" onclick="zoomIn()" title="Zoom In (+ or Ctrl+Scroll)">+</button>
-  <button class="canvas-btn" onclick="resetZoom()" title="Reset Zoom">⊙</button>
-  <button class="canvas-btn" onclick="window.electronAPI?.saveCanvasContent({filename:'__FILENAME__'})" title="Save">&#8681;</button>
-  <button class="canvas-btn" onclick="window.electronAPI?.minimizeCanvasWindow()" title="Minimize">&#x2013;</button>
-  <button class="canvas-btn close" onclick="window.electronAPI?.closeCanvasWindow()" title="Close">&#x2715;</button>
+<div class="canvas-top-bar">
+  <div class="canvas-brand">
+    <span class="canvas-drag-grip">⠿</span>
+    <span class="canvas-brand-icon">✦</span>
+    <span>Yuki Canvas</span>
+  </div>
+  <div class="canvas-controls">
+    <button class="canvas-btn" onclick="zoomOut()" title="Zoom Out (− or Ctrl+Scroll)">−</button>
+    <span id="zoom-label">100%</span>
+    <button class="canvas-btn" onclick="zoomIn()" title="Zoom In (+ or Ctrl+Scroll)">+</button>
+    <button class="canvas-btn" onclick="resetZoom()" title="Reset Zoom">⊙</button>
+    <button class="canvas-btn" onclick="window.electronAPI?.saveCanvasContent({filename:'__FILENAME__'})" title="Save PNG/SVG">&#8681;</button>
+    <button class="canvas-btn" onclick="window.electronAPI?.minimizeCanvasWindow()" title="Minimize">&#x2013;</button>
+    <button class="canvas-btn close" onclick="window.electronAPI?.closeCanvasWindow()" title="Close">&#x2715;</button>
+  </div>
 </div>
 <div id="viewport-wrapper">
   <div id="zoom-container">
     __CANVAS_CONTENT__
   </div>
 </div>
-<div class="drag-hint">Drag canvas/background to pan • Shift+Drag window • Ctrl+Scroll or + / − to zoom</div>
+<div class="drag-hint">Drag top bar to move window • Drag canvas to pan • Ctrl+Scroll to zoom</div>
 <script>
   // ── Zoom & Pan State ──
   let currentZoom = 1.0;
@@ -225,8 +266,8 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
   let lastWindowX = 0, lastWindowY = 0;
 
   wrapper.addEventListener('mousedown', function(e) {
-    if (e.target.closest('.canvas-overlay') || e.target.closest('button, a, input, select, textarea')) return;
-    if (e.button !== 0) return;
+    if (e.target.closest('.canvas-top-bar') || e.target.closest('button, a, input, select, textarea')) return;
+    if (e.button !== 0 && e.button !== 1) return;
     isPanning = true;
     startX = e.clientX - panX;
     startY = e.clientY - panY;
@@ -241,7 +282,8 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
     lastWindowX = e.screenX;
     lastWindowY = e.screenY;
 
-    if (e.shiftKey && window.electronAPI && window.electronAPI.dragWindowBy) {
+    // Alt or Middle Click drags the whole OS window anywhere
+    if ((e.altKey || e.buttons === 4) && window.electronAPI && window.electronAPI.dragWindowBy) {
       window.electronAPI.dragWindowBy(dx, dy);
     } else {
       panX = e.clientX - startX;

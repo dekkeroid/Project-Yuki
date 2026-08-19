@@ -96,6 +96,21 @@ def get_basic_tools_definition() -> list:
         {
             "type": "function",
             "function": {
+                "name": "generate_image",
+                "description": "Generates a high-resolution image, wallpaper, art piece, or illustration from a detailed text description using the configured Image Generation Model and displays it on the Canvas.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Detailed text prompt describing the image."},
+                        "aspect_ratio": {"type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"], "description": "Aspect ratio for the generated image. Defaults to '1:1'."}
+                    },
+                    "required": ["prompt"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "update_user_fact",
                 "description": "Remember a personal fact or preference shared by the user.",
                 "parameters": {
@@ -674,6 +689,21 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
+                "name": "jarvis_generate_image",
+                "description": "Generates high-resolution AI artwork, photos, wallpapers, scenery, character illustrations, or digital paintings from a text prompt using the image generation engine (FLUX / Imagen / DALL-E) and displays the resulting image on Canvas. Use this when the user asks to draw, generate, or paint a picture, wallpaper, portrait, or artwork. (For flowcharts, architecture diagrams, and SVG vector charts, use jarvis_html_graphics instead).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Detailed text prompt describing the image, scene, subject, style, lighting, and composition."},
+                        "aspect_ratio": {"type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"], "description": "Aspect ratio for the generated image. Defaults to '1:1'."}
+                    },
+                    "required": ["prompt"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "jarvis_run_python",
                 "description": "Execute Python code for calculations, math, stats, data processing (CSV/JSON/XML), file operations (batch rename, find duplicates, hash), text processing, format conversion, system interrogation, web API calls, encryption/hashing, code analysis/lint, and any custom logic. Full Python stdlib + numpy/pandas available. Supports on-the-fly package self-healing via [sys.executable, '-m', 'pip', 'install', 'pkg']. Returns stdout output.",
                 "parameters": {
@@ -737,7 +767,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_html_graphics",
-                "description": "Render raw SVG or HTML5 Canvas in a borderless floating window with a soft light background (#f0f0f0). Use this to show diagrams, flowcharts, pixel art, SVG illustrations, animated visuals, system architecture diagrams, or any creative visual. For data graphs and charts, use matplotlib via jarvis_run_python instead. Input must be a raw <svg>...</svg> block or <canvas> with inline <script>. Do NOT wrap in <html>/<body>. Use dark colors for strokes/text so they contrast against the light background.",
+                "description": "Renders vector SVG diagrams, flowcharts, system architecture diagrams, state machines, and interactive HTML5 canvas animations in a borderless floating window. Input must be a raw <svg>...</svg> block or <canvas> with inline <script>. Do NOT use this for AI digital artwork, wallpapers, or photos (use jarvis_generate_image instead). For data graphs/charts, use matplotlib via jarvis_run_python instead.",
                 "parameters": {
                     "type": "object",
                     "properties": {

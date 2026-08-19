@@ -128,6 +128,8 @@ manual_hidden = [
     # Misc
     'dotenv',
     'requests',
+    'charset_normalizer',
+    'chardet',
     'multipart',
     'pypdf',
     'pykakasi',

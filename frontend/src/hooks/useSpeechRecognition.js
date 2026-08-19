@@ -448,20 +448,36 @@ export function useSpeechRecognition(options = {}) {
           return;
         }
 
+        const audioTrack = stream.getAudioTracks()[0];
+        const trackLabel = audioTrack ? audioTrack.label : 'Unknown Mic';
+        const trackState = audioTrack ? audioTrack.readyState : 'none';
+        const trackMuted = audioTrack ? audioTrack.muted : false;
+        console.log(`[STT-DIAG] Mic stream opened: "${trackLabel}" | readyState=${trackState} | muted=${trackMuted}`);
+
         micStreamRef.current = stream;
 
         const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
+        const recordingStartTime = Date.now();
+        let chunkCount = 0;
+
+        mediaRecorder.onerror = (errEvent) => {
+          console.error("[STT-DIAG] MediaRecorder error event:", errEvent.error || errEvent);
+        };
 
         mediaRecorder.ondataavailable = (event) => {
           if (event.data && event.data.size > 0) {
+            chunkCount++;
             audioChunksRef.current.push(event.data);
+            const totalBytes = audioChunksRef.current.reduce((acc, c) => acc + c.size, 0);
+            console.log(`[STT-DIAG] MediaRecorder Chunk #${chunkCount} (+${event.data.size} bytes, total=${totalBytes} bytes @ ${Date.now() - recordingStartTime}ms)`);
           }
         };
 
         mediaRecorder.onstop = async () => {
-          console.log("[STT] MediaRecorder stopped.");
+          const totalRecordingDurationMs = Date.now() - recordingStartTime;
+          console.log(`[STT-DIAG] MediaRecorder stopped. Total active duration: ${totalRecordingDurationMs}ms, Chunks: ${audioChunksRef.current.length}`);
 
           if (micStreamRef.current) {
             micStreamRef.current.getTracks().forEach(track => track.stop());
@@ -487,8 +503,10 @@ export function useSpeechRecognition(options = {}) {
           isSpeechRecActiveRef.current = false;
 
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          console.log(`[STT-DIAG] Pre-flight AudioBlob: size=${audioBlob.size} bytes, type='${audioBlob.type}', duration=${totalRecordingDurationMs}ms`);
+
           if (audioChunksRef.current.length === 0 || audioBlob.size < 4000) {
-            logSTTStatus(`[STT] Ignored short clip (${audioBlob.size} bytes).`);
+            logSTTStatus(`[STT] Ignored short clip (${audioBlob.size} bytes, ${totalRecordingDurationMs}ms).`);
             setIsTranscribing(false);
             updateListeningState();
             return;
@@ -577,19 +595,11 @@ export function useSpeechRecognition(options = {}) {
         const micAnalyser = micAudioCtx.createAnalyser();
         micAnalyser.fftSize = 2048;
         const micSource = micAudioCtx.createMediaStreamSource(stream);
-
-        // Web Audio API Voice Bandpass Filter (300Hz - 3400Hz) — commented out for now
-        // const voiceBandpass = micAudioCtx.createBiquadFilter();
-        // voiceBandpass.type = 'bandpass';
-        // voiceBandpass.frequency.value = 1850;
-        // voiceBandpass.Q.value = 0.65;
-        // micSource.connect(voiceBandpass);
-        // voiceBandpass.connect(micAnalyser);
-
         micSource.connect(micAnalyser);
 
         micAudioContextRef.current = micAudioCtx;
         micAnalyserRef.current = micAnalyser;
+        console.log(`[STT-DIAG] AudioContext created | state=${micAudioCtx.state} | sampleRate=${micAudioCtx.sampleRate}Hz`);
 
         vadSpeakingRef.current = false;
         vadSilenceStartRef.current = null;
@@ -599,15 +609,24 @@ export function useSpeechRecognition(options = {}) {
 
         const bufferLength = micAnalyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
+        let sampleCount = 0;
 
         const checkMicVolume = () => {
           if (!vadActiveRef.current || !isRecordingRef.current || !micAnalyserRef.current) return;
 
+          sampleCount++;
           micAnalyserRef.current.getByteTimeDomainData(dataArray);
           
           let mean = 0;
+          let minVal = 255;
+          let maxVal = 0;
+          let zeroCount = 0;
           for (let i = 0; i < bufferLength; i++) {
-            mean += dataArray[i];
+            const v = dataArray[i];
+            mean += v;
+            if (v < minVal) minVal = v;
+            if (v > maxVal) maxVal = v;
+            if (v === 0) zeroCount++;
           }
           mean /= bufferLength;
 
@@ -632,16 +651,25 @@ export function useSpeechRecognition(options = {}) {
 
           const silenceTimeoutMs = silenceTimeoutRef.current || 1000;
           const now = Date.now();
+          const elapsedStream = now - vadActivationTimeRef.current;
+
+          // Periodic sample diagnostics (every ~1s when idle)
+          if (sampleCount % 35 === 0) {
+            console.log(`[VAD-DIAG] @${elapsedStream}ms | RMS=${normalized.toFixed(4)} | Thresh=${micThreshold.toFixed(4)} | Min=${minVal} Max=${maxVal} Mean=${mean.toFixed(1)} Zeros=${zeroCount} | Speaking=${vadSpeakingRef.current}`);
+          }
 
           if (normalized > micThreshold) {
             vadSilenceStartRef.current = null;
             if (vadSustainedStart === null) {
               vadSustainedStart = now;
+              console.log(`[VAD-DIAG] Volume exceeded threshold (${normalized.toFixed(4)} > ${micThreshold.toFixed(4)}) at ${elapsedStream}ms. Starting 250ms sustain verification.`);
             }
 
             // Require 250ms of sustained speech energy to reject clicks, coughs, and transient noise
-            if (now - vadActivationTimeRef.current > 150 && now - vadSustainedStart >= 250) {
+            if (elapsedStream > 150 && now - vadSustainedStart >= 250) {
               if (!vadSpeakingRef.current) {
+                const sustainedDuration = now - vadSustainedStart;
+                console.log(`[VAD-DIAG] >>> SPEECH ACTIVATED <<< at ${elapsedStream}ms | RMS=${normalized.toFixed(4)} (Threshold=${micThreshold.toFixed(4)}) | Sustained=${sustainedDuration}ms | Waveform: Min=${minVal} Max=${maxVal} Zeros=${zeroCount}`);
                 logSTTStatus("Sustained user speech detected (250ms verified)");
                 vadSpeakingRef.current = true;
                 if (isPlayingRef?.current || ttsStreamActiveRef?.current) {
@@ -674,9 +702,11 @@ export function useSpeechRecognition(options = {}) {
             if (vadSpeakingRef.current) {
               if (vadSilenceStartRef.current === null) {
                 vadSilenceStartRef.current = now;
+                console.log(`[VAD-DIAG] Volume dropped below threshold (${normalized.toFixed(4)} <= ${micThreshold.toFixed(4)}). Starting silence timer (Limit: ${silenceTimeoutMs}ms).`);
               } else if (now - vadSilenceStartRef.current > silenceTimeoutMs) {
                 const elapsedSilence = Math.round(now - vadSilenceStartRef.current);
                 const reasonStr = `Silence Cutoff triggered (${elapsedSilence}ms silence > ${silenceTimeoutMs}ms limit)`;
+                console.log(`[VAD-DIAG] >>> SILENCE CUTOFF TRIGGERED <<< at ${elapsedStream}ms | Elapsed Silence: ${elapsedSilence}ms | Current RMS: ${normalized.toFixed(4)} | Threshold: ${micThreshold.toFixed(4)}`);
                 logSTTStatus(`[STT] ${reasonStr}`);
                 stopSpeechRecognition(false, reasonStr);
                 return;

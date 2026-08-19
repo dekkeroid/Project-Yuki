@@ -49,11 +49,16 @@ function Confirm-Yes {
     return ($answer -match '^(y|yes)$')
 }
 
-function Is-AnyNewer {
+function Get-NewerFiles {
     param([string]$ReferencePath, [object[]]$Sources)
     $ref = Get-Item $ReferencePath -ErrorAction SilentlyContinue
-    if (-not $ref) { return $true }
-    return @($Sources | Where-Object { $_ -and $_.LastWriteTime -gt $ref.LastWriteTime }).Count -gt 0
+    if (-not $ref) { return $Sources }
+    return @($Sources | Where-Object { $_ -and $_.LastWriteTime -gt $ref.LastWriteTime })
+}
+
+function Is-AnyNewer {
+    param([string]$ReferencePath, [object[]]$Sources)
+    return (Get-NewerFiles $ReferencePath $Sources).Count -gt 0
 }
 
 $installDir = Get-YukiInstallDir
@@ -77,7 +82,7 @@ Write-Host "Checking for changes..."
 
 $backendSources = @(Get-ChildItem "$backendDir\app" -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -notmatch '\\__pycache__\\' -and $_.Extension -notin '.pyc', '.pyo' })
-$backendSources += @(Get-Item "$backendDir\run.py" -ErrorAction SilentlyContinue)
+$backendSources += @(Get-Item "$backendDir\run.py", "$backendDir\requirements.txt", "$backendDir\yuki-backend.spec" -ErrorAction SilentlyContinue)
 $backendChanged = Is-AnyNewer (Join-Path $installDir 'resources\backend\backend.exe') $backendSources
 
 $frontendSources = @(Get-ChildItem "$frontendDir\src" -Recurse -File -ErrorAction SilentlyContinue)
@@ -124,7 +129,25 @@ foreach ($r in $rows) {
     if ($r.Name -eq 'Backend engine' -and $isSelected) {
         $installedExe = Join-Path $installDir 'resources\backend\backend.exe'
         if (Test-Path $installedExe) {
-            Write-Host "  Note: Fast Sync copies raw .py files instantly. If your changes aren't showing up or the app is failing, choose 'No' below for a Full Rebuild." -ForegroundColor Yellow
+            $changedBackendFiles = Get-NewerFiles $installedExe $backendSources
+            if ($changedBackendFiles.Count -gt 0) {
+                Write-Host ""
+                Write-Host "  Modified backend files ($($changedBackendFiles.Count)):" -ForegroundColor Cyan
+                $maxToShow = 25
+                $toShow = $changedBackendFiles | Select-Object -First $maxToShow
+                foreach ($f in $toShow) {
+                    $relPath = $f.FullName
+                    if ($relPath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $relPath = $relPath.Substring($root.Length).TrimStart('\', '/')
+                    }
+                    Write-Host "    - $relPath" -ForegroundColor DarkCyan
+                }
+                if ($changedBackendFiles.Count -gt $maxToShow) {
+                    Write-Host "    ... and $($changedBackendFiles.Count - $maxToShow) more file(s)" -ForegroundColor DarkGray
+                }
+                Write-Host ""
+            }
+            Write-Host "  Note: Fast Sync copies raw .py files instantly except run.py. If your changes aren't showing up or the app is failing, choose 'No' below for a Full Rebuild." -ForegroundColor Yellow
             $fastSync = Confirm-Yes "  Use Fast Sync for Backend? (Choose 'No' for a Full Rebuild)" $true
             if ($fastSync) {
                 $env:YUKI_FULL_REBUILD = ''
@@ -257,6 +280,12 @@ if ($selElectron) {
 Write-Host ""
 Write-Host "============================================"
 Write-Host "  Update complete!"
-Write-Host "  Launch Yuki AI from your Start Menu / desktop."
+Write-Host "  Launching Yuki AI in a new window..."
 Write-Host "============================================"
+
+$installedAppExe = Join-Path $installDir 'Yuki AI.exe'
+if (Test-Path $installedAppExe) {
+    Start-Process powershell -WorkingDirectory $installDir -ArgumentList @('-NoExit', '-Command', '& ".\yuki ai.exe"')
+}
+
 exit 0

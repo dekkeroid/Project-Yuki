@@ -95,24 +95,32 @@ export const isMathExpression = (str) => {
   if (!str || typeof str !== 'string') return false;
   const trimmed = str.trim();
   if (!trimmed) return false;
-  if (/\\(frac|sqrt|alpha|beta|gamma|delta|theta|pi|sigma|omega|times|div|pm|le|ge|neq|approx|int|sum|lim|to|cdot|left|right|text|mathrm)\b/.test(trimmed)) {
+  // Any backslash TeX commands (e.g. \frac, \%, \alpha, \text, \times, etc.)
+  if (/\\[a-zA-Z%]+/.test(trimmed)) {
     return true;
   }
-  if (/[\^_{}=+<>/\*\-]/.test(trimmed)) {
+  // Mathematical operators, subscripts, superscripts, relations
+  if (/[\^_{}=+<>/\*\-~|!\\]/.test(trimmed)) {
     return true;
   }
+  // Single variable letters (e.g. $x$, $y$, $n$)
   if (/^[a-zA-Z]$/.test(trimmed)) {
     return true;
   }
-  if (/^\d+([.,]\d+)?\s*(and|or|to|-)?\s*\d*$/i.test(trimmed)) {
-    return false;
+  // Standalone numbers in math context (e.g. $12$, $2$, $0.075$)
+  if (/^\d+(?:[.,]\d+)?$/.test(trimmed)) {
+    return true;
   }
-  return /[a-zA-Z]/.test(trimmed);
+  return /[a-zA-Z0-9]/.test(trimmed);
 };
 
 export const renderTextWithInlineMath = (text, keyPrefix = 'math') => {
   if (!text || typeof text !== 'string') return text || '';
-  const mathRegex = /\\\(([\s\S]+?)\\\)|\$([^\$\n]+?)\$/g;
+  // Match \( LaTeX inline math \) or $ LaTeX inline math $ using Pandoc/KaTeX standard spacing rules:
+  // 1. Opening $ not preceded by \ and not followed by whitespace: (?<!\\)\$(?!\s)
+  // 2. Content without newlines or unescaped $: ([^\$\n]+?)
+  // 3. Closing $ not preceded by whitespace and not followed by a digit: (?<!\s)\$(?!\d)
+  const mathRegex = /(?:\\\(([\s\S]+?)\\\)|(?<!\\)\$(?!\s)([^\$\n]+?)(?<!\s)\$(?!\d))/g;
   const result = [];
   let lastIdx = 0;
   let match;
@@ -122,10 +130,14 @@ export const renderTextWithInlineMath = (text, keyPrefix = 'math') => {
     if (matchIndex > lastIdx) {
       result.push(text.substring(lastIdx, matchIndex));
     }
-    const mathContent = match[1] || match[2];
-    if (mathContent && isMathExpression(mathContent)) {
+    const mathContent = match[1] !== undefined ? match[1] : match[2];
+    const trimmedMath = mathContent ? mathContent.trim() : '';
+
+    // \( ... \) is always explicit LaTeX math. For $ ... $, check isMathExpression.
+    const isExplicitLatex = match[1] !== undefined;
+    if (trimmedMath && (isExplicitLatex || isMathExpression(trimmedMath))) {
       result.push(
-        <MathRenderer key={`${keyPrefix}-${matchIndex}`} math={mathContent} displayMode={false} />
+        <MathRenderer key={`${keyPrefix}-${matchIndex}`} math={trimmedMath} displayMode={false} />
       );
     } else {
       result.push(match[0]);
@@ -808,7 +820,35 @@ const renderMarkdownTextLines = (lines, { isSystem = false, disableFileLinks = f
       continue;
     }
 
-    // Markdown Headers (#, ##, ###)
+    // Markdown Headers (#, ##, ###, ####, #####, ######)
+    if (trimmed.startsWith('###### ')) {
+      rendered.push(
+        <h6 key={i} style={{ color: '#94a3b8', margin: '4px 0 2px', fontSize: '0.74rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {formatMessageText(trimmed.replace(/^######\s+/, ''), disableFileLinks)}
+        </h6>
+      );
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith('##### ')) {
+      rendered.push(
+        <h5 key={i} style={{ color: '#cbd5e1', margin: '5px 0 2px', fontSize: '0.78rem', fontWeight: 600 }}>
+          {formatMessageText(trimmed.replace(/^#####\s+/, ''), disableFileLinks)}
+        </h5>
+      );
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith('#### ')) {
+      rendered.push(
+        <h4 key={i} style={{ color: '#c4b5fd', margin: '6px 0 2px', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ width: '2px', height: '9px', background: '#a78bfa', borderRadius: '1px' }}></span>
+          {formatMessageText(trimmed.replace(/^####\s+/, ''), disableFileLinks)}
+        </h4>
+      );
+      i++;
+      continue;
+    }
     if (trimmed.startsWith('### ')) {
       rendered.push(
         <h3 key={i} style={{ color: '#38bdf8', margin: '8px 0 3px', fontSize: '0.86rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1074,7 +1114,7 @@ export const RenderMessageContent = ({ content, isSystem, disableFileLinks = fal
                   <div style={{ color: '#38bdf8', fontSize: '0.66rem', fontWeight: 700, marginBottom: '3px' }}>
                     📥 INPUT / ARGUMENTS:
                   </div>
-                  <div style={{ background: '#020617', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.2)', maxHeight: '200px', overflow: 'auto', fontSize: '0.68rem', color: '#cbd5e1' }}>
+                  <div style={{ background: '#020617', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.2)', maxHeight: '280px', overflow: 'auto', fontSize: '0.68rem', color: '#cbd5e1' }}>
                     <pre style={{ margin: 0, whiteSpace: 'pre', fontFamily: 'Consolas, Monaco, monospace' }}>{tb.args}</pre>
                   </div>
                 </div>
@@ -1084,7 +1124,7 @@ export const RenderMessageContent = ({ content, isSystem, disableFileLinks = fal
                   <div style={{ color: '#64748b', fontSize: '0.66rem', fontWeight: 600, marginBottom: '3px' }}>
                     📤 RESULT / OUTPUT:
                   </div>
-                  <div style={{ background: '#020617', padding: '6px 8px', borderRadius: '6px', border: '1px solid #1e293b', maxHeight: '200px', overflow: 'auto', fontSize: '0.68rem', color: isFailed ? '#f87171' : '#4ade80' }}>
+                  <div style={{ background: '#020617', padding: '6px 8px', borderRadius: '6px', border: '1px solid #1e293b', maxHeight: '280px', overflow: 'auto', fontSize: '0.68rem', color: isFailed ? '#f87171' : '#4ade80' }}>
                     <pre style={{ margin: 0, whiteSpace: 'pre', fontFamily: 'Consolas, Monaco, monospace' }}>{tb.output}</pre>
                   </div>
                 </div>

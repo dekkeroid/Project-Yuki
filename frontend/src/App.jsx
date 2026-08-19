@@ -925,7 +925,7 @@ const App = () => {
         console.warn("Failed to check tool result for window_control JSON:", e);
       }
       const resultStr = typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result || '');
-      const snippet = resultStr.length > 800 ? resultStr.slice(0, 800) + '\n... [truncated]' : resultStr;
+      const snippet = resultStr.length > 15000 ? resultStr.slice(0, 15000) + '\n... [truncated for display]' : resultStr;
       toolBadgesAccumulatorRef.current = toolBadgesAccumulatorRef.current.replace('⏳ Running...', '✓ Done');
       if (!toolBadgesAccumulatorRef.current.includes('```terminal_stream\n')) {
         toolBadgesAccumulatorRef.current += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
@@ -3811,8 +3811,10 @@ const App = () => {
                             const originalText = btn.innerText;
                             const originalBg = btn.style.background;
                             btn.innerText = "Saving...";
-                            await handleUpdateSetting('character_name', localCharName);
-                            await handleUpdateSetting('character_persona', localCharPersona);
+                            await handleUpdateSetting({
+                              character_name: localCharName,
+                              character_persona: localCharPersona
+                            });
                             btn.innerText = "✓ Saved";
                             btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
                             setTimeout(() => {

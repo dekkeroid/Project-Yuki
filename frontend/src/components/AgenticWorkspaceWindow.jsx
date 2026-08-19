@@ -465,7 +465,7 @@ export const AgenticWorkspaceWindow = ({
         }
       } else if (data.type === 'tool_result') {
         const resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result || '');
-        const snippet = resultStr.length > 800 ? resultStr.slice(0, 800) + '\n... [truncated]' : resultStr;
+        const snippet = resultStr.length > 15000 ? resultStr.slice(0, 15000) + '\n... [truncated for display]' : resultStr;
 
         setViewMessages(prev => {
           if (!prev || prev.length === 0) return prev;
@@ -4288,6 +4288,34 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                               options={allNames}
                               placeholder="Search or select Vision Scan model..."
                             />
+                          </div>
+
+                          {/* Role 5: Image Generation Model */}
+                          <div style={{ background: 'rgba(9, 13, 22, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(236, 72, 153, 0.25)' }}>
+                            <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#ec4899', display: 'block', marginBottom: '2px' }}>
+                              5. Image Generation Model (Tool Model)
+                            </label>
+                            <div style={{ fontSize: '0.66rem', color: '#94a3b8', marginBottom: '6px' }}>
+                              Target model used by <code style={{ color: '#ec4899' }}>jarvis_generate_image</code> tool to generate high-resolution art & wallpapers on Canvas.
+                            </div>
+                            <SearchableModelSelect
+                              value={activeSettings.llm_image_gen_model || ''}
+                              onChange={(val) => handleUpdateSetting({ llm_image_gen_model: val })}
+                              options={allNames}
+                              placeholder="Search or select Image Generation model..."
+                            />
+                            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <input
+                                type="checkbox"
+                                id="ws_use_free_image_gen"
+                                checked={!!activeSettings.use_free_image_gen}
+                                onChange={(e) => handleUpdateSetting('use_free_image_gen', e.target.checked)}
+                                style={{ accentColor: '#ec4899', width: '13px', height: '13px', cursor: 'pointer' }}
+                              />
+                              <label htmlFor="ws_use_free_image_gen" style={{ fontSize: '0.66rem', color: '#cbd5e1', cursor: 'pointer' }}>
+                                Always use Free FLUX.1 Engine (Override Selected Model)
+                              </label>
+                            </div>
                           </div>
                         </div>
                       );

@@ -153,27 +153,51 @@ async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], mode
     """
     update_last_stt_time()
     
-    # Prepare input for faster-whisper (supports file_path string or binary BytesIO object)
+    raw_bytes = None
     if isinstance(audio_input, str):
         if not os.path.exists(audio_input):
-            print(f"[STT] Audio file path does not exist: {audio_input}")
+            print(f"[STT-DEBUG] Audio file path does not exist: {audio_input}")
             return ""
         whisper_input = audio_input
     elif isinstance(audio_input, bytes):
         if len(audio_input) < 1000:
+            print(f"[STT-DEBUG] Raw bytes length ({len(audio_input)}) < 1000. Skipping.")
             return ""
+        raw_bytes = audio_input
         whisper_input = io.BytesIO(audio_input)
     elif isinstance(audio_input, io.BytesIO):
+        raw_bytes = audio_input.getvalue()
         whisper_input = audio_input
     else:
         whisper_input = audio_input
-        
+
     def run_inference():
         try:
             t0 = time.time()
             active_compute = getattr(config, "WHISPER_COMPUTE_TYPE", compute_type) or compute_type
             active_model_size = getattr(config, "WHISPER_MODEL", model_size) or model_size
             model = get_whisper_model(active_model_size, active_compute)
+            
+            # Pre-probe container with PyAV to log stream diagnostics
+            try:
+                import av
+                if isinstance(whisper_input, io.BytesIO):
+                    whisper_input.seek(0)
+                probe_container = av.open(whisper_input)
+                audio_streams = [s for s in probe_container.streams if s.type == "audio"]
+                stream_info = f"format='{probe_container.format.name}', streams={len(probe_container.streams)}, audio_streams={len(audio_streams)}"
+                if audio_streams:
+                    s0 = audio_streams[0]
+                    stream_info += f", codec='{s0.codec_context.name if s0.codec_context else 'unknown'}', rate={s0.sample_rate}, channels={s0.channels}"
+                probe_container.close()
+                if isinstance(whisper_input, io.BytesIO):
+                    whisper_input.seek(0)
+                print(f"[STT-DEBUG] PyAV Container Probe: {stream_info}")
+            except Exception as probe_err:
+                print(f"[STT-DEBUG] PyAV Container Pre-probe warning: {probe_err}")
+                if isinstance(whisper_input, io.BytesIO):
+                    whisper_input.seek(0)
+
             whisper_prompt = (
                 "Yuki, you can execute a command such as taking a screenshot, getting system stats, checking the current date or time, "
                 "setting system volume, media playback control, running a terminal command, launching an application, searching files, "
@@ -212,7 +236,16 @@ async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], mode
                 
             return {"text": text, "timing": {"whisper_ms": inference_ms}}
         except Exception as e:
-            print(f"[STT] Whisper Transcription Error: {e}")
+            print(f"[STT] Whisper Transcription Error: {type(e).__name__}: {e}")
+            # Auto-save failing audio artifact to disk for diagnostic inspection
+            if raw_bytes:
+                try:
+                    debug_file = Path(__file__).resolve().parent.parent.parent / "debug_failed_audio.webm"
+                    with open(debug_file, "wb") as f:
+                        f.write(raw_bytes)
+                    print(f"[STT-DEBUG] Failed audio blob ({len(raw_bytes)} bytes) saved to: {debug_file}")
+                except Exception as save_err:
+                    print(f"[STT-DEBUG] Could not save failed audio blob: {save_err}")
             return {"text": "", "timing": {}}
             
     return await asyncio.to_thread(run_inference)
