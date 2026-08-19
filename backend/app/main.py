@@ -2354,6 +2354,25 @@ async def speech_status(req: dict):
     print(f"[STT Frontend] {msg}")
     return {"status": "ok"}
 
+@app.get("/api/speech/debug_history")
+async def get_speech_debug_history():
+    """Returns metadata for the last 5 voice turns saved by the audio inspector."""
+    from app.voice.debug_inspector import get_recent_turns
+    return {"turns": get_recent_turns()}
+
+@app.get("/api/speech/debug_audio/{filename}")
+async def get_speech_debug_audio(filename: str):
+    """Streams a saved debug audio clip (.webm or .wav) for the dashboard audio inspector."""
+    from fastapi.responses import FileResponse
+    from app.voice.debug_inspector import get_audio_file_path
+    
+    file_path = get_audio_file_path(filename)
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    media_type = "audio/webm" if filename.endswith(".webm") else "audio/wav"
+    return FileResponse(str(file_path), media_type=media_type)
+
 @app.get("/api/tools")
 async def get_tools_list(mode: Optional[str] = None):
     """

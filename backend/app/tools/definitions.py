@@ -691,7 +691,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_generate_image",
-                "description": "Generates high-resolution AI artwork, photos, wallpapers, scenery, character illustrations, or digital paintings from a text prompt using the image generation engine (FLUX / Imagen / DALL-E) and displays the resulting image on Canvas. Use this when the user asks to draw, generate, or paint a picture, wallpaper, portrait, or artwork. (For flowcharts, architecture diagrams, and SVG vector charts, use jarvis_html_graphics instead).",
+                "description": "Generates high-resolution AI artwork, photos, wallpapers, scenery, character illustrations, or digital paintings from a text prompt using the image generation engine (FLUX / Imagen / DALL-E) and opens the image in the system's default image viewer. Use this when the user asks to draw, generate, or paint a picture, wallpaper, portrait, or artwork. (For flowcharts, architecture diagrams, and SVG vector charts, use jarvis_html_graphics instead).",
                 "parameters": {
                     "type": "object",
                     "properties": {

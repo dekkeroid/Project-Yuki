@@ -209,6 +209,27 @@ async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], mode
                 min_silence_duration_ms=getattr(config, "SILERO_MIN_SILENCE_DURATION_MS", 400),
                 speech_pad_ms=getattr(config, "SILERO_SPEECH_PAD_MS", 200)
             )
+
+            # Extract exact Silero VAD cleaned audio array for the dual-stage inspector
+            silero_audio_array = None
+            try:
+                import numpy as np
+                from faster_whisper.audio import decode_audio
+                from faster_whisper.vad import get_speech_timestamps, VadOptions
+                if isinstance(whisper_input, io.BytesIO):
+                    whisper_input.seek(0)
+                pcm_audio = decode_audio(whisper_input, sampling_rate=16000)
+                vad_opts = VadOptions(**vad_params)
+                speech_chunks = get_speech_timestamps(pcm_audio, vad_opts)
+                if speech_chunks:
+                    silero_audio_array = np.concatenate([pcm_audio[c["start"]:c["end"]] for c in speech_chunks])
+                if isinstance(whisper_input, io.BytesIO):
+                    whisper_input.seek(0)
+            except Exception as vad_extract_err:
+                print(f"[STT-INSPECTOR] Silero extraction note: {vad_extract_err}")
+                if isinstance(whisper_input, io.BytesIO):
+                    whisper_input.seek(0)
+
             segments, info = model.transcribe(
                 whisper_input,
                 beam_size=getattr(config, "WHISPER_BEAM_SIZE", 1),
@@ -232,20 +253,37 @@ async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], mode
             ]
             if lower_text in hallucinations:
                 print(f"[STT] Filtered known Whisper hallucination: '{text}'")
-                return {"text": "", "timing": {"whisper_ms": inference_ms}}
-                
+                text = ""
+
+            # Record turn in 5-turn dual audio inspector
+            try:
+                from app.voice.debug_inspector import record_debug_turn
+                record_debug_turn(
+                    raw_bytes=raw_bytes,
+                    silero_audio=silero_audio_array,
+                    transcript=text,
+                    whisper_ms=inference_ms,
+                    model=active_model_size
+                )
+            except Exception as insp_err:
+                print(f"[STT-INSPECTOR] Turn recording warning: {insp_err}")
+
             return {"text": text, "timing": {"whisper_ms": inference_ms}}
         except Exception as e:
             print(f"[STT] Whisper Transcription Error: {type(e).__name__}: {e}")
-            # Auto-save failing audio artifact to disk for diagnostic inspection
+            # Record failed turn in inspector
             if raw_bytes:
                 try:
-                    debug_file = Path(__file__).resolve().parent.parent.parent / "debug_failed_audio.webm"
-                    with open(debug_file, "wb") as f:
-                        f.write(raw_bytes)
-                    print(f"[STT-DEBUG] Failed audio blob ({len(raw_bytes)} bytes) saved to: {debug_file}")
-                except Exception as save_err:
-                    print(f"[STT-DEBUG] Could not save failed audio blob: {save_err}")
+                    from app.voice.debug_inspector import record_debug_turn
+                    record_debug_turn(
+                        raw_bytes=raw_bytes,
+                        silero_audio=None,
+                        transcript=f"[Decode Error: {type(e).__name__}]",
+                        whisper_ms=0.0,
+                        model=active_model_size if 'active_model_size' in locals() else "unknown"
+                    )
+                except Exception:
+                    pass
             return {"text": "", "timing": {}}
             
     return await asyncio.to_thread(run_inference)

@@ -522,6 +522,31 @@ const ControlDashboard = ({
   const [autoEvolveArchetype, setAutoEvolveArchetype] = useState(profile?.settings?.auto_evolving_archetype ?? true);
   const [archetypeIntensity, setArchetypeIntensity] = useState(profile?.settings?.archetype_intensity || 'moderate');
 
+  // Rolling 5-Turn Audio Inspector State
+  const [debugAudioHistory, setDebugAudioHistory] = useState([]);
+  const [loadingDebugAudio, setLoadingDebugAudio] = useState(false);
+
+  const fetchDebugAudioHistory = async () => {
+    try {
+      setLoadingDebugAudio(true);
+      const res = await fetch(`${API_BASE}/api/speech/debug_history`);
+      if (res.ok) {
+        const data = await res.json();
+        setDebugAudioHistory(data.turns || []);
+      }
+    } catch (e) {
+      console.warn("[ControlDashboard] Failed to fetch debug audio history:", e);
+    } finally {
+      setLoadingDebugAudio(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'settings' && (settingsSubTab === 'speech' || settingsSubTab === 'voice')) {
+      fetchDebugAudioHistory();
+    }
+  }, [activeTab, settingsSubTab]);
+
 
   const fetchRelationshipStatus = async (targetPreset) => {
     try {
@@ -7173,6 +7198,123 @@ const ControlDashboard = ({
                           <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
                             When mic is off, unload Whisper after this many seconds of no transcription requests. (Default: 300s)
                           </span>
+                        </div>
+
+                        {/* ─── Recent Voice Turns Dual-Stage Audio Inspector (Last 5 Turns) ─── */}
+                        <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(167, 139, 250, 0.2)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              <Volume2 style={{ width: '14px', height: '14px', color: '#38bdf8' }} />
+                              Voice Audio Inspector (Last 5 Turns)
+                            </span>
+                            <button
+                              onClick={fetchDebugAudioHistory}
+                              disabled={loadingDebugAudio}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                background: 'rgba(56, 189, 248, 0.15)',
+                                border: '1px solid rgba(56, 189, 248, 0.3)',
+                                color: '#38bdf8',
+                                fontSize: '0.68rem',
+                                fontWeight: 500,
+                                cursor: loadingDebugAudio ? 'wait' : 'pointer'
+                              }}
+                            >
+                              <RefreshCw style={{ width: '10px', height: '10px', animation: loadingDebugAudio ? 'spin 1s linear infinite' : 'none' }} />
+                              {loadingDebugAudio ? 'Refreshing...' : 'Refresh Clips'}
+                            </button>
+                          </div>
+
+                          <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginBottom: '10px' }}>
+                            Review both what your browser mic sent (Raw WebM) and the exact isolated speech fed into Whisper (Silero WAV) for the last 5 turns.
+                          </span>
+
+                          {debugAudioHistory.length === 0 ? (
+                            <div style={{ padding: '12px', textAlign: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                No voice clips recorded yet in this session. Speak to Yuki to review and inspect audio.
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                              {debugAudioHistory.map((turn) => (
+                                <div
+                                  key={turn.turn_id}
+                                  style={{
+                                    padding: '10px',
+                                    background: 'rgba(15, 23, 42, 0.65)',
+                                    borderRadius: '8px',
+                                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '8px'
+                                  }}
+                                >
+                                  {/* Turn Header */}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                                    <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f1f5f9' }}>
+                                      Turn #{turn.turn_id} — <span style={{ color: '#94a3b8', fontWeight: 400 }}>{turn.time_short}</span>
+                                    </span>
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                      <span style={{ fontSize: '0.62rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(167, 139, 250, 0.2)', color: '#c4b5fd' }}>
+                                        {turn.model}
+                                      </span>
+                                      <span style={{ fontSize: '0.62rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(45, 212, 191, 0.2)', color: '#5eead4' }}>
+                                        {turn.whisper_ms}ms
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Transcript Text */}
+                                  <div style={{
+                                    padding: '6px 8px',
+                                    background: 'rgba(0, 0, 0, 0.35)',
+                                    borderRadius: '6px',
+                                    borderLeft: turn.is_empty ? '3px solid #fb7185' : '3px solid #38bdf8'
+                                  }}>
+                                    <span style={{ fontSize: '0.72rem', color: turn.is_empty ? '#fda4af' : '#e2e8f0', fontStyle: turn.is_empty ? 'italic' : 'normal' }}>
+                                      {turn.transcript ? `"${turn.transcript}"` : "[Empty / Noise Rejected]"}
+                                    </span>
+                                  </div>
+
+                                  {/* Dual Audio Players */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '2px' }}>
+                                    {/* Player 1: Raw WebM */}
+                                    <div style={{ padding: '6px', background: 'rgba(0,0,0,0.25)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                        <span style={{ fontSize: '0.64rem', fontWeight: 600, color: '#93c5fd' }}>1. Raw Mic (WebM)</span>
+                                        <span style={{ fontSize: '0.6rem', color: '#64748b' }}>{(turn.raw_size_bytes / 1024).toFixed(1)} KB</span>
+                                      </div>
+                                      {turn.raw_file ? (
+                                        <audio controls src={`${API_BASE}/api/speech/debug_audio/${turn.raw_file}`} style={{ width: '100%', height: '28px' }} />
+                                      ) : (
+                                        <span style={{ fontSize: '0.62rem', color: '#64748b' }}>No audio file</span>
+                                      )}
+                                    </div>
+
+                                    {/* Player 2: Silero Cleaned WAV */}
+                                    <div style={{ padding: '6px', background: 'rgba(0,0,0,0.25)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                        <span style={{ fontSize: '0.64rem', fontWeight: 600, color: '#f472b6' }}>2. Silero Cleaned (WAV)</span>
+                                        <span style={{ fontSize: '0.6rem', color: '#64748b' }}>{turn.silero_duration_ms > 0 ? `${turn.silero_duration_ms}ms` : '0ms'}</span>
+                                      </div>
+                                      {turn.silero_file ? (
+                                        <audio controls src={`${API_BASE}/api/speech/debug_audio/${turn.silero_file}`} style={{ width: '100%', height: '28px' }} />
+                                      ) : (
+                                        <span style={{ fontSize: '0.62rem', color: '#fda4af', fontStyle: 'italic', display: 'block', marginTop: '4px' }}>
+                                          Silero detected 0 voice frames
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </>
                     )}
