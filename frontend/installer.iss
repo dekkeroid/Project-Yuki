@@ -1,5 +1,5 @@
 #define MyAppName "Yuki AI"
-#define MyAppVersion "0.3.3-beta"
+#define MyAppVersion "0.3.4-beta"
 #define MyAppPublisher "void dekkeroid"
 #define MyAppURL "https://github.com/dekkeroid/Project-Yuki"
 #define MyAppExeName "Yuki AI.exe"

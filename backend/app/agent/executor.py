@@ -240,9 +240,10 @@ class AgentExecutor:
         
         async def _async_web_search(**kwargs):
             from app.tools.web import web_search
-            return await web_search(
-                query=kwargs.get("query") or kwargs.get("search") or kwargs.get("text") or (list(kwargs.values())[0] if kwargs else "")
-            )
+            query_val = kwargs.get("query") or kwargs.get("queries") or kwargs.get("search") or kwargs.get("text")
+            if query_val is None and kwargs:
+                query_val = list(kwargs.values())[0]
+            return await web_search(query=query_val)
         
         # Lazy-import tool modules to avoid blocking module-level imports
         from app.tools.system import (
@@ -257,7 +258,7 @@ class AgentExecutor:
             jarvis_replace_file_content, jarvis_list_dir_tree, jarvis_git_status,
             jarvis_system_diagnostics, jarvis_network_status, jarvis_web_scrape,
             jarvis_window_control, jarvis_run_terminal, jarvis_analyze_image,
-            jarvis_see_screen
+            jarvis_generate_image, jarvis_see_screen
         )
         from app.tools.canvas import jarvis_html_graphics, jarvis_html_viewer
         from app.tools.system import send_process_stdin, find_files_by_glob, jarvis_grep_files
@@ -439,6 +440,14 @@ class AgentExecutor:
             "jarvis_analyze_image": lambda **kwargs: jarvis_analyze_image(
                 kwargs.get("image_path") or "",
                 prompt=kwargs.get("prompt") or "Analyze and describe this image in detail."
+            ),
+            "jarvis_generate_image": lambda **kwargs: jarvis_generate_image(
+                prompt=kwargs.get("prompt") or "",
+                aspect_ratio=kwargs.get("aspect_ratio") or "1:1"
+            ),
+            "generate_image": lambda **kwargs: jarvis_generate_image(
+                prompt=kwargs.get("prompt") or "",
+                aspect_ratio=kwargs.get("aspect_ratio") or "1:1"
             ),
             "jarvis_see_screen": lambda **kwargs: jarvis_see_screen(
                 kwargs.get("prompt") or "",
@@ -3063,7 +3072,17 @@ class AgentExecutor:
                         tool_failed = False
                         if isinstance(tool_result, str):
                             lower_res = tool_result.lower().strip()
-                            if lower_res.startswith("error") or lower_res.startswith("failed") or lower_res.startswith("access denied") or "exception" in lower_res:
+                            if (
+                                lower_res.startswith("error:") or
+                                lower_res.startswith("error ") or
+                                lower_res.startswith("failed:") or
+                                lower_res.startswith("failed to ") or
+                                lower_res.startswith("action failed") or
+                                lower_res.startswith("access denied") or
+                                "traceback (most recent call last)" in lower_res or
+                                bool(re.search(r'\b(syntaxerror|nameerror|typeerror|valueerror|indexerror|keyerror|filenotfounderror|permissionerror|runtimeerror|zerodivisionerror):\b', lower_res)) or
+                                bool(re.search(r'^[a-zA-Z0-9_ ]+error:\s', lower_res))
+                            ):
                                 tool_failed = True
 
                         # Her own work affects her mood — done well is satisfying, failing stresses.
@@ -3073,8 +3092,8 @@ class AgentExecutor:
                             pass
 
                         output_snippet = str(tool_result).strip()
-                        if len(output_snippet) > 800:
-                            output_snippet = output_snippet[:800] + "\n... [truncated]"
+                        if len(output_snippet) > 15000:
+                            output_snippet = output_snippet[:15000] + "\n... [truncated for display]"
 
                         try:
                             args_json = json.dumps(tool_args, indent=2, ensure_ascii=False) if tool_args else ""

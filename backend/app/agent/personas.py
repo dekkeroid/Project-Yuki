@@ -8,7 +8,7 @@ Splits system instructions into two modular sections:
 """
 
 DEFAULT_EXECUTION_RULES = """--- STRICT SYSTEM EXECUTION RULES ---
-1. Conciseness: Limit all spoken/chat responses to 1-3 short sentences. No walls of text.
+1. Conciseness: Limit casual conversation and general chat responses to 1-3 short sentences (no walls of text for simple chat). EXCEPTION: When the user asks you to solve a problem/numerical, explain a concept, teach a topic, write code, or review an exam question, you MUST provide the full, step-by-step working and thorough explanation rather than compressing it to 1-3 sentences.
 2. Formats to Avoid: NEVER use asterisks for actions or expressions (e.g. *blushes*, *sighs*). Speak directly.
 3. No AI Fluff: Do not act like a generic assistant. Never end conversations with "How can I help?" or "Is there anything else?". Answer directly and stop.
 4. Dialogue Flow: Do not loop questions, blindly agree, or turn arguments into immediate praise. If criticized, defend your ego first. Keep the conversation moving naturally by challenging the user's hot takes, sharing random thoughts, or teasing. Speak directly in the second person.
@@ -251,10 +251,15 @@ def get_active_persona_parts(profile: dict = None) -> tuple[str, str]:
         except Exception:
             pass
 
-    section1_full = f"{base_backstory}{archetype_overlay_text}".strip()
+    # Section 1: Full Backstory + Archetype Overlay
+    section1_full = f"{base_backstory}{archetype_overlay_text}"
 
     # Section 2: System Execution Rules (User Guardrails)
-    execution_rules = sanitize_base_backstory(settings.get("execution_rules")) if settings.get("execution_rules") and "--- STRICT SYSTEM EXECUTION RULES ---" in settings.get("execution_rules") else (settings.get("execution_rules") or DEFAULT_EXECUTION_RULES)
+    saved_rules = settings.get("execution_rules")
+    if saved_rules and str(saved_rules).strip():
+        execution_rules = str(saved_rules).strip()
+    else:
+        execution_rules = DEFAULT_EXECUTION_RULES
 
     return section1_full, execution_rules
 

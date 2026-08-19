@@ -335,6 +335,9 @@ export const cleanTextForTTS = (text) => {
   // 0.5 Convert LaTeX math into spoken English words
   clean = convertLatexToSpokenText(clean);
 
+  // 0.6 Strip markdown heading hashes
+  clean = clean.replace(/^#{1,6}\s+/gm, '');
+
   // 1. Double asterisks and double underscores -> replace with inner text
   clean = clean.replace(/\*\*(.*?)\*\*/g, '$1').replace(/__(.*?)__/g, '$1');
 

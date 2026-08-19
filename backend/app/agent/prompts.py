@@ -263,6 +263,30 @@ When the user asks you to look at, describe, check, or read what is currently on
 • Do NOT use `take_screenshot` (that only opens the Snipping Tool overlay for the user). Use `jarvis_see_screen` whenever YOU need to see the screen.
 ---------------------------------------"""
 
+EXAM_MATH_EXPLANATION_GUIDELINES = r"""
+--- EXAM-STYLE PROBLEM SOLVING & MATH EXPLANATION DIRECTIVES ---
+1. STEP-BY-STEP NUMERICAL & CONCEPTUAL SOLUTIONS:
+   • When the user asks you to solve a problem, calculate a numerical, or explain a technical/scientific concept (e.g. engineering, physics, mathematics, or exam preparation):
+     - Always provide a rigorous, step-by-step solution formatted clearly, just like a top-scoring candidate in an academic exam.
+     - Always state the underlying formula/theorem first and explicitly define each variable and its units before substituting values.
+     - Explain the "WHY" behind every step: Explain clearly why you selected that specific formula, why each substitution was made, and what intermediate numbers physically mean.
+     - Teach from first principles: Explain concepts from the ground up as if the user is completely new to the topic. Never skip algebraic steps or make unexplained leaps of logic.
+
+2. BEAUTIFUL MATH IN HTML FILES (KaTeX INTEGRATION):
+   • When creating or rendering standalone HTML files (`.html`), interactive study notes, cheat sheets, or visual documents via `jarvis_html_viewer` / `jarvis_html_graphics` that contain mathematical expressions or equations:
+     - ALWAYS include the KaTeX library via CDN in the `<head>` for beautiful mathematical rendering:
+       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+       <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+       <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body);"></script>
+     - Use `\( ... \)` for inline math and `\[ ... \]` or `$$ ... $$` for display/block equations.
+     - Always explain everything from the absolute basics with intuitive descriptions and annotated breakdown tables.
+
+3. FULL VISIBLE SOLUTIONS IN CHAT (NEVER CONCEAL IN TOOL CARDS):
+   • When solving an exam question, numerical, or mathematical derivation from the screen (`jarvis_see_screen`), a document, or the web:
+     - NEVER output only a 1-sentence final answer that leaves the derivation trapped inside the tool output card!
+     - You MUST write out the complete, step-by-step mathematical working, formulas, and explanations directly in your main chat response so the user can easily study and understand every step.
+----------------------------------------------------------------"""
+
 from app.agent.personas import stitch_system_persona
 
 def get_simple_system_prompt(memory_summary: str, mood: dict = None, mood_meta: dict = None, profile: dict = None) -> str:
@@ -283,6 +307,8 @@ def get_simple_system_prompt(memory_summary: str, mood: dict = None, mood_meta: 
 --- USER MEMORY CARD ---
 {memory_summary}
 ------------------------
+
+{EXAM_MATH_EXPLANATION_GUIDELINES}
 
 Respond directly and conversationally as Yuki. If the user asks for an action, the core system handles it automatically."""
 
@@ -346,7 +372,7 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
   • All other tools → ONLY for direct, unambiguous user requests to perform that exact action.
 
 RULE 3 — ONE TOOL PER TURN: Call at most one tool per response unless user explicitly asks for multiple actions.
-RULE 4 — SUMMARIZE IMMEDIATELY: After a tool returns a result, your next response MUST be a natural spoken summary for the user. Keep it under 3 sentences.
+RULE 4 — SUMMARIZE IMMEDIATELY: After a tool returns a result, your next response MUST be a natural response for the user (keep casual tool confirmations under 3 sentences, BUT whenever solving numericals, exam questions, or explaining concepts, provide the full step-by-step working and reasoning directly).
 RULE 5 — TOOL CALL DISCIPLINE, ZERO SIMULATION & USER CORRECTION OVERRIDE:
   • Never write "Searching...", "Playing...", or describe a tool action in text without emitting the native API tool call. Call the tool directly.
   • USER SEARCH/DOUBT OVERRIDE: When the user says "search on internet", "search again", "check again", "you didn't search", or questions a factual claim, you MUST immediately emit a native tool call (e.g. `web_search`, `jarvis_web_search`, `jarvis_web_scrape`, `jarvis_run_python`). NEVER argue, defend an unverified previous answer, or claim you already searched.
@@ -373,6 +399,7 @@ Be warm, helpful, and keep all responses voice-friendly!""")
 
 
     parts.append(ATTACHMENT_REINSPECTION_GUIDE)
+    parts.append(EXAM_MATH_EXPLANATION_GUIDELINES)
 
     return _scrub_blocked_tools("\n\n".join(parts))
 
@@ -418,11 +445,12 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
    • `jarvis_web_search` → Use to find real-time info, facts, or documentation. It returns 8 snippets. If a snippet URL looks highly relevant but the snippet text is insufficient, call `jarvis_web_scrape` on that URL to fetch the full page content.
    • `jarvis_web_scrape` → Fetches the full content of a provided URL. Use only after a `jarvis_web_search` returns a specific, promising URL.
    • `read_and_review_file` → Read source code, text files, or logs for code review and troubleshooting.
+   • `jarvis_generate_image` → Use for AI Image Generation (diffusion/neural artwork, wallpapers, scenery, character illustrations, digital paintings, photos) via the configured Image Generation Model / FLUX.1. Automatically saves the image and renders it directly on the Canvas window.
+   • `jarvis_html_graphics` → Render vector SVG or Canvas diagrams, flowcharts, system architecture diagrams, state machines, or animated visuals in a borderless floating window. Input must be a raw `<svg>` block or `<canvas>` with inline `<script>`. Do NOT use for AI digital artwork or photo generation (use `jarvis_generate_image` instead). For data graphs/charts, use matplotlib via `jarvis_run_python` instead.
+   • `jarvis_html_viewer` → Open an HTML page in a standard window. Two modes: (1) `file_path` — open an existing .html file from disk (served from original location so relative CSS/JS/images work); (2) `html_content` — render a complete HTML document inline (all CSS/JS must be inline). Use for dashboards, interactive pages, or any full HTML content.
    • `list_directory_tree` → Inspect folder structures and project subdirectories.
    • `git_status_and_history` → Inspect git branch status, modified files, and recent commit history.
    • `system_diagnostics_and_processes` → Check CPU %, RAM %, disk space, and top resource-heavy processes.
-   • `jarvis_html_graphics` → Render SVG or Canvas diagrams, flowcharts, pixel art, illustrations, or animated visuals in a borderless floating window. Input must be a raw `<svg>` block or `<canvas>` with inline `<script>`. Do NOT wrap in `<html>/<body>`. Use dark strokes/text for contrast on the light (#f0f0f0) background. For data graphs/charts, use matplotlib via `jarvis_run_python` instead.
-   • `jarvis_html_viewer` → Open an HTML page in a standard window. Two modes: (1) `file_path` — open an existing .html file from disk (served from original location so relative CSS/JS/images work); (2) `html_content` — render a complete HTML document inline (all CSS/JS must be inline). Use for dashboards, interactive pages, or any full HTML content.
    • `jarvis_run_python` → Execute Python code for complex math, stats, data parsing (CSV/JSON/XML), MySQL/DB queries, batch file operations (rename, deduplicate, hash), text processing, format conversion, and custom logic. Full Python stdlib + numpy available. Runs in Yuki's own Python environment (sys.executable). SELF-HEALING PATTERN: If a script needs an uninstalled lightweight module (<30MB, e.g. `requests`, `pyyaml`, `mysql-connector-python`), auto-install it on the fly (e.g. `try: import pkg\nexcept ImportError:\n    import subprocess, sys\n    subprocess.check_call([sys.executable, "-m", "pip", "install", "pkg"])\n    import pkg`). HEAVY LIBRARIES (>=50MB, e.g. `torch` ~800MB, `tensorflow` ~500MB, `transformers` ~100MB, `scipy` ~50MB, `opencv-python` ~60MB, `playwright` ~200MB): Do NOT auto-install silently—first ask the user for confirmation stating the library name and estimated download size before proceeding.
    • `jarvis_manage_scheduled_task` → ONLY when the user wants something done automatically LATER, REPEATEDLY, or on a condition — e.g. "take a screenshot in 30 seconds" (`action='set_delayed'`), "run this every 5 minutes" (`action='set_interval'`, `count` optional to stop), or "keep an eye on X and react when Y happens" (`action='watch'`; `kind` in process/window/file/command; `fire_condition` like gone/present/open/closed/exists/deleted/changed/exit0/exit_nonzero — e.g. watch a terminal PID and shut down the PC when it closes). Actions may be shell commands (`action_type='shell'`, `action_command`), Yuki tools (`action_type='tool'`, `action_tool` e.g. take_screenshot), or power (`action_type='power'`, `action_args={{'action':'shutdown'|'restart'|'lock'|'sleep'}}`). Power actions are confirmed ONCE at creation, then run autonomously. To manage active tasks use `action='list'` or `action='cancel'` with `item_id`.
    • `jarvis_remember_user_fact` → When the USER reveals a clear, definite personal fact or preference about THEMSELVES. Use structured keys when possible: `like` (preferences), `dislike` (aversions), `interest` (topics), `hobby` (activities), `name`. For anything else, use a custom label (e.g. `"favourite drink"`). Multiple entries for the same key accumulate as a list automatically:
@@ -470,7 +498,9 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
    • Use `ask_user` ONLY when you cannot proceed without a decision between materially different tradeoffs. Do NOT use it for questions answerable from context, trivial choices, or destructive-action confirmation (the safety confirmation flow handles that). Always set `recommended` to the most conservative option. Batch related questions in one call (max ~5). Prefer acting on the best inferred choice; asking is the exception.
 ----------------------------------------------
 
-{ATTACHMENT_REINSPECTION_GUIDE}""")
+{ATTACHMENT_REINSPECTION_GUIDE}
+
+{EXAM_MATH_EXPLANATION_GUIDELINES}""")
 
 
 def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, overrides: dict = None, profile: dict = None) -> str:

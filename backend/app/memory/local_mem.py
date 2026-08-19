@@ -120,6 +120,9 @@ class MemoryManager:
                 "history_summary_percent": 50,
                 "history_summary_position": "oldest",
                 "llm_summary_model": "",
+                "llm_vision_model": "",
+                "llm_image_gen_model": "",
+                "use_free_image_gen": False,
                 "user_country": "Auto",
                 "allow_voice_barge_in": True,
                 "barge_in_sensitivity": 1.0
@@ -193,6 +196,9 @@ class MemoryManager:
                 config.LLM_CODER_BACKEND = data["settings"].get("llm_coder_backend", getattr(config, "LLM_CODER_BACKEND", ""))
                 config.LLM_CODER_BASE_URL = data["settings"].get("llm_coder_base_url", getattr(config, "LLM_CODER_BASE_URL", ""))
                 config.LLM_CODER_MODEL = data["settings"].get("llm_coder_model", getattr(config, "LLM_CODER_MODEL", ""))
+                config.LLM_VISION_MODEL = data["settings"].get("llm_vision_model", getattr(config, "LLM_VISION_MODEL", ""))
+                config.LLM_IMAGE_GEN_MODEL = data["settings"].get("llm_image_gen_model", getattr(config, "LLM_IMAGE_GEN_MODEL", ""))
+                config.USE_FREE_IMAGE_GEN = bool(data["settings"].get("use_free_image_gen", getattr(config, "USE_FREE_IMAGE_GEN", False)))
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
                 
                 # IMPORTANT FIX FOR PROD:
@@ -374,7 +380,18 @@ class MemoryManager:
             config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
             self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
             self._save_profile()
-        elif key in ("persona_preset", "auto_evolving_archetype", "archetype_intensity", "execution_rules"):
+        elif key == "persona_preset":
+            self.profile["settings"]["persona_preset"] = str(value).strip()
+            from app.agent.personas import get_clean_character_backstory
+            config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+            self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
+            self._save_profile()
+        elif key == "execution_rules":
+            self.profile["settings"]["execution_rules"] = str(value).strip()
+            from app.agent.personas import get_clean_character_backstory
+            config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+            self._save_profile()
+        elif key in ("auto_evolving_archetype", "archetype_intensity"):
             from app.agent.personas import get_clean_character_backstory
             config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
             self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
@@ -452,6 +469,12 @@ class MemoryManager:
             config.BROWSER_NEURAL_VAD_CONFIDENCE = float(value)
         elif key == "adaptive_silence_cutoff":
             config.ADAPTIVE_SILENCE_CUTOFF = bool(value)
+        elif key == "llm_vision_model":
+            config.LLM_VISION_MODEL = str(value).strip()
+        elif key == "llm_image_gen_model":
+            config.LLM_IMAGE_GEN_MODEL = str(value).strip()
+        elif key == "use_free_image_gen":
+            config.USE_FREE_IMAGE_GEN = bool(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

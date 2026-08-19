@@ -971,7 +971,8 @@ function createWindow() {
       minHeight: MIN_H,
       frame: !isGraphics,
       titleBarStyle: isGraphics ? 'hidden' : 'default',
-      backgroundColor: '#f0f0f0',
+      resizable: true,
+      backgroundColor: '#1a1a2e',
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
         nodeIntegration: false,

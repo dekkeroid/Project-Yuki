@@ -368,10 +368,10 @@ def jarvis_network_status(host: str = "8.8.8.8") -> str:
         return f"Network Check Error: {str(e)}"
 
 
-def jarvis_web_scrape(url: str, max_chars: int = 4000) -> str:
+def jarvis_web_scrape(url: str, max_chars: int = 5000) -> str:
     """
-    Fetches a web page URL over HTTP and returns clean readable text.
-    Uses modern Chrome headers, DOM cleaning via BeautifulSoup, and a fallback reader
+    Fetches a web page URL over HTTP and returns clean readable Markdown.
+    Uses modern Chrome headers, DOM cleaning via extract_clean_markdown, and a fallback reader
     to prevent HTTP 403 Forbidden / bot-protection errors.
     """
     if not url or not isinstance(url, str):
@@ -405,45 +405,52 @@ def jarvis_web_scrape(url: str, max_chars: int = 4000) -> str:
     except Exception as e:
         fetch_error = str(e)
 
-    # If direct fetch failed or was blocked (e.g. 403 Forbidden / Cloudflare), attempt fallback via reader proxy
-    if not raw_html:
+    # If direct fetch succeeded, extract clean markdown
+    if raw_html:
         try:
-            import httpx
-            jina_url = f"https://r.jina.ai/{url}"
-            with httpx.Client(follow_redirects=True, timeout=12.0) as client:
-                resp = client.get(jina_url)
-                if resp.status_code == 200 and resp.text.strip():
-                    text = resp.text.strip()
-                    if len(text) > max_chars:
-                        text = text[:max_chars] + f"\n... [Truncated at {max_chars} characters]"
-                    return f"=== Scraped Content ({url}) ===\n{text}"
+            import urllib.parse
+            domain = urllib.parse.urlparse(url).netloc.replace("www.", "")
+            from app.tools.web import extract_clean_markdown
+            clean_md = extract_clean_markdown(raw_html, max_chars=max_chars, domain=domain)
+            if clean_md and len(clean_md.strip()) >= 80:
+                return f"=== Scraped Content ({url}) ===\n{clean_md}"
         except Exception:
             pass
 
-    if not raw_html:
-        return f"Web Scraper Notice: Could not access '{url}' ({fetch_error or 'Forbidden/Blocked'}). The site may require authentication or block automated scraping. Try searching for alternative sources using jarvis_web_search."
-
-    # Parse and clean HTML using BeautifulSoup
+    # If direct fetch failed or was blocked (e.g. 403 Forbidden / Cloudflare), attempt fallback via reader proxy
     try:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(raw_html, "html.parser")
-        for tag in soup(["script", "style", "header", "footer", "nav", "aside", "noscript", "svg", "form", "button"]):
-            tag.decompose()
-        text = soup.get_text(separator=" ")
-        text = re.sub(r'\s+', ' ', text).strip()
+        import httpx
+        jina_url = f"https://r.jina.ai/{url}"
+        with httpx.Client(follow_redirects=True, timeout=12.0) as client:
+            resp = client.get(jina_url)
+            if resp.status_code == 200 and resp.text.strip():
+                text = resp.text.strip()
+                # Strip Jina header metadata
+                text = re.sub(r'^(Title:.*?\n|URL Source:.*?\n|Markdown Content:\s*)+', '', text, flags=re.MULTILINE | re.IGNORECASE).strip()
+                # Skip top navigation menu lines before the article / cast content anchor
+                entry_match = re.search(r'(?im)^(?:#{1,4}\s+|(?:\*|\-)\s+)?(Full cast\s*&?\s*crew|Series Directed by|Series Cast|Cast and crew|Main Cast|Voice Cast|Characters & Voice Actors|Overview|Summary)\b(?!\s*\]\()', text)
+                if entry_match and entry_match.start() < 8000:
+                    text = text[entry_match.start():].strip()
+                else:
+                    first_h = -1
+                    for match in re.finditer(r'(?m)^#{1,3}\s+', text):
+                        first_h = match.start()
+                        break
+                    if first_h > 0 and first_h < 4000:
+                        text = text[first_h:].strip()
+
+                if len(text) > max_chars:
+                    cutoff = max_chars
+                    last_para = text.rfind("\n", 0, max_chars)
+                    if last_para > max_chars * 0.7:
+                        cutoff = last_para
+                    text = text[:cutoff].strip() + f"\n\n... [Content truncated at {cutoff} characters]"
+                return f"=== Scraped Content ({url}) ===\n{text}"
     except Exception:
-        # Fallback to regex cleaning if bs4 is unavailable
-        clean_html = re.sub(r'<(script|style|header|footer|nav|aside)[^>]*>.*?</\1>', '', raw_html, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<[^>]+>', ' ', clean_html)
-        text = re.sub(r'\s+', ' ', text).strip()
+        pass
 
-    if not text:
-        return f"Web Scraper Notice: '{url}' returned no readable text content."
+    return f"Web Scraper Notice: Could not access '{url}' ({fetch_error or 'Forbidden/Blocked'}). The site may require authentication or block automated scraping. Try searching for alternative sources using jarvis_web_search."
 
-    if len(text) > max_chars:
-        text = text[:max_chars] + f"\n... [Truncated at {max_chars} characters]"
-
-    return f"=== Scraped Content ({url}) ===\n{text}"
 
 
 def jarvis_window_control(action: str = "list", title_query: str = None) -> str:
@@ -527,9 +534,7 @@ def _analyze_image_file(image_path: str, prompt: str) -> str:
             vision_model = MemoryManager().profile.get("settings", {}).get("llm_vision_model") or ""
         except Exception:
             pass
-        vision_model = vision_model or getattr(config, "LLM_VISION_MODEL", "") or ""
-        if not vision_model:
-            vision_model = "gemini-3.6-flash"
+        vision_model = vision_model or getattr(config, "LLM_VISION_MODEL", "") or getattr(config, "LLM_MODEL", "") or ""
         api_key = config.LLM_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
 
         base_url = config.get_effective_base_url()
@@ -682,3 +687,223 @@ def _find_window_bbox(window_title: str):
         return None
     rect = win32gui.GetWindowRect(results[0])
     return tuple(rect)
+
+
+def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
+    """
+    Generates a high-quality image from a text description using the configured Image Generation Model.
+    Supports OpenRouter, Grok (xAI), OpenAI, Together AI, Google AI Studio, Local WebUI, and Custom Proxies.
+    Saves the image to yuki_attachment/generated_images and automatically opens it on the Canvas.
+    """
+    import base64
+    import datetime
+    import json
+    import os
+    import re
+    import time
+    import urllib.parse
+    import uuid
+    from pathlib import Path
+    import requests
+    from app import config
+    from app.tools.canvas import _broadcast_canvas_ws
+
+    if not prompt or not prompt.strip():
+        return "Image Generation Error: Please provide a description of the image you want to generate."
+
+    # 1. Resolve configured Image Generation Model & Free FLUX Override
+    image_model = ""
+    use_free_override = False
+    try:
+        from app.memory.local_mem import MemoryManager
+        mem_settings = MemoryManager().profile.get("settings", {})
+        image_model = mem_settings.get("llm_image_gen_model") or ""
+        use_free_override = bool(mem_settings.get("use_free_image_gen", False))
+    except Exception:
+        pass
+    image_model = (image_model or getattr(config, "LLM_IMAGE_GEN_MODEL", "") or "").strip()
+    use_free_override = use_free_override or getattr(config, "USE_FREE_IMAGE_GEN", False)
+
+    def generate_via_flux_free(prompt_text: str, aspect: str):
+        try:
+            w, h = 1024, 1024
+            if "16:9" in aspect:
+                w, h = 1344, 768
+            elif "9:16" in aspect:
+                w, h = 768, 1344
+            elif "4:3" in aspect:
+                w, h = 1152, 864
+            elif "3:4" in aspect:
+                w, h = 864, 1152
+
+            encoded_prompt = urllib.parse.quote(prompt_text)
+            flux_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={w}&height={h}&nologo=true&model=flux"
+            print(f"[ImageGen][FLUX-Free] Fetching free FLUX.1 image from {flux_url[:100]}...")
+            resp = requests.get(flux_url, timeout=45)
+            if resp.status_code == 200 and len(resp.content) > 5000:
+                return resp.content
+        except Exception as e:
+            print(f"[ImageGen][FLUX-Free] Free generation error: {e}")
+        return None
+
+    # 2. Resolve credentials & endpoint
+    api_key = config.LLM_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
+    base_url = config.get_effective_base_url()
+
+    out_dir = Path(config.BASE_DIR) / "yuki_attachment" / "generated_images"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"gen_{int(time.time())}_{uuid.uuid4().hex[:6]}.png"
+    file_path = out_dir / filename
+
+    print(f"[ImageGen] Generating image for prompt='{prompt[:60]}...' | model='{image_model or '(default)'}' | free_override={use_free_override}")
+
+    image_bytes = None
+    last_error = ""
+    engine_used = ""
+
+    # Check if User configured Free FLUX as default override
+    if use_free_override:
+        print("[ImageGen] Using Free FLUX.1 Engine as primary generator.")
+        image_bytes = generate_via_flux_free(prompt, aspect_ratio)
+        if image_bytes:
+            engine_used = "Free FLUX.1 Engine"
+
+    # Strategy 1: OpenAI-Compatible /images/generations endpoint (OpenRouter, Grok, OpenAI, Together, Custom)
+    if not image_bytes and base_url:
+        try:
+            oai_url = f"{base_url.rstrip('/')}/images/generations"
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+
+            payload = {
+                "prompt": prompt,
+                "n": 1,
+                "size": "1024x1024" if aspect_ratio == "1:1" else ("1792x1024" if "16:9" in aspect_ratio else "1024x1792"),
+                "response_format": "b64_json"
+            }
+            if image_model:
+                payload["model"] = image_model
+
+            resp = requests.post(oai_url, headers=headers, json=payload, timeout=90)
+            if resp.status_code == 200:
+                res_data = resp.json()
+                items = res_data.get("data", [])
+                if items:
+                    if items[0].get("b64_json"):
+                        image_bytes = base64.b64decode(items[0]["b64_json"])
+                    elif items[0].get("url"):
+                        img_dl = requests.get(items[0]["url"], timeout=30)
+                        if img_dl.status_code == 200:
+                            image_bytes = img_dl.content
+                    if image_bytes:
+                        engine_used = image_model or "OpenAI Image Endpoint"
+            else:
+                last_error = f"HTTP {resp.status_code}: {resp.text[:300]}"
+        except Exception as e:
+            last_error = str(e)
+
+    # Strategy 2: Google AI Studio / Gemini REST API (if base_url is Google or Strategy 1 failed)
+    if not image_bytes and api_key and ("googleapis.com" in base_url or not base_url or "gemini" in (image_model or "").lower() or "imagen" in (image_model or "").lower()):
+        clean_model = image_model.replace("models/", "") if image_model else "imagen-3.0-generate-002"
+        # Try Imagen :predict endpoint
+        try:
+            g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:predict?key={api_key}"
+            g_payload = {
+                "instances": [{"prompt": prompt}],
+                "parameters": {"sampleCount": 1, "aspectRatio": aspect_ratio}
+            }
+            g_resp = requests.post(g_url, json=g_payload, timeout=60)
+            if g_resp.status_code == 200:
+                g_data = g_resp.json()
+                preds = g_data.get("predictions", [])
+                if preds and preds[0].get("bytesBase64Encoded"):
+                    image_bytes = base64.b64decode(preds[0]["bytesBase64Encoded"])
+                    engine_used = clean_model
+            else:
+                last_error = f"Google Predict HTTP {g_resp.status_code}: {g_resp.text[:300]}"
+        except Exception as e:
+            last_error = str(e)
+
+        # Try Gemini multimodal :generateContent inline_data
+        if not image_bytes:
+            try:
+                g_url2 = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
+                g_payload2 = {
+                    "contents": [{"parts": [{"text": f"Generate an image of: {prompt}"}]}]
+                }
+                g_resp2 = requests.post(g_url2, json=g_payload2, timeout=60)
+                if g_resp2.status_code == 200:
+                    g_data2 = g_resp2.json()
+                    candidates = g_data2.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        for p in parts:
+                            if "inline_data" in p and p["inline_data"].get("data"):
+                                image_bytes = base64.b64decode(p["inline_data"]["data"])
+                                engine_used = clean_model
+                                break
+                            elif "text" in p:
+                                b64_match = re.search(r'data:image/[^;]+;base64,([A-Za-z0-9+/=]+)', p["text"])
+                                if b64_match:
+                                    image_bytes = base64.b64decode(b64_match.group(1))
+                                    engine_used = clean_model
+                                    break
+            except Exception as e:
+                last_error = str(e)
+
+    # Strategy 3: Chat Interleaved / Multimodal fallback via /chat/completions
+    if not image_bytes and base_url:
+        try:
+            chat_url = f"{base_url.rstrip('/')}/chat/completions"
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            chat_payload = {
+                "model": image_model or getattr(config, "LLM_MODEL", ""),
+                "messages": [{"role": "user", "content": f"Generate an image of: {prompt}"}]
+            }
+            c_resp = requests.post(chat_url, headers=headers, json=chat_payload, timeout=60)
+            if c_resp.status_code == 200:
+                c_data = c_resp.json()
+                c_text = c_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                b64_match = re.search(r'data:image/[^;]+;base64,([A-Za-z0-9+/=]+)', c_text)
+                if b64_match:
+                    image_bytes = base64.b64decode(b64_match.group(1))
+                    engine_used = image_model or "Multimodal Chat Model"
+                else:
+                    url_match = re.search(r'https?://[^\s\)\"\']+\.(?:png|jpg|jpeg|webp)', c_text)
+                    if url_match:
+                        dl = requests.get(url_match.group(0), timeout=30)
+                        if dl.status_code == 200:
+                            image_bytes = dl.content
+                            engine_used = image_model or "Multimodal Chat Model"
+        except Exception:
+            pass
+
+    # Strategy 4: Automatic Free FLUX.1 Fallback if upstream provider failed or had 0 quota
+    if not image_bytes:
+        print(f"[ImageGen] Configured provider failed ({last_error or 'No response'}). Activating Free FLUX.1 fallback...")
+        image_bytes = generate_via_flux_free(prompt, aspect_ratio)
+        if image_bytes:
+            engine_used = "Free FLUX.1 Engine (Auto Fallback)"
+
+    if not image_bytes:
+        return f"Image Generation Notice: Could not generate image using model '{image_model or 'default'}'. Details: {last_error or 'No image data returned from provider or fallback.'}"
+
+    # 3. Save to disk
+    file_path.write_bytes(image_bytes)
+    print(f"[ImageGen] Image saved successfully to '{file_path}' ({len(image_bytes)} bytes) using engine '{engine_used}'.")
+
+    # 4. Open in Canvas / Image Viewer
+    clean_path_str = str(file_path).replace("\\", "/")
+    encoded_path = urllib.parse.quote(clean_path_str, safe="/:")
+    serve_url = f"serve-file?path={encoded_path}"
+    
+    try:
+        _broadcast_canvas_ws({"type": "open-canvas", "mode": "viewer", "filename": serve_url})
+    except Exception as e:
+        print(f"[ImageGen] Canvas broadcast warning: {e}")
+
+    return f"Successfully generated image using {engine_used} for: \"{prompt}\"\n\n- File Path: {clean_path_str}\n- Displayed on Canvas window."
+

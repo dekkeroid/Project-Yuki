@@ -443,7 +443,7 @@ async def lifespan(app: FastAPI):
         await agent_executor.mcp_tools.aclose()
 
 
-app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.3-beta", lifespan=lifespan)
+app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.4-beta", lifespan=lifespan)
 
 # Setup CORS — restrict to localhost and LAN origins
 app.add_middleware(
@@ -1205,6 +1205,8 @@ class SettingsUpdateRequest(BaseModel):
     llm_reviewer_model: Optional[str] = None
     llm_summary_model: Optional[str] = None
     llm_vision_model: Optional[str] = None
+    llm_image_gen_model: Optional[str] = None
+    use_free_image_gen: Optional[bool] = None
     always_included_tools: Optional[List[str]] = None
     blocked_tools: Optional[List[str]] = None
     included_coder_tools: Optional[List[str]] = None
@@ -1486,9 +1488,6 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.character_name is not None:
         config.CHARACTER_NAME = req.character_name.strip()
         memory_manager.update_setting("character_name", req.character_name.strip())
-    if req.character_persona is not None:
-        config.CHARACTER_PERSONA = req.character_persona.strip()
-        memory_manager.update_setting("character_persona", req.character_persona.strip())
     if req.crawler_paused is not None:
         memory_manager.update_setting("crawler_paused", req.crawler_paused)
         if req.crawler_paused:
@@ -1717,7 +1716,16 @@ async def update_settings(req: SettingsUpdateRequest):
     await broadcast_profile_update()
     
     if req.llm_vision_model is not None:
+        config.LLM_VISION_MODEL = req.llm_vision_model.strip()
         memory_manager.update_setting("llm_vision_model", req.llm_vision_model.strip())
+
+    if req.llm_image_gen_model is not None:
+        config.LLM_IMAGE_GEN_MODEL = req.llm_image_gen_model.strip()
+        memory_manager.update_setting("llm_image_gen_model", req.llm_image_gen_model.strip())
+
+    if req.use_free_image_gen is not None:
+        config.USE_FREE_IMAGE_GEN = bool(req.use_free_image_gen)
+        memory_manager.update_setting("use_free_image_gen", bool(req.use_free_image_gen))
 
     if req.always_included_tools is not None:
         seen = set()
@@ -2262,7 +2270,11 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
 
     try:
         content = await file.read()
+        hex_preview = content[:16].hex() if content else "empty"
+        print(f"[STT-DEBUG] /api/speech/transcribe received {len(content) if content else 0} bytes | filename='{file.filename}' | content_type='{file.content_type}' | magic_hex='{hex_preview}'")
+
         if not content or len(content) < 1000:
+            print(f"[STT-DEBUG] Payload too small (<1000 bytes). Ignored.")
             return {"text": ""}
 
         # ── Cloud / Custom provider path ──────────────────────────────────────

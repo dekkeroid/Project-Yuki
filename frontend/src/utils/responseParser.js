@@ -8,7 +8,12 @@ export function stripAnimationTags(rawText) {
   if (!rawText || typeof rawText !== 'string') return rawText || '';
   const animRegex = /<(?:yuki_)?anim:([a-zA-Z0-9_\-]+)\/?>|\[anim:\s*([a-zA-Z0-9_\-]+)\]/gi;
   const emotionRegex = /<(?:yuki_)?emotion:([a-zA-Z0-9_\-]+)\/?>|\[emotion:\s*([a-zA-Z0-9_\-]+)\]/gi;
-  return rawText.replace(animRegex, '').replace(emotionRegex, '').replace(/[ \t]{2,}/g, ' ').trim();
+  return rawText
+    .replace(animRegex, '')
+    .replace(emotionRegex, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 }
 
 /**

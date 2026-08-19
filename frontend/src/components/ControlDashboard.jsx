@@ -739,6 +739,8 @@ const ControlDashboard = ({
     llm_simple_api_key: '',
     llm_simple_model: '',
     llm_vision_model: '',
+    llm_image_gen_model: '',
+    use_free_image_gen: false,
     always_included_tools: [],
     blocked_tools: [],
     tts_voice: 'af_bella',
@@ -862,14 +864,27 @@ const ControlDashboard = ({
   };
 
   // Local Character & Persona States
-  const [charName, setCharName] = useState('Yuki');
-  const [charPersona, setCharPersona] = useState('');
-  const [personaPreset, setPersonaPreset] = useState('sassy_tech_gf');
-  const [executionRules, setExecutionRules] = useState('');
+  const [charName, setCharName] = useState(settings?.character_name || profile?.settings?.character_name || 'Yuki');
+  const [charPersona, setCharPersona] = useState(settings?.character_persona || profile?.settings?.character_persona || '');
+  const [personaPreset, setPersonaPreset] = useState(() => {
+    const raw = settings?.persona_preset || profile?.settings?.persona_preset || 'sassy_tech_gf';
+    const legacyMap = {
+      'sassy_girlfriend': 'sassy_tech_gf',
+      'classic_yuki': 'gentle_companion',
+      'tsundere_dev': 'hacker_cyberpunk',
+      'kuudere_os': 'gentle_companion',
+      'deredere_friend': 'sassy_tech_gf',
+      'yandere_companion': 'sassy_tech_gf',
+      'auto': 'sassy_tech_gf'
+    };
+    return legacyMap[raw] || raw;
+  });
+  const [executionRules, setExecutionRules] = useState(settings?.execution_rules || profile?.settings?.execution_rules || '');
   const [presetsRegistry, setPresetsRegistry] = useState({});
   const [customPersonaPrompts, setCustomPersonaPrompts] = useState(profile?.settings?.custom_persona_prompts || {});
   const [whisperActionState, setWhisperActionState] = useState('idle');
   const [whisperStatusNotice, setWhisperStatusNotice] = useState(null);
+  const isCharacterStateInitializedRef = useRef(false);
 
   const handleResetPromptToDefault = async (targetPreset) => {
     const presetKey = targetPreset || personaPreset;
@@ -881,9 +896,16 @@ const ControlDashboard = ({
       const res = await fetch(`${API_BASE}/api/personas/reset-prompt?preset=${encodeURIComponent(presetKey)}`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        setCharPersona(data.character_persona);
+        const defaultPrompt = presetsRegistry[presetKey]?.prompt || data.character_persona || '';
+        setCharPersona(defaultPrompt);
         if (data.custom_persona_prompts) {
           setCustomPersonaPrompts(data.custom_persona_prompts);
+        } else {
+          setCustomPersonaPrompts(prev => {
+            const next = { ...prev };
+            delete next[presetKey];
+            return next;
+          });
         }
       }
     } catch (e) {
@@ -923,18 +945,25 @@ const ControlDashboard = ({
           if (!executionRules && data.default_execution_rules) {
             setExecutionRules(data.default_execution_rules);
           }
+          // Set initial charPersona for the active preset if not yet initialized
+          if (!isCharacterStateInitializedRef.current) {
+            const currentPreset = personaPreset || 'sassy_tech_gf';
+            const initialPrompt = data.custom_persona_prompts?.[currentPreset] || (currentPreset === 'custom' ? (settings?.character_persona || '') : (data.presets?.[currentPreset]?.prompt || ''));
+            if (initialPrompt && !charPersona) {
+              setCharPersona(initialPrompt);
+            }
+            isCharacterStateInitializedRef.current = true;
+          }
         }
       })
       .catch(() => {});
   }, []);
 
-  // Sync character local states when settings change
+  // Sync character local states ONLY on first initial load
   useEffect(() => {
+    if (isCharacterStateInitializedRef.current) return;
     if (settings?.character_name) {
       setCharName(settings.character_name);
-    }
-    if (settings?.character_persona) {
-      setCharPersona(settings.character_persona);
     }
     if (settings?.persona_preset) {
       const legacyMap = {
@@ -948,7 +977,10 @@ const ControlDashboard = ({
       };
       setPersonaPreset(legacyMap[settings.persona_preset] || settings.persona_preset);
     }
-    if (settings?.execution_rules) {
+    if (settings?.character_persona && !charPersona) {
+      setCharPersona(settings.character_persona);
+    }
+    if (settings?.execution_rules && !executionRules) {
       setExecutionRules(settings.execution_rules);
     }
   }, [settings]);
@@ -957,6 +989,9 @@ const ControlDashboard = ({
   useEffect(() => {
     if (profile?.settings) {
       setSettings(prev => ({ ...prev, ...profile.settings }));
+      if (profile.settings.custom_persona_prompts) {
+        setCustomPersonaPrompts(profile.settings.custom_persona_prompts);
+      }
     }
   }, [profile?.settings]);
 
@@ -2936,7 +2971,7 @@ const ControlDashboard = ({
                     onChange={async (e) => {
                       const val = e.target.value;
                       setPersonaPreset(val);
-                      let newPrompt = customPersonaPrompts[val] || presetsRegistry[val]?.prompt || '';
+                      const newPrompt = customPersonaPrompts[val] || presetsRegistry[val]?.prompt || '';
                       setCharPersona(newPrompt);
                       await handleUpdateSetting('persona_preset', val);
                       fetchRelationshipStatus(val);
@@ -3118,16 +3153,9 @@ const ControlDashboard = ({
                   <textarea
                     value={charPersona}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      setCharPersona(val);
-                      setPersonaPreset('custom');
+                      setCharPersona(e.target.value);
                     }}
-                    onBlur={(e) => {
-                      handleUpdateSetting({
-                        persona_preset: 'custom',
-                        character_persona: e.target.value
-                      });
-                    }}
+                    placeholder="Enter character backstory & prompt..."
                     className="glass-input"
                     style={{
                       padding: '8px 10px',
@@ -3177,6 +3205,10 @@ const ControlDashboard = ({
                         character_persona: charPersona,
                         execution_rules: executionRules
                       });
+                      setCustomPersonaPrompts(prev => ({
+                        ...prev,
+                        [personaPreset]: charPersona
+                      }));
                       btn.innerText = "✓ Saved Specs";
                       btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
                       setTimeout(() => {
@@ -5751,6 +5783,48 @@ const ControlDashboard = ({
                           />
                         );
                       })()}
+                    </div>
+
+                    {/* Image Generation Model Selection */}
+                    <div className="identity-field" style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                        <span className="field-label" style={{ color: '#ec4899' }}>Image Generation Model (Tool Model)</span>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '6px' }}>
+                        Model used by <code style={{ color: '#ec4899' }}>jarvis_generate_image</code> tool to generate high-resolution art & wallpapers on Canvas.
+                      </div>
+                      {(() => {
+                        const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
+                        const allNames = Array.from(new Set([
+                          ...(settings.llm_image_gen_model ? [settings.llm_image_gen_model] : []),
+                          ...fetchedNames
+                        ]));
+                        return (
+                          <SearchableModelSelect
+                            value={settings.llm_image_gen_model || ''}
+                            onChange={(val) => handleUpdateSetting('llm_image_gen_model', val)}
+                            options={allNames}
+                            placeholder="Search or select Image Generation model..."
+                          />
+                        );
+                      })()}
+
+                      {/* Free FLUX.1 Engine Override Checkbox */}
+                      <div style={{ marginTop: '10px', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                        <input
+                          type="checkbox"
+                          id="use_free_image_gen"
+                          checked={!!settings.use_free_image_gen}
+                          onChange={(e) => handleUpdateSetting('use_free_image_gen', e.target.checked)}
+                          style={{ accentColor: '#ec4899', width: '14px', height: '14px', cursor: 'pointer', marginTop: '2px' }}
+                        />
+                        <label htmlFor="use_free_image_gen" style={{ fontSize: '0.72rem', color: '#cbd5e1', cursor: 'pointer', lineHeight: '1.4' }}>
+                          <span style={{ fontWeight: 600, color: settings.use_free_image_gen ? '#ec4899' : '#e2e8f0' }}>Always use Free FLUX.1 Engine (Override Selected Model)</span>
+                          <span style={{ display: 'block', fontSize: '0.66rem', color: '#94a3b8' }}>
+                            Generates images directly via public FLUX.1 cluster with 0 cost and no API keys required. (When unchecked, uses selected model with free fallback).
+                          </span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 </>
