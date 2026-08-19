@@ -689,11 +689,11 @@ def _find_window_bbox(window_title: str):
     return tuple(rect)
 
 
-def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
+def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "auto") -> str:
     """
     Generates a high-quality image from a text description using the configured Image Generation Model.
-    Supports OpenRouter, Grok (xAI), OpenAI, Together AI, Google AI Studio, Local WebUI, and Custom Proxies.
-    Saves the image to yuki_attachment/generated_images and automatically opens it on the Canvas.
+    Supports OpenRouter, Grok (xAI), OpenAI, Together AI, Google AI Studio, Local WebUI, and Free FLUX.1 with style presets.
+    Saves the image to yuki_attachment/generated_images and automatically opens it in the default system image viewer and Canvas.
     """
     import base64
     import datetime
@@ -724,7 +724,7 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
     image_model = (image_model or getattr(config, "LLM_IMAGE_GEN_MODEL", "") or "").strip()
     use_free_override = use_free_override or getattr(config, "USE_FREE_IMAGE_GEN", False)
 
-    def generate_via_flux_free(prompt_text: str, aspect: str):
+    def generate_via_flux_free(prompt_text: str, aspect: str, chosen_style: str = "auto"):
         try:
             w, h = 1024, 1024
             if "16:9" in aspect:
@@ -736,15 +736,30 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
             elif "3:4" in aspect:
                 w, h = 864, 1152
 
+            # Resolve style model preset (flux, flux-anime, flux-realism, flux-3d, turbo)
+            effective_style = "flux"
+            s_lower = (chosen_style or "auto").strip().lower()
+            p_lower = prompt_text.lower()
+            if s_lower in ("flux", "flux-anime", "flux-realism", "flux-3d", "turbo", "any-dark"):
+                effective_style = s_lower
+            elif s_lower == "anime" or any(w in p_lower for w in ("anime", "manga", "waifu", "chibi", "otaku", "shonen", "shoujo", "kawaii", "genshin", "vtuber")):
+                effective_style = "flux-anime"
+            elif s_lower in ("realism", "realistic", "photo") or any(w in p_lower for w in ("realistic", "realism", "photograph", "portrait", "dslr", "raw photo", "cinematic photo", "real life")):
+                effective_style = "flux-realism"
+            elif s_lower in ("3d", "cgi", "render") or any(w in p_lower for w in ("3d", "cgi", "unreal engine", "isometric", "pixar", "claymation", "blender", "octane render")):
+                effective_style = "flux-3d"
+            elif s_lower == "turbo":
+                effective_style = "turbo"
+
             encoded_prompt = urllib.parse.quote(prompt_text)
-            flux_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={w}&height={h}&nologo=true&model=flux"
-            print(f"[ImageGen][FLUX-Free] Fetching free FLUX.1 image from {flux_url[:100]}...")
+            flux_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={w}&height={h}&nologo=true&model={effective_style}"
+            print(f"[ImageGen][FLUX-Free] Fetching free image ({effective_style}) from {flux_url[:110]}...")
             resp = requests.get(flux_url, timeout=45)
             if resp.status_code == 200 and len(resp.content) > 5000:
-                return resp.content
+                return resp.content, effective_style
         except Exception as e:
             print(f"[ImageGen][FLUX-Free] Free generation error: {e}")
-        return None
+        return None, "flux"
 
     # 2. Resolve credentials & endpoint
     api_key = config.LLM_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
@@ -764,9 +779,9 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
     # Check if User configured Free FLUX as default override
     if use_free_override:
         print("[ImageGen] Using Free FLUX.1 Engine as primary generator.")
-        image_bytes = generate_via_flux_free(prompt, aspect_ratio)
+        image_bytes, used_style = generate_via_flux_free(prompt, aspect_ratio, style)
         if image_bytes:
-            engine_used = "Free FLUX.1 Engine"
+            engine_used = f"Free FLUX.1 ({used_style})"
 
     # Strategy 1: OpenAI-Compatible /images/generations endpoint (OpenRouter, Grok, OpenAI, Together, Custom)
     if not image_bytes and base_url:
@@ -884,9 +899,9 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
     # Strategy 4: Automatic Free FLUX.1 Fallback if upstream provider failed or had 0 quota
     if not image_bytes:
         print(f"[ImageGen] Configured provider failed ({last_error or 'No response'}). Activating Free FLUX.1 fallback...")
-        image_bytes = generate_via_flux_free(prompt, aspect_ratio)
+        image_bytes, used_style = generate_via_flux_free(prompt, aspect_ratio, style)
         if image_bytes:
-            engine_used = "Free FLUX.1 Engine (Auto Fallback)"
+            engine_used = f"Free FLUX.1 ({used_style}) [Auto Fallback]"
 
     if not image_bytes:
         return f"Image Generation Notice: Could not generate image using model '{image_model or 'default'}'. Details: {last_error or 'No image data returned from provider or fallback.'}"

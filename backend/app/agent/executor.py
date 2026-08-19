@@ -443,11 +443,13 @@ class AgentExecutor:
             ),
             "jarvis_generate_image": lambda **kwargs: jarvis_generate_image(
                 prompt=kwargs.get("prompt") or "",
-                aspect_ratio=kwargs.get("aspect_ratio") or "1:1"
+                aspect_ratio=kwargs.get("aspect_ratio") or "1:1",
+                style=kwargs.get("style") or "auto"
             ),
             "generate_image": lambda **kwargs: jarvis_generate_image(
                 prompt=kwargs.get("prompt") or "",
-                aspect_ratio=kwargs.get("aspect_ratio") or "1:1"
+                aspect_ratio=kwargs.get("aspect_ratio") or "1:1",
+                style=kwargs.get("style") or "auto"
             ),
             "jarvis_see_screen": lambda **kwargs: jarvis_see_screen(
                 kwargs.get("prompt") or "",
