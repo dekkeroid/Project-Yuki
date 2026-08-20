@@ -83,6 +83,17 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
     margin:0;
     padding:0;
     position:relative;
+    transition:background-color 0.2s ease;
+  }
+  body.theme-checker {
+    background-color: #1a1a24 !important;
+    background-image: 
+      linear-gradient(45deg, #262636 25%, transparent 25%), 
+      linear-gradient(-45deg, #262636 25%, transparent 25%), 
+      linear-gradient(45deg, transparent 75%, #262636 75%), 
+      linear-gradient(-45deg, transparent 75%, #262636 75%) !important;
+    background-size: 20px 20px !important;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px !important;
   }
   .canvas-top-bar {
     position:fixed;
@@ -207,6 +218,7 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
     <span>Yuki Canvas</span>
   </div>
   <div class="canvas-controls">
+    <button class="canvas-btn" onclick="cycleTheme()" id="theme-btn" title="Toggle Background Color (Dark, Black, Slate, Light, Grid) [B]">🎨</button>
     <button class="canvas-btn" onclick="zoomOut()" title="Zoom Out (− or Ctrl+Scroll)">−</button>
     <span id="zoom-label">100%</span>
     <button class="canvas-btn" onclick="zoomIn()" title="Zoom In (+ or Ctrl+Scroll)">+</button>
@@ -221,8 +233,30 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
     __CANVAS_CONTENT__
   </div>
 </div>
-<div class="drag-hint">Drag top bar to move window • Drag canvas to pan • Ctrl+Scroll to zoom</div>
+<div class="drag-hint">Drag top bar to move window • Drag canvas to pan • Ctrl+Scroll to zoom • [B] Toggle background</div>
 <script>
+  // ── Background Color Theme Cycle ──
+  const themes = [
+    { name: 'Dark Space', bg: '#121220', checker: false },
+    { name: 'Pitch Black', bg: '#000000', checker: false },
+    { name: 'Slate Gray', bg: '#252836', checker: false },
+    { name: 'Pure White', bg: '#ffffff', checker: false },
+    { name: 'Transparency Grid', bg: '', checker: true }
+  ];
+  let currentThemeIdx = 0;
+
+  function cycleTheme() {
+    currentThemeIdx = (currentThemeIdx + 1) % themes.length;
+    const t = themes[currentThemeIdx];
+    if (t.checker) {
+      document.body.classList.add('theme-checker');
+      document.body.style.backgroundColor = '';
+    } else {
+      document.body.classList.remove('theme-checker');
+      document.body.style.backgroundColor = t.bg;
+    }
+  }
+
   // ── Zoom & Pan State ──
   let currentZoom = 1.0;
   let panX = 0;
@@ -244,12 +278,13 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
   function zoomOut() { currentZoom = Math.max(ZOOM_MIN, currentZoom - ZOOM_STEP); applyTransform(); }
   function resetZoom() { currentZoom = 1.0; panX = 0; panY = 0; applyTransform(); }
 
-  // Keyboard shortcut controls: + / - / 0
+  // Keyboard shortcut controls: + / - / 0 / b
   document.addEventListener('keydown', function(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (e.key === '+' || e.key === '=') { zoomIn(); }
     else if (e.key === '-' || e.key === '_') { zoomOut(); }
     else if (e.key === '0' || e.key === 'r') { resetZoom(); }
+    else if (e.key === 'b' || e.key === 'B' || e.key === 't' || e.key === 'T') { cycleTheme(); }
   });
 
   // Ctrl + MouseWheel zoom scaling

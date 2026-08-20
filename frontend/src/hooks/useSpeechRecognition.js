@@ -458,7 +458,8 @@ export function useSpeechRecognition(options = {}) {
 
         const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
         mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
+        const localChunks = [];
+        audioChunksRef.current = localChunks;
         const recordingStartTime = Date.now();
         let chunkCount = 0;
 
@@ -469,15 +470,24 @@ export function useSpeechRecognition(options = {}) {
         mediaRecorder.ondataavailable = (event) => {
           if (event.data && event.data.size > 0) {
             chunkCount++;
-            audioChunksRef.current.push(event.data);
-            const totalBytes = audioChunksRef.current.reduce((acc, c) => acc + c.size, 0);
+            localChunks.push(event.data);
+            audioChunksRef.current = localChunks;
+            const totalBytes = localChunks.reduce((acc, c) => acc + c.size, 0);
             console.log(`[STT-DIAG] MediaRecorder Chunk #${chunkCount} (+${event.data.size} bytes, total=${totalBytes} bytes @ ${Date.now() - recordingStartTime}ms)`);
           }
         };
 
         mediaRecorder.onstop = async () => {
+          // Detach listeners to prevent trailing events from polluting future turns
+          mediaRecorder.ondataavailable = null;
+          mediaRecorder.onerror = null;
+          mediaRecorder.onstop = null;
+          if (mediaRecorderRef.current === mediaRecorder) {
+            mediaRecorderRef.current = null;
+          }
+
           const totalRecordingDurationMs = Date.now() - recordingStartTime;
-          console.log(`[STT-DIAG] MediaRecorder stopped. Total active duration: ${totalRecordingDurationMs}ms, Chunks: ${audioChunksRef.current.length}`);
+          console.log(`[STT-DIAG] MediaRecorder stopped. Total active duration: ${totalRecordingDurationMs}ms, Chunks: ${localChunks.length}`);
 
           if (micStreamRef.current) {
             micStreamRef.current.getTracks().forEach(track => track.stop());
@@ -502,10 +512,49 @@ export function useSpeechRecognition(options = {}) {
           setIsListening(false);
           isSpeechRecActiveRef.current = false;
 
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          if (localChunks.length === 0) {
+            logSTTStatus(`[STT] Ignored empty clip (0 chunks, ${totalRecordingDurationMs}ms).`);
+            setIsTranscribing(false);
+            updateListeningState();
+            return;
+          }
+
+          // EBML Header Sanity Check: Ensure the first chunk contains the WebM container magic header [0x1A, 0x45, 0xDF, 0xA3]
+          let validChunks = localChunks;
+          try {
+            const firstChunkBuffer = await localChunks[0].slice(0, 4).arrayBuffer();
+            const firstBytes = new Uint8Array(firstChunkBuffer);
+            const isHeader = (firstBytes[0] === 0x1A && firstBytes[1] === 0x45 && firstBytes[2] === 0xDF && firstBytes[3] === 0xA3);
+            if (!isHeader) {
+              const hexFound = Array.from(firstBytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+              console.warn(`[STT-DIAG] Chunk #1 missing EBML header (found: [${hexFound}]). Searching for valid header chunk...`);
+              let headerIndex = -1;
+              for (let i = 1; i < localChunks.length; i++) {
+                const buf = await localChunks[i].slice(0, 4).arrayBuffer();
+                const bytes = new Uint8Array(buf);
+                if (bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3) {
+                  headerIndex = i;
+                  break;
+                }
+              }
+              if (headerIndex !== -1) {
+                console.log(`[STT-DIAG] Recovered valid EBML header chunk at index ${headerIndex}. Discarding ${headerIndex} orphan chunk(s).`);
+                validChunks = localChunks.slice(headerIndex);
+              } else {
+                console.warn("[STT-DIAG] No valid EBML header found in recording. Discarding corrupted fragment.");
+                setIsTranscribing(false);
+                updateListeningState();
+                return;
+              }
+            }
+          } catch (ebmlErr) {
+            console.warn("[STT-DIAG] EBML header check warning:", ebmlErr);
+          }
+
+          const audioBlob = new Blob(validChunks, { type: 'audio/webm' });
           console.log(`[STT-DIAG] Pre-flight AudioBlob: size=${audioBlob.size} bytes, type='${audioBlob.type}', duration=${totalRecordingDurationMs}ms`);
 
-          if (audioChunksRef.current.length === 0 || audioBlob.size < 4000) {
+          if (audioBlob.size < 4000) {
             logSTTStatus(`[STT] Ignored short clip (${audioBlob.size} bytes, ${totalRecordingDurationMs}ms).`);
             setIsTranscribing(false);
             updateListeningState();

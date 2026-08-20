@@ -1,0 +1,352 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 2400" width="1000" height="2400" style="background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="bg-card" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#131b2e" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="grad-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="grad-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="grad-teal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d9488"/>
+      <stop offset="100%" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="grad-rose" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e11d48"/>
+      <stop offset="100%" stop-color="#f43f5e"/>
+    </linearGradient>
+    <linearGradient id="grad-amber" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+
+    <!-- Drop Shadows -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+
+    <!-- Arrow Marker -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#c084fc"/>
+    </marker>
+    <marker id="arrow-rose" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#fb7185"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#fbbf24"/>
+    </marker>
+  </defs>
+
+  <!-- Title Header -->
+  <text x="500" y="45" text-anchor="middle" fill="#f8fafc" font-size="24" font-weight="800" letter-spacing="1.5">PROJECT YUKI — SPEECH-TO-TEXT ARCHITECTURE</text>
+  <text x="500" y="72" text-anchor="middle" fill="#94a3b8" font-size="13" font-weight="500">End-to-End Pipeline: Web Audio API • MediaRecorder • PyTorch Silero VAD • Faster-Whisper</text>
+
+  <!-- ==================== SECTION 1: FRONTEND ==================== -->
+  <g transform="translate(50, 95)">
+    <rect x="0" y="0" width="900" height="860" rx="16" fill="url(#bg-card)" stroke="#38bdf8" stroke-width="1.5" stroke-opacity="0.4" filter="url(#shadow)"/>
+    <rect x="0" y="0" width="900" height="42" rx="16" fill="#1e293b" fill-opacity="0.8"/>
+    <text x="20" y="27" fill="#38bdf8" font-size="14" font-weight="700" letter-spacing="0.8">1. FRONTEND: BROWSER / ELECTRON (useSpeechRecognition.js)</text>
+
+    <!-- Node: Mic Hardware -->
+    <g transform="translate(450, 65)" filter="url(#shadow)">
+      <rect x="-160" y="0" width="320" height="44" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.2"/>
+      <text x="0" y="27" text-anchor="middle" fill="#f8fafc" font-size="13" font-weight="600">Microphone Hardware (WASAPI)</text>
+    </g>
+
+    <!-- Link: Mic -> Analyser -->
+    <path d="M 450 109 L 450 155" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="395" y="122" width="110" height="18" rx="4" fill="#0b0f19" stroke="#1e293b" stroke-width="1"/>
+    <text x="450" y="135" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="500">Audio Stream</text>
+
+    <!-- Node: Web Audio API -->
+    <g transform="translate(450, 155)" filter="url(#shadow)">
+      <rect x="-160" y="0" width="320" height="44" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.2"/>
+      <text x="0" y="27" text-anchor="middle" fill="#f8fafc" font-size="13" font-weight="600">Web Audio API (AnalyserNode)</text>
+    </g>
+
+    <!-- Link: Analyser -> Diamond 1 -->
+    <path d="M 450 199 L 450 245" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="375" y="212" width="150" height="18" rx="4" fill="#0b0f19" stroke="#1e293b" stroke-width="1"/>
+    <text x="450" y="225" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="500">Live 1024-sample FFT</text>
+
+    <!-- Diamond 1: VAD RMS Check -->
+    <g transform="translate(450, 290)" filter="url(#shadow)">
+      <path d="M 0 -45 L 145 0 L 0 45 L -145 0 Z" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+      <text x="0" y="-5" text-anchor="middle" fill="#f8fafc" font-size="11" font-weight="600">VAD RMS Check:</text>
+      <text x="0" y="12" text-anchor="middle" fill="#38bdf8" font-size="11" font-weight="700">Volume &gt; Threshold?</text>
+    </g>
+
+    <!-- Branch: No -> Wait / Meter -->
+    <path d="M 595 290 L 710 290" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="635" y="275" width="35" height="16" rx="3" fill="#0b0f19" stroke="#1e293b" stroke-width="1"/>
+    <text x="652" y="287" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600">No</text>
+    <g transform="translate(710, 268)">
+      <rect x="0" y="0" width="160" height="44" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+      <text x="80" y="27" text-anchor="middle" fill="#94a3b8" font-size="11" font-weight="500">Wait / Live Meter</text>
+    </g>
+
+    <!-- Link: Diamond 1 -> Start Recording (Yes) -->
+    <path d="M 450 335 L 450 385" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="365" y="348" width="170" height="18" rx="4" fill="#0b0f19" stroke="#0284c7" stroke-width="1"/>
+    <text x="450" y="361" text-anchor="middle" fill="#38bdf8" font-size="10" font-weight="600">Yes (250ms sustained)</text>
+
+    <!-- Node: Start Recording -->
+    <g transform="translate(450, 385)" filter="url(#shadow)">
+      <rect x="-160" y="0" width="320" height="44" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1.2"/>
+      <text x="0" y="27" text-anchor="middle" fill="#f8fafc" font-size="13" font-weight="600">Start Recording (MediaRecorder)</text>
+    </g>
+
+    <!-- Link: Start -> Collect Chunks -->
+    <path d="M 450 429 L 450 475" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="390" y="442" width="120" height="18" rx="4" fill="#0b0f19" stroke="#1e293b" stroke-width="1"/>
+    <text x="450" y="455" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="500">Every 250ms</text>
+
+    <!-- Node: Collect Chunks -->
+    <g transform="translate(450, 475)" filter="url(#shadow)">
+      <rect x="-160" y="0" width="320" height="44" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.2"/>
+      <text x="0" y="27" text-anchor="middle" fill="#f8fafc" font-size="13" font-weight="600">Collect WebM/Opus Chunks</text>
+    </g>
+
+    <!-- Link: Collect Chunks -> Diamond 2 -->
+    <path d="M 450 519 L 450 565" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <!-- Diamond 2: Silence Timeout -->
+    <g transform="translate(450, 605)" filter="url(#shadow)">
+      <path d="M 0 -40 L 140 0 L 0 40 L -140 0 Z" fill="#1e293b" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="0" y="-5" text-anchor="middle" fill="#f8fafc" font-size="11" font-weight="600">Silence &gt;</text>
+      <text x="0" y="12" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="700">Silence Timeout?</text>
+    </g>
+
+    <!-- Loop: Silence No -> Back to Collect Chunks -->
+    <path d="M 310 605 L 210 605 L 210 497 L 290 497" fill="none" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="218" y="545" width="30" height="16" rx="3" fill="#0b0f19" stroke="#1e293b" stroke-width="1"/>
+    <text x="233" y="557" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600">No</text>
+
+    <!-- Link: Silence Yes -> Stop -->
+    <path d="M 450 645 L 450 685" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrow-amber)"/>
+    <rect x="430" y="653" width="40" height="16" rx="3" fill="#0b0f19" stroke="#d97706" stroke-width="1"/>
+    <text x="450" y="665" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">Yes</text>
+
+    <!-- Node: MediaRecorder.stop() -->
+    <g transform="translate(450, 685)" filter="url(#shadow)">
+      <rect x="-160" y="0" width="320" height="38" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.2"/>
+      <text x="0" y="24" text-anchor="middle" fill="#f8fafc" font-size="12" font-weight="600">MediaRecorder.stop()</text>
+    </g>
+
+    <!-- Link: Stop -> Assemble -->
+    <path d="M 450 723 L 450 750" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <!-- Node: Assemble Blob -->
+    <g transform="translate(450, 750)" filter="url(#shadow)">
+      <rect x="-160" y="0" width="320" height="38" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.2"/>
+      <text x="0" y="24" text-anchor="middle" fill="#f8fafc" font-size="12" font-weight="600">Assemble AudioBlob from Chunks</text>
+    </g>
+
+    <!-- Link: Assemble -> Preflight -->
+    <path d="M 450 788 L 450 812" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <!-- Diamond 3: Pre-flight -->
+    <g transform="translate(450, 842)">
+      <path d="M 0 -30 L 110 0 L 0 30 L -110 0 Z" fill="#1e293b" stroke="#a855f7" stroke-width="1.2"/>
+      <text x="0" y="3" text-anchor="middle" fill="#f8fafc" font-size="10" font-weight="600">Blob Size &gt;= 4KB?</text>
+    </g>
+
+    <!-- Discard Branch -->
+    <path d="M 340 842 L 240 842" stroke="#fb7185" stroke-width="1.5" marker-end="url(#arrow-rose)"/>
+    <rect x="255" y="825" width="65" height="16" rx="3" fill="#0b0f19" stroke="#e11d48" stroke-width="1"/>
+    <text x="287" y="837" text-anchor="middle" fill="#fb7185" font-size="9" font-weight="600">No (&lt; 4KB)</text>
+    <g transform="translate(80, 824)">
+      <rect x="0" y="0" width="160" height="36" rx="6" fill="#1c1917" stroke="#e11d48" stroke-width="1"/>
+      <text x="80" y="22" text-anchor="middle" fill="#fca5a5" font-size="10" font-weight="600">Discard Short/Noise Clip</text>
+    </g>
+
+    <!-- Success Branch Down -->
+    <path d="M 450 872 L 450 900" stroke="#38bdf8" stroke-width="1.5"/>
+  </g>
+
+  <!-- Big Connector 1 -> 2 -->
+  <path d="M 500 967 L 500 1010" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="360" y="977" width="280" height="20" rx="5" fill="#0369a1" stroke="#38bdf8" stroke-width="1"/>
+  <text x="500" y="991" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="700">POST /api/speech/transcribe (FormData)</text>
+
+  <!-- ==================== SECTION 2: BACKEND ==================== -->
+  <g transform="translate(50, 1020)">
+    <rect x="0" y="0" width="900" height="750" rx="16" fill="url(#bg-card)" stroke="#a855f7" stroke-width="1.5" stroke-opacity="0.4" filter="url(#shadow)"/>
+    <rect x="0" y="0" width="900" height="42" rx="16" fill="#1e293b" fill-opacity="0.8"/>
+    <text x="20" y="27" fill="#c084fc" font-size="14" font-weight="700" letter-spacing="0.8">2. BACKEND: FASTAPI SERVER (main.py &amp; stt.py)</text>
+
+    <!-- Node: FastAPI Endpoint -->
+    <g transform="translate(450, 65)" filter="url(#shadow)">
+      <rect x="-160" y="0" width="320" height="40" rx="8" fill="#1e293b" stroke="#a855f7" stroke-width="1.2"/>
+      <text x="0" y="25" text-anchor="middle" fill="#f8fafc" font-size="12" font-weight="600">FastAPI Endpoint (/api/speech/transcribe)</text>
+    </g>
+
+    <!-- Link -> Payload check -->
+    <path d="M 450 105 L 450 135" stroke="#c084fc" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+
+    <!-- Diamond: Payload Size -->
+    <g transform="translate(450, 165)">
+      <path d="M 0 -30 L 120 0 L 0 30 L -120 0 Z" fill="#1e293b" stroke="#a855f7" stroke-width="1.2"/>
+      <text x="0" y="3" text-anchor="middle" fill="#f8fafc" font-size="10" font-weight="600">Payload Size &gt;= 1000B?</text>
+    </g>
+
+    <!-- Payload No -> Return empty -->
+    <path d="M 330 165 L 230 165" stroke="#fb7185" stroke-width="1.5" marker-end="url(#arrow-rose)"/>
+    <rect x="250" y="150" width="35" height="16" rx="3" fill="#0b0f19" stroke="#e11d48" stroke-width="1"/>
+    <text x="267" y="162" text-anchor="middle" fill="#fb7185" font-size="10" font-weight="600">No</text>
+    <g transform="translate(70, 147)">
+      <rect x="0" y="0" width="160" height="36" rx="6" fill="#1c1917" stroke="#e11d48" stroke-width="1"/>
+      <text x="80" y="22" text-anchor="middle" fill="#fca5a5" font-size="10" font-weight="600">Return Empty Text &quot;&quot;</text>
+    </g>
+
+    <!-- Link: Yes -> BytesIO -->
+    <path d="M 450 195 L 450 225" stroke="#c084fc" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+    <rect x="430" y="203" width="40" height="16" rx="3" fill="#0b0f19" stroke="#7c3aed" stroke-width="1"/>
+    <text x="450" y="215" text-anchor="middle" fill="#c084fc" font-size="10" font-weight="600">Yes</text>
+
+    <!-- Node: BytesIO -->
+    <g transform="translate(450, 225)" filter="url(#shadow)">
+      <rect x="-150" y="0" width="300" height="36" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.2"/>
+      <text x="0" y="23" text-anchor="middle" fill="#f8fafc" font-size="12" font-weight="600">In-Memory Stream (io.BytesIO)</text>
+    </g>
+
+    <!-- Link -> PyAV -->
+    <path d="M 450 261 L 450 290" stroke="#c084fc" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+
+    <!-- Node: PyAV Demuxer -->
+    <g transform="translate(450, 290)" filter="url(#shadow)">
+      <rect x="-150" y="0" width="300" height="36" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.2"/>
+      <text x="0" y="23" text-anchor="middle" fill="#f8fafc" font-size="12" font-weight="600">PyAV / FFmpeg Demuxer</text>
+    </g>
+
+    <!-- Link -> Silero -->
+    <path d="M 450 326 L 450 355" stroke="#c084fc" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+
+    <!-- Node: Silero VAD -->
+    <g transform="translate(450, 355)" filter="url(#shadow)">
+      <rect x="-150" y="0" width="300" height="38" rx="8" fill="#1e293b" stroke="#14b8a6" stroke-width="1.4"/>
+      <text x="0" y="24" text-anchor="middle" fill="#2dd4bf" font-size="13" font-weight="700">PyTorch Silero VAD Filter</text>
+    </g>
+
+    <!-- Link -> Faster-Whisper Model -->
+    <path d="M 450 393 L 450 440" stroke="#14b8a6" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="380" y="408" width="140" height="18" rx="4" fill="#0b0f19" stroke="#0d9488" stroke-width="1"/>
+    <text x="450" y="421" text-anchor="middle" fill="#2dd4bf" font-size="10" font-weight="600">Clean Voice Frames</text>
+
+    <!-- Node: Faster-Whisper -->
+    <g transform="translate(450, 440)" filter="url(#shadow)">
+      <rect x="-180" y="0" width="360" height="44" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+      <text x="0" y="27" text-anchor="middle" fill="#38bdf8" font-size="13" font-weight="700">CTranslate2 Faster-Whisper (GPU/CPU)</text>
+    </g>
+
+    <!-- Link -> Greedy Decode -->
+    <path d="M 450 484 L 450 530" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="370" y="498" width="160" height="18" rx="4" fill="#0b0f19" stroke="#1e293b" stroke-width="1"/>
+    <text x="450" y="511" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="500">Greedy Decode (Beam=1)</text>
+
+    <!-- Node: Aggregated Transcript -->
+    <g transform="translate(450, 530)" filter="url(#shadow)">
+      <rect x="-150" y="0" width="300" height="36" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.2"/>
+      <text x="0" y="23" text-anchor="middle" fill="#f8fafc" font-size="12" font-weight="600">Aggregated Transcript Text</text>
+    </g>
+
+    <!-- Link -> Anti-Hallucination -->
+    <path d="M 450 566 L 450 595" stroke="#c084fc" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+
+    <!-- Diamond: Anti-Hallucination -->
+    <g transform="translate(450, 625)">
+      <path d="M 0 -30 L 120 0 L 0 30 L -120 0 Z" fill="#1e293b" stroke="#a855f7" stroke-width="1.2"/>
+      <text x="0" y="3" text-anchor="middle" fill="#f8fafc" font-size="10" font-weight="600">Anti-Hallucination Filter</text>
+    </g>
+
+    <!-- Hallucination Branch -->
+    <path d="M 330 625 L 230 625" stroke="#fb7185" stroke-width="1.5" marker-end="url(#arrow-rose)"/>
+    <rect x="238" y="600" width="85" height="16" rx="3" fill="#0b0f19" stroke="#e11d48" stroke-width="1"/>
+    <text x="280" y="612" text-anchor="middle" fill="#fb7185" font-size="9" font-weight="600">Hallucination</text>
+    <g transform="translate(70, 607)">
+      <rect x="0" y="0" width="160" height="36" rx="6" fill="#1c1917" stroke="#e11d48" stroke-width="1"/>
+      <text x="80" y="22" text-anchor="middle" fill="#fca5a5" font-size="10" font-weight="600">Return Empty Text &quot;&quot;</text>
+    </g>
+
+    <!-- Clean Text Branch Down -->
+    <path d="M 450 655 L 450 690" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="410" y="663" width="80" height="16" rx="3" fill="#0b0f19" stroke="#0d9488" stroke-width="1"/>
+    <text x="450" y="675" text-anchor="middle" fill="#2dd4bf" font-size="9" font-weight="600">Clean Text</text>
+
+    <!-- Node: Return JSON -->
+    <g transform="translate(450, 690)" filter="url(#shadow)">
+      <rect x="-150" y="0" width="300" height="38" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="1.2"/>
+      <text x="0" y="24" text-anchor="middle" fill="#a7f3d0" font-size="12" font-weight="700">Return JSON { text, timing }</text>
+    </g>
+  </g>
+
+  <!-- Big Connector 2 -> 3 -->
+  <path d="M 500 1770 L 500 1820" stroke="#10b981" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ==================== SECTION 3: POST-TRANSCRIPTION & BARGE-IN ==================== -->
+  <g transform="translate(50, 1830)">
+    <rect x="0" y="0" width="900" height="470" rx="16" fill="url(#bg-card)" stroke="#10b981" stroke-width="1.5" stroke-opacity="0.4" filter="url(#shadow)"/>
+    <rect x="0" y="0" width="900" height="42" rx="16" fill="#1e293b" fill-opacity="0.8"/>
+    <text x="20" y="27" fill="#34d399" font-size="14" font-weight="700" letter-spacing="0.8">3. POST-TRANSCRIPTION &amp; BARGE-IN (useSpeechRecognition.js)</text>
+
+    <!-- Diamond: Is data.text non-empty? -->
+    <g transform="translate(450, 95)" filter="url(#shadow)">
+      <path d="M 0 -35 L 140 0 L 0 35 L -140 0 Z" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
+      <text x="0" y="4" text-anchor="middle" fill="#f8fafc" font-size="11" font-weight="600">Is data.text non-empty?</text>
+    </g>
+
+    <!-- Empty branch -> Ignore Noise -->
+    <path d="M 590 95 L 680 95" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="615" y="80" width="40" height="16" rx="3" fill="#0b0f19" stroke="#1e293b" stroke-width="1"/>
+    <text x="635" y="92" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600">Empty</text>
+    <g transform="translate(680, 73)">
+      <rect x="0" y="0" width="190" height="44" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+      <text x="95" y="20" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600">Ignore Noise / Cup Sound</text>
+      <text x="95" y="34" text-anchor="middle" fill="#34d399" font-size="10" font-weight="700">Keep Yuki Speaking</text>
+    </g>
+
+    <!-- Valid text branch -> Was Yuki Speaking? -->
+    <path d="M 450 130 L 450 190" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="415" y="150" width="70" height="16" rx="3" fill="#0b0f19" stroke="#059669" stroke-width="1"/>
+    <text x="450" y="162" text-anchor="middle" fill="#34d399" font-size="10" font-weight="600">Valid Text</text>
+
+    <!-- Diamond: Was Yuki Speaking? -->
+    <g transform="translate(450, 225)" filter="url(#shadow)">
+      <path d="M 0 -35 L 140 0 L 0 35 L -140 0 Z" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+      <text x="0" y="4" text-anchor="middle" fill="#f8fafc" font-size="11" font-weight="600">Was Yuki Speaking?</text>
+    </g>
+
+    <!-- Yes -> Barge In Interruption -->
+    <path d="M 590 225 L 680 225" stroke="#fb7185" stroke-width="1.5" marker-end="url(#arrow-rose)"/>
+    <rect x="620" y="210" width="30" height="16" rx="3" fill="#0b0f19" stroke="#e11d48" stroke-width="1"/>
+    <text x="635" y="222" text-anchor="middle" fill="#fb7185" font-size="10" font-weight="600">Yes</text>
+    <g transform="translate(680, 203)">
+      <rect x="0" y="0" width="190" height="44" rx="8" fill="#1c1917" stroke="#e11d48" stroke-width="1.2"/>
+      <text x="95" y="20" text-anchor="middle" fill="#fca5a5" font-size="10" font-weight="700">Barge-In Interruption</text>
+      <text x="95" y="34" text-anchor="middle" fill="#fb7185" font-size="9" font-weight="500">stopAllPlayback()</text>
+    </g>
+
+    <!-- Connect Barge-In back to LLM processing -->
+    <path d="M 775 247 L 775 350 L 590 350" fill="none" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <!-- No -> Process Command -->
+    <path d="M 450 260 L 450 330" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="435" y="285" width="30" height="16" rx="3" fill="#0b0f19" stroke="#0284c7" stroke-width="1"/>
+    <text x="450" y="297" text-anchor="middle" fill="#38bdf8" font-size="10" font-weight="600">No</text>
+
+    <!-- Node: Process Command / Send to LLM -->
+    <g transform="translate(450, 330)" filter="url(#shadow)">
+      <rect x="-160" y="0" width="320" height="44" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+      <text x="0" y="27" text-anchor="middle" fill="#38bdf8" font-size="13" font-weight="700">Process Command / Send to LLM</text>
+    </g>
+  </g>
+</svg>
