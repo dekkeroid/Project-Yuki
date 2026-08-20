@@ -212,6 +212,7 @@ async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], mode
 
             # Extract exact Silero VAD cleaned audio array for the dual-stage inspector
             silero_audio_array = None
+            input_for_whisper = whisper_input
             try:
                 import numpy as np
                 from faster_whisper.audio import decode_audio

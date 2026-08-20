@@ -2273,6 +2273,13 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
         hex_preview = content[:16].hex() if content else "empty"
         print(f"[STT-DEBUG] /api/speech/transcribe received {len(content) if content else 0} bytes | filename='{file.filename}' | content_type='{file.content_type}' | magic_hex='{hex_preview}'")
 
+        # Auto-align WebM container if leading orphaned bytes precede EBML header
+        ebml_magic = b'\x1a\x45\xdf\xa3'
+        if content and not content.startswith(ebml_magic) and ebml_magic in content:
+            idx = content.find(ebml_magic)
+            print(f"[STT-DEBUG] Auto-aligned payload: stripped {idx} leading orphaned bytes before EBML header.")
+            content = content[idx:]
+
         if not content or len(content) < 1000:
             print(f"[STT-DEBUG] Payload too small (<1000 bytes). Ignored.")
             return {"text": ""}

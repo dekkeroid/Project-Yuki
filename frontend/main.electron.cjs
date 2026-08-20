@@ -972,7 +972,7 @@ function createWindow() {
       frame: !isGraphics,
       titleBarStyle: isGraphics ? 'hidden' : 'default',
       resizable: true,
-      backgroundColor: '#1a1a2e',
+      backgroundColor: isGraphics ? '#121220' : '#ffffff',
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
         nodeIntegration: false,
