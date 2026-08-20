@@ -4200,6 +4200,51 @@ async def create_new_chat_session():
     })
     return {"status": "success", "session_id": active_session_id, "messages": []}
 
+@app.get("/api/chat/search")
+async def search_chat_history(q: str = Query(..., min_length=1), limit: int = Query(50, ge=1, le=200)):
+    """Searches across all past chat sessions and messages."""
+    try:
+        from app.memory.db import search_chat_conversations
+        results = await asyncio.to_thread(search_chat_conversations, q, limit)
+        total_matches = sum(len(r.get("matches", [])) for r in results)
+        return {
+            "status": "success",
+            "query": q,
+            "total_sessions": len(results),
+            "total_matches": total_matches,
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class RenameSessionRequest(BaseModel):
+    title: str
+
+@app.patch("/api/chat/sessions/{session_id}/title")
+@app.post("/api/chat/sessions/{session_id}/rename")
+async def rename_chat_session(session_id: str, req: RenameSessionRequest):
+    """Renames a chat session and marks it as a custom user title."""
+    if not req.title or not req.title.strip():
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    try:
+        from app.memory.db import update_chat_session_title
+        new_title = req.title.strip()
+        ok = await asyncio.to_thread(update_chat_session_title, session_id, new_title)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Failed to update session title")
+        
+        # Broadcast title rename event
+        await broadcast_ws_event({
+            "type": "session_renamed",
+            "session_id": session_id,
+            "title": new_title
+        })
+        return {"status": "success", "session_id": session_id, "title": new_title}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/api/chat/sessions/{session_id}")
 async def delete_chat_session_by_id(session_id: str):
     """Deletes a past session."""

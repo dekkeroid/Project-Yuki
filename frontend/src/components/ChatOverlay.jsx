@@ -188,13 +188,14 @@ export const formatMessageText = (text, disableFileLinks = false) => {
   }
 
   // Regex matches:
-  // 1. Markdown Links: [label](url_or_path)
-  // 2. HTTP/HTTPS URLs: https://... or http://... or www....
-  // 3. Windows File Paths (with ext): D:\path\to\file.ext
-  // 4. file:/// URIs
-  // 5. Windows Folder Paths (no ext): D:\path\to\folder
-  // 6. Code block `code` & Bold **bold**
-  const linkOrPathRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+|www\.[^\)]+|file:\/\/\/?[^\)]+|[A-Za-z]:[\\\/][^\)]+)\)|(https?:\/\/[^\s\(\)<>"'\`\n]+|www\.[^\s\(\)<>"'\`\n]+)|([A-Za-z]:[\\\/][^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|(file:\/\/\/[^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|([A-Za-z]:[\\\/][^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+)|`([^`]+)`|\*\*([^*]+)\*\*/gi;
+  // 1. Standard Markdown Links: [label](url_or_path)
+  // 2. Reversed Format Links: (label)[url]
+  // 3. HTTP/HTTPS URLs: https://... or http://... or www....
+  // 4. Windows File Paths (with ext): D:\path\to\file.ext
+  // 5. file:/// URIs
+  // 6. Windows Folder Paths (no ext): D:\path\to\folder
+  // 7. Code block `code` & Bold **bold**
+  const linkOrPathRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+|www\.[^\)]+|file:\/\/\/?[^\)]+|[A-Za-z]:[\\\/][^\)]+)\)|\(([^)]+)\)\[(https?:\/\/[^\]]+|www\.[^\]]+)\]|(https?:\/\/[^\s\(\)<>"'\`\n]+|www\.[^\s\(\)<>"'\`\n]+)|([A-Za-z]:[\\\/][^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|(file:\/\/\/[^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|([A-Za-z]:[\\\/][^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+)|`([^`]+)`|\*\*([^*]+)\*\*/gi;
 
   const parts = [];
   let lastIndex = 0;
@@ -220,41 +221,84 @@ export const formatMessageText = (text, disableFileLinks = false) => {
       continue;
     }
 
-    if (match[1] && match[2]) {
-      // Markdown link: [label](target)
-      const label = match[1];
-      const target = match[2];
+    const mdLabel = match[1] || match[3];
+    const mdTarget = match[2] || match[4];
+
+    if (mdLabel && mdTarget) {
+      // Markdown link: [label](target) or (label)[target]
+      const label = mdLabel;
+      const target = mdTarget;
       const isUrl = /^https?:\/\//i.test(target) || /^www\./i.test(target);
       const isFile = !isUrl && (/\.[a-zA-Z0-9]{1,8}$/.test(label) || /\.[a-zA-Z0-9]{1,8}$/.test(target));
 
       if (isUrl) {
-        parts.push(
-          <button
-            key={matchIndex}
-            type="button"
-            onClick={() => openExternalUrl(target)}
-            title={`Click to open ${target} in external web browser`}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '2px 8px',
-              borderRadius: '6px',
-              background: 'rgba(56, 189, 248, 0.15)',
-              border: '1px solid rgba(56, 189, 248, 0.35)',
-              color: '#38bdf8',
-              fontSize: '0.76rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              margin: '0 3px',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
-            }}
-          >
-            <Globe style={{ width: '12px', height: '12px', color: '#38bdf8' }} />
-            <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{label}</span>
-            <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
-          </button>
-        );
+        const isCitationBadge = /^\[?\d+\]?$/i.test(label) || /^\[?(source|ref|link)\]?$/i.test(label);
+        if (isCitationBadge) {
+          parts.push(
+            <button
+              key={matchIndex}
+              type="button"
+              onClick={() => openExternalUrl(target)}
+              title={`Source: ${target}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '2px',
+                padding: '1px 5px',
+                borderRadius: '4px',
+                background: 'rgba(56, 189, 248, 0.15)',
+                border: '1px solid rgba(56, 189, 248, 0.35)',
+                color: '#38bdf8',
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                margin: '0 2px',
+                verticalAlign: 'baseline',
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(56, 189, 248, 0.3)'; e.currentTarget.style.color = '#fff'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(56, 189, 248, 0.15)'; e.currentTarget.style.color = '#38bdf8'; }}
+            >
+              <span>{label}</span>
+              <ExternalLink style={{ width: '8px', height: '8px', opacity: 0.8 }} />
+            </button>
+          );
+        } else {
+          parts.push(
+            <a
+              key={matchIndex}
+              href={target}
+              onClick={(e) => { e.preventDefault(); openExternalUrl(target); }}
+              title={`Click to open ${target} in external browser`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                color: '#38bdf8',
+                textDecoration: 'underline',
+                textUnderlineOffset: '2.5px',
+                textDecorationColor: 'rgba(56, 189, 248, 0.5)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                margin: '0 1px',
+                fontSize: 'inherit',
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = '#7dd3fc';
+                e.currentTarget.style.textDecorationColor = '#7dd3fc';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = '#38bdf8';
+                e.currentTarget.style.textDecorationColor = 'rgba(56, 189, 248, 0.5)';
+              }}
+            >
+              <Globe style={{ width: '11px', height: '11px', flexShrink: 0, opacity: 0.85 }} />
+              <span>{label}</span>
+              <ExternalLink style={{ width: '9px', height: '9px', opacity: 0.7, flexShrink: 0 }} />
+            </a>
+          );
+        }
       } else if (isFile) {
         const rawPath = target.replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
         parts.push(
@@ -315,39 +359,52 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           </button>
         );
       }
-    } else if (match[3]) {
+    } else if (match[5]) {
       // Raw Web URL
-      const rawUrl = match[3];
+      const rawUrl = match[5];
+      let displayUrl = rawUrl;
+      try {
+        const parsed = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`);
+        displayUrl = parsed.hostname + (parsed.pathname.length > 20 ? parsed.pathname.substring(0, 18) + '…' : parsed.pathname);
+      } catch (_) {}
+
       parts.push(
-        <button
+        <a
           key={matchIndex}
-          type="button"
-          onClick={() => openExternalUrl(rawUrl)}
+          href={rawUrl}
+          onClick={(e) => { e.preventDefault(); openExternalUrl(rawUrl); }}
           title={`Click to open ${rawUrl} in external web browser`}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '4px',
-            padding: '2px 8px',
-            borderRadius: '6px',
-            background: 'rgba(56, 189, 248, 0.15)',
-            border: '1px solid rgba(56, 189, 248, 0.35)',
+            gap: '3px',
             color: '#38bdf8',
-            fontSize: '0.76rem',
+            textDecoration: 'underline',
+            textUnderlineOffset: '2.5px',
+            textDecorationColor: 'rgba(56, 189, 248, 0.5)',
             fontWeight: 600,
             cursor: 'pointer',
-            margin: '0 3px',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+            margin: '0 1px',
+            fontSize: 'inherit',
+            transition: 'all 0.15s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = '#7dd3fc';
+            e.currentTarget.style.textDecorationColor = '#7dd3fc';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = '#38bdf8';
+            e.currentTarget.style.textDecorationColor = 'rgba(56, 189, 248, 0.5)';
           }}
         >
-          <Globe style={{ width: '12px', height: '12px', color: '#38bdf8' }} />
-          <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>{rawUrl}</span>
-          <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
-        </button>
+          <Globe style={{ width: '11px', height: '11px', flexShrink: 0, opacity: 0.85 }} />
+          <span>{displayUrl}</span>
+          <ExternalLink style={{ width: '9px', height: '9px', opacity: 0.7, flexShrink: 0 }} />
+        </a>
       );
-    } else if (match[4] || match[5]) {
+    } else if (match[6] || match[7]) {
       // Raw Windows or file:/// File path string
-      const rawPath = (match[4] || match[5]).replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
+      const rawPath = (match[6] || match[7]).replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
       const fileName = rawPath.split('\\').pop() || rawPath;
 
       parts.push(
