@@ -5,13 +5,51 @@ import {
   Code, Activity, Brain, Volume2, Mic, MicOff, ChevronDown, ChevronRight,
   Folder, Calendar, Plus, Trash2, History, PanelLeftClose, PanelLeftOpen,
   Settings, Globe, Sliders, Check, ShieldAlert, Tag, FolderPlus, FolderOpen, Layers,
-  FileText, ExternalLink, Square, Key, Paperclip, Image
+  FileText, ExternalLink, Square, Key, Paperclip, Image, Edit2
 } from 'lucide-react';
 import { RenderMessageContent, AgenticToolTimelineItem, parseMessageThought, renderMessageAttachments } from './ChatOverlay';
 import { SearchableModelSelect } from './ControlDashboard';
 import MicLevelMeter from './MicLevelMeter';
 import { API_BASE } from '../api';
 import { useBackendSocket } from '../hooks/useBackendSocket';
+
+const renderHighlightedText = (text, query) => {
+  if (!text || !query || !query.trim()) return text;
+  const q = query.trim();
+  const qLower = q.toLowerCase();
+  const tLower = text.toLowerCase();
+  const parts = [];
+  let currIdx = 0;
+  let matchIdx = tLower.indexOf(qLower, currIdx);
+
+  while (matchIdx !== -1) {
+    if (matchIdx > currIdx) {
+      parts.push(text.substring(currIdx, matchIdx));
+    }
+    const matchedText = text.substring(matchIdx, matchIdx + q.length);
+    parts.push(
+      <span
+        key={matchIdx}
+        style={{
+          backgroundColor: 'rgba(245, 158, 11, 0.4)',
+          color: '#fbbf24',
+          borderRadius: '3px',
+          padding: '0 2px',
+          fontWeight: 700
+        }}
+      >
+        {matchedText}
+      </span>
+    );
+    currIdx = matchIdx + q.length;
+    matchIdx = tLower.indexOf(qLower, currIdx);
+  }
+
+  if (currIdx < text.length) {
+    parts.push(text.substring(currIdx));
+  }
+  return parts;
+};
 
 const renderTreeFileIcon = (fileName) => {
   const ext = fileName.split('.').pop().toLowerCase();
@@ -293,9 +331,17 @@ export const AgenticWorkspaceWindow = ({
   const [viewMessages, setViewMessages] = useState(null); // Loaded messages when inspecting past session
   const [isTurnRunning, setIsTurnRunning] = useState(false);
   const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState(null);
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [editingTitleText, setEditingTitleText] = useState('');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const chatContainerRef = useRef(null);
+  const targetScrollRef = useRef(null);
   const [coderLlmModels, setCoderLlmModels] = useState([]);
   const coderModelsFetchRef = useRef(0);
   const CODER_FETCH_COOLDOWN = 2000;
@@ -539,6 +585,8 @@ export const AgenticWorkspaceWindow = ({
         fetchSessionTree();
       } else if (data.type === 'stream_done') {
         setIsTurnRunning(false);
+        fetchSessionTree();
+      } else if (data.type === 'session_renamed') {
         fetchSessionTree();
       }
     } catch (_) { }
@@ -1300,11 +1348,42 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
     });
   };
 
-  // Inspect and Promote a session to Global Active Session (Instant 0ms Highlight)
-  const handleSelectSession = async (sessionId) => {
-    // Instantly highlight target session node in tree with 0ms delay
+  // Debounced search across all conversations
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/chat/search?q=${encodeURIComponent(q)}&limit=50`);
+        if (res.ok) {
+          const data = await res.json();
+          setSearchResults(data.results || []);
+        }
+      } catch (err) {
+        console.error("Failed to search conversations:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Inspect and Promote a session to Global Active Session (Instant 0ms Highlight + Optional Target Message Scroll)
+  const handleSelectSession = async (sessionId, targetMessageId = null) => {
     setSelectedPastSessionId(sessionId);
     setActiveSessionId(sessionId);
+    if (targetMessageId != null) {
+      targetScrollRef.current = targetMessageId;
+      setScrollTargetMessageId(targetMessageId);
+      setHighlightedMessageId(targetMessageId);
+    }
 
     try {
       const actRes = await fetch(`${API_BASE}/api/chat/sessions/activate`, {
@@ -1328,6 +1407,98 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
       }
     } catch (err) {
       console.error("Failed to load/activate session:", err);
+    }
+  };
+
+  // Resilient scroll to targeted search message with glow highlight
+  useEffect(() => {
+    const targetId = targetScrollRef.current || scrollTargetMessageId;
+    if (!targetId) return;
+
+    let cancelled = false;
+    let attempts = 0;
+
+    const tryScroll = () => {
+      if (cancelled) return;
+      const el =
+        document.getElementById(`chat-msg-${targetId}`) ||
+        document.querySelector(`[data-msg-id="${targetId}"]`) ||
+        document.querySelector(`[data-msg-index="${targetId}"]`);
+
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedMessageId(targetId);
+        setTimeout(() => {
+          if (!cancelled) {
+            targetScrollRef.current = null;
+            setScrollTargetMessageId(null);
+          }
+        }, 1200);
+        setTimeout(() => {
+          if (!cancelled) {
+            setHighlightedMessageId(null);
+          }
+        }, 3000);
+      } else if (attempts < 25) {
+        attempts++;
+        setTimeout(tryScroll, 50);
+      } else {
+        targetScrollRef.current = null;
+        setScrollTargetMessageId(null);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      tryScroll();
+    }, 60);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [scrollTargetMessageId, displayMessages, selectedPastSessionId]);
+
+  // Save renamed session title
+  const handleSaveRename = async (sessionId, customText = null) => {
+    const titleToSave = (customText !== null ? customText : editingTitleText).trim();
+    if (!titleToSave) {
+      setEditingSessionId(null);
+      return;
+    }
+
+    // Optimistic UI update across session tree
+    setSessionTree((prevTree) =>
+      prevTree.map((yr) => ({
+        ...yr,
+        months: yr.months.map((mn) => ({
+          ...mn,
+          dates: mn.dates.map((dt) => ({
+            ...dt,
+            sessions: dt.sessions.map((s) => {
+              if (s.session_id === sessionId) {
+                return { ...s, title: titleToSave };
+              }
+              return s;
+            })
+          }))
+        }))
+      }))
+    );
+
+    setEditingSessionId(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/sessions/${encodeURIComponent(sessionId)}/title`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: titleToSave })
+      });
+      if (!res.ok) {
+        fetchSessionTree();
+      }
+    } catch (err) {
+      console.error("Failed to rename session:", err);
+      fetchSessionTree();
     }
   };
 
@@ -1366,12 +1537,13 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
   // Displayed messages: either active turn messages or inspected past session messages
   const displayMessages = selectedPastSessionId && viewMessages ? viewMessages : messages;
 
-  // Instant Bottom-Up Scroll (Industry Standard 0-Jump Layout)
+  // Instant Bottom-Up Scroll (Industry Standard 0-Jump Layout, skipped when targeting search message)
   React.useLayoutEffect(() => {
+    if (targetScrollRef.current || scrollTargetMessageId) return;
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  }, [displayMessages, selectedPastSessionId]);
+  }, [displayMessages, selectedPastSessionId, scrollTargetMessageId]);
 
   // Persistent TODO list panel (Live Output tab) — visible in coder mode when the toggle is ON
   const [todoListText, setTodoListText] = React.useState('');
@@ -1425,6 +1597,20 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
     }
     return null;
   }, [displayMessages]);
+
+  const currentSessionTitle = React.useMemo(() => {
+    const targetId = selectedPastSessionId || activeSessionId;
+    if (!targetId) return '';
+    for (const yr of sessionTree) {
+      for (const mn of yr.months || []) {
+        for (const dt of mn.dates || []) {
+          const found = dt.sessions?.find((s) => s.session_id === targetId);
+          if (found) return found.title;
+        }
+      }
+    }
+    return '';
+  }, [sessionTree, selectedPastSessionId, activeSessionId]);
 
   return (
     <div style={{
@@ -1634,8 +1820,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
             flexDirection: 'column',
             overflow: 'hidden'
           }}>
-            {/* Sidebar Top Action */}
-            <div style={{ padding: '12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            {/* Sidebar Top Action & Search */}
+            <div style={{ padding: '12px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
                 type="button"
                 onClick={handleStartNewSession}
@@ -1659,9 +1845,57 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                 <Plus style={{ width: '15px', height: '15px' }} />
                 Start New Session
               </button>
+
+              {/* Search Bar Across All Conversations */}
+              <div style={{ position: 'relative', width: '100%' }}>
+                <Search style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', width: '13px', height: '13px', color: searchQuery ? '#38bdf8' : '#94a3b8', pointerEvents: 'none' }} />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search all conversations..."
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '6px 26px 6px 26px',
+                    background: 'rgba(255, 255, 255, 0.04)',
+                    border: searchQuery ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '6px',
+                    color: '#f8fafc',
+                    fontSize: '0.72rem',
+                    outline: 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = 'rgba(56, 189, 248, 0.6)'}
+                  onBlur={(e) => { if (!searchQuery) e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                    title="Clear Search"
+                    style={{
+                      position: 'absolute',
+                      right: '6px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      padding: '2px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <X style={{ width: '12px', height: '12px' }} />
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Hierarchical Tree Container */}
+            {/* Sidebar Content: Search Results OR Hierarchical Archive Tree */}
             <div style={{
               flex: 1,
               padding: '10px 8px',
@@ -1669,191 +1903,406 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
               scrollbarWidth: 'thin',
               scrollbarColor: 'rgba(167, 139, 250, 0.3) transparent'
             }}>
-              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '8px', paddingLeft: '6px' }}>
-                Chat History Archive
-              </div>
+              {searchQuery.trim().length > 0 ? (
+                /* Search Results View */
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', paddingLeft: '4px', paddingRight: '4px' }}>
+                    <span style={{ fontSize: '0.66rem', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                      Search Results
+                    </span>
+                    {isSearching ? (
+                      <RefreshCw style={{ width: '11px', height: '11px', color: '#38bdf8', animation: 'spin 1s linear infinite' }} />
+                    ) : (
+                      <span style={{ fontSize: '0.62rem', color: '#94a3b8' }}>
+                        {searchResults.length} session{searchResults.length === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </div>
 
-              {sessionTree.length === 0 ? (
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic', padding: '10px 6px' }}>
-                  No saved sessions yet. Start chatting to archive session logs!
+                  {!isSearching && searchResults.length === 0 ? (
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic', padding: '12px 6px', textAlign: 'center' }}>
+                      No messages found for "{searchQuery}"
+                    </div>
+                  ) : (
+                    searchResults.map((res) => {
+                      const isSessSelected = res.session_id === selectedPastSessionId;
+                      const isSessActive = res.session_id === activeSessionId;
+
+                      return (
+                        <div
+                          key={res.session_id}
+                          style={{
+                            marginBottom: '8px',
+                            background: isSessSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                            borderRadius: '7px',
+                            border: isSessSelected ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid rgba(255, 255, 255, 0.06)',
+                            padding: '6px 8px',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {/* Session Title Header Card */}
+                          <div
+                            onClick={() => handleSelectSession(res.session_id, res.matches && res.matches[0] ? res.matches[0].id : null)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              cursor: 'pointer',
+                              marginBottom: res.matches && res.matches.length > 0 ? '6px' : '0',
+                              gap: '6px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden', minWidth: 0 }}>
+                              <MessageSquare style={{ width: '12px', height: '12px', color: '#38bdf8', flexShrink: 0 }} />
+                              <span
+                                title={res.title}
+                                style={{
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                  color: isSessSelected ? '#38bdf8' : isSessActive ? '#c4b5fd' : '#e2e8f0',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {renderHighlightedText(res.title, searchQuery)}
+                              </span>
+                            </div>
+                            <span style={{ fontSize: '0.58rem', color: '#94a3b8', flexShrink: 0 }}>
+                              {res.date_str}
+                            </span>
+                          </div>
+
+                          {/* Matching Messages List */}
+                          {res.matches && res.matches.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              {res.matches.map((m) => {
+                                const isUser = m.role === 'user';
+                                return (
+                                  <div
+                                    key={m.id}
+                                    onClick={() => handleSelectSession(res.session_id, m.id)}
+                                    title="Click to scroll to this message in conversation"
+                                    style={{
+                                      padding: '5px 7px',
+                                      background: 'rgba(15, 23, 42, 0.75)',
+                                      border: '1px solid rgba(56, 189, 248, 0.15)',
+                                      borderRadius: '5px',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.5)';
+                                      e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.15)';
+                                      e.currentTarget.style.background = 'rgba(15, 23, 42, 0.75)';
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                                      <span style={{ fontSize: '0.60rem', fontWeight: 700, color: isUser ? '#a78bfa' : '#38bdf8' }}>
+                                        {isUser ? 'Master' : 'Yuki AI'}
+                                      </span>
+                                      <span style={{ fontSize: '0.55rem', color: '#64748b' }}>
+                                        {m.timestamp ? new Date(m.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                      </span>
+                                    </div>
+                                    <div style={{ fontSize: '0.66rem', color: '#cbd5e1', lineHeight: '1.35', overflowWrap: 'break-word' }}>
+                                      {renderHighlightedText(m.snippet, searchQuery)}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               ) : (
-                sessionTree.map((yrObj) => {
-                  const yrKey = `yr_${yrObj.year}`;
-                  const isYrExpanded = expandedNodes.has(yrKey);
+                /* Standard Hierarchical Tree Archive View */
+                <div>
+                  <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '8px', paddingLeft: '6px' }}>
+                    Chat History Archive
+                  </div>
 
-                  return (
-                    <div key={yrKey} style={{ marginBottom: '6px' }}>
-                      {/* Year Node */}
-                      <div
-                        onClick={() => toggleNode(yrKey)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          padding: '5px 6px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          fontSize: '0.76rem',
-                          fontWeight: 700,
-                          color: '#c4b5fd',
-                          background: 'rgba(255,255,255,0.03)',
-                          userSelect: 'none'
-                        }}
-                      >
-                        {isYrExpanded ? <ChevronDown style={{ width: '14px', height: '14px' }} /> : <ChevronRight style={{ width: '14px', height: '14px' }} />}
-                        <Folder style={{ width: '14px', height: '14px', color: '#8b5cf6' }} />
-                        <span>{yrObj.year}</span>
-                      </div>
+                  {sessionTree.length === 0 ? (
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic', padding: '10px 6px' }}>
+                      No saved sessions yet. Start chatting to archive session logs!
+                    </div>
+                  ) : (
+                    sessionTree.map((yrObj) => {
+                      const yrKey = `yr_${yrObj.year}`;
+                      const isYrExpanded = expandedNodes.has(yrKey);
 
-                      {/* Month Nodes */}
-                      {isYrExpanded && (
-                        <div style={{ paddingLeft: '12px', marginTop: '4px' }}>
-                          {yrObj.months.map((mnObj) => {
-                            const mnKey = `mn_${mnObj.month}`;
-                            const isMnExpanded = expandedNodes.has(mnKey);
+                      return (
+                        <div key={yrKey} style={{ marginBottom: '6px' }}>
+                          {/* Year Node */}
+                          <div
+                            onClick={() => toggleNode(yrKey)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '5px 6px',
+                              borderRadius: '5px',
+                              cursor: 'pointer',
+                              fontSize: '0.76rem',
+                              fontWeight: 700,
+                              color: '#c4b5fd',
+                              background: 'rgba(255,255,255,0.03)',
+                              userSelect: 'none'
+                            }}
+                          >
+                            {isYrExpanded ? <ChevronDown style={{ width: '14px', height: '14px' }} /> : <ChevronRight style={{ width: '14px', height: '14px' }} />}
+                            <Folder style={{ width: '14px', height: '14px', color: '#8b5cf6' }} />
+                            <span>{yrObj.year}</span>
+                          </div>
 
-                            return (
-                              <div key={mnKey} style={{ marginBottom: '4px' }}>
-                                <div
-                                  onClick={() => toggleNode(mnKey)}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    padding: '4px 6px',
-                                    borderRadius: '5px',
-                                    cursor: 'pointer',
-                                    fontSize: '0.74rem',
-                                    fontWeight: 600,
-                                    color: '#cbd5e1',
-                                    userSelect: 'none'
-                                  }}
-                                >
-                                  {isMnExpanded ? <ChevronDown style={{ width: '13px', height: '13px' }} /> : <ChevronRight style={{ width: '13px', height: '13px' }} />}
-                                  <Calendar style={{ width: '13px', height: '13px', color: '#38bdf8' }} />
-                                  <span>{mnObj.month}</span>
-                                </div>
+                          {/* Month Nodes */}
+                          {isYrExpanded && (
+                            <div style={{ paddingLeft: '12px', marginTop: '4px' }}>
+                              {yrObj.months.map((mnObj) => {
+                                const mnKey = `mn_${mnObj.month}`;
+                                const isMnExpanded = expandedNodes.has(mnKey);
 
-                                {/* Date Nodes */}
-                                {isMnExpanded && (
-                                  <div style={{ paddingLeft: '12px', marginTop: '3px' }}>
-                                    {mnObj.dates.map((dtObj) => {
-                                      const dtKey = `dt_${dtObj.date}`;
-                                      const isDtExpanded = expandedNodes.has(dtKey);
+                                return (
+                                  <div key={mnKey} style={{ marginBottom: '4px' }}>
+                                    <div
+                                      onClick={() => toggleNode(mnKey)}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        padding: '4px 6px',
+                                        borderRadius: '5px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.74rem',
+                                        fontWeight: 600,
+                                        color: '#cbd5e1',
+                                        userSelect: 'none'
+                                      }}
+                                    >
+                                      {isMnExpanded ? <ChevronDown style={{ width: '13px', height: '13px' }} /> : <ChevronRight style={{ width: '13px', height: '13px' }} />}
+                                      <Calendar style={{ width: '13px', height: '13px', color: '#38bdf8' }} />
+                                      <span>{mnObj.month}</span>
+                                    </div>
 
-                                      return (
-                                        <div key={dtKey} style={{ marginBottom: '3px' }}>
-                                          <div
-                                            onClick={() => toggleNode(dtKey)}
-                                            style={{
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: '5px',
-                                              padding: '3px 6px',
-                                              borderRadius: '4px',
-                                              cursor: 'pointer',
-                                              fontSize: '0.72rem',
-                                              color: '#94a3b8',
-                                              userSelect: 'none'
-                                            }}
-                                          >
-                                            {isDtExpanded ? <ChevronDown style={{ width: '12px', height: '12px' }} /> : <ChevronRight style={{ width: '12px', height: '12px' }} />}
-                                            <span>📅 {dtObj.date}</span>
-                                            <span style={{ fontSize: '0.62rem', opacity: 0.6 }}>({dtObj.sessions.length})</span>
-                                          </div>
+                                    {/* Date Nodes */}
+                                    {isMnExpanded && (
+                                      <div style={{ paddingLeft: '12px', marginTop: '3px' }}>
+                                        {mnObj.dates.map((dtObj) => {
+                                          const dtKey = `dt_${dtObj.date}`;
+                                          const isDtExpanded = expandedNodes.has(dtKey);
 
-                                          {/* Session Items */}
-                                          {isDtExpanded && (
-                                            <div style={{ paddingLeft: '10px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                              {dtObj.sessions.map((sess) => {
-                                                const isActive = sess.session_id === activeSessionId;
-                                                const isSelected = sess.session_id === selectedPastSessionId;
+                                          return (
+                                            <div key={dtKey} style={{ marginBottom: '3px' }}>
+                                              <div
+                                                onClick={() => toggleNode(dtKey)}
+                                                style={{
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  gap: '5px',
+                                                  padding: '3px 6px',
+                                                  borderRadius: '4px',
+                                                  cursor: 'pointer',
+                                                  fontSize: '0.72rem',
+                                                  color: '#94a3b8',
+                                                  userSelect: 'none'
+                                                }}
+                                              >
+                                                {isDtExpanded ? <ChevronDown style={{ width: '12px', height: '12px' }} /> : <ChevronRight style={{ width: '12px', height: '12px' }} />}
+                                                <span>📅 {dtObj.date}</span>
+                                                <span style={{ fontSize: '0.62rem', opacity: 0.6 }}>({dtObj.sessions.length})</span>
+                                              </div>
 
-                                                return (
-                                                  <div
-                                                    key={sess.session_id}
-                                                    onClick={() => handleSelectSession(sess.session_id)}
-                                                    style={{
-                                                      display: 'flex',
-                                                      alignItems: 'center',
-                                                      justifyContent: 'space-between',
-                                                      padding: '5px 8px',
-                                                      borderRadius: '6px',
-                                                      fontSize: '0.70rem',
-                                                      cursor: 'pointer',
-                                                      background: isSelected
-                                                        ? 'rgba(56, 189, 248, 0.25)'
-                                                        : isActive
-                                                          ? 'rgba(167, 139, 250, 0.2)'
-                                                          : 'rgba(255,255,255,0.02)',
-                                                      border: isSelected
-                                                        ? '1px solid rgba(56, 189, 248, 0.4)'
-                                                        : isActive
-                                                          ? '1px solid rgba(167, 139, 250, 0.3)'
-                                                          : '1px solid transparent',
-                                                      color: isSelected ? '#38bdf8' : isActive ? '#c4b5fd' : '#e2e8f0',
-                                                      transition: 'all 0.15s ease'
-                                                    }}
-                                                  >
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                                                      <MessageSquare style={{ width: '12px', height: '12px', flexShrink: 0 }} />
-                                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sess.title}</span>
-                                                      {sess.status === 'incomplete' && (
-                                                        <span
-                                                          title="This turn was interrupted or crashed and was recovered"
+                                              {/* Session Items */}
+                                              {isDtExpanded && (
+                                                <div style={{ paddingLeft: '10px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                  {dtObj.sessions.map((sess) => {
+                                                    const isActive = sess.session_id === activeSessionId;
+                                                    const isSelected = sess.session_id === selectedPastSessionId;
+                                                    const isEditing = editingSessionId === sess.session_id;
+
+                                                    if (isEditing) {
+                                                      return (
+                                                        <div
+                                                          key={sess.session_id}
+                                                          onClick={(e) => e.stopPropagation()}
                                                           style={{
-                                                            flexShrink: 0,
-                                                            fontSize: '0.58rem',
-                                                            fontWeight: 600,
-                                                            color: '#fbbf24',
-                                                            background: 'rgba(251, 191, 36, 0.15)',
-                                                            border: '1px solid rgba(251, 191, 36, 0.4)',
-                                                            borderRadius: '4px',
-                                                            padding: '1px 5px'
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px',
+                                                            padding: '3px 6px',
+                                                            background: 'rgba(15, 23, 42, 0.95)',
+                                                            borderRadius: '6px',
+                                                            border: '1px solid rgba(56, 189, 248, 0.6)',
+                                                            width: '100%',
+                                                            boxSizing: 'border-box'
                                                           }}
                                                         >
-                                                          ⚠ Recovered
-                                                        </span>
-                                                      )}
-                                                    </div>
+                                                          <input
+                                                            autoFocus
+                                                            type="text"
+                                                            value={editingTitleText}
+                                                            onChange={(e) => setEditingTitleText(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                              if (e.key === 'Enter') handleSaveRename(sess.session_id);
+                                                              if (e.key === 'Escape') setEditingSessionId(null);
+                                                            }}
+                                                            onFocus={(e) => e.target.select()}
+                                                            style={{
+                                                              flex: 1,
+                                                              minWidth: 0,
+                                                              background: 'transparent',
+                                                              border: 'none',
+                                                              outline: 'none',
+                                                              color: '#ffffff',
+                                                              fontSize: '0.70rem',
+                                                              fontFamily: 'inherit'
+                                                            }}
+                                                          />
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => handleSaveRename(sess.session_id)}
+                                                            title="Save Title (Enter)"
+                                                            style={{ background: 'none', border: 'none', color: '#4ade80', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                                          >
+                                                            <Check style={{ width: '12px', height: '12px' }} />
+                                                          </button>
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => setEditingSessionId(null)}
+                                                            title="Cancel (Esc)"
+                                                            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                                          >
+                                                            <X style={{ width: '12px', height: '12px' }} />
+                                                          </button>
+                                                        </div>
+                                                      );
+                                                    }
 
-                                                    <button
-                                                      type="button"
-                                                      onClick={(e) => handleDeleteSession(e, sess.session_id)}
-                                                      title="Delete Session"
-                                                      style={{
-                                                        background: 'none',
-                                                        border: 'none',
-                                                        color: '#94a3b8',
-                                                        opacity: 0.6,
-                                                        cursor: 'pointer',
-                                                        padding: '2px',
-                                                        borderRadius: '3px'
-                                                      }}
-                                                      onMouseEnter={(e) => e.target.style.opacity = 1}
-                                                      onMouseLeave={(e) => e.target.style.opacity = 0.6}
-                                                    >
-                                                      <Trash2 style={{ width: '11px', height: '11px' }} />
-                                                    </button>
-                                                  </div>
-                                                );
-                                              })}
+                                                    return (
+                                                      <div
+                                                        key={sess.session_id}
+                                                        onClick={() => handleSelectSession(sess.session_id)}
+                                                        onDoubleClick={(e) => {
+                                                          e.stopPropagation();
+                                                          setEditingSessionId(sess.session_id);
+                                                          setEditingTitleText(sess.title);
+                                                        }}
+                                                        style={{
+                                                          display: 'flex',
+                                                          alignItems: 'center',
+                                                          justifyContent: 'space-between',
+                                                          padding: '5px 8px',
+                                                          borderRadius: '6px',
+                                                          fontSize: '0.70rem',
+                                                          cursor: 'pointer',
+                                                          background: isSelected
+                                                            ? 'rgba(56, 189, 248, 0.25)'
+                                                            : isActive
+                                                              ? 'rgba(167, 139, 250, 0.2)'
+                                                              : 'rgba(255,255,255,0.02)',
+                                                          border: isSelected
+                                                            ? '1px solid rgba(56, 189, 248, 0.4)'
+                                                            : isActive
+                                                              ? '1px solid rgba(167, 139, 250, 0.3)'
+                                                              : '1px solid transparent',
+                                                          color: isSelected ? '#38bdf8' : isActive ? '#c4b5fd' : '#e2e8f0',
+                                                          transition: 'all 0.15s ease'
+                                                        }}
+                                                      >
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', minWidth: 0 }}>
+                                                          <MessageSquare style={{ width: '12px', height: '12px', flexShrink: 0 }} />
+                                                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sess.title}</span>
+                                                          {sess.status === 'incomplete' && (
+                                                            <span
+                                                              title="This turn was interrupted or crashed and was recovered"
+                                                              style={{
+                                                                flexShrink: 0,
+                                                                fontSize: '0.58rem',
+                                                                fontWeight: 600,
+                                                                color: '#fbbf24',
+                                                                background: 'rgba(251, 191, 36, 0.15)',
+                                                                border: '1px solid rgba(251, 191, 36, 0.4)',
+                                                                borderRadius: '4px',
+                                                                padding: '1px 5px'
+                                                              }}
+                                                            >
+                                                              ⚠ Recovered
+                                                            </span>
+                                                          )}
+                                                        </div>
+
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
+                                                          <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              setEditingSessionId(sess.session_id);
+                                                              setEditingTitleText(sess.title);
+                                                            }}
+                                                            title="Rename Session"
+                                                            style={{
+                                                              background: 'none',
+                                                              border: 'none',
+                                                              color: '#94a3b8',
+                                                              opacity: 0.6,
+                                                              cursor: 'pointer',
+                                                              padding: '2px',
+                                                              borderRadius: '3px',
+                                                              display: 'flex',
+                                                              alignItems: 'center'
+                                                            }}
+                                                            onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                                                            onMouseLeave={(e) => e.currentTarget.style.opacity = 0.6}
+                                                          >
+                                                            <Edit2 style={{ width: '11px', height: '11px' }} />
+                                                          </button>
+                                                          <button
+                                                            type="button"
+                                                            onClick={(e) => handleDeleteSession(e, sess.session_id)}
+                                                            title="Delete Session"
+                                                            style={{
+                                                              background: 'none',
+                                                              border: 'none',
+                                                              color: '#94a3b8',
+                                                              opacity: 0.6,
+                                                              cursor: 'pointer',
+                                                              padding: '2px',
+                                                              borderRadius: '3px',
+                                                              display: 'flex',
+                                                              alignItems: 'center'
+                                                            }}
+                                                            onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                                                            onMouseLeave={(e) => e.currentTarget.style.opacity = 0.6}
+                                                          >
+                                                            <Trash2 style={{ width: '11px', height: '11px' }} />
+                                                          </button>
+                                                        </div>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              )}
                                             </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            );
-                          })}
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })
+                      );
+                    })
+                  )}
+                </div>
               )}
             </div>
           </aside>
@@ -1883,19 +2332,96 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
           borderRight: '1px solid rgba(167, 139, 250, 0.15)',
           background: 'rgba(11, 15, 25, 0.85)'
         }}>
-          {/* Inspected Past Session Banner */}
-          {selectedPastSessionId && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '6px 16px',
-              background: 'rgba(56, 189, 248, 0.15)',
-              borderBottom: '1px solid rgba(56, 189, 248, 0.3)',
-              fontSize: '0.74rem',
-              color: '#38bdf8'
-            }}>
-              <span>📜 Inspecting Archived Session Log ({selectedPastSessionId})</span>
+          {/* Active / Inspected Past Session Banner */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 16px',
+            background: selectedPastSessionId ? 'rgba(56, 189, 248, 0.15)' : 'rgba(15, 23, 42, 0.95)',
+            borderBottom: selectedPastSessionId ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(167, 139, 250, 0.15)',
+            fontSize: '0.74rem',
+            color: selectedPastSessionId ? '#38bdf8' : '#e2e8f0'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+              <span style={{ color: selectedPastSessionId ? '#38bdf8' : '#a78bfa', fontWeight: 600, flexShrink: 0 }}>
+                {selectedPastSessionId ? '📜 Inspected Session:' : '💬 Current Session:'}
+              </span>
+
+              {editingSessionId === (selectedPastSessionId || activeSessionId) ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={editingTitleText}
+                    onChange={(e) => setEditingTitleText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveRename(selectedPastSessionId || activeSessionId);
+                      if (e.key === 'Escape') setEditingSessionId(null);
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    style={{
+                      padding: '2px 6px',
+                      background: 'rgba(0, 0, 0, 0.4)',
+                      border: '1px solid rgba(56, 189, 248, 0.6)',
+                      borderRadius: '4px',
+                      color: '#ffffff',
+                      fontSize: '0.74rem',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSaveRename(selectedPastSessionId || activeSessionId)}
+                    title="Save Title"
+                    style={{ background: 'none', border: 'none', color: '#4ade80', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                  >
+                    <Check style={{ width: '13px', height: '13px' }} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingSessionId(null)}
+                    title="Cancel"
+                    style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                  >
+                    <X style={{ width: '13px', height: '13px' }} />
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                  <span style={{ fontWeight: 600, color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {currentSessionTitle || selectedPastSessionId || activeSessionId || 'Active Session'}
+                  </span>
+                  {(selectedPastSessionId || activeSessionId) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetId = selectedPastSessionId || activeSessionId;
+                        setEditingSessionId(targetId);
+                        setEditingTitleText(currentSessionTitle || targetId);
+                      }}
+                      title="Rename Session Title"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        opacity: 0.7
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = 0.7}
+                    >
+                      <Edit2 style={{ width: '12px', height: '12px' }} />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {selectedPastSessionId && (
               <button
                 type="button"
                 onClick={() => {
@@ -1910,13 +2436,14 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   borderRadius: '4px',
                   cursor: 'pointer',
                   fontSize: '0.68rem',
-                  fontWeight: 600
+                  fontWeight: 600,
+                  flexShrink: 0
                 }}
               >
                 Return to Live Session
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Active Session Context & Workspace Directories Toolbar */}
           <div style={{
@@ -2171,9 +2698,17 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 
                 const { thoughts, toolBadges, cleanContent } = parseMessageThought(msg.content);
 
+                const isMsgHighlighted =
+                  highlightedMessageId != null &&
+                  (String(msg.id) === String(highlightedMessageId) ||
+                   String(index) === String(highlightedMessageId));
+
                 return (
                   <div
-                    key={index}
+                    key={msg.id ?? index}
+                    id={`chat-msg-${msg.id ?? index}`}
+                    data-msg-id={msg.id}
+                    data-msg-index={index}
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -2182,7 +2717,13 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       width: '100%',
                       minWidth: 0,
                       boxSizing: 'border-box',
-                      alignSelf: isUser ? 'flex-end' : 'flex-start'
+                      alignSelf: isUser ? 'flex-end' : 'flex-start',
+                      borderRadius: '12px',
+                      transition: 'all 0.3s ease',
+                      boxShadow: isMsgHighlighted ? '0 0 24px rgba(56, 189, 248, 0.8), inset 0 0 12px rgba(56, 189, 248, 0.3)' : 'none',
+                      outline: isMsgHighlighted ? '2px solid #38bdf8' : 'none',
+                      padding: isMsgHighlighted ? '6px' : '0px',
+                      background: isMsgHighlighted ? 'rgba(56, 189, 248, 0.12)' : 'transparent'
                     }}
                   >
                     {/* Speaker Tag */}

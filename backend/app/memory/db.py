@@ -640,6 +640,10 @@ def init_db():
     if 'status' not in cols:
         cursor.execute("ALTER TABLE chat_sessions ADD COLUMN status TEXT;")
 
+    # Migration: add is_custom_title column (1 = user manually edited title, 0 = auto-generated)
+    if 'is_custom_title' not in cols:
+        cursor.execute("ALTER TABLE chat_sessions ADD COLUMN is_custom_title INTEGER DEFAULT 0;")
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS chat_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1173,10 +1177,10 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
     def _do(conn):
         cursor = conn.cursor()
         cursor.execute("""
-        INSERT INTO chat_sessions (session_id, title, created_at, updated_at, year, month_name, date_str, pruned_context, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO chat_sessions (session_id, title, created_at, updated_at, year, month_name, date_str, pruned_context, status, is_custom_title)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ON CONFLICT(session_id) DO UPDATE SET
-            title = excluded.title,
+            title = CASE WHEN chat_sessions.is_custom_title = 1 THEN chat_sessions.title ELSE excluded.title END,
             updated_at = excluded.updated_at,
             pruned_context = COALESCE(excluded.pruned_context, chat_sessions.pruned_context),
             status = excluded.status
@@ -1361,13 +1365,13 @@ def get_hierarchical_chat_sessions() -> Dict[str, Any]:
     finally:
         conn.close()
 
-def get_session_messages(session_id: str, limit: Optional[int] = None) -> List[Dict[str, str]]:
+def get_session_messages(session_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
     conn = get_connection()
     try:
         if limit and isinstance(limit, int) and limit > 0:
             rows = conn.execute("""
-            SELECT role, content, attachments FROM (
-                SELECT id, role, content, attachments FROM chat_messages
+            SELECT id, role, content, attachments, timestamp FROM (
+                SELECT id, role, content, attachments, timestamp FROM chat_messages
                 WHERE session_id = ?
                 ORDER BY id DESC
                 LIMIT ?
@@ -1375,13 +1379,18 @@ def get_session_messages(session_id: str, limit: Optional[int] = None) -> List[D
             """, (session_id, limit)).fetchall()
         else:
             rows = conn.execute("""
-            SELECT role, content, attachments FROM chat_messages
+            SELECT id, role, content, attachments, timestamp FROM chat_messages
             WHERE session_id = ?
             ORDER BY id ASC
             """, (session_id,)).fetchall()
         msgs = []
         for r in rows:
-            msg = {"role": r["role"], "content": r["content"]}
+            msg = {
+                "id": r["id"],
+                "role": r["role"],
+                "content": r["content"],
+                "timestamp": r["timestamp"]
+            }
             atts = r["attachments"]
             if atts:
                 try:
@@ -1394,6 +1403,127 @@ def get_session_messages(session_id: str, limit: Optional[int] = None) -> List[D
         return msgs
     except Exception as e:
         print(f"[DB] Error fetching messages for session '{session_id}': {e}")
+        return []
+    finally:
+        conn.close()
+
+def update_chat_session_title(session_id: str, new_title: str) -> bool:
+    """
+    Updates a chat session's title and marks it as a custom title (is_custom_title = 1).
+    """
+    if not session_id or not new_title:
+        return False
+    title = new_title.strip()
+    if not title:
+        return False
+    now = time.time()
+
+    def _do(conn):
+        cursor = conn.cursor()
+        cursor.execute("""
+        UPDATE chat_sessions
+        SET title = ?, is_custom_title = 1, updated_at = ?
+        WHERE session_id = ?
+        """, (title, now, session_id))
+
+    try:
+        _run_write(_do, log_prefix=f"update_chat_session_title('{session_id}')")
+        return True
+    except Exception as e:
+        print(f"[DB] Error updating chat session title for '{session_id}': {e}")
+        return False
+
+def _extract_match_snippet(text: str, query: str, max_chars: int = 120) -> str:
+    """Extracts a clean snippet centered around the matching query text."""
+    if not text or not query:
+        return text[:max_chars] if text else ""
+    clean = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', text, flags=re.IGNORECASE).strip()
+    clean = clean.replace('\n', ' ').strip()
+    idx = clean.lower().find(query.lower())
+    if idx == -1:
+        return (clean[:max_chars] + "...") if len(clean) > max_chars else clean
+    start = max(0, idx - 40)
+    end = min(len(clean), idx + len(query) + 60)
+    snippet = clean[start:end].strip()
+    if start > 0:
+        snippet = "..." + snippet
+    if end < len(clean):
+        snippet = snippet + "..."
+    return snippet
+
+def search_chat_conversations(query: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """
+    Searches across all past chat sessions and messages for the given query string.
+    Returns grouped session results containing session metadata and all matched message snippets.
+    """
+    if not query or not query.strip():
+        return []
+    
+    q = query.strip()
+    like_pattern = f"%{q}%"
+    conn = get_connection()
+    try:
+        # Search matching messages joined with sessions
+        msg_rows = conn.execute("""
+            SELECT m.id, m.session_id, m.role, m.content, m.timestamp,
+                   s.title as session_title, s.date_str, s.year, s.month_name, s.updated_at
+            FROM chat_messages m
+            JOIN chat_sessions s ON m.session_id = s.session_id
+            WHERE m.content LIKE ?
+            ORDER BY m.timestamp DESC
+            LIMIT ?
+        """, (like_pattern, limit * 4)).fetchall()
+        
+        # Also search session titles directly
+        title_rows = conn.execute("""
+            SELECT session_id, title as session_title, date_str, year, month_name, updated_at
+            FROM chat_sessions
+            WHERE title LIKE ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+        """, (like_pattern, limit)).fetchall()
+        
+        sessions_map = {}
+        for r in title_rows:
+            sid = r["session_id"]
+            sessions_map[sid] = {
+                "session_id": sid,
+                "title": r["session_title"] or "Chat Session",
+                "date_str": r["date_str"] or "",
+                "year": r["year"],
+                "month_name": r["month_name"] or "",
+                "updated_at": r["updated_at"] or 0,
+                "title_matched": True,
+                "matches": []
+            }
+            
+        for r in msg_rows:
+            sid = r["session_id"]
+            if sid not in sessions_map:
+                sessions_map[sid] = {
+                    "session_id": sid,
+                    "title": r["session_title"] or "Chat Session",
+                    "date_str": r["date_str"] or "",
+                    "year": r["year"],
+                    "month_name": r["month_name"] or "",
+                    "updated_at": r["updated_at"] or 0,
+                    "title_matched": False,
+                    "matches": []
+                }
+            
+            snippet = _extract_match_snippet(r["content"], q)
+            sessions_map[sid]["matches"].append({
+                "id": r["id"],
+                "role": r["role"],
+                "content": r["content"],
+                "snippet": snippet,
+                "timestamp": r["timestamp"]
+            })
+            
+        results = sorted(sessions_map.values(), key=lambda x: x["updated_at"], reverse=True)
+        return results[:limit]
+    except Exception as e:
+        print(f"[DB] Error searching chat conversations for '{q}': {e}")
         return []
     finally:
         conn.close()

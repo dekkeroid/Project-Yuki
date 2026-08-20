@@ -365,12 +365,12 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_web_scrape",
-                "description": "Fetch a web page URL and extract clean text/markdown content for deep reading (up to max_chars, default 4000). Use this for deep reading of articles, documentation, or promising URLs found via jarvis_web_search.",
+                "description": "Fetch a web page URL and extract clean text/markdown content for deep reading (up to max_chars, default 15000 in Advanced Mode, 5000 in Basic Mode). Use this for deep reading of articles, documentation, or promising URLs found via jarvis_web_search.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "url": {"type": "string", "description": "Web URL to fetch and scrape."},
-                        "max_chars": {"type": "integer", "description": "Max text characters to extract (default 4000)."}
+                        "max_chars": {"type": "integer", "description": "Max text characters to extract (defaults to 15,000 in Advanced Mode, 5,000 in Basic Mode)."}
                     },
                     "required": ["url"]
                 }
@@ -676,11 +676,11 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_see_screen",
-                "description": "Captures the current screen (full display, or a specific app window via window_title) and analyzes it with a vision model. Returns a detailed description of everything visible including a verbatim transcription of all on-screen text (titles, buttons, menus, error messages, dialog boxes). Use this when you need to SEE what the user is looking at. ALWAYS ask for an extremely detailed description AND a full verbatim transcription of ALL text in the capture so the answer can answer any follow-up question.",
+                "description": "Automatically captures the current screen (or a specific app window via window_title) and sends the screenshot directly to a Vision Multimodal LLM. Returns a detailed visual breakdown and verbatim transcription of visible text, code, or UI elements. Use this whenever you need to SEE what is on the user's screen.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "prompt": {"type": "string", "description": "Highly detailed analysis instructions for the vision model. Ask for a comprehensive description of every element AND a verbatim transcription of all visible text."},
+                        "prompt": {"type": "string", "description": "Visual analysis instructions/questions sent directly to the Vision LLM analyzing the captured screen. DO NOT write 'take a screenshot' (capture is 100% automatic). Instead, specify what to inspect, transcribe, locate, or explain in the image."},
                         "window_title": {"type": "string", "description": "Optional window title substring. If provided, only that app window is captured instead of the full screen."}
                     },
                     "required": ["prompt"]

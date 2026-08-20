@@ -4,6 +4,7 @@ Set-Location $root
 
 $backendDir = 'backend'
 $frontendDir = 'frontend'
+$extraPackages = @('youtube_transcript_api')
 
 # --- Locate the installed app dynamically ---
 # Priority: running process -> Inno Setup uninstall registry -> default location
@@ -147,8 +148,26 @@ foreach ($r in $rows) {
                 }
                 Write-Host ""
             }
+            $needsFullRebuild = $false
+            if ($changedBackendFiles) {
+                $criticalFiles = @('run.py', 'requirements.txt', 'yuki-backend.spec')
+                $changedCritical = @($changedBackendFiles | Where-Object { 
+                    $fileName = Split-Path $_.FullName -Leaf
+                    $criticalFiles -contains $fileName
+                })
+                if ($changedCritical.Count -gt 0) {
+                    $needsFullRebuild = $true
+                    Write-Host "  [WARNING] The following critical build files have changed:" -ForegroundColor Red
+                    foreach ($c in $changedCritical) {
+                        Write-Host "    - $(Split-Path $c.FullName -Leaf)" -ForegroundColor Red
+                    }
+                    Write-Host "  Fast Sync CANNOT apply changes to these files (requires a Full Rebuild)." -ForegroundColor Red
+                    Write-Host ""
+                }
+            }
             Write-Host "  Note: Fast Sync copies raw .py files instantly except run.py. If your changes aren't showing up or the app is failing, choose 'No' below for a Full Rebuild." -ForegroundColor Yellow
-            $fastSync = Confirm-Yes "  Use Fast Sync for Backend? (Choose 'No' for a Full Rebuild)" $true
+            $defaultFastSync = if ($needsFullRebuild) { $false } else { $true }
+            $fastSync = Confirm-Yes "  Use Fast Sync for Backend? (Choose 'No' for a Full Rebuild)" $defaultFastSync
             if ($fastSync) {
                 $env:YUKI_FULL_REBUILD = ''
             } else {
@@ -240,8 +259,30 @@ if ($selBackend) {
             $rc3 = robocopy "$root\$backendDir\app" $localDistApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
         }
 
+        # Sync extra packages from local venv to installed app
+        foreach ($pkg in $extraPackages) {
+            $srcPkg = "$root\$backendDir\venv\Lib\site-packages\$pkg"
+            if (Test-Path $srcPkg) {
+                Write-Host "  Syncing extra package: $pkg"
+                $destPkgInternal = Join-Path $installDir "resources\backend\_internal\$pkg"
+                $rc_pkg1 = robocopy $srcPkg $destPkgInternal /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+                
+                if (Test-Path "$root\$backendDir\dist\backend\_internal") {
+                    $localDistPkg = "$root\$backendDir\dist\backend\_internal\$pkg"
+                    $rc_pkg2 = robocopy $srcPkg $localDistPkg /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+                }
+            } else {
+                Write-Host "  [WARN] Extra package $pkg not found in venv site-packages." -ForegroundColor Yellow
+            }
+        }
+
         if ($rc1 -ge 8) { Write-Host ""; Write-Host "FAST COPY FAILED (robocopy code $rc1)."; exit 1 }
         Write-Host "[OK] Backend app source files updated in ~0.5s!"
+
+        # Touch backend.exe LastWriteTime to avoid subsequent false-positive CHANGED status
+        if (Test-Path $installedExe) {
+            (Get-Item $installedExe).LastWriteTime = Get-Date
+        }
     } else {
         Write-Host "--- Backend engine: full rebuild (PyInstaller) ---"
         Push-Location "$root\$backendDir"

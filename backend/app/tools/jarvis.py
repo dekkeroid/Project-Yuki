@@ -368,18 +368,32 @@ def jarvis_network_status(host: str = "8.8.8.8") -> str:
         return f"Network Check Error: {str(e)}"
 
 
-def jarvis_web_scrape(url: str, max_chars: int = 5000) -> str:
+def jarvis_web_scrape(url: str, max_chars: int = None) -> str:
     """
     Fetches a web page URL over HTTP and returns clean readable Markdown.
     Uses modern Chrome headers, DOM cleaning via extract_clean_markdown, and a fallback reader
     to prevent HTTP 403 Forbidden / bot-protection errors.
     """
+    if max_chars is None or max_chars <= 0:
+        is_advanced = getattr(config, "TOOL_MODE", "basic") == "advanced"
+        max_chars = 15000 if is_advanced else 5000
+
     if not url or not isinstance(url, str):
         return "Web Scraper Error: URL cannot be empty."
 
     url = url.strip()
     if not url.startswith(('http://', 'https://')):
         url = 'https://' + url
+
+    from app.tools.web import is_youtube_url, extract_youtube_content
+    if is_youtube_url(url):
+        try:
+            yt_text = extract_youtube_content(url, max_chars=max_chars)
+            if yt_text and len(yt_text.strip()) >= 50:
+                return f"=== Scraped Content ({url}) ===\n{yt_text}"
+        except Exception as e:
+            import sys
+            print(f"[jarvis_web_scrape] YouTube extraction failed for {url}: {e}", file=sys.stderr)
 
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -439,13 +453,17 @@ def jarvis_web_scrape(url: str, max_chars: int = 5000) -> str:
                     if first_h > 0 and first_h < 4000:
                         text = text[first_h:].strip()
 
-                if len(text) > max_chars:
-                    cutoff = max_chars
-                    last_para = text.rfind("\n", 0, max_chars)
-                    if last_para > max_chars * 0.7:
-                        cutoff = last_para
-                    text = text[:cutoff].strip() + f"\n\n... [Content truncated at {cutoff} characters]"
-                return f"=== Scraped Content ({url}) ===\n{text}"
+                from app.tools.web import is_bot_blocked
+                if is_bot_blocked(text):
+                    fetch_error = "Protected by anti-bot/login security"
+                else:
+                    if len(text) > max_chars:
+                        cutoff = max_chars
+                        last_para = text.rfind("\n", 0, max_chars)
+                        if last_para > max_chars * 0.7:
+                            cutoff = last_para
+                        text = text[:cutoff].strip() + f"\n\n... [Content truncated at {cutoff} characters]"
+                    return f"=== Scraped Content ({url}) ===\n{text}"
     except Exception:
         pass
 

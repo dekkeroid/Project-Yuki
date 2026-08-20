@@ -41,8 +41,449 @@ AUTHORITY_DOMAINS = (
     "myanimelist.net", "animenewsnetwork.com", "imdb.com", "themoviedb.org", "rottentomatoes.com",
     "reddit.com", "quora.com",
     "developer.mozilla.org", "docs.python.org", "react.dev", "stackoverflow.com", "github.com",
-    "testbook.com", "geeksforgeeks.org", "w3schools.com", "tutorialspoint.com", "khanacademy.org", "fandom.com"
+    "testbook.com", "geeksforgeeks.org", "w3schools.com", "tutorialspoint.com", "khanacademy.org", "fandom.com",
+    "youtube.com", "youtu.be"
 )
+
+
+# ---------------------------------------------------------------------------
+# YouTube Deep Extraction Pipeline
+# ---------------------------------------------------------------------------
+
+def is_youtube_url(url: str) -> bool:
+    """Check if the provided URL points to YouTube or short youtu.be."""
+    if not url or not isinstance(url, str):
+        return False
+    u_lower = url.lower().strip()
+    return "youtube.com" in u_lower or "youtu.be" in u_lower
+
+
+def parse_youtube_ids(url: str) -> tuple:
+    """Extracts (video_id, playlist_id, fetch_url) from various YouTube URL formats."""
+    parsed = urllib.parse.urlparse(url)
+    qs = urllib.parse.parse_qs(parsed.query)
+    video_id = None
+    playlist_id = qs.get("list", [None])[0]
+    netloc = parsed.netloc.lower()
+    path = parsed.path
+
+    if "youtu.be" in netloc:
+        video_id = path.lstrip("/").split("?")[0].split("&")[0]
+    elif "/shorts/" in path:
+        video_id = path.split("/shorts/")[1].split("/")[0].split("?")[0]
+    elif "/embed/" in path:
+        video_id = path.split("/embed/")[1].split("/")[0].split("?")[0]
+    elif "/watch" in path:
+        video_id = qs.get("v", [None])[0]
+
+    if video_id:
+        fetch_url = f"https://www.youtube.com/watch?v={video_id}"
+    elif playlist_id:
+        fetch_url = f"https://www.youtube.com/playlist?list={playlist_id}"
+    else:
+        fetch_url = url
+
+    return video_id, playlist_id, fetch_url
+
+
+def fetch_youtube_transcript(video_id: str, max_chars: int = 4000) -> str:
+    """
+    Extracts timestamped speech transcripts from YouTube closed captions / automatic ASR.
+    Groups sentences into clean 30-45 second timestamp intervals.
+    """
+    if not video_id:
+        return ""
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        api = YouTubeTranscriptApi()
+        snippets = None
+
+        # 1. Try finding English or preferred language transcript from list
+        try:
+            t_list = api.list(video_id)
+            target_t = None
+            try:
+                target_t = t_list.find_transcript(['en', 'en-US', 'en-GB', 'en-CA'])
+            except Exception:
+                target_t = next(iter(t_list))
+
+            if target_t:
+                snippets = target_t.fetch()
+        except Exception:
+            pass
+
+        # 2. Fallback to direct fetch
+        if not snippets:
+            try:
+                snippets = api.fetch(video_id)
+            except Exception:
+                pass
+
+        if not snippets:
+            return ""
+
+        # Format into clean, aggregated timestamped bullets
+        lines = []
+        current_block = []
+        block_start = 0
+        current_block_words = 0
+
+        for item in snippets:
+            text = getattr(item, "text", "") if hasattr(item, "text") else item.get("text", "")
+            text = text.replace("\n", " ").strip()
+            if not text or (text.startswith("[") and text.endswith("]")):
+                continue
+
+            start_sec = getattr(item, "start", 0) if hasattr(item, "start") else item.get("start", 0)
+            if not current_block:
+                block_start = int(start_sec)
+
+            current_block.append(text)
+            current_block_words += len(text.split())
+
+            # Group every ~35 words or sentence boundary for clean readability
+            if current_block_words >= 35 or text.endswith((".", "!", "?")):
+                mins, secs = divmod(block_start, 60)
+                hrs, mins = divmod(mins, 60)
+                time_str = f"{hrs:02d}:{mins:02d}:{secs:02d}" if hrs else f"{mins:02d}:{secs:02d}"
+                lines.append(f"- `[{time_str}]` {' '.join(current_block)}")
+                current_block = []
+                current_block_words = 0
+
+        if current_block:
+            mins, secs = divmod(block_start, 60)
+            hrs, mins = divmod(mins, 60)
+            time_str = f"{hrs:02d}:{mins:02d}:{secs:02d}" if hrs else f"{mins:02d}:{secs:02d}"
+            lines.append(f"- `[{time_str}]` {' '.join(current_block)}")
+
+        md = "\n".join(lines).strip()
+        if len(md) > max_chars:
+            md = md[:max_chars].strip() + "\n... [Transcript truncated to fit search budget. Call 'jarvis_web_scrape' on this YouTube URL to extract the full transcript]"
+        return md
+    except Exception:
+        return ""
+
+
+def format_youtube_markdown(title: str, channel: str, channel_url: str, duration: str,
+                            views: str, publish_date: str, keywords: list,
+                            playlist_title: str, playlist_items: list,
+                            description: str, transcript: str = "",
+                            max_chars: int = 5000) -> str:
+    if not title and not description and not playlist_items and not transcript:
+        return ""
+
+    doc_lines = []
+    heading = title if title else "YouTube Content"
+    doc_lines.append(f"# YouTube: {heading}")
+    if channel:
+        ch_str = f"**Channel:** [{channel}]({channel_url})" if channel_url else f"**Channel:** {channel}"
+        doc_lines.append(ch_str)
+
+    meta_badges = []
+    if duration:
+        meta_badges.append(f"**Duration:** {duration}")
+    if views:
+        meta_badges.append(f"**Views:** {views}")
+    if publish_date:
+        meta_badges.append(f"**Published:** {publish_date}")
+    if meta_badges:
+        doc_lines.append(" • ".join(meta_badges))
+
+    if keywords:
+        doc_lines.append("**Tags:** " + ", ".join(keywords[:10]))
+
+    if playlist_title or playlist_items:
+        pl_head = f"## Playlist / Tracklist: {playlist_title}" if playlist_title else "## Playlist Tracks"
+        doc_lines.append(f"\n{pl_head}")
+        doc_lines.extend(playlist_items)
+
+    if transcript:
+        doc_lines.append("\n## Spoken Transcript & Timestamps\n" + transcript)
+
+    if description:
+        doc_lines.append("\n## Description\n" + description)
+
+    md = "\n\n".join(doc_lines).strip()
+    if len(md) > max_chars:
+        md = md[:max_chars].strip() + "\n\n... [Content truncated to fit search budget. Call 'jarvis_web_scrape' on this URL to read up to 15,000+ characters if this page looks promising]"
+    return md
+
+
+def extract_youtube_content(url: str, max_chars: int = 5000) -> str:
+    """
+    Synchronously extracts rich metadata, tracklists, transcripts, and description from any YouTube URL
+    using YouTube's official oEmbed API, player metadata, and closed captions.
+    """
+    if not is_youtube_url(url):
+        return ""
+
+    video_id, playlist_id, fetch_url = parse_youtube_ids(url)
+
+    # Layer 1: Official YouTube oEmbed API
+    oembed_data = {}
+    try:
+        oe_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(url)}&format=json"
+        oe_resp = requests.get(oe_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
+        if oe_resp.status_code == 200:
+            oembed_data = oe_resp.json()
+    except Exception:
+        pass
+
+    title = oembed_data.get("title", "")
+    channel = oembed_data.get("author_name", "")
+    channel_url = oembed_data.get("author_url", "")
+
+    views = ""
+    duration = ""
+    description = ""
+    keywords = []
+    publish_date = ""
+    playlist_title = ""
+    playlist_items = []
+    transcript = ""
+
+    # Layer 2: Extract Spoken Transcript if video_id is present
+    if video_id:
+        transcript_budget = min(max_chars, 4000)
+        transcript = fetch_youtube_transcript(video_id, max_chars=transcript_budget)
+
+    # Layer 3: Direct Page Fetch & Deep Scraping
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    try:
+        resp = requests.get(fetch_url, headers=headers, timeout=8.0)
+        if resp.status_code == 200:
+            html = resp.text
+
+            # 3a. Player response (video details)
+            m_player = re.search(r"ytInitialPlayerResponse\s*=\s*({.+?});", html)
+            if m_player:
+                try:
+                    p_data = json.loads(m_player.group(1))
+                    v_det = p_data.get("videoDetails", {})
+                    title = title or v_det.get("title", "")
+                    channel = channel or v_det.get("author", "")
+                    description = description or v_det.get("shortDescription", "")
+                    publish_date = p_data.get("microformat", {}).get("playerMicroformatRenderer", {}).get("publishDate", "")
+
+                    sec = int(v_det.get("lengthSeconds", "0") or "0")
+                    if sec > 0:
+                        m, s = divmod(sec, 60)
+                        h, m = divmod(m, 60)
+                        duration = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+                    vc = v_det.get("viewCount")
+                    if vc:
+                        try:
+                            views = f"{int(vc):,} views"
+                        except Exception:
+                            views = f"{vc} views"
+                    keywords = v_det.get("keywords", []) or []
+                except Exception:
+                    pass
+
+            # 3b. Initial data (playlist/mix tracks)
+            m_init = re.search(r"ytInitialData\s*=\s*({.+?});", html)
+            if m_init:
+                try:
+                    i_data = json.loads(m_init.group(1))
+                    pl_obj = i_data.get("contents", {}).get("twoColumnWatchNextResults", {}).get("playlist", {}).get("playlist", {})
+                    if pl_obj:
+                        playlist_title = pl_obj.get("title", "")
+                        for item in pl_obj.get("contents", [])[:15]:
+                            r = item.get("playlistPanelVideoRenderer", {})
+                            if r:
+                                t = r.get("title", {}).get("simpleText", "") or "".join(s.get("text", "") for s in r.get("title", {}).get("runs", []))
+                                a = r.get("shortBylineText", {}).get("runs", [{}])[0].get("text", "")
+                                d = r.get("lengthText", {}).get("simpleText", "")
+                                vid = r.get("videoId", "")
+                                if t:
+                                    tag = f"- **{t}**" + (f" by {a}" if a else "") + (f" `[{d}]`" if d else "") + (f" (https://youtu.be/{vid})" if vid else "")
+                                    playlist_items.append(tag)
+
+                    if not playlist_items:
+                        tabs = i_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+                        for tab in tabs:
+                            sections = tab.get("tabRenderer", {}).get("content", {}).get("sectionListRenderer", {}).get("contents", [])
+                            for sec in sections:
+                                items = sec.get("itemSectionRenderer", {}).get("contents", [])
+                                for it in items:
+                                    vids = it.get("playlistVideoListRenderer", {}).get("contents", [])
+                                    for v in vids[:20]:
+                                        r = v.get("playlistVideoRenderer", {})
+                                        if r:
+                                            t = r.get("title", {}).get("simpleText", "") or "".join(s.get("text", "") for s in r.get("title", {}).get("runs", []))
+                                            a = r.get("shortBylineText", {}).get("runs", [{}])[0].get("text", "")
+                                            d = r.get("lengthText", {}).get("simpleText", "")
+                                            vid = r.get("videoId", "")
+                                            if t:
+                                                playlist_items.append(f"- **{t}**" + (f" by {a}" if a else "") + (f" `[{d}]`" if d else "") + (f" (https://youtu.be/{vid})" if vid else ""))
+                except Exception:
+                    pass
+
+            # 3c. Fallback OpenGraph / meta tags
+            if not title:
+                m_og_t = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']+)["\']', html)
+                if m_og_t:
+                    title = m_og_t.group(1)
+            if not description:
+                m_og_d = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\']([^"\']+)["\']', html)
+                if m_og_d:
+                    description = m_og_d.group(1)
+            if not channel:
+                m_ch = re.search(r'<link\s+itemprop=["\']name["\']\s+content=["\']([^"\']+)["\']', html)
+                if m_ch:
+                    channel = m_ch.group(1)
+    except Exception:
+        pass
+
+    return format_youtube_markdown(title, channel, channel_url, duration, views,
+                                   publish_date, keywords, playlist_title,
+                                   playlist_items, description, transcript=transcript,
+                                   max_chars=max_chars)
+
+
+async def async_extract_youtube_content(client: httpx.AsyncClient, url: str, max_chars: int = 5000) -> str:
+    """
+    Asynchronously extracts rich metadata, tracklists, transcripts, and description from any YouTube URL.
+    """
+    if not is_youtube_url(url):
+        return ""
+
+    video_id, playlist_id, fetch_url = parse_youtube_ids(url)
+
+    # Layer 1: Official YouTube oEmbed API
+    oembed_data = {}
+    try:
+        oe_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(url)}&format=json"
+        oe_resp = await client.get(oe_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
+        if oe_resp.status_code == 200:
+            oembed_data = oe_resp.json()
+    except Exception:
+        pass
+
+    title = oembed_data.get("title", "")
+    channel = oembed_data.get("author_name", "")
+    channel_url = oembed_data.get("author_url", "")
+
+    views = ""
+    duration = ""
+    description = ""
+    keywords = []
+    publish_date = ""
+    playlist_title = ""
+    playlist_items = []
+    transcript = ""
+
+    # Layer 2: Extract Spoken Transcript (threaded to keep event loop responsive)
+    if video_id:
+        transcript_budget = min(max_chars, 4000)
+        try:
+            transcript = await asyncio.to_thread(fetch_youtube_transcript, video_id, max_chars=transcript_budget)
+        except Exception:
+            pass
+
+    # Layer 3: Direct Page Fetch & Deep Scraping
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    try:
+        resp = await client.get(fetch_url, headers=headers, timeout=8.0)
+        if resp.status_code == 200:
+            html = resp.text
+
+            # 3a. Player response (video details)
+            m_player = re.search(r"ytInitialPlayerResponse\s*=\s*({.+?});", html)
+            if m_player:
+                try:
+                    p_data = json.loads(m_player.group(1))
+                    v_det = p_data.get("videoDetails", {})
+                    title = title or v_det.get("title", "")
+                    channel = channel or v_det.get("author", "")
+                    description = description or v_det.get("shortDescription", "")
+                    publish_date = p_data.get("microformat", {}).get("playerMicroformatRenderer", {}).get("publishDate", "")
+
+                    sec = int(v_det.get("lengthSeconds", "0") or "0")
+                    if sec > 0:
+                        m, s = divmod(sec, 60)
+                        h, m = divmod(m, 60)
+                        duration = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+                    vc = v_det.get("viewCount")
+                    if vc:
+                        try:
+                            views = f"{int(vc):,} views"
+                        except Exception:
+                            views = f"{vc} views"
+                    keywords = v_det.get("keywords", []) or []
+                except Exception:
+                    pass
+
+            # 3b. Initial data (playlist/mix tracks)
+            m_init = re.search(r"ytInitialData\s*=\s*({.+?});", html)
+            if m_init:
+                try:
+                    i_data = json.loads(m_init.group(1))
+                    pl_obj = i_data.get("contents", {}).get("twoColumnWatchNextResults", {}).get("playlist", {}).get("playlist", {})
+                    if pl_obj:
+                        playlist_title = pl_obj.get("title", "")
+                        for item in pl_obj.get("contents", [])[:15]:
+                            r = item.get("playlistPanelVideoRenderer", {})
+                            if r:
+                                t = r.get("title", {}).get("simpleText", "") or "".join(s.get("text", "") for s in r.get("title", {}).get("runs", []))
+                                a = r.get("shortBylineText", {}).get("runs", [{}])[0].get("text", "")
+                                d = r.get("lengthText", {}).get("simpleText", "")
+                                vid = r.get("videoId", "")
+                                if t:
+                                    tag = f"- **{t}**" + (f" by {a}" if a else "") + (f" `[{d}]`" if d else "") + (f" (https://youtu.be/{vid})" if vid else "")
+                                    playlist_items.append(tag)
+
+                    if not playlist_items:
+                        tabs = i_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+                        for tab in tabs:
+                            sections = tab.get("tabRenderer", {}).get("content", {}).get("sectionListRenderer", {}).get("contents", [])
+                            for sec in sections:
+                                items = sec.get("itemSectionRenderer", {}).get("contents", [])
+                                for it in items:
+                                    vids = it.get("playlistVideoListRenderer", {}).get("contents", [])
+                                    for v in vids[:20]:
+                                        r = v.get("playlistVideoRenderer", {})
+                                        if r:
+                                            t = r.get("title", {}).get("simpleText", "") or "".join(s.get("text", "") for s in r.get("title", {}).get("runs", []))
+                                            a = r.get("shortBylineText", {}).get("runs", [{}])[0].get("text", "")
+                                            d = r.get("lengthText", {}).get("simpleText", "")
+                                            vid = r.get("videoId", "")
+                                            if t:
+                                                playlist_items.append(f"- **{t}**" + (f" by {a}" if a else "") + (f" `[{d}]`" if d else "") + (f" (https://youtu.be/{vid})" if vid else ""))
+                except Exception:
+                    pass
+
+            # 3c. Fallback OpenGraph / meta tags
+            if not title:
+                m_og_t = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']+)["\']', html)
+                if m_og_t:
+                    title = m_og_t.group(1)
+            if not description:
+                m_og_d = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\']([^"\']+)["\']', html)
+                if m_og_d:
+                    description = m_og_d.group(1)
+            if not channel:
+                m_ch = re.search(r'<link\s+itemprop=["\']name["\']\s+content=["\']([^"\']+)["\']', html)
+                if m_ch:
+                    channel = m_ch.group(1)
+    except Exception:
+        pass
+
+    return format_youtube_markdown(title, channel, channel_url, duration, views,
+                                   publish_date, keywords, playlist_title,
+                                   playlist_items, description, transcript=transcript,
+                                   max_chars=max_chars)
+
 
 
 def prune_crew_sections(text: str) -> str:
@@ -325,45 +766,118 @@ async def web_search(query) -> str:
         'Accept-Language': 'en-US,en;q=0.9'
     }
 
+    def decode_bing_url(bing_url: str) -> str:
+        if "bing.com/ck/a" in bing_url and "&u=" in bing_url:
+            import base64
+            try:
+                parsed = urllib.parse.urlparse(bing_url)
+                qs = urllib.parse.parse_qs(parsed.query)
+                u_val = qs.get("u", [""])[0]
+                if u_val.startswith("a1"):
+                    b64_str = u_val[2:]
+                    b64_str += "=" * ((4 - len(b64_str) % 4) % 4)
+                    return base64.urlsafe_b64decode(b64_str).decode("utf-8")
+            except Exception:
+                pass
+        return bing_url
+
     async def search_single_query(client: httpx.AsyncClient, q: str):
-        encoded_query = urllib.parse.quote(q)
+        # Prepare both verbatim query (for DDG quotes/boolean) and cleaned query (for Bing to avoid quote-spam bug)
+        q_clean = re.sub(r'[\'"]', ' ', q)
+        q_clean = re.sub(r'\s+', ' ', q_clean).strip()
+        encoded_query_clean = urllib.parse.quote(q_clean)
+
+        # 1. Fetch DDG POST (verbatim query matching, highly accurate on quoted/niche facts)
+        async def fetch_ddg():
+            ddg_urls, ddg_snips = [], []
+            try:
+                resp = await client.post("https://html.duckduckgo.com/html/", data={"q": q, "b": ""}, headers=headers, timeout=4.0)
+                if resp.status_code == 200 and "captcha" not in resp.text.lower() and "anomaly" not in resp.text.lower():
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    for result in soup.find_all(class_="result")[:10]:
+                        link_el = result.find("a", class_="result__a")
+                        desc_el = result.find(class_="result__snippet")
+                        if link_el and desc_el:
+                            title = link_el.get_text(strip=True)
+                            href = link_el.get("href", "")
+                            desc = desc_el.get_text(strip=True)
+
+                            parsed = urllib.parse.urlparse(href)
+                            qs = urllib.parse.parse_qs(parsed.query)
+                            real_url = qs.get("uddg", [href])[0]
+                            if real_url.startswith("//"):
+                                real_url = "https:" + real_url
+
+                            if real_url.startswith("http") and not real_url.startswith("/") and real_url not in ddg_urls:
+                                ddg_urls.append(real_url)
+                                ddg_snips.append((title, desc, real_url))
+            except Exception as e:
+                import sys
+                print(f"[web_search] DDG attempt failed for '{q}': {e}", file=sys.stderr)
+            return ddg_urls, ddg_snips
+
+        # 2. Fetch Bing (Fast response, high coverage on entities and general topics)
+        async def fetch_bing():
+            bing_urls, bing_snips = [], []
+            try:
+                # Only set English locale for Latin queries to avoid Korean/spam fallback; preserve native script for non-Latin
+                is_non_latin = bool(re.search(r'[\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u0900-\u097F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]', q))
+                lang_param = "" if is_non_latin else "&setlang=en-us"
+                bing_url = f"https://www.bing.com/search?q={encoded_query_clean}{lang_param}"
+                resp = await client.get(bing_url, headers=headers, timeout=4.0)
+                if resp.status_code == 200 and resp.text:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    for r in soup.find_all("li", class_="b_algo")[:10]:
+                        h2 = r.find("h2")
+                        if not h2:
+                            continue
+                        a = h2.find("a")
+                        if not a:
+                            continue
+                        title = a.get_text(strip=True)
+                        raw_href = a.get("href", "")
+                        real_href = decode_bing_url(raw_href)
+                        snippet_el = r.find("p") or r.find(class_="b_caption")
+                        snippet = snippet_el.get_text(strip=True) if snippet_el else ""
+
+                        if real_href and real_href.startswith("http") and "bing.com" not in real_href and real_href not in bing_urls:
+                            bing_urls.append(real_href)
+                            bing_snips.append((title, snippet, real_href))
+            except Exception as e:
+                import sys
+                print(f"[web_search] Bing attempt failed for '{q}': {e}", file=sys.stderr)
+            return bing_urls, bing_snips
+
+        # Run DDG and Bing in parallel
+        (ddg_urls, ddg_snips), (bing_urls, bing_snips) = await asyncio.gather(fetch_ddg(), fetch_bing())
+
         q_urls = []
         q_snippets = []
+        seen_urls = set()
 
-        # 1. Try DuckDuckGo HTML Search
-        ddg_url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
-        try:
-            resp = await client.get(ddg_url, headers=headers, timeout=5.0)
-            if resp.status_code == 200 and "captcha" not in resp.text.lower() and "anomaly" not in resp.text.lower():
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(resp.text, "html.parser")
-                for result in soup.find_all(class_="result")[:8]:
-                    link_el = result.find("a", class_="result__a")
-                    desc_el = result.find(class_="result__snippet")
-                    if link_el and desc_el:
-                        title = link_el.get_text(strip=True)
-                        href = link_el.get("href", "")
-                        desc = desc_el.get_text(strip=True)
+        # Interleave and merge results, prioritizing DDG for exact queries and Bing for authority
+        max_results = max(len(ddg_snips), len(bing_snips))
+        for i in range(max_results):
+            if i < len(ddg_snips):
+                t, d, u = ddg_snips[i]
+                if u not in seen_urls:
+                    seen_urls.add(u)
+                    q_urls.append(u)
+                    q_snippets.append(f"- {t}: {d} ({u})")
+            if i < len(bing_snips):
+                t, d, u = bing_snips[i]
+                if u not in seen_urls:
+                    seen_urls.add(u)
+                    q_urls.append(u)
+                    q_snippets.append(f"- {t}: {d} ({u})")
 
-                        parsed = urllib.parse.urlparse(href)
-                        qs = urllib.parse.parse_qs(parsed.query)
-                        real_url = qs.get("uddg", [href])[0]
-                        if real_url.startswith("//"):
-                            real_url = "https:" + real_url
-
-                        if real_url and real_url not in q_urls and not real_url.startswith("/"):
-                            q_urls.append(real_url)
-
-                        q_snippets.append(f"- {title}: {desc} ({real_url})")
-        except Exception as e:
-            import sys
-            print(f"[web_search] DDG attempt failed for '{q}': {e}", file=sys.stderr)
-
-        # 2. Fallback: Try Yahoo Search if DDG failed or returned nothing
+        # 3. Fallback: Try Yahoo Search if both returned nothing
         if not q_urls:
-            yahoo_url = f"https://search.yahoo.com/search?p={encoded_query}"
+            yahoo_url = f"https://search.yahoo.com/search?p={encoded_query_clean}"
             try:
-                resp = await client.get(yahoo_url, headers=headers, timeout=5.0)
+                resp = await client.get(yahoo_url, headers=headers, timeout=4.0)
                 if resp.status_code == 200:
                     from bs4 import BeautifulSoup
                     soup = BeautifulSoup(resp.text, "html.parser")
@@ -392,7 +906,7 @@ async def web_search(query) -> str:
     all_urls = []
     all_snippets = []
 
-    async with httpx.AsyncClient(timeout=8.0) as client:
+    async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
         search_tasks = [search_single_query(client, q) for q in query_list]
         search_results = await asyncio.gather(*search_tasks)
 
@@ -408,7 +922,12 @@ async def web_search(query) -> str:
             query_display = ", ".join(f"'{q}'" for q in query_list)
             return f"No search results found for {query_display}."
 
-        # Re-rank candidates based on query subtopic terms, synonym clusters, and explicit requested domains
+        # Inject direct query URLs if present in query_list
+        for q_item in query_list:
+            if q_item.startswith(('http://', 'https://')) and q_item not in all_urls:
+                all_urls.insert(0, q_item)
+
+        # Re-rank candidates based on query subtopic terms, synonym clusters, deep links, and explicit requested domains
         full_query = " ".join(query_list)
         q_words = set(re.findall(r'\b[a-zA-Z0-9_]+\b', full_query.lower()))
 
@@ -420,15 +939,45 @@ async def web_search(query) -> str:
             {"solution", "example", "syntax", "answers"}
         ]
 
+        # Technical/Formula topic boost
+        is_formula_or_science = any(w in q_words for w in ("formula", "equation", "law", "theorem", "definition", "engineering", "calculate", "calculation", "derivation", "proof", "method", "unit"))
+        if is_formula_or_science:
+            synonym_clusters.append({"geeksforgeeks", "testbook", "sanfoundry", "byjus", "unacademy", "vedantu", "tutorialspoint", "w3schools", "sciencedirect", "wikipedia", "engineering"})
+
         scored_urls = []
         for i, u in enumerate(all_urls):
             score = 100 - i * 5
             u_lower = u.lower()
+            parsed_u = urllib.parse.urlparse(u)
+            is_root = parsed_u.path.strip("/") == "" or parsed_u.path.strip("/").lower() in ("index.html", "index.php", "home")
+
+            # Heavily demote generic root homepages (e.g. https://www.youtube.com/)
+            if is_root:
+                score -= 80
+
+            # Boost exact URL match or direct query tokens
+            for q_item in query_list:
+                if q_item.lower() == u_lower:
+                    score += 200
+                elif is_youtube_url(q_item):
+                    vid_id, pl_id, _ = parse_youtube_ids(q_item)
+                    if vid_id and vid_id in u:
+                        score += 150
+                    if pl_id and pl_id in u:
+                        score += 60
+                elif len(q_item) >= 6 and q_item.lower() in u_lower:
+                    score += 50
 
             # Boost if query explicitly requested domain
-            for domain_kw in ("wikipedia", "imdb", "reddit", "quora", "testbook", "github", "fandom", "myanimelist", "animenewsnetwork", "behindthevoiceactors", "btva"):
+            for domain_kw in ("wikipedia", "imdb", "reddit", "quora", "testbook", "github", "fandom", "myanimelist", "animenewsnetwork", "behindthevoiceactors", "btva", "youtube", "geeksforgeeks", "sanfoundry"):
                 if domain_kw in q_words and domain_kw in u_lower:
                     score += 50
+
+            # Boost educational / scientific / reference domains for technical formula queries
+            if is_formula_or_science:
+                for edu_kw in ("testbook", "geeksforgeeks", "sanfoundry", "byjus", "unacademy", "vedantu", "tutorialspoint", "wikipedia.org/wiki/"):
+                    if edu_kw in u_lower:
+                        score += 45
 
             # Boost synonym cluster terms found in URL
             for cluster in synonym_clusters:
@@ -460,10 +1009,13 @@ async def web_search(query) -> str:
         is_advanced = getattr(config, "TOOL_MODE", "basic") == "advanced"
         base_budget = 5000 if is_advanced else 1000
 
-        # Authority-First Strategy: Check if URL #1 or #2 is an authoritative domain
+        # Authority-First Strategy: Check top deep link from authoritative domains (ignoring root homepages)
         top_authority_url = None
-        for u in all_urls[:2]:
-            domain_part = urllib.parse.urlparse(u).netloc.lower()
+        for u in all_urls[:4]:
+            parsed_u = urllib.parse.urlparse(u)
+            if parsed_u.path.strip("/") == "":
+                continue  # Never choose a root homepage as the deep authority source
+            domain_part = parsed_u.netloc.lower()
             if any(auth_d in domain_part for auth_d in AUTHORITY_DOMAINS):
                 top_authority_url = u
                 break
@@ -480,10 +1032,30 @@ async def web_search(query) -> str:
             candidate_urls = all_urls[:6]
 
         def is_bot_blocked(text: str) -> bool:
+            if not text:
+                return True
             t_lower = text.lower()
-            return any(p in t_lower for p in ("security verification", "verify you are human", "just a moment...", "enable javascript", "access denied", "ddos protection", "checking your browser")) and len(text) < 800
+            blocked_phrases = (
+                "security verification", "verify you are human", "just a moment...",
+                "enable javascript", "access denied", "ddos protection", "checking your browser",
+                "error 403", "403: forbidden", "403 forbidden", "error 404", "404 not found",
+                "error 429", "too many requests", "you've been blocked", "blocked by network security",
+                "log in to your reddit account", "target url returned error", "use your developer token",
+                "rate limit exceeded", "unusual traffic from your computer", "pardon our interruption",
+                "please complete the security check", "cf-browser-verification", "ray id:", "attention required! | cloudflare"
+            )
+            return any(p in t_lower for p in blocked_phrases) and len(text) < 1500
 
         async def fetch_page(url: str):
+            if is_youtube_url(url):
+                try:
+                    yt_text = await async_extract_youtube_content(client, url, max_chars=page_budget)
+                    if yt_text and len(yt_text.strip()) >= 50:
+                        return f"[Source: YouTube ({url})]\n{yt_text}"
+                except Exception as e:
+                    import sys
+                    print(f"[web_search] YouTube deep fetch failed for {url}: {e}", file=sys.stderr)
+
             try:
                 parsed_url = urllib.parse.urlparse(url)
                 domain = parsed_url.netloc.replace("www.", "")
@@ -491,9 +1063,9 @@ async def web_search(query) -> str:
                 domain = url
 
             clean_text = ""
-            # A. Attempt direct fetch
+            # A. Attempt direct fetch (fast 3.5s timeout)
             try:
-                resp = await client.get(url, headers=headers, follow_redirects=True, timeout=6.0)
+                resp = await client.get(url, headers=headers, follow_redirects=True, timeout=3.5)
                 if resp.status_code == 200 and resp.text:
                     parsed_md = extract_clean_markdown(resp.text, max_chars=page_budget, domain=domain, query=full_query)
                     if not is_bot_blocked(parsed_md):
@@ -502,11 +1074,11 @@ async def web_search(query) -> str:
                 import sys
                 print(f"[web_search] Direct fetch failed for {url}: {e}", file=sys.stderr)
 
-            # B. Attempt reader proxy fallback if direct fetch was blocked / empty
+            # B. Attempt reader proxy fallback if direct fetch was blocked / empty (fast 3.5s timeout)
             if not clean_text or len(clean_text.strip()) < 80:
                 try:
                     jina_url = f"https://r.jina.ai/{url}"
-                    jina_resp = await client.get(jina_url, timeout=7.0)
+                    jina_resp = await client.get(jina_url, timeout=3.5)
                     if jina_resp.status_code == 200 and jina_resp.text.strip():
                         jina_text = jina_resp.text.strip()
                         if not is_bot_blocked(jina_text):
