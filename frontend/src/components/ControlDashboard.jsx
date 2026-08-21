@@ -766,6 +766,10 @@ const ControlDashboard = ({
     llm_vision_model: '',
     llm_image_gen_model: '',
     use_free_image_gen: false,
+    image_gen_provider: 'pollinations',
+    huggingface_api_key: '',
+    stable_horde_api_key: '0000000000',
+    stable_horde_model: 'Pony Diffusion V6 XL',
     always_included_tools: [],
     blocked_tools: [],
     tts_voice: 'af_bella',
@@ -5813,42 +5817,103 @@ const ControlDashboard = ({
                     {/* Image Generation Model Selection */}
                     <div className="identity-field" style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                        <span className="field-label" style={{ color: '#ec4899' }}>Image Generation Model (Tool Model)</span>
+                        <span className="field-label" style={{ color: '#ec4899' }}>Image Generation Engine & Provider</span>
                       </div>
-                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '6px' }}>
-                        Model used by <code style={{ color: '#ec4899' }}>jarvis_generate_image</code> tool to generate high-resolution art & wallpapers on Canvas.
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '8px' }}>
+                        Choose the provider used by <code style={{ color: '#ec4899' }}>jarvis_generate_image</code> to generate high-resolution art, anime, and wallpapers.
                       </div>
-                      {(() => {
-                        const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
-                        const allNames = Array.from(new Set([
-                          ...(settings.llm_image_gen_model ? [settings.llm_image_gen_model] : []),
-                          ...fetchedNames
-                        ]));
-                        return (
-                          <SearchableModelSelect
-                            value={settings.llm_image_gen_model || ''}
-                            onChange={(val) => handleUpdateSetting('llm_image_gen_model', val)}
-                            options={allNames}
-                            placeholder="Search or select Image Generation model..."
-                          />
-                        );
-                      })()}
 
-                      {/* Free FLUX.1 Engine Override Checkbox */}
-                      <div style={{ marginTop: '10px', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                        <input
-                          type="checkbox"
-                          id="use_free_image_gen"
-                          checked={!!settings.use_free_image_gen}
-                          onChange={(e) => handleUpdateSetting('use_free_image_gen', e.target.checked)}
-                          style={{ accentColor: '#ec4899', width: '14px', height: '14px', cursor: 'pointer', marginTop: '2px' }}
-                        />
-                        <label htmlFor="use_free_image_gen" style={{ fontSize: '0.72rem', color: '#cbd5e1', cursor: 'pointer', lineHeight: '1.4' }}>
-                          <span style={{ fontWeight: 600, color: settings.use_free_image_gen ? '#ec4899' : '#e2e8f0' }}>Always use Free FLUX.1 Engine (Override Selected Model)</span>
-                          <span style={{ display: 'block', fontSize: '0.66rem', color: '#94a3b8' }}>
-                            Generates images directly via public FLUX.1 cluster with 0 cost and no API keys required. (When unchecked, uses selected model with free fallback).
-                          </span>
-                        </label>
+                      {/* Image Generation Provider Selector */}
+                      <select
+                        value={settings.image_gen_provider || 'pollinations'}
+                        onChange={(e) => handleUpdateSetting('image_gen_provider', e.target.value)}
+                        style={{ width: '100%', padding: '7px 10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '0.78rem', outline: 'none', cursor: 'pointer', marginBottom: '10px' }}
+                      >
+                        <option value="pollinations" style={{ background: '#0b0813' }}>🌸 Free FLUX.1 Engine (Pollinations — Zero Config, Unlimited)</option>
+                        <option value="huggingface" style={{ background: '#0b0813' }}>🤗 Hugging Face Serverless (FLUX.1-dev / SDXL / Playground)</option>
+                        <option value="stable_horde" style={{ background: '#0b0813' }}>🐎 Stable Horde (Pony XL / Illustrious / Uncensored Network)</option>
+                        <option value="custom" style={{ background: '#0b0813' }}>⚡ Configured LLM / OpenAI Image Endpoint</option>
+                      </select>
+
+                      {/* Hugging Face Contextual Config */}
+                      {(settings.image_gen_provider === 'huggingface') && (
+                        <div style={{ padding: '10px', background: 'rgba(236,72,153,0.06)', border: '1px solid rgba(236,72,153,0.2)', borderRadius: '8px', marginBottom: '10px' }}>
+                          <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginBottom: '6px' }}>
+                            <span style={{ fontWeight: 600, color: '#ec4899' }}>Hugging Face Access Token</span> (Free read token from huggingface.co)
+                          </div>
+                          <input
+                            type="password"
+                            value={settings.huggingface_api_key || ''}
+                            onChange={(e) => handleUpdateSetting('huggingface_api_key', e.target.value)}
+                            placeholder="hf_..."
+                            style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'white', fontSize: '0.76rem', outline: 'none', marginBottom: '8px' }}
+                          />
+                          <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginBottom: '4px' }}>Model Repository Preset</div>
+                          <select
+                            value={settings.llm_image_gen_model || 'black-forest-labs/FLUX.1-dev'}
+                            onChange={(e) => handleUpdateSetting('llm_image_gen_model', e.target.value)}
+                            style={{ width: '100%', padding: '6px 8px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'white', fontSize: '0.74rem', outline: 'none' }}
+                          >
+                            <option value="black-forest-labs/FLUX.1-dev" style={{ background: '#0b0813' }}>black-forest-labs/FLUX.1-dev (28-Step High Quality FLUX)</option>
+                            <option value="stabilityai/stable-diffusion-xl-base-1.0" style={{ background: '#0b0813' }}>stabilityai/stable-diffusion-xl-base-1.0 (Official SDXL 1.0)</option>
+                            <option value="playgroundai/playground-v2.5-1024px-aesthetic" style={{ background: '#0b0813' }}>playgroundai/playground-v2.5-1024px-aesthetic (Aesthetic Fantasy/Art)</option>
+                            <option value="ByteDance/SDXL-Lightning" style={{ background: '#0b0813' }}>ByteDance/SDXL-Lightning (Fast SDXL)</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Stable Horde Contextual Config */}
+                      {(settings.image_gen_provider === 'stable_horde') && (
+                        <div style={{ padding: '10px', background: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.2)', borderRadius: '8px', marginBottom: '10px' }}>
+                          <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginBottom: '6px' }}>
+                            <span style={{ fontWeight: 600, color: '#c084fc' }}>Stable Horde API Key</span> (Default: <code style={{ color: '#c084fc' }}>0000000000</code> for Anonymous Free Access)
+                          </div>
+                          <input
+                            type="text"
+                            value={settings.stable_horde_api_key || '0000000000'}
+                            onChange={(e) => handleUpdateSetting('stable_horde_api_key', e.target.value)}
+                            placeholder="0000000000"
+                            style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'white', fontSize: '0.76rem', outline: 'none', marginBottom: '8px' }}
+                          />
+                          <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginBottom: '4px' }}>Community Model Checkpoint</div>
+                          <select
+                            value={settings.stable_horde_model || 'Pony Diffusion V6 XL'}
+                            onChange={(e) => handleUpdateSetting('stable_horde_model', e.target.value)}
+                            style={{ width: '100%', padding: '6px 8px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'white', fontSize: '0.74rem', outline: 'none' }}
+                          >
+                            <option value="Pony Diffusion V6 XL" style={{ background: '#0b0813' }}>Pony Diffusion V6 XL (King of Anime & Stylized Characters)</option>
+                            <option value="Illustrious XL" style={{ background: '#0b0813' }}>Illustrious XL (Next-Gen Japanese Anime Checkpoint)</option>
+                            <option value="Juggernaut XL" style={{ background: '#0b0813' }}>Juggernaut XL (Cinema-Grade Photorealism)</option>
+                            <option value="Dreamshaper" style={{ background: '#0b0813' }}>Dreamshaper (Versatile Fantasy & Concept Art)</option>
+                            <option value="ICBINP - I Can't Believe It's Not Photography" style={{ background: '#0b0813' }}>ICBINP (Extreme Photorealism)</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Custom / OpenAI Endpoint Config */}
+                      {(settings.image_gen_provider === 'custom') && (
+                        <div>
+                          {(() => {
+                            const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
+                            const allNames = Array.from(new Set([
+                              ...(settings.llm_image_gen_model ? [settings.llm_image_gen_model] : []),
+                              ...fetchedNames
+                            ]));
+                            return (
+                              <SearchableModelSelect
+                                value={settings.llm_image_gen_model || ''}
+                                onChange={(val) => handleUpdateSetting('llm_image_gen_model', val)}
+                                options={allNames}
+                                placeholder="Search or select Image Generation model..."
+                              />
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      {/* Free FLUX.1 Engine Fallback Notice */}
+                      <div style={{ marginTop: '8px', fontSize: '0.68rem', color: '#94a3b8' }}>
+                        ℹ️ <em>If the selected provider is unreachable or unconfigured, Yuki automatically falls back to the Free FLUX.1 Engine without failing.</em>
                       </div>
                     </div>
                   </div>

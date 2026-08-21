@@ -67,6 +67,10 @@ LLM_CODER_MODEL = os.environ.get("LLM_CODER_MODEL", "")
 LLM_VISION_MODEL = os.environ.get("LLM_VISION_MODEL", "")
 LLM_IMAGE_GEN_MODEL = os.environ.get("LLM_IMAGE_GEN_MODEL", "")
 USE_FREE_IMAGE_GEN = os.environ.get("USE_FREE_IMAGE_GEN", "false").lower() in ("true", "1")
+IMAGE_GEN_PROVIDER = os.environ.get("IMAGE_GEN_PROVIDER", "pollinations").strip().lower()
+HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY", "")
+STABLE_HORDE_API_KEY = os.environ.get("STABLE_HORDE_API_KEY", "0000000000")
+STABLE_HORDE_MODEL = os.environ.get("STABLE_HORDE_MODEL", "Pony Diffusion V6 XL")
 
 # Tool Operating Mode — "basic" (weak/local LLMs) vs "advanced" (frontier cloud LLMs with parallel multi-step execution)
 TOOL_MODE = os.environ.get("TOOL_MODE", "basic").strip().lower()
@@ -167,7 +171,7 @@ TTS_VOICE = os.environ.get("TTS_VOICE", "af_sarah")
 TTS_RATE = os.environ.get("TTS_RATE", "auto") # Speed factor (default: auto = mood-driven)
 TTS_DEVICE = os.environ.get("TTS_DEVICE", "auto")  # "auto", "gpu", "cpu"
 TTS_PRELOAD = os.environ.get("TTS_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload TTS model on startup (uses ~250-400 MB extra RAM)
-TTS_GPU_MEM_LIMIT_MB = int(os.environ.get("TTS_GPU_MEM_LIMIT_MB", "512"))  # Max VRAM arena size (MB) for Kokoro ONNX on CUDA
+TTS_GPU_MEM_LIMIT_MB = int(os.environ.get("TTS_GPU_MEM_LIMIT_MB", "0"))  # 0 = Dynamic allocation with HEURISTIC cuDNN search
 TTS_IDLE_TIMEOUT = int(os.environ.get("TTS_IDLE_TIMEOUT", "300"))  # seconds before auto-unload when idle
 TTS_AUTO_UNLOAD = os.environ.get("TTS_AUTO_UNLOAD", "false").strip().lower() in ("1", "true", "yes", "on")
 STT_PRELOAD = os.environ.get("STT_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload STT Whisper model on startup

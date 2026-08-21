@@ -729,18 +729,36 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
     if not prompt or not prompt.strip():
         return "Image Generation Error: Please provide a description of the image you want to generate."
 
-    # 1. Resolve configured Image Generation Model & Free FLUX Override
+    # 1. Resolve configured Image Generation Provider, Models & Keys
+    image_provider = "pollinations"
     image_model = ""
     use_free_override = False
+    hf_key = ""
+    horde_key = "0000000000"
+    horde_model = "Pony Diffusion V6 XL"
+
     try:
         from app.memory.local_mem import MemoryManager
         mem_settings = MemoryManager().profile.get("settings", {})
-        image_model = mem_settings.get("llm_image_gen_model") or ""
-        use_free_override = bool(mem_settings.get("use_free_image_gen", False))
+        image_provider = mem_settings.get("image_gen_provider") or getattr(config, "IMAGE_GEN_PROVIDER", "pollinations")
+        image_model = mem_settings.get("llm_image_gen_model") or getattr(config, "LLM_IMAGE_GEN_MODEL", "")
+        use_free_override = bool(mem_settings.get("use_free_image_gen", getattr(config, "USE_FREE_IMAGE_GEN", False)))
+        hf_key = mem_settings.get("huggingface_api_key") or getattr(config, "HUGGINGFACE_API_KEY", "")
+        horde_key = mem_settings.get("stable_horde_api_key") or getattr(config, "STABLE_HORDE_API_KEY", "0000000000")
+        horde_model = mem_settings.get("stable_horde_model") or getattr(config, "STABLE_HORDE_MODEL", "Pony Diffusion V6 XL")
     except Exception:
-        pass
-    image_model = (image_model or getattr(config, "LLM_IMAGE_GEN_MODEL", "") or "").strip()
-    use_free_override = use_free_override or getattr(config, "USE_FREE_IMAGE_GEN", False)
+        image_provider = getattr(config, "IMAGE_GEN_PROVIDER", "pollinations")
+        image_model = getattr(config, "LLM_IMAGE_GEN_MODEL", "")
+        use_free_override = getattr(config, "USE_FREE_IMAGE_GEN", False)
+        hf_key = getattr(config, "HUGGINGFACE_API_KEY", "")
+        horde_key = getattr(config, "STABLE_HORDE_API_KEY", "0000000000")
+        horde_model = getattr(config, "STABLE_HORDE_MODEL", "Pony Diffusion V6 XL")
+
+    image_provider = (image_provider or "pollinations").strip().lower()
+    image_model = (image_model or "").strip()
+    hf_key = (hf_key or "").strip()
+    horde_key = (horde_key or "0000000000").strip()
+    horde_model = (horde_model or "Pony Diffusion V6 XL").strip()
 
     def generate_via_flux_free(prompt_text: str, aspect: str, chosen_style: str = "auto"):
         try:
@@ -779,6 +797,76 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
             print(f"[ImageGen][FLUX-Free] Free generation error: {e}")
         return None, "flux"
 
+    def generate_via_huggingface(prompt_text: str, token: str, model_name: str = ""):
+        if not token:
+            return None
+        target_model = model_name or "black-forest-labs/FLUX.1-dev"
+        endpoints = [
+            f"https://router.huggingface.co/hf-inference/models/{target_model}",
+            f"https://api-inference.huggingface.co/models/{target_model}"
+        ]
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        for ep in endpoints:
+            try:
+                print(f"[ImageGen][HuggingFace] Requesting model '{target_model}' via {ep}...")
+                resp = requests.post(ep, headers=headers, json={"inputs": prompt_text}, timeout=60)
+                if resp.status_code == 200 and len(resp.content) > 5000:
+                    return resp.content
+            except Exception as e:
+                print(f"[ImageGen][HuggingFace] Attempt error: {e}")
+        return None
+
+    def generate_via_stable_horde(prompt_text: str, aspect: str, api_token: str, model_choice: str):
+        try:
+            w, h = 512, 512
+            if "16:9" in aspect:
+                w, h = 768, 448
+            elif "9:16" in aspect:
+                w, h = 448, 768
+
+            h_url = "https://aihorde.net/api/v2/generate/async"
+            h_headers = {
+                "apikey": api_token or "0000000000",
+                "Client-Agent": "ProjectYuki:v0.3.4:github.com/dekkeroid/Project-Yuki"
+            }
+            h_payload = {
+                "prompt": prompt_text,
+                "params": {
+                    "sampler_name": "k_euler",
+                    "cfg_scale": 7.0,
+                    "width": w,
+                    "height": h,
+                    "steps": 25,
+                    "n": 1
+                },
+                "models": [model_choice] if model_choice else ["Pony Diffusion V6 XL", "Illustrious XL", "stable_diffusion"]
+            }
+            print(f"[ImageGen][StableHorde] Submitting prompt to Horde model '{model_choice}'...")
+            resp = requests.post(h_url, headers=h_headers, json=h_payload, timeout=20)
+            if resp.status_code == 202:
+                task_id = resp.json().get("id")
+                print(f"[ImageGen][StableHorde] Task accepted (ID: {task_id}). Awaiting generation...")
+                for _ in range(25):  # Poll up to ~50s
+                    time.sleep(2)
+                    c_resp = requests.get(f"https://aihorde.net/api/v2/generate/check/{task_id}", headers=h_headers, timeout=10)
+                    if c_resp.status_code == 200 and c_resp.json().get("done"):
+                        break
+                # Fetch result
+                s_resp = requests.get(f"https://aihorde.net/api/v2/generate/status/{task_id}", headers=h_headers, timeout=15)
+                if s_resp.status_code == 200:
+                    gens = s_resp.json().get("generations", [])
+                    if gens:
+                        img_field = gens[0].get("img", "")
+                        if img_field.startswith("http"):
+                            dl = requests.get(img_field, timeout=30)
+                            if dl.status_code == 200:
+                                return dl.content
+                        elif img_field:
+                            return base64.b64decode(img_field)
+        except Exception as e:
+            print(f"[ImageGen][StableHorde] Error: {e}")
+        return None
+
     # 2. Resolve credentials & endpoint
     api_key = config.LLM_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
     base_url = config.get_effective_base_url()
@@ -788,14 +876,26 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
     filename = f"gen_{int(time.time())}_{uuid.uuid4().hex[:6]}.png"
     file_path = out_dir / filename
 
-    print(f"[ImageGen] Generating image for prompt='{prompt[:60]}...' | model='{image_model or '(default)'}' | free_override={use_free_override}")
+    print(f"[ImageGen] Generating image | provider='{image_provider}' | prompt='{prompt[:60]}...' | model='{image_model or '(default)'}'")
 
     image_bytes = None
     last_error = ""
     engine_used = ""
 
-    # Check if User configured Free FLUX as default override
-    if use_free_override:
+    # Check Provider Strategy
+    if image_provider == "huggingface" and hf_key:
+        print("[ImageGen] Using Hugging Face Inference API.")
+        image_bytes = generate_via_huggingface(prompt, hf_key, image_model)
+        if image_bytes:
+            engine_used = f"Hugging Face ({image_model or 'FLUX.1-dev'})"
+
+    elif image_provider == "stable_horde":
+        print(f"[ImageGen] Using Stable Horde ({horde_model}).")
+        image_bytes = generate_via_stable_horde(prompt, aspect_ratio, horde_key, horde_model)
+        if image_bytes:
+            engine_used = f"Stable Horde ({horde_model})"
+
+    elif use_free_override or image_provider == "pollinations":
         print("[ImageGen] Using Free FLUX.1 Engine as primary generator.")
         image_bytes, used_style = generate_via_flux_free(prompt, aspect_ratio, style)
         if image_bytes:
