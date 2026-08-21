@@ -568,7 +568,7 @@ def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "
             el.decompose()
 
     boilerplate_pattern = re.compile(
-        r"\b(cookie|consent|banner|modal|popup|sidebar|sidebar-wrapper|leftside|newsletter|subscribe|author-bio|ad-|advertisement|social-share|share-buttons|disclaimer|breadcrumbs|nav-menu|menu-wrapper|menu|navbar|site-nav|related-posts|related-articles|related-content|recommendations?|recommended|promo-box|latest-news|comments?|reviews?|user-ratings?|poll|voting|footer-widget|site-footer|trending|copyright|privacy-policy)\b",
+        r"\b(cookie|consent|banner|modal|popup|sidebar|sidebar-wrapper|leftside|newsletter|subscribe|author-bio|ad-|advertisement|social-share|share-buttons|disclaimer|breadcrumbs|nav-menu|menu-wrapper|menu|navbar|site-nav|related-posts|related-articles|related-content|recommendations?|recommended|promo-box|latest-news|comments?|reviews?|user-ratings?|poll|voting|footer-widget|site-footer|trending|copyright|privacy-policy|copy-btn|copy-box|copy-button|btn|button-wrapper|action-bar|toolbar|interactive-box|drafter)\b",
         re.I
     )
     for el in soup.find_all(attrs={"class": boilerplate_pattern}):
@@ -715,7 +715,7 @@ def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "
         elif last_sentence > max_chars * 0.7:
             cutoff = last_sentence + 1
 
-        markdown_doc = markdown_doc[:cutoff].strip() + f"\n\n... [Content truncated at {cutoff} characters]"
+        markdown_doc = markdown_doc[:cutoff].strip() + f"\n\n... [Content truncated at {cutoff} characters. Call 'jarvis_web_scrape' on this URL to read up to 15,000+ characters if this page looks promising]"
 
     return markdown_doc
 
@@ -787,7 +787,7 @@ async def web_search(query) -> str:
         q_clean = re.sub(r'\s+', ' ', q_clean).strip()
         encoded_query_clean = urllib.parse.quote(q_clean)
 
-        # 1. Fetch DDG POST (verbatim query matching, highly accurate on quoted/niche facts)
+        # 1. Primary Engine: DuckDuckGo POST (Fast ~300ms, accurate, ad-free, worldwide)
         async def fetch_ddg():
             ddg_urls, ddg_snips = [], []
             try:
@@ -795,7 +795,7 @@ async def web_search(query) -> str:
                 if resp.status_code == 200 and "captcha" not in resp.text.lower() and "anomaly" not in resp.text.lower():
                     from bs4 import BeautifulSoup
                     soup = BeautifulSoup(resp.text, "html.parser")
-                    for result in soup.find_all(class_="result")[:10]:
+                    for result in soup.find_all(class_="result")[:12]:
                         link_el = result.find("a", class_="result__a")
                         desc_el = result.find(class_="result__snippet")
                         if link_el and desc_el:
@@ -817,13 +817,22 @@ async def web_search(query) -> str:
                 print(f"[web_search] DDG attempt failed for '{q}': {e}", file=sys.stderr)
             return ddg_urls, ddg_snips
 
-        # 2. Fetch Bing (Fast response, high coverage on entities and general topics)
+        # 2. Fallback Engine: Bing Search (Engaged when DDG returns < 4 results)
         async def fetch_bing():
             bing_urls, bing_snips = [], []
             try:
-                # Only set English locale for Latin queries to avoid Korean/spam fallback; preserve native script for non-Latin
-                is_non_latin = bool(re.search(r'[\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u0900-\u097F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]', q))
-                lang_param = "" if is_non_latin else "&setlang=en-us"
+                # Script-adaptive market/locale targeting
+                if re.search(r'[\u3040-\u30FF\u31F0-\u31FF]', q):
+                    lang_param = "&setmkt=ja-jp&setlang=ja-jp"
+                elif re.search(r'[\u4E00-\u9FFF]', q) and not re.search(r'[a-zA-Z]', q):
+                    lang_param = "&setmkt=zh-cn&setlang=zh-cn"
+                elif re.search(r'[\u0900-\u097F]', q):
+                    lang_param = "&setmkt=en-in&setlang=hi"
+                elif re.search(r'[\uAC00-\uD7AF]', q):
+                    lang_param = "&setmkt=ko-kr&setlang=ko-kr"
+                else:
+                    lang_param = "&setmkt=en-us&setlang=en-us"
+
                 bing_url = f"https://www.bing.com/search?q={encoded_query_clean}{lang_param}"
                 resp = await client.get(bing_url, headers=headers, timeout=4.0)
                 if resp.status_code == 200 and resp.text:
@@ -850,30 +859,36 @@ async def web_search(query) -> str:
                 print(f"[web_search] Bing attempt failed for '{q}': {e}", file=sys.stderr)
             return bing_urls, bing_snips
 
-        # Run DDG and Bing in parallel
-        (ddg_urls, ddg_snips), (bing_urls, bing_snips) = await asyncio.gather(fetch_ddg(), fetch_bing())
-
         q_urls = []
         q_snippets = []
         seen_urls = set()
 
-        # Interleave and merge results, prioritizing DDG for exact queries and Bing for authority
-        max_results = max(len(ddg_snips), len(bing_snips))
-        for i in range(max_results):
-            if i < len(ddg_snips):
-                t, d, u = ddg_snips[i]
-                if u not in seen_urls:
-                    seen_urls.add(u)
-                    q_urls.append(u)
-                    q_snippets.append(f"- {t}: {d} ({u})")
-            if i < len(bing_snips):
-                t, d, u = bing_snips[i]
-                if u not in seen_urls:
+        # Step 1: Run primary DuckDuckGo search
+        ddg_urls, ddg_snips = await fetch_ddg()
+        for t, d, u in ddg_snips:
+            if u not in seen_urls:
+                seen_urls.add(u)
+                q_urls.append(u)
+                q_snippets.append(f"- {t}: {d} ({u})")
+
+        # Step 2: If DDG returned insufficient results (< 4), fall back to Bing
+        if len(q_urls) < 4:
+            is_latin_query = not bool(re.search(r'[\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u0900-\u097F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]', q))
+
+            def is_junk_snippet(title_str, url_str):
+                low = url_str.lower()
+                if is_latin_query and any(x in low for x in [".52pojie.cn", "52pojie.cn", "baidu.com", "zhihu.com", "csdn.net", "jb51.net", "cr173.com"]):
+                    return True
+                return False
+
+            bing_urls, bing_snips = await fetch_bing()
+            for t, d, u in bing_snips:
+                if u not in seen_urls and not is_junk_snippet(t, u):
                     seen_urls.add(u)
                     q_urls.append(u)
                     q_snippets.append(f"- {t}: {d} ({u})")
 
-        # 3. Fallback: Try Yahoo Search if both returned nothing
+        # Step 3: Tertiary Fallback: Try Yahoo Search if still empty
         if not q_urls:
             yahoo_url = f"https://search.yahoo.com/search?p={encoded_query_clean}"
             try:
@@ -1011,12 +1026,16 @@ async def web_search(query) -> str:
 
         # Authority-First Strategy: Check top deep link from authoritative domains (ignoring root homepages)
         top_authority_url = None
-        for u in all_urls[:4]:
+        for u in all_urls[:5]:
             parsed_u = urllib.parse.urlparse(u)
             if parsed_u.path.strip("/") == "":
                 continue  # Never choose a root homepage as the deep authority source
             domain_part = parsed_u.netloc.lower()
             if any(auth_d in domain_part for auth_d in AUTHORITY_DOMAINS):
+                # Ensure the authority URL path shares key terms with the query
+                meaningful_q_words = [w for w in q_words if len(w) > 2 and w not in ("in", "on", "at", "the", "a", "an", "and", "or", "for", "of", "to", "with", "is", "was", "are", "were")]
+                if len(meaningful_q_words) >= 2 and not any(w in u.lower() for w in meaningful_q_words):
+                    continue
                 top_authority_url = u
                 break
 
@@ -1097,7 +1116,7 @@ async def web_search(query) -> str:
                                 last_para = jina_text.rfind("\n", 0, page_budget)
                                 if last_para > page_budget * 0.7:
                                     cutoff = last_para
-                                jina_text = jina_text[:cutoff].strip() + f"\n\n... [Content truncated at {cutoff} characters]"
+                                jina_text = jina_text[:cutoff].strip() + f"\n\n... [Content truncated at {cutoff} characters. Call 'jarvis_web_scrape' on this URL to read up to 15,000+ characters if this page looks promising]"
                             clean_text = jina_text
                 except Exception:
                     pass

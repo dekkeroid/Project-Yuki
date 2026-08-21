@@ -362,7 +362,8 @@ const App = () => {
   const [powerConnected, setPowerConnected] = useState(true);
   const yukiSelfHiddenRef = useRef(false);
   const chatContainerRef = useRef(null);
-  const [lastDrivesCount, setLastDrivesCount] = useState(null);
+  const knownDrivesRef = useRef(null);
+  const knownDevicesRef = useRef(null);
   const hasTriggeredLowSsdWarningRef = useRef(false);
   const hasTriggeredHighRamWarningRef = useRef(false);
   const hostPlatform = useMemo(() => {
@@ -585,6 +586,14 @@ const App = () => {
 
   const handleAskUserSubmit = async (askId, answers) => {
     setAskUserData(null);
+    window.yukiAskUserOpen = false;
+    window.yukiConfirmJustClosed = true;
+    if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+      window.electronAPI.setIgnoreMouseEvents(false);
+    }
+    setTimeout(() => {
+      window.yukiConfirmJustClosed = false;
+    }, 1500);
     try {
       await fetch(`${API_BASE}/api/ask_user/${askId}/answer`, {
         method: 'POST',
@@ -599,7 +608,16 @@ const App = () => {
   const handleAskUserClose = () => {
     // Dismiss without answering — the agent will time out and use the recommended option.
     setAskUserData(null);
+    window.yukiAskUserOpen = false;
+    window.yukiConfirmJustClosed = true;
+    if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+      window.electronAPI.setIgnoreMouseEvents(false);
+    }
+    setTimeout(() => {
+      window.yukiConfirmJustClosed = false;
+    }, 1500);
   };
+
 
   const handleDismissAlarm = async (id) => {
     setActiveAlarm(null);
@@ -925,7 +943,8 @@ const App = () => {
         console.warn("Failed to check tool result for window_control JSON:", e);
       }
       const resultStr = typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result || '');
-      const snippet = resultStr.length > 15000 ? resultStr.slice(0, 15000) + '\n... [truncated for display]' : resultStr;
+      const rawSnippet = resultStr.length > 15000 ? resultStr.slice(0, 15000) + '\n... [truncated for display]' : resultStr;
+      const snippet = rawSnippet.replace(/```/g, "'''");
       toolBadgesAccumulatorRef.current = toolBadgesAccumulatorRef.current.replace('⏳ Running...', '✓ Done');
       if (!toolBadgesAccumulatorRef.current.includes('```terminal_stream\n')) {
         toolBadgesAccumulatorRef.current += `\`\`\`tool_output\n${snippet}\n\`\`\`\n`;
@@ -1129,6 +1148,10 @@ const App = () => {
     } else if (msg.type === 'ask_user') {
       // ask_user tool: render a structured question dialog.
       // The agent is blocked awaiting resolution via POST /api/ask_user/{ask_id}/answer.
+      window.yukiAskUserOpen = true;
+      if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+        window.electronAPI.setIgnoreMouseEvents(false);
+      }
       setAskUserData({ ask_id: msg.ask_id, questions: msg.questions });
     }
   };
@@ -1223,33 +1246,125 @@ const App = () => {
 
         if (data.ram && !data.ram.error) {
           const ramPercent = data.ram.usage_percent;
-          if (ramPercent > 95) {
+          if (ramPercent > 90) {
             if (!hasTriggeredHighRamWarningRef.current) {
               hasTriggeredHighRamWarningRef.current = true;
-              fetch('/api/system/optimize_memory', { method: 'POST' }).catch(() => { });
-              const msg = `Master, your system RAM is almost full at ${ramPercent}%! I've automatically trimmed the heaviest processes behind the scenes — should help some.`;
+              fetch(`${API_BASE}/api/system/optimize_memory?mode=boost`, { method: 'POST' }).catch(() => { });
+              const msg = `Master, your system RAM is high at ${ramPercent}%! I've automatically trimmed the heaviest processes behind the scenes — should help some.`;
               setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to RAM* ${msg}` }]);
               speakSystemMessage(msg, 'surprised');
             }
-          } else {
+          } else if (ramPercent < 85) {
             hasTriggeredHighRamWarningRef.current = false;
           }
         }
 
-        if (data.disk && data.disk.drives_count !== undefined) {
-          const count = data.disk.drives_count;
-          setLastDrivesCount((prevCount) => {
-            if (prevCount !== null && count !== prevCount) {
-              const inserted = count > prevCount;
-              const msg = inserted
-                ? "Master, did you just plug in a USB device? Let me see what's in there!"
-                : "A storage drive was disconnected. Bye-bye USB!";
+        // 1. Detect USB & Storage Drive Insertions / Disconnections
+        if (data.disk && Array.isArray(data.disk.drives)) {
+          const currentDrives = data.disk.drives;
+          const currentDriveMap = new Map(currentDrives.map((d) => [d.mountpoint, d]));
 
-              setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to drive* ${msg}` }]);
-              speakSystemMessage(msg, 'relaxed');
+          if (knownDrivesRef.current === null) {
+            knownDrivesRef.current = currentDriveMap;
+          } else {
+            const addedDrives = currentDrives.filter((d) => !knownDrivesRef.current.has(d.mountpoint));
+            const removedDrives = Array.from(knownDrivesRef.current.values()).filter((d) => !currentDriveMap.has(d.mountpoint));
+
+            const recordSystemEvent = (content) => {
+              if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+                try {
+                  socketRef.current.send(JSON.stringify({
+                    type: 'system_event',
+                    role: 'assistant',
+                    content
+                  }));
+                } catch (_) {}
+              }
+            };
+
+            for (const drive of addedDrives) {
+              const letter = drive.mountpoint.replace(/[:\\]/g, '');
+              const spoken = drive.free_gb && drive.total_gb
+                ? `I detected a storage drive on drive ${letter} with ${drive.free_gb} gigabytes free space!`
+                : `Master, a storage drive was connected on drive ${letter}!`;
+
+              const chatContent = `*reacts to drive* **Storage Drive Connected: \`${drive.mountpoint}\`**\n• **Capacity:** ${drive.free_gb} GB free / ${drive.total_gb} GB (${drive.usage_percent}% used)\n\n[Open in Explorer](${drive.mountpoint})`;
+
+              setMessages((prev) => [...prev, { role: 'assistant', content: chatContent }]);
+              speakSystemMessage(spoken);
+              recordSystemEvent(chatContent);
             }
-            return count;
-          });
+
+            for (const drive of removedDrives) {
+              const letter = drive.mountpoint.replace(/[:\\]/g, '');
+              const spoken = `Storage drive ${letter} was disconnected. Bye-bye drive!`;
+              const chatContent = `*reacts to drive* Storage drive **${drive.mountpoint}** was disconnected.`;
+
+              setMessages((prev) => [...prev, { role: 'assistant', content: chatContent }]);
+              speakSystemMessage(spoken);
+              recordSystemEvent(chatContent);
+            }
+
+            knownDrivesRef.current = currentDriveMap;
+          }
+        }
+
+        // 2. Detect PnP Devices (Gamepads, Phones, Audio, Tablets, Webcams)
+        if (Array.isArray(data.devices)) {
+          const currentDevices = data.devices;
+          const currentDeviceSet = new Set(currentDevices.map((d) => d.id || d.name));
+
+          if (knownDevicesRef.current === null) {
+            knownDevicesRef.current = currentDeviceSet;
+          } else {
+            const addedDevices = currentDevices.filter((d) => !knownDevicesRef.current.has(d.id || d.name));
+
+            const recordSystemEvent = (content) => {
+              if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+                try {
+                  socketRef.current.send(JSON.stringify({
+                    type: 'system_event',
+                    role: 'assistant',
+                    content
+                  }));
+                } catch (_) {}
+              }
+            };
+
+            for (const dev of addedDevices) {
+              if (dev.type === 'generic_hid' || dev.type === 'unknown' || !dev.name) {
+                continue; // Skip generic keyboards/mice/system services to prevent voice spam
+              }
+
+              let spoken = '';
+              let chatContent = '';
+
+              if (dev.type === 'gamepad') {
+                spoken = `Gamepad connected: ${dev.name}. Ready for gaming, Master!`;
+                chatContent = `*reacts to controller* **Gamepad Connected:** ${dev.name}`;
+              } else if (dev.type === 'phone') {
+                spoken = `Mobile device connected: ${dev.name}.`;
+                chatContent = `*reacts to phone* **Mobile Device Connected:** ${dev.name}`;
+              } else if (dev.type === 'audio') {
+                spoken = `Audio device connected: ${dev.name}.`;
+                chatContent = `*reacts to audio* **Audio Device Connected:** ${dev.name}`;
+              } else if (dev.type === 'tablet') {
+                spoken = `Drawing tablet connected: ${dev.name}.`;
+                chatContent = `*reacts to tablet* **Drawing Tablet Connected:** ${dev.name}`;
+              } else if (dev.type === 'webcam') {
+                spoken = `Webcam connected: ${dev.name}.`;
+                chatContent = `*reacts to camera* **Webcam Connected:** ${dev.name}`;
+              }
+
+              if (spoken && chatContent) {
+                setMessages((prev) => [...prev, { role: 'assistant', content: chatContent }]);
+                speakSystemMessage(spoken);
+                recordSystemEvent(chatContent);
+              }
+            }
+
+            knownDevicesRef.current = currentDeviceSet;
+          }
         }
       } catch (e) {
         console.warn("Telemetry check failed:", e);
@@ -1935,6 +2050,58 @@ const App = () => {
           speakSystemMessage("Hmph! I'm currently offline, Master. Make sure the backend server is running!", 'sad');
           updateListeningState();
         }
+        return;
+      }
+
+      if (cmd === '/boost-ram' || cmd === '/self-optimize') {
+        const isBoost = cmd === '/boost-ram';
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        setAvatarExpression('relaxed');
+        setIsThinking(true);
+        setTtsStreamActive(false);
+
+        fetch(`${API_BASE}/api/system/optimize_memory?mode=${isBoost ? 'boost' : 'self'}`, { method: 'POST' })
+          .then((res) => {
+            if (!res.ok) throw new Error("Could not contact memory optimizer endpoint.");
+            return res.json();
+          })
+          .then((data) => {
+            setIsThinking(false);
+            if (data.status === 'error') {
+              const err = `Failed to optimize memory: ${data.message || 'Unknown error'}`;
+              setMessages((prev) => [...prev, { role: 'assistant', content: err }]);
+              speakSystemMessage(err, 'sad');
+              return;
+            }
+
+            const beforePct = data.before_pct ?? 0;
+            const afterPct = data.after_pct ?? 0;
+            const freedMb = data.freed_mb ?? 0;
+            const yukiCount = data.yuki_procs_trimmed ?? 0;
+            const sysCount = data.system_procs_trimmed ?? 0;
+
+            let resultMsg = "";
+            let speechMsg = "";
+
+            if (isBoost) {
+              resultMsg = `🚀 **RAM Boost Completed!**\n• RAM: **${beforePct}%** → **${afterPct}%** (${freedMb > 0 ? `${freedMb} MB freed` : 'Memory compacted'})\n• Yuki Processes Trimmed: **${yukiCount}** (Python + Electron/Node)\n• Background Apps Trimmed: **${sysCount}**`;
+              speechMsg = freedMb > 0
+                ? `RAM boosted! Lowered usage to ${afterPct}%, freeing ${Math.round(freedMb)} megabytes.`
+                : `RAM boost complete! Memory compacted down to ${afterPct}%.`;
+            } else {
+              resultMsg = `🧹 **Self-Optimization Completed!**\n• RAM: **${beforePct}%** → **${afterPct}%** (${freedMb > 0 ? `${freedMb} MB freed` : 'Working set trimmed'})\n• Yuki Engine Processes Trimmed: **${yukiCount}** (Python + Electron/Node)`;
+              speechMsg = `Self-optimization complete! Trimmed Yuki's memory working set.`;
+            }
+
+            setMessages((prev) => [...prev, { role: 'assistant', content: resultMsg }]);
+            speakSystemMessage(speechMsg, 'relaxed');
+          })
+          .catch((err) => {
+            setIsThinking(false);
+            const errStr = `Error executing ${cmd}: ${err.message}`;
+            setMessages((prev) => [...prev, { role: 'assistant', content: errStr }]);
+            speakSystemMessage(errStr, 'sad');
+          });
         return;
       }
 

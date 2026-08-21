@@ -551,13 +551,16 @@ class AgentExecutor:
         leaves the running tool's parameters on disk (tool_runs.jsonl).
         """
         from app.agent.tool_journal import record_tool_start, record_tool_end
+        from app.tools.selector import record_recent_tool
 
         raw_args = dict(tool_args or {})
         turn_id = self._active_turn_id or ""
         start_ts = time.time()
         record_tool_start(turn_id, tool_name, raw_args)
+        record_recent_tool(tool_name)
         try:
             result = await self._dispatch_tool(tool_name, raw_args, mode=mode, workspace_root=workspace_root)
+
         except Exception as e:
             record_tool_end(turn_id, tool_name, "error", result="", error=str(e), duration_ms=(time.time() - start_ts) * 1000)
             raise
@@ -3101,7 +3104,8 @@ class AgentExecutor:
                             args_json = json.dumps(tool_args, indent=2, ensure_ascii=False) if tool_args else ""
                         except Exception:
                             args_json = str(tool_args)
-                        args_block = f"\n```tool_args\n{args_json}\n```" if args_json else ""
+                        safe_args_json = args_json.replace("```", "'''")
+                        args_block = f"\n```tool_args\n{safe_args_json}\n```" if safe_args_json else ""
 
                         tool_target = tool_args.get("file_path") or tool_args.get("path") or tool_args.get("command") or tool_args.get("url") or ""
                         if tool_target and len(str(tool_target)) > 60:
@@ -3109,7 +3113,8 @@ class AgentExecutor:
                         target_info = f" (`{tool_target}`)" if tool_target else ""
                         status_symbol = "❌ Error" if tool_failed else "✓ Done"
 
-                        tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**{args_block}\n```tool_output\n{output_snippet}\n```"
+                        safe_output_snippet = output_snippet.replace("```", "'''")
+                        tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**{args_block}\n```tool_output\n{safe_output_snippet}\n```"
                         accumulated_response_total.append(tool_badge)
 
                         tc_id = tool_call["id"]

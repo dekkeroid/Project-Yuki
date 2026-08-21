@@ -24,6 +24,12 @@ const getFileIcon = (fileNameOrPath) => {
   if (["png", "jpg", "jpeg", "svg", "webp", "gif", "ico", "bmp"].includes(ext)) {
     return <Eye style={{ width: '12px', height: '12px', color: '#4ade80' }} />;
   }
+  if (["mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v"].includes(ext)) {
+    return <Film style={{ width: '12px', height: '12px', color: '#ec4899' }} />;
+  }
+  if (["mp3", "wav", "flac", "aac", "ogg", "m4a", "wma"].includes(ext)) {
+    return <Music style={{ width: '12px', height: '12px', color: '#a855f7' }} />;
+  }
   return <FileText style={{ width: '12px', height: '12px', color: '#94a3b8' }} />;
 };
 
@@ -72,12 +78,23 @@ export const parseMessageThought = (rawContent) => {
 const handleOpenFileInSidebar = (filePath) => {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('yuki:open-file', { detail: { path: filePath } }));
+    if (window.electronAPI?.openChatWindow) {
+      window.electronAPI.openChatWindow({ openFile: filePath });
+    }
   }
 };
 
 const handleOpenFolderInSidebar = (folderPath) => {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('yuki:open-folder', { detail: { path: folderPath } }));
+    if (window.electronAPI?.openChatWindow) {
+      window.electronAPI.openChatWindow({ openFolder: folderPath });
+    }
+    fetch(`${API_BASE}/api/system/open_explorer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: folderPath })
+    }).catch(() => {});
   }
 };
 
@@ -188,14 +205,14 @@ export const formatMessageText = (text, disableFileLinks = false) => {
   }
 
   // Regex matches:
-  // 1. Standard Markdown Links: [label](url_or_path)
-  // 2. Reversed Format Links: (label)[url]
-  // 3. HTTP/HTTPS URLs: https://... or http://... or www....
-  // 4. Windows File Paths (with ext): D:\path\to\file.ext
-  // 5. file:/// URIs
-  // 6. Windows Folder Paths (no ext): D:\path\to\folder
-  // 7. Code block `code` & Bold **bold**
-  const linkOrPathRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+|www\.[^\)]+|file:\/\/\/?[^\)]+|[A-Za-z]:[\\\/][^\)]+)\)|\(([^)]+)\)\[(https?:\/\/[^\]]+|www\.[^\]]+)\]|(https?:\/\/[^\s\(\)<>"'\`\n]+|www\.[^\s\(\)<>"'\`\n]+)|([A-Za-z]:[\\\/][^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|(file:\/\/\/[^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))|([A-Za-z]:[\\\/][^:\*\?"'\`<>\|\s\n\(\)\[\]{}]+)|`([^`]+)`|\*\*([^*]+)\*\*/gi;
+  // 1. Markdown Links: [label](url_or_path)
+  // 2. HTTP/HTTPS URLs: https://... or http://... or www....
+  // 3. Windows File Paths (with ext): D:\path\to\file.ext
+  // 4. file:/// URIs
+  // 5. Windows Folder Paths (no ext): D:\path\to\folder
+  // 6. Code block `code`
+  // 7. Bold text **bold**
+  const linkOrPathRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+|www\.[^\)]+|file:\/\/\/[^\)]*|[A-Za-z]:[\\\/]?[^\)]*)\)|(https?:\/\/[^\s\(\)<>"'\`\n]+|www\.[^\s\(\)<>"'\`\n]+)|((?:file:\/\/\/(?:[A-Za-z]:)?[\\\/]|[A-Za-z]:[\\\/])(?:[^:\*\?"'\`<>\|\r\n\(\)\[\]{}]+[\\\/])*[^:\*\?"'\`<>\|\r\n\(\)\[\]{}/\\\s][^:\*\?"'\`<>\|\r\n\(\)\[\]{}/\\]*?\.[a-zA-Z0-9]{1,8})|((?:file:\/\/\/(?:[A-Za-z]:)?[\\\/]|[A-Za-z]:[\\\/])(?:[^:\*\?"'\`<>\|\r\n\(\)\[\]{}]+[\\\/])+)|((?:file:\/\/\/(?:[A-Za-z]:)?[\\\/]|[A-Za-z]:[\\\/])(?:[^:\*\?"'\`<>\|\r\n\(\)\[\]{}\s]+[\\\/])*(?:[^:\*\?"'\`<>\|\r\n\(\)\[\]{}\s]+)?)|`([^`]+)`|\*\*([^*]+)\*\*/gi;
 
   const parts = [];
   let lastIndex = 0;
@@ -221,13 +238,10 @@ export const formatMessageText = (text, disableFileLinks = false) => {
       continue;
     }
 
-    const mdLabel = match[1] || match[3];
-    const mdTarget = match[2] || match[4];
-
-    if (mdLabel && mdTarget) {
-      // Markdown link: [label](target) or (label)[target]
-      const label = mdLabel;
-      const target = mdTarget;
+    if (match[1] && match[2]) {
+      // Markdown link: [label](target)
+      const label = match[1];
+      const target = match[2];
       const isUrl = /^https?:\/\//i.test(target) || /^www\./i.test(target);
       const isFile = !isUrl && (/\.[a-zA-Z0-9]{1,8}$/.test(label) || /\.[a-zA-Z0-9]{1,8}$/.test(target));
 
@@ -359,9 +373,9 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           </button>
         );
       }
-    } else if (match[5]) {
+    } else if (match[3]) {
       // Raw Web URL
-      const rawUrl = match[5];
+      const rawUrl = match[3];
       let displayUrl = rawUrl;
       try {
         const parsed = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`);
@@ -402,9 +416,9 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           <ExternalLink style={{ width: '9px', height: '9px', opacity: 0.7, flexShrink: 0 }} />
         </a>
       );
-    } else if (match[6] || match[7]) {
-      // Raw Windows or file:/// File path string
-      const rawPath = (match[6] || match[7]).replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
+    } else if (match[4]) {
+      // Raw Windows or file:/// File path string (with extension, spaces supported)
+      const rawPath = match[4].replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
       const fileName = rawPath.split('\\').pop() || rawPath;
 
       parts.push(
@@ -434,10 +448,10 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           <ExternalLink style={{ width: '10px', height: '10px', opacity: 0.8 }} />
         </button>
       );
-    } else if (match[6]) {
-      // Raw Windows Folder path string (no file extension)
-      const rawPath = match[6].replace(/\//g, '\\');
-      const folderName = rawPath.split('\\').pop() || rawPath;
+    } else if (match[5] || match[6]) {
+      // Raw Windows Folder path string (spaces supported)
+      const rawPath = (match[5] || match[6]).replace(/^file:\/\/\/?/, '').replace(/\//g, '\\');
+      const folderName = rawPath.replace(/[\\\/]+$/, '').split('\\').pop() || rawPath;
 
       parts.push(
         <button
@@ -469,8 +483,8 @@ export const formatMessageText = (text, disableFileLinks = false) => {
     } else if (match[7]) {
       // Code block `code`
       const codeContent = match[7].trim();
-      const fileMatch = codeContent.match(/^([A-Za-z]:[\\\/][^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc)|file:\/\/\/[^\s\(\)<>"'\n]+?\.(?:md|js|py|json|css|html|ts|jsx|tsx|png|jpg|jpeg|svg|webp|gif|txt|log|cpp|c|cs|java|db|pyc))$/i);
-      const folderMatch = !fileMatch && codeContent.match(/^([A-Za-z]:[\\\/][^\s\:\*\?"<>\|\n\(\)\[\]{}]+)$/i);
+      const fileMatch = codeContent.match(/^((?:file:\/\/\/(?:[A-Za-z]:)?[\\\/]|[A-Za-z]:[\\\/]).*?\.[a-zA-Z0-9]{1,8})$/i);
+      const folderMatch = !fileMatch && codeContent.match(/^((?:file:\/\/\/(?:[A-Za-z]:)?[\\\/]|[A-Za-z]:[\\\/]).*?)$/i);
       const urlMatch = codeContent.match(/^(https?:\/\/[^\s\(\)<>"'\n]+|www\.[^\s\(\)<>"'\n]+)$/i);
 
       if (urlMatch) {
@@ -534,7 +548,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
         );
       } else if (folderMatch) {
         const rawPath = folderMatch[1].replace(/\//g, '\\');
-        const folderName = rawPath.split('\\').pop() || rawPath;
+        const folderName = rawPath.replace(/[\\\/]+$/, '').split('\\').pop() || rawPath;
         parts.push(
           <button
             key={matchIndex}
@@ -563,18 +577,18 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           </button>
         );
       } else {
+        // Standard Inline code `code`
         parts.push(
           <code
             key={matchIndex}
             style={{
-              fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
-              fontSize: '0.85em',
-              background: 'rgba(255, 255, 255, 0.12)',
+              background: 'rgba(255, 255, 255, 0.08)',
               padding: '2px 6px',
               borderRadius: '4px',
-              color: '#2dd4bf',
-              border: '1px solid rgba(255, 255, 255, 0.05)',
-              margin: '0 2px'
+              fontSize: '0.85em',
+              fontFamily: 'monospace',
+              color: '#e2e8f0',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
             }}
           >
             {codeContent}
@@ -582,15 +596,9 @@ export const formatMessageText = (text, disableFileLinks = false) => {
         );
       }
     } else if (match[8]) {
-      // Bold **bold**
+      // Bold text **bold**
       parts.push(
-        <strong
-          key={matchIndex}
-          style={{
-            fontWeight: '700',
-            color: '#e2e8f0'
-          }}
-        >
+        <strong key={matchIndex} style={{ fontWeight: '700', color: '#f8fafc' }}>
           {renderTextWithInlineMath(match[8], `bold-math-${matchIndex}`)}
         </strong>
       );

@@ -218,16 +218,20 @@ async def _run_memory_optimizer_bg():
     await asyncio.sleep(30)
     while True:
         try:
-            # Only unload Whisper under real memory pressure, and only when running on the GPU.
-            # Never unload while listening mode is active (mic is on, whisper in active use).
+            # Only unload Whisper / Kokoro under real memory pressure, and only when running on the GPU.
+            # Never unload Whisper while listening mode is active (mic is on, whisper in active use).
             try:
-                from app.voice.stt import is_whisper_on_gpu, is_listening_mode_active, unload_whisper_if_idle
-                if not is_listening_mode_active() and config.WHISPER_AUTO_UNLOAD and is_whisper_on_gpu():
-                    from app.gpu_monitor import get_dedicated_gpu_vram_percent
-                    vram_pct = get_dedicated_gpu_vram_percent()
-                    if vram_pct is not None and vram_pct > config.WHISPER_VRAM_THRESHOLD:
+                from app.gpu_monitor import get_dedicated_gpu_vram_percent
+                vram_pct = get_dedicated_gpu_vram_percent()
+                if vram_pct is not None and vram_pct > config.WHISPER_VRAM_THRESHOLD:
+                    from app.voice.stt import is_whisper_on_gpu, is_listening_mode_active, unload_whisper_if_idle
+                    if not is_listening_mode_active() and config.WHISPER_AUTO_UNLOAD and is_whisper_on_gpu():
                         print(f"[Memory] GPU VRAM at {vram_pct:.1f}% > {config.WHISPER_VRAM_THRESHOLD}% - unloading Whisper to free VRAM.")
                         unload_whisper_if_idle(force=True)
+                    from app.voice.tts import is_kokoro_on_gpu, unload_kokoro_if_idle
+                    if is_kokoro_on_gpu():
+                        print(f"[Memory] GPU VRAM at {vram_pct:.1f}% > {config.WHISPER_VRAM_THRESHOLD}% - unloading Kokoro TTS to free VRAM.")
+                        unload_kokoro_if_idle(force=True)
             except Exception:
                 pass
 
@@ -238,12 +242,15 @@ async def _run_memory_optimizer_bg():
         await asyncio.sleep(300)
 
 async def _whisper_idle_monitor_bg():
-    """Background task to specifically monitor Whisper idle time and unload it if configured."""
+    """Background task to specifically monitor Whisper and Kokoro idle time and unload if configured."""
     while True:
         try:
             if config.WHISPER_AUTO_UNLOAD:
                 from app.voice.stt import unload_whisper_if_idle
                 unload_whisper_if_idle(force=False)
+            if getattr(config, "TTS_AUTO_UNLOAD", False):
+                from app.voice.tts import unload_kokoro_if_idle
+                unload_kokoro_if_idle(force=False)
         except Exception:
             pass
         await asyncio.sleep(60)
@@ -2550,6 +2557,8 @@ def get_tools_source():
         "app/tools/todo_list.py",
         "app/tools/selector.py",
         "app/tools/safety.py",
+        "app/voice/tts.py",
+        "app/voice/stt.py",
     ]
     out = {}
     for rel in modules:
@@ -3205,15 +3214,42 @@ def get_gpu_memory():
 
 
 @app.post("/api/system/optimize_memory")
-def optimize_memory_endpoint():
+def optimize_memory_endpoint(mode: Optional[str] = "auto"):
     """
     Manually triggers process memory optimization.
-    Called when the app is hidden or minimized to reclaim RAM immediately.
-    (Whisper model is intentionally NOT unloaded here to avoid cold-load delays on next STT use.)
+    mode = "boost" (optimizes Yuki + system background processes)
+    mode = "self" (optimizes only Yuki Python + Electron/Node processes)
+    mode = "auto" (default periodic/hide behavior)
     """
     try:
         from app.memory.optimizer import optimize_all_processes
-        optimize_all_processes(force=True)
+        trim_system = (mode == "boost")
+        only_self = (mode == "self")
+        res = optimize_all_processes(force=True, trim_system_procs=trim_system, only_self=only_self)
+        return res
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class OpenExplorerRequest(BaseModel):
+    path: str
+
+
+@app.post("/api/system/open_explorer")
+def open_in_explorer_endpoint(req: OpenExplorerRequest):
+    """Opens a file or directory in Windows File Explorer / OS default file manager."""
+    try:
+        target = req.path.strip()
+        if len(target) == 2 and target[1] == ':':
+            target += "\\"
+        if not os.path.exists(target):
+            return {"status": "error", "message": f"Path does not exist: {target}"}
+        if sys.platform == "win32":
+            os.startfile(target)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", target])
+        else:
+            subprocess.Popen(["xdg-open", target])
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -3628,6 +3664,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     "status": "idle",
                     "message": "Turn terminated by user!"
                 })
+                continue
+
+            if msg_type == "system_event":
+                event_text = payload.get("content", "").strip()
+                role = payload.get("role", "assistant")
+                if event_text:
+                    global_chat_history.append({"role": role, "content": event_text})
+                    await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
+                    print(f"[SystemEvent] Added context to chat history: {event_text[:80]}...")
                 continue
             
             if msg_type == "chat":
@@ -4140,10 +4185,16 @@ async def get_chat_sessions():
 
 @app.get("/api/chat/sessions/{session_id}")
 async def get_chat_session_history(session_id: str):
-    """Returns full message history for a specific past session."""
+    """Returns full message history for a specific past session or the active in-memory session."""
     try:
+        if session_id == "active" or session_id == "current" or session_id == active_session_id:
+            if global_chat_history is not None and len(global_chat_history) > 0:
+                return {"status": "success", "session_id": active_session_id, "messages": global_chat_history}
+        
         from app.memory.db import get_session_messages
-        messages = get_session_messages(session_id)
+        messages = await asyncio.to_thread(get_session_messages, session_id)
+        if not messages and session_id == active_session_id:
+            messages = global_chat_history or []
         return {"status": "success", "session_id": session_id, "messages": messages}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -4201,15 +4252,24 @@ async def create_new_chat_session():
     return {"status": "success", "session_id": active_session_id, "messages": []}
 
 @app.get("/api/chat/search")
-async def search_chat_history(q: str = Query(..., min_length=1), limit: int = Query(50, ge=1, le=200)):
-    """Searches across all past chat sessions and messages."""
+async def search_chat_history(
+    q: str = Query(..., min_length=1),
+    exact: bool = Query(False),
+    role: Optional[str] = Query(None),
+    sort: str = Query("newest"),
+    limit: Optional[int] = Query(None, ge=1, le=500)
+):
+    """Searches across all past chat sessions and messages with optional role, sort order, and exact match filters."""
     try:
         from app.memory.db import search_chat_conversations
-        results = await asyncio.to_thread(search_chat_conversations, q, limit)
+        results = await asyncio.to_thread(search_chat_conversations, q, exact, role, sort, limit)
         total_matches = sum(len(r.get("matches", [])) for r in results)
         return {
             "status": "success",
             "query": q,
+            "exact": exact,
+            "role": role,
+            "sort": sort,
             "total_sessions": len(results),
             "total_matches": total_matches,
             "results": results

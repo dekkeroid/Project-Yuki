@@ -25,8 +25,12 @@ _QUERY_EXPANSIONS = {
     "artwork": ("image", "picture", "art", "paint", "draw"),
     "browse": ("web", "internet", "search"),
     "browser": ("web", "internet", "url", "launch"),
+    "choice": ("option", "choose", "select", "pick", "decide", "ask"),
+    "choose": ("choice", "option", "select", "pick", "decide", "ask"),
+    "clarify": ("ask", "question", "choice", "option", "confirm"),
     "clip": ("screenshot", "capture"),
     "dashboard": ("html", "page", "interactive", "widget"),
+    "decide": ("choice", "choose", "pick", "option", "select", "ask"),
     "diagram": ("svg", "flowchart", "architecture", "visual", "wireframe", "graph", "schema"),
     "dir": ("directory", "folder", "list", "file"),
     "draw": ("image", "picture", "artwork", "paint", "canvas", "illustration", "generate"),
@@ -118,6 +122,7 @@ _TOOL_HINTS = {
     "jarvis_html_viewer": ("html", "page", "website", "dashboard", "interactive", "full", "document", "form", "button", "layout", "webpage", "embed", "open", "file", "serve", "local"),
     "jarvis_find_files_by_glob": ("glob", "find", "search", "pattern", "files", "match"),
     "jarvis_grep_files": ("grep", "search", "find", "pattern", "content", "code", "source", "files", "symbol", "function", "keyword", "line"),
+    "ask_user": ("ask", "question", "clarify", "choice", "options", "choose", "pick", "select", "which", "decision", "tradeoff", "prompt", "poll"),
 
     # Legacy Basic Mode Tools
     "generate_image": ("draw", "generate", "image", "picture", "art", "photo", "wallpaper", "sketch", "canvas", "illustration", "paint", "diffusion", "render"),
@@ -162,6 +167,48 @@ _DEFAULT_CODING_TOOLS = {
 
 _TOKEN_RE = re.compile(r"[a-z0-9_]+")
 
+_RECENT_TOOLS: list[str] = []
+_HISTORY_BOOTSTRAPPED: bool = False
+
+
+def record_recent_tool(tool_name: str) -> None:
+    """Record an executed tool name at the front of the recent tools history."""
+    global _RECENT_TOOLS, _HISTORY_BOOTSTRAPPED
+    if not tool_name or not isinstance(tool_name, str):
+        return
+    name = tool_name.strip()
+    if not name:
+        return
+    if not _HISTORY_BOOTSTRAPPED:
+        _bootstrap_recent_tools()
+    if name in _RECENT_TOOLS:
+        _RECENT_TOOLS.remove(name)
+    _RECENT_TOOLS.insert(0, name)
+    if len(_RECENT_TOOLS) > 20:
+        del _RECENT_TOOLS[20:]
+
+
+def get_recent_tools(limit: int = 2) -> list[str]:
+    """Return the last `limit` unique tool names used in reverse chronological order."""
+    global _RECENT_TOOLS, _HISTORY_BOOTSTRAPPED
+    if not _HISTORY_BOOTSTRAPPED:
+        _bootstrap_recent_tools()
+    return list(_RECENT_TOOLS[:limit])
+
+
+def _bootstrap_recent_tools() -> None:
+    """Bootstrap in-memory recent tools from durable journal if available."""
+    global _RECENT_TOOLS, _HISTORY_BOOTSTRAPPED
+    _HISTORY_BOOTSTRAPPED = True
+    try:
+        from app.agent.tool_journal import get_recent_tool_names
+        recent = get_recent_tool_names(limit=10)
+        for name in reversed(recent):
+            if name not in _RECENT_TOOLS:
+                _RECENT_TOOLS.insert(0, name)
+    except Exception as e:
+        print(f"[ToolSelector] Could not bootstrap tool history from journal: {e}")
+
 
 def select_relevant_tools(
     tools: Sequence[dict[str, Any]],
@@ -170,7 +217,7 @@ def select_relevant_tools(
     max_tools: int | None = None,   
     fallback_threshold: float = DEFAULT_FALLBACK_THRESHOLD,
 ) -> list[dict[str, Any]]:
-    """Return a compact, ranked tool list containing always-included core tools + query-matched tools."""
+    """Return a compact, ranked tool list containing always-included core tools + query-matched tools + recent history tools."""
     if not tools:
         return []
 
@@ -196,38 +243,56 @@ def select_relevant_tools(
 
     query_terms = _expand_query_terms(_tokens(user_message))
     if not query_terms:
-        return always_tools or list(tools)[:max_tools]
+        base_tools = list(always_tools) or list(tools)[:max_tools]
+    else:
+        scored = []
+        for index, tool in enumerate(tools):
+            name = _tool_name(tool)
+            if name in always_tool_names:
+                continue
+            tool_terms = _tool_terms(tool)
+            hint_terms = set(_TOOL_HINTS.get(name, ()))
+            overlap = query_terms & (tool_terms | hint_terms)
+            if not overlap:
+                score = 0.0
+            else:
+                name_bonus = 0.22 if query_terms & set(name.split("_")) else 0.0
+                hint_bonus = 0.12 if query_terms & hint_terms else 0.0
+                score = len(overlap) / max(len(query_terms), 1) + name_bonus + hint_bonus
+            scored.append((score, -index, tool))
 
-    scored = []
-    for index, tool in enumerate(tools):
-        name = _tool_name(tool)
-        if name in always_tool_names:
-            continue
-        tool_terms = _tool_terms(tool)
-        hint_terms = set(_TOOL_HINTS.get(name, ()))
-        overlap = query_terms & (tool_terms | hint_terms)
-        if not overlap:
-            score = 0.0
+        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+
+        debug_view = [(round(score, 4), -neg_index, _tool_name(tool)) for score, neg_index, tool in scored]
+        print(f"[SCORED] max_tools={max_tools} query={sorted(query_terms)}")
+        for score, index, name in debug_view:
+            print(f"  {score:>7.4f}  idx={index:<3d}  {name}")
+        
+        # If confidence is low (e.g. casual chitchat), use ONLY the always-included core tools!
+        if not scored or scored[0][0] < fallback_threshold:
+            base_tools = list(always_tools) or list(tools)[:max_tools]
         else:
-            name_bonus = 0.22 if query_terms & set(name.split("_")) else 0.0
-            hint_bonus = 0.12 if query_terms & hint_terms else 0.0
-            score = len(overlap) / max(len(query_terms), 1) + name_bonus + hint_bonus
-        scored.append((score, -index, tool))
+            # Otherwise, use always-included tools + top query-matched action tools
+            matched_tools = [tool for score, _, tool in scored if score > 0][:max(1, max_tools - len(always_tools))]
+            base_tools = list(always_tools) + matched_tools
 
-    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    # Append the last 2 unique tools from history if not already in the list
+    recent_names = get_recent_tools(limit=2)
+    if recent_names:
+        present_names = {_tool_name(t) for t in base_tools}
+        tools_by_name = {_tool_name(t): t for t in tools}
+        appended_history = []
+        for r_name in recent_names:
+            if r_name not in present_names and r_name in tools_by_name:
+                appended_history.append(tools_by_name[r_name])
+                present_names.add(r_name)
+        if appended_history:
+            history_names_str = ", ".join(_tool_name(t) for t in appended_history)
+            print(f"[Tools] Appended {len(appended_history)} history tools to payload ({len(base_tools)} base -> {len(base_tools) + len(appended_history)} total): {history_names_str}")
+            return base_tools + appended_history
 
-    debug_view = [(round(score, 4), -neg_index, _tool_name(tool)) for score, neg_index, tool in scored]
-    print(f"[SCORED] max_tools={max_tools} query={sorted(query_terms)}")
-    for score, index, name in debug_view:
-        print(f"  {score:>7.4f}  idx={index:<3d}  {name}")
-    
-    # If confidence is low (e.g. casual chitchat), return ONLY the always-included core tools!
-    if not scored or scored[0][0] < fallback_threshold:
-        return always_tools or list(tools)[:max_tools]
+    return base_tools
 
-    # Otherwise, return always-included tools + top query-matched action tools
-    matched_tools = [tool for score, _, tool in scored if score > 0][:max(1, max_tools - len(always_tools))]
-    return always_tools + matched_tools
 
 
 def _tokens(text) -> set[str]:

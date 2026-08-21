@@ -62,12 +62,40 @@ def _ensure_model_files():
 # Lazy-loaded Kokoro instance
 _kokoro_instance = None
 _kokoro_lock = threading.Lock()
+_last_tts_request_time = 0.0
+_kokoro_using_gpu = False
+
+def update_last_tts_time():
+    global _last_tts_request_time
+    _last_tts_request_time = time.time()
+
+def get_last_tts_time() -> float:
+    return _last_tts_request_time
+
+def is_kokoro_on_gpu() -> bool:
+    return _kokoro_using_gpu and _kokoro_instance is not None
+
+def unload_kokoro_if_idle(force: bool = False):
+    global _kokoro_instance, _kokoro_using_gpu
+    with _kokoro_lock:
+        if _kokoro_instance is None:
+            return
+        idle_time = time.time() - _last_tts_request_time
+        timeout = getattr(config, "TTS_IDLE_TIMEOUT", 300)
+        auto_unload = getattr(config, "TTS_AUTO_UNLOAD", False)
+        if force or (auto_unload and idle_time > timeout):
+            print(f"[TTS] Kokoro model unloaded ({'forced by memory pressure' if force else f'idle for {int(idle_time)}s'}).")
+            _kokoro_instance = None
+            _kokoro_using_gpu = False
+            import gc
+            gc.collect()
 
 def reset_kokoro():
     """Clear the cached Kokoro instance so the next call re-initializes with current config."""
-    global _kokoro_instance
+    global _kokoro_instance, _kokoro_using_gpu
     with _kokoro_lock:
         _kokoro_instance = None
+        _kokoro_using_gpu = False
     print("[TTS] Kokoro instance cleared. Will re-initialize on next speech request.")
 
 async def get_kokoro_async() -> "Kokoro":
@@ -96,7 +124,7 @@ def _build_session(providers: list):
 
 
 def get_kokoro() -> "Kokoro":
-    global _kokoro_instance
+    global _kokoro_instance, _kokoro_using_gpu
     if _kokoro_instance is not None:
         return _kokoro_instance
 
@@ -122,6 +150,8 @@ def get_kokoro() -> "Kokoro":
             print("[TTS] Device set to CPU. Loading with CPU provider...")
             session = _build_session(["CPUExecutionProvider"])
             _kokoro_instance = Kokoro.from_session(session, str(VOICES_PATH))
+            _kokoro_using_gpu = False
+            update_last_tts_time()
             print(f"[TTS] Model loaded on CPU. Active providers: {session.get_providers()}")
             _warmup_cpu(_kokoro_instance)
             return _kokoro_instance
@@ -134,7 +164,20 @@ def get_kokoro() -> "Kokoro":
             gpu_provider = "DmlExecutionProvider"
 
         if gpu_provider:
-            providers = [gpu_provider, "CPUExecutionProvider"] if device_pref == "auto" else [gpu_provider]
+            if gpu_provider == "CUDAExecutionProvider":
+                cuda_mem_limit = getattr(config, "TTS_GPU_MEM_LIMIT_MB", 512) * 1024 * 1024
+                cuda_options = {
+                    "device_id": "0",
+                    "gpu_mem_limit": str(cuda_mem_limit),
+                    "arena_extend_strategy": "kSameAsRequested",
+                    "cudnn_conv_algo_search": "HEURISTIC",
+                    "do_copy_in_default_stream": "1",
+                }
+                gpu_entry = (gpu_provider, cuda_options)
+            else:
+                gpu_entry = gpu_provider
+
+            providers = [gpu_entry, "CPUExecutionProvider"] if device_pref == "auto" else [gpu_entry]
             print(f"[TTS] Trying GPU provider: {gpu_provider}...")
             try:
                 session = _build_session(providers)
@@ -151,8 +194,10 @@ def get_kokoro() -> "Kokoro":
                     t_warm = time.time()
                     kokoro.create("hi", voice="af_sarah", speed=1.0, lang="en-us")
                     elapsed = int((time.time() - t_warm) * 1000)
-                    print(f"[TTS] {gpu_provider} warm-up OK in {elapsed}ms - GPU is active.")
+                    print(f"[TTS] {gpu_provider} warm-up OK in {elapsed}ms - GPU is active (VRAM arena capped at {getattr(config, 'TTS_GPU_MEM_LIMIT_MB', 512)}MB).")
                     _kokoro_instance = kokoro
+                    _kokoro_using_gpu = True
+                    update_last_tts_time()
                     return _kokoro_instance
             except Exception as e:
                 if device_pref == "gpu":
@@ -164,6 +209,8 @@ def get_kokoro() -> "Kokoro":
         print("[TTS] Loading with CPU provider...")
         session = _build_session(["CPUExecutionProvider"])
         _kokoro_instance = Kokoro.from_session(session, str(VOICES_PATH))
+        _kokoro_using_gpu = False
+        update_last_tts_time()
         print(f"[TTS] Model loaded on CPU. Active providers: {session.get_providers()}")
         _warmup_cpu(_kokoro_instance)
 
@@ -254,6 +301,164 @@ def transliterate_for_tts(text: str) -> str:
     return text_ascii
 
 
+_ONES = [
+    "", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+    "seventeen", "eighteen", "nineteen"
+]
+_TENS = [
+    "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"
+]
+_DIGIT_WORDS = {
+    "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+    "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine"
+}
+
+def _below_1000_to_words(n: int) -> str:
+    res = []
+    if n >= 100:
+        res.append(_ONES[n // 100] + " hundred")
+        n %= 100
+    if n >= 20:
+        t = _TENS[n // 10]
+        rem = n % 10
+        if rem > 0:
+            res.append(f"{t}-{_ONES[rem]}")
+        else:
+            res.append(t)
+    elif n > 0:
+        res.append(_ONES[n])
+    return " ".join(res)
+
+def int_to_words_international(n: int) -> str:
+    """Converts an integer to English words using the International standard (millions, billions, etc.)."""
+    if n == 0:
+        return "zero"
+    chunks = [
+        (10**18, "quintillion"),
+        (10**15, "quadrillion"),
+        (10**12, "trillion"),
+        (10**9, "billion"),
+        (10**6, "million"),
+        (10**3, "thousand"),
+        (1, "")
+    ]
+    parts = []
+    rem = n
+    for unit_val, unit_name in chunks:
+        if rem >= unit_val:
+            c = rem // unit_val
+            rem %= unit_val
+            words = _below_1000_to_words(c)
+            if words:
+                if unit_name:
+                    parts.append(f"{words} {unit_name}")
+                else:
+                    parts.append(words)
+    return " ".join(parts)
+
+def int_to_words_indian(n: int) -> str:
+    """Converts an integer to English words using the Indian numbering system (lakhs, crores, etc.)."""
+    if n == 0:
+        return "zero"
+    chunks = [
+        (10**17, "shankh"),
+        (10**15, "padma"),
+        (10**13, "neel"),
+        (10**11, "kharab"),
+        (10**9, "arab"),
+        (10**7, "crore"),
+        (10**5, "lakh"),
+        (10**3, "thousand"),
+        (1, "")
+    ]
+    parts = []
+    rem = n
+    for unit_val, unit_name in chunks:
+        if rem >= unit_val:
+            c = rem // unit_val
+            rem %= unit_val
+            words = _below_1000_to_words(c)
+            if words:
+                if unit_name:
+                    parts.append(f"{words} {unit_name}")
+                else:
+                    parts.append(words)
+    return " ".join(parts)
+
+def normalize_numbers_for_speech(text: str) -> str:
+    """
+    Normalizes numbers in text into spoken English words.
+    - Numbers with Indian commas (e.g. 5,01,123 or 60,23,123) -> Indian standard (lakhs, crores).
+    - Numbers with International commas (e.g. 5,231,232) -> International standard (millions, etc.).
+    - Numbers without commas (e.g. 500000) -> International standard.
+    - Decimals (e.g. 5.23, 5,01,123.75) -> Spoken whole number + 'point' + digits.
+    """
+    if not text:
+        return ""
+
+    # 1. Indian formatted numbers: 1-2 digits, one or more 2-digit groups, ending with 3-digit group (e.g. 5,01,123 or 60,23,123 or 1,50,00,000)
+    indian_comma_regex = re.compile(r'\b(\d{1,2}(?:,\d{2})+,\d{3})(?:\.(\d+))?\b')
+    def replace_indian(m):
+        num_str = m.group(1).replace(',', '')
+        dec_part = m.group(2)
+        try:
+            n = int(num_str)
+            spoken = int_to_words_indian(n)
+            if dec_part:
+                dec_spoken = " ".join(_DIGIT_WORDS.get(d, d) for d in dec_part)
+                spoken = f"{spoken} point {dec_spoken}"
+            return spoken
+        except Exception:
+            return m.group(0)
+
+    text = indian_comma_regex.sub(replace_indian, text)
+
+    # 2. International formatted numbers: 1-3 digits, one or more 3-digit groups (e.g. 5,231,232 or 1,000,000)
+    intl_comma_regex = re.compile(r'\b(\d{1,3}(?:,\d{3})+)(?:\.(\d+))?\b')
+    def replace_intl(m):
+        num_str = m.group(1).replace(',', '')
+        dec_part = m.group(2)
+        try:
+            n = int(num_str)
+            spoken = int_to_words_international(n)
+            if dec_part:
+                dec_spoken = " ".join(_DIGIT_WORDS.get(d, d) for d in dec_part)
+                spoken = f"{spoken} point {dec_spoken}"
+            return spoken
+        except Exception:
+            return m.group(0)
+
+    text = intl_comma_regex.sub(replace_intl, text)
+
+    # 3. Standalone decimals (e.g. 12.34 or 500000.5)
+    decimal_regex = re.compile(r'(?<![\d.])\b(\d+)\.(\d+)\b(?![\d.])')
+    def replace_decimal(m):
+        try:
+            int_part = int(m.group(1))
+            dec_part = m.group(2)
+            spoken = int_to_words_international(int_part)
+            dec_spoken = " ".join(_DIGIT_WORDS.get(d, d) for d in dec_part)
+            return f"{spoken} point {dec_spoken}"
+        except Exception:
+            return m.group(0)
+
+    text = decimal_regex.sub(replace_decimal, text)
+
+    # 4. Standalone unformatted integers (e.g. 500000, 100, 42)
+    plain_int_regex = re.compile(r'(?<![\d:/\-])\b(\d{1,18})\b(?![\d:/\-])')
+    def replace_plain_int(m):
+        try:
+            n = int(m.group(1))
+            return int_to_words_international(n)
+        except Exception:
+            return m.group(0)
+
+    text = plain_int_regex.sub(replace_plain_int, text)
+
+    return text
+
+
 def clean_text_for_tts(text: str) -> str:
     import re
     if not text:
@@ -284,9 +489,17 @@ def clean_text_for_tts(text: str) -> str:
     # This must run before comparison symbol normalization to prevent them from matching as math comparison.
     text = re.sub(r'<([a-zA-Z0-9_\-+]+)>', r' \1 ', text)
 
-    # 4. Code Block Speech Filtering (Replace multi-line code blocks with clean spoken summary)
+    # 4. Code Block & Table Speech Filtering (Replace visual elements with clean spoken transitions)
     text = re.sub(r'```[a-zA-Z0-9_\-]*\n[\s\S]*?```', ' I have provided the code on your screen. ', text)
     text = re.sub(r'```[\s\S]*?```', ' I have provided the code on your screen. ', text)
+    # Replace multi-row markdown tables with a natural spoken bridge
+    text = re.sub(r'(\n|^)(?:\s*\|[^\n]+\|\s*\n)+', '\n I have displayed the detailed table on your screen. \n', text)
+
+    # 4.5 Strip standalone Sources / References / Footnotes sections at the bottom from voice
+    text = re.sub(r'(?i)\n+\s*(?:\*\*)?(?:sources?|references?|citations?)(?:\*\*)?:?\s*[\s\S]*$', '', text)
+
+    # 4.6 Convert inline markdown links [Label](URL) to just Label before stripping raw URLs
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
 
     # 5. Strip URLs, File Paths, and IP addresses BEFORE numeric ITN runs
     text = re.sub(r'\bhttps?://(?:www\.)?([^/\s]+)(?:/[^\s]*)?', r'\1', text)
@@ -372,17 +585,15 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'\b\.md\b', ' dot m d ', text)
     # ---------------------------------------------------
 
-    # Decimals ITN (e.g. 0.1 -> 0 point 1)
-    text = re.sub(r'(\d+)\.(\d+)', r'\1 point \2', text)
-
     # 8. Industry-Standard ITN: Currency & Unit Symbols
-    text = re.sub(r'\$', ' dollars', text) # Safe fallback for remaining dollar signs
-    text = re.sub(r'\$(\d+(?:\.\d+)?)', r'\1 dollars', text)
-    text = re.sub(r'£(\d+(?:\.\d+)?)', r'\1 pounds', text)
-    text = re.sub(r'€(\d+(?:\.\d+)?)', r'\1 euros', text)
-    text = re.sub(r'₹(\d+(?:\.\d+)?)', r'\1 rupees', text)
-    text = re.sub(r'¥(\d+(?:\.\d+)?)', r'\1 yen', text)
+    text = re.sub(r'₹([\d,]+(?:\.\d+)?)', r'\1 rupees', text)
+    text = re.sub(r'\$([\d,]+(?:\.\d+)?)', r'\1 dollars', text)
+    text = re.sub(r'£([\d,]+(?:\.\d+)?)', r'\1 pounds', text)
+    text = re.sub(r'€([\d,]+(?:\.\d+)?)', r'\1 euros', text)
+    text = re.sub(r'¥([\d,]+(?:\.\d+)?)', r'\1 yen', text)
+    text = re.sub(r'\b(?:Rs\.?|INR)\s*([\d,]+(?:\.\d+)?)', r'\1 rupees', text, flags=re.IGNORECASE)
     text = re.sub(r'(\d+(?:\.\d+)?)\s*yuan\b', r'\1 yuan', text, flags=re.IGNORECASE)
+    text = re.sub(r'\$', ' dollars', text) # Safe fallback for remaining dollar signs
 
     text = re.sub(r'(\d+)\s*%', r'\1 percent', text)
     text = re.sub(r'(\d+)\s*°[CC]', r'\1 degrees Celsius', text)
@@ -416,6 +627,9 @@ def clean_text_for_tts(text: str) -> str:
     ]
     for pattern, replacement in abbreviations:
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+    # 8.5 Full Spoken Number Normalization (Indian & International numbering formats)
+    text = normalize_numbers_for_speech(text)
 
     # 9. Foreign Character Transliteration
     text = transliterate_for_tts(text)
@@ -469,6 +683,7 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
     """
     Generates WAV audio bytes for a given text using Kokoro-ONNX locally.
     """
+    update_last_tts_time()
     text = clean_text_for_tts(text)
     if not text.strip():
         return b""

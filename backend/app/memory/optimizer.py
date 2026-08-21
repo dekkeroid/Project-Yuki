@@ -110,7 +110,7 @@ def _foreground_pid() -> Optional[int]:
         return None
 
 
-def _select_trim_candidates(procs, now, foreground_pid):
+def _select_trim_candidates(procs, now, foreground_pid, is_emergency=False):
     """Pure, side-effect-free selection of which processes are safe to trim.
 
     Given an iterable of `_ProcInfo`, the current time `now` (epoch seconds)
@@ -119,19 +119,19 @@ def _select_trim_candidates(procs, now, foreground_pid):
 
     Excludes:
       - safelisted system-critical processes (_NEVER_TRIM, matched case-insensitively)
-      - the foreground-window process (the app the user just opened/focused)
-      - processes younger than 30s (recently launched — trimming them freezes startup)
       - HIGH/REALTIME priority class processes
+      - (if NOT emergency / RAM <= 95%): the foreground-window process & processes younger than 30s
     """
     candidates = []
     for p in procs:
         name = (p.name or '')
         if name.lower() in _NEVER_TRIM_LOWER:
             continue
-        if foreground_pid is not None and p.pid == foreground_pid:
-            continue
-        if p.create_time is not None and now is not None and (now - p.create_time) < 30:
-            continue
+        if not is_emergency:
+            if foreground_pid is not None and p.pid == foreground_pid:
+                continue
+            if p.create_time is not None and now is not None and (now - p.create_time) < 30:
+                continue
         if p.priority in _SKIP_PRIORITIES:
             continue
         candidates.append(p)
@@ -139,17 +139,18 @@ def _select_trim_candidates(procs, now, foreground_pid):
     return candidates[:MAX_TRIM_CANDIDATES]
 
 
-def _empty_working_set(pid: int) -> bool:
+def _empty_working_set(pid: int, is_emergency: bool = False) -> bool:
     """Call EmptyWorkingSet on a process by PID. Returns True on success."""
     try:
-        # Defense-in-depth safety guard: never trim safelisted system processes or active foreground PID
+        # Defense-in-depth safety guard: never trim safelisted system processes
         try:
             pname = psutil.Process(pid).name()
             if pname and pname.lower() in _NEVER_TRIM_LOWER:
                 return False
-            fg_pid = _foreground_pid()
-            if fg_pid is not None and pid == fg_pid:
-                return False
+            if not is_emergency:
+                fg_pid = _foreground_pid()
+                if fg_pid is not None and pid == fg_pid:
+                    return False
         except Exception:
             pass
 
@@ -167,12 +168,14 @@ def _empty_working_set(pid: int) -> bool:
         return False
 
 
-def optimize_all_processes(force=False, skip_own_process=False):
+def optimize_all_processes(force=False, skip_own_process=False, trim_system_procs=False, only_self=False):
     global LAST_OPTIMIZATION_TIME
     now = time.time()
     if not force and now - LAST_OPTIMIZATION_TIME < OPTIMIZATION_COOLDOWN:
-        return
+        return {"status": "cooldown", "message": "Optimization ran recently."}
     LAST_OPTIMIZATION_TIME = now
+
+    before_ram = psutil.virtual_memory() if os.name == 'nt' else None
 
     # We skip trimming our own process to protect the loaded Whisper/Kokoro model pages
     # only if Whisper is actively loading, or if listening mode is active AND the user
@@ -188,7 +191,7 @@ def optimize_all_processes(force=False, skip_own_process=False):
             if time_since_last_speech < 120.0:
                 should_skip_own = True
         
-        if should_skip_own:
+        if should_skip_own and not force:
             skip_own_process = True
     except Exception:
         pass
@@ -199,27 +202,22 @@ def optimize_all_processes(force=False, skip_own_process=False):
     gc.collect()
 
     if os.name != 'nt':
-        return
+        return {"status": "success", "platform": "non-windows"}
 
     pids_to_optimize = []
+    own_trimmed = False
 
-    # 2. Trim our own Python process first. GetCurrentProcess() returns the
-    #    current-process pseudo-handle (equivalent to -1) but correctly typed
-    #    as a pointer-sized HANDLE for 64-bit Python.
-    #    Skipped while a chat turn / TTS synthesis is active (busy guard) and
-    #    during the initial startup sweep (skip_own_process) — trimming would
-    #    page out the freshly preloaded Kokoro/Whisper model pages and undo the
-    #    warm-up, making the first real turn slow.
-    if not is_own_process_busy() and not skip_own_process:
+    # 2. Trim our own Python process first.
+    if (not is_own_process_busy() or force) and not skip_own_process:
         try:
             own_handle = ctypes.windll.kernel32.GetCurrentProcess()
-            ctypes.windll.psapi.EmptyWorkingSet(own_handle)
-            print('[Memory] Own process working set trimmed.')
+            if ctypes.windll.psapi.EmptyWorkingSet(own_handle):
+                own_trimmed = True
+                print('[Memory] Own process working set trimmed.')
         except Exception as e:
             print(f'[Memory] Failed to trim own process: {e}')
 
-    # 3. Collect parent PID + its full child tree (covers the Electron main process
-    #    when Python is launched as a child, or vice-versa)
+    # 3. Collect parent PID + its full child tree
     try:
         ppid = os.getppid()
     except AttributeError:
@@ -235,7 +233,6 @@ def optimize_all_processes(force=False, skip_own_process=False):
             print(f'[Memory] Could not resolve parent process tree: {e}')
 
     # 4. Scan ALL running processes for Electron/Node processes belonging to Project Yuki
-    #    This catches the GPU process and renderer, which are NOT in the parent tree.
     try:
         for p in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
             try:
@@ -261,23 +258,18 @@ def optimize_all_processes(force=False, skip_own_process=False):
     if pids_to_optimize:
         print(f'[Memory] EmptyWorkingSet called on {optimized_count}/{len(pids_to_optimize)} Electron/Node process(es).')
 
-    # 6. If system RAM > 90%, trim top MAX_TRIM_CANDIDATES memory-hogging
-    #    processes — safely. The original branch trimmed the raw top-10 by
-    #    memory_percent with no guards, which could trim dwm.exe/explorer.exe/the
-    #    just-opened foreground app and freeze the UI. Now we safelist critical
-    #    processes, skip the foreground window, skip processes younger than 30s,
-    #    and skip HIGH/REALTIME priority processes. Selection is factored into the
-    #    pure, unit-testable _select_trim_candidates helper.
+    # 6. System processes trim (if trim_system_procs is True or if RAM > 90% and not only_self)
+    trimmed_details = []
     try:
         ram = psutil.virtual_memory()
-        if ram.percent > 90:
+        if not only_self and (trim_system_procs or ram.percent > 90):
+            is_emergency = (ram.percent > 95 or trim_system_procs)
             fg_pid = _foreground_pid()
             scan_time = time.time()
             scanned = []
             for p in psutil.process_iter(['pid', 'name', 'memory_percent', 'create_time']):
                 try:
                     pid = p.info['pid']
-                    # Don't re-trim processes already handled in steps 3-5.
                     if pid in pids_to_optimize:
                         continue
                     scanned.append(_ProcInfo(
@@ -290,10 +282,6 @@ def optimize_all_processes(force=False, skip_own_process=False):
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
 
-            # Sort by memory_percent desc and only fetch priority for the top
-            # SCAN_ENRICH_WINDOW, so the global scan stays cheap (nice() is a
-            # per-process syscall) while leaving headroom for the exclusion
-            # filters to fill all MAX_TRIM_CANDIDATES slots.
             scanned.sort(key=lambda pi: pi.memory_percent, reverse=True)
             enriched = []
             for pi in scanned[:SCAN_ENRICH_WINDOW]:
@@ -306,20 +294,38 @@ def optimize_all_processes(force=False, skip_own_process=False):
                     pc = None
                 enriched.append(pi._replace(priority=pc))
 
-            candidates = _select_trim_candidates(enriched, scan_time, fg_pid)
+            candidates = _select_trim_candidates(enriched, scan_time, fg_pid, is_emergency=is_emergency)
 
-            trimmed_details = []
             for pi in candidates:
                 try:
                     proc = psutil.Process(pi.pid)
                     before_mb = proc.memory_info().rss / (1024 * 1024)
-                    if _empty_working_set(pi.pid):
+                    if _empty_working_set(pi.pid, is_emergency=is_emergency):
                         trimmed_details.append((pi.name, pi.pid, before_mb))
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
 
-            print(f"[Memory] RAM at {ram.percent}% — trimming {len(trimmed_details)} processes:")
+            mode_label = " (Boost/Emergency: included foreground & young apps)" if is_emergency else ""
+            print(f"[Memory] System RAM at {ram.percent}%{mode_label} - trimmed {len(trimmed_details)} process(es):")
             for name, pid, before_mb in trimmed_details:
                 print(f"  - {name} (pid={pid}, ws~{before_mb:.0f}MB)")
     except Exception as e:
         print(f'[Memory] RAM-triggered optimization error: {e}')
+
+    after_ram = psutil.virtual_memory()
+    before_used_mb = round((before_ram.total - before_ram.available) / (1024 * 1024), 1) if before_ram else 0
+    after_used_mb = round((after_ram.total - after_ram.available) / (1024 * 1024), 1)
+    freed_mb = max(0.0, round(before_used_mb - after_used_mb, 1))
+
+    return {
+        "status": "success",
+        "mode": "boost" if trim_system_procs else ("self" if only_self else "auto"),
+        "before_pct": round(before_ram.percent, 1) if before_ram else 0,
+        "after_pct": round(after_ram.percent, 1),
+        "before_used_mb": before_used_mb,
+        "after_used_mb": after_used_mb,
+        "freed_mb": freed_mb,
+        "yuki_procs_trimmed": optimized_count + (1 if own_trimmed else 0),
+        "system_procs_trimmed": len(trimmed_details),
+        "trimmed_system_details": [(name, pid, round(before_mb, 1)) for name, pid, before_mb in trimmed_details]
+    }

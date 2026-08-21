@@ -13,23 +13,32 @@ import MicLevelMeter from './MicLevelMeter';
 import { API_BASE } from '../api';
 import { useBackendSocket } from '../hooks/useBackendSocket';
 
-const renderHighlightedText = (text, query) => {
+const renderHighlightedText = (text, query, exactMatch = false) => {
   if (!text || !query || !query.trim()) return text;
-  const q = query.trim();
-  const qLower = q.toLowerCase();
-  const tLower = text.toLowerCase();
-  const parts = [];
-  let currIdx = 0;
-  let matchIdx = tLower.indexOf(qLower, currIdx);
-
-  while (matchIdx !== -1) {
-    if (matchIdx > currIdx) {
-      parts.push(text.substring(currIdx, matchIdx));
+  
+  const hasSpaces = query.startsWith(' ') || query.endsWith(' ');
+  let regex;
+  try {
+    if (exactMatch && !hasSpaces) {
+      regex = new RegExp(`\\b(${query.trim().replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')})\\b`, 'gi');
+    } else {
+      regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')})`, 'gi');
     }
-    const matchedText = text.substring(matchIdx, matchIdx + q.length);
+  } catch (e) {
+    return text;
+  }
+
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
     parts.push(
       <span
-        key={matchIdx}
+        key={match.index}
         style={{
           backgroundColor: 'rgba(245, 158, 11, 0.4)',
           color: '#fbbf24',
@@ -38,17 +47,17 @@ const renderHighlightedText = (text, query) => {
           fontWeight: 700
         }}
       >
-        {matchedText}
+        {match[0]}
       </span>
     );
-    currIdx = matchIdx + q.length;
-    matchIdx = tLower.indexOf(qLower, currIdx);
+    lastIndex = match.index + match[0].length;
   }
 
-  if (currIdx < text.length) {
-    parts.push(text.substring(currIdx));
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
   }
-  return parts;
+
+  return parts.length > 0 ? parts : text;
 };
 
 const renderTreeFileIcon = (fileName) => {
@@ -328,11 +337,16 @@ export const AgenticWorkspaceWindow = ({
   const [sessionTree, setSessionTree] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState('');
   const [selectedPastSessionId, setSelectedPastSessionId] = useState(null);
-  const [viewMessages, setViewMessages] = useState(null); // Loaded messages when inspecting past session
+  const [viewMessages, setViewMessages] = useState(null); // Loaded messages when inspecting past or standalone active session
+  const displayMessages = selectedPastSessionId && viewMessages ? viewMessages : ((!onSendMessage || messages.length === 0) && viewMessages !== null ? viewMessages : messages);
   const [isTurnRunning, setIsTurnRunning] = useState(false);
   const [expandedNodes, setExpandedNodes] = useState(new Set()); // Set of expanded node keys (e.g. "year_2026", "date_30 July 2026")
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [exactMatch, setExactMatch] = useState(false);
+  const [filterMaster, setFilterMaster] = useState(true);
+  const [filterYuki, setFilterYuki] = useState(true);
+  const [searchSortOrder, setSearchSortOrder] = useState('newest'); // 'newest' | 'oldest'
   const [isSearching, setIsSearching] = useState(false);
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState(null);
@@ -342,6 +356,7 @@ export const AgenticWorkspaceWindow = ({
   const textareaRef = useRef(null);
   const chatContainerRef = useRef(null);
   const targetScrollRef = useRef(null);
+  const isSearchNavigatingRef = useRef(false);
   const [coderLlmModels, setCoderLlmModels] = useState([]);
   const coderModelsFetchRef = useRef(0);
   const CODER_FETCH_COOLDOWN = 2000;
@@ -438,6 +453,14 @@ export const AgenticWorkspaceWindow = ({
           if (actData && actData.messages) setViewMessages(actData.messages);
         })
         .catch(() => { });
+    } else if (!onSendMessage || !messages || messages.length === 0) {
+      // Standalone mode: load active session in-memory messages immediately on connect
+      fetch(`${API_BASE}/api/chat/sessions/active`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((actData) => {
+          if (actData && actData.messages) setViewMessages(actData.messages);
+        })
+        .catch(() => { });
     }
   };
 
@@ -511,7 +534,8 @@ export const AgenticWorkspaceWindow = ({
         }
       } else if (data.type === 'tool_result') {
         const resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result || '');
-        const snippet = resultStr.length > 15000 ? resultStr.slice(0, 15000) + '\n... [truncated for display]' : resultStr;
+        const rawSnippet = resultStr.length > 15000 ? resultStr.slice(0, 15000) + '\n... [truncated for display]' : resultStr;
+        const snippet = rawSnippet.replace(/```/g, "'''");
 
         setViewMessages(prev => {
           if (!prev || prev.length === 0) return prev;
@@ -752,9 +776,19 @@ export const AgenticWorkspaceWindow = ({
 
     window.addEventListener('yuki:open-file', handleOpenFileEvent);
     window.addEventListener('yuki:open-folder', handleOpenFolderEvent);
+    let unsubFile = null;
+    let unsubFolder = null;
+    if (window.electronAPI?.onOpenFile) {
+      unsubFile = window.electronAPI.onOpenFile((data) => handleOpenFileEvent({ detail: data }));
+    }
+    if (window.electronAPI?.onOpenFolder) {
+      unsubFolder = window.electronAPI.onOpenFolder((data) => handleOpenFolderEvent({ detail: data }));
+    }
     return () => {
       window.removeEventListener('yuki:open-file', handleOpenFileEvent);
       window.removeEventListener('yuki:open-folder', handleOpenFolderEvent);
+      if (unsubFile) unsubFile();
+      if (unsubFolder) unsubFolder();
     };
   }, []);
   // Internal Settings Sync (for standalone Chat Window mode)
@@ -1292,6 +1326,17 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
           setSessionTree(data.data.years);
           if (data.active_session_id) {
             setActiveSessionId(data.active_session_id);
+            if (!selectedPastSessionId && (!onSendMessage || !messages || messages.length === 0)) {
+              try {
+                const sessRes = await fetch(`${API_BASE}/api/chat/sessions/${encodeURIComponent(data.active_session_id)}`);
+                if (sessRes.ok) {
+                  const sessData = await sessRes.json();
+                  if (sessData && sessData.messages) {
+                    setViewMessages(sessData.messages);
+                  }
+                }
+              } catch (_) {}
+            }
           }
 
           // Smart Auto-Collapse: expand ONLY active session's Year, Month, and Date
@@ -1348,19 +1393,23 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
     });
   };
 
-  // Debounced search across all conversations
+  // Debounced search across all conversations (with Exact Match, Speaker Filter, & Date Sorting)
   useEffect(() => {
-    const q = searchQuery.trim();
-    if (!q) {
+    const q = searchQuery;
+    if (!q || !q.trim()) {
       setSearchResults([]);
       setIsSearching(false);
       return;
     }
 
+    const speakerRole = (filterMaster && !filterYuki) ? 'user' : (!filterMaster && filterYuki) ? 'assistant' : null;
+    const roleParam = speakerRole ? `&role=${speakerRole}` : '';
+
     setIsSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/chat/search?q=${encodeURIComponent(q)}&limit=50`);
+        // Fetch all matching results sorted chronologically
+        const res = await fetch(`${API_BASE}/api/chat/search?q=${encodeURIComponent(q)}&exact=${exactMatch}&sort=${searchSortOrder}${roleParam}`);
         if (res.ok) {
           const data = await res.json();
           setSearchResults(data.results || []);
@@ -1373,17 +1422,59 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, exactMatch, filterMaster, filterYuki, searchSortOrder]);
 
   // Inspect and Promote a session to Global Active Session (Instant 0ms Highlight + Optional Target Message Scroll)
   const handleSelectSession = async (sessionId, targetMessageId = null) => {
-    setSelectedPastSessionId(sessionId);
-    setActiveSessionId(sessionId);
     if (targetMessageId != null) {
+      isSearchNavigatingRef.current = true;
       targetScrollRef.current = targetMessageId;
       setScrollTargetMessageId(targetMessageId);
       setHighlightedMessageId(targetMessageId);
+
+      // Check if we are already viewing this session
+      const isAlreadyActive =
+        selectedPastSessionId === sessionId ||
+        (!selectedPastSessionId && activeSessionId === sessionId);
+
+      if (isAlreadyActive && displayMessages && displayMessages.length > 0) {
+        // Direct scroll to existing DOM element in current session!
+        const scrollDirect = (attempts = 0) => {
+          const el =
+            document.getElementById(`chat-msg-${targetMessageId}`) ||
+            document.querySelector(`[data-msg-id="${targetMessageId}"]`) ||
+            document.querySelector(`[data-msg-index="${targetMessageId}"]`);
+
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setHighlightedMessageId(targetMessageId);
+            setTimeout(() => {
+              isSearchNavigatingRef.current = false;
+              targetScrollRef.current = null;
+              setScrollTargetMessageId(null);
+            }, 2500);
+            setTimeout(() => {
+              setHighlightedMessageId(null);
+            }, 4000);
+          } else if (attempts < 25) {
+            setTimeout(() => scrollDirect(attempts + 1), 40);
+          } else {
+            isSearchNavigatingRef.current = false;
+            targetScrollRef.current = null;
+            setScrollTargetMessageId(null);
+          }
+        };
+        requestAnimationFrame(() => scrollDirect(0));
+        return;
+      }
+    } else {
+      isSearchNavigatingRef.current = false;
+      targetScrollRef.current = null;
+      setScrollTargetMessageId(null);
     }
+
+    setSelectedPastSessionId(sessionId);
+    setActiveSessionId(sessionId);
 
     try {
       const actRes = await fetch(`${API_BASE}/api/chat/sessions/activate`, {
@@ -1407,13 +1498,14 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
       }
     } catch (err) {
       console.error("Failed to load/activate session:", err);
+      isSearchNavigatingRef.current = false;
     }
   };
 
-  // Resilient scroll to targeted search message with glow highlight
+  // Resilient scroll to targeted search message with glow highlight on session load
   useEffect(() => {
     const targetId = targetScrollRef.current || scrollTargetMessageId;
-    if (!targetId) return;
+    if (!targetId || !displayMessages || displayMessages.length === 0) return;
 
     let cancelled = false;
     let attempts = 0;
@@ -1430,33 +1522,33 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
         setHighlightedMessageId(targetId);
         setTimeout(() => {
           if (!cancelled) {
+            isSearchNavigatingRef.current = false;
             targetScrollRef.current = null;
             setScrollTargetMessageId(null);
           }
-        }, 1200);
+        }, 2500);
         setTimeout(() => {
           if (!cancelled) {
             setHighlightedMessageId(null);
           }
-        }, 3000);
-      } else if (attempts < 25) {
+        }, 4000);
+      } else if (attempts < 30) {
         attempts++;
         setTimeout(tryScroll, 50);
       } else {
+        isSearchNavigatingRef.current = false;
         targetScrollRef.current = null;
         setScrollTargetMessageId(null);
       }
     };
 
-    const timer = setTimeout(() => {
-      tryScroll();
-    }, 60);
+    const timer = setTimeout(tryScroll, 60);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [scrollTargetMessageId, displayMessages, selectedPastSessionId]);
+  }, [displayMessages, selectedPastSessionId]);
 
   // Save renamed session title
   const handleSaveRename = async (sessionId, customText = null) => {
@@ -1534,16 +1626,15 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
     }
   };
 
-  // Displayed messages: either active turn messages or inspected past session messages
-  const displayMessages = selectedPastSessionId && viewMessages ? viewMessages : messages;
-
   // Instant Bottom-Up Scroll (Industry Standard 0-Jump Layout, skipped when targeting search message)
   React.useLayoutEffect(() => {
-    if (targetScrollRef.current || scrollTargetMessageId) return;
+    if (isSearchNavigatingRef.current || targetScrollRef.current || scrollTargetMessageId) {
+      return;
+    }
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  }, [displayMessages, selectedPastSessionId, scrollTargetMessageId]);
+  }, [displayMessages, selectedPastSessionId]);
 
   // Persistent TODO list panel (Live Output tab) — visible in coder mode when the toggle is ON
   const [todoListText, setTodoListText] = React.useState('');
@@ -1857,7 +1948,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   style={{
                     width: '100%',
                     boxSizing: 'border-box',
-                    padding: '6px 26px 6px 26px',
+                    padding: '6px 65px 6px 26px',
                     background: 'rgba(255, 255, 255, 0.04)',
                     border: searchQuery ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
                     borderRadius: '6px',
@@ -1869,30 +1960,163 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                   onFocus={(e) => e.target.style.borderColor = 'rgba(56, 189, 248, 0.6)'}
                   onBlur={(e) => { if (!searchQuery) e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }}
                 />
-                {searchQuery && (
+                
+                {/* Search Actions: Match Exact Toggle & Clear */}
+                <div style={{ position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: '3px' }}>
                   <button
                     type="button"
-                    onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                    title="Clear Search"
+                    onClick={() => setExactMatch(!exactMatch)}
+                    title={exactMatch ? "Match Exact / Whole Word: Active" : "Match Exact / Whole Word: Inactive (Click to match exact words or phrases)"}
                     style={{
-                      position: 'absolute',
-                      right: '6px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: '#94a3b8',
+                      background: exactMatch ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                      border: exactMatch ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '4px',
+                      color: exactMatch ? '#38bdf8' : '#94a3b8',
+                      fontSize: '0.58rem',
+                      fontWeight: 700,
                       cursor: 'pointer',
-                      padding: '2px',
+                      padding: '2px 4px',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center'
+                      gap: '2px',
+                      userSelect: 'none',
+                      transition: 'all 0.15s ease'
                     }}
                   >
-                    <X style={{ width: '12px', height: '12px' }} />
+                    <span style={{ fontSize: '0.62rem', letterSpacing: '-0.5px' }}>"Ab"</span>
+                    <span>Exact</span>
                   </button>
-                )}
+
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                      title="Clear Search"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <X style={{ width: '12px', height: '12px' }} />
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {/* Speaker Role & Date Sort Filter Controls (Only shown when searching) */}
+              {searchQuery.trim().length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2px', gap: '4px', marginTop: '2px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (filterMaster && !filterYuki) {
+                          setFilterYuki(true);
+                        } else {
+                          setFilterMaster(!filterMaster);
+                        }
+                      }}
+                      title="Filter messages sent by Master (User)"
+                      style={{
+                        background: filterMaster ? 'rgba(167, 139, 250, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                        border: filterMaster ? '1px solid rgba(167, 139, 250, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '10px',
+                        color: filterMaster ? '#c4b5fd' : '#64748b',
+                        fontSize: '0.58rem',
+                        fontWeight: 600,
+                        padding: '1px 6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <span style={{ fontSize: '0.62rem' }}>{filterMaster ? '✓' : '○'}</span>
+                      <span>Master</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!filterMaster && filterYuki) {
+                          setFilterMaster(true);
+                        } else {
+                          setFilterYuki(!filterYuki);
+                        }
+                      }}
+                      title="Filter messages sent by Yuki AI (Assistant)"
+                      style={{
+                        background: filterYuki ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                        border: filterYuki ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '10px',
+                        color: filterYuki ? '#38bdf8' : '#64748b',
+                        fontSize: '0.58rem',
+                        fontWeight: 600,
+                        padding: '1px 6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <span style={{ fontSize: '0.62rem' }}>{filterYuki ? '✓' : '○'}</span>
+                      <span>Yuki AI</span>
+                    </button>
+                  </div>
+
+                  {/* Date Sort Toggle: Newest vs Oldest */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSearchSortOrder(searchSortOrder === 'newest' ? 'oldest' : 'newest')}
+                      title={searchSortOrder === 'newest' ? "Sort order: Newest first (Click to sort Oldest first)" : "Sort order: Oldest first (Click to sort Newest first)"}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                        borderRadius: '10px',
+                        color: '#cbd5e1',
+                        fontSize: '0.58rem',
+                        fontWeight: 600,
+                        padding: '1px 6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '2px',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <span>{searchSortOrder === 'newest' ? '↓ Newest' : '↑ Oldest'}</span>
+                    </button>
+
+                    {(!filterMaster || !filterYuki) && (
+                      <button
+                        type="button"
+                        onClick={() => { setFilterMaster(true); setFilterYuki(true); }}
+                        title="Reset filter to all speakers"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#94a3b8',
+                          fontSize: '0.56rem',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          padding: '0'
+                        }}
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Sidebar Content: Search Results OR Hierarchical Archive Tree */}
@@ -1908,7 +2132,9 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', paddingLeft: '4px', paddingRight: '4px' }}>
                     <span style={{ fontSize: '0.66rem', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                      Search Results
+                      Search Results {exactMatch && <span style={{ color: '#a78bfa', textTransform: 'none', fontSize: '0.58rem', fontWeight: 600 }}>(Exact)</span>}
+                      {filterMaster && !filterYuki && <span style={{ color: '#c4b5fd', textTransform: 'none', fontSize: '0.58rem', fontWeight: 600 }}> [Master]</span>}
+                      {!filterMaster && filterYuki && <span style={{ color: '#38bdf8', textTransform: 'none', fontSize: '0.58rem', fontWeight: 600 }}> [Yuki AI]</span>}
                     </span>
                     {isSearching ? (
                       <RefreshCw style={{ width: '11px', height: '11px', color: '#38bdf8', animation: 'spin 1s linear infinite' }} />
@@ -1921,7 +2147,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 
                   {!isSearching && searchResults.length === 0 ? (
                     <div style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic', padding: '12px 6px', textAlign: 'center' }}>
-                      No messages found for "{searchQuery}"
+                      No messages found for "{searchQuery}" {exactMatch && '(Exact Word Match)'}
                     </div>
                   ) : (
                     searchResults.map((res) => {
@@ -1942,7 +2168,10 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                         >
                           {/* Session Title Header Card */}
                           <div
-                            onClick={() => handleSelectSession(res.session_id, res.matches && res.matches[0] ? res.matches[0].id : null)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectSession(res.session_id, res.matches && res.matches[0] ? res.matches[0].id : null);
+                            }}
                             style={{
                               display: 'flex',
                               alignItems: 'center',
@@ -1965,7 +2194,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                   whiteSpace: 'nowrap'
                                 }}
                               >
-                                {renderHighlightedText(res.title, searchQuery)}
+                                {renderHighlightedText(res.title, searchQuery, exactMatch)}
                               </span>
                             </div>
                             <span style={{ fontSize: '0.58rem', color: '#94a3b8', flexShrink: 0 }}>
@@ -1981,7 +2210,10 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                 return (
                                   <div
                                     key={m.id}
-                                    onClick={() => handleSelectSession(res.session_id, m.id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSelectSession(res.session_id, m.id);
+                                    }}
                                     title="Click to scroll to this message in conversation"
                                     style={{
                                       padding: '5px 7px',
@@ -2009,7 +2241,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                                       </span>
                                     </div>
                                     <div style={{ fontSize: '0.66rem', color: '#cbd5e1', lineHeight: '1.35', overflowWrap: 'break-word' }}>
-                                      {renderHighlightedText(m.snippet, searchQuery)}
+                                      {renderHighlightedText(m.snippet, searchQuery, exactMatch)}
                                     </div>
                                   </div>
                                 );

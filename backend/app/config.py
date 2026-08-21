@@ -167,6 +167,9 @@ TTS_VOICE = os.environ.get("TTS_VOICE", "af_sarah")
 TTS_RATE = os.environ.get("TTS_RATE", "auto") # Speed factor (default: auto = mood-driven)
 TTS_DEVICE = os.environ.get("TTS_DEVICE", "auto")  # "auto", "gpu", "cpu"
 TTS_PRELOAD = os.environ.get("TTS_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload TTS model on startup (uses ~250-400 MB extra RAM)
+TTS_GPU_MEM_LIMIT_MB = int(os.environ.get("TTS_GPU_MEM_LIMIT_MB", "512"))  # Max VRAM arena size (MB) for Kokoro ONNX on CUDA
+TTS_IDLE_TIMEOUT = int(os.environ.get("TTS_IDLE_TIMEOUT", "300"))  # seconds before auto-unload when idle
+TTS_AUTO_UNLOAD = os.environ.get("TTS_AUTO_UNLOAD", "false").strip().lower() in ("1", "true", "yes", "on")
 STT_PRELOAD = os.environ.get("STT_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload STT Whisper model on startup
 STT_DEVICE = os.environ.get("STT_DEVICE", "auto")  # "auto", "gpu", "cpu"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
