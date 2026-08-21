@@ -97,7 +97,7 @@ def get_basic_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "generate_image",
-                "description": "Generates a high-resolution image, wallpaper, art piece, or illustration from a detailed text description using the configured Image Generation Model and displays it on the Canvas.",
+                "description": "Generates AI diffusion images using models like FLUX, Imagen, or DALL-E and opens the image in the system's default photo viewer. ONLY use this tool when the user EXPLICITLY asks to 'generate an image' using AI diffusion. For all general requests to draw, create pixel art, design visual cards, or make graphics, use jarvis_html_graphics instead.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -691,7 +691,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_generate_image",
-                "description": "Generates high-resolution AI artwork, photos, wallpapers, scenery, character illustrations, or digital paintings from a text prompt using the image generation engine (FLUX / Imagen / DALL-E) and opens the image in the system's default image viewer. Use this when the user asks to draw, generate, or paint a picture, wallpaper, portrait, or artwork. (For flowcharts, architecture diagrams, and SVG vector charts, use jarvis_html_graphics instead).",
+                "description": "Generates AI diffusion images using image models (FLUX, Imagen, DALL-E) and opens them in the default system photo viewer. ONLY use this tool when the user EXPLICITLY asks to 'generate an image' using AI diffusion. For general requests to draw, make graphics, pixel art, diagrams, visual cards, or illustrations, use jarvis_html_graphics instead.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -769,13 +769,13 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_html_graphics",
-                "description": "Renders vector SVG diagrams, flowcharts, system architecture diagrams, state machines, and interactive HTML5 canvas animations in a borderless floating window. Input must be a raw <svg>...</svg> block or <canvas> with inline <script>. Do NOT use this for AI digital artwork, wallpapers, or photos (use jarvis_generate_image instead). For data graphs/charts, use matplotlib via jarvis_run_python instead.",
+                "description": "Renders interactive HTML/SVG/Canvas visual graphics, drawings, pixel art, diagrams, UI mockups, visual cards, and animations in a floating Canvas window. Supports: (1) Vector SVG markup (<svg>...</svg>); (2) HTML5 <canvas> with inline <script>; (3) Stylized HTML/CSS graphics, pixel art grids, and composite visual displays with embedded web or local images (<img src=\"...\">). Use this tool whenever the user asks to draw, make graphics, create pixel art, design a visual card, or render diagrams.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "svg_or_canvas": {
                             "type": "string",
-                            "description": "Raw SVG markup (<svg>...</svg>) or a <canvas> element with inline <script> that draws to it. Self-contained, no external imports."
+                            "description": "Raw SVG markup (<svg>...</svg>), HTML5 <canvas> element with inline <script>, or a styled HTML/CSS graphics block with optional embedded <img> elements."
                         }
                     },
                     "required": ["svg_or_canvas"]
