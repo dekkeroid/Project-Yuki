@@ -123,6 +123,10 @@ class MemoryManager:
                 "llm_vision_model": "",
                 "llm_image_gen_model": "",
                 "use_free_image_gen": False,
+                "image_gen_provider": "pollinations",
+                "huggingface_api_key": "",
+                "stable_horde_api_key": "0000000000",
+                "stable_horde_model": "Pony Diffusion V6 XL",
                 "user_country": "Auto",
                 "allow_voice_barge_in": True,
                 "barge_in_sensitivity": 1.0
@@ -199,6 +203,10 @@ class MemoryManager:
                 config.LLM_VISION_MODEL = data["settings"].get("llm_vision_model", getattr(config, "LLM_VISION_MODEL", ""))
                 config.LLM_IMAGE_GEN_MODEL = data["settings"].get("llm_image_gen_model", getattr(config, "LLM_IMAGE_GEN_MODEL", ""))
                 config.USE_FREE_IMAGE_GEN = bool(data["settings"].get("use_free_image_gen", getattr(config, "USE_FREE_IMAGE_GEN", False)))
+                config.IMAGE_GEN_PROVIDER = str(data["settings"].get("image_gen_provider", getattr(config, "IMAGE_GEN_PROVIDER", "pollinations"))).strip().lower()
+                config.HUGGINGFACE_API_KEY = str(data["settings"].get("huggingface_api_key", getattr(config, "HUGGINGFACE_API_KEY", ""))).strip()
+                config.STABLE_HORDE_API_KEY = str(data["settings"].get("stable_horde_api_key", getattr(config, "STABLE_HORDE_API_KEY", "0000000000"))).strip()
+                config.STABLE_HORDE_MODEL = str(data["settings"].get("stable_horde_model", getattr(config, "STABLE_HORDE_MODEL", "Pony Diffusion V6 XL"))).strip()
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
                 
                 # IMPORTANT FIX FOR PROD:
@@ -475,6 +483,14 @@ class MemoryManager:
             config.LLM_IMAGE_GEN_MODEL = str(value).strip()
         elif key == "use_free_image_gen":
             config.USE_FREE_IMAGE_GEN = bool(value)
+        elif key == "image_gen_provider":
+            config.IMAGE_GEN_PROVIDER = str(value).strip().lower()
+        elif key == "huggingface_api_key":
+            config.HUGGINGFACE_API_KEY = str(value).strip()
+        elif key == "stable_horde_api_key":
+            config.STABLE_HORDE_API_KEY = str(value).strip()
+        elif key == "stable_horde_model":
+            config.STABLE_HORDE_MODEL = str(value).strip()
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

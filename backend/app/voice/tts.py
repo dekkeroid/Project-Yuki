@@ -61,13 +61,15 @@ def _ensure_model_files():
 
 # Lazy-loaded Kokoro instance
 _kokoro_instance = None
-_kokoro_lock = threading.Lock()
+_kokoro_lock = threading.RLock()
 _last_tts_request_time = 0.0
 _kokoro_using_gpu = False
+_tts_used_since_load = False
 
 def update_last_tts_time():
-    global _last_tts_request_time
+    global _last_tts_request_time, _tts_used_since_load
     _last_tts_request_time = time.time()
+    _tts_used_since_load = True
 
 def get_last_tts_time() -> float:
     return _last_tts_request_time
@@ -75,8 +77,36 @@ def get_last_tts_time() -> float:
 def is_kokoro_on_gpu() -> bool:
     return _kokoro_using_gpu and _kokoro_instance is not None
 
+def has_tts_been_used_since_load() -> bool:
+    return _tts_used_since_load
+
+def recycle_kokoro_if_idle(idle_threshold: float = 60.0, force: bool = False):
+    """
+    If Kokoro was used to synthesize speech in this cycle and has been idle for >= 60 seconds (or forced),
+    unload the old session to flush any accumulated ONNX CUDA memory/arena, then reload and warm it up
+    so it's clean, fresh, and ready for instant <100ms response without recurring loops.
+    """
+    global _kokoro_instance, _kokoro_using_gpu, _tts_used_since_load
+    with _kokoro_lock:
+        if _kokoro_instance is None:
+            return
+        idle_time = time.time() - _last_tts_request_time
+        # Only recycle if speech was actually produced since last load, AND it's been idle >= threshold
+        if force or (_tts_used_since_load and idle_time >= idle_threshold):
+            print(f"[TTS] Recycling Kokoro session after speech use (idle for {int(idle_time)}s) to flush accumulated VRAM arena...")
+            _kokoro_instance = None
+            _kokoro_using_gpu = False
+            _tts_used_since_load = False
+            import gc
+            gc.collect()
+            try:
+                get_kokoro()
+                print("[TTS] Kokoro cleanly reloaded and warmed up for next turn.")
+            except Exception as e:
+                print(f"[TTS] Warning during Kokoro warm reload: {e}")
+
 def unload_kokoro_if_idle(force: bool = False):
-    global _kokoro_instance, _kokoro_using_gpu
+    global _kokoro_instance, _kokoro_using_gpu, _tts_used_since_load
     with _kokoro_lock:
         if _kokoro_instance is None:
             return
@@ -87,15 +117,17 @@ def unload_kokoro_if_idle(force: bool = False):
             print(f"[TTS] Kokoro model unloaded ({'forced by memory pressure' if force else f'idle for {int(idle_time)}s'}).")
             _kokoro_instance = None
             _kokoro_using_gpu = False
+            _tts_used_since_load = False
             import gc
             gc.collect()
 
 def reset_kokoro():
     """Clear the cached Kokoro instance so the next call re-initializes with current config."""
-    global _kokoro_instance, _kokoro_using_gpu
+    global _kokoro_instance, _kokoro_using_gpu, _tts_used_since_load
     with _kokoro_lock:
         _kokoro_instance = None
         _kokoro_using_gpu = False
+        _tts_used_since_load = False
     print("[TTS] Kokoro instance cleared. Will re-initialize on next speech request.")
 
 async def get_kokoro_async() -> "Kokoro":
@@ -151,7 +183,8 @@ def get_kokoro() -> "Kokoro":
             session = _build_session(["CPUExecutionProvider"])
             _kokoro_instance = Kokoro.from_session(session, str(VOICES_PATH))
             _kokoro_using_gpu = False
-            update_last_tts_time()
+            _tts_used_since_load = False
+            _last_tts_request_time = time.time()
             print(f"[TTS] Model loaded on CPU. Active providers: {session.get_providers()}")
             _warmup_cpu(_kokoro_instance)
             return _kokoro_instance
@@ -165,11 +198,9 @@ def get_kokoro() -> "Kokoro":
 
         if gpu_provider:
             if gpu_provider == "CUDAExecutionProvider":
-                cuda_mem_limit = getattr(config, "TTS_GPU_MEM_LIMIT_MB", 512) * 1024 * 1024
                 cuda_options = {
                     "device_id": "0",
-                    "gpu_mem_limit": str(cuda_mem_limit),
-                    "arena_extend_strategy": "kSameAsRequested",
+                    "arena_extend_strategy": "kNextPowerOfTwo",
                     "cudnn_conv_algo_search": "HEURISTIC",
                     "do_copy_in_default_stream": "1",
                 }
@@ -193,11 +224,11 @@ def get_kokoro() -> "Kokoro":
                     print("[TTS] Validating GPU provider with warm-up inference...")
                     t_warm = time.time()
                     kokoro.create("hi", voice="af_sarah", speed=1.0, lang="en-us")
-                    elapsed = int((time.time() - t_warm) * 1000)
-                    print(f"[TTS] {gpu_provider} warm-up OK in {elapsed}ms - GPU is active (VRAM arena capped at {getattr(config, 'TTS_GPU_MEM_LIMIT_MB', 512)}MB).")
                     _kokoro_instance = kokoro
                     _kokoro_using_gpu = True
-                    update_last_tts_time()
+                    _tts_used_since_load = False
+                    _last_tts_request_time = time.time()
+                    print(f"[TTS] {gpu_provider} warm-up OK in {int((time.time() - t_warm)*1000)}ms - GPU is active (dynamic VRAM arena).")
                     return _kokoro_instance
             except Exception as e:
                 if device_pref == "gpu":
@@ -796,5 +827,22 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
         sf.write(audio_buffer, samples, sample_rate, format='WAV')
         return audio_buffer.getvalue()
     except Exception as e:
-        print(f"[TTS] Kokoro Generation Error: {e}")
+        print(f"[TTS] Kokoro Generation Error on GPU session: {e}")
+        # If GPU failed (e.g. temporary VRAM pressure or allocation spike), attempt CPU fallback
+        if _kokoro_using_gpu:
+            try:
+                print("[TTS] Attempting instant CPU fallback synthesis for text chunk...")
+                import onnxruntime as ort
+                from kokoro_onnx import Kokoro
+                session_cpu = _build_session(["CPUExecutionProvider"])
+                kokoro_cpu = Kokoro.from_session(session_cpu, str(VOICES_PATH))
+                samples, sample_rate = await asyncio.to_thread(
+                    kokoro_cpu.create, text, voice=kokoro_voice, speed=speed_factor, lang=lang_code
+                )
+                audio_buffer = io.BytesIO()
+                sf.write(audio_buffer, samples, sample_rate, format='WAV')
+                print("[TTS] CPU fallback synthesis succeeded!")
+                return audio_buffer.getvalue()
+            except Exception as cpu_err:
+                print(f"[TTS] CPU fallback also failed: {cpu_err}")
         return b""

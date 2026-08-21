@@ -242,18 +242,18 @@ async def _run_memory_optimizer_bg():
         await asyncio.sleep(300)
 
 async def _whisper_idle_monitor_bg():
-    """Background task to specifically monitor Whisper and Kokoro idle time and unload if configured."""
+    """Background task to specifically monitor Whisper and recycle Kokoro idle memory after speech use."""
     while True:
         try:
             if config.WHISPER_AUTO_UNLOAD:
                 from app.voice.stt import unload_whisper_if_idle
                 unload_whisper_if_idle(force=False)
-            if getattr(config, "TTS_AUTO_UNLOAD", False):
-                from app.voice.tts import unload_kokoro_if_idle
-                unload_kokoro_if_idle(force=False)
+            # Recycle Kokoro 60s after speech use: flushes accumulated VRAM arena & immediately reloads warm
+            from app.voice.tts import recycle_kokoro_if_idle
+            recycle_kokoro_if_idle(idle_threshold=60.0)
         except Exception:
             pass
-        await asyncio.sleep(60)
+        await asyncio.sleep(15)
 
 async def _warmup_whisper():
     """Background: preload the faster-whisper model so the first STT use is instant."""
@@ -1214,6 +1214,10 @@ class SettingsUpdateRequest(BaseModel):
     llm_vision_model: Optional[str] = None
     llm_image_gen_model: Optional[str] = None
     use_free_image_gen: Optional[bool] = None
+    image_gen_provider: Optional[str] = None
+    huggingface_api_key: Optional[str] = None
+    stable_horde_api_key: Optional[str] = None
+    stable_horde_model: Optional[str] = None
     always_included_tools: Optional[List[str]] = None
     blocked_tools: Optional[List[str]] = None
     included_coder_tools: Optional[List[str]] = None
@@ -1733,6 +1737,43 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.use_free_image_gen is not None:
         config.USE_FREE_IMAGE_GEN = bool(req.use_free_image_gen)
         memory_manager.update_setting("use_free_image_gen", bool(req.use_free_image_gen))
+
+    if req.image_gen_provider is not None:
+        prov = req.image_gen_provider.strip().lower()
+        config.IMAGE_GEN_PROVIDER = prov
+        memory_manager.update_setting("image_gen_provider", prov)
+
+    if req.huggingface_api_key is not None:
+        from app.utils.security import encrypt_api_key, decrypt_api_key
+        key_val = req.huggingface_api_key.strip()
+        if key_val:
+            if "..." in key_val and not key_val.startswith("enc_v1:"):
+                pass  # masked
+            else:
+                decrypted = decrypt_api_key(key_val) if key_val.startswith("enc_v1:") else key_val
+                config.HUGGINGFACE_API_KEY = decrypted
+                memory_manager.update_setting("huggingface_api_key", encrypt_api_key(decrypted))
+        else:
+            config.HUGGINGFACE_API_KEY = ""
+            memory_manager.update_setting("huggingface_api_key", "")
+
+    if req.stable_horde_api_key is not None:
+        from app.utils.security import encrypt_api_key, decrypt_api_key
+        key_val = req.stable_horde_api_key.strip()
+        if key_val:
+            if "..." in key_val and not key_val.startswith("enc_v1:"):
+                pass
+            else:
+                decrypted = decrypt_api_key(key_val) if key_val.startswith("enc_v1:") else key_val
+                config.STABLE_HORDE_API_KEY = decrypted
+                memory_manager.update_setting("stable_horde_api_key", encrypt_api_key(decrypted))
+        else:
+            config.STABLE_HORDE_API_KEY = "0000000000"
+            memory_manager.update_setting("stable_horde_api_key", "0000000000")
+
+    if req.stable_horde_model is not None:
+        config.STABLE_HORDE_MODEL = req.stable_horde_model.strip()
+        memory_manager.update_setting("stable_horde_model", req.stable_horde_model.strip())
 
     if req.always_included_tools is not None:
         seen = set()

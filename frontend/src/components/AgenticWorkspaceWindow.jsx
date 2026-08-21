@@ -5066,29 +5066,29 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                           {/* Role 5: Image Generation Model */}
                           <div style={{ background: 'rgba(9, 13, 22, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(236, 72, 153, 0.25)' }}>
                             <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#ec4899', display: 'block', marginBottom: '2px' }}>
-                              5. Image Generation Model (Tool Model)
+                              5. Image Generation Engine & Provider
                             </label>
                             <div style={{ fontSize: '0.66rem', color: '#94a3b8', marginBottom: '6px' }}>
-                              Target model used by <code style={{ color: '#ec4899' }}>jarvis_generate_image</code> tool to generate high-resolution art & wallpapers on Canvas.
+                              Provider used by <code style={{ color: '#ec4899' }}>jarvis_generate_image</code> to render art, wallpapers, and anime.
                             </div>
-                            <SearchableModelSelect
-                              value={activeSettings.llm_image_gen_model || ''}
-                              onChange={(val) => handleUpdateSetting({ llm_image_gen_model: val })}
-                              options={allNames}
-                              placeholder="Search or select Image Generation model..."
-                            />
-                            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <input
-                                type="checkbox"
-                                id="ws_use_free_image_gen"
-                                checked={!!activeSettings.use_free_image_gen}
-                                onChange={(e) => handleUpdateSetting('use_free_image_gen', e.target.checked)}
-                                style={{ accentColor: '#ec4899', width: '13px', height: '13px', cursor: 'pointer' }}
+                            <select
+                              value={activeSettings.image_gen_provider || 'pollinations'}
+                              onChange={(e) => handleUpdateSetting({ image_gen_provider: e.target.value })}
+                              style={{ width: '100%', padding: '6px 8px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'white', fontSize: '0.74rem', outline: 'none', marginBottom: '6px' }}
+                            >
+                              <option value="pollinations" style={{ background: '#0b0813' }}>🌸 Free FLUX.1 Engine (Pollinations — Zero Config)</option>
+                              <option value="huggingface" style={{ background: '#0b0813' }}>🤗 Hugging Face (FLUX.1-dev / SDXL)</option>
+                              <option value="stable_horde" style={{ background: '#0b0813' }}>🐎 Stable Horde (Pony XL / Illustrious / Uncensored)</option>
+                              <option value="custom" style={{ background: '#0b0813' }}>⚡ Configured LLM / OpenAI Image Endpoint</option>
+                            </select>
+                            {(activeSettings.image_gen_provider === 'custom') && (
+                              <SearchableModelSelect
+                                value={activeSettings.llm_image_gen_model || ''}
+                                onChange={(val) => handleUpdateSetting({ llm_image_gen_model: val })}
+                                options={allNames}
+                                placeholder="Search or select Image Generation model..."
                               />
-                              <label htmlFor="ws_use_free_image_gen" style={{ fontSize: '0.66rem', color: '#cbd5e1', cursor: 'pointer' }}>
-                                Always use Free FLUX.1 Engine (Override Selected Model)
-                              </label>
-                            </div>
+                            )}
                           </div>
                         </div>
                       );
