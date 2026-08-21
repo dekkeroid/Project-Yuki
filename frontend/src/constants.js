@@ -185,19 +185,21 @@ export const BATTERY_PLUG_RESPONSES = {
 import { ANIMATIONS } from './animationsRegistry';
 
 export const STATIC_COMMANDS = [
-  { cmd: '/pcstat',       description: 'Show live PC stats (CPU, RAM, GPU...)' },
-  { cmd: '/open',         description: 'Search and open any file' },
-  { cmd: '/o',            description: 'Search and open any file (Alias for /open)' },
-  { cmd: '/play',         description: 'Search and play a video or song' },
-  { cmd: '/p',            description: 'Search and play a video or song (Alias for /play)' },
-  { cmd: '/read',         description: 'Search and read document content' },
-  { cmd: '/sum',          description: 'Search and summarize document content' },
-  { cmd: '/wink',         description: 'Yuki winks at you' },
-  { cmd: '/angry',        description: 'Yuki pouts angrily' },
-  { cmd: '/sad',          description: 'Yuki sighs sadly' },
-  { cmd: '/surprised',    description: 'Yuki looks surprised' },
-  { cmd: '/relaxed',      description: 'Yuki smiles relaxedly' },
-  { cmd: '/neutral',      description: 'Reset expression to neutral' },
+  { cmd: '/pcstat',        description: 'Show live PC stats (CPU, RAM, GPU...)' },
+  { cmd: '/boost-ram',     description: 'Deep RAM boost (optimizes Yuki + system background processes)' },
+  { cmd: '/self-optimize', description: 'Trim Yuki working set & garbage collect (self-only)' },
+  { cmd: '/open',          description: 'Search and open any file' },
+  { cmd: '/o',             description: 'Search and open any file (Alias for /open)' },
+  { cmd: '/play',          description: 'Search and play a video or song' },
+  { cmd: '/p',             description: 'Search and play a video or song (Alias for /play)' },
+  { cmd: '/read',          description: 'Search and read document content' },
+  { cmd: '/sum',           description: 'Search and summarize document content' },
+  { cmd: '/wink',          description: 'Yuki winks at you' },
+  { cmd: '/angry',         description: 'Yuki pouts angrily' },
+  { cmd: '/sad',           description: 'Yuki sighs sadly' },
+  { cmd: '/surprised',     description: 'Yuki looks surprised' },
+  { cmd: '/relaxed',       description: 'Yuki smiles relaxedly' },
+  { cmd: '/neutral',       description: 'Reset expression to neutral' },
 ];
 
 export const SLASH_COMMANDS = [
@@ -326,6 +328,178 @@ export const convertLatexToSpokenText = (text) => {
   return str;
 };
 
+const ONES = [
+  '', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+  'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
+  'seventeen', 'eighteen', 'nineteen'
+];
+const TENS = [
+  '', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'
+];
+const DIGIT_WORDS = {
+  '0': 'zero', '1': 'one', '2': 'two', '3': 'three', '4': 'four',
+  '5': 'five', '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine'
+};
+
+const below1000ToWords = (n) => {
+  const res = [];
+  if (n >= 100) {
+    res.push(ONES[Math.floor(n / 100)] + ' hundred');
+    n %= 100;
+  }
+  if (n >= 20) {
+    const t = TENS[Math.floor(n / 10)];
+    const rem = n % 10;
+    if (rem > 0) {
+      res.push(`${t}-${ONES[rem]}`);
+    } else {
+      res.push(t);
+    }
+  } else if (n > 0) {
+    res.push(ONES[n]);
+  }
+  return res.join(' ');
+};
+
+export const intToWordsInternational = (n) => {
+  if (n === 0 || n === 0n) return 'zero';
+  let num;
+  try {
+    num = typeof n === 'bigint' ? n : BigInt(n);
+  } catch {
+    return String(n);
+  }
+  const chunks = [
+    [10n ** 18n, 'quintillion'],
+    [10n ** 15n, 'quadrillion'],
+    [10n ** 12n, 'trillion'],
+    [10n ** 9n, 'billion'],
+    [10n ** 6n, 'million'],
+    [10n ** 3n, 'thousand'],
+    [1n, '']
+  ];
+  const parts = [];
+  let rem = num;
+  for (const [unitVal, unitName] of chunks) {
+    if (rem >= unitVal) {
+      const c = Number(rem / unitVal);
+      rem = rem % unitVal;
+      const words = below1000ToWords(c);
+      if (words) {
+        if (unitName) {
+          parts.push(`${words} ${unitName}`);
+        } else {
+          parts.push(words);
+        }
+      }
+    }
+  }
+  return parts.join(' ');
+};
+
+export const intToWordsIndian = (n) => {
+  if (n === 0 || n === 0n) return 'zero';
+  let num;
+  try {
+    num = typeof n === 'bigint' ? n : BigInt(n);
+  } catch {
+    return String(n);
+  }
+  const chunks = [
+    [10n ** 17n, 'shankh'],
+    [10n ** 15n, 'padma'],
+    [10n ** 13n, 'neel'],
+    [10n ** 11n, 'kharab'],
+    [10n ** 9n, 'arab'],
+    [10n ** 7n, 'crore'],
+    [10n ** 5n, 'lakh'],
+    [10n ** 3n, 'thousand'],
+    [1n, '']
+  ];
+  const parts = [];
+  let rem = num;
+  for (const [unitVal, unitName] of chunks) {
+    if (rem >= unitVal) {
+      const c = Number(rem / unitVal);
+      rem = rem % unitVal;
+      const words = below1000ToWords(c);
+      if (words) {
+        if (unitName) {
+          parts.push(`${words} ${unitName}`);
+        } else {
+          parts.push(words);
+        }
+      }
+    }
+  }
+  return parts.join(' ');
+};
+
+export const normalizeNumbersForSpeech = (text) => {
+  if (!text) return '';
+
+  // Currency symbols conversion before number parsing
+  let res = text
+    .replace(/₹([\d,]+(?:\.\d+)?)/g, '$1 rupees')
+    .replace(/\$([\d,]+(?:\.\d+)?)/g, '$1 dollars')
+    .replace(/£([\d,]+(?:\.\d+)?)/g, '$1 pounds')
+    .replace(/€([\d,]+(?:\.\d+)?)/g, '$1 euros')
+    .replace(/¥([\d,]+(?:\.\d+)?)/g, '$1 yen')
+    .replace(/\b(?:Rs\.?|INR)\s*([\d,]+(?:\.\d+)?)/gi, '$1 rupees');
+
+  // 1. Indian formatted numbers (e.g. 5,01,123 or 60,23,123 or 1,50,00,000)
+  res = res.replace(/\b(\d{1,2}(?:,\d{2})+,\d{3})(?:\.(\d+))?\b/g, (match, intStr, decPart) => {
+    try {
+      const cleanInt = intStr.replace(/,/g, '');
+      let spoken = intToWordsIndian(BigInt(cleanInt));
+      if (decPart) {
+        const decSpoken = decPart.split('').map(d => DIGIT_WORDS[d] || d).join(' ');
+        spoken = `${spoken} point ${decSpoken}`;
+      }
+      return spoken;
+    } catch {
+      return match;
+    }
+  });
+
+  // 2. International formatted numbers (e.g. 5,231,232 or 1,000,000)
+  res = res.replace(/\b(\d{1,3}(?:,\d{3})+)(?:\.(\d+))?\b/g, (match, intStr, decPart) => {
+    try {
+      const cleanInt = intStr.replace(/,/g, '');
+      let spoken = intToWordsInternational(BigInt(cleanInt));
+      if (decPart) {
+        const decSpoken = decPart.split('').map(d => DIGIT_WORDS[d] || d).join(' ');
+        spoken = `${spoken} point ${decSpoken}`;
+      }
+      return spoken;
+    } catch {
+      return match;
+    }
+  });
+
+  // 3. Standalone decimals (e.g. 12.34 or 500000.5)
+  res = res.replace(/(?<![\d.])\b(\d+)\.(\d+)\b(?![\d.])/g, (match, intPart, decPart) => {
+    try {
+      let spoken = intToWordsInternational(BigInt(intPart));
+      const decSpoken = decPart.split('').map(d => DIGIT_WORDS[d] || d).join(' ');
+      return `${spoken} point ${decSpoken}`;
+    } catch {
+      return match;
+    }
+  });
+
+  // 4. Standalone unformatted integers (e.g. 500000, 100, 42)
+  res = res.replace(/(?<![\d:/\-])\b(\d{1,18})\b(?![\d:/\-])/g, (match, intStr) => {
+    try {
+      return intToWordsInternational(BigInt(intStr));
+    } catch {
+      return match;
+    }
+  });
+
+  return res;
+};
+
 export const cleanTextForTTS = (text) => {
   if (!text) return '';
 
@@ -364,10 +538,13 @@ export const cleanTextForTTS = (text) => {
   // 3. Remove backticks but keep their inner text
   clean = clean.replace(/`/g, '');
 
-  // 4. Remove emojis
+  // 4. Normalize numbers to spoken words (Indian & International numbering formats)
+  clean = normalizeNumbersForSpeech(clean);
+
+  // 5. Remove emojis
   clean = clean.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2702}-\u{27B0}\u{24C2}-\u{1F251}\u{2600}-\u{27BF}]/gu, '');
 
-  // 5. Replace multiple spaces with a single space
+  // 6. Replace multiple spaces with a single space
   return clean.replace(/\s+/g, ' ').trim();
 };
 

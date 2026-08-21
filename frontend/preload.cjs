@@ -117,8 +117,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openSettingsWindow: () => {
     ipcRenderer.send('open-settings-window');
   },
-  openChatWindow: () => {
-    ipcRenderer.send('open-chat-window');
+  openChatWindow: (payload) => {
+    ipcRenderer.send('open-chat-window', payload);
+  },
+  onOpenFile: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('yuki:open-file', handler);
+    return () => ipcRenderer.removeListener('yuki:open-file', handler);
+  },
+  onOpenFolder: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('yuki:open-folder', handler);
+    return () => ipcRenderer.removeListener('yuki:open-folder', handler);
   },
   openAlarmWindow: (alarmData) => {
     ipcRenderer.send('open-alarm-window', alarmData);

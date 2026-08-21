@@ -93,9 +93,12 @@ $frontendChanged = Is-AnyNewer (Join-Path $installDir 'resources\frontend\dist\i
 $electronSources = @(Get-Item `
     "$frontendDir\main.electron.cjs", `
     "$frontendDir\preload.cjs", `
+    "$frontendDir\package.json", `
+    "$frontendDir\package-lock.json", `
     "$frontendDir\electron-builder.yml", `
     "$frontendDir\installer.iss", `
-    "$frontendDir\icon.ico" -ErrorAction SilentlyContinue)
+    "$frontendDir\icon.ico", `
+    "$frontendDir\icon.png" -ErrorAction SilentlyContinue)
 $electronChanged = Is-AnyNewer (Join-Path $installDir 'resources\app.asar') $electronSources
 
 # ---------- Preview ----------
@@ -175,6 +178,55 @@ foreach ($r in $rows) {
             }
         }
     }
+
+    if ($r.Name -eq 'Electron shell' -and $isSelected) {
+        $installedAsar = Join-Path $installDir 'resources\app.asar'
+        if (Test-Path $installedAsar) {
+            $changedElectronFiles = Get-NewerFiles $installedAsar $electronSources
+            if ($changedElectronFiles.Count -gt 0) {
+                Write-Host ""
+                Write-Host "  Modified electron files ($($changedElectronFiles.Count)):" -ForegroundColor Cyan
+                $maxToShow = 25
+                $toShow = $changedElectronFiles | Select-Object -First $maxToShow
+                foreach ($f in $toShow) {
+                    $relPath = $f.FullName
+                    if ($relPath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $relPath = $relPath.Substring($root.Length).TrimStart('\', '/')
+                    }
+                    Write-Host "    - $relPath" -ForegroundColor DarkCyan
+                }
+                if ($changedElectronFiles.Count -gt $maxToShow) {
+                    Write-Host "    ... and $($changedElectronFiles.Count - $maxToShow) more file(s)" -ForegroundColor DarkGray
+                }
+                Write-Host ""
+            }
+            $needsFullElectronRebuild = $false
+            if ($changedElectronFiles) {
+                $criticalElectronFiles = @('electron-builder.yml', 'installer.iss', 'package.json', 'package-lock.json', 'icon.ico')
+                $changedCriticalElectron = @($changedElectronFiles | Where-Object { 
+                    $fileName = Split-Path $_.FullName -Leaf
+                    $criticalElectronFiles -contains $fileName
+                })
+                if ($changedCriticalElectron.Count -gt 0) {
+                    $needsFullElectronRebuild = $true
+                    Write-Host "  [WARNING] The following critical electron build files have changed:" -ForegroundColor Red
+                    foreach ($c in $changedCriticalElectron) {
+                        Write-Host "    - $(Split-Path $c.FullName -Leaf)" -ForegroundColor Red
+                    }
+                    Write-Host "  Fast Sync CANNOT apply changes to these files (requires a Full Rebuild)." -ForegroundColor Red
+                    Write-Host ""
+                }
+            }
+            Write-Host "  Note: Fast Sync packs main.electron.cjs, preload.cjs, and icons into app.asar instantly. Choose 'No' below for a Full Rebuild." -ForegroundColor Yellow
+            $defaultFastSyncElectron = if ($needsFullElectronRebuild) { $false } else { $true }
+            $fastSyncElectron = Confirm-Yes "  Use Fast Sync for Electron Shell? (Choose 'No' for a Full Rebuild)" $defaultFastSyncElectron
+            if ($fastSyncElectron) {
+                $env:YUKI_ELECTRON_FULL_REBUILD = ''
+            } else {
+                $env:YUKI_ELECTRON_FULL_REBUILD = '1'
+            }
+        }
+    }
 }
 
 $selected = @($rows | Where-Object { $_.Selected })
@@ -198,7 +250,14 @@ foreach ($r in $selected) {
                 "pyinstaller yuki-backend.spec, then copy backend (full rebuild)"
             }
         }
-        'Electron shell' { "npm run build:electron, then copy shell + asar" }
+        'Electron shell' { 
+            $installedAsar = Join-Path $installDir 'resources\app.asar'
+            if ((Test-Path $installedAsar) -and (-not $env:YUKI_ELECTRON_FULL_REBUILD)) {
+                "Fast sync app.asar (sub-second)"
+            } else {
+                "npm run build:electron, then copy shell + asar (full rebuild)"
+            }
+        }
     }
     Write-Host ("  - {0}: {1}" -f $r.Name, $step)
 }
@@ -302,20 +361,57 @@ if ($selBackend) {
 
 if ($selElectron) {
     Write-Host ""
-    Write-Host "--- Electron shell: repacking ---"
-    Push-Location "$root\$frontendDir"
-    npm run build:electron
-    if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host ""; Write-Host "BUILD FAILED."; exit 1 }
-    Pop-Location
+    $installedAsar = Join-Path $installDir 'resources\app.asar'
+    if ((Test-Path $installedAsar) -and (-not $env:YUKI_ELECTRON_FULL_REBUILD)) {
+        Write-Host "--- Electron shell: Fast Syncing app.asar ---"
+        $tempDir = Join-Path $root "$frontendDir\release\fast-asar-temp"
+        if (Test-Path $tempDir) { Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Path $tempDir | Out-Null
+        
+        Copy-Item "$root\$frontendDir\main.electron.cjs" $tempDir
+        Copy-Item "$root\$frontendDir\preload.cjs" $tempDir
+        Copy-Item "$root\$frontendDir\package.json" $tempDir
+        if (Test-Path "$root\$frontendDir\icon.png") {
+            Copy-Item "$root\$frontendDir\icon.png" $tempDir
+        }
+        if (Test-Path "$root\$frontendDir\public\icon.png") {
+            $publicDir = Join-Path $tempDir "public"
+            New-Item -ItemType Directory -Path $publicDir | Out-Null
+            Copy-Item "$root\$frontendDir\public\icon.png" $publicDir
+        }
+        if (Test-Path "$root\$frontendDir\dist") {
+            robocopy "$root\$frontendDir\dist" (Join-Path $tempDir "dist") /E /NFL /NDL /NJH /NJS /XD models
+        }
+        
+        Push-Location "$root\$frontendDir"
+        npx asar pack $tempDir $installedAsar
+        $packCode = $LASTEXITCODE
+        Pop-Location
+        
+        Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        
+        if ($packCode -ne 0) {
+            Write-Host ""
+            Write-Host "FAST ASAR PACK FAILED."
+            exit 1
+        }
+        Write-Host "[OK] Electron shell (app.asar) fast-synced in ~1s!"
+    } else {
+        Write-Host "--- Electron shell: repacking (full builder) ---"
+        Push-Location "$root\$frontendDir"
+        npm run build:electron
+        if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host ""; Write-Host "BUILD FAILED."; exit 1 }
+        Pop-Location
 
-    Write-Host "--- Electron shell: copying (shell + asar, excluding backend/frontend) ---"
-    $src = "$root\$frontendDir\release\win-unpacked"
-    $copyArgs = @('/E', '/NFL', '/NDL', '/NJH', '/NJS', '/XF', '.env')
-    foreach ($d in @("$src\resources\backend", "$src\resources\frontend\dist")) {
-        $copyArgs += @('/XD', $d)
+        Write-Host "--- Electron shell: copying (shell + asar, excluding backend/frontend) ---"
+        $src = "$root\$frontendDir\release\win-unpacked"
+        $copyArgs = @('/E', '/NFL', '/NDL', '/NJH', '/NJS', '/XF', '.env')
+        foreach ($d in @("$src\resources\backend", "$src\resources\frontend\dist")) {
+            $copyArgs += @('/XD', $d)
+        }
+        $rc = robocopy $src $installDir @copyArgs
+        if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
     }
-    $rc = robocopy $src $installDir @copyArgs
-    if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
 }
 
 Write-Host ""

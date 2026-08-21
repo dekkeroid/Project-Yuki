@@ -1836,15 +1836,62 @@ def get_detailed_stats() -> dict:
 
     try:
         disk = psutil.disk_usage('C:\\')
+        drives_list = []
+        import ctypes
+        DRIVE_REMOVABLE = 2
+        for p in psutil.disk_partitions(all=False):
+            mount = p.mountpoint
+            try:
+                du = psutil.disk_usage(mount)
+                is_removable = False
+                if sys.platform == "win32":
+                    try:
+                        dtype = ctypes.windll.kernel32.GetDriveTypeW(mount)
+                        is_removable = (dtype == DRIVE_REMOVABLE)
+                    except Exception:
+                        is_removable = 'removable' in (p.opts or '').lower()
+                else:
+                    is_removable = 'removable' in (p.opts or '').lower() or '/media/' in mount or '/Volumes/' in mount
+
+                drives_list.append({
+                    'mountpoint': mount,
+                    'device': p.device,
+                    'fstype': p.fstype,
+                    'opts': p.opts,
+                    'is_removable': is_removable,
+                    'total_gb': round(du.total / (1024**3), 1),
+                    'free_gb': round(du.free / (1024**3), 1),
+                    'used_gb': round(du.used / (1024**3), 1),
+                    'usage_percent': round(du.percent, 1)
+                })
+            except Exception:
+                drives_list.append({
+                    'mountpoint': mount,
+                    'device': p.device,
+                    'fstype': p.fstype,
+                    'opts': p.opts,
+                    'is_removable': False,
+                    'total_gb': 0.0,
+                    'free_gb': 0.0,
+                    'used_gb': 0.0,
+                    'usage_percent': 0.0
+                })
+
         stats['disk'] = {
             'total_gb': round(disk.total / (1024**3), 2),
             'used_gb': round(disk.used / (1024**3), 2),
             'free_gb': round(disk.free / (1024**3), 2),
             'usage_percent': disk.percent,
-            'drives_count': len(psutil.disk_partitions(all=False))
+            'drives_count': len(drives_list),
+            'drives': drives_list
         }
     except Exception as e:
-        stats['disk'] = {'error': str(e), 'drives_count': 1}
+        stats['disk'] = {'error': str(e), 'drives_count': 1, 'drives': []}
+
+    try:
+        stats['devices'] = _get_connected_pnp_devices()
+    except Exception as e:
+        stats['devices'] = []
 
     try:
         boot_time = psutil.boot_time()
@@ -1859,3 +1906,80 @@ def get_detailed_stats() -> dict:
         stats['uptime'] = {'error': str(e)}
 
     return stats
+
+
+_CACHED_PNP_DEVICES = None
+_CACHED_PNP_TIME = 0.0
+
+
+def _get_connected_pnp_devices():
+    global _CACHED_PNP_DEVICES, _CACHED_PNP_TIME
+    now = time.time()
+    if _CACHED_PNP_DEVICES is not None and (now - _CACHED_PNP_TIME) < 10.0:
+        return _CACHED_PNP_DEVICES
+
+    if sys.platform != "win32":
+        return []
+
+    try:
+        ps_code = """
+$classes = @('Media','AudioEndpoint','Camera','Image','WPD','XboxComposite','HIDClass','Bluetooth')
+Get-PnpDevice -PresentOnly | Where-Object { $classes -contains $_.Class -and $_.FriendlyName } | Select-Object FriendlyName, Class, InstanceId | ConvertTo-Json -Compress
+"""
+        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_code]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if proc.returncode == 0 and proc.stdout.strip():
+            import json
+            raw_data = json.loads(proc.stdout.strip())
+            if isinstance(raw_data, dict):
+                raw_data = [raw_data]
+            devices = []
+            for item in raw_data:
+                name = item.get("FriendlyName")
+                pnp_class = item.get("Class")
+                inst_id = item.get("InstanceId")
+                if not name or not inst_id:
+                    continue
+                dev_type = _classify_pnp_device(name, pnp_class)
+                devices.append({
+                    "name": name,
+                    "class": pnp_class,
+                    "type": dev_type,
+                    "id": inst_id
+                })
+            _CACHED_PNP_DEVICES = devices
+            _CACHED_PNP_TIME = now
+            return devices
+    except Exception:
+        pass
+
+    return _CACHED_PNP_DEVICES or []
+
+
+def _classify_pnp_device(name: str, pnp_class: str = "") -> str:
+    n = (name or "").lower()
+    c = (pnp_class or "").lower()
+
+    # 1. Gamepads / Controllers
+    if any(k in n for k in ["controller", "gamepad", "dualsense", "dualshock", "xbox", "joystick", "8bitdo", "flydigi", "thrustmaster"]) or c == "xboxcomposite":
+        return "gamepad"
+
+    # 2. Drawing Tablets
+    if any(k in n for k in ["wacom", "xp-pen", "huion", "gaomon", "pen tablet", "drawing tablet"]):
+        return "tablet"
+
+    # 3. Webcams / Cameras
+    if any(k in n for k in ["webcam", "brio", "cam link", "c920", "c922", "c930", "hd pro webcam"]) or c in ["camera", "image"]:
+        return "webcam"
+
+    # 4. Phones / Portable Media (WPD)
+    if c == "wpd" or any(k in n for k in ["iphone", "pixel", "galaxy", "redmi", "oneplus", "xperia", "android", "portable device", "lumia", "gopro"]):
+        return "phone"
+
+    # 5. Audio Devices (Mics, Headsets, DACs)
+    if any(k in n for k in ["microphone", "mic", "headset", "headphone", "earphone", "earbuds", "buds", "scarlett", "quadcast", "yeti", "dac", "amplifier", "audio interface", "airpods", "rockerz", "soundbar", "stone 260"]) or c in ["audioendpoint"]:
+        return "audio"
+
+    # 6. Generic Input / HID (mice, keyboards, etc. - ignored from voice spam)
+    return "generic_hid"
+

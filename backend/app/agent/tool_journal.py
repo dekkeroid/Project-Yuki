@@ -87,3 +87,19 @@ def read_journal(turn_id: Optional[str] = None) -> list:
     except Exception as e:
         print(f"[ToolJournal] Failed to read journal: {e}")
     return records
+
+
+def get_recent_tool_names(limit: int = 10) -> list[str]:
+    """Return the most recent unique tool names from the journal in reverse-chronological order."""
+    records = read_journal()
+    seen = set()
+    recent = []
+    for rec in reversed(records):
+        name = rec.get("tool_name")
+        if name and name not in seen:
+            seen.add(name)
+            recent.append(name)
+            if len(recent) >= limit:
+                break
+    return recent
+

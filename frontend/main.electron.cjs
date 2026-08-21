@@ -303,12 +303,16 @@ function createSettingsWindow() {
 
 let chatWorkspaceWindow = null;
 
-function createChatWorkspaceWindow() {
+function createChatWorkspaceWindow(payload = null) {
   if (chatWorkspaceWindow && !chatWorkspaceWindow.isDestroyed()) {
     if (chatWorkspaceWindow.isMinimized()) chatWorkspaceWindow.restore();
-    chatWorkspaceWindow.maximize();
     chatWorkspaceWindow.show();
     chatWorkspaceWindow.focus();
+    if (payload?.openFile) {
+      chatWorkspaceWindow.webContents.send('yuki:open-file', { path: payload.openFile });
+    } else if (payload?.openFolder) {
+      chatWorkspaceWindow.webContents.send('yuki:open-folder', { path: payload.openFolder });
+    }
     return;
   }
 
@@ -318,7 +322,7 @@ function createChatWorkspaceWindow() {
     height: 820,
     minWidth: 800,
     minHeight: 600,
-    title: 'Chat',
+    title: 'Agentic Workspace',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     backgroundColor: '#090d16',
@@ -335,6 +339,11 @@ function createChatWorkspaceWindow() {
       chatWorkspaceWindow.maximize();
       chatWorkspaceWindow.show();
       chatWorkspaceWindow.focus();
+      if (payload?.openFile) {
+        chatWorkspaceWindow.webContents.send('yuki:open-file', { path: payload.openFile });
+      } else if (payload?.openFolder) {
+        chatWorkspaceWindow.webContents.send('yuki:open-folder', { path: payload.openFolder });
+      }
     }
   });
 

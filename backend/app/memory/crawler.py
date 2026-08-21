@@ -508,17 +508,32 @@ def _contains_blacklisted_dir_component(path: str) -> bool:
 
 def _detect_data_drives() -> List[str]:
     """
-    Return a list of non-system data mount points for the current OS.
-    Windows: drive letters D:-Z:  |  macOS: /Volumes/*  |  Linux: /mnt/*, /media/*
+    Return a list of non-system fixed internal data mount points for the current OS.
+    Removable drives (e.g. USB flash drives, memory cards, optical discs) are strictly
+    excluded to prevent ghost records, ejection locks, and USB I/O thrashing.
+    Windows: fixed drive letters D:-Z: (GetDriveTypeW == DRIVE_FIXED)
+    macOS: /Volumes/*
+    Linux: /mnt/*, /media/*
     """
     drives: List[str] = []
     if sys.platform == "win32":
+        import ctypes
+        DRIVE_FIXED = 3
         for letter in string.ascii_uppercase:
             if letter in ("A", "B", "C"):
                 continue
             drive = f"{letter}:\\"
             if os.path.exists(drive):
-                drives.append(drive)
+                try:
+                    drive_type = ctypes.windll.kernel32.GetDriveTypeW(drive)
+                    # Only include internal fixed storage partitions (DRIVE_FIXED = 3).
+                    # Skip DRIVE_REMOVABLE (2), DRIVE_REMOTE (4), DRIVE_CDROM (5), DRIVE_RAMDISK (6).
+                    if drive_type == DRIVE_FIXED:
+                        drives.append(drive)
+                    else:
+                        print(f"[Crawler] Skipping non-fixed drive {drive} (type={drive_type}) to protect removable media.")
+                except Exception:
+                    drives.append(drive)
     elif sys.platform == "darwin":
         volumes = Path("/Volumes")
         if volumes.exists():

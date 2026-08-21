@@ -1134,7 +1134,7 @@ const AvatarViewer = ({
         } else {
           // Off character and off UI: ignore mouse clicks on window, but forward them to desktop instantly.
           const enableClickthrough = window.yukiDebugToggles ? window.yukiDebugToggles.clickthrough : true;
-          const suspendClickthrough = window.yukiConfirmJustClosed === true;
+        const suspendClickthrough = window.yukiConfirmJustClosed === true || window.yukiAskUserOpen === true || !!document.querySelector('.ask-user-dialog-overlay') || !!document.querySelector('.yuki-confirm-overlay');
           if (enableClickthrough && !suspendClickthrough) {
             if (!isIgnoringMouseRef.current) {
               window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
@@ -1163,7 +1163,7 @@ const AvatarViewer = ({
       unsubscribeCursorMove = window.electronAPI.onCursorMove((data) => {
         // Toggle click-through ignores state based on window bounds hovering
         const enableClickthrough = window.yukiDebugToggles ? window.yukiDebugToggles.clickthrough : true;
-        const suspendClickthrough = window.yukiConfirmJustClosed === true;
+        const suspendClickthrough = window.yukiConfirmJustClosed === true || window.yukiAskUserOpen === true || !!document.querySelector('.ask-user-dialog-overlay') || !!document.querySelector('.yuki-confirm-overlay');
         if (enableClickthrough && !suspendClickthrough && !isRotating) {
           if (!data.hovering) {
             if (ignoreTimeoutRef.current) {

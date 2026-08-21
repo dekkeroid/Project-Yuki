@@ -1433,17 +1433,54 @@ def update_chat_session_title(session_id: str, new_title: str) -> bool:
         print(f"[DB] Error updating chat session title for '{session_id}': {e}")
         return False
 
-def _extract_match_snippet(text: str, query: str, max_chars: int = 120) -> str:
-    """Extracts a clean snippet centered around the matching query text."""
+def _strip_tool_and_thought_blocks(text: str) -> str:
+    """
+    Strips internal thinking blocks, tool badges, tool_args/tool_output code fences,
+    and system tool start/result markers so search operates strictly on conversational text.
+    """
+    if not text:
+        return ""
+    # 1. Strip thoughts/thinking tags (<thought>...</thought>, <think>...</think>, <reasoning>...</reasoning>)
+    clean = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', text, flags=re.IGNORECASE)
+    # 2. Strip ⚙️ [Tool Start] / ⚙️ [Tool Result] lines
+    clean = re.sub(r'⚙️\s*\[Tool (?:Start|Result)\][^\n]*', '', clean)
+    # 3. Strip 🛠️ tool badges and their code blocks
+    clean = re.sub(r'🛠️\s*\*{0,2}\[[^\]]+\]\*{0,2}(?:\s*```(?:tool_args|tool_output|terminal_stream)\n[\s\S]*?\n```)?', '', clean)
+    # 4. Strip standalone ```tool_args ... ```, ```tool_output ... ```, ```terminal_stream ... ```
+    clean = re.sub(r'```(?:tool_args|tool_output|terminal_stream)\n[\s\S]*?\n```', '', clean)
+    # 5. Strip animation and emotion tags
+    clean = re.sub(r'<(?:yuki_)?(?:anim|emotion):[a-zA-Z0-9_\-]+\/?>|\[(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\]', '', clean, flags=re.IGNORECASE)
+    return clean.strip()
+
+def _extract_match_snippet(text: str, query: str, exact_match: bool = False, max_chars: int = 120) -> str:
+    """Extracts a clean snippet centered around the matching query text from conversational speech."""
     if not text or not query:
         return text[:max_chars] if text else ""
-    clean = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', text, flags=re.IGNORECASE).strip()
-    clean = clean.replace('\n', ' ').strip()
-    idx = clean.lower().find(query.lower())
+    clean = _strip_tool_and_thought_blocks(text).replace('\n', ' ').strip()
+    
+    idx = -1
+    match_len = len(query)
+    
+    if exact_match and not (query.startswith(" ") or query.endswith(" ")):
+        # Whole word match search
+        m = re.search(rf"\b{re.escape(query.strip())}\b", clean, re.IGNORECASE)
+        if m:
+            idx = m.start()
+            match_len = m.end() - m.start()
+    
+    if idx == -1:
+        idx = clean.lower().find(query.lower())
+        
+    if idx == -1:
+        # Fallback to query stripped
+        idx = clean.lower().find(query.strip().lower())
+        match_len = len(query.strip())
+
     if idx == -1:
         return (clean[:max_chars] + "...") if len(clean) > max_chars else clean
+        
     start = max(0, idx - 40)
-    end = min(len(clean), idx + len(query) + 60)
+    end = min(len(clean), idx + match_len + 60)
     snippet = clean[start:end].strip()
     if start > 0:
         snippet = "..." + snippet
@@ -1451,53 +1488,119 @@ def _extract_match_snippet(text: str, query: str, max_chars: int = 120) -> str:
         snippet = snippet + "..."
     return snippet
 
-def search_chat_conversations(query: str, limit: int = 50) -> List[Dict[str, Any]]:
+def search_chat_conversations(
+    query: str,
+    exact_match: bool = False,
+    role: Optional[str] = None,
+    sort_order: str = "newest",
+    limit: Optional[int] = None
+) -> List[Dict[str, Any]]:
     """
     Searches across all past chat sessions and messages for the given query string.
-    Returns grouped session results containing session metadata and all matched message snippets.
+    Supports substring search, exact whole-word matching, speaker role filtering,
+    and chronological sorting by date (newest first vs oldest first).
+    If limit is None or <= 0, returns all matching results without artificial truncation.
     """
     if not query or not query.strip():
         return []
     
-    q = query.strip()
-    like_pattern = f"%{q}%"
+    q_stripped = query.strip()
+    if not q_stripped:
+        return []
+    
+    q_raw = query if (query.startswith(" ") or query.endswith(" ")) else q_stripped
+    like_pattern = f"%{q_raw}%" if not exact_match else f"%{q_stripped}%"
+    role_filter = role.lower().strip() if (role and role.strip() and role.strip().lower() in ("user", "assistant")) else None
+    
+    is_oldest = sort_order.lower().strip() == "oldest"
+    order_dir = "ASC" if is_oldest else "DESC"
+    
+    # Construct optional limit clause
+    msg_limit_clause = f"LIMIT {int(limit) * 8}" if (limit and limit > 0) else ""
+    title_limit_clause = f"LIMIT {int(limit)}" if (limit and limit > 0) else ""
+    
     conn = get_connection()
     try:
-        # Search matching messages joined with sessions
-        msg_rows = conn.execute("""
-            SELECT m.id, m.session_id, m.role, m.content, m.timestamp,
-                   s.title as session_title, s.date_str, s.year, s.month_name, s.updated_at
-            FROM chat_messages m
-            JOIN chat_sessions s ON m.session_id = s.session_id
-            WHERE m.content LIKE ?
-            ORDER BY m.timestamp DESC
-            LIMIT ?
-        """, (like_pattern, limit * 4)).fetchall()
+        # Search matching messages joined with sessions, excluding pure system messages
+        if role_filter:
+            msg_rows = conn.execute(f"""
+                SELECT m.id, m.session_id, m.role, m.content, m.timestamp,
+                       s.title as session_title, s.date_str, s.year, s.month_name, s.updated_at
+                FROM chat_messages m
+                JOIN chat_sessions s ON m.session_id = s.session_id
+                WHERE m.role = ? AND m.content LIKE ?
+                ORDER BY m.timestamp {order_dir}
+                {msg_limit_clause}
+            """, (role_filter, like_pattern)).fetchall()
+        else:
+            msg_rows = conn.execute(f"""
+                SELECT m.id, m.session_id, m.role, m.content, m.timestamp,
+                       s.title as session_title, s.date_str, s.year, s.month_name, s.updated_at
+                FROM chat_messages m
+                JOIN chat_sessions s ON m.session_id = s.session_id
+                WHERE m.role != 'system' AND m.content LIKE ?
+                ORDER BY m.timestamp {order_dir}
+                {msg_limit_clause}
+            """, (like_pattern,)).fetchall()
         
-        # Also search session titles directly
-        title_rows = conn.execute("""
-            SELECT session_id, title as session_title, date_str, year, month_name, updated_at
-            FROM chat_sessions
-            WHERE title LIKE ?
-            ORDER BY updated_at DESC
-            LIMIT ?
-        """, (like_pattern, limit)).fetchall()
+        # Also search session titles directly (if not filtering strictly by speaker)
+        title_rows = []
+        if not role_filter:
+            title_rows = conn.execute(f"""
+                SELECT session_id, title as session_title, date_str, year, month_name, updated_at
+                FROM chat_sessions
+                WHERE title LIKE ?
+                ORDER BY updated_at {order_dir}
+                {title_limit_clause}
+            """, (like_pattern,)).fetchall()
         
         sessions_map = {}
         for r in title_rows:
             sid = r["session_id"]
-            sessions_map[sid] = {
-                "session_id": sid,
-                "title": r["session_title"] or "Chat Session",
-                "date_str": r["date_str"] or "",
-                "year": r["year"],
-                "month_name": r["month_name"] or "",
-                "updated_at": r["updated_at"] or 0,
-                "title_matched": True,
-                "matches": []
-            }
+            title = r["session_title"] or "Chat Session"
+            
+            # Check exact match on title if required
+            title_matches = False
+            if exact_match:
+                if q_raw != q_stripped:
+                    title_matches = q_raw.lower() in title.lower()
+                else:
+                    title_matches = bool(re.search(rf"\b{re.escape(q_stripped)}\b", title, re.IGNORECASE))
+            else:
+                title_matches = q_raw.lower() in title.lower()
+                
+            if title_matches:
+                sessions_map[sid] = {
+                    "session_id": sid,
+                    "title": title,
+                    "date_str": r["date_str"] or "",
+                    "year": r["year"],
+                    "month_name": r["month_name"] or "",
+                    "updated_at": r["updated_at"] or 0,
+                    "title_matched": True,
+                    "matches": []
+                }
             
         for r in msg_rows:
+            raw_content = r["content"] or ""
+            # Strip tool results, args, thoughts, and system badges
+            clean_content = _strip_tool_and_thought_blocks(raw_content)
+            
+            # Verify match in clean conversational text
+            is_matched = False
+            if exact_match:
+                if q_raw != q_stripped:
+                    # User specifically entered leading/trailing spaces
+                    is_matched = q_raw.lower() in clean_content.lower()
+                else:
+                    # Whole word boundary matching
+                    is_matched = bool(re.search(rf"\b{re.escape(q_stripped)}\b", clean_content, re.IGNORECASE))
+            else:
+                is_matched = q_raw.lower() in clean_content.lower()
+                
+            if not is_matched:
+                continue
+
             sid = r["session_id"]
             if sid not in sessions_map:
                 sessions_map[sid] = {
@@ -1511,19 +1614,27 @@ def search_chat_conversations(query: str, limit: int = 50) -> List[Dict[str, Any
                     "matches": []
                 }
             
-            snippet = _extract_match_snippet(r["content"], q)
+            snippet = _extract_match_snippet(clean_content, q_raw, exact_match=exact_match)
             sessions_map[sid]["matches"].append({
                 "id": r["id"],
                 "role": r["role"],
-                "content": r["content"],
+                "content": clean_content,
                 "snippet": snippet,
                 "timestamp": r["timestamp"]
             })
             
-        results = sorted(sessions_map.values(), key=lambda x: x["updated_at"], reverse=True)
-        return results[:limit]
+        # Filter out sessions that have 0 matches and whose title did NOT match
+        valid_sessions = [s for s in sessions_map.values() if len(s["matches"]) > 0 or s.get("title_matched")]
+        
+        # Sort matches inside each session by timestamp
+        for s in valid_sessions:
+            s["matches"].sort(key=lambda m: m["timestamp"] or 0, reverse=not is_oldest)
+            
+        # Sort session list by updated_at
+        results = sorted(valid_sessions, key=lambda x: x["updated_at"] or 0, reverse=not is_oldest)
+        return results[:limit] if (limit and limit > 0) else results
     except Exception as e:
-        print(f"[DB] Error searching chat conversations for '{q}': {e}")
+        print(f"[DB] Error searching chat conversations for '{query}': {e}")
         return []
     finally:
         conn.close()
