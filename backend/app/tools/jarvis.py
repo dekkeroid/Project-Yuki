@@ -790,11 +790,28 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
             encoded_prompt = urllib.parse.quote(prompt_text)
             flux_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={w}&height={h}&nologo=true&model={effective_style}"
             print(f"[ImageGen][FLUX-Free] Fetching free image ({effective_style}) from {flux_url[:110]}...")
-            resp = requests.get(flux_url, timeout=45)
+            resp = requests.get(flux_url, timeout=50)
             if resp.status_code == 200 and len(resp.content) > 5000:
                 return resp.content, effective_style
+
+            # If specialized style timed out or returned error, try fast base flux
+            if effective_style != "flux":
+                print("[ImageGen][FLUX-Free] Specialized style failed/timed out. Trying base FLUX.1...")
+                fallback_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={w}&height={h}&nologo=true&model=flux"
+                fb_resp = requests.get(fallback_url, timeout=30)
+                if fb_resp.status_code == 200 and len(fb_resp.content) > 5000:
+                    return fb_resp.content, "flux"
         except Exception as e:
             print(f"[ImageGen][FLUX-Free] Free generation error: {e}")
+            try:
+                # Emergency fast retry with base model
+                encoded_prompt = urllib.parse.quote(prompt_text)
+                fb_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&model=flux"
+                fb_resp = requests.get(fb_url, timeout=25)
+                if fb_resp.status_code == 200 and len(fb_resp.content) > 5000:
+                    return fb_resp.content, "flux"
+            except Exception:
+                pass
         return None, "flux"
 
     def generate_via_huggingface(prompt_text: str, token: str, model_name: str = ""):
