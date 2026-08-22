@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -822,8 +822,73 @@ const ControlDashboard = ({
     hotkey_focus_chat: true,
     hotkey_open_logs: false,
     hotkey_turn_on_listening: true,
+    telegram_enabled: false,
+    telegram_bot_token: '',
+    telegram_allowed_users: '',
+    telegram_voice_replies: true,
+    telegram_notify_reminders: true,
+    telegram_verbose_tools: true,
     ...(profile?.settings || {})
   });
+
+  // Telegram Integration State
+  const [telegramStatus, setTelegramStatus] = useState({ enabled: false, running: false, username: '', status: 'offline', error: '', allowed_users: '' });
+  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+  const [telegramTestResult, setTelegramTestResult] = useState(null);
+  const [showTelegramToken, setShowTelegramToken] = useState(false);
+
+  const fetchTelegramStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/telegram/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setTelegramStatus(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch Telegram status:", e);
+    }
+  };
+
+  const testTelegramConnection = async () => {
+    setIsTestingTelegram(true);
+    setTelegramTestResult(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/telegram/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: settings.telegram_bot_token || '' })
+      });
+      const data = await res.json();
+      setTelegramTestResult(data);
+      fetchTelegramStatus();
+    } catch (e) {
+      setTelegramTestResult({ status: 'error', message: e.message || 'Connection test failed.' });
+    } finally {
+      setIsTestingTelegram(false);
+    }
+  };
+
+  const handleToggleTelegramToken = async () => {
+    const nextState = !showTelegramToken;
+    if (nextState && settings.telegram_bot_token && typeof settings.telegram_bot_token === 'string' && (settings.telegram_bot_token.startsWith('enc_v1:') || settings.telegram_bot_token.startsWith('gAAAA'))) {
+      try {
+        const res = await fetch(`${API_BASE}/api/settings/decrypt-key`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: settings.telegram_bot_token })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.decrypted) {
+            setSettings(prev => ({ ...prev, telegram_bot_token: data.decrypted }));
+          }
+        }
+      } catch (e) {
+        console.error("Failed to decrypt telegram token:", e);
+      }
+    }
+    setShowTelegramToken(nextState);
+  };
 
   // Wake-Up Hotkey Key Combination Recorder State
   const [isRecordingHotkey, setIsRecordingHotkey] = useState(false);
@@ -3895,6 +3960,23 @@ const ControlDashboard = ({
                 >
                   <Brain style={{ width: '13px', height: '13px' }} />
                   <span>AI Brain</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsSubTab('remote');
+                    fetchTelegramStatus();
+                  }}
+                  style={{
+                    flex: 1, padding: '7px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                    fontSize: '0.76rem', fontWeight: 600, transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    background: settingsSubTab === 'remote' ? 'linear-gradient(135deg, #8b5cf6, #d946ef)' : 'transparent',
+                    color: settingsSubTab === 'remote' ? '#fff' : '#94a3b8',
+                    boxShadow: settingsSubTab === 'remote' ? '0 0 10px rgba(139,92,246,0.3)' : 'none'
+                  }}
+                >
+                  <Send style={{ width: '13px', height: '13px' }} />
+                  <span>Remote & Telegram</span>
                 </button>
               </div>
 
@@ -7758,6 +7840,330 @@ const ControlDashboard = ({
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Sub-tab 4: Remote Access & Telegram */}
+              {settingsSubTab === 'remote' && (
+                <>
+                  {/* Master Telegram Integration Banner Card */}
+                  <div className="card-group" style={{
+                    background: settings.telegram_enabled ? 'linear-gradient(135deg, rgba(139,92,246,0.14) 0%, rgba(56,189,248,0.12) 100%)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${settings.telegram_enabled ? 'rgba(139,92,246,0.45)' : 'rgba(255,255,255,0.08)'}`,
+                    borderRadius: '16px',
+                    padding: '16px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{
+                          width: '36px', height: '36px', borderRadius: '10px',
+                          background: 'linear-gradient(135deg, #0088cc, #00b4d8)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          boxShadow: '0 0 14px rgba(0,136,204,0.4)'
+                        }}>
+                          <Send className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>Telegram Bot Remote Access</span>
+                            {telegramStatus.running ? (
+                              <span style={{
+                                fontSize: '0.65rem', padding: '2px 8px', borderRadius: '12px',
+                                background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80',
+                                border: '1px solid rgba(34, 197, 94, 0.4)', fontWeight: 600
+                              }}>
+                                ● Online {telegramStatus.username ? `@${telegramStatus.username}` : ''}
+                              </span>
+                            ) : (
+                              <span style={{
+                                fontSize: '0.65rem', padding: '2px 8px', borderRadius: '12px',
+                                background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8',
+                                border: '1px solid rgba(148, 163, 184, 0.3)', fontWeight: 600
+                              }}>
+                                ○ {settings.telegram_enabled ? 'Starting...' : 'Disabled'}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.55)', marginTop: '2px' }}>
+                            Chat, send voice notes, upload photos, and control your PC from your phone anywhere in the world.
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Enable Toggle Switch */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextVal = !settings.telegram_enabled;
+                          handleUpdateSetting('telegram_enabled', nextVal);
+                        }}
+                        style={{
+                          background: settings.telegram_enabled ? 'linear-gradient(135deg, #0088cc, #8b5cf6)' : 'rgba(255,255,255,0.08)',
+                          border: `1px solid ${settings.telegram_enabled ? 'rgba(0,136,204,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                          borderRadius: '14px',
+                          width: '46px',
+                          height: '24px',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          transition: 'all 0.2s ease',
+                          flexShrink: 0
+                        }}
+                      >
+                        <div style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '50%',
+                          background: '#fff',
+                          position: 'absolute',
+                          top: '2px',
+                          left: settings.telegram_enabled ? '24px' : '2px',
+                          transition: 'all 0.2s ease',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                        }} />
+                      </button>
+                    </div>
+
+                    {/* Test Connection Button & Status Feedback */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <button
+                        type="button"
+                        onClick={testTelegramConnection}
+                        disabled={isTestingTelegram || !settings.telegram_bot_token}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(56,189,248,0.4)',
+                          background: 'rgba(56,189,248,0.12)',
+                          color: '#38bdf8',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                          cursor: (isTestingTelegram || !settings.telegram_bot_token) ? 'not-allowed' : 'pointer',
+                          opacity: (isTestingTelegram || !settings.telegram_bot_token) ? 0.6 : 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        {isTestingTelegram ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                        <span>{isTestingTelegram ? 'Testing...' : 'Test Connection'}</span>
+                      </button>
+
+                      {telegramTestResult && (
+                        <div style={{
+                          fontSize: '0.72rem',
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          background: telegramTestResult.status === 'success' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                          color: telegramTestResult.status === 'success' ? '#4ade80' : '#f87171',
+                          border: `1px solid ${telegramTestResult.status === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flex: 1
+                        }}>
+                          {telegramTestResult.message}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Authentication & Security Settings */}
+                  <div className="card-group" style={{ marginTop: '12px' }}>
+                    <div className="card-group-header">
+                      <ShieldAlert className="w-4 h-4 text-amber-400" />
+                      <span className="card-group-title">Authentication & Security</span>
+                    </div>
+
+                    {/* Bot Token */}
+                    <div className="identity-field" style={{ marginTop: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="field-label">Telegram Bot Token</span>
+                        <a
+                          href="https://t.me/BotFather"
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: '0.68rem', color: '#38bdf8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}
+                        >
+                          <span>Get token from @BotFather</span>
+                          <ExternalLink style={{ width: '10px', height: '10px' }} />
+                        </a>
+                      </div>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginTop: '3px' }}>
+                        <input
+                          type={showTelegramToken ? 'text' : 'password'}
+                          placeholder="e.g. 1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ"
+                          value={settings.telegram_bot_token || ''}
+                          onChange={(e) => handleUpdateSetting('telegram_bot_token', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '8px 36px 8px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: '#fff',
+                            fontSize: '0.78rem',
+                            outline: 'none'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleToggleTelegramToken}
+                          style={{
+                            position: 'absolute', right: '8px', background: 'transparent',
+                            border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', padding: '4px'
+                          }}
+                        >
+                          {showTelegramToken ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      </div>
+                      <span style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', display: 'block' }}>
+                        Create a new bot via @BotFather on Telegram, paste its API token above, and toggle the master switch.
+                      </span>
+                    </div>
+
+                    {/* Allowed User IDs / Usernames */}
+                    <div className="identity-field" style={{ marginTop: '12px' }}>
+                      <span className="field-label">Allowed User IDs / Usernames (Security Whitelist)</span>
+                      <input
+                        type="text"
+                        placeholder="e.g. 123456789, @yourusername (comma-separated)"
+                        value={settings.telegram_allowed_users || ''}
+                        onChange={(e) => handleUpdateSetting('telegram_allowed_users', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: '#fff',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          marginTop: '3px'
+                        }}
+                      />
+                      <div style={{
+                        marginTop: '6px', padding: '8px 10px', borderRadius: '8px',
+                        background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)',
+                        fontSize: '0.67rem', color: '#bae6fd', lineHeight: '1.4'
+                      }}>
+                        💡 <b>Finding your Telegram ID:</b> Message your bot on Telegram. If you are not yet whitelisted, Yuki will immediately reply with your exact numerical User ID so you can copy and paste it here!
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Remote Features & Behavior Toggles */}
+                  <div className="card-group" style={{ marginTop: '12px' }}>
+                    <div className="card-group-header">
+                      <Sparkles className="w-4 h-4 text-teal-400" />
+                      <span className="card-group-title">Remote Capabilities & Audio</span>
+                    </div>
+
+                    {/* Voice Note Replies */}
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Volume2 className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Voice Note Audio Replies (Kokoro TTS)</span>
+                        </div>
+                        <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                          Yuki synthesizes neural voice notes and replies with spoken audio to Telegram voice messages.
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.telegram_voice_replies ?? true}
+                        onChange={(e) => handleUpdateSetting('telegram_voice_replies', e.target.checked)}
+                        style={{ cursor: 'pointer', accentColor: '#8b5cf6', width: '16px', height: '16px' }}
+                      />
+                    </div>
+
+                    {/* Proactive Push Reminders & Alarms */}
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Proactive Alarms & Reminders Push</span>
+                        </div>
+                        <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                          Dispatches mobile push notifications to your Telegram chat whenever timers or scheduled alarms trigger.
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.telegram_notify_reminders ?? true}
+                        onChange={(e) => handleUpdateSetting('telegram_notify_reminders', e.target.checked)}
+                        style={{ cursor: 'pointer', accentColor: '#8b5cf6', width: '16px', height: '16px' }}
+                      />
+                    </div>
+
+                    {/* Show Tool Executions in Telegram Chat */}
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '10px 0'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Wrench className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Live Tool Execution Updates</span>
+                        </div>
+                        <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                          Display real-time tool badges (e.g. terminal execution, web search) and results directly in Telegram chat.
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.telegram_verbose_tools ?? true}
+                        onChange={(e) => handleUpdateSetting('telegram_verbose_tools', e.target.checked)}
+                        style={{ cursor: 'pointer', accentColor: '#8b5cf6', width: '16px', height: '16px' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Remote Features & Commands Guide */}
+                  <div className="card-group" style={{ marginTop: '12px' }}>
+                    <div className="card-group-header">
+                      <Command className="w-4 h-4 text-indigo-400" />
+                      <span className="card-group-title">Telegram Capabilities & Commands</span>
+                    </div>
+                    <div style={{
+                      display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '6px',
+                      fontSize: '0.7rem', color: '#cbd5e1'
+                    }}>
+                      <div style={{ background: 'rgba(0,0,0,0.25)', padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <b style={{ color: '#a78bfa' }}>📸 Screenshot & Photos:</b>
+                        <div style={{ color: 'rgba(255,255,255,0.5)', marginTop: '2px', fontSize: '0.65rem' }}>
+                          Type <code>/screenshot</code> or send photos for instant vision analysis.
+                        </div>
+                      </div>
+                      <div style={{ background: 'rgba(0,0,0,0.25)', padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <b style={{ color: '#38bdf8' }}>📁 File & Folder Sharing:</b>
+                        <div style={{ color: 'rgba(255,255,255,0.5)', marginTop: '2px', fontSize: '0.65rem' }}>
+                          Ask Yuki to send any file or folder (she auto-zips folders into archives).
+                        </div>
+                      </div>
+                      <div style={{ background: 'rgba(0,0,0,0.25)', padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <b style={{ color: '#34d399' }}>🎙️ Voice Notes:</b>
+                        <div style={{ color: 'rgba(255,255,255,0.5)', marginTop: '2px', fontSize: '0.65rem' }}>
+                          Hold mic on Telegram to speak; Yuki transcribes and speaks back.
+                        </div>
+                      </div>
+                      <div style={{ background: 'rgba(0,0,0,0.25)', padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <b style={{ color: '#f472b6' }}>🛡️ Interactive Approvals:</b>
+                        <div style={{ color: 'rgba(255,255,255,0.5)', marginTop: '2px', fontSize: '0.65rem' }}>
+                          Sensitive operations send <code>[ Approve ]</code> inline buttons to your phone.
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </>

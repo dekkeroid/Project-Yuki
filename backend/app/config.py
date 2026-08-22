@@ -234,6 +234,14 @@ HOTKEY_FOCUS_CHAT = os.environ.get("HOTKEY_FOCUS_CHAT", "true").strip().lower() 
 HOTKEY_OPEN_LOGS = os.environ.get("HOTKEY_OPEN_LOGS", "false").strip().lower() in ("1", "true", "yes", "on")
 HOTKEY_TURN_ON_LISTENING = os.environ.get("HOTKEY_TURN_ON_LISTENING", "true").strip().lower() in ("1", "true", "yes", "on")
 
+# Telegram Bot Integration Settings
+TELEGRAM_ENABLED = os.environ.get("TELEGRAM_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_ALLOWED_USERS = os.environ.get("TELEGRAM_ALLOWED_USERS", "").strip()
+TELEGRAM_VOICE_REPLIES = os.environ.get("TELEGRAM_VOICE_REPLIES", "true").strip().lower() in ("1", "true", "yes", "on")
+TELEGRAM_NOTIFY_REMINDERS = os.environ.get("TELEGRAM_NOTIFY_REMINDERS", "true").strip().lower() in ("1", "true", "yes", "on")
+TELEGRAM_VERBOSE_TOOLS = os.environ.get("TELEGRAM_VERBOSE_TOOLS", "true").strip().lower() in ("1", "true", "yes", "on")
+
 
 def get_effective_base_url() -> str:
     """Get the effective LLM base URL based on backend type."""

@@ -102,6 +102,9 @@ manual_hidden = [
     'bs4',
     'httpx',
     'aiohttp',
+    'app.channels',
+    'app.channels.telegram_service',
+    'app.tools.telegram_tools',
 
     # System
     'psutil',

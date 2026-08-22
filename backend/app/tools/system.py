@@ -477,11 +477,30 @@ def _find_and_focus_running_app(app_name: str, app_path: str = None) -> tuple[bo
             else:
                 user32.ShowWindow(found_hwnd, 5)  # SW_SHOW
 
-            # Windows foreground focus bypass
-            user32.keybd_event(0x12, 0, 0, 0)       # ALT down
-            user32.SetForegroundWindow(found_hwnd)
-            user32.keybd_event(0x12, 0, 2, 0)       # ALT up
+            # Attach thread inputs to grant foreground activation privilege without pressing ALT (which toggles Firefox/Notepad menu bars)
+            cur_thread = ctypes.windll.kernel32.GetCurrentThreadId()
+            fg_hwnd = user32.GetForegroundWindow()
+            fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
+            target_thread = user32.GetWindowThreadProcessId(found_hwnd, None)
+            
+            attached = False
+            if fg_thread and fg_thread != cur_thread:
+                user32.AttachThreadInput(cur_thread, fg_thread, True)
+                attached = True
+            if target_thread and target_thread != cur_thread:
+                user32.AttachThreadInput(cur_thread, target_thread, True)
+                attached = True
+
             user32.BringWindowToTop(found_hwnd)
+            user32.SetForegroundWindow(found_hwnd)
+            user32.SetFocus(found_hwnd)
+
+            if attached:
+                if fg_thread and fg_thread != cur_thread:
+                    user32.AttachThreadInput(cur_thread, fg_thread, False)
+                if target_thread and target_thread != cur_thread:
+                    user32.AttachThreadInput(cur_thread, target_thread, False)
+
             return True, found_title
         except Exception as e:
             print(f"[launch_app] Error focusing existing window: {e}")
