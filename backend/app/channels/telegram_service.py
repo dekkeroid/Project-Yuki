@@ -1220,9 +1220,12 @@ async def _process_single_update(tg: TelegramClient, client: httpx.AsyncClient, 
                 if voice_bytes:
                     from app.voice.stt import transcribe_audio_file
                     stt_t0 = time.time()
-                    transcribed_text = await transcribe_audio_file(voice_bytes)
+                    stt_res = await transcribe_audio_file(voice_bytes)
                     stt_duration = time.time() - stt_t0
-                    transcribed_text = (transcribed_text or "").strip()
+                    if isinstance(stt_res, dict):
+                        transcribed_text = stt_res.get("text", "").strip()
+                    else:
+                        transcribed_text = str(stt_res or "").strip()
                     
                     if not transcribed_text:
                         print(f"[Telegram] Voice note from {user_label} ({user.get('id')}): [Inaudible / No speech detected]")
