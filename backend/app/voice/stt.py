@@ -145,9 +145,9 @@ def get_whisper_model(model_size: str = None, compute_type: str = "int8_float16"
         return _whisper_instance
 
 import io
-from typing import Union, BinaryIO
+from typing import Union, BinaryIO, Dict, Any
 
-async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], model_size: str = "base", compute_type: str = "int8_float16", language: str = "en") -> str:
+async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], model_size: str = "base", compute_type: str = "int8_float16", language: str = "en") -> Dict[str, Any]:
     """
     Transcribes an audio file path or in-memory byte stream on a separate worker thread with low-latency beam_size=1 greedy decoding and Silero VAD.
     """
