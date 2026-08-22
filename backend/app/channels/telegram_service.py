@@ -399,11 +399,32 @@ async def send_unauthorized_reply(tg: TelegramClient, client: httpx.AsyncClient,
         print(f"[Telegram] Failed to send unauthorized reply: {e}")
 
 
+def _get_ffmpeg_executable() -> Optional[str]:
+    """Resolves FFmpeg executable: bundled imageio-ffmpeg static binary -> system PATH -> standard fallback paths."""
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.exists(exe):
+            return exe
+    except Exception:
+        pass
+
+    path_bin = shutil.which("ffmpeg")
+    if path_bin and os.path.exists(path_bin):
+        return path_bin
+
+    for candidate in (r"C:\ffmpeg\bin\ffmpeg.exe", r"C:\ffmpeg\ffmpeg.exe"):
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 def _compress_video_ffmpeg(video_path: str) -> Optional[str]:
-    """Compresses large video using ffmpeg so it fits within Telegram's 50MB limit."""
+    """Compresses large video using FFmpeg so it fits within Telegram's 50MB limit."""
     import subprocess
-    ffmpeg_bin = shutil.which("ffmpeg") or r"C:\ffmpeg\bin\ffmpeg.exe"
-    if not os.path.exists(ffmpeg_bin) and not shutil.which("ffmpeg"):
+    ffmpeg_bin = _get_ffmpeg_executable()
+    if not ffmpeg_bin:
+        print("[Telegram] No FFmpeg binary found. Skipping video compression.")
         return None
     
     file_name = os.path.basename(video_path)
