@@ -870,7 +870,7 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
             h_url = "https://aihorde.net/api/v2/generate/async"
             h_headers = {
                 "apikey": api_token or "0000000000",
-                "Client-Agent": "ProjectYuki:v0.3.4:github.com/dekkeroid/Project-Yuki"
+                "Client-Agent": "ProjectYuki:v0.3.5:github.com/dekkeroid/Project-Yuki"
             }
 
             # Resolve target models dynamically if set to 'auto'

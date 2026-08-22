@@ -244,7 +244,18 @@ def capture_screenshot(window_title: str = "", save_to: str = "") -> str:
             from app.tools.jarvis import _find_window_bbox
             bbox = _find_window_bbox(window_title)
 
-        img = ImageGrab.grab(bbox=bbox) if bbox else ImageGrab.grab()
+        img = None
+        try:
+            img = ImageGrab.grab(bbox=bbox, all_screens=True) if not bbox else ImageGrab.grab(bbox=bbox)
+        except Exception:
+            try:
+                img = ImageGrab.grab(bbox=bbox)
+            except Exception:
+                pass
+
+        if img is None:
+            import pyautogui
+            img = pyautogui.screenshot(region=bbox) if bbox else pyautogui.screenshot()
 
         if save_to:
             path = os.path.abspath(os.path.expanduser(save_to))

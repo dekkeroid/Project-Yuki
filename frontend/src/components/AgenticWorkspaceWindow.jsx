@@ -2569,7 +2569,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '6px 16px',
+            padding: showSidebar ? '6px 16px' : '6px 20px 6px 28px',
+            transition: 'padding 0.2s ease',
             background: selectedPastSessionId ? 'rgba(56, 189, 248, 0.15)' : 'rgba(15, 23, 42, 0.95)',
             borderBottom: selectedPastSessionId ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(167, 139, 250, 0.15)',
             fontSize: '0.74rem',
@@ -2679,7 +2680,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 
           {/* Active Session Context & Workspace Directories Toolbar */}
           <div style={{
-            padding: '8px 16px',
+            padding: showSidebar ? '8px 16px' : '8px 20px 8px 28px',
+            transition: 'padding 0.2s ease',
             background: 'rgba(15, 23, 42, 0.85)',
             borderBottom: '1px solid rgba(167, 139, 250, 0.15)',
             display: 'flex',
@@ -2846,13 +2848,14 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
             ref={chatContainerRef}
             style={{
               flex: 1,
-              padding: '16px 20px',
+              padding: showSidebar ? '16px 20px' : '16px 24px 16px 36px',
               overflowY: 'auto',
               display: 'flex',
               flexDirection: 'column',
               gap: '12px',
               scrollbarWidth: 'thin',
-              scrollbarColor: 'rgba(167, 139, 250, 0.3) transparent'
+              scrollbarColor: 'rgba(167, 139, 250, 0.3) transparent',
+              transition: 'padding 0.2s ease'
             }}
           >
             {backendStatus === 'offline' && (
@@ -2912,7 +2915,7 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       <div style={{
                         padding: '10px 14px',
                         borderRadius: '14px 14px 14px 2px',
-                        background: 'rgba(15, 23, 42, 0.85)',
+                        background: 'linear-gradient(135deg, rgba(22, 30, 46, 0.85) 0%, rgba(34, 46, 68, 0.75) 100%)',
                         border: `1px solid ${themeAccent}45`,
                         color: '#cbd5e1',
                         fontSize: '0.80rem',
@@ -3182,8 +3185,8 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                       borderRadius: isUser ? '14px 14px 2px 14px' : '14px 14px 14px 2px',
                       background: isUser
                         ? 'linear-gradient(135deg, rgba(139, 92, 246, 0.35) 0%, rgba(109, 40, 217, 0.35) 100%)'
-                        : 'rgba(15, 23, 42, 0.75)',
-                      border: isUser ? '1px solid rgba(167, 139, 250, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
+                        : 'linear-gradient(135deg, rgba(22, 30, 46, 0.85) 0%, rgba(34, 46, 68, 0.75) 100%)',
+                      border: isUser ? '1px solid rgba(167, 139, 250, 0.4)' : '1px solid rgba(148, 163, 184, 0.18)',
                       color: '#f8fafc',
                       fontSize: '0.82rem',
                       lineHeight: '1.5',
@@ -3205,9 +3208,10 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 
           {/* Prompt Input Container (Modern Unified Card Layout) */}
           <div style={{
-            padding: '12px 16px 14px',
+            padding: showSidebar ? '12px 16px 14px' : '12px 20px 14px 32px',
             background: 'rgba(15, 23, 42, 0.95)',
-            borderTop: '1px solid rgba(167, 139, 250, 0.2)'
+            borderTop: '1px solid rgba(167, 139, 250, 0.2)',
+            transition: 'padding 0.2s ease'
           }}>
             <form
               onSubmit={(e) => {

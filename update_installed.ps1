@@ -4,7 +4,6 @@ Set-Location $root
 
 $backendDir = 'backend'
 $frontendDir = 'frontend'
-$extraPackages = @('youtube_transcript_api')
 
 # --- Locate the installed app dynamically ---
 # Priority: running process -> Inno Setup uninstall registry -> default location
@@ -318,20 +317,44 @@ if ($selBackend) {
             $rc3 = robocopy "$root\$backendDir\app" $localDistApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
         }
 
-        # Sync extra packages from local venv to installed app
-        foreach ($pkg in $extraPackages) {
-            $srcPkg = "$root\$backendDir\venv\Lib\site-packages\$pkg"
-            if (Test-Path $srcPkg) {
-                Write-Host "  Syncing extra package: $pkg"
-                $destPkgInternal = Join-Path $installDir "resources\backend\_internal\$pkg"
-                $rc_pkg1 = robocopy $srcPkg $destPkgInternal /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+        # Automatically detect and sync any newly installed or updated packages from venv to installed app
+        $sitePackages = "$root\$backendDir\venv\Lib\site-packages"
+        if (Test-Path $sitePackages) {
+            $skipNames = @('pip', 'setuptools', 'wheel', '_distutils_hack', 'pkg_resources', 'easy_install.py', '__pycache__')
+            $exeTime = if (Test-Path $installedExe) { (Get-Item $installedExe).LastWriteTime } else { [DateTime]::MinValue }
+            
+            $packageItems = Get-ChildItem $sitePackages | Where-Object {
+                $n = $_.Name
+                if ($n -match '\.(dist-info|egg-info)$') { return $false }
+                if ($skipNames -contains $n) { return $false }
+                return $true
+            }
+
+            $syncedCount = 0
+            foreach ($item in $packageItems) {
+                $targetInternal = Join-Path $installDir "resources\backend\_internal\$($item.Name)"
+                $targetLocalDist = "$root\$backendDir\dist\backend\_internal\$($item.Name)"
                 
-                if (Test-Path "$root\$backendDir\dist\backend\_internal") {
-                    $localDistPkg = "$root\$backendDir\dist\backend\_internal\$pkg"
-                    $rc_pkg2 = robocopy $srcPkg $localDistPkg /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+                # If package is missing in installed app OR was modified after backend.exe was compiled, sync it automatically!
+                if ((-not (Test-Path $targetInternal)) -or ($item.LastWriteTime -gt $exeTime)) {
+                    Write-Host "  [Auto-Sync Package] Syncing: $($item.Name)" -ForegroundColor Cyan
+                    if ($item.PSIsContainer) {
+                        $null = robocopy $item.FullName $targetInternal /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+                        if (Test-Path "$root\$backendDir\dist\backend\_internal") {
+                            $null = robocopy $item.FullName $targetLocalDist /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+                        }
+                    } else {
+                        Copy-Item $item.FullName -Destination $targetInternal -Force
+                        if (Test-Path "$root\$backendDir\dist\backend\_internal") {
+                            Copy-Item $item.FullName -Destination $targetLocalDist -Force
+                        }
+                    }
+                    $syncedCount++
                 }
-            } else {
-                Write-Host "  [WARN] Extra package $pkg not found in venv site-packages." -ForegroundColor Yellow
+            }
+
+            if ($syncedCount -gt 0) {
+                Write-Host "  [Auto-Sync] Successfully synchronized $syncedCount package(s) from venv." -ForegroundColor Green
             }
         }
 

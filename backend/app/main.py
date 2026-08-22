@@ -442,15 +442,30 @@ async def lifespan(app: FastAPI):
     except Exception as _cp_err:
         print(f"[Startup] Cloud provider settings restore error: {_cp_err}")
 
+    # ── Telegram Bot Service Startup ──────────────────────────────────────
+    try:
+        from app.channels import telegram_service
+        telegram_service.set_service_dependencies(agent_executor, memory_manager)
+        if getattr(config, "TELEGRAM_ENABLED", False) and getattr(config, "TELEGRAM_BOT_TOKEN", ""):
+            print("[Startup] Telegram Bot integration enabled — starting polling service...")
+            asyncio.create_task(telegram_service.start_telegram_bot())
+    except Exception as _tg_err:
+        print(f"[Startup] Telegram bot initialization error: {_tg_err}")
 
     yield
 
     # ── Shutdown ─────────────────────────────────────────────────────────
+    try:
+        from app.channels import telegram_service
+        await telegram_service.stop_telegram_bot()
+    except Exception:
+        pass
+
     if agent_executor:
         await agent_executor.mcp_tools.aclose()
 
 
-app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.4-beta", lifespan=lifespan)
+app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.5-beta", lifespan=lifespan)
 
 # Setup CORS — restrict to localhost and LAN origins
 app.add_middleware(
@@ -1255,6 +1270,12 @@ class SettingsUpdateRequest(BaseModel):
     hotkey_turn_on_listening: Optional[bool] = None
     allow_voice_barge_in: Optional[bool] = None
     barge_in_sensitivity: Optional[float] = None
+    telegram_enabled: Optional[bool] = None
+    telegram_bot_token: Optional[str] = None
+    telegram_allowed_users: Optional[str] = None
+    telegram_voice_replies: Optional[bool] = None
+    telegram_notify_reminders: Optional[bool] = None
+    telegram_verbose_tools: Optional[bool] = None
 
 
 
@@ -1824,6 +1845,50 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("codegraph_advanced_enabled", bool(req.codegraph_advanced_enabled))
         print(f"[SETTINGS-UPDATE-BE] codegraph_advanced_enabled = {bool(req.codegraph_advanced_enabled)}")
 
+    telegram_changed = False
+    if req.telegram_enabled is not None:
+        config.TELEGRAM_ENABLED = bool(req.telegram_enabled)
+        memory_manager.update_setting("telegram_enabled", bool(req.telegram_enabled))
+        telegram_changed = True
+    if req.telegram_bot_token is not None:
+        from app.utils.security import encrypt_api_key, decrypt_api_key
+        tk_val = req.telegram_bot_token.strip()
+        if tk_val:
+            if "..." in tk_val and not tk_val.startswith("enc_v1:"):
+                pass
+            else:
+                decrypted_tk = decrypt_api_key(tk_val) if tk_val.startswith("enc_v1:") else tk_val
+                config.TELEGRAM_BOT_TOKEN = decrypted_tk
+                memory_manager.update_setting("telegram_bot_token", encrypt_api_key(decrypted_tk))
+                telegram_changed = True
+        else:
+            config.TELEGRAM_BOT_TOKEN = ""
+            memory_manager.update_setting("telegram_bot_token", "")
+            telegram_changed = True
+    if req.telegram_allowed_users is not None:
+        config.TELEGRAM_ALLOWED_USERS = req.telegram_allowed_users.strip()
+        memory_manager.update_setting("telegram_allowed_users", req.telegram_allowed_users.strip())
+    if req.telegram_voice_replies is not None:
+        config.TELEGRAM_VOICE_REPLIES = bool(req.telegram_voice_replies)
+        memory_manager.update_setting("telegram_voice_replies", bool(req.telegram_voice_replies))
+    if req.telegram_notify_reminders is not None:
+        config.TELEGRAM_NOTIFY_REMINDERS = bool(req.telegram_notify_reminders)
+        memory_manager.update_setting("telegram_notify_reminders", bool(req.telegram_notify_reminders))
+    if req.telegram_verbose_tools is not None:
+        config.TELEGRAM_VERBOSE_TOOLS = bool(req.telegram_verbose_tools)
+        memory_manager.update_setting("telegram_verbose_tools", bool(req.telegram_verbose_tools))
+
+    if telegram_changed:
+        try:
+            from app.channels import telegram_service
+            telegram_service.set_service_dependencies(agent_executor, memory_manager)
+            if config.TELEGRAM_ENABLED and config.TELEGRAM_BOT_TOKEN:
+                asyncio.create_task(telegram_service.restart_telegram_bot())
+            else:
+                asyncio.create_task(telegram_service.stop_telegram_bot())
+        except Exception as tg_err:
+            print(f"[Telegram] Error updating service state: {tg_err}")
+
     import copy
     current_settings = copy.deepcopy(memory_manager.profile.get("settings", {}))
     current_settings.update({
@@ -2182,6 +2247,35 @@ async def select_custom_endpoint(req: DeleteCustomEndpointRequest):
         "reviewer_model": ep.get("reviewer_model", ""),
         "summary_model": ep.get("summary_model", "")
     }
+
+
+# ------------------------------------------------------------------ #
+#  Telegram Remote Access Endpoints                                  #
+# ------------------------------------------------------------------ #
+
+class TelegramTestRequest(BaseModel):
+    token: Optional[str] = None
+
+
+@app.get("/api/telegram/status")
+async def get_telegram_status_endpoint():
+    """Returns the live connection state of the Telegram Bot."""
+    from app.channels import telegram_service
+    return telegram_service.get_telegram_status()
+
+
+@app.post("/api/telegram/test")
+async def test_telegram_connection(req: TelegramTestRequest = Body(default=TelegramTestRequest())):
+    """Validates a Telegram Bot token with Telegram servers without altering running state."""
+    from app.channels import telegram_service
+    from app.utils.security import decrypt_api_key
+    
+    token_to_test = req.token.strip() if (req and req.token) else getattr(config, "TELEGRAM_BOT_TOKEN", "")
+    if token_to_test.startswith("enc_v1:") or "gAAAA" in token_to_test:
+        token_to_test = decrypt_api_key(token_to_test)
+        
+    return await telegram_service.test_bot_token(token_to_test)
+
 
 @app.get("/api/tts")
 async def tts_endpoint(text: str, voice: Optional[str] = None, rate: Optional[str] = None):
@@ -2628,27 +2722,37 @@ def serve_tool_tester():
 async def broadcast_due_reminders(due: List[Dict[str, Any]]):
     """
     Broadcasts speech announcements and alarm_triggered WebSocket events
-    for active alarm ringing overlays.
+    for active alarm ringing overlays, and dispatches push alerts to Telegram.
     """
-    if due and active_websockets:
-        for item in due:
-            msg = item.get("message") or "Your scheduled reminder is due!"
-            announcement = f"Attention: {msg}"
-            for ws in list(active_websockets):
-                try:
-                    await ws.send_json({
-                        "type": "speech",
-                        "text": announcement
-                    })
-                    await ws.send_json({
-                        "type": "alarm_triggered",
-                        "id": item["id"],
-                        "category": item.get("category", "timer"),
-                        "message": msg
-                    })
-                    print(f"[WebSocket] Broadcasted alarm_triggered for timer #{item['id']}: '{msg}'")
-                except Exception as e:
-                    print(f"[WebSocket] Error broadcasting due reminder: {e}")
+    if due:
+        # 1. Proactive Telegram alarm/reminder dispatch
+        try:
+            from app.channels import telegram_service
+            for item in due:
+                asyncio.create_task(telegram_service.dispatch_telegram_reminder(item))
+        except Exception as tg_rem_err:
+            print(f"[Telegram] Error dispatching reminder: {tg_rem_err}")
+
+        # 2. WebSocket broadcast to active frontend windows
+        if active_websockets:
+            for item in due:
+                msg = item.get("message") or "Your scheduled reminder is due!"
+                announcement = f"Attention: {msg}"
+                for ws in list(active_websockets):
+                    try:
+                        await ws.send_json({
+                            "type": "speech",
+                            "text": announcement
+                        })
+                        await ws.send_json({
+                            "type": "alarm_triggered",
+                            "id": item["id"],
+                            "category": item.get("category", "timer"),
+                            "message": msg
+                        })
+                        print(f"[WebSocket] Broadcasted alarm_triggered for timer #{item['id']}: '{msg}'")
+                    except Exception as e:
+                        print(f"[WebSocket] Error broadcasting due reminder: {e}")
 
 async def reminder_heartbeat_loop():
     """

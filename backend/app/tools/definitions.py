@@ -212,6 +212,34 @@ def get_basic_tools_definition() -> list:
                     "required": ["questions"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "telegram_send_screenshot",
+                "description": "Captures the current desktop monitor screen of the user's PC and immediately uploads and sends the screenshot image directly to the user's Telegram chat on their phone. ONLY use this when the user is chatting from Telegram and wants to receive a screenshot on their phone.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "caption": {"type": "string", "description": "Optional caption for the screenshot image on Telegram."}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "telegram_send_file",
+                "description": "Uploads and sends any file, image, document, script, or compressed folder (.zip) from the user's PC directly to the user's Telegram chat on their phone. Call this whenever the remote user asks for a file, or after you create a file that the user needs on their phone.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_or_folder_path": {"type": "string", "description": "Path to the file or folder on the PC to upload to Telegram."},
+                        "caption": {"type": "string", "description": "Optional message caption on Telegram."}
+                    },
+                    "required": ["file_or_folder_path"]
+                }
+            }
         }
     ]
 
@@ -839,6 +867,34 @@ def get_advanced_jarvis_tools_definition() -> list:
                         }
                     },
                     "required": ["questions"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "telegram_send_screenshot",
+                "description": "WHEN TO USE: The user is chatting with you from Telegram on their mobile phone and explicitly asks you to send them a screenshot of their PC or wants to see what's on their desktop screen. Captures the primary desktop monitor and uploads the screenshot image directly to their Telegram chat. DO NOT USE jarvis_see_screen when the user wants to receive the screenshot image themselves — jarvis_see_screen is only for your internal AI vision inspection.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "caption": {"type": "string", "description": "Optional caption message to include with the photo on Telegram."}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "telegram_send_file",
+                "description": "WHEN TO USE: Upload and send any file, document, photo, code script, or auto-zipped folder (.zip) from the user's PC directly to their Telegram chat. Use this whenever the remote user asks you to send a file to their phone, or after you create/edit/download a file that the remote user wants to receive.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_or_folder_path": {"type": "string", "description": "Path to the file or directory on the PC to upload and send to Telegram."},
+                        "caption": {"type": "string", "description": "Optional message caption on Telegram."}
+                    },
+                    "required": ["file_or_folder_path"]
                 }
             }
         }

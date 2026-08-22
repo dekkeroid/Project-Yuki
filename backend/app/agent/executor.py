@@ -266,6 +266,7 @@ class AgentExecutor:
             codegraph_explore, codegraph_search, codegraph_node, codegraph_files,
             codegraph_callers, codegraph_callees, codegraph_impact, codegraph_status,
         )
+        from app.tools.telegram_tools import telegram_send_screenshot, telegram_send_file
         from app.tools.ask_user import ask_user as _ask_user_async
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
@@ -522,11 +523,16 @@ class AgentExecutor:
             "codegraph_impact": lambda **kwargs: codegraph_impact(
                 kwargs.get("symbol") or kwargs.get("name") or "",
                 project_path=kwargs.get("project_path") or kwargs.get("path")
-            ),
+),
             "codegraph_status": lambda **kwargs: codegraph_status(
                 project_path=kwargs.get("project_path") or kwargs.get("path")
             ),
             "codegraph_set_workspace_directory": lambda **kwargs: self._codegraph_set_workspace_directory(**kwargs),
+            "telegram_send_screenshot": lambda **kwargs: telegram_send_screenshot(caption=kwargs.get("caption") or ""),
+            "telegram_send_file": lambda **kwargs: telegram_send_file(
+                file_or_folder_path=kwargs.get("file_or_folder_path") or kwargs.get("path") or kwargs.get("file_path") or "",
+                caption=kwargs.get("caption") or ""
+            ),
         }
         from app.mcp_client import StdioMCPToolBridge
         self.mcp_tools = StdioMCPToolBridge(get_tools_definition, get_filtered_tools)
@@ -558,40 +564,30 @@ class AgentExecutor:
         start_ts = time.time()
         record_tool_start(turn_id, tool_name, raw_args)
         record_recent_tool(tool_name)
+
+        if not self.mcp_tools.enabled:
+            return await self._run_in_process_tool(tool_name, raw_args, mode=mode, workspace_root=workspace_root)
+
+        # Stdio MCP tool execution path (preferred)
         try:
-            result = await self._dispatch_tool(tool_name, raw_args, mode=mode, workspace_root=workspace_root)
-
+            res = await self.mcp_tools.call_tool(tool_name, raw_args)
+            record_tool_end(turn_id, tool_name, res, time.time() - start_ts)
+            return res
         except Exception as e:
-            record_tool_end(turn_id, tool_name, "error", result="", error=str(e), duration_ms=(time.time() - start_ts) * 1000)
-            raise
-        status = "error" if isinstance(result, str) and result.lower().startswith(("error", "failed")) else "success"
-        record_tool_end(turn_id, tool_name, status, result=result, error=(result if status == "error" else ""), duration_ms=(time.time() - start_ts) * 1000)
-        return result
+            # Fall back to in-process execution on any MCP fault
+            res = await self._run_in_process_tool(tool_name, raw_args, mode=mode, workspace_root=workspace_root)
+            record_tool_end(turn_id, tool_name, res, time.time() - start_ts)
+            return res
 
-    async def _dispatch_tool(self, tool_name: str, tool_args: Dict[str, Any], *, mode: str = "assistant", workspace_root: Optional[str] = None) -> str:
-        """Inner dispatch: preflight auth -> MCP boundary -> legacy local dispatcher."""
-        raw_args = dict(tool_args or {})
-
-        # Gate before dispatching to either MCP or the legacy local dispatcher.
-        # Do not consume a valid grant here while MCP is enabled: the stdio MCP
-        # subprocess is the final execution boundary and consumes the grant.
-        preflight = self._authorize_tool_call(tool_name, raw_args, consume_grant=False, mode=mode, workspace_root=workspace_root)
-        if not preflight.allowed:
-            return preflight.message
-
-        mcp_args = dict(preflight.arguments or {})
-        grant_id = raw_args.get("confirmation_grant_id") or raw_args.get("_host_confirmation_grant_id")
-        if grant_id:
-            mcp_args["confirmation_grant_id"] = grant_id
-
-        mcp_result = await self.mcp_tools.call_tool(tool_name, mcp_args)
-        if mcp_result.handled:
-            return mcp_result.result
+    async def _run_in_process_tool(self, tool_name: str, raw_args: Dict[str, Any], *, mode: str = "assistant", workspace_root: Optional[str] = None) -> str:
+        """In-process legacy tool execution path (fallback)."""
+        import inspect
 
         if tool_name not in self.tools:
             if self.mcp_tools.last_error:
                 return f"Error: Tool '{tool_name}' is not registered. MCP status: {self.mcp_tools.last_error}"
             return f"Error: Tool '{tool_name}' is not registered."
+
         local_decision = self._authorize_tool_call(tool_name, raw_args, consume_grant=True, mode=mode, workspace_root=workspace_root)
         if not local_decision.allowed:
             return local_decision.message
@@ -602,7 +598,10 @@ class AgentExecutor:
             if inspect.iscoroutinefunction(tool_func):
                 return await (tool_func(**execution_args) if execution_args else tool_func())
             else:
-                return await (asyncio.to_thread(tool_func, **execution_args) if execution_args else asyncio.to_thread(tool_func))
+                res = tool_func(**execution_args) if execution_args else tool_func()
+                if inspect.iscoroutine(res):
+                    return await res
+                return res
         except Exception as e:
             return f"Error executing tool: {str(e)}"
 
@@ -2061,6 +2060,23 @@ class AgentExecutor:
             ask_enabled = bool(self.memory.profile.get("settings", {}).get("ask_user_enabled", True))
         if not ask_enabled:
             tools = [t for t in tools if t.get("function", {}).get("name") != "ask_user"]
+
+        # Scope Telegram tools EXCLUSIVELY to remote Telegram sessions
+        is_from_telegram = bool(overrides.get("from_telegram", False))
+        if is_from_telegram:
+            from app.tools.definitions import get_tools_definition
+            all_defs = get_tools_definition()
+            telegram_defs = [t for t in all_defs if t.get("function", {}).get("name", "").startswith("telegram_")]
+            existing_names = {t.get("function", {}).get("name") for t in tools}
+            for tdef in telegram_defs:
+                tname = tdef.get("function", {}).get("name")
+                if tname and tname not in existing_names:
+                    tools.append(tdef)
+                    existing_names.add(tname)
+        else:
+            # Desktop mode: NEVER include telegram tools!
+            tools = [t for t in tools if not t.get("function", {}).get("name", "").startswith("telegram_")]
+
         return tools
 
     def _drop_blocked_tools(self, tools: list) -> list:

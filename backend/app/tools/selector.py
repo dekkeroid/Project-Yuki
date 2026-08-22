@@ -126,6 +126,8 @@ _TOOL_HINTS = {
     "jarvis_find_files_by_glob": ("glob", "find", "search", "pattern", "files", "match"),
     "jarvis_grep_files": ("grep", "search", "find", "pattern", "content", "code", "source", "files", "symbol", "function", "keyword", "line"),
     "ask_user": ("ask", "question", "clarify", "choice", "options", "choose", "pick", "select", "which", "decision", "tradeoff", "prompt", "poll"),
+    "telegram_send_screenshot": ("screenshot", "screen", "capture", "send", "snap", "display", "monitor", "telegram", "phone", "mobile", "desktop"),
+    "telegram_send_file": ("send", "upload", "file", "folder", "document", "photo", "image", "transfer", "export", "telegram", "share", "drop"),
 
     # Legacy Basic Mode Tools
     "generate_image": ("generate_image", "generate an image", "ai generate", "diffusion", "flux", "imagen", "dall-e"),

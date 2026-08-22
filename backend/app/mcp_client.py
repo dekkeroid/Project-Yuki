@@ -67,6 +67,10 @@ class StdioMCPToolBridge:
         return config.TOOL_TRANSPORT == "mcp-stdio"
 
     @property
+    def is_enabled(self) -> bool:
+        return config.TOOL_TRANSPORT == "mcp-stdio"
+
+    @property
     def fallback_enabled(self) -> bool:
         return config.MCP_FALLBACK_TO_LOCAL
 

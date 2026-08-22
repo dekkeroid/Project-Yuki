@@ -129,7 +129,13 @@ class MemoryManager:
                 "stable_horde_model": "Pony Diffusion V6 XL",
                 "user_country": "Auto",
                 "allow_voice_barge_in": True,
-                "barge_in_sensitivity": 1.0
+                "barge_in_sensitivity": 1.0,
+                "telegram_enabled": False,
+                "telegram_bot_token": "",
+                "telegram_allowed_users": "",
+                "telegram_voice_replies": True,
+                "telegram_notify_reminders": True,
+                "telegram_verbose_tools": True
             }
         }
         if not os.path.exists(self.profile_path):
@@ -246,6 +252,15 @@ class MemoryManager:
                     config.TOOL_BLACKLIST = set(data["settings"].get("blocked_tools") or [])
                 if "included_coder_tools" in data["settings"]:
                     config.INCLUDED_CODER_TOOLS = list(data["settings"].get("included_coder_tools") or [])
+
+                config.TELEGRAM_ENABLED = bool(data["settings"].get("telegram_enabled", getattr(config, "TELEGRAM_ENABLED", False)))
+                raw_tg_token = data["settings"].get("telegram_bot_token", getattr(config, "TELEGRAM_BOT_TOKEN", ""))
+                dec_tg_token = decrypt_api_key(raw_tg_token) if (raw_tg_token and ("enc_v1:" in str(raw_tg_token) or "gAAAA" in str(raw_tg_token))) else (raw_tg_token or "")
+                config.TELEGRAM_BOT_TOKEN = dec_tg_token
+                config.TELEGRAM_ALLOWED_USERS = str(data["settings"].get("telegram_allowed_users", getattr(config, "TELEGRAM_ALLOWED_USERS", "")))
+                config.TELEGRAM_VOICE_REPLIES = bool(data["settings"].get("telegram_voice_replies", getattr(config, "TELEGRAM_VOICE_REPLIES", True)))
+                config.TELEGRAM_NOTIFY_REMINDERS = bool(data["settings"].get("telegram_notify_reminders", getattr(config, "TELEGRAM_NOTIFY_REMINDERS", True)))
+                config.TELEGRAM_VERBOSE_TOOLS = bool(data["settings"].get("telegram_verbose_tools", getattr(config, "TELEGRAM_VERBOSE_TOOLS", True)))
                 
                 return data
         except Exception as e:
@@ -491,6 +506,21 @@ class MemoryManager:
             config.STABLE_HORDE_API_KEY = str(value).strip()
         elif key == "stable_horde_model":
             config.STABLE_HORDE_MODEL = str(value).strip()
+        elif key == "telegram_enabled":
+            config.TELEGRAM_ENABLED = bool(value)
+        elif key == "telegram_bot_token":
+            from app.utils.security import decrypt_api_key, encrypt_api_key
+            config.TELEGRAM_BOT_TOKEN = decrypt_api_key(value) if value and value.startswith("enc_v1:") else str(value).strip()
+            self.profile["settings"]["telegram_bot_token"] = encrypt_api_key(value) if value else ""
+            self._save_profile()
+        elif key == "telegram_allowed_users":
+            config.TELEGRAM_ALLOWED_USERS = str(value).strip()
+        elif key == "telegram_voice_replies":
+            config.TELEGRAM_VOICE_REPLIES = bool(value)
+        elif key == "telegram_notify_reminders":
+            config.TELEGRAM_NOTIFY_REMINDERS = bool(value)
+        elif key == "telegram_verbose_tools":
+            config.TELEGRAM_VERBOSE_TOOLS = bool(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

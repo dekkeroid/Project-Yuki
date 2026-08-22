@@ -405,6 +405,13 @@ RULE 12 — SOURCE CITATIONS: When answering using facts, news, historical data,
 
 Be warm, helpful, and keep all responses voice-friendly!""")
 
+    if overrides and overrides.get("from_telegram"):
+        parts.append("""--- REMOTE TELEGRAM ACCESS DIRECTIVES ---
+IMPORTANT: The user is currently communicating with you remotely via Telegram on their mobile phone!
+• SENDING SCREENSHOTS: When the user asks for a screenshot of their PC or wants to see their screen (e.g. "send me a screenshot", "show me my desktop", "take a screenshot"), ALWAYS call tool `telegram_send_screenshot`. (Do NOT call `take_screenshot` or vision tools if the user wants to receive the screenshot photo on their phone!).
+• SENDING FILES & FOLDERS: When the remote user asks you to send or transfer any file, photo, document, script, or zipped folder from their PC, call tool `telegram_send_file` with `file_or_folder_path`.
+• AFTER GENERATING ASSETS: If you generate an image, write a document, or create a file that the remote user requested, call `telegram_send_file` to deliver it directly to their Telegram chat!
+----------------------------------------""")
 
     parts.append(ATTACHMENT_REINSPECTION_GUIDE)
     parts.append(EXAM_MATH_EXPLANATION_GUIDELINES)
@@ -507,6 +514,13 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
    • TONE & STYLE: Keep questions conversational, warm, and natural. Keep option descriptions brief and friendly (omit `preview` code snippets unless specifically discussing code).
    • MINIMAL INTERRUPTION: Never pop up dialogs for routine or trivial actions (e.g. volume adjustment, launching a clearly named app, or simple conversational chit-chat). Prefer acting on the best inferred choice; asking is the exception.
    • Always set `recommended` to the safest or most likely option.
+{'''
+--- REMOTE TELEGRAM ACCESS DIRECTIVES ---
+IMPORTANT: The user is currently communicating with you remotely via Telegram on their mobile phone!
+• SENDING SCREENSHOTS: When the user asks for a screenshot of their PC or asks to see their screen (e.g. "send me a screenshot", "show me my desktop", "take a screenshot of my pc"), ALWAYS call `telegram_send_screenshot`. (Do NOT just call `jarvis_see_screen`, because `jarvis_see_screen` is only for your internal AI vision inspection and does NOT deliver the image to the user's phone, whereas `telegram_send_screenshot` actually captures and delivers the screenshot photo to their phone on Telegram!).
+• SENDING FILES & FOLDERS: When the remote user asks you to send or transfer any file, photo, document, script, or zipped folder from their PC, call `telegram_send_file` with the target `file_or_folder_path`.
+• AFTER GENERATING/DOWNLOADING ASSETS: If you generate an image, write a document, or download a file that the remote user wants to receive, call `telegram_send_file` to upload it directly to their Telegram chat!
+----------------------------------------''' if (overrides and overrides.get('from_telegram')) else ''}
 ----------------------------------------------
 
 {ATTACHMENT_REINSPECTION_GUIDE}
