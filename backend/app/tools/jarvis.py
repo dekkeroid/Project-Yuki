@@ -872,6 +872,20 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
                 "apikey": api_token or "0000000000",
                 "Client-Agent": "ProjectYuki:v0.3.4:github.com/dekkeroid/Project-Yuki"
             }
+
+            # Resolve target models dynamically if set to 'auto'
+            s_lower = (chosen_style or "auto").strip().lower()
+            p_lower = prompt_text.lower()
+            if not model_choice or model_choice.lower() == "auto":
+                if s_lower in ("flux-anime", "anime") or any(w in p_lower for w in ("anime", "manga", "waifu", "genshin")):
+                    target_models = ["Pony Diffusion V6 XL", "Illustrious XL"]
+                elif s_lower in ("flux-realism", "realism", "photo") or any(w in p_lower for w in ("realistic", "photograph", "portrait", "dslr")):
+                    target_models = ["Juggernaut XL", "ICBINP - I Can't Believe It's Not Photography"]
+                else:
+                    target_models = ["Dreamshaper", "Pony Diffusion V6 XL", "stable_diffusion"]
+            else:
+                target_models = [model_choice]
+
             h_payload = {
                 "prompt": styled_prompt,
                 "params": {
@@ -882,9 +896,9 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
                     "steps": 25,
                     "n": 1
                 },
-                "models": [model_choice] if model_choice else ["Pony Diffusion V6 XL", "Illustrious XL", "stable_diffusion"]
+                "models": target_models
             }
-            print(f"[ImageGen][StableHorde] Submitting prompt to Horde model '{model_choice}' (prompt='{styled_prompt[:60]}')...")
+            print(f"[ImageGen][StableHorde] Submitting prompt to Horde models {target_models} (prompt='{styled_prompt[:60]}')...")
             resp = requests.post(h_url, headers=h_headers, json=h_payload, timeout=20)
             if resp.status_code == 202:
                 task_id = resp.json().get("id")
