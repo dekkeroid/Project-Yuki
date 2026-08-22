@@ -814,26 +814,51 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
                 pass
         return None, "flux"
 
-    def generate_via_huggingface(prompt_text: str, token: str, model_name: str = ""):
+    def enrich_prompt_for_style(p_text: str, s_choice: str) -> str:
+        s = (s_choice or "auto").strip().lower()
+        p_lower = p_text.lower()
+        if s in ("flux-anime", "anime") or any(w in p_lower for w in ("anime", "manga", "waifu", "chibi", "otaku", "genshin")):
+            if "anime" not in p_lower and "manga" not in p_lower and "cel-shaded" not in p_lower:
+                return f"{p_text}, vibrant Japanese anime artwork, highly detailed cel-shaded illustration"
+        elif s in ("flux-realism", "realism", "photo") or any(w in p_lower for w in ("realistic", "realism", "photograph", "portrait", "dslr")):
+            if "photorealistic" not in p_lower and "realistic" not in p_lower and "photography" not in p_lower:
+                return f"{p_text}, photorealistic 85mm portrait photography, natural skin texture, studio lighting, 8k resolution"
+        elif s in ("flux-3d", "3d", "cgi") or any(w in p_lower for w in ("3d", "cgi", "pixar", "isometric", "render", "unreal engine")):
+            if "3d" not in p_lower and "pixar" not in p_lower and "render" not in p_lower:
+                return f"{p_text}, 3D CGI Disney Pixar style character render, Octane 3D render, volumetric lighting"
+        return p_text
+
+    def generate_via_huggingface(prompt_text: str, token: str, model_name: str = "", chosen_style: str = "auto"):
         if not token:
             return None
         target_model = model_name or "black-forest-labs/FLUX.1-dev"
+        styled_prompt = enrich_prompt_for_style(prompt_text, chosen_style)
         endpoints = [
             f"https://router.huggingface.co/hf-inference/models/{target_model}",
             f"https://api-inference.huggingface.co/models/{target_model}"
         ]
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "x-wait-for-model": "true"
+        }
         for ep in endpoints:
             try:
-                print(f"[ImageGen][HuggingFace] Requesting model '{target_model}' via {ep}...")
-                resp = requests.post(ep, headers=headers, json={"inputs": prompt_text}, timeout=60)
+                print(f"[ImageGen][HuggingFace] Requesting model '{target_model}' via {ep} (prompt='{styled_prompt[:60]}')...")
+                resp = requests.post(ep, headers=headers, json={"inputs": styled_prompt}, timeout=75)
                 if resp.status_code == 200 and len(resp.content) > 5000:
                     return resp.content
+                elif resp.status_code == 503:
+                    # Model is currently loading into GPU memory on Hugging Face
+                    time.sleep(6)
+                    retry_resp = requests.post(ep, headers=headers, json={"inputs": styled_prompt}, timeout=75)
+                    if retry_resp.status_code == 200 and len(retry_resp.content) > 5000:
+                        return retry_resp.content
             except Exception as e:
                 print(f"[ImageGen][HuggingFace] Attempt error: {e}")
         return None
 
-    def generate_via_stable_horde(prompt_text: str, aspect: str, api_token: str, model_choice: str):
+    def generate_via_stable_horde(prompt_text: str, aspect: str, api_token: str, model_choice: str, chosen_style: str = "auto"):
         try:
             w, h = 512, 512
             if "16:9" in aspect:
@@ -841,13 +866,14 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
             elif "9:16" in aspect:
                 w, h = 448, 768
 
+            styled_prompt = enrich_prompt_for_style(prompt_text, chosen_style)
             h_url = "https://aihorde.net/api/v2/generate/async"
             h_headers = {
                 "apikey": api_token or "0000000000",
                 "Client-Agent": "ProjectYuki:v0.3.4:github.com/dekkeroid/Project-Yuki"
             }
             h_payload = {
-                "prompt": prompt_text,
+                "prompt": styled_prompt,
                 "params": {
                     "sampler_name": "k_euler",
                     "cfg_scale": 7.0,
@@ -858,7 +884,7 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
                 },
                 "models": [model_choice] if model_choice else ["Pony Diffusion V6 XL", "Illustrious XL", "stable_diffusion"]
             }
-            print(f"[ImageGen][StableHorde] Submitting prompt to Horde model '{model_choice}'...")
+            print(f"[ImageGen][StableHorde] Submitting prompt to Horde model '{model_choice}' (prompt='{styled_prompt[:60]}')...")
             resp = requests.post(h_url, headers=h_headers, json=h_payload, timeout=20)
             if resp.status_code == 202:
                 task_id = resp.json().get("id")
@@ -902,13 +928,13 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
     # Check Provider Strategy
     if image_provider == "huggingface" and hf_key:
         print("[ImageGen] Using Hugging Face Inference API.")
-        image_bytes = generate_via_huggingface(prompt, hf_key, image_model)
+        image_bytes = generate_via_huggingface(prompt, hf_key, image_model, style)
         if image_bytes:
             engine_used = f"Hugging Face ({image_model or 'FLUX.1-dev'})"
 
     elif image_provider == "stable_horde":
         print(f"[ImageGen] Using Stable Horde ({horde_model}).")
-        image_bytes = generate_via_stable_horde(prompt, aspect_ratio, horde_key, horde_model)
+        image_bytes = generate_via_stable_horde(prompt, aspect_ratio, horde_key, horde_model, style)
         if image_bytes:
             engine_used = f"Stable Horde ({horde_model})"
 
