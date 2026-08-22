@@ -1022,10 +1022,16 @@ def _needs_confirmation(path: str) -> bool:
     path_lower = path.lower()
     # Steam games (.exe with valid appid) are safe
     is_steam = path_lower.endswith(".exe") and _get_steam_appid(path) is not None
-    # Media files are safe
+    # Media, images, and document files are safe
     _, ext = os.path.splitext(path_lower)
-    is_media = ext in ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg')
-    return not (is_steam or is_media)
+    safe_exts = (
+        '.mp4', '.mkv', '.webm', '.avi', '.mov', '.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac',
+        '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg', '.ico',
+        '.pdf', '.txt', '.md', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.csv', '.json', '.yaml', '.xml',
+        '.lnk', '.url'
+    )
+    is_safe_file = ext in safe_exts
+    return not (is_steam or is_safe_file)
 
 
 def resolve_best_file_via_suggestions(query: str, play_mode: bool = False) -> Optional[str]:
