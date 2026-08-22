@@ -1017,7 +1017,7 @@ async def _process_single_update(tg: TelegramClient, client: httpx.AsyncClient, 
                 from app.tools.files import open_or_play_file
                 from app.tools.system import launch_app
                 # Try opening file first, then fall back to app launcher
-                res = open_or_play_file(query, mode="open")
+                res = open_or_play_file(query, play_mode=False)
                 if "No files found" in res or "Error" in res:
                     res = launch_app(query)
                 await tg.send_message(client, chat_id, f"📂 {res}")
@@ -1030,7 +1030,7 @@ async def _process_single_update(tg: TelegramClient, client: httpx.AsyncClient, 
             await tg.send_chat_action(client, chat_id, "typing")
             try:
                 from app.tools.files import open_or_play_file
-                res = open_or_play_file(query, mode="play")
+                res = open_or_play_file(query, play_mode=True)
                 await tg.send_message(client, chat_id, f"🎵 {res}")
             except Exception as e:
                 await tg.send_message(client, chat_id, f"⚠️ Play error: {e}")
