@@ -43,6 +43,7 @@ _active_confirmations: Dict[str, asyncio.Future] = {}
 _chat_histories: Dict[int, List[Dict[str, str]]] = {}
 _chat_text_only: Dict[int, bool] = {}
 _known_chat_ids: set = set()
+_current_active_chat_id: Optional[int] = None
 
 _SESSIONS_FILE = os.path.join(config.BASE_DIR, "telegram_sessions.json")
 
@@ -277,6 +278,25 @@ class TelegramClient:
         r = await client.post(f"{self.base_url}/sendDocument", data=data, files=files, timeout=60.0)
         return r.json()
 
+    async def send_audio(
+        self,
+        client: httpx.AsyncClient,
+        chat_id: int,
+        audio_bytes: bytes,
+        filename: str = "audio.mp3",
+        caption: str = "",
+        title: str = "",
+        performer: str = ""
+    ) -> dict:
+        data = {"chat_id": str(chat_id), "caption": caption, "parse_mode": "HTML"}
+        if title:
+            data["title"] = title
+        if performer:
+            data["performer"] = performer
+        files = {"audio": (filename, audio_bytes, "audio/mpeg")}
+        r = await client.post(f"{self.base_url}/sendAudio", data=data, files=files, timeout=90.0)
+        return r.json()
+
     async def answer_callback_query(self, client: httpx.AsyncClient, callback_query_id: str, text: str = ""):
         try:
             await client.post(
@@ -365,12 +385,44 @@ async def send_unauthorized_reply(tg: TelegramClient, client: httpx.AsyncClient,
         print(f"[Telegram] Failed to send unauthorized reply: {e}")
 
 
-async def _send_file_or_folder(tg: TelegramClient, client: httpx.AsyncClient, chat_id: int, file_path: str, caption: str = "") -> bool:
-    """Uploads a file, image, or zipped folder to Telegram."""
+def _extract_audio_from_video(video_path: str) -> Optional[bytes]:
+    """Extracts MP3 audio bytes from video using PyAV."""
+    try:
+        import av
+        input_container = av.open(video_path)
+        audio_stream = next((s for s in input_container.streams if s.type == 'audio'), None)
+        if not audio_stream:
+            return None
+        
+        out_buffer = io.BytesIO()
+        output_container = av.open(out_buffer, mode='w', format='mp3')
+        out_stream = output_container.add_stream('mp3', rate=audio_stream.rate)
+        
+        for packet in input_container.demux(audio_stream):
+            for frame in packet.decode():
+                for out_packet in out_stream.encode(frame):
+                    output_container.mux(out_packet)
+                    
+        for out_packet in out_stream.encode():
+            output_container.mux(out_packet)
+            
+        output_container.close()
+        input_container.close()
+        return out_buffer.getvalue()
+    except Exception as e:
+        print(f"[Telegram] Audio extraction error: {e}")
+        return None
+
+
+async def _send_file_or_folder(tg: TelegramClient, client: httpx.AsyncClient, chat_id: int, file_path: str, caption: str = "") -> Tuple[bool, str]:
+    """Uploads a file, image, audio, or zipped folder to Telegram with auto-handling for large files."""
     if not os.path.exists(file_path):
-        return False
+        return False, f"File not found: '{file_path}'"
     
     clean_path = os.path.abspath(file_path)
+    file_name = os.path.basename(clean_path)
+    ext = os.path.splitext(clean_path)[1].lower()
+    
     try:
         if os.path.isdir(clean_path):
             dir_name = os.path.basename(clean_path.rstrip(r"\/")) or "folder"
@@ -383,9 +435,17 @@ async def _send_file_or_folder(tg: TelegramClient, client: httpx.AsyncClient, ch
                         rel_f = os.path.relpath(full_f, clean_path)
                         zipf.write(full_f, rel_f)
             
+            zip_size = os.path.getsize(zip_dest)
+            if zip_size > 50 * 1024 * 1024:
+                try:
+                    os.remove(zip_dest)
+                except Exception:
+                    pass
+                return False, f"Zipped archive is {zip_size / (1024*1024):.1f}MB, which exceeds Telegram's 50MB bot upload limit."
+
             with open(zip_dest, "rb") as doc_file:
                 doc_bytes = doc_file.read()
-                await tg.send_document(
+                res = await tg.send_document(
                     client,
                     chat_id,
                     doc_bytes,
@@ -396,54 +456,121 @@ async def _send_file_or_folder(tg: TelegramClient, client: httpx.AsyncClient, ch
                 os.remove(zip_dest)
             except Exception:
                 pass
-            return True
+            if res.get("ok"):
+                return True, f"Successfully uploaded folder archive '{dir_name}.zip' to Telegram."
+            return False, f"Telegram API error: {res.get('description', 'Upload failed')}"
             
-        elif is_image_file(clean_path):
-            with open(clean_path, "rb") as photo_file:
-                photo_bytes = photo_file.read()
-                await tg.send_photo(
+        file_size = os.path.getsize(clean_path)
+        file_size_mb = file_size / (1024 * 1024)
+
+        if is_image_file(clean_path):
+            if file_size_mb > 10.0:
+                with open(clean_path, "rb") as doc_file:
+                    res = await tg.send_document(
+                        client,
+                        chat_id,
+                        doc_file.read(),
+                        filename=file_name,
+                        caption=caption or f"🖼️ <code>{file_name}</code>"
+                    )
+            else:
+                with open(clean_path, "rb") as photo_file:
+                    res = await tg.send_photo(
+                        client,
+                        chat_id,
+                        photo_file.read(),
+                        filename=file_name,
+                        caption=caption or f"🖼️ <code>{file_name}</code>"
+                    )
+            if res.get("ok"):
+                return True, f"Successfully sent image '{file_name}' to Telegram."
+            return False, f"Telegram API error: {res.get('description', 'Upload failed')}"
+
+        elif ext in (".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".wma", ".opus"):
+            if file_size_mb > 50.0:
+                return False, f"Audio file is {file_size_mb:.1f}MB, which exceeds Telegram's 50MB bot upload limit."
+            with open(clean_path, "rb") as audio_file:
+                res = await tg.send_audio(
                     client,
                     chat_id,
-                    photo_bytes,
-                    filename=os.path.basename(clean_path),
-                    caption=caption or f"🖼️ <code>{os.path.basename(clean_path)}</code>"
+                    audio_file.read(),
+                    filename=file_name,
+                    title=os.path.splitext(file_name)[0],
+                    caption=caption or f"🎵 <code>{file_name}</code>"
                 )
-            return True
+            if res.get("ok"):
+                return True, f"Successfully uploaded song/audio '{file_name}' to Telegram."
+            return False, f"Telegram API error: {res.get('description', 'Upload failed')}"
+
+        elif ext in (".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v"):
+            if file_size_mb <= 49.0:
+                with open(clean_path, "rb") as doc_file:
+                    res = await tg.send_document(
+                        client,
+                        chat_id,
+                        doc_file.read(),
+                        filename=file_name,
+                        caption=caption or f"🎬 <code>{file_name}</code>"
+                    )
+                if res.get("ok"):
+                    return True, f"Successfully uploaded video '{file_name}' to Telegram."
+                return False, f"Telegram API error: {res.get('description', 'Upload failed')}"
+            else:
+                # Video exceeds Telegram 50MB bot limit -> Automatically extract high quality audio track!
+                print(f"[Telegram] Video '{file_name}' is {file_size_mb:.1f}MB (> 50MB limit). Extracting audio track...")
+                audio_bytes = _extract_audio_from_video(clean_path)
+                if audio_bytes and len(audio_bytes) < 50 * 1024 * 1024:
+                    mp3_name = f"{os.path.splitext(file_name)[0]}.mp3"
+                    res = await tg.send_audio(
+                        client,
+                        chat_id,
+                        audio_bytes,
+                        filename=mp3_name,
+                        title=os.path.splitext(file_name)[0],
+                        caption=caption or f"🎵 <b>Audio Track</b> ({file_size_mb:.1f}MB original video exceeds 50MB limit — extracted high-quality MP3)"
+                    )
+                    if res.get("ok"):
+                        return True, f"Sent high-quality audio track '{mp3_name}' ({len(audio_bytes)/(1024*1024):.1f}MB) to Telegram (extracted because original video is {file_size_mb:.1f}MB, which exceeds Telegram's 50MB bot limit)."
+                return False, f"Video file is {file_size_mb:.1f}MB, which exceeds Telegram's 50MB bot upload limit."
+
         else:
+            if file_size_mb > 50.0:
+                return False, f"File is {file_size_mb:.1f}MB, which exceeds Telegram's 50MB bot upload limit."
             with open(clean_path, "rb") as doc_file:
-                doc_bytes = doc_file.read()
-                await tg.send_document(
+                res = await tg.send_document(
                     client,
                     chat_id,
-                    doc_bytes,
-                    filename=os.path.basename(clean_path),
-                    caption=caption or f"📄 <code>{os.path.basename(clean_path)}</code>"
+                    doc_file.read(),
+                    filename=file_name,
+                    caption=caption or f"📄 <code>{file_name}</code>"
                 )
-            return True
+            if res.get("ok"):
+                return True, f"Successfully uploaded file '{file_name}' to Telegram."
+            return False, f"Telegram API error: {res.get('description', 'Upload failed')}"
     except Exception as e:
         print(f"[Telegram] Error uploading file '{file_path}': {e}")
-        return False
+        return False, str(e)
 
 
-async def send_file_to_active_chat(file_path: str, caption: str = "", chat_id: Optional[int] = None) -> bool:
+async def send_file_to_active_chat(file_path: str, caption: str = "", chat_id: Optional[int] = None) -> Tuple[bool, str]:
     """Sends a file, screenshot, or folder directly to the active Telegram chat."""
     global _current_active_chat_id, _known_chat_ids
     target_chat = chat_id or _current_active_chat_id or (next(iter(_known_chat_ids)) if _known_chat_ids else None)
     if not target_chat:
         print("[Telegram] send_file_to_active_chat failed: No active chat ID found.")
-        return False
+        return False, "No active Telegram chat session found."
     
     token = getattr(config, "TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
-        return False
+        return False, "Telegram Bot Token is not configured in settings."
         
     tg = TelegramClient(token)
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             return await _send_file_or_folder(tg, client, target_chat, file_path, caption=caption)
     except Exception as e:
         print(f"[Telegram] Error sending file to chat #{target_chat}: {e}")
-        return False
+        return False, str(e)
 
 
 # ── Core Agent Turn Dispatcher ────────────────────────────────────────────────

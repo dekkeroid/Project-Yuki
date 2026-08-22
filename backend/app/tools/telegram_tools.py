@@ -31,11 +31,8 @@ async def telegram_send_screenshot(caption: str = "") -> str:
             return f"Error: Screenshot file was not found at '{img_path}'."
         
         from app.channels import telegram_service
-        sent = await telegram_service.send_file_to_active_chat(img_path, caption=caption or f"📸 Desktop Screenshot ({time.strftime('%I:%M %p')})")
-        if sent:
-            return f"Successfully captured screen and sent screenshot to user's Telegram: {img_path}"
-        else:
-            return f"Captured screenshot at '{img_path}', but no active Telegram chat is currently open to receive it."
+        success, detail = await telegram_service.send_file_to_active_chat(img_path, caption=caption or f"📸 Desktop Screenshot ({time.strftime('%I:%M %p')})")
+        return detail
     except Exception as e:
         return f"Error capturing/sending screenshot to Telegram: {str(e)}"
 
@@ -54,13 +51,7 @@ async def telegram_send_file(file_or_folder_path: str, caption: str = "") -> str
     
     try:
         from app.channels import telegram_service
-        sent = await telegram_service.send_file_to_active_chat(clean_path, caption=caption)
-        if sent:
-            if os.path.isdir(clean_path):
-                return f"Successfully compressed folder and sent '{clean_path}' to user's Telegram as a zip archive."
-            else:
-                return f"Successfully sent file '{clean_path}' to user's Telegram."
-        else:
-            return f"Target exists at '{clean_path}', but no active Telegram chat is currently open to receive it."
+        success, detail = await telegram_service.send_file_to_active_chat(clean_path, caption=caption)
+        return detail
     except Exception as e:
         return f"Error sending file to Telegram: {str(e)}"
