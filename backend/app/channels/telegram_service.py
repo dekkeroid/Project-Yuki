@@ -297,6 +297,20 @@ class TelegramClient:
         r = await client.post(f"{self.base_url}/sendAudio", data=data, files=files, timeout=90.0)
         return r.json()
 
+    async def send_video(
+        self,
+        client: httpx.AsyncClient,
+        chat_id: int,
+        video_bytes: bytes,
+        filename: str = "video.mp4",
+        caption: str = "",
+        supports_streaming: bool = True
+    ) -> dict:
+        data = {"chat_id": str(chat_id), "caption": caption, "parse_mode": "HTML", "supports_streaming": str(supports_streaming).lower()}
+        files = {"video": (filename, video_bytes, "video/mp4")}
+        r = await client.post(f"{self.base_url}/sendVideo", data=data, files=files, timeout=120.0)
+        return r.json()
+
     async def answer_callback_query(self, client: httpx.AsyncClient, callback_query_id: str, text: str = ""):
         try:
             await client.post(
@@ -385,8 +399,48 @@ async def send_unauthorized_reply(tg: TelegramClient, client: httpx.AsyncClient,
         print(f"[Telegram] Failed to send unauthorized reply: {e}")
 
 
+def _compress_video_ffmpeg(video_path: str) -> Optional[str]:
+    """Compresses large video using ffmpeg so it fits within Telegram's 50MB limit."""
+    import subprocess
+    ffmpeg_bin = shutil.which("ffmpeg") or r"C:\ffmpeg\bin\ffmpeg.exe"
+    if not os.path.exists(ffmpeg_bin) and not shutil.which("ffmpeg"):
+        return None
+    
+    file_name = os.path.basename(video_path)
+    base_name, _ = os.path.splitext(file_name)
+    temp_dest = os.path.join(get_attachment_directory(), f"compressed_{base_name}_{int(time.time())}.mp4")
+    
+    try:
+        cmd = [
+            ffmpeg_bin, "-y", "-i", video_path,
+            "-vf", "scale=trunc(min(1280,iw)/2)*2:-2",
+            "-c:v", "libx264", "-crf", "28", "-preset", "veryfast",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            temp_dest
+        ]
+        res = subprocess.run(cmd, capture_output=True, timeout=120)
+        if res.returncode == 0 and os.path.exists(temp_dest):
+            csize = os.path.getsize(temp_dest)
+            if csize <= 49 * 1024 * 1024:
+                return temp_dest
+            else:
+                try:
+                    os.remove(temp_dest)
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[Telegram] Video compression failed: {e}")
+        if os.path.exists(temp_dest):
+            try:
+                os.remove(temp_dest)
+            except Exception:
+                pass
+    return None
+
+
 def _extract_audio_from_video(video_path: str) -> Optional[bytes]:
-    """Extracts MP3 audio bytes from video using PyAV."""
+    """Extracts MP3 audio bytes from video in-memory using PyAV (no temp files on disk)."""
     try:
         import av
         input_container = av.open(video_path)
@@ -415,7 +469,7 @@ def _extract_audio_from_video(video_path: str) -> Optional[bytes]:
 
 
 async def _send_file_or_folder(tg: TelegramClient, client: httpx.AsyncClient, chat_id: int, file_path: str, caption: str = "") -> Tuple[bool, str]:
-    """Uploads a file, image, audio, or zipped folder to Telegram with auto-handling for large files."""
+    """Uploads a file, image, audio, video, or zipped folder to Telegram with auto-handling for large files."""
     if not os.path.exists(file_path):
         return False, f"File not found: '{file_path}'"
     
@@ -443,22 +497,24 @@ async def _send_file_or_folder(tg: TelegramClient, client: httpx.AsyncClient, ch
                     pass
                 return False, f"Zipped archive is {zip_size / (1024*1024):.1f}MB, which exceeds Telegram's 50MB bot upload limit."
 
-            with open(zip_dest, "rb") as doc_file:
-                doc_bytes = doc_file.read()
-                res = await tg.send_document(
-                    client,
-                    chat_id,
-                    doc_bytes,
-                    filename=f"{dir_name}.zip",
-                    caption=caption or f"📁 <b>Archive of folder:</b> <code>{clean_path}</code>"
-                )
             try:
-                os.remove(zip_dest)
-            except Exception:
-                pass
-            if res.get("ok"):
-                return True, f"Successfully uploaded folder archive '{dir_name}.zip' to Telegram."
-            return False, f"Telegram API error: {res.get('description', 'Upload failed')}"
+                with open(zip_dest, "rb") as doc_file:
+                    doc_bytes = doc_file.read()
+                    res = await tg.send_document(
+                        client,
+                        chat_id,
+                        doc_bytes,
+                        filename=f"{dir_name}.zip",
+                        caption=caption or f"📁 <b>Archive of folder:</b> <code>{clean_path}</code>"
+                    )
+                if res.get("ok"):
+                    return True, f"Successfully uploaded folder archive '{dir_name}.zip' to Telegram."
+                return False, f"Telegram API error: {res.get('description', 'Upload failed')}"
+            finally:
+                try:
+                    os.remove(zip_dest)
+                except Exception:
+                    pass
             
         file_size = os.path.getsize(clean_path)
         file_size_mb = file_size / (1024 * 1024)
@@ -504,11 +560,11 @@ async def _send_file_or_folder(tg: TelegramClient, client: httpx.AsyncClient, ch
 
         elif ext in (".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v"):
             if file_size_mb <= 49.0:
-                with open(clean_path, "rb") as doc_file:
-                    res = await tg.send_document(
+                with open(clean_path, "rb") as vid_file:
+                    res = await tg.send_video(
                         client,
                         chat_id,
-                        doc_file.read(),
+                        vid_file.read(),
                         filename=file_name,
                         caption=caption or f"🎬 <code>{file_name}</code>"
                     )
@@ -516,8 +572,30 @@ async def _send_file_or_folder(tg: TelegramClient, client: httpx.AsyncClient, ch
                     return True, f"Successfully uploaded video '{file_name}' to Telegram."
                 return False, f"Telegram API error: {res.get('description', 'Upload failed')}"
             else:
-                # Video exceeds Telegram 50MB bot limit -> Automatically extract high quality audio track!
-                print(f"[Telegram] Video '{file_name}' is {file_size_mb:.1f}MB (> 50MB limit). Extracting audio track...")
+                # Video exceeds Telegram 50MB limit -> Attempt fast video compression first!
+                print(f"[Telegram] Video '{file_name}' is {file_size_mb:.1f}MB (> 50MB limit). Attempting fast video compression...")
+                comp_path = _compress_video_ffmpeg(clean_path)
+                if comp_path and os.path.exists(comp_path):
+                    try:
+                        c_mb = os.path.getsize(comp_path) / (1024 * 1024)
+                        with open(comp_path, "rb") as cvid:
+                            res = await tg.send_video(
+                                client,
+                                chat_id,
+                                cvid.read(),
+                                filename=f"{os.path.splitext(file_name)[0]}_720p.mp4",
+                                caption=caption or f"🎬 <b>Compressed Video</b> ({c_mb:.1f}MB, original was {file_size_mb:.1f}MB)"
+                            )
+                        if res.get("ok"):
+                            return True, f"Successfully compressed and sent video '{file_name}' ({c_mb:.1f}MB) to Telegram."
+                    finally:
+                        try:
+                            os.remove(comp_path)
+                        except Exception:
+                            pass
+
+                # If video compression couldn't reduce under 50MB, fall back to in-memory MP3 audio track
+                print(f"[Telegram] Falling back to high-quality audio extraction for '{file_name}'...")
                 audio_bytes = _extract_audio_from_video(clean_path)
                 if audio_bytes and len(audio_bytes) < 50 * 1024 * 1024:
                     mp3_name = f"{os.path.splitext(file_name)[0]}.mp3"
