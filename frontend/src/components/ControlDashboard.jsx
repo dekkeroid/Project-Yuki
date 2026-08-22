@@ -5877,10 +5877,11 @@ const ControlDashboard = ({
                           />
                           <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginBottom: '4px' }}>Community Model Checkpoint</div>
                           <select
-                            value={settings.stable_horde_model || 'Pony Diffusion V6 XL'}
+                            value={settings.stable_horde_model || 'auto'}
                             onChange={(e) => handleUpdateSetting('stable_horde_model', e.target.value)}
                             style={{ width: '100%', padding: '6px 8px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'white', fontSize: '0.74rem', outline: 'none' }}
                           >
+                            <option value="auto" style={{ background: '#0b0813' }}>✨ Auto Dynamic (Pony for Anime, Juggernaut for Realism, Dreamshaper for 3D)</option>
                             <option value="Pony Diffusion V6 XL" style={{ background: '#0b0813' }}>Pony Diffusion V6 XL (King of Anime & Stylized Characters)</option>
                             <option value="Illustrious XL" style={{ background: '#0b0813' }}>Illustrious XL (Next-Gen Japanese Anime Checkpoint)</option>
                             <option value="Juggernaut XL" style={{ background: '#0b0813' }}>Juggernaut XL (Cinema-Grade Photorealism)</option>
