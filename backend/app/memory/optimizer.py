@@ -52,13 +52,49 @@ SCAN_ENRICH_WINDOW = 30
 PROCESS_QUERY_INFORMATION = 0x0400
 PROCESS_SET_QUOTA         = 0x0100
 
-# Never trim working sets of these system-critical processes — trimming dwm/explorer
-# at >90% RAM can freeze the UI and look like a crash.
+# Never trim working sets of these system-critical, security, networking, terminal, and installer processes.
+# Trimming dwm/explorer at >90% RAM can freeze the UI; trimming security/VPN/tunnels can disrupt connectivity/protection;
+# trimming terminals causes input stutter; trimming active LZMA decompressors thrashes the pagefile.
 _NEVER_TRIM = {
+    # ── 1. Core OS, Display Compositor & Critical System Services ──
     "dwm.exe", "explorer.exe", "csrss.exe", "winlogon.exe", "smss.exe",
-    "services.exe", "lsass.exe", "MsMpEng.exe", "SearchIndexer.exe",
-    "fontdrvhost.exe", "dwmapi.dll",  # display/compositor
+    "services.exe", "lsass.exe", "SearchIndexer.exe", "fontdrvhost.exe",
+    "dwmapi.dll", "sihost.exe", "ctfmon.exe", "RuntimeBroker.exe",
     "System", "Idle", "Registry",
+
+    # ── 2. Security, Anti-Virus & Anti-Malware Engines ──
+    "MsMpEng.exe", "NisSrv.exe", "SecurityHealthService.exe", "SecurityHealthSystray.exe",
+    "Malwarebytes.exe", "MBAMService.exe", "mbam.exe", "mbamtray.exe",
+    "avp.exe", "avpui.exe", "bdagent.exe", "vsserv.exe",
+    "AvastSvc.exe", "AvastUI.exe", "AVGNT.EXE", "avgsvc.exe",
+    "NortonSecurity.exe", "ccSvcHst.exe", "mcshield.exe", "McAPExe.exe",
+    "ekrn.exe", "egui.exe", "SavService.exe", "FortiClient.exe",
+    "CrowdStrike.exe", "CSFalconService.exe", "SentinelAgent.exe",
+
+    # ── 3. VPN, Tunneling, Proxy & Mesh Networking ──
+    "ProtonVPN.Client.exe", "ProtonVPN.Service.exe", "ProtonVPN.exe", "ProtonVPN.WireGuard.exe",
+    "wireguard.exe", "wireguard-service.exe",
+    "openvpn.exe", "openvpn-gui.exe", "ovpnagent.exe",
+    "tailscale.exe", "tailscaled.exe", "tailscale-ipn.exe",
+    "zerotier-one.exe", "zerotier-one_x64.exe",
+    "cloudflared.exe", "warp-svc.exe", "Cloudflare WARP.exe",
+    "ngrok.exe", "localtunnel.exe",
+    "NordVPN.exe", "nordvpn-service.exe", "ExpressVPN.exe", "expressvpn-service.exe",
+    "MullvadVPN.exe", "mullvad-daemon.exe", "Surfshark.exe", "surfshark-service.exe",
+    "pia-client.exe", "pia-service.exe", "v2ray.exe", "xray.exe", "clash.exe", "sing-box.exe",
+
+    # ── 4. Developer Terminals, Consoles, Shells & Remote Sessions ──
+    "WindowsTerminal.exe", "wt.exe", "conhost.exe", "openconsole.exe",
+    "cmd.exe", "powershell.exe", "pwsh.exe",
+    "alacritty.exe", "wezterm-gui.exe", "kitty.exe", "hyper.exe", "mintty.exe",
+    "ssh.exe", "sshd.exe", "pageant.exe", "putty.exe",
+    "git-bash.exe", "bash.exe", "wsl.exe", "wslhost.exe", "vmmem.exe", "vmmemWSL.exe",
+
+    # ── 5. Installers, Setup Engines & Active Archive Decompressors ──
+    # Exempting active decompressors prevents severe pagefile thrashing and CPU slowdown during installs
+    "islzma64.exe", "islzma32.exe", "isdone.dll",
+    "7z.exe", "7zG.exe", "7zFM.exe",
+    "WinRAR.exe", "Rar.exe", "UnRAR.exe",
 }
 
 # Windows priority classes that are too important to trim. psutil exposes these

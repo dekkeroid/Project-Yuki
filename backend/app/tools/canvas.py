@@ -1,6 +1,7 @@
 """Canvas tools for rendering SVG/Canvas graphics and full HTML pages in popup windows."""
 
 import os
+import re
 import time
 import uuid
 import asyncio
@@ -12,6 +13,55 @@ logger = logging.getLogger(__name__)
 
 _broadcast_callback = None
 _main_loop: Optional[Any] = None
+
+
+def _sanitize_and_extract_graphics(content: str) -> str:
+    """Extract and sanitize graphics content for the Canvas shell.
+
+    If the content is a full HTML document (with <!DOCTYPE>, <html>, <head>, or <body>),
+    it extracts all <style> tags and body contents, re-scoping global `body`/`html`
+    CSS rules to `#zoom-container` and removing viewport-locking properties (e.g. 100vh)
+    to prevent breaking the Canvas shell and top bar layout.
+    """
+    text = content.strip()
+    has_html_wrapper = bool(re.search(r'<!DOCTYPE|<html|<body|<head', text, re.IGNORECASE))
+    if not has_html_wrapper:
+        return text
+
+    # Extract all <style>...</style> blocks
+    styles = re.findall(r'<style\b[^>]*>(.*?)</style>', text, re.IGNORECASE | re.DOTALL)
+    sanitized_styles = []
+    for s in styles:
+        # Re-scope body or html selectors to #zoom-container
+        cleaned_s = re.sub(r'\b(html\s*,\s*body|body|html)\b', '#zoom-container', s, flags=re.IGNORECASE)
+        # Neutralize full-viewport lock properties that would distort the shell
+        cleaned_s = re.sub(r'height\s*:\s*100vh\s*;?', '', cleaned_s, flags=re.IGNORECASE)
+        cleaned_s = re.sub(r'width\s*:\s*100vw\s*;?', '', cleaned_s, flags=re.IGNORECASE)
+        cleaned_s = re.sub(r'overflow\s*:\s*hidden\s*;?', '', cleaned_s, flags=re.IGNORECASE)
+        sanitized_styles.append(f"<style>\n{cleaned_s}\n</style>")
+
+    # Extract body content if present, else everything outside <head>
+    body_match = re.search(r'<body\b[^>]*>(.*?)</body>', text, re.IGNORECASE | re.DOTALL)
+    if body_match:
+        inner_body = body_match.group(1).strip()
+    else:
+        inner_body = re.sub(r'<head\b[^>]*>.*?</head>', '', text, flags=re.IGNORECASE | re.DOTALL)
+        inner_body = re.sub(r'<!DOCTYPE[^>]*>', '', inner_body, flags=re.IGNORECASE)
+        inner_body = re.sub(r'</?(?:html|body)[^>]*>', '', inner_body, flags=re.IGNORECASE).strip()
+
+    # Also extract any <script> tags in the document if present
+    scripts = re.findall(r'<script\b[^>]*>(.*?)</script>', text, re.IGNORECASE | re.DOTALL)
+    script_blocks = [f"<script>\n{sc}\n</script>" for sc in scripts if sc.strip()]
+
+    parts = []
+    if sanitized_styles:
+        parts.extend(sanitized_styles)
+    if inner_body:
+        parts.append(inner_body)
+    if script_blocks:
+        parts.extend(script_blocks)
+
+    return "\n".join(parts)
 
 
 def set_broadcast_callback(cb):
@@ -191,6 +241,13 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
     transform-origin:center center;
     transition:transform 0.05s ease-out;
     display:inline-block;
+    user-select:text;
+    max-width:100%;
+    max-height:100%;
+  }
+  #zoom-container img {
+    max-width:100%;
+    height:auto;
   }
   .drag-hint {
     position:fixed;
@@ -225,6 +282,7 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
     <button class="canvas-btn" onclick="resetZoom()" title="Reset Zoom">⊙</button>
     <button class="canvas-btn" onclick="window.electronAPI?.saveCanvasContent({filename:'__FILENAME__'})" title="Save PNG/SVG">&#8681;</button>
     <button class="canvas-btn" onclick="window.electronAPI?.minimizeCanvasWindow()" title="Minimize">&#x2013;</button>
+    <button class="canvas-btn" onclick="toggleMaximize()" title="Maximize / Restore" id="max-btn">&#9633;</button>
     <button class="canvas-btn close" onclick="window.electronAPI?.closeCanvasWindow()" title="Close">&#x2715;</button>
   </div>
 </div>
@@ -277,6 +335,20 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
   function zoomIn()  { currentZoom = Math.min(ZOOM_MAX, currentZoom + ZOOM_STEP); applyTransform(); }
   function zoomOut() { currentZoom = Math.max(ZOOM_MIN, currentZoom - ZOOM_STEP); applyTransform(); }
   function resetZoom() { currentZoom = 1.0; panX = 0; panY = 0; applyTransform(); }
+
+  function toggleMaximize() {
+    if (window.electronAPI && window.electronAPI.maximizeCanvasWindow) {
+      window.electronAPI.maximizeCanvasWindow();
+    }
+  }
+
+  const topBarEl = document.querySelector('.canvas-top-bar');
+  if (topBarEl) {
+    topBarEl.addEventListener('dblclick', function(e) {
+      if (e.target.closest('button, .canvas-controls')) return;
+      toggleMaximize();
+    });
+  }
 
   // Keyboard shortcut controls: + / - / 0 / b
   document.addEventListener('keydown', function(e) {
@@ -334,14 +406,12 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
 </body>
 </html>"""
 
-    if content.lower().lstrip().startswith("<!doctype") or content.lower().lstrip().startswith("<html"):
-        canvas_html = content
-    else:
-        canvas_html = _GRAPHICS_SHELL.replace("__CANVAS_CONTENT__", content).replace("__FILENAME__", filename)
+    sanitized_content = _sanitize_and_extract_graphics(content)
+    canvas_html = _GRAPHICS_SHELL.replace("__CANVAS_CONTENT__", sanitized_content).replace("__FILENAME__", filename)
 
     file_path.write_text(canvas_html, encoding="utf-8")
     _broadcast_canvas_ws({"type": "open-canvas", "mode": "graphics", "filename": filename})
-    return f"Opened graphics window for {filename}"
+    return f"Opened graphics window for {filename} (Saved to disk at: {file_path.as_posix()})"
 
 
 def jarvis_html_viewer(html_content: str = "", file_path: str = "") -> str:

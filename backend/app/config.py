@@ -220,7 +220,14 @@ from app.agent.personas import stitch_system_persona, PERSONA_PRESETS, DEFAULT_E
 
 CHARACTER_PERSONA = stitch_system_persona()
 
+START_WITH_LAST_AVATAR_SIZE = os.environ.get("START_WITH_LAST_AVATAR_SIZE", "true").strip().lower() in ("1", "true", "yes", "on")
 
+ENABLE_VECTOR_MEMORY = os.environ.get("ENABLE_VECTOR_MEMORY", "false").strip().lower() in ("1", "true", "yes", "on")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "").strip()
+EMBEDDING_USE_LOCAL = os.environ.get("EMBEDDING_USE_LOCAL", "false").strip().lower() in ("1", "true", "yes", "on")
+EMBEDDING_BACKEND = os.environ.get("EMBEDDING_BACKEND", "lmstudio").strip()
+EMBEDDING_BASE_URL = os.environ.get("EMBEDDING_BASE_URL", "http://127.0.0.1:1234").strip()
+EMBEDDING_API_KEY = os.environ.get("EMBEDDING_API_KEY", "").strip()
 
 NO_LLM_MODE = False
 
@@ -256,3 +263,22 @@ def get_effective_base_url() -> str:
 def get_backend_type() -> str:
     """Get the normalized backend type string."""
     return (LLM_BACKEND or "lmstudio").lower()
+
+
+def get_effective_embedding_endpoint():
+    """
+    Returns (base_url, api_key) for embedding operations.
+    If EMBEDDING_USE_LOCAL is True, uses the dedicated local/custom endpoint.
+    Otherwise, defaults to the effective main LLM base URL and API key.
+    """
+    if EMBEDDING_USE_LOCAL:
+        raw_url = (EMBEDDING_BASE_URL or "http://127.0.0.1:1234").strip().rstrip("/")
+        backend = (EMBEDDING_BACKEND or "lmstudio").lower()
+        if backend == "ollama":
+            if not raw_url.endswith("/v1"):
+                raw_url = f"{raw_url}/v1"
+        elif backend in ("lmstudio", "vllm"):
+            if not raw_url.endswith("/v1") and not raw_url.endswith("/api/v0"):
+                raw_url = f"{raw_url}/v1"
+        return raw_url, EMBEDDING_API_KEY
+    return get_effective_base_url(), LLM_API_KEY

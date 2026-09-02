@@ -48,6 +48,7 @@ export default function SettingsApp() {
   });
   const [availableLlmModels, setAvailableLlmModels] = useState([]);
   const [availableSimpleLlmModels, setAvailableSimpleLlmModels] = useState([]);
+  const [availableEmbeddingModels, setAvailableEmbeddingModels] = useState([]);
   const [preferHeadsetMic, setPreferHeadsetMic] = useState(() => {
     return localStorage.getItem('yuki-prefer-headset') !== 'false';
   });
@@ -129,6 +130,7 @@ export default function SettingsApp() {
 
   const lastFetchTime = useRef(0);
   const lastSimpleFetchTime = useRef(0);
+  const lastEmbeddingFetchTime = useRef(0);
   const FETCH_COOLDOWN_MS = 2000;
 
   const fetchLlmModels = async (force = false) => {
@@ -167,6 +169,24 @@ export default function SettingsApp() {
     }
   };
 
+  const fetchEmbeddingModels = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastEmbeddingFetchTime.current < FETCH_COOLDOWN_MS) return;
+    lastEmbeddingFetchTime.current = now;
+    setAvailableEmbeddingModels([]);
+    try {
+      const res = await fetch(`${API_BASE}/api/models?target=embedding`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.models && data.models.length > 0) {
+          setAvailableEmbeddingModels(data.models);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch embedding models:", e);
+    }
+  };
+
   const refreshMicDevices = async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -182,6 +202,7 @@ export default function SettingsApp() {
     fetchProfile();
     fetchLlmModels();
     fetchSimpleLlmModels();
+    fetchEmbeddingModels();
     refreshMicDevices();
 
     const onDeviceChange = async () => {
@@ -295,8 +316,10 @@ export default function SettingsApp() {
         }}
         availableLlmModels={availableLlmModels}
         availableSimpleLlmModels={availableSimpleLlmModels}
+        availableEmbeddingModels={availableEmbeddingModels}
         onRefreshLlmModels={() => fetchLlmModels(true)}
         onRefreshSimpleLlmModels={() => fetchSimpleLlmModels(true)}
+        onRefreshEmbeddingModels={() => fetchEmbeddingModels(true)}
         preferHeadsetMic={preferHeadsetMic}
         onPreferHeadsetMicChange={(val) => {
           setPreferHeadsetMic(val);

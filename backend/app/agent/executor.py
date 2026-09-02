@@ -243,7 +243,8 @@ class AgentExecutor:
             query_val = kwargs.get("query") or kwargs.get("queries") or kwargs.get("search") or kwargs.get("text")
             if query_val is None and kwargs:
                 query_val = list(kwargs.values())[0]
-            return await web_search(query=query_val)
+            img_search = bool(kwargs.get("image_search", False))
+            return await web_search(query=query_val, image_search=img_search)
         
         # Lazy-import tool modules to avoid blocking module-level imports
         from app.tools.system import (
@@ -542,6 +543,42 @@ class AgentExecutor:
         self._scheduled_tasks_module = _scheduled_tasks
         _scheduled_tasks.set_action_executor(self._run_scheduled_action)
 
+    def _normalize_tool_name(self, tool_name: str) -> str:
+        """
+        Normalizes and auto-heals corrupted, doubled, or hallucinated tool names.
+        e.g., 'jarvis_web_searchjarvis_web_search' -> 'jarvis_web_search'
+        """
+        if not tool_name or not isinstance(tool_name, str):
+            return ""
+
+        cleaned = tool_name.strip()
+        if hasattr(self, "tools") and cleaned in self.tools:
+            return cleaned
+
+        # 1. Check for exact repeated string concatenations (e.g. "tooltool", "tooltooltool")
+        if hasattr(self, "tools"):
+            for reg_tool in self.tools.keys():
+                if not reg_tool:
+                    continue
+                if cleaned == reg_tool * 2 or cleaned == reg_tool * 3:
+                    print(f"[Executor] Auto-healed doubled tool name '{tool_name}' -> '{reg_tool}'")
+                    return reg_tool
+                if len(cleaned) > len(reg_tool) and cleaned.replace(reg_tool, "") == "":
+                    print(f"[Executor] Auto-healed repeated tool name '{tool_name}' -> '{reg_tool}'")
+                    return reg_tool
+
+            # 2. Check for punctuation / underscore variations
+            for reg_tool in self.tools.keys():
+                if not reg_tool:
+                    continue
+                clean_nopunct = cleaned.lower().replace("_", "").replace("-", "")
+                reg_nopunct = reg_tool.lower().replace("_", "").replace("-", "")
+                if clean_nopunct == reg_nopunct * 2 or clean_nopunct == reg_nopunct:
+                    print(f"[Executor] Auto-healed normalized tool name '{tool_name}' -> '{reg_tool}'")
+                    return reg_tool
+
+        return cleaned
+
     # ------------------------------------------------------------------ #
     #  Tool dispatcher helper                                              #
     # ------------------------------------------------------------------ #
@@ -556,6 +593,7 @@ class AgentExecutor:
         dispatch and the END record afterwards, so a hard crash mid-run still
         leaves the running tool's parameters on disk (tool_runs.jsonl).
         """
+        tool_name = self._normalize_tool_name(tool_name)
         from app.agent.tool_journal import record_tool_start, record_tool_end
         from app.tools.selector import record_recent_tool
 
@@ -1302,26 +1340,69 @@ class AgentExecutor:
                     "content": f"[Past Result ({tool_name})]: {content}"
                 })
             elif role == "assistant":
-                # Strip visual UI tool badges from LLM prompt context to prevent prompt
-                # pollution, but preserve a compact record of each tool result so that
-                # follow-up turns ("continue") keep the context of what was done.
-                tool_outputs = re.findall(r'```tool_output\n([\s\S]*?)```', content)
-                clean_content = re.sub(r'🛠️\s*\*\*\s*\[.*?\]\s*\*\*(?:\n```tool_args[\s\S]*?```)?(?:\n```tool_output[\s\S]*?```)?', '', content).strip()
-                preserved = []
-                for out in tool_outputs:
-                    snippet = out.strip()
-                    if len(snippet) > 400:
-                        snippet = snippet[:400] + "..."
-                    if snippet:
-                        preserved.append(f"[Past Result]: {snippet}")
-                if preserved:
-                    preserved = preserved[-4:]
-                    if clean_content:
-                        clean_content = clean_content + "\n" + "\n".join(preserved)
-                    else:
-                        clean_content = "\n".join(preserved)
-                elif not clean_content:
+                # Parse visual UI tool badges from LLM prompt context to preserve a structured,
+                # token-conscious record of tool names, input arguments, and results across turns.
+                tool_badge_pattern = re.compile(
+                    r'🛠️\s*\*\*\s*\[([^\]]+?)(?:\s*—\s*(?:✓ Done|❌ Error|[^\]]+))?\]\s*\*\*(?:\n```tool_args\n([\s\S]*?)```)?(?:\n```tool_output\n([\s\S]*?)```)?'
+                )
+                matches = list(tool_badge_pattern.finditer(content))
+                clean_speech = tool_badge_pattern.sub('', content).strip()
+
+                # Dynamic budget per tool badge: higher in Coder/Jarvis mode, compact in basic chat
+                max_args_chars = 3500 if is_coder_mode else 600
+                max_out_chars = 2000 if is_coder_mode else 400
+
+                preserved_actions = []
+                for b_match in matches:
+                    raw_name = b_match.group(1).strip()
+                    clean_name = raw_name.split()[0].split('(')[0].strip()
+                    raw_args = (b_match.group(2) or "").strip()
+                    raw_out = (b_match.group(3) or "").strip()
+
+                    args_repr = ""
+                    if raw_args:
+                        try:
+                            parsed_args = json.loads(raw_args)
+                            # For canvas graphics, preserve metadata pointer instead of dumping 3,000 tokens of raw HTML
+                            if clean_name in ("jarvis_html_graphics", "jarvis_html_viewer") and isinstance(parsed_args, dict):
+                                title = parsed_args.get("title") or "Canvas"
+                                html_prev = str(parsed_args.get("svg_or_canvas") or parsed_args.get("html_content") or "")[:120]
+                                args_repr = f'{{"title": "{title}", "preview": "{html_prev}...", "source_directory": "yuki_attachment/canvas/"}}'
+                            # For large Python scripts, preserve preview + cache pointer
+                            elif clean_name in ("run_python_script", "jarvis_run_python") and isinstance(parsed_args, dict):
+                                code_str = str(parsed_args.get("code") or "")
+                                if len(code_str) > 300:
+                                    args_repr = f'{{"code_preview": "{code_str[:120]}...", "cached_source": ".tool_cache/python_latest.py"}}'
+                                else:
+                                    args_repr = json.dumps(parsed_args, ensure_ascii=False)
+                            else:
+                                args_repr = json.dumps(parsed_args, ensure_ascii=False)
+                        except Exception:
+                            args_repr = raw_args
+
+                    if len(args_repr) > max_args_chars:
+                        args_repr = args_repr[:max_args_chars] + "... [truncated]"
+
+                    if len(raw_out) > max_out_chars:
+                        raw_out = raw_out[:max_out_chars] + "... [truncated]"
+
+                    action_line = f"[Past Tool Action ({clean_name})]: args={args_repr} -> result={raw_out}"
+                    preserved_actions.append(action_line)
+
+                # Keep up to the last 6 tool actions per assistant message to stay well within token bounds
+                if preserved_actions:
+                    preserved_actions = preserved_actions[-6:]
+
+                final_text_parts = []
+                if preserved_actions:
+                    final_text_parts.extend(preserved_actions)
+                if clean_speech:
+                    final_text_parts.append(clean_speech)
+
+                clean_content = "\n\n".join(final_text_parts).strip()
+                if not clean_content:
                     clean_content = "Task step executed."
+
                 msg_obj = {"role": "assistant", "content": clean_content}
                 if m.get("tool_calls"):
                     # DB-loaded history stores tool responses as plain text (converted
@@ -2660,7 +2741,11 @@ class AgentExecutor:
                     yield "token", pending_text, label
                 pending_text = ""
                 for tc_delta in tool_calls:
-                    index = tc_delta.get("index", 0)
+                    index = tc_delta.get("index")
+                    if index is None:
+                        tc_id = tc_delta.get("id")
+                        index = tc_id if tc_id else len(accumulated_tool_calls)
+                    
                     if index not in accumulated_tool_calls:
                         accumulated_tool_calls[index] = {
                             "id": tc_delta.get("id"),
@@ -2668,9 +2753,24 @@ class AgentExecutor:
                             "function": {"name": "", "arguments": ""}
                         }
                     
+                    if tc_delta.get("id") and not accumulated_tool_calls[index].get("id"):
+                        accumulated_tool_calls[index]["id"] = tc_delta["id"]
+
                     fn_delta = tc_delta.get("function", {})
                     if fn_delta.get("name"):
-                        accumulated_tool_calls[index]["function"]["name"] += fn_delta["name"]
+                        new_name = fn_delta["name"]
+                        curr_name = accumulated_tool_calls[index]["function"]["name"]
+                        if not curr_name:
+                            accumulated_tool_calls[index]["function"]["name"] = new_name
+                        elif curr_name == new_name:
+                            pass
+                        elif new_name.startswith(curr_name):
+                            accumulated_tool_calls[index]["function"]["name"] = new_name
+                        elif curr_name.endswith(new_name):
+                            pass
+                        else:
+                            accumulated_tool_calls[index]["function"]["name"] += new_name
+
                     if fn_delta.get("arguments"):
                         accumulated_tool_calls[index]["function"]["arguments"] += fn_delta["arguments"]
                         
@@ -2696,8 +2796,13 @@ class AgentExecutor:
                 
         # Stream complete, yield any accumulated tool calls
         if accumulated_tool_calls:
-            sorted_indices = sorted(accumulated_tool_calls.keys())
-            compiled_calls = [accumulated_tool_calls[idx] for idx in sorted_indices]
+            sorted_indices = sorted(accumulated_tool_calls.keys(), key=lambda x: str(x))
+            compiled_calls = []
+            for idx in sorted_indices:
+                call_obj = accumulated_tool_calls[idx]
+                raw_name = call_obj["function"]["name"]
+                call_obj["function"]["name"] = self._normalize_tool_name(raw_name)
+                compiled_calls.append(call_obj)
             yield "tool_calls", compiled_calls, last_label
 
     async def execute_chat_turn_stream(self, user_message: str, chat_history: List[Dict[str, str]], overrides: Optional[Dict[str, Any]] = None, attachments: Optional[List[Dict[str, Any]]] = None):
@@ -2865,6 +2970,31 @@ class AgentExecutor:
             except Exception as e:
                 print(f"[MoodEngine] react error: {e}")
 
+        self.last_vector_timing = {"duration_ms": 0.0, "count": 0, "status": "disabled"}
+        if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message:
+            _vm_t0 = time.time()
+            try:
+                from app.memory.vector_memory import search_relevant_memories
+                rel_mem = await search_relevant_memories(user_message, top_k=5, min_similarity=0.60)
+                _vm_dur = (time.time() - _vm_t0) * 1000.0
+                recalled_count = len(rel_mem) if rel_mem else 0
+                self.last_vector_timing = {
+                    "duration_ms": _vm_dur,
+                    "count": recalled_count,
+                    "status": "success"
+                }
+                if rel_mem:
+                    overrides["relevant_memories"] = rel_mem
+                    print(f"[VectorMemory] Recalled {len(rel_mem)} relevant memory item(s) in {_vm_dur:.1f}ms")
+                elif _vm_dur < 5.0:
+                    print(f"[VectorMemory] Skipped memory lookup for conversational banter/filler ({_vm_dur:.1f}ms)")
+                else:
+                    print(f"[VectorMemory] Searched in {_vm_dur:.1f}ms (0 matches >= 60%)")
+            except Exception as _ve:
+                _vm_dur = (time.time() - _vm_t0) * 1000.0
+                self.last_vector_timing = {"duration_ms": _vm_dur, "count": 0, "status": "error"}
+                print(f"[VectorMemory] Search error ({_vm_dur:.1f}ms): {_ve}")
+
         try:
             tb, tm = self._get_backend_and_model_for_task(resolved_backend, overrides=overrides)
             # _build_messages may block on the LLM summarizer when condensing history,
@@ -2960,7 +3090,8 @@ class AgentExecutor:
                     # the transcript stays valid for the API (prevents code 3230).
                     pending_calls = []
                     for tool_call in tool_calls_to_execute:
-                        tool_name = tool_call["function"]["name"]
+                        tool_name = self._normalize_tool_name(tool_call["function"]["name"])
+                        tool_call["function"]["name"] = tool_name
                         try:
                             tool_args = json.loads(tool_call["function"]["arguments"])
                             if isinstance(tool_args, dict) and tool_args.get("type") == "function" and "function" in tool_args:
@@ -3286,6 +3417,12 @@ class AgentExecutor:
                         print(f"[RelationshipEngine] Evolution error: {e}")
                     assistant_final_speech = "\n".join(accumulated_response_total)
                     final_history.append({"role": "assistant", "content": assistant_final_speech})
+                    if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message:
+                        try:
+                            from app.memory.vector_memory import extract_and_index_turn
+                            asyncio.create_task(extract_and_index_turn(user_message, assistant_final_speech))
+                        except Exception:
+                            pass
                     yield "final_history", final_history, backend_used
                     return
             
@@ -3336,5 +3473,11 @@ class AgentExecutor:
                 print(f"[RelationshipEngine] Evolution error: {e}")
             assistant_final_speech = "\n".join(accumulated_response_total)
             final_history.append({"role": "assistant", "content": assistant_final_speech})
+            if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message:
+                try:
+                    from app.memory.vector_memory import extract_and_index_turn
+                    asyncio.create_task(extract_and_index_turn(user_message, assistant_final_speech))
+                except Exception:
+                    pass
             yield "final_history", final_history, backend_used
 

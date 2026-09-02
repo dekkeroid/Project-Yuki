@@ -889,6 +889,11 @@ async def _process_agent_turn(
     print(f"  - Time to First Token (TTFT): {ttft_str}")
     print(f"  - LLM Token Generation:       {llm_gen_str}")
     print(f"  - Tool Executions:            {tool_str}")
+    vm_timing = getattr(agent_executor, "last_vector_timing", None)
+    if vm_timing and vm_timing.get("status") != "disabled":
+        vm_ms = vm_timing.get("duration_ms", 0.0)
+        vm_cnt = vm_timing.get("count", 0)
+        print(f"  - Vector Memory Recall:       {vm_ms:.1f}ms ({vm_cnt} item(s) injected)")
     if tts_duration > 0:
         print(f"  - Kokoro TTS Voice Synthesis: {tts_duration:.2f}s")
     print(f"======================================================================\n")

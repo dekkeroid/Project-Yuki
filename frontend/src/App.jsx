@@ -330,6 +330,7 @@ const App = () => {
 
   const [availableLlmModels, setAvailableLlmModels] = useState([]);
   const [availableSimpleLlmModels, setAvailableSimpleLlmModels] = useState([]);
+  const [availableEmbeddingModels, setAvailableEmbeddingModels] = useState([]);
   const [gpuMemData, setGpuMemData] = useState({ gpus: [], top5: {} });
 
   // Sync companion local states when profile changes
@@ -374,8 +375,19 @@ const App = () => {
     const ua = navigator.userAgent;
     return ua.includes('Windows') ? 'Windows' : ua.includes('Mac') ? 'macOS' : 'Linux';
   }, []);
-  // Always start at 100% scale on launch — no persistence across restarts
-  const [avatarScale, setAvatarScale] = useState(1.0);
+  // Avatar model scale — restores last used size if start_with_last_avatar_size is true (default), or 100% (1.0) if false
+  const [avatarScale, setAvatarScale] = useState(() => {
+    try {
+      const remember = localStorage.getItem('yuki-start-with-last-avatar-size');
+      const shouldRemember = remember !== null ? remember === 'true' : true;
+      if (shouldRemember) {
+        const saved = localStorage.getItem('yuki-avatar-scale');
+        const parsed = saved ? parseFloat(saved) : 1.0;
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
+    } catch (e) { }
+    return 1.0;
+  });
   const [avatarSkinToneColor, setAvatarSkinToneColor] = useState(() => {
     const saved = localStorage.getItem('yuki-avatar-skintone-color');
     return saved ? saved : '#FFE5E5';
@@ -389,10 +401,15 @@ const App = () => {
     return localStorage.getItem('yuki-camera-tracking') !== 'false';
   });
 
-  // Always reset avatar scale in localStorage to 1.0 on main app startup so external Settings window also defaults to 100%
+  // On startup, if start_with_last_avatar_size is explicitly disabled, reset avatar scale in localStorage to 1.0
   useEffect(() => {
     try {
-      localStorage.setItem('yuki-avatar-scale', '1.0');
+      const remember = localStorage.getItem('yuki-start-with-last-avatar-size');
+      const shouldRemember = remember !== null ? remember === 'true' : true;
+      if (!shouldRemember) {
+        localStorage.setItem('yuki-avatar-scale', '1.0');
+        setAvatarScale(1.0);
+      }
     } catch (e) { }
   }, []);
 
@@ -657,6 +674,7 @@ const App = () => {
   } = useSystemMonitor({
     API_BASE,
     setModelName,
+    setIsBackendFullyReady,
     isSettingsOpen,
     activeTab
   });
@@ -827,6 +845,7 @@ const App = () => {
   const lastFetchTime = useRef(0);
   const FETCH_COOLDOWN_MS = 2000;
   const lastSimpleFetchTime = useRef(0);
+  const lastEmbeddingFetchTime = useRef(0);
 
   const handleWebSocketMessage = (event) => {
     const msg = JSON.parse(event.data);
@@ -879,6 +898,11 @@ const App = () => {
       }
       if (msg?.profile?.settings?.tagger_paused !== undefined) {
         setTaggerPaused(msg.profile.settings.tagger_paused);
+      }
+      if (msg?.profile?.settings?.start_with_last_avatar_size !== undefined) {
+        try {
+          localStorage.setItem('yuki-start-with-last-avatar-size', msg.profile.settings.start_with_last_avatar_size ? 'true' : 'false');
+        } catch { }
       }
     } else if (msg.type === 'status') {
       if (msg.status === 'thinking') {
@@ -1621,42 +1645,93 @@ const App = () => {
     };
   }, []);
 
-  // On startup: Wait until backend (Kokoro TTS, etc.) is fully ready before triggering greeting
+  // On startup: Wait until backend (Kokoro TTS, Whisper STT, LLM) is fully ready and socket is connected before triggering greeting
   const hasSentStartupGreetingRef = useRef(false);
   const hasCheckedListenOnStartupRef = useRef(false);
   useEffect(() => {
     if (!isBackendFullyReady) return;
     if (hasSentStartupGreetingRef.current) return;
-    hasSentStartupGreetingRef.current = true;
 
     // Check if WebSocket is connected & LLM is enabled (non-coder companion mode)
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && !profile?.settings?.no_llm_mode) {
+    const isSocketOpen = socketRef.current && socketRef.current.readyState === WebSocket.OPEN;
+    if (!profile?.settings?.no_llm_mode) {
+      if (!isSocketOpen) {
+        // Socket is still connecting; wait for backendStatus / socket connection before triggering LLM greeting
+        return;
+      }
+      hasSentStartupGreetingRef.current = true;
       console.log('[Startup] Requesting mood-driven LLM startup greeting...');
       setTtsStreamActive(true);
       setIsThinking(true);
-      const greetingPrompt = "[SYSTEM EVENT: User just opened Project Yuki. Give a brief, warm 1-sentence greeting (under 12 words) reflecting your current mood state. Include <yuki_anim:wave/> or a mood emotion tag at the start.]";
+      const greetingPrompt = "[SYSTEM EVENT: User just opened Project Yuki. Give a brief, warm 1-sentence greeting (under 12 words) reflecting your current mood state. Start your reply with <yuki_anim:wave/> (using angle brackets <>).]";
       socketRef.current.send(JSON.stringify({ type: 'chat', message: greetingPrompt, is_startup_greeting: true }));
     } else {
+      hasSentStartupGreetingRef.current = true;
       // Fallback offline TTS voice greeting + wave motion
       setCustomAnimation('greeting_wave');
       setTimeout(() => setCustomAnimation(''), 100);
       const fallbackMsg = "Welcome back, Master! I'm ready to help you today.";
       speakSystemMessage(fallbackMsg, 'relaxed');
     }
-  }, [isBackendFullyReady, profile?.settings?.no_llm_mode]);
+  }, [isBackendFullyReady, backendStatus, profile?.settings?.no_llm_mode]);
 
-  // AFK Welcoming Detector hook
-  const isAfkRef = useRef(false);
+  // Living Presence & Sleep / Awakening Controller
+  const isSleepingRef = useRef(false);
+  const sleepStartedAtRef = useRef(null);
+
   useEffect(() => {
-    if (systemIdleTime >= 1800) { // 30 minutes
-      isAfkRef.current = true;
-    } else if (systemIdleTime === 0 && isAfkRef.current) {
-      isAfkRef.current = false;
-      const msg = "Welcome back, Master! I missed you.";
-      setMessages((prev) => [...prev, { role: 'assistant', content: `*reacts to welcome* ${msg}` }]);
-      speakSystemMessage(msg, 'relaxed');
+    // 3 minutes (180s) of continuous inactivity initiates sleep state
+    if (systemIdleTime >= 180) {
+      if (!isSleepingRef.current) {
+        isSleepingRef.current = true;
+        sleepStartedAtRef.current = Date.now();
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          socketRef.current.send(JSON.stringify({
+            type: 'sleep_state',
+            state: 'sleeping',
+            idle_seconds: systemIdleTime
+          }));
+        }
+      }
+    } else if (systemIdleTime === 0 && isSleepingRef.current) {
+      // User just returned / moved mouse or typed — wake up sequence
+      isSleepingRef.current = false;
+      const sleepDurationMs = Date.now() - (sleepStartedAtRef.current || Date.now());
+      const sleepMins = Math.max(1, Math.round(sleepDurationMs / 60000));
+      sleepStartedAtRef.current = null;
+
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({
+          type: 'sleep_state',
+          state: 'waking',
+          idle_seconds: 0
+        }));
+      }
+
+      // Play waking stretch or yawn animation
+      const wakeAnim = sleepMins > 30 ? 'stretching' : 'yawning';
+      setCustomAnimation(wakeAnim);
+      setTimeout(() => setCustomAnimation(''), 100);
+
+      const isSocketOpen = socketRef.current && socketRef.current.readyState === WebSocket.OPEN;
+      if (!profile?.settings?.no_llm_mode && isSocketOpen) {
+        console.log(`[Presence] Yuki waking up after ${sleepMins}m nap. Requesting wake reaction...`);
+        setTtsStreamActive(true);
+        setIsThinking(true);
+        const wakePrompt = `[SYSTEM EVENT: You just woke up from a ${sleepMins}-minute nap because Master returned to the desk. Give a short, warm, groggy 1-sentence wake-up greeting (under 12 words) acknowledging how long you were asleep.]`;
+        socketRef.current.send(JSON.stringify({ type: 'chat', message: wakePrompt, is_wake_greeting: true }));
+      } else if (!muteVoice) {
+        // Offline voice fallback
+        let fallbackWakeMsg = `Welcome back, Master! I ended up taking a quick ${sleepMins}-minute nap.`;
+        if (sleepMins >= 60) {
+          const hours = Math.round((sleepMins / 60) * 10) / 10;
+          fallbackWakeMsg = `Yaaawn... Good to see you, Master. Did I really sleep for ${hours} hours?`;
+        }
+        setMessages((prev) => [...prev, { role: 'assistant', content: `*wakes up* ${fallbackWakeMsg}` }]);
+        speakSystemMessage(fallbackWakeMsg, 'relaxed');
+      }
     }
-  }, [systemIdleTime, muteVoice]);
+  }, [systemIdleTime, muteVoice, profile?.settings?.no_llm_mode]);
 
   // Internet connectivity polling — detects drops/recovery within 1-2 seconds
   useEffect(() => {
@@ -2661,6 +2736,24 @@ const App = () => {
     }
   };
 
+  const fetchEmbeddingModels = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastEmbeddingFetchTime.current < FETCH_COOLDOWN_MS) return;
+    lastEmbeddingFetchTime.current = now;
+    try {
+      setAvailableEmbeddingModels([]);
+      const response = await fetch(`${API_BASE}/api/models?target=embedding`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.models && data.models.length > 0) {
+          setAvailableEmbeddingModels(data.models);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load embedding models from backend:", e);
+    }
+  };
+
   const fetchVrmModels = async () => {
     try {
       const response = await fetch(`${API_BASE}/api/models/vrm`);
@@ -2724,6 +2817,7 @@ const App = () => {
     fetchVrmModels();
     fetchLlmModels();
     fetchSimpleLlmModels();
+    fetchEmbeddingModels();
   }, []);
 
   const handleTerminate = () => {
@@ -4160,6 +4254,19 @@ const App = () => {
                           }}
                           style={{ width: '100%', cursor: 'pointer', accentColor: '#a855f7' }}
                         />
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                          <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)' }}>Start with last used size</span>
+                          <input
+                            type="checkbox"
+                            checked={profile?.settings?.start_with_last_avatar_size ?? true}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              handleUpdateSetting('start_with_last_avatar_size', val);
+                              try { localStorage.setItem('yuki-start-with-last-avatar-size', val ? 'true' : 'false'); } catch {}
+                            }}
+                            style={{ accentColor: '#a855f7', cursor: 'pointer' }}
+                          />
+                        </div>
                       </div>
 
                       <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
@@ -5369,8 +5476,10 @@ const App = () => {
           }}
           availableLlmModels={availableLlmModels}
           availableSimpleLlmModels={availableSimpleLlmModels}
+          availableEmbeddingModels={availableEmbeddingModels}
           onRefreshLlmModels={() => fetchLlmModels(true)}
           onRefreshSimpleLlmModels={() => fetchSimpleLlmModels(true)}
+          onRefreshEmbeddingModels={() => fetchEmbeddingModels(true)}
           preferHeadsetMic={preferHeadsetMic}
           onPreferHeadsetMicChange={(val) => {
             setPreferHeadsetMic(val);

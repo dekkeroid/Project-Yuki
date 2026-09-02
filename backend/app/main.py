@@ -55,6 +55,13 @@ from app.agent.executor import AgentExecutor
 llm_loaded_event = asyncio.Event()
 tts_warmed_up_event = asyncio.Event()
 whisper_warmed_up_event = asyncio.Event()
+backend_fully_ready = False
+
+def is_backend_ready() -> bool:
+    """Check if all critical models (LLM, Kokoro TTS, Whisper STT) have finished warming up."""
+    return backend_fully_ready or (
+        llm_loaded_event.is_set() and tts_warmed_up_event.is_set() and whisper_warmed_up_event.is_set()
+    )
 
 # ---------------------------------------------------------------------------
 # Lifespan context manager (replaces deprecated @app.on_event)
@@ -277,6 +284,7 @@ async def _warmup_whisper():
 
 async def _coordinate_startup_optimization():
     """Wait for all warmups to finish, then run a single memory cleanup sweep."""
+    global backend_fully_ready
     try:
         await asyncio.gather(
             llm_loaded_event.wait(),
@@ -284,6 +292,7 @@ async def _coordinate_startup_optimization():
             whisper_warmed_up_event.wait(),
             return_exceptions=True
         )
+        backend_fully_ready = True
         print("[Startup] All critical models (LLM, TTS, STT) are loaded/warmed up.")
         await broadcast_ws({"type": "backend_ready"})
 
@@ -325,7 +334,9 @@ async def lifespan(app: FastAPI):
     try:
         from app.memory.db import init_db
         init_db()
-        print("[Startup] SQLite database schema initialized.")
+        from app.memory.vector_memory import init_vector_db
+        init_vector_db()
+        print("[Startup] SQLite database and vector memory schemas initialized.")
     except Exception as e:
         print(f"[Startup] Error initializing database schema: {e}")
 
@@ -409,10 +420,13 @@ async def lifespan(app: FastAPI):
 
     # 3. Background idle drift — step every 60 s so mood moves between messages.
     async def _mood_idle_loop():
+        from app.memory.presence_engine import presence_manager
         while True:
             await asyncio.sleep(60)
             try:
-                memory_manager.step_mood()
+                presence_manager.step_idle(60.0)
+                if not presence_manager.is_sleeping():
+                    memory_manager.step_mood()
             except Exception as _e:
                 print(f"[MoodEngine] idle step error: {_e}")
 
@@ -667,6 +681,10 @@ def health_check():
         "model": config.LLM_MODEL,
         "llm_backend": config.get_backend_type(),
         "llm_base_url": config.get_effective_base_url(),
+        "backend_ready": is_backend_ready(),
+        "llm_ready": llm_loaded_event.is_set(),
+        "tts_ready": tts_warmed_up_event.is_set(),
+        "whisper_ready": whisper_warmed_up_event.is_set(),
     }
 
 _models_cache = {}
@@ -768,6 +786,24 @@ async def get_available_models(target: str = "complex"):
                     backend = LMStudioBackend(base_url_override=coder_base_url)
             else:
                 backend = get_backend()
+        elif target == "embedding":
+            use_local = getattr(config, "EMBEDDING_USE_LOCAL", False)
+            if use_local:
+                emb_backend_type = (getattr(config, "EMBEDDING_BACKEND", "lmstudio") or "lmstudio").lower()
+                emb_base_url = (getattr(config, "EMBEDDING_BASE_URL", "http://127.0.0.1:1234") or "http://127.0.0.1:1234").strip()
+                emb_key = getattr(config, "EMBEDDING_API_KEY", "") or ""
+                masked_key = (emb_key[:4] + "...") if emb_key and len(emb_key) > 8 else ("(set)" if emb_key else "(empty)")
+                print(f"[ModelFetch][Embedding] local=True backend_type='{emb_backend_type}', base_url='{emb_base_url}', api_key={masked_key}")
+                from app.agent.llm_backend import OllamaBackend, OpenAICompatibleBackend, LMStudioBackend
+                if emb_backend_type == "ollama":
+                    backend = OllamaBackend(base_url_override=emb_base_url)
+                elif emb_backend_type in ("openai", "groq", "together", "deepseek", "custom", "vllm"):
+                    backend = OpenAICompatibleBackend(base_url_override=emb_base_url, api_key_override=emb_key)
+                else:
+                    backend = LMStudioBackend(base_url_override=emb_base_url)
+            else:
+                backend = get_backend()
+                print(f"[ModelFetch][Embedding] local=False, using primary backend '{backend.name}', base_url='{backend.base_url}'")
         else:
             backend = get_backend()
             print(f"[ModelFetch][Complex] backend '{backend.name}', base_url='{backend.base_url}', models_url='{backend.get_models_url()}'")
@@ -1164,6 +1200,13 @@ class SettingsUpdateRequest(BaseModel):
     crawler_paused: Optional[bool] = None
     tagger_paused: Optional[bool] = None
     active_vrm_model: Optional[str] = None
+    start_with_last_avatar_size: Optional[bool] = None
+    enable_vector_memory: Optional[bool] = None
+    embedding_model: Optional[str] = None
+    embedding_use_local: Optional[bool] = None
+    embedding_backend: Optional[str] = None
+    embedding_base_url: Optional[str] = None
+    embedding_api_key: Optional[str] = None
     whisper_model: Optional[str] = None
     whisper_compute_type: Optional[str] = None
     use_local_whisper: Optional[bool] = None
@@ -1539,6 +1582,27 @@ async def update_settings(req: SettingsUpdateRequest):
             optimize_all_processes(force=True)
         except Exception:
             pass
+    if req.start_with_last_avatar_size is not None:
+        config.START_WITH_LAST_AVATAR_SIZE = bool(req.start_with_last_avatar_size)
+        memory_manager.update_setting("start_with_last_avatar_size", bool(req.start_with_last_avatar_size))
+    if req.enable_vector_memory is not None:
+        config.ENABLE_VECTOR_MEMORY = bool(req.enable_vector_memory)
+        memory_manager.update_setting("enable_vector_memory", bool(req.enable_vector_memory))
+    if req.embedding_model is not None:
+        config.EMBEDDING_MODEL = req.embedding_model.strip()
+        memory_manager.update_setting("embedding_model", req.embedding_model.strip())
+    if req.embedding_use_local is not None:
+        config.EMBEDDING_USE_LOCAL = bool(req.embedding_use_local)
+        memory_manager.update_setting("embedding_use_local", bool(req.embedding_use_local))
+    if req.embedding_backend is not None:
+        config.EMBEDDING_BACKEND = req.embedding_backend.strip().lower()
+        memory_manager.update_setting("embedding_backend", req.embedding_backend.strip().lower())
+    if req.embedding_base_url is not None:
+        config.EMBEDDING_BASE_URL = req.embedding_base_url.strip()
+        memory_manager.update_setting("embedding_base_url", req.embedding_base_url.strip())
+    if req.embedding_api_key is not None:
+        config.EMBEDDING_API_KEY = req.embedding_api_key.strip()
+        memory_manager.update_setting("embedding_api_key", req.embedding_api_key.strip())
     if req.whisper_model is not None:
         config.WHISPER_MODEL = req.whisper_model.strip()
         memory_manager.update_setting("whisper_model", req.whisper_model.strip())
@@ -3385,9 +3449,19 @@ def open_in_explorer_endpoint(req: OpenExplorerRequest):
     """Opens a file or directory in Windows File Explorer / OS default file manager."""
     try:
         target = req.path.strip()
+        if target.startswith("file:///"):
+            target = target[8:]
+        elif target.startswith("file://"):
+            target = target[7:]
+        target = os.path.normpath(target)
         if len(target) == 2 and target[1] == ':':
             target += "\\"
         if not os.path.exists(target):
+            parent_dir = os.path.dirname(target)
+            if parent_dir and os.path.exists(parent_dir):
+                if sys.platform == "win32":
+                    os.startfile(parent_dir)
+                    return {"status": "success", "notice": "Opened parent directory since target file does not exist."}
             return {"status": "error", "message": f"Path does not exist: {target}"}
         if sys.platform == "win32":
             os.startfile(target)
@@ -3397,6 +3471,7 @@ def open_in_explorer_endpoint(req: OpenExplorerRequest):
             subprocess.Popen(["xdg-open", target])
         return {"status": "success"}
     except Exception as e:
+        print(f"[open_explorer] Error opening path '{req.path}': {e}")
         return {"status": "error", "message": str(e)}
 
 
@@ -3771,6 +3846,12 @@ async def websocket_endpoint(websocket: WebSocket):
         "profile": memory_manager.profile
     })
     
+    # If models are already warmed up and ready, inform the client immediately
+    if is_backend_ready():
+        await websocket.send_json({
+            "type": "backend_ready"
+        })
+    
     chat_task = None
     try:
         while True:
@@ -3820,7 +3901,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     print(f"[SystemEvent] Added context to chat history: {event_text[:80]}...")
                 continue
             
+            if msg_type == "sleep_state":
+                from app.memory.presence_engine import presence_manager
+                new_state = data.get("state", "active")
+                idle_sec = float(data.get("idle_seconds", 0.0))
+                presence_manager.set_sleep_state(new_state, idle_sec)
+                print(f"[Presence] Sleep state updated to '{new_state}' (idle: {idle_sec}s)")
+                continue
+
             if msg_type == "chat":
+                from app.memory.presence_engine import presence_manager
+                presence_manager.record_interaction()
                 if chat_task and not chat_task.done():
                     chat_task.cancel()
                     try:
@@ -4185,6 +4276,11 @@ async def websocket_endpoint(websocket: WebSocket):
                             print(f"  - Time to First Token (TTFT): {ttft_str}")
                             print(f"  - LLM Token Generation:       {llm_gen_str}")
                             print(f"  - Tool Executions:            {tool_str}")
+                            vm_timing = getattr(agent_executor, "last_vector_timing", None)
+                            if vm_timing and vm_timing.get("status") != "disabled":
+                                vm_ms = vm_timing.get("duration_ms", 0.0)
+                                vm_cnt = vm_timing.get("count", 0)
+                                print(f"  - Vector Memory Recall:       {vm_ms:.1f}ms ({vm_cnt} item(s) injected)")
                             print(f"============================================================\n")
 
                             # Send final stream done message containing total time to all connected clients
