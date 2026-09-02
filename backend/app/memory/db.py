@@ -1203,7 +1203,8 @@ def save_chat_session_if_eligible(session_id: str, messages: List[Dict[str, str]
                         atts_json = json.dumps(atts, ensure_ascii=False)
                     except Exception:
                         atts_json = None
-                msg_rows.append((session_id, r, c, atts_json, now))
+                m_ts = m.get("timestamp") or now
+                msg_rows.append((session_id, r, c, atts_json, m_ts))
 
         cursor.executemany("""
         INSERT INTO chat_messages (session_id, role, content, attachments, timestamp)

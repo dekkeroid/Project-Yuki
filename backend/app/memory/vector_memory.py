@@ -335,7 +335,8 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
                         "content": content,
                         "category": cat,
                         "similarity": sim,
-                        "days_ago": days_ago
+                        "days_ago": days_ago,
+                        "created_at": created_at
                     })
 
             scored.sort(key=lambda x: x["similarity"], reverse=True)
@@ -356,7 +357,8 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
                 "content": content,
                 "category": cat,
                 "similarity": sim,
-                "days_ago": days_ago
+                "days_ago": days_ago,
+                "created_at": created_at
             })
 
     scored.sort(key=lambda x: x["similarity"], reverse=True)

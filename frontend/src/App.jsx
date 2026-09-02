@@ -2498,7 +2498,7 @@ const App = () => {
     // Default chat turn: Set stream active and thinking state FIRST to prevent coordinator race
     setTtsStreamActive(true);
     setIsThinking(true);
-    setMessages((prev) => [...prev, { role: 'user', content: text, attachments: attachmentsList || [] }]);
+    setMessages((prev) => [...prev, { role: 'user', content: text, attachments: attachmentsList || [], timestamp: Date.now() / 1000 }]);
 
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       const payload = { type: 'chat', message: text };

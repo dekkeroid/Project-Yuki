@@ -1,6 +1,7 @@
 import re
 import app.config
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Optional
 
 _COUNTRY_MAP = {
     "IN": "India", "US": "United States", "GB": "United Kingdom", "CA": "Canada",
@@ -69,6 +70,57 @@ def _get_user_country(profile: dict = None) -> str:
         pass
     return ""
 
+def _format_memory_time(created_at: Optional[float], days_ago: int = 0) -> str:
+    """
+    Formats a memory's creation timestamp into an intuitive, human-readable temporal label.
+    Examples:
+      - 'Today at 10:39 PM (15m ago)'
+      - 'Today at 3:15 PM (7h ago)'
+      - 'Yesterday at 4:20 PM'
+      - 'Monday at 2:10 PM (2d ago)'
+      - 'Aug 25, 2026 at 11:00 AM (8d ago)'
+    """
+    if not created_at:
+        return "today" if days_ago == 0 else f"{days_ago} day(s) ago"
+
+    try:
+        mem_dt = datetime.fromtimestamp(created_at)
+        now_dt = datetime.now()
+        delta_sec = max(0.0, (now_dt - mem_dt).total_seconds())
+
+        time_part = mem_dt.strftime("%I:%M %p").lstrip("0")
+
+        # Within the last hour
+        if delta_sec < 60:
+            return f"Just now ({time_part})"
+        if delta_sec < 3600:
+            mins = max(1, int(delta_sec // 60))
+            return f"Today at {time_part} ({mins}m ago)"
+
+        # Same calendar day
+        if mem_dt.date() == now_dt.date():
+            hours = max(1, int(delta_sec // 3600))
+            return f"Today at {time_part} ({hours}h ago)"
+
+        # Yesterday
+        yesterday = now_dt.date() - timedelta(days=1)
+        if mem_dt.date() == yesterday:
+            return f"Yesterday at {time_part}"
+
+        # Within the past week: show day name
+        if delta_sec < 7 * 86400:
+            day_name = mem_dt.strftime("%A")
+            days = max(1, int(delta_sec // 86400))
+            return f"{day_name} at {time_part} ({days}d ago)"
+
+        # Older: show Month Day, Year
+        date_str = mem_dt.strftime("%b %d, %Y")
+        days = max(1, int(delta_sec // 86400))
+        return f"{date_str} at {time_part} ({days}d ago)"
+    except Exception:
+        return "today" if days_ago == 0 else f"{days_ago} day(s) ago"
+
+
 def get_time_block(profile: dict = None, relevant_memories: list = None) -> str:
     now = datetime.now()
     time_str = now.strftime("%A, %B %d, %Y - %I:%M %p")
@@ -98,7 +150,7 @@ def get_time_block(profile: dict = None, relevant_memories: list = None) -> str:
     if relevant_memories:
         lines.append("--- RELEVANT EPISODIC MEMORIES ---")
         for mem in relevant_memories:
-            time_label = "today" if mem.get("days_ago", 0) == 0 else f"{mem['days_ago']} day(s) ago"
+            time_label = _format_memory_time(mem.get("created_at"), mem.get("days_ago", 0))
             lines.append(f"• [{time_label}]: {mem['content']}")
         lines.append("-----------------------------------")
         
