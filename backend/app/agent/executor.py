@@ -2982,8 +2982,9 @@ def _get_shared_sync_session() -> requests.Session:
             except Exception as e:
                 print(f"[MoodEngine] react error: {e}")
 
-        self.last_vector_timing = {"duration_ms": 0.0, "count": 0, "status": "disabled"}
-        if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message:
+        is_coder_mode = bool(overrides.get("coding_mode")) or resolved_backend in ("coder", "complex_coder")
+        self.last_vector_timing = {"duration_ms": 0.0, "count": 0, "status": "disabled_coder_mode" if is_coder_mode else "disabled"}
+        if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message and not is_coder_mode:
             _vm_t0 = time.time()
             try:
                 from app.memory.vector_memory import search_relevant_memories
@@ -3429,7 +3430,7 @@ def _get_shared_sync_session() -> requests.Session:
                         print(f"[RelationshipEngine] Evolution error: {e}")
                     assistant_final_speech = "\n".join(accumulated_response_total)
                     final_history.append({"role": "assistant", "content": assistant_final_speech})
-                    if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message:
+                    if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message and not is_coder_mode:
                         try:
                             from app.memory.vector_memory import extract_and_index_turn
                             asyncio.create_task(extract_and_index_turn(user_message, assistant_final_speech))
@@ -3485,7 +3486,7 @@ def _get_shared_sync_session() -> requests.Session:
                 print(f"[RelationshipEngine] Evolution error: {e}")
             assistant_final_speech = "\n".join(accumulated_response_total)
             final_history.append({"role": "assistant", "content": assistant_final_speech})
-            if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message:
+            if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message and not is_coder_mode:
                 try:
                     from app.memory.vector_memory import extract_and_index_turn
                     asyncio.create_task(extract_and_index_turn(user_message, assistant_final_speech))
