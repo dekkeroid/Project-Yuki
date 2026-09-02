@@ -53,3 +53,35 @@ Whenever adding a new AI action tool or system capability to Project Yuki, **ALW
 
 ### 5. System Prompt Directives (`backend/app/agent/prompts.py`)
 - Add a bullet under `2. JARVIS TOOLSET GUIDELINES` in `generate_jarvis_system_prompt()` instructing the AI on exact usage boundaries, required parameters, and best practices.
+
+---
+
+## Vector Memory, Database Migrations & Session Protocol
+
+Whenever working on long-term memory, vector search, or SQLite storage in Project Yuki, **ALWAYS** observe these architectural standards:
+
+### 1. Schema & Auto-Migration (`backend/app/memory/vector_memory.py`)
+- **Table Schema**: `memories` table consists of:
+  `id (INTEGER PK)`, `content (TEXT)`, `category (TEXT)`, `embedding (TEXT JSON)`, `created_at (REAL)`, and `session_id (TEXT NULLABLE)`.
+- **Dynamic Migration**: Never rely solely on `CREATE TABLE IF NOT EXISTS` for existing user databases. `init_vector_db()` must inspect `PRAGMA table_info(memories)` and auto-apply `ALTER TABLE memories ADD COLUMN <name> <type>` if columns are missing.
+- **Indexes**: Maintain performance indexes on `category`, `created_at`, and `session_id`.
+
+### 2. Coder Mode Isolation (`backend/app/agent/executor.py`)
+- **Pre-Turn Search**: If `is_coder_mode` (`overrides.get("coding_mode")` or `resolved_backend in ("coder", "complex_coder")`), **bypass** `search_relevant_memories` entirely and set `self.last_vector_timing["status"] = "disabled_coder_mode"`.
+- **Post-Turn Indexing**: **Bypass** `extract_and_index_turn` in Coder Mode. This prevents multi-line code diffs, terminal stack traces, and compiler errors from polluting `vectors.db`.
+- **Rationale**: Keeps coding turns at 0ms vector latency and eliminates the risk of recalling superseded or outdated code signatures from earlier sessions.
+
+### 3. Temporal Context & Formatting (`backend/app/agent/prompts.py`)
+- Recalled episodic memories injected into the LLM system prompt must pass through `_format_memory_time(created_at, days_ago)`.
+- Always format memories with intuitive temporal labels (e.g., `[Just now (11:07 PM)]`, `[Today at 10:39 PM (15m ago)]`, `[Yesterday at 4:20 PM]`, `[Saturday at 9:55 PM (4d ago)]`) to grant the model precise chronological grounding.
+
+### 4. Chat Turn Timestamps & SQLite Persistence (`db.py` & UI)
+- All message objects (`final_history`, `App.jsx`, `ChatOverlay.jsx`) must carry a float UNIX `timestamp`.
+- In `backend/app/memory/db.py` (`save_chat_session_if_eligible`), always persist `m.get("timestamp") or now` so each message maintains its true creation time when reloaded from SQLite.
+
+### 5. Packaging & Installed App Data Safety (`update_installed.ps1`)
+- **Robocopy Exclusion**: Fast-sync commands must explicitly exclude `*.db`, `*.db-wal`, and `*.db-shm` to ensure user memories and files are never overwritten from development templates.
+- **Full Rebuild Backup**: On PyInstaller rebuilds, `vectors.db` must be temporarily backed up to `$env:TEMP\yuki_vectors_backup` and restored after new binaries are laid down.
+
+### 6. Code Structure Integrity in `executor.py`
+- **Class Indentation Rule**: **NEVER** declare module-level helper functions at column 0 in the middle of `class AgentExecutor`. In Python, an unindented `def` terminates the class body and detaches all subsequent methods (`execute_chat_turn_stream`, etc.). Keep all module-level helpers at the top of the file above the class.
