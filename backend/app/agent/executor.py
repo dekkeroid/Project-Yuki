@@ -933,7 +933,8 @@ class AgentExecutor:
                 action_command = do.split(":", 1)[1].strip() or "Alert"
             elif do.lower().startswith("power:"):
                 action_type = "power"
-                action_args = {"action": do.split(":", 1)[1].strip() or "shutdown"}
+                action_command = do.split(":", 1)[1].strip() or "shutdown"
+                action_args = {"action": action_command}
             elif any(do.lower().startswith(p) for p in ("launch_app:", "app_name:", "app:", "launch:", "open:", "start:")):
                 target_app = do.split(":", 1)[1].strip()
                 action_type = "tool"

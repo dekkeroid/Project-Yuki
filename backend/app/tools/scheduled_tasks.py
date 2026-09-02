@@ -598,10 +598,16 @@ def execute_action(task: Dict[str, Any]) -> str:
         except Exception as e:
             return f"telegram alert failed: {e}"
 
+    if action_type == "power":
+        from app.tools.system import system_power_control
+        power_action = (action_args.get("action") if isinstance(action_args, dict) else "") or action_command or "shutdown"
+        return system_power_control(str(power_action).lower().strip(), confirmed=True)
+
     if action_type == "shell":
         cmd = action_command or (action_args.get("command") if isinstance(action_args, dict) else "") or (action_args.get("app_name") if isinstance(action_args, dict) else "")
         if cmd:
             return _run_shell_action(cmd)
+        return "empty shell command"
 
     if _action_executor is None:
         msg = "No action executor registered; cannot run scheduled action."

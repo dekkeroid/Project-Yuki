@@ -488,7 +488,8 @@ def _dispatch_scheduled_task(**kwargs) -> str:
             action_command = do.split(":", 1)[1].strip() or "Alert"
         elif do.lower().startswith("power:"):
             action_type = "power"
-            action_args = {"action": do.split(":", 1)[1].strip() or "shutdown"}
+            action_command = do.split(":", 1)[1].strip() or "shutdown"
+            action_args = {"action": action_command}
         elif any(do.lower().startswith(p) for p in ("close_app:", "close:", "kill:", "terminate:")):
             target_app = do.split(":", 1)[1].strip()
             action_type = "tool"
