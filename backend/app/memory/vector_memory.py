@@ -106,6 +106,21 @@ def init_vector_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_session_id ON memories(session_id)")
 
+        # Auto-migrate legacy JSON text embeddings to compact float32 binary BLOBs
+        cursor.execute("SELECT id, embedding FROM memories WHERE typeof(embedding) = 'text'")
+        text_rows = cursor.fetchall()
+        if text_rows:
+            import numpy as np
+            for r_id, r_json in text_rows:
+                try:
+                    emb_list = json.loads(r_json)
+                    emb_blob = sqlite3.Binary(np.array(emb_list, dtype=np.float32).tobytes())
+                    cursor.execute("UPDATE memories SET embedding = ? WHERE id = ?", (emb_blob, r_id))
+                except Exception:
+                    pass
+            conn.commit()
+            print(f"[VectorMemory] Auto-migrated {len(text_rows)} legacy JSON embedding(s) to compact float32 BLOBs.")
+
         conn.commit()
         conn.close()
     except Exception as e:
@@ -116,15 +131,25 @@ _init_db = init_vector_db
 init_vector_db()
 
 
-def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
-    if not vec1 or not vec2 or len(vec1) != len(vec2):
+def _cosine_similarity(vec1: Any, vec2: Any) -> float:
+    if vec1 is None or vec2 is None:
         return 0.0
-    dot_product = sum(a * b for a, b in zip(vec1, vec2))
-    norm_a = math.sqrt(sum(a * a for a in vec1))
-    norm_b = math.sqrt(sum(b * b for b in vec2))
-    if norm_a == 0.0 or norm_b == 0.0:
+    try:
+        len1 = len(vec1)
+        len2 = len(vec2)
+        if len1 == 0 or len2 == 0 or len1 != len2:
+            return 0.0
+        import numpy as np
+        a = np.asarray(vec1, dtype=np.float32)
+        b = np.asarray(vec2, dtype=np.float32)
+        dot = float(np.dot(a, b))
+        norm_a = float(np.linalg.norm(a))
+        norm_b = float(np.linalg.norm(b))
+        if norm_a == 0.0 or norm_b == 0.0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+    except Exception:
         return 0.0
-    return dot_product / (norm_a * norm_b)
 
 
 async def warmup_embedding_model_async() -> bool:
@@ -266,15 +291,16 @@ async def embed_text_async(text: str) -> Optional[List[float]]:
 
 
 def store_memory_sync(content: str, category: str, embedding: List[float], session_id: Optional[str] = None) -> bool:
-    """Synchronously insert an embedded memory into SQLite."""
+    """Synchronously insert an embedded memory into SQLite as a compact float32 binary BLOB."""
     try:
+        import numpy as np
         conn = sqlite3.connect(_DB_PATH)
         cursor = conn.cursor()
-        emb_json = json.dumps(embedding)
+        emb_blob = sqlite3.Binary(np.array(embedding, dtype=np.float32).tobytes())
         now = time.time()
         cursor.execute(
             "INSERT INTO memories (content, category, embedding, created_at, session_id) VALUES (?, ?, ?, ?, ?)",
-            (content.strip(), category, emb_json, now, session_id)
+            (content.strip(), category, emb_blob, now, session_id)
         )
         conn.commit()
         conn.close()
@@ -294,18 +320,24 @@ async def store_memory(content: str, category: str = "general", session_id: Opti
     return await asyncio.to_thread(store_memory_sync, content, category, emb, session_id)
 
 
-def _load_all_memories_sync() -> List[Tuple[int, str, str, List[float], float]]:
+def _load_all_memories_sync() -> List[Tuple[int, str, str, Any, float]]:
+    """Loads all stored memories, deserializing binary BLOBs or legacy JSON text transparently."""
     try:
+        import numpy as np
         conn = sqlite3.connect(_DB_PATH)
         cursor = conn.cursor()
-        # Unlimited query: all memories (core facts, preferences, conversation turns) are eligible
         cursor.execute("SELECT id, content, category, embedding, created_at FROM memories ORDER BY id DESC")
         rows = cursor.fetchall()
         conn.close()
         results = []
-        for row_id, content, cat, emb_str, created_at in rows:
+        for row_id, content, cat, emb_raw, created_at in rows:
             try:
-                emb = json.loads(emb_str)
+                if isinstance(emb_raw, bytes):
+                    emb = np.frombuffer(emb_raw, dtype=np.float32)
+                elif isinstance(emb_raw, str):
+                    emb = np.array(json.loads(emb_raw), dtype=np.float32)
+                else:
+                    continue
                 results.append((row_id, content, cat, emb, created_at))
             except Exception:
                 continue
@@ -320,6 +352,7 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
     Search stored memories semantically related to the user's query.
     Uses fast NumPy matrix vectorization (1-2ms for tens of thousands of memories)
     and grants permanent recall priority to user preferences and core facts.
+    Guards against dimension mismatch when switching embedding models.
     """
     if not getattr(config, "ENABLE_VECTOR_MEMORY", False):
         return []
@@ -338,6 +371,17 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
 
     all_memories = await asyncio.to_thread(_load_all_memories_sync)
     if not all_memories:
+        return []
+
+    now = time.time()
+    target_dim = len(query_vec)
+    valid_memories = [m for m in all_memories if len(m[3]) == target_dim]
+    mismatched = len(all_memories) - len(valid_memories)
+    if mismatched > 0:
+        model_name = getattr(config, "EMBEDDING_MODEL", "active model")
+        print(f"[VectorMemory] ⚠️ Dimension Notice: Skipped {mismatched} memories with mismatched dimensions (active model '{model_name}' expects {target_dim} dims). Use 'Reset Vector DB' in Settings to re-align.")
+
+    if not valid_memories:
         return []
 
     def _compute_effective_score(raw_sim: float, cat: str, created_at: float) -> float:
@@ -360,7 +404,7 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
 
     try:
         import numpy as np
-        matrix = np.array([m[3] for m in all_memories], dtype=np.float32)
+        matrix = np.array([m[3] for m in valid_memories], dtype=np.float32)
         q_vec = np.array(query_vec, dtype=np.float32)
         q_norm = float(np.linalg.norm(q_vec))
         if q_norm > 0.0:
@@ -368,7 +412,7 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
             sims = np.dot(matrix, q_vec) / (m_norms * q_norm + 1e-9)
 
             scored = []
-            for i, (mem_id, content, cat, _, created_at) in enumerate(all_memories):
+            for i, (mem_id, content, cat, _, created_at) in enumerate(valid_memories):
                 raw_sim = float(sims[i])
                 if raw_sim >= min_similarity:
                     eff_score = _compute_effective_score(raw_sim, cat, created_at)
@@ -390,7 +434,7 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
 
     # Fallback to pure-python search
     scored = []
-    for mem_id, content, cat, emb, created_at in all_memories:
+    for mem_id, content, cat, emb, created_at in valid_memories:
         raw_sim = _cosine_similarity(query_vec, emb)
         if raw_sim >= min_similarity:
             eff_score = _compute_effective_score(raw_sim, cat, created_at)
