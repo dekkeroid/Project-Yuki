@@ -916,57 +916,87 @@ class AgentExecutor:
             except Exception:
                 action_args = {}
 
-        # Parse compact 'do' / 'run' parameter
-        do = (kwargs.get("do") or kwargs.get("run") or "").strip()
-        if do:
-            if do.lower().startswith("sound:"):
-                action_type = "sound"
-                action_command = do.split(":", 1)[1].strip() or "tada"
-            elif do.lower().startswith("popup:"):
-                action_type = "popup"
-                action_command = do.split(":", 1)[1].strip() or "Reminder"
-            elif do.lower().startswith("notify:"):
-                action_type = "notify"
-                action_command = do.split(":", 1)[1].strip() or "Notification"
-            elif do.lower().startswith("telegram:"):
-                action_type = "telegram"
-                action_command = do.split(":", 1)[1].strip() or "Alert"
-            elif do.lower().startswith("power:"):
+        # 1. First-class structured fields (preferred)
+        run_tool = (kwargs.get("run_tool") or "").strip()
+        run_builtin = (kwargs.get("run_builtin") or "").strip().lower()
+        run_notify = (kwargs.get("run_notify") or "").strip()
+        run_command = (kwargs.get("run_command") or "").strip()
+
+        if run_tool:
+            action_type = "tool"
+            action_tool = self._resolve_tool_name(run_tool)
+            raw_args = kwargs.get("run_args") or action_args or {}
+            if isinstance(raw_args, str):
+                try:
+                    import json
+                    raw_args = json.loads(raw_args)
+                except Exception:
+                    raw_args = {}
+            action_args = dict(raw_args)
+        elif run_builtin:
+            if run_builtin in ("shutdown", "restart", "sleep", "lock"):
                 action_type = "power"
-                action_command = do.split(":", 1)[1].strip() or "shutdown"
-                action_args = {"action": action_command}
-            elif any(do.lower().startswith(p) for p in ("launch_app:", "app_name:", "app:", "launch:", "open:", "start:")):
-                target_app = do.split(":", 1)[1].strip()
-                action_type = "tool"
-                action_tool = "launch_app"
-                action_args = {"app_name": target_app, "query": target_app}
-            elif any(do.lower().startswith(p) for p in ("close_app:", "close:", "kill:", "terminate:")):
-                target_app = do.split(":", 1)[1].strip()
-                action_type = "tool"
-                action_tool = "close_app"
-                action_args = {"app_name": target_app, "name": target_app, "action": "kill"}
-            elif ":" in do and (do.split(":", 1)[0].strip() in self.tools or self._resolve_tool_name(do.split(":", 1)[0].strip()) in self.tools):
-                t_cand, t_arg = do.split(":", 1)
-                action_type = "tool"
-                action_tool = self._resolve_tool_name(t_cand.strip())
-                val = t_arg.strip()
-                action_args = {
-                    "app_name": val,
-                    "query": val,
-                    "file_path_or_query": val,
-                    "path": val,
-                    "message": val,
-                }
-            elif do in self.tools or self._resolve_tool_name(do) in self.tools:
-                action_type = "tool"
-                action_tool = self._resolve_tool_name(do)
-            elif do.lower().endswith(".exe") or (os.path.isabs(do) and os.path.exists(do)):
-                action_type = "tool"
-                action_tool = "launch_app"
-                action_args = {"app_name": do, "query": do}
-            else:
-                action_type = "shell"
-                action_command = do
+                action_command = run_builtin
+                action_args = {"action": run_builtin}
+            elif run_builtin.startswith("sound:") or run_builtin in ("tada", "chime", "beep"):
+                action_type = "sound"
+                action_command = run_builtin.split(":", 1)[-1]
+                action_args = {"sound": action_command}
+        elif run_notify:
+            action_type = "popup"
+            action_command = run_notify
+            action_args = {"message": run_notify}
+        elif run_command:
+            action_type = "shell"
+            action_command = run_command
+        else:
+            # 2. Backwards-compatible 'do' / 'run' string parsing
+            do = (kwargs.get("do") or kwargs.get("run") or "").strip()
+            if do:
+                if do.lower().startswith("sound:"):
+                    action_type = "sound"
+                    action_command = do.split(":", 1)[1].strip() or "tada"
+                elif do.lower().startswith("popup:"):
+                    action_type = "popup"
+                    action_command = do.split(":", 1)[1].strip() or "Reminder"
+                elif do.lower().startswith("notify:"):
+                    action_type = "notify"
+                    action_command = do.split(":", 1)[1].strip() or "Notification"
+                elif do.lower().startswith("telegram:"):
+                    action_type = "telegram"
+                    action_command = do.split(":", 1)[1].strip() or "Alert"
+                elif do.lower().startswith("power:"):
+                    action_type = "power"
+                    action_command = do.split(":", 1)[1].strip() or "shutdown"
+                    action_args = {"action": action_command}
+                elif any(do.lower().startswith(p) for p in ("launch_app:", "app_name:", "app:", "launch:", "open:", "start:")):
+                    target_app = do.split(":", 1)[1].strip()
+                    action_type = "tool"
+                    action_tool = "launch_app"
+                    action_args = {"app_name": target_app, "query": target_app}
+                elif any(do.lower().startswith(p) for p in ("close_app:", "close:", "kill:", "terminate:")):
+                    target_app = do.split(":", 1)[1].strip()
+                    action_type = "tool"
+                    action_tool = "close_app"
+                    action_args = {"app_name": target_app, "name": target_app, "action": "kill"}
+                elif ":" in do and (do.split(":", 1)[0].strip() in self.tools or self._resolve_tool_name(do.split(":", 1)[0].strip()) in self.tools):
+                    t_cand, t_arg = do.split(":", 1)
+                    action_type = "tool"
+                    action_tool = self._resolve_tool_name(t_cand.strip())
+                    val = t_arg.strip()
+                    action_args = {
+                        "app_name": val,
+                        "query": val,
+                        "file_path_or_query": val,
+                        "path": val,
+                        "message": val,
+                    }
+                elif do in self.tools or self._resolve_tool_name(do) in self.tools:
+                    action_type = "tool"
+                    action_tool = self._resolve_tool_name(do)
+                else:
+                    action_type = "shell"
+                    action_command = do
 
         if action in ("set_delayed", "delayed", "schedule", "do_later"):
             seconds = kwargs.get("seconds") or kwargs.get("delay") or kwargs.get("duration") or kwargs.get("after")
@@ -1010,53 +1040,42 @@ class AgentExecutor:
             return f"Interval task #{res['id']} set to fire every {res['interval_seconds']:.0f}s (count={count})."
 
         if action in ("watch", "watcher", "monitor", "keep_an_eye"):
-            condition = (kwargs.get("condition") or kwargs.get("fire_condition") or kwargs.get("if") or "gone").lower().strip()
+            condition = (kwargs.get("condition") or kwargs.get("fire_condition") or kwargs.get("if") or "closed").lower().strip()
             monitor = (kwargs.get("kind") or kwargs.get("monitor_type") or kwargs.get("monitor") or "").lower().strip()
             target = kwargs.get("target") or kwargs.get("process") or kwargs.get("pid") or kwargs.get("window") or kwargs.get("file") or ""
             
-            # Auto-infer monitor kind if omitted or if condition passed as 'process'
-            if condition == "process":
-                monitor = "process"
-                condition = "gone"
-            elif condition in ("battery", "charging", "discharging", "low"):
-                monitor = monitor or "battery"
-            elif condition in ("storage", "disk"):
-                monitor = monitor or "storage"
-            elif condition in ("network", "disconnected", "connected"):
-                monitor = monitor or "network"
+            # Normalize conditions
+            if condition in ("closed", "close", "gone", "exit", "quit", "stopped", "killed", "terminated"):
+                condition = "closed"
+            elif condition in ("opened", "open", "present", "running", "started", "launched"):
+                condition = "opened"
 
+            # Auto-infer monitor kind if omitted
             if not monitor:
-                if str(target).lower().endswith(".exe"):
-                    monitor = "process"
-                elif condition in ("minimized", "maximized", "focused", "unfocused", "open", "opened", "closed"):
-                    monitor = "window"
-                elif condition in ("gone", "present", "running", "terminated"):
-                    monitor = "process"
+                if condition in ("battery_low", "battery_charging", "battery", "charging", "discharging", "low"):
+                    monitor = "battery"
+                elif condition in ("storage_low", "storage", "disk"):
+                    monitor = "storage"
+                elif condition in ("network_disconnected", "network_connected", "network", "disconnected", "connected"):
+                    monitor = "network"
                 elif condition in ("changed", "modified", "deleted", "exists", "created"):
                     monitor = "file"
                 elif condition in ("exit0", "exit_nonzero"):
                     monitor = "command"
                 else:
-                    monitor = "window"
-
-            # Normalize conditions across monitors
-            if monitor == "process":
-                if condition in ("closed", "close", "quit", "exit", "stopped", "killed", "terminated"):
-                    condition = "gone"
-                elif condition in ("open", "opened", "running", "started"):
-                    condition = "present"
+                    monitor = "app"
 
             if not target:
                 return "Error: 'target' is required for watch."
 
             seconds = kwargs.get("seconds") or kwargs.get("interval") or kwargs.get("every")
             if seconds is None:
-                seconds = 1.5 if monitor in ("window", "process") else 30.0
+                seconds = 1.5 if monitor in ("app", "window", "process") else 30.0
             else:
                 try:
                     seconds = float(seconds)
                 except (ValueError, TypeError):
-                    seconds = 1.5 if monitor in ("window", "process") else 30.0
+                    seconds = 1.5 if monitor in ("app", "window", "process") else 30.0
 
             count = kwargs.get("count")
             if count is None:

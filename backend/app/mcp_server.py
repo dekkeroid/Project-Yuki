@@ -472,38 +472,73 @@ def _dispatch_scheduled_task(**kwargs) -> str:
         except Exception:
             action_args = {}
 
-    do = (kwargs.get("do") or "").strip()
-    if do:
-        if do.lower().startswith("sound:"):
-            action_type = "sound"
-            action_command = do.split(":", 1)[1].strip() or "tada"
-        elif do.lower().startswith("popup:"):
-            action_type = "popup"
-            action_command = do.split(":", 1)[1].strip() or "Reminder"
-        elif do.lower().startswith("notify:"):
-            action_type = "notify"
-            action_command = do.split(":", 1)[1].strip() or "Notification"
-        elif do.lower().startswith("telegram:"):
-            action_type = "telegram"
-            action_command = do.split(":", 1)[1].strip() or "Alert"
-        elif do.lower().startswith("power:"):
+    # 1. First-class structured fields (preferred)
+    run_tool = (kwargs.get("run_tool") or "").strip()
+    run_builtin = (kwargs.get("run_builtin") or "").strip().lower()
+    run_notify = (kwargs.get("run_notify") or "").strip()
+    run_command = (kwargs.get("run_command") or "").strip()
+
+    if run_tool:
+        action_type = "tool"
+        action_tool = run_tool
+        raw_args = kwargs.get("run_args") or action_args or {}
+        if isinstance(raw_args, str):
+            try:
+                import json
+                raw_args = json.loads(raw_args)
+            except Exception:
+                raw_args = {}
+        action_args = dict(raw_args)
+    elif run_builtin:
+        if run_builtin in ("shutdown", "restart", "sleep", "lock"):
             action_type = "power"
-            action_command = do.split(":", 1)[1].strip() or "shutdown"
-            action_args = {"action": action_command}
-        elif any(do.lower().startswith(p) for p in ("close_app:", "close:", "kill:", "terminate:")):
-            target_app = do.split(":", 1)[1].strip()
-            action_type = "tool"
-            action_tool = "close_app"
-            action_args = {"app_name": target_app, "name": target_app, "action": "kill"}
-        elif ":" in do and do.split(":", 1)[0].strip().lower() in ("launch_app", "close_app", "open_or_play_file", "take_screenshot"):
-            p_clean, val = do.split(":", 1)
-            action_type = "tool"
-            action_tool = p_clean.strip()
-            val_clean = val.strip()
-            action_args = {"app_name": val_clean, "query": val_clean, "file_path_or_query": val_clean, "path": val_clean}
-        else:
-            action_type = "shell"
-            action_command = do
+            action_command = run_builtin
+            action_args = {"action": run_builtin}
+        elif run_builtin.startswith("sound:") or run_builtin in ("tada", "chime", "beep"):
+            action_type = "sound"
+            action_command = run_builtin.split(":", 1)[-1]
+            action_args = {"sound": action_command}
+    elif run_notify:
+        action_type = "popup"
+        action_command = run_notify
+        action_args = {"message": run_notify}
+    elif run_command:
+        action_type = "shell"
+        action_command = run_command
+    else:
+        # 2. Backwards-compatible 'do' string parsing
+        do = (kwargs.get("do") or "").strip()
+        if do:
+            if do.lower().startswith("sound:"):
+                action_type = "sound"
+                action_command = do.split(":", 1)[1].strip() or "tada"
+            elif do.lower().startswith("popup:"):
+                action_type = "popup"
+                action_command = do.split(":", 1)[1].strip() or "Reminder"
+            elif do.lower().startswith("notify:"):
+                action_type = "notify"
+                action_command = do.split(":", 1)[1].strip() or "Notification"
+            elif do.lower().startswith("telegram:"):
+                action_type = "telegram"
+                action_command = do.split(":", 1)[1].strip() or "Alert"
+            elif do.lower().startswith("power:"):
+                action_type = "power"
+                action_command = do.split(":", 1)[1].strip() or "shutdown"
+                action_args = {"action": action_command}
+            elif any(do.lower().startswith(p) for p in ("close_app:", "close:", "kill:", "terminate:")):
+                target_app = do.split(":", 1)[1].strip()
+                action_type = "tool"
+                action_tool = "close_app"
+                action_args = {"app_name": target_app, "name": target_app, "action": "kill"}
+            elif ":" in do and do.split(":", 1)[0].strip().lower() in ("launch_app", "close_app", "open_or_play_file", "take_screenshot"):
+                p_clean, val = do.split(":", 1)
+                action_type = "tool"
+                action_tool = p_clean.strip()
+                val_clean = val.strip()
+                action_args = {"app_name": val_clean, "query": val_clean, "file_path_or_query": val_clean, "path": val_clean}
+            else:
+                action_type = "shell"
+                action_command = do
 
     if action_clean in ("set_delayed", "delayed"):
         seconds = kwargs.get("seconds") or 0
@@ -541,32 +576,40 @@ def _dispatch_scheduled_task(**kwargs) -> str:
         return f"Interval task #{res['id']} every {res['interval_seconds']:.0f}s (count={kwargs.get('count')})."
 
     if action_clean in ("watch", "watcher", "monitor"):
-        condition = (kwargs.get("condition") or kwargs.get("fire_condition") or "gone").lower().strip()
+        condition = (kwargs.get("condition") or kwargs.get("fire_condition") or "closed").lower().strip()
         monitor = (kwargs.get("kind") or kwargs.get("monitor_type") or "").lower().strip()
         target = kwargs.get("target") or ""
         
+        # Normalize conditions
+        if condition in ("closed", "close", "gone", "exit", "quit", "stopped", "killed", "terminated"):
+            condition = "closed"
+        elif condition in ("opened", "open", "present", "running", "started", "launched"):
+            condition = "opened"
+
         if not monitor:
-            if condition in ("minimized", "maximized", "focused", "unfocused", "open", "opened", "closed"):
-                monitor = "window"
-            elif condition in ("gone", "present", "running", "terminated"):
-                monitor = "process"
+            if condition in ("battery_low", "battery_charging", "battery", "charging", "discharging", "low"):
+                monitor = "battery"
+            elif condition in ("storage_low", "storage", "disk"):
+                monitor = "storage"
+            elif condition in ("network_disconnected", "network_connected", "network", "disconnected", "connected"):
+                monitor = "network"
             elif condition in ("changed", "modified", "deleted", "exists", "created"):
                 monitor = "file"
             elif condition in ("exit0", "exit_nonzero"):
                 monitor = "command"
             else:
-                monitor = "window"
+                monitor = "app"
 
         if not target:
             return "Error: 'target' is required for watch."
         seconds = kwargs.get("seconds")
         if seconds is None:
-            seconds = 1.5 if monitor == "window" else 30.0
+            seconds = 1.5 if monitor in ("app", "window", "process") else 30.0
         else:
             try:
                 seconds = float(seconds)
             except (ValueError, TypeError):
-                seconds = 1.5 if monitor == "window" else 30.0
+                seconds = 1.5 if monitor in ("app", "window", "process") else 30.0
         count = kwargs.get("count")
         if count is None:
             count = 1

@@ -341,17 +341,22 @@ def evaluate_watcher_condition(task: Dict[str, Any], previous_fired: bool) -> bo
 
     curr_truth = False
 
-    if monitor == "process":
-        alive = _check_process_alive(target)
-        if condition in ("gone", "closed", "close", "quit", "exit", "stopped", "killed", "terminated", "process"):
+    if monitor in ("app", "window", "process"):
+        if condition in ("closed", "close", "gone", "exit", "quit", "stopped", "killed", "terminated", "process"):
+            win_open = _check_window_state(target, "open")
+            proc_alive = _check_process_alive(target)
+            curr_truth = not win_open and not proc_alive
+        elif condition in ("open", "opened", "present", "running", "started"):
+            win_open = _check_window_state(target, "open")
+            proc_alive = _check_process_alive(target)
+            curr_truth = win_open or proc_alive
+        elif condition in ("minimized", "maximized", "focused", "unfocused"):
+            curr_truth = _check_window_state(target, condition)
+        elif monitor == "process":
+            alive = _check_process_alive(target)
             curr_truth = not alive
-        elif condition in ("present", "open", "opened", "running", "started"):
-            curr_truth = alive
         else:
-            curr_truth = not alive
-
-    elif monitor == "window":
-        curr_truth = _check_window_state(target, condition)
+            curr_truth = _check_window_state(target, condition)
 
     elif monitor == "file":
         path = os.path.abspath(os.path.expanduser(os.path.expandvars(target)))
