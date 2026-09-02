@@ -149,7 +149,9 @@ def get_time_block(profile: dict = None, relevant_memories: list = None) -> str:
 
     if relevant_memories:
         lines.append("--- RELEVANT EPISODIC MEMORIES ---")
-        for mem in relevant_memories:
+        # Present recalled memories chronologically (oldest -> newest) so the LLM reads a natural timeline
+        chronological = sorted(relevant_memories, key=lambda m: m.get("created_at") or 0.0)
+        for mem in chronological:
             time_label = _format_memory_time(mem.get("created_at"), mem.get("days_ago", 0))
             lines.append(f"• [{time_label}]: {mem['content']}")
         lines.append("-----------------------------------")

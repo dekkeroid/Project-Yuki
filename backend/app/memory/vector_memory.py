@@ -340,7 +340,24 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
     if not all_memories:
         return []
 
-    now = time.time()
+    def _compute_effective_score(raw_sim: float, cat: str, created_at: float) -> float:
+        score = raw_sim
+        # Priority boost for core facts and preferences so they never get overshadowed
+        if cat in ("preference", "core_fact"):
+            score += 0.05
+        # Recency bonus: grants newer memories priority over stale ones when relevance is comparable
+        if created_at and created_at > 0:
+            age_sec = max(0.0, now - created_at)
+            if age_sec < 4 * 3600:       # Past 4 hours: +0.035
+                score += 0.035
+            elif age_sec < 24 * 3600:    # Past 24 hours: +0.025
+                score += 0.025
+            elif age_sec < 48 * 3600:    # Past 48 hours: +0.012
+                score += 0.012
+            elif age_sec < 7 * 86400:    # Past week: +0.005
+                score += 0.005
+        return score
+
     try:
         import numpy as np
         matrix = np.array([m[3] for m in all_memories], dtype=np.float32)
@@ -352,17 +369,16 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
 
             scored = []
             for i, (mem_id, content, cat, _, created_at) in enumerate(all_memories):
-                sim = float(sims[i])
-                # Priority boost for core facts and preferences so they never get overshadowed
-                if cat in ("preference", "core_fact"):
-                    sim += 0.05
-                if sim >= min_similarity:
+                raw_sim = float(sims[i])
+                if raw_sim >= min_similarity:
+                    eff_score = _compute_effective_score(raw_sim, cat, created_at)
                     days_ago = max(0, int((now - created_at) // 86400))
                     scored.append({
                         "id": mem_id,
                         "content": content,
                         "category": cat,
-                        "similarity": sim,
+                        "similarity": eff_score,
+                        "raw_similarity": raw_sim,
                         "days_ago": days_ago,
                         "created_at": created_at
                     })
@@ -375,16 +391,16 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
     # Fallback to pure-python search
     scored = []
     for mem_id, content, cat, emb, created_at in all_memories:
-        sim = _cosine_similarity(query_vec, emb)
-        if cat in ("preference", "core_fact"):
-            sim += 0.05
-        if sim >= min_similarity:
+        raw_sim = _cosine_similarity(query_vec, emb)
+        if raw_sim >= min_similarity:
+            eff_score = _compute_effective_score(raw_sim, cat, created_at)
             days_ago = max(0, int((now - created_at) // 86400))
             scored.append({
                 "id": mem_id,
                 "content": content,
                 "category": cat,
-                "similarity": sim,
+                "similarity": eff_score,
+                "raw_similarity": raw_sim,
                 "days_ago": days_ago,
                 "created_at": created_at
             })
