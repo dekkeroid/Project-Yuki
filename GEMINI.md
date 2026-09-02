@@ -68,23 +68,10 @@ In Python, unindented code (column 0) terminates the preceding class definition.
 
 ---
 
-## SQLite Database Schema Migration Protocol (`init_*_db`)
+## SQLite Schema Migrations & DB Init Rule
 
-`CREATE TABLE IF NOT EXISTS` only runs when creating a brand-new database file. It **DOES NOT** update or add columns to an existing database. Whenever adding a column or modifying tables in `vectors.db`, `yuki_files.db`, or any SQLite database:
+Whenever making changes to any database structure or table (`vectors.db`, `yuki_files.db`, etc.), **ALWAYS** update the corresponding initialization function (`init_vector_db`, `init_db`, etc.) to automatically migrate older databases:
 
-### 1. Dynamic Column Migration Check
-Always inspect existing table columns using `PRAGMA table_info`:
-```python
-cursor.execute("PRAGMA table_info(table_name)")
-existing_cols = {row[1] for row in cursor.fetchall()}
-
-if "new_column" not in existing_cols:
-    cursor.execute("ALTER TABLE table_name ADD COLUMN new_column TEXT DEFAULT NULL")
-    print("[DB] Auto-migrated: added missing column 'new_column'")
-```
-
-### 2. Idempotent Index Creation
-Always create indexes using `IF NOT EXISTS`:
-```python
-cursor.execute("CREATE INDEX IF NOT EXISTS idx_table_col ON table_name(new_column)")
-```
+- `CREATE TABLE IF NOT EXISTS` only runs for brand-new files and does not update existing databases.
+- Always inspect existing columns (e.g. using `PRAGMA table_info`) and execute `ALTER TABLE ... ADD COLUMN` for any missing columns so existing databases upgrade seamlessly without crashing.
+- Ensure any new indexes use `CREATE INDEX IF NOT EXISTS`.
