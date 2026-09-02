@@ -108,7 +108,13 @@ async def warmup_embedding_model_async() -> bool:
     if not base_url:
         return False
 
-    url = f"{base_url}/embeddings"
+    is_ollama = ":11434" in base_url or getattr(config, "EMBEDDING_BACKEND", "") == "ollama"
+    if is_ollama:
+        clean_base = base_url.replace("/v1", "").rstrip("/")
+        url = f"{clean_base}/api/embed"
+    else:
+        url = f"{base_url}/embeddings"
+
     print(f"[VectorMemory][Startup] Pre-warming embedding model '{model}' at '{url}' (keep_alive=60m)...")
 
     headers = {
@@ -125,18 +131,21 @@ async def warmup_embedding_model_async() -> bool:
 
     t_start = time.time()
     try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             res = await client.post(url, json=payload, headers=headers)
             warm_ms = (time.time() - t_start) * 1000.0
             if res.status_code == 200:
                 data = res.json()
-                dims = len(data["data"][0].get("embedding", [])) if "data" in data and len(data["data"]) > 0 else 0
+                if is_ollama:
+                    dims = len(data.get("embeddings", [[]])[0])
+                else:
+                    dims = len(data["data"][0].get("embedding", [])) if "data" in data and len(data["data"]) > 0 else 0
                 print(f"[VectorMemory][Startup] Model '{model}' warmed up in GPU ({dims} dims) in {warm_ms:.1f}ms! GPU keep-alive set to 60m.")
                 return True
             else:
                 print(f"[VectorMemory][Startup] Warmup request failed ({warm_ms:.1f}ms): HTTP {res.status_code} from '{url}' - {res.text[:120]}")
     except httpx.TimeoutException:
-        print(f"[VectorMemory][Startup] Warmup timed out (>25s) at '{url}' (model='{model}').")
+        print(f"[VectorMemory][Startup] Warmup timed out (>60s) at '{url}' (model='{model}').")
     except Exception as e:
         print(f"[VectorMemory][Startup] Warmup error at '{url}': {e}")
     return False
@@ -145,8 +154,8 @@ async def warmup_embedding_model_async() -> bool:
 async def embed_text_async(text: str) -> Optional[List[float]]:
     """
     Generate an embedding vector for the provided text using the configured LLM endpoint.
-    Guarded by a 3.5s timeout to guarantee chat responsiveness.
-    Includes keep_alive: 60m for local servers (Ollama, LM Studio) to prevent idle unloading.
+    Guarded by a 5.0s timeout to guarantee chat responsiveness.
+    Includes keep_alive: 60m for Ollama and local servers to prevent idle unloading.
     """
     if not getattr(config, "ENABLE_VECTOR_MEMORY", False):
         return None
@@ -159,8 +168,12 @@ async def embed_text_async(text: str) -> Optional[List[float]]:
     if not base_url:
         return None
 
-    # Construct standard embeddings URL: {base_url}/embeddings
-    url = f"{base_url}/embeddings"
+    is_ollama = ":11434" in base_url or getattr(config, "EMBEDDING_BACKEND", "") == "ollama"
+    if is_ollama:
+        clean_base = base_url.replace("/v1", "").rstrip("/")
+        url = f"{clean_base}/api/embed"
+    else:
+        url = f"{base_url}/embeddings"
 
     headers = {
         "Content-Type": "application/json"
@@ -177,16 +190,24 @@ async def embed_text_async(text: str) -> Optional[List[float]]:
     print(f"[VectorMemory] Requesting embedding: model='{model}' endpoint='{url}' (input chars={len(text.strip())})")
     t_start = time.time()
     try:
-        async with httpx.AsyncClient(timeout=3.5) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             res = await client.post(url, json=payload, headers=headers)
             call_ms = (time.time() - t_start) * 1000.0
             if res.status_code == 200:
                 data = res.json()
-                if "data" in data and len(data["data"]) > 0:
-                    emb = data["data"][0].get("embedding")
-                    if isinstance(emb, list) and len(emb) > 0:
-                        print(f"[VectorMemory] Generated embedding vector ({len(emb)} dims) via '{model}' from '{url}' in {call_ms:.1f}ms")
-                        return emb
+                if is_ollama:
+                    embs = data.get("embeddings", [])
+                    if embs and len(embs) > 0:
+                        emb = embs[0]
+                        if isinstance(emb, list) and len(emb) > 0:
+                            print(f"[VectorMemory] Generated embedding vector ({len(emb)} dims) via '{model}' from '{url}' in {call_ms:.1f}ms")
+                            return emb
+                else:
+                    if "data" in data and len(data["data"]) > 0:
+                        emb = data["data"][0].get("embedding")
+                        if isinstance(emb, list) and len(emb) > 0:
+                            print(f"[VectorMemory] Generated embedding vector ({len(emb)} dims) via '{model}' from '{url}' in {call_ms:.1f}ms")
+                            return emb
             else:
                 print(f"[VectorMemory] Embedding request failed ({call_ms:.1f}ms): HTTP {res.status_code} from '{url}' - {res.text[:120]}")
     except httpx.TimeoutException:
