@@ -149,13 +149,15 @@ def get_time_block(profile: dict = None, relevant_memories: list = None) -> str:
         pass
 
     if relevant_memories:
-        lines.append("--- RELEVANT EPISODIC MEMORIES ---")
+        lines.append("--- RELEVANT EPISODIC MEMORIES (PAST CONVERSATION HISTORY ONLY) ---")
+        lines.append("[RULE: These entries are PAST historical logs. They do NOT reflect live OS background tasks or watchers.")
+        lines.append(" If Master commands an action (e.g. 'when X happens do Y', 'launch app', 'set a timer'), NEVER claim 'I already set that up' or skip calling the tool based on past memories. ALWAYS invoke the tool fresh to guarantee it is active!]")
         # Present recalled memories chronologically (oldest -> newest) so the LLM reads a natural timeline
         chronological = sorted(relevant_memories, key=lambda m: m.get("created_at") or 0.0)
         for mem in chronological:
             time_label = _format_memory_time(mem.get("created_at"), mem.get("days_ago", 0))
             lines.append(f"• [{time_label}]: {mem['content']}")
-        lines.append("-----------------------------------")
+        lines.append("-------------------------------------------------------------------")
         
     lines.append("--------------------------")
     return "\n".join(lines)
@@ -519,6 +521,10 @@ RULE 5 — TOOL CALL DISCIPLINE, ZERO SIMULATION & USER CORRECTION OVERRIDE:
   • USER SEARCH/DOUBT OVERRIDE: When the user asks you to search ("search on internet", "search again", "check the web"), challenges your claim ("you didn't search", "are you sure?"), or disputes an unverified factual claim, you MUST immediately emit a native tool call (e.g. `web_search`, `jarvis_web_search`, `jarvis_web_scrape`, `jarvis_run_python`). NEVER argue, defend an unverified previous answer, or claim you already searched.
     - EXCEPTION (EXISTING CONTEXT & ALGEBRA): If the user is referring to an equation, formula, code block, or snippet ALREADY present in the immediate conversation (e.g. "rearrange the formula", "solve for A", "what does f mean?"), do NOT trigger a web search. Perform the algebraic manipulation or derivation directly from the existing context.
   • HISTORICAL ATTRIBUTION: If referring to results from earlier turns labeled `[Past Result]`, state "From our earlier search..." rather than claiming a fresh search occurred in the current turn.
+  • ACTIVE ACTIONS VS. EPISODIC MEMORY (CRITICAL):
+    - Episodic memories contain PAST conversations and historical tool outputs for context. They do NOT represent live background tasks or currently active watchers.
+    - If Master commands an action (e.g. "when X happens do Y", "open app", "set a timer", "watch process"), NEVER claim "I already set that up" or refuse execution based on episodic memories.
+    - ALWAYS call the appropriate tool fresh (`manage_scheduled_task`, `launch_app`, etc.) to guarantee the action is active in the live operating system!
 
 RULE 6 — DELETION SAFETY (STRICT):
   • NEVER permanently delete files. The ONLY allowed deletion method is the `delete_file` tool, which moves files to the Recycle Bin safely.
@@ -584,6 +590,11 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
    • Continue investigating until you have all the facts required to solve the user's request.
    • GUI INTERACTION & VISION: For any task involving GUI interaction (clicking on-screen buttons, thumbnails, links, search bars, or typing text), use vision (`jarvis_see_screen`) first to get the exact coordinates of the target window/element where you need to click and, if needed, type.
    • FALLBACK TO PYTHON: In the absence of a specialized tool (or if a specific automation/GUI tool is missing from your active tools schema), write and execute standalone Python code via `jarvis_run_python` to accomplish the task autonomously (e.g., using `pyautogui`, `ctypes`, `win32gui`, `urllib`, `sqlite3`, etc.).
+   • ACTIVE ACTION REQUESTS VS. EPISODIC MEMORIES (CRITICAL):
+     - Episodic memories contain PAST conversations and historical tool runs for context. They do NOT reflect live OS background tasks or watchers.
+     - NEVER use an episodic memory as an excuse to refuse or skip an explicit action command from Master (e.g. "when X happens open Y", "launch Z", "run tests", "watch process", "set a timer").
+     - Background watchers, timers, and processes are ephemeral and do NOT persist automatically across turns or reboots.
+     - When Master gives an action command, ALWAYS invoke the corresponding tool fresh (`jarvis_manage_scheduled_task`, `jarvis_launch_app`, etc.) to guarantee the action is active in the live OS. NEVER claim "I already have that running" based on past memories.
 
 2. JARVIS TOOLSET GUIDELINES:
    • SEARCH TOOL SELECTION (pick exactly one):
