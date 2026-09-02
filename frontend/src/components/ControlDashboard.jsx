@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -1983,8 +1983,48 @@ const ControlDashboard = ({
         body: JSON.stringify({ item_id: id })
       });
       fetchScheduledTasks();
+      fetchScheduledTaskRuns();
     } catch (e) {
       console.error("Failed to cancel scheduled task:", e);
+    }
+  };
+
+  const [schedRuns, setSchedRuns] = useState([]);
+
+  const fetchScheduledTaskRuns = () => {
+    fetch(`${API_BASE}/api/scheduled-tasks/runs?limit=30`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.runs) {
+          setSchedRuns(data.runs);
+        }
+      })
+      .catch(err => console.error("Failed to fetch scheduled task runs:", err));
+  };
+
+  const handlePauseScheduledTask = async (id) => {
+    try {
+      await fetch(`${API_BASE}/api/scheduled-tasks/pause`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_id: id })
+      });
+      fetchScheduledTasks();
+    } catch (e) {
+      console.error("Failed to pause scheduled task:", e);
+    }
+  };
+
+  const handleResumeScheduledTask = async (id) => {
+    try {
+      await fetch(`${API_BASE}/api/scheduled-tasks/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_id: id })
+      });
+      fetchScheduledTasks();
+    } catch (e) {
+      console.error("Failed to resume scheduled task:", e);
     }
   };
 
@@ -2091,6 +2131,7 @@ const ControlDashboard = ({
       if (activeTab === 'tasks') {
         fetchTimeItems();
         fetchScheduledTasks();
+        fetchScheduledTaskRuns();
       }
 
       interval = setInterval(() => {
@@ -2103,6 +2144,7 @@ const ControlDashboard = ({
         if (activeTab === 'tasks') {
           fetchTimeItems();
           fetchScheduledTasks();
+          fetchScheduledTaskRuns();
         }
       }, 3000);
     }
@@ -4435,6 +4477,11 @@ const ControlDashboard = ({
                                   <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: '4px', background: badgeBg, color: badgeColor, fontWeight: 700, letterSpacing: '0.5px' }}>
                                     {String(t.kind || '').toUpperCase()}
                                   </span>
+                                  {t.is_paused ? (
+                                    <span style={{ fontSize: '0.58rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(234,179,8,0.2)', color: '#fde047', fontWeight: 700 }}>
+                                      PAUSED
+                                    </span>
+                                  ) : null}
                                   <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {isWatcher ? `${t.monitor_type} '${t.target}' → ${t.fire_condition}` : actionDesc}
                                   </span>
@@ -4442,22 +4489,86 @@ const ControlDashboard = ({
                                 <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.4)', marginTop: '3px', fontFamily: 'monospace' }}>
                                   {isWatcher ? `action: ${actionDesc} · poll ${Math.round((t.interval_seconds || 1.5) * 10) / 10}s` : (t.interval_seconds ? `every ${Math.round(t.interval_seconds)}s${t.count == null ? ' (looping)' : ''}` : '')}
                                   {t.count != null ? ` · x${t.count}` : ''}
-                                  {schedCountdown(t) ? ` · ${t.kind === 'interval' ? 'next in ' : ''}${schedCountdown(t)}` : ''}
+                                  {t.is_paused ? ' · paused' : (schedCountdown(t) ? ` · ${t.kind === 'interval' ? 'next in ' : ''}${schedCountdown(t)}` : '')}
                                 </div>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleCancelScheduledTask(t.id)}
-                                style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                              >
-                                Cancel
-                              </button>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                {t.is_paused ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResumeScheduledTask(t.id)}
+                                    style={{ background: 'rgba(34,197,94,0.2)', border: '1px solid rgba(34,197,94,0.4)', color: '#86efac', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                                  >
+                                    <Play style={{ width: '10px', height: '10px' }} /> Resume
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePauseScheduledTask(t.id)}
+                                    style={{ background: 'rgba(234,179,8,0.15)', border: '1px solid rgba(234,179,8,0.35)', color: '#fde047', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                                  >
+                                    <Pause style={{ width: '10px', height: '10px' }} /> Pause
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleCancelScheduledTask(t.id)}
+                                  style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', borderRadius: '6px', padding: '3px 8px', fontSize: '0.68rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );
                       })}
                     </div>
                   )}
+
+                  {/* Recent Execution History / Run Log */}
+                  <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <History style={{ width: '14px', height: '14px', color: '#a78bfa' }} />
+                        <span>Recent Run History</span>
+                      </div>
+                      <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>
+                        {schedRuns.length} recorded
+                      </span>
+                    </div>
+                    {schedRuns.length === 0 ? (
+                      <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)', fontStyle: 'italic', padding: '12px 0', textAlign: 'center' }}>
+                        No execution history recorded yet. Completed and fired tasks will log here.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                        {schedRuns.map(r => {
+                          const isErr = r.status === 'error';
+                          const stColor = isErr ? '#f87171' : '#4ade80';
+                          const stBg = isErr ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)';
+                          const timeStr = r.fired_at ? new Date(r.fired_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+                          return (
+                            <div key={r.id} style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)', padding: '6px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '0.68rem' }}>
+                              <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                <span style={{ fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)', fontSize: '0.64rem', flexShrink: 0 }}>
+                                  {timeStr}
+                                </span>
+                                <span style={{ padding: '1px 4px', borderRadius: '3px', background: stBg, color: stColor, fontWeight: 700, fontSize: '0.58rem', flexShrink: 0 }}>
+                                  {r.status ? r.status.toUpperCase() : 'OK'}
+                                </span>
+                                <span style={{ color: '#fff', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                                  #{r.task_id} [{r.kind}]: {r.result}
+                                </span>
+                              </div>
+                              <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.62rem', flexShrink: 0, fontFamily: 'monospace' }}>
+                                {r.action_desc}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </>

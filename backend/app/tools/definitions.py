@@ -15,15 +15,15 @@ def get_scheduled_task_schema(name: str = "manage_scheduled_task") -> dict:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["watch", "set_delayed", "set_interval", "list", "cancel"]
+                        "enum": ["watch", "set_delayed", "set_interval", "list", "cancel", "pause", "resume"]
                     },
                     "target": {
                         "type": "string",
-                        "description": "Target to watch: window title (e.g. 'antigravity', 'Chrome'), process name, file path, or shell command."
+                        "description": "Target to watch: window/app name (e.g. 'antigravity', 'Chrome'), process name, file path, hardware metric (battery, storage, network), or command."
                     },
                     "condition": {
                         "type": "string",
-                        "description": "Trigger condition: window (minimized/closed/open/focused), process (gone/present), file (changed/deleted/exists), command (exit0/exit_nonzero)."
+                        "description": "Trigger condition: window (minimized/closed/open/focused), process (gone/present), battery (low/charging), storage (low), network (disconnected), file (changed/deleted)."
                     },
                     "seconds": {
                         "type": "number",
@@ -31,7 +31,7 @@ def get_scheduled_task_schema(name: str = "manage_scheduled_task") -> dict:
                     },
                     "do": {
                         "type": "string",
-                        "description": "Action to run: 'sound:tada' (or chime/beep), 'power:shutdown', Yuki tool name (e.g. 'take_screenshot'), or shell command."
+                        "description": "Action to run: 'popup:<msg>', 'notify:<msg>', 'sound:tada', 'telegram:<msg>', 'power:shutdown', tool name, or shell command."
                     },
                     "count": {
                         "type": "integer",
@@ -39,7 +39,7 @@ def get_scheduled_task_schema(name: str = "manage_scheduled_task") -> dict:
                     },
                     "item_id": {
                         "type": "integer",
-                        "description": "Task ID to cancel (for action='cancel')."
+                        "description": "Task ID (for action='cancel' | 'pause' | 'resume')."
                     }
                 },
                 "required": ["action"]

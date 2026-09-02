@@ -477,6 +477,15 @@ def _dispatch_scheduled_task(**kwargs) -> str:
         if do.lower().startswith("sound:"):
             action_type = "sound"
             action_command = do.split(":", 1)[1].strip() or "tada"
+        elif do.lower().startswith("popup:"):
+            action_type = "popup"
+            action_command = do.split(":", 1)[1].strip() or "Reminder"
+        elif do.lower().startswith("notify:"):
+            action_type = "notify"
+            action_command = do.split(":", 1)[1].strip() or "Notification"
+        elif do.lower().startswith("telegram:"):
+            action_type = "telegram"
+            action_command = do.split(":", 1)[1].strip() or "Alert"
         elif do.lower().startswith("power:"):
             action_type = "power"
             action_args = {"action": do.split(":", 1)[1].strip() or "shutdown"}
@@ -584,6 +593,20 @@ def _dispatch_scheduled_task(**kwargs) -> str:
             action_desc = t.get("action_command") or t.get("action_tool") or t.get("action_type") or "shell"
             lines.append(f"- #{t['id']} [{kind_t}] {desc} -> {action_desc}")
         return "Active scheduled tasks:\n" + "\n".join(lines)
+
+    if action_clean in ("pause", "hold"):
+        item_id = kwargs.get("item_id") or kwargs.get("id")
+        if item_id:
+            scheduled_tasks.pause_task(int(item_id))
+            return f"Paused scheduled task #{item_id}."
+        return "Missing item_id to pause."
+
+    if action_clean in ("resume", "unpause"):
+        item_id = kwargs.get("item_id") or kwargs.get("id")
+        if item_id:
+            res = scheduled_tasks.resume_task(int(item_id))
+            return f"Resumed scheduled task #{item_id}."
+        return "Missing item_id to resume."
 
     if action_clean in ("cancel", "stop"):
         item_id = kwargs.get("item_id") or kwargs.get("id")
