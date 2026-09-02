@@ -9,7 +9,6 @@ DEFAULT_MOOD_SPECTRUM = {
     "curiosity": 65,
     "affection": 55,
     "stress_level": 20,
-    "doomer": 25,
     "hunger": 30,
     "horniness": 45,
     "playfulness": 50,
@@ -148,7 +147,9 @@ class MemoryManager:
                 "telegram_allowed_users": "",
                 "telegram_voice_replies": True,
                 "telegram_notify_reminders": True,
-                "telegram_verbose_tools": True
+                "telegram_verbose_tools": True,
+                "proactive_nudge_mode": "visual_only",
+                "proactive_nudge_interval_min": 45
             }
         }
         if not os.path.exists(self.profile_path):
@@ -240,6 +241,8 @@ class MemoryManager:
                 from app.agent.personas import get_clean_character_backstory
                 config.CHARACTER_PERSONA = get_clean_character_backstory(data)
                 data["settings"]["character_persona"] = config.CHARACTER_PERSONA
+                config.PROACTIVE_NUDGE_MODE = str(data["settings"].get("proactive_nudge_mode", getattr(config, "PROACTIVE_NUDGE_MODE", "visual_only"))).strip().lower()
+                config.PROACTIVE_NUDGE_INTERVAL_MIN = int(data["settings"].get("proactive_nudge_interval_min", getattr(config, "PROACTIVE_NUDGE_INTERVAL_MIN", 45)))
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
                 config.START_WITH_LAST_AVATAR_SIZE = bool(data["settings"].get("start_with_last_avatar_size", getattr(config, "START_WITH_LAST_AVATAR_SIZE", True)))
                 config.ENABLE_VECTOR_MEMORY = bool(data["settings"].get("enable_vector_memory", getattr(config, "ENABLE_VECTOR_MEMORY", False)))
@@ -578,6 +581,10 @@ class MemoryManager:
             config.TELEGRAM_NOTIFY_REMINDERS = bool(value)
         elif key == "telegram_verbose_tools":
             config.TELEGRAM_VERBOSE_TOOLS = bool(value)
+        elif key == "proactive_nudge_mode":
+            config.PROACTIVE_NUDGE_MODE = str(value).strip().lower()
+        elif key == "proactive_nudge_interval_min":
+            config.PROACTIVE_NUDGE_INTERVAL_MIN = int(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

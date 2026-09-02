@@ -436,8 +436,18 @@ export function useAudioPlayback(options = {}) {
 
   const speakSystemMessage = useCallback((text, expression = null) => {
     systemMessageActiveRef.current = true;
+    if (expression && setAvatarExpression) setAvatarExpression(expression);
+
+    // If the message contains only action descriptions/asterisks (e.g. "*waves hello*") with no speakable text, skip TTS synthesis entirely
+    const cleanSpoken = cleanTextForTTS(stripAnimationTags(getSpeechFriendlyText(text)));
+    if (!cleanSpoken) {
+      systemMessageActiveRef.current = false;
+      if (setIsThinking) setIsThinking(false);
+      setTtsStreamActive(false);
+      return;
+    }
+
     if (muteVoiceRef.current) {
-      if (expression && setAvatarExpression) setAvatarExpression(expression);
       if (setIsThinking) setIsThinking(false);
       setTtsStreamActive(false);
       return;
@@ -447,12 +457,11 @@ export function useAudioPlayback(options = {}) {
       window.speechSynthesis.cancel();
       hasReceivedAudioRef.current = false;
       setTtsStreamActive(true);
-      if (expression && setAvatarExpression) setAvatarExpression(expression);
       ws.send(JSON.stringify({ type: 'tts_only', text, expression }));
     } else {
       speakTextNatively(text, expression);
     }
-  }, [setAvatarExpression, setIsThinking, socketRef, speakTextNatively]);
+  }, [setAvatarExpression, setIsThinking, socketRef, speakTextNatively, setTtsStreamActive]);
 
   useEffect(() => {
     return () => {

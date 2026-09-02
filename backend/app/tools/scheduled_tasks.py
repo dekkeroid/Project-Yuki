@@ -89,35 +89,193 @@ def _check_process_alive(target) -> bool:
     return False
 
 
-def _check_window_open(target) -> bool:
-    """True when at least one visible window's title contains ``target``."""
+def _check_window_state(target: str, condition: str) -> bool:
+    """
+    Evaluates window condition:
+      'open', 'closed', 'minimized', 'maximized', 'focused', 'unfocused'.
+    Supports desktop inspection via ctypes (Default desktop) with win32gui/pygetwindow fallbacks.
+    """
     target = str(target or "").strip().lower()
     if not target:
         return False
+    cond = (condition or "open").lower().strip()
+    if cond in ("closed", "gone", "terminated", "killed"):
+        cond = "closed"
+    elif cond in ("open", "opened", "present", "running"):
+        cond = "open"
+    elif cond in ("minimized", "minimize", "iconic"):
+        cond = "minimized"
+    elif cond in ("maximized", "maximize"):
+        cond = "maximized"
+    elif cond in ("focused", "active", "foreground"):
+        cond = "focused"
+    elif cond in ("unfocused", "inactive", "background"):
+        cond = "unfocused"
+
+    # 1. Inspect user's interactive desktop via ctypes
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        h_desk = user32.OpenDesktopW("Default", 0, False, 0x0100)  # DESKTOP_ENUMERATE
+        matches = []
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        def _desk_cb(hwnd, _):
+            try:
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buff, length + 1)
+                    title = buff.value.strip().lower()
+                    if target in title:
+                        is_vis = bool(user32.IsWindowVisible(hwnd))
+                        is_ico = bool(user32.IsIconic(hwnd))
+                        if is_vis or is_ico:
+                            matches.append((hwnd, is_ico))
+            except Exception:
+                pass
+            return True
+
+        if h_desk:
+            user32.EnumDesktopWindows(h_desk, WNDENUMPROC(_desk_cb), 0)
+            user32.CloseDesktop(h_desk)
+
+        if matches:
+            if cond == "closed":
+                return False
+            if cond == "open":
+                return True
+            fg = user32.GetForegroundWindow()
+            for hwnd, is_ico in matches:
+                if cond == "minimized" and is_ico:
+                    return True
+                if cond == "maximized":
+                    class WINDOWPLACEMENT(ctypes.Structure):
+                        _fields_ = [
+                            ("length", wintypes.UINT),
+                            ("flags", wintypes.UINT),
+                            ("showCmd", wintypes.UINT),
+                            ("ptMinPosition", wintypes.POINT),
+                            ("ptMaxPosition", wintypes.POINT),
+                            ("rcNormalPosition", wintypes.RECT),
+                        ]
+                    wp = WINDOWPLACEMENT()
+                    wp.length = ctypes.sizeof(WINDOWPLACEMENT)
+                    if user32.GetWindowPlacement(hwnd, ctypes.byref(wp)) and wp.showCmd == 3:
+                        return True
+                if cond == "focused" and hwnd == fg:
+                    return True
+                if cond == "unfocused" and hwnd != fg:
+                    return True
+            if cond in ("minimized", "maximized", "focused"):
+                return False
+    except Exception:
+        pass
+
+    # 2. Fallback: win32gui
     try:
         import win32gui
+        import win32con
 
-        found = False
+        matching_hwnds = []
 
         def _cb(hwnd, _results):
-            nonlocal found
             try:
-                if win32gui.IsWindowVisible(hwnd):
-                    title = win32gui.GetWindowText(hwnd) or ""
-                    if target in title.lower():
-                        found = True
+                if win32gui.IsWindow(hwnd):
+                    title = (win32gui.GetWindowText(hwnd) or "").strip().lower()
+                    if target in title:
+                        if win32gui.IsWindowVisible(hwnd) or win32gui.IsIconic(hwnd):
+                            matching_hwnds.append(hwnd)
             except Exception:
                 pass
 
         win32gui.EnumWindows(_cb, None)
-        return found
+        if cond == "closed":
+            return len(matching_hwnds) == 0
+        if not matching_hwnds:
+            return False
+        if cond == "open":
+            return True
+
+        fg_hwnd = win32gui.GetForegroundWindow()
+        for hwnd in matching_hwnds:
+            if cond == "minimized" and win32gui.IsIconic(hwnd):
+                return True
+            if cond == "maximized":
+                plc = win32gui.GetWindowPlacement(hwnd)
+                if plc and len(plc) > 1 and plc[1] == win32con.SW_SHOWMAXIMIZED:
+                    return True
+            if cond == "focused" and hwnd == fg_hwnd:
+                return True
+            if cond == "unfocused" and hwnd != fg_hwnd:
+                return True
+        return False
     except Exception:
         pass
+
+    # 3. Fallback: pygetwindow
     try:
         import pygetwindow as gw
-        return len(gw.getWindowsWithTitle(target)) > 0
+        wins = [w for w in gw.getAllWindows() if target in (w.title or "").lower()]
+        if cond == "closed":
+            return len(wins) == 0
+        if not wins:
+            return False
+        if cond == "open":
+            return True
+        for w in wins:
+            if cond == "minimized" and getattr(w, "isMinimized", False):
+                return True
+            if cond == "maximized" and getattr(w, "isMaximized", False):
+                return True
+            if cond == "focused" and getattr(w, "isActive", False):
+                return True
+            if cond == "unfocused" and not getattr(w, "isActive", False):
+                return True
     except Exception:
-        return False
+        pass
+
+    return False
+
+
+def _check_window_open(target) -> bool:
+    """True when at least one visible window's title contains ``target``."""
+    return _check_window_state(target, "open")
+
+
+def _play_builtin_sound(sound_name: str) -> str:
+    """Plays a Windows built-in sound (e.g. tada, chime, beep, alert, chord)."""
+    sound = (sound_name or "tada").lower().strip()
+    try:
+        import winsound
+        alias_map = {
+            "tada": "SystemAsterisk",
+            "asterisk": "SystemAsterisk",
+            "chime": "SystemNotification",
+            "notification": "SystemNotification",
+            "beep": "SystemDefault",
+            "default": "SystemDefault",
+            "alert": "SystemHand",
+            "hand": "SystemHand",
+            "error": "SystemHand",
+            "chord": "SystemQuestion",
+            "question": "SystemQuestion",
+            "exclamation": "SystemExclamation",
+        }
+        alias = alias_map.get(sound, sound)
+        try:
+            winsound.PlaySound(alias, winsound.SND_ALIAS | winsound.SND_ASYNC)
+            return f"played sound: {sound}"
+        except Exception:
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            return f"played system beep for: {sound}"
+    except Exception as e:
+        try:
+            subprocess.Popen('powershell -c "[System.Media.SystemSounds]::Asterisk.Play()"', shell=True)
+            return f"played sound via powershell: {sound}"
+        except Exception as e2:
+            return f"sound playback failed: {e2}"
 
 
 def _file_signature(path: str) -> Optional[tuple]:
@@ -141,7 +299,7 @@ def evaluate_watcher_condition(task: Dict[str, Any], previous_fired: bool) -> bo
 
     ``monitor_type``/``fire_condition`` combos:
       process | gone|present
-      window  | open|closed
+      window  | minimized|maximized|focused|unfocused|open|closed
       file    | exists|deleted|changed
       command | exit0|exit_nonzero   (runs ``target`` as a shell command each tick)
     """
@@ -154,8 +312,7 @@ def evaluate_watcher_condition(task: Dict[str, Any], previous_fired: bool) -> bo
         return not alive if condition == "gone" else alive if condition == "present" else False
 
     if monitor == "window":
-        open_now = _check_window_open(target)
-        return not open_now if condition == "closed" else open_now if condition == "open" else False
+        return _check_window_state(target, condition)
 
     if monitor == "file":
         path = os.path.abspath(os.path.expanduser(os.path.expandvars(target)))
@@ -278,6 +435,10 @@ def execute_action(task: Dict[str, Any]) -> str:
     action_command = task.get("action_command")
     action_tool = task.get("action_tool")
     action_args = task.get("action_args")
+
+    if action_type == "sound":
+        sound_target = action_command or (action_args.get("sound") if isinstance(action_args, dict) else "") or "tada"
+        return _play_builtin_sound(sound_target)
 
     if action_type == "shell" and action_command:
         return _run_shell_action(action_command)
@@ -441,16 +602,20 @@ def add_watcher(
 ) -> Dict[str, Any]:
     """Watch ``monitor_type`` every ``interval_seconds`` and fire when the
     ``fire_condition`` holds. Default ``count=1`` fires once then stops."""
+    m_type = (monitor_type or "").lower().strip()
     try:
         interval_seconds = float(interval_seconds)
     except (ValueError, TypeError):
-        interval_seconds = 1.0
-    interval_seconds = max(1.0, interval_seconds)
+        interval_seconds = 1.5 if m_type == "window" else 1.0
+    # For UI window watchers, default to 1.5s if omitted or left at high default
+    if m_type == "window" and interval_seconds >= 30.0:
+        interval_seconds = 1.5
+    interval_seconds = max(0.5, interval_seconds)
     now = time.time()
     task_id = _insert_task(
         now,
         kind="watcher",
-        monitor_type=(monitor_type or "").lower().strip(),
+        monitor_type=m_type,
         target=str(target or "").strip(),
         interval_seconds=interval_seconds,
         count=count,
@@ -672,10 +837,16 @@ async def _runner_interval(task_id: int):
             delay = max(0.0, float(task.get("next_run_at") or time.time()) - time.time())
             if delay > 0:
                 await asyncio.sleep(delay)
-            await asyncio.to_thread(process_single_due_task, task_id)
+            try:
+                await asyncio.to_thread(process_single_due_task, task_id)
+            except Exception as e:
+                print(f"[ScheduledTasks] Interval task #{task_id} execution error: {e}")
+                await asyncio.sleep(1.0)
             # If it deactivated after firing, the loop ends next iteration.
     except asyncio.CancelledError:
         pass
+    except Exception as e:
+        print(f"[ScheduledTasks] Interval runner crashed for task #{task_id}: {e}")
     finally:
         _running_tasks.pop(task_id, None)
 
@@ -686,12 +857,17 @@ async def _runner_watcher(task_id: int):
             task = _fetch_task(task_id)
             if not task or not task.get("is_active"):
                 break
-            await asyncio.to_thread(process_single_due_task, task_id)
+            try:
+                await asyncio.to_thread(process_single_due_task, task_id)
+            except Exception as e:
+                print(f"[ScheduledTasks] Watcher task #{task_id} evaluation error: {e}")
             # Sleep for the poll interval before the next check.
-            interval = float(task.get("interval_seconds") or 1)
+            interval = float(task.get("interval_seconds") or 1.5)
             await asyncio.sleep(interval)
     except asyncio.CancelledError:
         pass
+    except Exception as e:
+        print(f"[ScheduledTasks] Watcher runner crashed for task #{task_id}: {e}")
     finally:
         _running_tasks.pop(task_id, None)
 

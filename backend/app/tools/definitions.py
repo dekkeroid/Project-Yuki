@@ -8,39 +8,39 @@ def get_scheduled_task_schema(name: str = "manage_scheduled_task") -> dict:
         "type": "function",
         "function": {
             "name": name,
-            "description": "Schedule silent background automation: delayed one-shot actions, repeating intervals, and condition watchers. "
-                           "Not for user-visible timers, alarms, reminders, or stopwatches — use manage_timer_stopwatch_alarms for those. "
-                           "Actions can be a shell command, a Yuki tool (e.g. take a screenshot), or a power action (shutdown/restart — confirmed once when the task is created). "
-                           "Use 'set_delayed' to run a tool/command once after N seconds (e.g. take_screenshot after 30s). Use 'set_interval' to repeat every N seconds (e.g. keep-alive ping). "
-                           "Use 'watch' to poll every N seconds and fire when a process/window/file/command condition flips (e.g. watch a terminal process and shut down the PC when it closes). "
-                           "Use 'list' to show active tasks and 'cancel' to stop one.",
+            "description": "Schedule background automation: delayed one-shot actions, repeating intervals, and condition watchers. "
+                           "Not for user-visible timers/alarms — use manage_timer_stopwatch_alarms for those.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["set_delayed", "set_interval", "watch", "list", "cancel"]
+                        "enum": ["watch", "set_delayed", "set_interval", "list", "cancel"]
                     },
-                    "kind": {"type": "string", "description": "For watch: 'process', 'window', 'file', or 'command'."},
-                    "target": {"type": "string", "description": "For watch: PID or process name, window title substring, file/folder path, or shell command (for 'command' watcher)."},
-                    "fire_condition": {
+                    "target": {
                         "type": "string",
-                        "description": "For watch: when to fire. process: 'gone' or 'present'. window: 'open' or 'closed'. file: 'exists', 'deleted', or 'changed'. command: 'exit0' or 'exit_nonzero'."
+                        "description": "Target to watch: window title (e.g. 'antigravity', 'Chrome'), process name, file path, or shell command."
                     },
-                    "seconds": {"type": "number", "description": "Delay (set_delayed) or poll/repeat interval (set_interval/watch) in seconds."},
-                    "count": {"type": "integer", "description": "Max number of fires. None = forever for intervals; watchers default to 1 (fire once then stop)."},
-                    "action_type": {
+                    "condition": {
                         "type": "string",
-                        "enum": ["shell", "tool", "power"],
-                        "description": "What to run when the task fires. 'shell' (default): run action_command. 'tool': call a Yuki tool by name via action_tool. 'power': run a system power action via action_args.action (shutdown/restart/lock/sleep/sign_out)."
+                        "description": "Trigger condition: window (minimized/closed/open/focused), process (gone/present), file (changed/deleted/exists), command (exit0/exit_nonzero)."
                     },
-                    "action_command": {"type": "string", "description": "Shell command to run when the task fires (for action_type='shell')."},
-                    "action_tool": {"type": "string", "description": "Yuki tool name to call when the task fires (for action_type='tool'), e.g. 'take_screenshot', 'jarvis_see_screen'."},
-                    "action_args": {
-                        "type": "object",
-                        "description": "Extra args for the action. For 'tool': args passed to the tool (e.g. {'window_title': 'Notepad'}). For 'power': {'action': 'shutdown'}."
+                    "seconds": {
+                        "type": "number",
+                        "description": "Delay duration, repeat interval, or watcher poll rate in seconds (defaults to 1.5s for window watchers)."
                     },
-                    "item_id": {"type": "integer", "description": "Task id to cancel (for 'cancel')."}
+                    "do": {
+                        "type": "string",
+                        "description": "Action to run: 'sound:tada' (or chime/beep), 'power:shutdown', Yuki tool name (e.g. 'take_screenshot'), or shell command."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Max fires (intervals default to unlimited; watchers default to 1)."
+                    },
+                    "item_id": {
+                        "type": "integer",
+                        "description": "Task ID to cancel (for action='cancel')."
+                    }
                 },
                 "required": ["action"]
             }

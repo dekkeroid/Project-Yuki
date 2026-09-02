@@ -36,7 +36,10 @@ const AvatarViewer = ({
   isBackendOnline = false,
   vrmDpr = 1.5,
   vrmFps = 40,
-  cameraTracking = true
+  cameraTracking = true,
+  boredom = 0,
+  energy = 55,
+  playfulness = 50
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -83,6 +86,21 @@ const AvatarViewer = ({
   const enableRotationRef = useRef(enableRotation);
   const autoResetRotationRef = useRef(autoResetRotation);
   const visibleRef = useRef(visible);
+  const boredomRef = useRef(boredom);
+  const energyRef = useRef(energy);
+  const playfulnessRef = useRef(playfulness);
+
+  useEffect(() => {
+    boredomRef.current = boredom;
+  }, [boredom]);
+
+  useEffect(() => {
+    energyRef.current = energy;
+  }, [energy]);
+
+  useEffect(() => {
+    playfulnessRef.current = playfulness;
+  }, [playfulness]);
 
   useEffect(() => {
     activeModelRef.current = activeModel;
@@ -1488,14 +1506,55 @@ const AvatarViewer = ({
           if (idleAnimState === 'none') {
             inactivityTimer += delta;
             if (inactivityTimer >= 15.0) {
-              // Trigger a random enabled idle animation from the registry
+              // Trigger an organically weighted idle animation based on boredom, energy, and mood
               const enabledIdleAnims = ANIMATIONS.filter(
                 a => !a.excludeFromRandomIdle && !disabledAnimationsRef.current.includes(a.name)
               );
               if (enabledIdleAnims.length > 0) {
-                const randAnim = enabledIdleAnims[Math.floor(Math.random() * enabledIdleAnims.length)];
-                idleAnimState = randAnim.name;
-                idleAnimDuration = randAnim.duration;
+                const currentBoredom = boredomRef.current || 0;
+                const currentEnergy = energyRef.current ?? 55;
+                const currentPlayfulness = playfulnessRef.current ?? 50;
+
+                // State-weighted selection:
+                // High boredom (> 0.6) heavily weights: boredarm, pout, peer, shrug
+                // Low energy (< 40) heavily weights: yawn, stretch, nap
+                // High playfulness (> 65) heavily weights: groove, laugh, cheer
+                const weights = enabledIdleAnims.map(anim => {
+                  let weight = 1.0;
+                  const name = anim.name.toLowerCase();
+
+                  if (currentBoredom >= 0.6) {
+                    if (name.includes('bored') || name.includes('pout')) weight += currentBoredom * 8;
+                    else if (name.includes('peer') || name.includes('shrug') || name.includes('knock')) weight += currentBoredom * 4;
+                  }
+
+                  if (currentEnergy <= 40) {
+                    const fatigueFactor = (40 - currentEnergy) / 40;
+                    if (name.includes('yawn') || name.includes('stretch') || name.includes('nap')) weight += fatigueFactor * 6;
+                  }
+
+                  if (currentPlayfulness >= 65) {
+                    const playFactor = (currentPlayfulness - 65) / 35;
+                    if (name.includes('groove') || name.includes('cheer') || name.includes('laugh')) weight += playFactor * 5;
+                  }
+
+                  return weight;
+                });
+
+                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+                let randomRoll = Math.random() * totalWeight;
+                let selectedAnim = enabledIdleAnims[0];
+
+                for (let i = 0; i < enabledIdleAnims.length; i++) {
+                  if (randomRoll < weights[i]) {
+                    selectedAnim = enabledIdleAnims[i];
+                    break;
+                  }
+                  randomRoll -= weights[i];
+                }
+
+                idleAnimState = selectedAnim.name;
+                idleAnimDuration = selectedAnim.duration;
               } else {
                 idleAnimState = 'none';
               }

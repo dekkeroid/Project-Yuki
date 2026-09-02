@@ -18,7 +18,9 @@ export default function SettingsApp() {
       character_persona: '',
       execution_rules: '',
       auto_evolving_archetype: true,
-      archetype_intensity: 'moderate'
+      archetype_intensity: 'moderate',
+      proactive_nudge_mode: 'visual_only',
+      proactive_nudge_interval_min: 45
     }
   });
   const [backendStatus, setBackendStatus] = useState('online');

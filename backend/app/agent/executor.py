@@ -8,6 +8,7 @@ import inspect
 import os
 import time
 import uuid
+from datetime import datetime
 from typing import Dict, Any, List, Tuple, Optional
 from app import config
 from app.agent.prompts import get_system_prompt, get_simple_system_prompt, get_advanced_jarvis_system_prompt, get_coding_agent_system_prompt, log_triggered_backend_tags
@@ -62,6 +63,44 @@ def _is_local_url(url: str) -> bool:
         or host.startswith("192.168.")
         or host.startswith("10.")
     )
+
+
+_TIMESTAMP_PREFIX_REGEX = re.compile(r'^\[(?:[A-Za-z]{3}\s+\d{1,2},\s*)?\d{1,2}:\d{2}\s*(?:AM|PM)\]\s*', re.IGNORECASE)
+
+def _format_msg_timestamp(ts: Any) -> str:
+    """
+    Formats a message timestamp (epoch float or ISO string) into a concise local time badge.
+    e.g. '[2:52 AM]' for today, or '[Sep 02, 11:45 PM]' for earlier days.
+    """
+    if not ts:
+        return ""
+    try:
+        if isinstance(ts, (int, float)):
+            dt = datetime.fromtimestamp(float(ts))
+        elif isinstance(ts, str):
+            ts_str = ts.strip()
+            if not ts_str:
+                return ""
+            try:
+                dt = datetime.fromtimestamp(float(ts_str))
+            except ValueError:
+                dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone()
+        else:
+            return ""
+
+        now = datetime.now()
+        hour_12 = dt.strftime("%I").lstrip("0") or "12"
+        min_str = dt.strftime("%M")
+        ampm = dt.strftime("%p")
+        if dt.date() == now.date():
+            return f"[{hour_12}:{min_str} {ampm}]"
+        else:
+            mon_day = dt.strftime("%b %d")
+            return f"[{mon_day}, {hour_12}:{min_str} {ampm}]"
+    except Exception:
+        return ""
 
 
 def _log_payload_stats(payload: dict, model: str, tag: str = ""):
@@ -870,6 +909,22 @@ class AgentExecutor:
             except Exception:
                 action_args = {}
 
+        # Parse compact 'do' / 'run' parameter
+        do = (kwargs.get("do") or kwargs.get("run") or "").strip()
+        if do:
+            if do.lower().startswith("sound:"):
+                action_type = "sound"
+                action_command = do.split(":", 1)[1].strip() or "tada"
+            elif do.lower().startswith("power:"):
+                action_type = "power"
+                action_args = {"action": do.split(":", 1)[1].strip() or "shutdown"}
+            elif do in self.tools or self._resolve_tool_name(do) in self.tools:
+                action_type = "tool"
+                action_tool = do
+            else:
+                action_type = "shell"
+                action_command = do
+
         if action in ("set_delayed", "delayed", "schedule", "do_later"):
             seconds = kwargs.get("seconds") or kwargs.get("delay") or kwargs.get("duration") or kwargs.get("after")
             try:
@@ -881,7 +936,7 @@ class AgentExecutor:
             res = scheduled_tasks.add_delayed(
                 seconds,
                 action_type=action_type,
-                action_command=kwargs.get("action_command"),
+                action_command=action_command or kwargs.get("action_command"),
                 action_tool=kwargs.get("action_tool"),
                 action_args=action_args,
             )
@@ -905,23 +960,42 @@ class AgentExecutor:
                 seconds,
                 count=count,
                 action_type=action_type,
-                action_command=kwargs.get("action_command"),
+                action_command=action_command or kwargs.get("action_command"),
                 action_tool=kwargs.get("action_tool"),
                 action_args=action_args,
             )
             return f"Interval task #{res['id']} set to fire every {res['interval_seconds']:.0f}s (count={count})."
 
         if action in ("watch", "watcher", "monitor", "keep_an_eye"):
+            condition = (kwargs.get("condition") or kwargs.get("fire_condition") or kwargs.get("if") or "gone").lower().strip()
             monitor = (kwargs.get("kind") or kwargs.get("monitor_type") or kwargs.get("monitor") or "").lower().strip()
             target = kwargs.get("target") or kwargs.get("process") or kwargs.get("pid") or kwargs.get("window") or kwargs.get("file") or ""
-            condition = (kwargs.get("fire_condition") or kwargs.get("condition") or kwargs.get("if") or "gone").lower().strip()
-            if not monitor or not target:
-                return "Error: 'kind' (process/window/file/command) and 'target' are required for watch."
-            seconds = kwargs.get("seconds") or kwargs.get("interval") or kwargs.get("every") or 30
-            try:
-                seconds = float(seconds)
-            except (ValueError, TypeError):
-                seconds = 30.0
+            
+            # Auto-infer monitor kind if omitted
+            if not monitor:
+                if condition in ("minimized", "maximized", "focused", "unfocused", "open", "opened", "closed"):
+                    monitor = "window"
+                elif condition in ("gone", "present", "running", "terminated"):
+                    monitor = "process"
+                elif condition in ("changed", "modified", "deleted", "exists", "created"):
+                    monitor = "file"
+                elif condition in ("exit0", "exit_nonzero"):
+                    monitor = "command"
+                else:
+                    monitor = "window"
+
+            if not target:
+                return "Error: 'target' is required for watch."
+
+            seconds = kwargs.get("seconds") or kwargs.get("interval") or kwargs.get("every")
+            if seconds is None:
+                seconds = 1.5 if monitor == "window" else 30.0
+            else:
+                try:
+                    seconds = float(seconds)
+                except (ValueError, TypeError):
+                    seconds = 1.5 if monitor == "window" else 30.0
+
             count = kwargs.get("count")
             if count is None:
                 count = 1
@@ -937,12 +1011,12 @@ class AgentExecutor:
                 fire_condition=condition,
                 count=count,
                 action_type=action_type,
-                action_command=kwargs.get("action_command"),
+                action_command=action_command or kwargs.get("action_command"),
                 action_tool=kwargs.get("action_tool"),
                 action_args=action_args,
             )
             return (
-                f"Watcher #{res['id']} active: every {res['interval_seconds']:.0f}s check {res['monitor_type']} "
+                f"Watcher #{res['id']} active: every {res['interval_seconds']:.1f}s check {res['monitor_type']} "
                 f"'{res['target']}' and fire when {res['fire_condition']}."
             )
 
@@ -980,10 +1054,15 @@ class AgentExecutor:
         return name
 
     def _run_scheduled_action(self, action_type, action_command, action_tool, action_args) -> str:
-        """Runs a fired scheduled action in-process (tool or power), bypassing
+        """Runs a fired scheduled action in-process (tool, sound, or power), bypassing
         the interactive safety flow — the task creation was already authorized.
         """
         action_args = dict(action_args or {})
+        if action_type == "sound":
+            from app.tools.scheduled_tasks import _play_builtin_sound
+            sound_target = action_command or (action_args.get("sound") if isinstance(action_args, dict) else "") or "tada"
+            return _play_builtin_sound(sound_target)
+
         if action_type == "power":
             from app.tools.system import system_power_control
             power_action = (action_args.get("action") or "").lower().strip()
@@ -1341,13 +1420,17 @@ class AgentExecutor:
         for m in pruned_history:
             role = m.get("role")
             content = str(m.get("content") or "").strip()
+            ts_badge = _format_msg_timestamp(m.get("timestamp"))
             
             if role == "tool":
                 # Convert orphaned tool messages (loaded from DB) to clean text context so API schema validates
                 tool_name = m.get("name", "Tool")
+                tool_text = f"[Past Result ({tool_name})]: {content}"
+                if ts_badge and not _TIMESTAMP_PREFIX_REGEX.match(tool_text):
+                    tool_text = f"{ts_badge} {tool_text}"
                 sanitized_history.append({
                     "role": "user",
-                    "content": f"[Past Result ({tool_name})]: {content}"
+                    "content": tool_text
                 })
             elif role == "assistant":
                 # Parse visual UI tool badges from LLM prompt context to preserve a structured,
@@ -1413,6 +1496,9 @@ class AgentExecutor:
                 if not clean_content:
                     clean_content = "Task step executed."
 
+                if ts_badge and not _TIMESTAMP_PREFIX_REGEX.match(clean_content):
+                    clean_content = f"{ts_badge} {clean_content}"
+
                 msg_obj = {"role": "assistant", "content": clean_content}
                 if m.get("tool_calls"):
                     # DB-loaded history stores tool responses as plain text (converted
@@ -1437,12 +1523,18 @@ class AgentExecutor:
                                 att_lines.append(f"[Attached {att_label} #{att_idx}: {att_fname} at '{att_spath}']")
                         if att_lines:
                             hist_content = content + "\n" + "\n".join(att_lines)
+                    if ts_badge and not _TIMESTAMP_PREFIX_REGEX.match(hist_content):
+                        hist_content = f"{ts_badge} {hist_content}"
                     sanitized_history.append({
                         "role": role,
                         "content": hist_content
                     })
 
+        curr_ts = (overrides or {}).get("timestamp") or time.time()
+        curr_ts_badge = _format_msg_timestamp(curr_ts)
         user_content = user_message
+        if curr_ts_badge and not _TIMESTAMP_PREFIX_REGEX.match(user_content):
+            user_content = f"{curr_ts_badge} {user_content}"
         is_native_vision = is_vision_model(active_model)
 
         if attachments:
@@ -1749,7 +1841,11 @@ class AgentExecutor:
 
         history_str = ""
         if last_exchanges:
-            history_lines = [f"{m['role'].capitalize()}: {str(m.get('content', ''))[:200]}" for m in last_exchanges]
+            history_lines = []
+            for m in last_exchanges:
+                t_badge = _format_msg_timestamp(m.get("timestamp"))
+                prefix = f"{t_badge} " if t_badge else ""
+                history_lines.append(f"{m['role'].capitalize()}: {prefix}{str(m.get('content', ''))[:200]}")
             history_str = "Recent Conversation:\n" + "\n".join(history_lines) + "\n\n"
 
         user_turn_content = (

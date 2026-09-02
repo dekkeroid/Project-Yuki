@@ -34,12 +34,14 @@ AXES = {
     "curiosity":    {"baseline": 65, "volatility": 4, "decay": 0.20},
     "affection":    {"baseline": 55, "volatility": 5, "decay": 0.22},
     "stress_level": {"baseline": 20, "volatility": 5, "decay": 0.20},
-    "doomer":       {"baseline": 25, "volatility": 4, "decay": 0.14},
     "hunger":       {"baseline": 30, "volatility": 6, "decay": 0.38},
     "playfulness":  {"baseline": 50, "volatility": 6, "decay": 0.25},
     "horniness":    {"baseline": 45, "volatility": 5, "decay": 0.22},
     "anger":        {"baseline": 10, "volatility": 5, "decay": 0.26},
 }
+
+PHYSICAL_AXES = {"energy", "hunger"}
+EMOTIONAL_AXES = {"happiness", "affection", "curiosity", "playfulness", "stress_level", "anger", "horniness"}
 
 # In LLM mood mode, which axes stay script-driven (physical drives the LLM
 # cannot judge reliably). The LLM tag handles every emotional axis —
@@ -152,7 +154,7 @@ REACTIONS = [
     ("sad", [
         "sad", "depressed", "lonely", "upset", "crying", "feel down",
         "tired of everything", "miserable", "heartbroken", "homesick", "grief",
-    ], {"happiness": -4, "curiosity": -3, "doomer": 4, "stress_level": 2, "affection": 3}),
+    ], {"happiness": -4, "curiosity": -3, "stress_level": 3, "affection": 3}),
     ("dismissal", [
         "whatever", "idk", "i don't care", "dont care", "meh", "fine.",
         "not interested", "don't wanna talk", "stop talking", "leave me alone",
@@ -167,11 +169,11 @@ REACTIONS = [
         "meaning of life", "philosophy", "the universe", "consciousness",
         "existence", "what if humans", "why do we", "nature of reality",
         "afterlife", "fate", "free will",
-    ], {"curiosity": 6, "doomer": 2}),
+    ], {"curiosity": 6, "stress_level": -1}),
     ("unwell", [
         "sick", "fever", "headache", "migraine", "not feeling well", "feel terrible",
         "feel awful", "throwing up", "stomach ache", "sore throat",
-    ], {"affection": 5, "stress_level": 2, "happiness": -2, "doomer": 1}),
+    ], {"affection": 5, "stress_level": 3, "happiness": -2}),
     ("playful", [
         "haha", "hehe", "lol", "lmao", "just kidding", "joking", "prank",
         "tease", "troll", "funny", "laugh", "rofl", "giggle",
@@ -188,7 +190,7 @@ REACTIONS = [
         "ugh", "this is so hard", "why me", "everything is broken",
         "nothing works", "i can't do this", "so frustrating", "this is a mess",
         "awful", "horrible day", "what a day",
-    ], {"stress_level": 4, "happiness": -2, "doomer": 2, "anger": 3}),
+    ], {"stress_level": 4, "happiness": -3, "anger": 3}),
     ("comfort", [
         "i'm here", "you're ok", "its ok", "don't worry", "it'll be okay",
         "everything will be fine", "you've got this", "i'll take care of you",
@@ -264,7 +266,7 @@ SELF_REACTIONS = [
     ("self_down", [
         "sad", "upset", "lonely", "down", "miserable", "heartbroken", "cry", "crying",
         "depressed", "numb", "empty",
-    ], {"happiness": -4, "affection": 3, "doomer": 2}),
+    ], {"happiness": -4, "affection": 3, "stress_level": 2}),
 ]
 
 _SELF_REACTION_PATTERNS = [
@@ -643,15 +645,23 @@ class MoodEngine:
             deltas["happiness"] = deltas.get("happiness", 0.0) - 1.5
             deltas["stress_level"] = deltas.get("stress_level", 0.0) + 1.0
 
-        # High doomer drains happiness and energy
-        if m["doomer"] >= 65:
-            deltas["happiness"] = deltas.get("happiness", 0.0) - 2.0
-            deltas["energy"] -= 1.0
+        # High boredom (from PresenceEngine) dampens curiosity and channels restless energy
+        try:
+            from app.memory.presence_engine import presence_manager
+            if presence_manager.boredom >= 0.70:
+                deltas["curiosity"] = deltas.get("curiosity", 0.0) - 1.5
+                if m["energy"] >= 55:
+                    deltas["playfulness"] = deltas.get("playfulness", 0.0) + 1.0  # restless teasing
+                else:
+                    deltas["happiness"] = deltas.get("happiness", 0.0) - 1.0     # day-dreamy gloom
+        except Exception:
+            pass
 
-        # High hunger causes peckish irritability and physical drag
+        # High hunger causes peckish irritability and physical drag ("hangry")
         if m["hunger"] >= 70:
             deltas["energy"] -= 1.5
-            deltas["stress_level"] = deltas.get("stress_level", 0.0) + 1.0
+            deltas["stress_level"] = deltas.get("stress_level", 0.0) + 1.5
+            deltas["happiness"] = deltas.get("happiness", 0.0) - 1.0
 
         # Low energy causes cognitive sluggishness
         if m["energy"] <= 25:
@@ -943,10 +953,8 @@ class MoodEngine:
         m = self.current()
         if m["energy"] < 30:
             rate = 0.8
-        elif m["doomer"] > 80:
-            rate = 0.8
-        elif m["doomer"] > 55:
-            rate = 0.9
+        elif m["happiness"] <= 35:
+            rate = 0.85
         elif m["energy"] < 35 or m["curiosity"] < 35:
             rate = 0.9
         elif m["energy"] > 90:
