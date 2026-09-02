@@ -2156,6 +2156,27 @@ async def reset_relationship_status_api(preset: Optional[str] = None):
     return status
 
 
+class ResetVectorMemoryRequest(BaseModel):
+    scope: Optional[str] = "all"  # 'all' or 'conversations'
+
+
+@app.post("/api/memory/vectors/reset")
+async def reset_vector_memory_api(req: Optional[ResetVectorMemoryRequest] = None):
+    """Clears memories from vectors.db."""
+    from app.memory.vector_memory import clear_vector_db
+    scope = req.scope if req and req.scope else "all"
+    res = await asyncio.to_thread(clear_vector_db, scope)
+    return res
+
+
+@app.get("/api/memory/vectors/stats")
+async def get_vector_memory_stats_api():
+    """Returns counts of items stored in vectors.db."""
+    from app.memory.vector_memory import get_vector_db_stats
+    res = await asyncio.to_thread(get_vector_db_stats)
+    return res
+
+
 @app.post("/api/chat/attachments/upload")
 async def upload_attachment_endpoint(file: UploadFile = File(...)):
     """
