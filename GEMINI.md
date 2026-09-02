@@ -88,8 +88,3 @@ Always create indexes using `IF NOT EXISTS`:
 ```python
 cursor.execute("CREATE INDEX IF NOT EXISTS idx_table_col ON table_name(new_column)")
 ```
-
-### 3. User Data Preservation During Builds
-Database files contain user memory, history, and embeddings.
-- In `update_installed.ps1` and build scripts, **ALWAYS** exclude `*.db`, `*.db-wal`, and `*.db-shm` from robocopy overwrites.
-- In full PyInstaller rebuilds, backup existing `.db` files before cleaning directories and restore them immediately after.
