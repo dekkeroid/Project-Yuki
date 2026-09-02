@@ -483,8 +483,14 @@ def _run_shell_action(command: str) -> str:
             from app.tools.system import launch_app
             return launch_app(app_name=app_target)
 
-    # If the command is an executable path (or ends in .exe) or an existing file on disk
-    if cmd_clean.lower().endswith(".exe") or (os.path.isabs(cmd_clean) and os.path.exists(cmd_clean)):
+    for prefix in ("close_app:", "close:", "kill:", "terminate:"):
+        if cmd_clean.lower().startswith(prefix):
+            app_target = cmd_clean.split(":", 1)[1].strip()
+            from app.tools.system import manage_process
+            return manage_process("kill", name=app_target)
+
+    # If the command is an executable path (or ends in .exe) or an existing file on disk (and NOT a colon command)
+    if ":" not in cmd_clean and (cmd_clean.lower().endswith(".exe") or (os.path.isabs(cmd_clean) and os.path.exists(cmd_clean))):
         try:
             from app.tools.system import launch_app
             res = launch_app(app_name=cmd_clean)
