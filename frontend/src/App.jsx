@@ -3150,7 +3150,7 @@ const App = () => {
                             }}>
                               {isUser ? 'Master' : 'Yuki'}
                             </span>
-                            {msg.timestamp && (() => {
+                            {!isUser && msg.timestamp && (() => {
                               const ts = msg.timestamp > 1e11 ? msg.timestamp / 1000 : msg.timestamp;
                               const date = new Date(ts * 1000);
                               const now = new Date();
