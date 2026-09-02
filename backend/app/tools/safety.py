@@ -465,6 +465,18 @@ def _blocked_reason(tool: str, args: dict[str, Any]) -> str | None:
         for pattern in _terminal_patterns():
             if re.search(pattern, command, flags=re.IGNORECASE):
                 return f"terminal command matches blocked pattern /{pattern}/"
+    if tool in ("manage_process", "close_app", "jarvis_close_app"):
+        action = (args.get("action") or "").lower().strip()
+        name = str(args.get("name") or args.get("app_name") or args.get("target") or "").lower().strip()
+        if action in ("kill", "") and name:
+            name_clean = name[:-4] if name.endswith(".exe") else name
+            PROTECTED = {
+                "explorer", "dwm", "csrss", "wininit", "services", "lsass",
+                "winlogon", "smss", "svchost", "system", "idle", "registry",
+                "fontdrvhost", "sihost", "ctfmon", "spoolsv"
+            }
+            if (name_clean in PROTECTED or name in PROTECTED) and name_clean not in ("file explorer", "windows explorer"):
+                return f"refusing to terminate system-critical process '{name}'"
     return None
 
 
