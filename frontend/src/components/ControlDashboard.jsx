@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -598,9 +598,61 @@ const ControlDashboard = ({
     }
   };
 
+  const [isResettingVectorMemory, setIsResettingVectorMemory] = useState(false);
+  const [vectorMemoryResetMsg, setVectorMemoryResetMsg] = useState('');
+  const [vectorMemoryCount, setVectorMemoryCount] = useState(null);
+
+  const fetchVectorMemoryStats = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/memory/vectors/stats`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setVectorMemoryCount(data.total ?? 0);
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  const handleResetVectorMemory = async () => {
+    const confirmMsg = vectorMemoryCount != null && vectorMemoryCount > 0
+      ? `Are you sure you want to reset the Vector Memory database? This will permanently erase all ${vectorMemoryCount} indexed memories and conversations.`
+      : "Are you sure you want to reset the Vector Memory database? This will permanently erase all indexed memories and conversations.";
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+    setIsResettingVectorMemory(true);
+    setVectorMemoryResetMsg('');
+    try {
+      const res = await fetch(`${API_BASE}/api/memory/vectors/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: 'all' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setVectorMemoryCount(0);
+        setVectorMemoryResetMsg(`Reset complete (${data.deleted_count || 0} memories cleared)`);
+        setTimeout(() => setVectorMemoryResetMsg(''), 4000);
+      } else {
+        setVectorMemoryResetMsg('Failed to reset vector memory');
+        setTimeout(() => setVectorMemoryResetMsg(''), 4000);
+      }
+    } catch (e) {
+      console.error('Failed to reset vector memory:', e);
+      setVectorMemoryResetMsg('Error resetting vector memory');
+      setTimeout(() => setVectorMemoryResetMsg(''), 4000);
+    } finally {
+      setIsResettingVectorMemory(false);
+    }
+  };
+
   const [audioOutputDevices, setAudioOutputDevices] = useState([]);
 
   useEffect(() => {
+    fetchVectorMemoryStats();
     const fetchOutputDevices = async () => {
       try {
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
@@ -6491,10 +6543,74 @@ const ControlDashboard = ({
                             );
                           })()}
                           {!settings.embedding_model && (
-                            <span style={{ fontSize: '0.66rem', color: '#fbbf24', marginTop: '4px', display: 'block' }}>
-                              ⚠️ No embedding model selected. Vector memory will remain dormant until a model is chosen.
+                            <span style={{ fontSize: '0.66rem', color: '#fbbf24', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <AlertCircle style={{ width: '12px', height: '12px', flexShrink: 0 }} /> No embedding model selected. Vector memory will remain dormant until a model is chosen.
                             </span>
                           )}
+
+                          {/* Reset Vector Database Button */}
+                          <div style={{
+                            marginTop: '12px',
+                            paddingTop: '10px',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '10px'
+                          }}>
+                            <div>
+                              <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span>Reset Vector Memory</span>
+                                {vectorMemoryCount !== null && (
+                                  <span style={{
+                                    fontSize: '0.64rem',
+                                    color: '#a78bfa',
+                                    background: 'rgba(167, 139, 250, 0.12)',
+                                    border: '1px solid rgba(167, 139, 250, 0.25)',
+                                    borderRadius: '4px',
+                                    padding: '1px 5px',
+                                    fontWeight: 500
+                                  }}>
+                                    {vectorMemoryCount} stored
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                                Erase all indexed conversation memories and reset vector storage.
+                              </div>
+                              {vectorMemoryResetMsg && (
+                                <span style={{ fontSize: '0.68rem', color: '#34d399', fontWeight: 500, marginTop: '2px', display: 'block' }}>
+                                  {vectorMemoryResetMsg}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleResetVectorMemory}
+                              disabled={isResettingVectorMemory}
+                              title="Reset all indexed vector memories"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                padding: '5px 10px',
+                                borderRadius: '6px',
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                color: '#fca5a5',
+                                cursor: isResettingVectorMemory ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.2s ease',
+                                flexShrink: 0
+                              }}
+                              onMouseEnter={(e) => { if (!isResettingVectorMemory) e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)'; }}
+                              onMouseLeave={(e) => { if (!isResettingVectorMemory) e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)'; }}
+                            >
+                              <Trash2 style={{ width: '12px', height: '12px' }} />
+                              {isResettingVectorMemory ? 'Resetting...' : 'Reset Vector DB'}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

@@ -417,6 +417,297 @@ def int_to_words_indian(n: int) -> str:
                     parts.append(words)
     return " ".join(parts)
 
+
+def year_to_words(year: int) -> str:
+    """Converts a calendar year (e.g. 1995, 2023, 2026) into spoken English words."""
+    if year < 1000 or year > 2999:
+        return int_to_words_international(year)
+    century = year // 100
+    rem = year % 100
+    if century == 20:
+        if rem == 0:
+            return "two thousand"
+        elif rem < 10:
+            return f"twenty oh-{_ONES[rem]}"
+        else:
+            return f"twenty {_below_1000_to_words(rem)}"
+    else:
+        c_words = _below_1000_to_words(century)
+        if rem == 0:
+            return f"{c_words} hundred"
+        elif rem < 10:
+            return f"{c_words} oh-{_ONES[rem]}"
+        else:
+            return f"{c_words} {_below_1000_to_words(rem)}"
+
+
+_ORDINAL_SPECIAL = {
+    1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth",
+    6: "sixth", 7: "seventh", 8: "eighth", 9: "ninth", 10: "tenth",
+    11: "eleventh", 12: "twelfth", 13: "thirteenth", 14: "fourteenth",
+    15: "fifteenth", 16: "sixteenth", 17: "seventeenth", 18: "eighteenth",
+    19: "nineteenth", 20: "twentieth", 30: "thirtieth", 40: "fortieth",
+    50: "fiftieth", 60: "sixtieth", 70: "seventieth", 80: "eightieth",
+    90: "ninetieth"
+}
+
+def int_to_ordinal_words(n: int) -> str:
+    """Converts an integer (e.g. 1, 2, 21, 100) into spoken ordinal words ('first', 'twenty-first')."""
+    if n <= 0:
+        return str(n)
+    if n in _ORDINAL_SPECIAL:
+        return _ORDINAL_SPECIAL[n]
+    if n < 100:
+        tens = (n // 10) * 10
+        ones = n % 10
+        return f"{_TENS[n // 10]}-{_ORDINAL_SPECIAL[ones]}"
+    cardinal = int_to_words_international(n)
+    words = cardinal.split()
+    last = words[-1]
+    if "-" in last:
+        prefix, sub = last.split("-", 1)
+        sub_n = {v: k for k, v in enumerate(_ONES)}.get(sub, 0)
+        if sub_n in _ORDINAL_SPECIAL:
+            words[-1] = f"{prefix}-{_ORDINAL_SPECIAL[sub_n]}"
+            return " ".join(words)
+    unit_map = {
+        "one": "first", "two": "second", "three": "third", "four": "fourth",
+        "five": "fifth", "six": "sixth", "seven": "seventh", "eight": "eighth",
+        "nine": "ninth", "ten": "tenth", "eleven": "eleventh", "twelve": "twelfth",
+        "hundred": "hundredth", "thousand": "thousandth", "million": "millionth",
+        "billion": "billionth", "trillion": "trillionth"
+    }
+    if last in unit_map:
+        words[-1] = unit_map[last]
+        return " ".join(words)
+    return cardinal + "th"
+
+
+def normalize_ordinals_for_speech(text: str) -> str:
+    """Converts written ordinals (e.g. 1st, 2nd, 3rd, 4th, 21st) into spoken words."""
+    if not text:
+        return ""
+    def replace_ord(m):
+        try:
+            num = int(m.group(1))
+            return int_to_ordinal_words(num)
+        except Exception:
+            return m.group(0)
+    return re.sub(r'\b(\d{1,6})(?:st|nd|rd|th)\b', replace_ord, text, flags=re.IGNORECASE)
+
+
+def normalize_times_for_speech(text: str) -> str:
+    """
+    Normalizes time formats into spoken English words.
+    - 12-hour: 1:00 AM -> one AM, 1:05 PM -> one oh-five PM, 1:30 PM -> one thirty PM
+    - 24-hour: 14:30 -> fourteen thirty, 08:00 -> eight hundred hours
+    - Timestamps: 01:23:45 -> one hour twenty-three minutes forty-five seconds
+    """
+    if not text:
+        return ""
+
+    # 1. 12-hour format with AM / PM: 1:00 AM, 12:30 pm, 11:05 a.m., 1:00:30 PM
+    def replace_12h(m):
+        try:
+            h = int(m.group(1))
+            mins = int(m.group(2))
+            sec_str = m.group(3)
+            ampm_raw = m.group(4).replace('.', '').upper()
+
+            h_words = _below_1000_to_words(h)
+            if mins == 0:
+                time_spoken = f"{h_words} {ampm_raw}"
+            elif mins < 10:
+                time_spoken = f"{h_words} oh-{_ONES[mins]} {ampm_raw}"
+            else:
+                time_spoken = f"{h_words} {_below_1000_to_words(mins)} {ampm_raw}"
+
+            if sec_str:
+                secs = int(sec_str)
+                if secs > 0:
+                    time_spoken += f" and {int_to_words_international(secs)} seconds"
+            return time_spoken
+        except Exception:
+            return m.group(0)
+
+    time_12h_regex = re.compile(r'\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\s*([ap]\.?m\.?)\b', re.IGNORECASE)
+    text = time_12h_regex.sub(replace_12h, text)
+
+    # 2. 3-part video/elapsed timestamps: 01:23:45 or 2:15:30
+    def replace_timestamp(m):
+        try:
+            h = int(m.group(1))
+            mins = int(m.group(2))
+            secs = int(m.group(3))
+            parts = []
+            if h > 0:
+                parts.append(f"{int_to_words_international(h)} hours" if h > 1 else "one hour")
+            if mins > 0:
+                parts.append(f"{int_to_words_international(mins)} minutes" if mins > 1 else "one minute")
+            if secs > 0:
+                parts.append(f"{int_to_words_international(secs)} seconds" if secs > 1 else "one second")
+            return " ".join(parts) if parts else "zero seconds"
+        except Exception:
+            return m.group(0)
+
+    timestamp_regex = re.compile(r'\b(\d{1,2}):([0-5]\d):([0-5]\d)\b')
+    text = timestamp_regex.sub(replace_timestamp, text)
+
+    # 3. 24-hour time or digital clock without AM/PM: 14:30, 08:00, 3:30 (avoiding ratios like 16:9)
+    def replace_clock(m):
+        try:
+            h_str = m.group(1)
+            h = int(h_str)
+            mins = int(m.group(2))
+
+            h_words = _below_1000_to_words(h)
+            if mins == 0:
+                if h >= 13 or (h_str.startswith('0') and len(h_str) == 2):
+                    return f"{h_words} hundred hours"
+                return f"{h_words} o'clock"
+            elif mins < 10:
+                return f"{h_words} oh-{_ONES[mins]}"
+            else:
+                return f"{h_words} {_below_1000_to_words(mins)}"
+        except Exception:
+            return m.group(0)
+
+    clock_regex = re.compile(r'(?<![:\w])\b([01]?\d|2[0-3]):([0-5]\d)\b(?![:\w])')
+    text = clock_regex.sub(replace_clock, text)
+
+    return text
+
+
+_MONTH_NAMES = {
+    1: "January", 2: "February", 3: "March", 4: "April",
+    5: "May", 6: "June", 7: "July", 8: "August",
+    9: "September", 10: "October", 11: "November", 12: "December"
+}
+
+_MONTH_ABBR_MAP = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2,
+    "mar": 3, "march": 3, "apr": 4, "april": 4,
+    "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10, "nov": 11, "november": 11,
+    "dec": 12, "december": 12
+}
+
+def normalize_dates_for_speech(text: str) -> str:
+    """
+    Normalizes dates for speech safely without guessing ambiguous formats:
+    - ISO 8601: 2023-11-03 -> November third, twenty twenty-three
+    - Named months: Nov 3, 2023 -> November third, twenty twenty-three
+    - Unambiguous numeric (>12): 25/11/2023 -> twenty-fifth of November, twenty twenty-three
+    - Ambiguous numeric (<=12): 11/03/2023 -> eleven slash three, twenty twenty-three (Zero Risk)
+    - Years in context: in 2024 -> in twenty twenty-four
+    """
+    if not text:
+        return ""
+
+    # 1. ISO 8601 Date: YYYY-MM-DD (e.g. 2023-11-03)
+    def replace_iso(m):
+        try:
+            year = int(m.group(1))
+            month = int(m.group(2))
+            day = int(m.group(3))
+            m_name = _MONTH_NAMES.get(month, "")
+            if m_name and 1 <= day <= 31:
+                return f"{m_name} {int_to_ordinal_words(day)}, {year_to_words(year)}"
+            return m.group(0)
+        except Exception:
+            return m.group(0)
+
+    text = re.sub(r'\b(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b', replace_iso, text)
+
+    # 2. Named Months: e.g. Nov 3, 2023 or November 3rd, 2023 or Nov 3
+    def replace_named_month(m):
+        try:
+            m_str = m.group(1).lower()
+            m_num = _MONTH_ABBR_MAP.get(m_str)
+            if not m_num:
+                return m.group(0)
+            day = int(m.group(2))
+            year_str = m.group(3)
+            res = f"{_MONTH_NAMES[m_num]} {int_to_ordinal_words(day)}"
+            if year_str:
+                res += f", {year_to_words(int(year_str))}"
+            return res
+        except Exception:
+            return m.group(0)
+
+    named_month_regex = re.compile(
+        r'\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b',
+        re.IGNORECASE
+    )
+    text = named_month_regex.sub(replace_named_month, text)
+
+    # 2b. Day of Named Month: e.g. 3rd of November 2023 or 15 March 2024
+    def replace_day_named_month(m):
+        try:
+            day = int(m.group(1))
+            m_str = m.group(2).lower()
+            m_num = _MONTH_ABBR_MAP.get(m_str)
+            if not m_num:
+                return m.group(0)
+            year_str = m.group(3)
+            res = f"{int_to_ordinal_words(day)} of {_MONTH_NAMES[m_num]}"
+            if year_str:
+                res += f", {year_to_words(int(year_str))}"
+            return res
+        except Exception:
+            return m.group(0)
+
+    day_named_regex = re.compile(
+        r'\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?(?:,?\s+(\d{4}))?\b',
+        re.IGNORECASE
+    )
+    text = day_named_regex.sub(replace_day_named_month, text)
+
+    # 3. Numeric dates: DD/MM/YYYY or MM/DD/YYYY or ambiguous 11/03/2023
+    def replace_numeric_date(m):
+        try:
+            n1 = int(m.group(1))
+            sep = m.group(2)
+            n2 = int(m.group(3))
+            year_val = int(m.group(4))
+            if year_val < 100:
+                year_val += 2000 if year_val < 50 else 1900
+
+            # Case A: n1 > 12 and n2 <= 12 -> Unambiguously DD/MM/YYYY
+            if n1 > 12 and 1 <= n2 <= 12 and n1 <= 31:
+                return f"{int_to_ordinal_words(n1)} of {_MONTH_NAMES[n2]}, {year_to_words(year_val)}"
+
+            # Case B: n1 <= 12 and n2 > 12 -> Unambiguously MM/DD/YYYY
+            if 1 <= n1 <= 12 and n2 > 12 and n2 <= 31:
+                return f"{_MONTH_NAMES[n1]} {int_to_ordinal_words(n2)}, {year_to_words(year_val)}"
+
+            # Case C: Both <= 12 -> AMBIGUOUS! Do NOT take risk!
+            if 1 <= n1 <= 12 and 1 <= n2 <= 12:
+                sep_word = "slash" if sep == "/" else ("dash" if sep == "-" else "dot")
+                return f"{int_to_words_international(n1)} {sep_word} {int_to_words_international(n2)}, {year_to_words(year_val)}"
+
+            return m.group(0)
+        except Exception:
+            return m.group(0)
+
+    numeric_date_regex = re.compile(r'\b(\d{1,2})([/\-\.])(\d{1,2})\2(\d{4}|\d{2})\b')
+    text = numeric_date_regex.sub(replace_numeric_date, text)
+
+    # 4. Spoken Years when explicitly preceded by prepositions: "in 2024", "since 1998"
+    def replace_prep_year(m):
+        try:
+            prep = m.group(1)
+            y = int(m.group(2))
+            return f"{prep} {year_to_words(y)}"
+        except Exception:
+            return m.group(0)
+
+    text = re.sub(r'\b(in|since|from|year|during|circa)\s+(19\d\d|20\d\d)\b', replace_prep_year, text, flags=re.IGNORECASE)
+
+    return text
+
+
 def normalize_numbers_for_speech(text: str) -> str:
     """
     Normalizes numbers in text into spoken English words.
@@ -590,6 +881,10 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'==', ' equals ', text)
     text = re.sub(r'!=', ' is not equal to ', text)
 
+    # 7.5 Times & Dates Normalization (Runs before slash fraction and range dash replacements)
+    text = normalize_times_for_speech(text)
+    text = normalize_dates_for_speech(text)
+
     # Slashes Fraction Division (only matches A/B if not preceded by a slash and not followed by "/number")
     text = re.sub(r'(?<!/)\b(\d+)/([1-9]\d*)\b(?!/\d)', r'\1 over \2', text)
 
@@ -627,8 +922,8 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'\$', ' dollars', text) # Safe fallback for remaining dollar signs
 
     text = re.sub(r'(\d+)\s*%', r'\1 percent', text)
-    text = re.sub(r'(\d+)\s*°[CC]', r'\1 degrees Celsius', text)
-    text = re.sub(r'(\d+)\s*°[FF]', r'\1 degrees Fahrenheit', text)
+    text = re.sub(r'(-)?\s*(\d+(?:\.\d+)?)\s*°[CC]', lambda m: f"{'minus ' if m.group(1) else ''}{m.group(2)} degrees Celsius", text)
+    text = re.sub(r'(-)?\s*(\d+(?:\.\d+)?)\s*°[FF]', lambda m: f"{'minus ' if m.group(1) else ''}{m.group(2)} degrees Fahrenheit", text)
     text = re.sub(r'(\d+)\s*km/h\b', r'\1 kilometers per hour', text, flags=re.IGNORECASE)
     text = re.sub(r'(\d+)\s*mph\b', r'\1 miles per hour', text, flags=re.IGNORECASE)
     text = re.sub(r'(\d+)\s*GB\b', r'\1 gigabytes', text)
@@ -643,6 +938,84 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'(\d+)\s*KB\b', r'\1 kilobytes', text)
     text = re.sub(r'(\d+)\s*Kb\b', r'\1 kilobits', text)
     text = re.sub(r'(\d+)\s*kb\b', r'\1 kilobytes', text)
+
+    # 8.1 Tech, Hardware & Performance Units
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:fps|FPS)\b', r'\1 frames per second', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:Hz|hz)\b', r'\1 hertz', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:kHz|khz)\b', r'\1 kilohertz', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:MHz|mhz)\b', r'\1 megahertz', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:GHz|ghz)\b', r'\1 gigahertz', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*ms\b', r'\1 milliseconds', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*ns\b', r'\1 nanoseconds', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:px|PX)\b', r'\1 pixels', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:kbps|Kbps)\b', r'\1 kilobits per second', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:mbps|Mbps)\b', r'\1 megabits per second', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:gbps|Gbps)\b', r'\1 gigabits per second', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:kW|kw)\b', r'\1 kilowatts', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*(?:kWh|kwh)\b', r'\1 kilowatt hours', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*W\b', r'\1 watts', text)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*V\b', r'\1 volts', text)
+    text = re.sub(r'\b4[kK]\b', 'four K', text)
+    text = re.sub(r'\b8[kK]\b', 'eight K', text)
+
+    # 8.2 Standalone Negative Numbers (e.g. -5 outside of units)
+    text = re.sub(r'(^|[\s(])-\s*(\d+(?:\.\d+)?)', r'\1minus \2', text)
+
+    # 8.3 Aspect Ratios & Dimensions (e.g. 1920x1080, 4x4, 16:9)
+    aspect_ratios = {
+        "16:9": "sixteen by nine", "4:3": "four by three",
+        "21:9": "twenty-one by nine", "3:2": "three by two",
+        "1:1": "one to one"
+    }
+    for ar, ar_words in aspect_ratios.items():
+        text = re.sub(rf'\b{ar}\b', ar_words, text)
+
+    def replace_dim(m):
+        w_str, h_str = m.group(1), m.group(2)
+        dim_map = {
+            "1920": "nineteen twenty", "1080": "ten eighty",
+            "1440": "fourteen forty", "3840": "thirty-eight forty",
+            "2160": "twenty-one sixty", "2560": "twenty-five sixty",
+            "1280": "twelve eighty", "720": "seven twenty"
+        }
+        w_spoken = dim_map.get(w_str, int_to_words_international(int(w_str)))
+        h_spoken = dim_map.get(h_str, int_to_words_international(int(h_str)))
+        return f"{w_spoken} by {h_spoken}"
+    text = re.sub(r'\b(\d{1,5})\s*[xX×]\s*(\d{1,5})\b', replace_dim, text)
+
+    # 8.4 Ordinal Numbers (1st, 2nd, 3rd, 21st, etc.)
+    text = normalize_ordinals_for_speech(text)
+
+    # 8.7 Software Multi-dot versions (e.g. v1.2.3 -> version one point two point three)
+    text = re.sub(r'\bv(\d+(?:\.\d+)+)\b', r'version \1', text, flags=re.IGNORECASE)
+    def replace_multidot(m):
+        parts = m.group(1).split('.')
+        spoken_parts = [int_to_words_international(int(p)) for p in parts]
+        return " point ".join(spoken_parts)
+    text = re.sub(r'\b(\d+(?:\.\d+){2,})\b', replace_multidot, text)
+
+    # 8.8 AI & Tech Acronyms
+    acronyms = [
+        (r'\bGPT-4o\b', 'GPT four oh'),
+        (r'\bGPT-4\b', 'GPT four'),
+        (r'\bLLMs\b', 'L L Ms'),
+        (r'\bLLM\b', 'L L M'),
+        (r'\bAPIs\b', 'A P Is'),
+        (r'\bAPI\b', 'A P I'),
+        (r'\bCLIs\b', 'C L Is'),
+        (r'\bCLI\b', 'C L I'),
+        (r'\bGUI\b', 'G U I'),
+        (r'\bUI/UX\b', 'U I, U X'),
+        (r'\bPRs\b', 'P Rs'),
+        (r'\bPR\b', 'P R'),
+        (r'\bFAQs\b', 'F A Qs'),
+        (r'\bFAQ\b', 'F A Q'),
+        (r'\bTL;?DR\b', 'T L D R'),
+        (r'(^|\s)w/(?=\s|$)', r'\1with'),
+        (r'(^|\s)w/o(?=\s|$)', r'\1without'),
+    ]
+    for pat, rep in acronyms:
+        text = re.sub(pat, rep, text)
 
     abbreviations = [
         (r'\be\.g\.\b', 'for example'),

@@ -451,8 +451,8 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
         tool_name = match.group(1).strip()
         tool_output = match.group(2).strip()
         clean_output = " ".join(tool_output.split())
-        if len(clean_output) > 300:
-            clean_output = clean_output[:297] + "..."
+        if len(clean_output) > 200:
+            clean_output = clean_output[:197] + "..."
         if clean_output:
             return f"[Tool: {tool_name} -> {clean_output}] "
         return f"[Tool: {tool_name}] "
@@ -494,3 +494,51 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
     idx_ms = (time.time() - t_idx) * 1000.0
     if stored:
         print(f"[VectorMemory] 💾 Background indexed '{category}' memory in {idx_ms:.1f}ms")
+
+
+def get_vector_db_stats() -> Dict[str, Any]:
+    """Returns total count and counts by category from vectors.db."""
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM memories")
+        total = cursor.fetchone()[0]
+        cursor.execute("SELECT category, COUNT(*) FROM memories GROUP BY category")
+        by_category = {row[0]: row[1] for row in cursor.fetchall()}
+        conn.close()
+        return {"success": True, "total": total, "by_category": by_category}
+    except Exception as e:
+        return {"success": False, "total": 0, "by_category": {}, "error": str(e)}
+
+
+def clear_vector_db(scope: str = "all") -> Dict[str, Any]:
+    """
+    Clears memories from vectors.db.
+    scope = 'conversations' -> deletes only category = 'conversation_turn'
+    scope = 'all' -> deletes all memories and resets sequence
+    """
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+        cursor = conn.cursor()
+        if scope == "conversations":
+            cursor.execute("SELECT COUNT(*) FROM memories WHERE category = 'conversation_turn'")
+            count = cursor.fetchone()[0]
+            cursor.execute("DELETE FROM memories WHERE category = 'conversation_turn'")
+        else:
+            cursor.execute("SELECT COUNT(*) FROM memories")
+            count = cursor.fetchone()[0]
+            cursor.execute("DELETE FROM memories")
+            try:
+                cursor.execute("DELETE FROM sqlite_sequence WHERE name = 'memories'")
+            except Exception:
+                pass
+        conn.commit()
+        cursor.execute("VACUUM")
+        conn.commit()
+        conn.close()
+        print(f"[VectorMemory] Cleared {count} item(s) from vectors.db (scope='{scope}')")
+        return {"success": True, "deleted_count": count, "scope": scope}
+    except Exception as e:
+        print(f"[VectorMemory] Error clearing vector db: {e}")
+        return {"success": False, "error": str(e), "deleted_count": 0}
+
