@@ -901,6 +901,8 @@ class AgentExecutor:
         from app.tools import scheduled_tasks
         action = (kwargs.get("action") or "").lower().strip()
         action_type = (kwargs.get("action_type") or "shell").lower().strip()
+        action_command = kwargs.get("action_command")
+        action_tool = kwargs.get("action_tool")
         action_args = kwargs.get("action_args") or {}
         if isinstance(action_args, str):
             try:
@@ -927,9 +929,21 @@ class AgentExecutor:
             elif do.lower().startswith("power:"):
                 action_type = "power"
                 action_args = {"action": do.split(":", 1)[1].strip() or "shutdown"}
+            elif ":" in do and (do.split(":", 1)[0].strip() in self.tools or self._resolve_tool_name(do.split(":", 1)[0].strip()) in self.tools):
+                t_cand, t_arg = do.split(":", 1)
+                action_type = "tool"
+                action_tool = self._resolve_tool_name(t_cand.strip())
+                val = t_arg.strip()
+                action_args = {
+                    "app_name": val,
+                    "query": val,
+                    "file_path_or_query": val,
+                    "path": val,
+                    "message": val,
+                }
             elif do in self.tools or self._resolve_tool_name(do) in self.tools:
                 action_type = "tool"
-                action_tool = do
+                action_tool = self._resolve_tool_name(do)
             else:
                 action_type = "shell"
                 action_command = do
@@ -945,8 +959,8 @@ class AgentExecutor:
             res = scheduled_tasks.add_delayed(
                 seconds,
                 action_type=action_type,
-                action_command=action_command or kwargs.get("action_command"),
-                action_tool=kwargs.get("action_tool"),
+                action_command=action_command,
+                action_tool=action_tool,
                 action_args=action_args,
             )
             return f"Scheduled task #{res['id']} to fire in {res['seconds']:.0f} seconds."
@@ -969,8 +983,8 @@ class AgentExecutor:
                 seconds,
                 count=count,
                 action_type=action_type,
-                action_command=action_command or kwargs.get("action_command"),
-                action_tool=kwargs.get("action_tool"),
+                action_command=action_command,
+                action_tool=action_tool,
                 action_args=action_args,
             )
             return f"Interval task #{res['id']} set to fire every {res['interval_seconds']:.0f}s (count={count})."
@@ -1020,8 +1034,8 @@ class AgentExecutor:
                 fire_condition=condition,
                 count=count,
                 action_type=action_type,
-                action_command=action_command or kwargs.get("action_command"),
-                action_tool=kwargs.get("action_tool"),
+                action_command=action_command,
+                action_tool=action_tool,
                 action_args=action_args,
             )
             return (
