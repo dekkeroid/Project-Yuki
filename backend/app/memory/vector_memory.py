@@ -31,10 +31,12 @@ _FILLER_PHRASES = {
     "continue", "go on", "what else", "so true", "really", "oh really", "wow", "oh wow",
     "no no not at all", "not at all", "no not at all", "no no", "not really", "why tho",
     "why", "why not", "what for", "idk", "dont know", "who knows", "nothing much",
-    "not much", "nevermind", "nvm", "just checking", "just saying", "i know", "you know"
+    "not much", "nevermind", "nvm", "just checking", "just saying", "i know", "you know",
+    "no im good", "im good", "im fine", "all good", "all fine", "im okay", "no thanks",
+    "im alright", "no worries", "nah im good", "nah im fine"
 }
 
-_LAUGHTER_REGEX = re.compile(r'^(?:ha|he|ja|lol|lmao|rofl|kek|xd)+$', re.IGNORECASE)
+_LAUGHTER_WORDS = re.compile(r'\b(?:[ha]{2,}|[he]{2,}|[ja]{2,}|l+o+l+|l+m+a+o+|r+o+f+l+|k+e+k+|x+d+)\b', re.IGNORECASE)
 
 def is_conversational_filler(text: str) -> bool:
     """
@@ -51,9 +53,14 @@ def is_conversational_filler(text: str) -> bool:
         return True
     if cleaned in ("hi", "hello", "hey", "yuki", "ok", "yes", "no"):
         return True
-    if _LAUGHTER_REGEX.match(cleaned.replace(" ", "")):
-        return True
     if cleaned in _FILLER_PHRASES:
+        return True
+    # Strip laughter tokens and check if remainder is purely a filler/acknowledgment
+    remainder = _LAUGHTER_WORDS.sub('', cleaned).strip()
+    remainder = " ".join(remainder.split())
+    if not remainder:
+        return True
+    if remainder in ("no", "yes", "ok", "okay", "good") or remainder in _FILLER_PHRASES:
         return True
     return False
 
@@ -151,6 +158,18 @@ async def warmup_embedding_model_async() -> bool:
     return False
 
 
+_shared_http_client: Optional[httpx.AsyncClient] = None
+
+async def _get_shared_client() -> httpx.AsyncClient:
+    global _shared_http_client
+    if _shared_http_client is None or _shared_http_client.is_closed:
+        _shared_http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(5.0, connect=3.0),
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+        )
+    return _shared_http_client
+
+
 async def embed_text_async(text: str) -> Optional[List[float]]:
     """
     Generate an embedding vector for the provided text using the configured LLM endpoint.
@@ -190,28 +209,28 @@ async def embed_text_async(text: str) -> Optional[List[float]]:
     print(f"[VectorMemory] Requesting embedding: model='{model}' endpoint='{url}' (input chars={len(text.strip())})")
     t_start = time.time()
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.post(url, json=payload, headers=headers)
-            call_ms = (time.time() - t_start) * 1000.0
-            if res.status_code == 200:
-                data = res.json()
-                if is_ollama:
-                    embs = data.get("embeddings", [])
-                    if embs and len(embs) > 0:
-                        emb = embs[0]
-                        if isinstance(emb, list) and len(emb) > 0:
-                            print(f"[VectorMemory] Generated embedding vector ({len(emb)} dims) via '{model}' from '{url}' in {call_ms:.1f}ms")
-                            return emb
-                else:
-                    if "data" in data and len(data["data"]) > 0:
-                        emb = data["data"][0].get("embedding")
-                        if isinstance(emb, list) and len(emb) > 0:
-                            print(f"[VectorMemory] Generated embedding vector ({len(emb)} dims) via '{model}' from '{url}' in {call_ms:.1f}ms")
-                            return emb
+        client = await _get_shared_client()
+        res = await client.post(url, json=payload, headers=headers)
+        call_ms = (time.time() - t_start) * 1000.0
+        if res.status_code == 200:
+            data = res.json()
+            if is_ollama:
+                embs = data.get("embeddings", [])
+                if embs and len(embs) > 0:
+                    emb = embs[0]
+                    if isinstance(emb, list) and len(emb) > 0:
+                        print(f"[VectorMemory] Generated embedding vector ({len(emb)} dims) via '{model}' from '{url}' in {call_ms:.1f}ms")
+                        return emb
             else:
-                print(f"[VectorMemory] Embedding request failed ({call_ms:.1f}ms): HTTP {res.status_code} from '{url}' - {res.text[:120]}")
+                if "data" in data and len(data["data"]) > 0:
+                    emb = data["data"][0].get("embedding")
+                    if isinstance(emb, list) and len(emb) > 0:
+                        print(f"[VectorMemory] Generated embedding vector ({len(emb)} dims) via '{model}' from '{url}' in {call_ms:.1f}ms")
+                        return emb
+        else:
+            print(f"[VectorMemory] Embedding request failed ({call_ms:.1f}ms): HTTP {res.status_code} from '{url}' - {res.text[:120]}")
     except httpx.TimeoutException:
-        print(f"[VectorMemory] Embedding request timed out (>3.5s): model='{model}' endpoint='{url}'. Skipping vector search.")
+        print(f"[VectorMemory] Embedding request timed out (>5.0s): model='{model}' endpoint='{url}'. Skipping vector search.")
     except Exception as e:
         print(f"[VectorMemory] Embedding error from '{url}' (model='{model}'): {e}")
 
