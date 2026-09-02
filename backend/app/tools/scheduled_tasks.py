@@ -482,7 +482,21 @@ def _run_shell_action(command: str) -> str:
             app_target = cmd_clean.split(":", 1)[1].strip()
             from app.tools.system import launch_app
             return launch_app(app_name=app_target)
+
+    # If the command is an executable path (or ends in .exe) or an existing file on disk
+    if cmd_clean.lower().endswith(".exe") or (os.path.isabs(cmd_clean) and os.path.exists(cmd_clean)):
+        try:
+            from app.tools.system import launch_app
+            res = launch_app(app_name=cmd_clean)
+            if "not found" not in res.lower() and "error" not in res.lower():
+                return res
+        except Exception:
+            pass
+
     try:
+        if os.path.isfile(cmd_clean):
+            os.startfile(cmd_clean)
+            return f"opened: {cmd_clean}"
         subprocess.Popen(command, shell=True)
         print(f"[ScheduledTasks] Executed shell action: {command}")
         return f"shell action executed: {command}"
@@ -578,8 +592,10 @@ def execute_action(task: Dict[str, Any]) -> str:
         except Exception as e:
             return f"telegram alert failed: {e}"
 
-    if action_type == "shell" and action_command:
-        return _run_shell_action(action_command)
+    if action_type == "shell":
+        cmd = action_command or (action_args.get("command") if isinstance(action_args, dict) else "") or (action_args.get("app_name") if isinstance(action_args, dict) else "")
+        if cmd:
+            return _run_shell_action(cmd)
 
     if _action_executor is None:
         msg = "No action executor registered; cannot run scheduled action."
