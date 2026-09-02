@@ -1720,22 +1720,46 @@ const ChatOverlay = ({
                         </span>
                       )}
                       {msg.timestamp && (() => {
-                        const date = new Date(msg.timestamp * 1000);
-                        const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                        const ts = msg.timestamp > 1e11 ? msg.timestamp / 1000 : msg.timestamp;
+                        const date = new Date(ts * 1000);
+                        const now = new Date();
+                        const deltaSec = Math.max(0, (now.getTime() - date.getTime()) / 1000);
                         const fullDateStr = date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+                        const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+
+                        let friendlyTime = timeStr;
+                        if (deltaSec < 60) {
+                          friendlyTime = 'just now';
+                        } else if (date.toDateString() === now.toDateString()) {
+                          friendlyTime = timeStr;
+                        } else {
+                          const yesterday = new Date(now);
+                          yesterday.setDate(now.getDate() - 1);
+                          if (date.toDateString() === yesterday.toDateString()) {
+                            friendlyTime = `yesterday, ${timeStr}`;
+                          } else if (deltaSec < 7 * 86400) {
+                            const day = date.toLocaleDateString([], { weekday: 'short' }).toLowerCase();
+                            friendlyTime = `${day}, ${timeStr}`;
+                          } else {
+                            const dStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' }).toLowerCase();
+                            friendlyTime = `${dStr}, ${timeStr}`;
+                          }
+                        }
+
                         return (
                           <span
                             title={fullDateStr}
                             style={{
-                              fontSize: '9.5px',
+                              fontSize: '8.5px',
                               color: '#94a3b8',
-                              opacity: 0.75,
+                              opacity: 0.70,
                               marginLeft: '3px',
                               fontVariantNumeric: 'tabular-nums',
+                              letterSpacing: '0.01em',
                               cursor: 'default'
                             }}
                           >
-                            {timeStr}
+                            {friendlyTime}
                           </span>
                         );
                       })()}
