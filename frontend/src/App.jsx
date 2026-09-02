@@ -368,6 +368,25 @@ const App = () => {
   const [crawlerPaused, setCrawlerPaused] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const [taggerPaused, setTaggerPaused] = useState(false);
+  const [presenceState, setPresenceState] = useState({
+    boredom: 0.0,
+    boredom_pct: 0,
+    sleep_state: 'active',
+    silence_seconds: 0,
+    active_window: '',
+    active_window_dwell_mins: 0
+  });
+  const [liveMood, setLiveMood] = useState({
+    happiness: 60,
+    energy: 55,
+    curiosity: 65,
+    affection: 55,
+    stress_level: 20,
+    hunger: 30,
+    horniness: 45,
+    playfulness: 50,
+    anger: 10
+  });
 
   const [powerConnected, setPowerConnected] = useState(true);
   const yukiSelfHiddenRef = useRef(false);
@@ -877,6 +896,36 @@ const App = () => {
       return; // mood_update is fully handled here
     }
 
+    // ── presence_update: live boredom, sleep state, circadian values ──────
+    if (msg.type === 'presence_update') {
+      if (msg.presence) {
+        setPresenceState(msg.presence);
+      }
+      if (msg.mood) {
+        setLiveMood(prev => ({ ...prev, ...msg.mood }));
+      }
+      return;
+    }
+
+    // ── proactive_nudge: autonomous idle nudges / check-ins ──────────────
+    if (msg.type === 'proactive_nudge') {
+      if (msg.anim) {
+        setCustomAnimation(msg.anim);
+        setTimeout(() => setCustomAnimation(''), 100);
+      }
+      if (msg.text) {
+        if (msg.mode === 'spoken') {
+          setMessages(prev => [...prev, { role: 'assistant', content: msg.text }]);
+          speakSystemMessage(msg.text, 'relaxed');
+        } else {
+          // Visual speech bubble only
+          setCurrentSpeechText(msg.text);
+          setTimeout(() => setCurrentSpeechText(''), 8000);
+        }
+      }
+      return;
+    }
+
     if (msg.type === 'backend_ready') {
       setIsBackendFullyReady(true);
       return;
@@ -1067,10 +1116,14 @@ const App = () => {
         return newMessages;
       });
 
-      if (!hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice && !msg.is_coding_mode) {
+      const isTtsOnly = msg.backend_used === 'tts_only';
+      if (!isTtsOnly && !hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice && !msg.is_coding_mode) {
         console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0, 80)}"`);
-        speakTextNatively(currentResponseTextRef.current);
+        const textToSpeak = currentResponseTextRef.current;
+        currentResponseTextRef.current = '';
+        speakTextNatively(textToSpeak);
       } else {
+        currentResponseTextRef.current = '';
         updateListeningState();
       }
     } else if (msg.type === 'session_switched' || msg.type === 'chat_update') {
@@ -1715,7 +1768,8 @@ const App = () => {
     if (systemIdleTime >= 180) {
       if (!isSleepingRef.current) {
         isSleepingRef.current = true;
-        sleepStartedAtRef.current = Date.now();
+        // Back-date sleep start by systemIdleTime so the initial 3m threshold is included in nap duration
+        sleepStartedAtRef.current = Date.now() - (systemIdleTime * 1000);
         if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
           socketRef.current.send(JSON.stringify({
             type: 'sleep_state',
@@ -2093,6 +2147,7 @@ const App = () => {
     // Clean interruption
     clearContinuedConversationSession();
     stopAllPlayback();
+    currentResponseTextRef.current = '';
 
     console.log("Clear queue and stop playback");
 
@@ -2513,6 +2568,7 @@ const App = () => {
       }
 
       if (resolvedCmd) {
+        currentResponseTextRef.current = '';
         setMessages((prev) => [
           ...prev,
           { role: 'user', content: text },
@@ -2913,6 +2969,9 @@ const App = () => {
               isBackendOnline={backendStatus === 'online'}
               vrmDpr={profile.settings?.vrm_dpr || 1.5}
               vrmFps={profile.settings?.vrm_fps || 40}
+              boredom={presenceState.boredom}
+              energy={liveMood.energy}
+              playfulness={liveMood.playfulness}
             />
           </Suspense>
         </main>
@@ -5458,6 +5517,9 @@ const App = () => {
             isBackendOnline={backendStatus === 'online'}
             vrmDpr={profile.settings?.vrm_dpr || 1.5}
             vrmFps={profile.settings?.vrm_fps || 40}
+            boredom={presenceState.boredom}
+            energy={liveMood.energy}
+            playfulness={liveMood.playfulness}
           />
         </Suspense>
       </main>
@@ -5492,6 +5554,7 @@ const App = () => {
       <Suspense fallback={<div style={{ position: 'absolute', top: '20px', left: '20px', color: '#8b5cf6' }}>Loading Controls...</div>}>
         <ControlDashboard
           profile={profile}
+          presenceState={presenceState}
           backendStatus={backendStatus}
           onResetProfile={handleReset}
           modelName={modelName}

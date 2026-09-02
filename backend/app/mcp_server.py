@@ -413,8 +413,10 @@ async def manage_timer_stopwatch_alarms(
 @mcp.tool()
 async def manage_scheduled_task(
     action: str,
-    kind: str | None = None,
     target: str | None = None,
+    condition: str | None = None,
+    do: str | None = None,
+    kind: str | None = None,
     fire_condition: str | None = None,
     seconds: float | None = None,
     count: int | None = None,
@@ -428,27 +430,21 @@ async def manage_scheduled_task(
     """Schedule autonomous tasks: delayed actions, recurring intervals, and watchers.
 
     action options:
-    - 'set_delayed': fire once after `seconds` (e.g. seconds=30, action_tool='take_screenshot')
-    - 'set_interval': fire every `seconds` (e.g. seconds=300, action_command='...')
-    - 'watch': poll every `seconds`; fire when condition flips. `kind` in
-      process/window/file/command; `fire_condition` e.g. process 'gone'/'present',
-      window 'open'/'closed', file 'exists'/'deleted'/'changed', command 'exit0'/'exit_nonzero'.
-      Example: watch a terminal PID and shut down the PC when it closes ->
-      watch(kind='process', target='<pid>', seconds=30, fire_condition='gone',
-            action_type='power', action_args={'action': 'shutdown'})
+    - 'watch': watch target (window, process, file, command) and react when condition occurs
+    - 'set_delayed': fire once after `seconds`
+    - 'set_interval': fire every `seconds`
     - 'list': show active tasks
     - 'cancel': cancel by item_id
-
-    Creating a task whose fired action is a power command or destructive shell
-    command is confirmed ONCE at creation; the task then runs autonomously.
     """
     return await _guarded_tool_call(
         "manage_scheduled_task",
         _dispatch_scheduled_task,
         {
             "action": action,
-            "kind": kind,
             "target": target,
+            "condition": condition,
+            "do": do,
+            "kind": kind,
             "fire_condition": fire_condition,
             "seconds": seconds,
             "count": count,
@@ -466,6 +462,8 @@ def _dispatch_scheduled_task(**kwargs) -> str:
     from app.tools import scheduled_tasks
     action_clean = (kwargs.get("action") or "").lower().strip()
     action_type = (kwargs.get("action_type") or "shell").lower().strip()
+    action_command = kwargs.get("action_command")
+    action_tool = kwargs.get("action_tool")
     action_args = kwargs.get("action_args") or {}
     if isinstance(action_args, str):
         try:
@@ -473,6 +471,18 @@ def _dispatch_scheduled_task(**kwargs) -> str:
             action_args = json.loads(action_args)
         except Exception:
             action_args = {}
+
+    do = (kwargs.get("do") or "").strip()
+    if do:
+        if do.lower().startswith("sound:"):
+            action_type = "sound"
+            action_command = do.split(":", 1)[1].strip() or "tada"
+        elif do.lower().startswith("power:"):
+            action_type = "power"
+            action_args = {"action": do.split(":", 1)[1].strip() or "shutdown"}
+        else:
+            action_type = "shell"
+            action_command = do
 
     if action_clean in ("set_delayed", "delayed"):
         seconds = kwargs.get("seconds") or 0
@@ -485,8 +495,8 @@ def _dispatch_scheduled_task(**kwargs) -> str:
         res = scheduled_tasks.add_delayed(
             seconds,
             action_type=action_type,
-            action_command=kwargs.get("action_command"),
-            action_tool=kwargs.get("action_tool"),
+            action_command=action_command,
+            action_tool=action_tool,
             action_args=action_args,
         )
         return f"Scheduled task #{res['id']} to fire in {res['seconds']:.0f} seconds."
@@ -503,23 +513,39 @@ def _dispatch_scheduled_task(**kwargs) -> str:
             seconds,
             count=kwargs.get("count"),
             action_type=action_type,
-            action_command=kwargs.get("action_command"),
-            action_tool=kwargs.get("action_tool"),
+            action_command=action_command,
+            action_tool=action_tool,
             action_args=action_args,
         )
         return f"Interval task #{res['id']} every {res['interval_seconds']:.0f}s (count={kwargs.get('count')})."
 
     if action_clean in ("watch", "watcher", "monitor"):
+        condition = (kwargs.get("condition") or kwargs.get("fire_condition") or "gone").lower().strip()
         monitor = (kwargs.get("kind") or kwargs.get("monitor_type") or "").lower().strip()
         target = kwargs.get("target") or ""
-        condition = (kwargs.get("fire_condition") or "gone").lower().strip()
-        if not monitor or not target:
-            return "Error: 'kind' (process/window/file/command) and 'target' are required for watch."
-        seconds = kwargs.get("seconds") or 30
-        try:
-            seconds = float(seconds)
-        except (ValueError, TypeError):
-            seconds = 30.0
+        
+        if not monitor:
+            if condition in ("minimized", "maximized", "focused", "unfocused", "open", "opened", "closed"):
+                monitor = "window"
+            elif condition in ("gone", "present", "running", "terminated"):
+                monitor = "process"
+            elif condition in ("changed", "modified", "deleted", "exists", "created"):
+                monitor = "file"
+            elif condition in ("exit0", "exit_nonzero"):
+                monitor = "command"
+            else:
+                monitor = "window"
+
+        if not target:
+            return "Error: 'target' is required for watch."
+        seconds = kwargs.get("seconds")
+        if seconds is None:
+            seconds = 1.5 if monitor == "window" else 30.0
+        else:
+            try:
+                seconds = float(seconds)
+            except (ValueError, TypeError):
+                seconds = 1.5 if monitor == "window" else 30.0
         count = kwargs.get("count")
         if count is None:
             count = 1
@@ -535,12 +561,12 @@ def _dispatch_scheduled_task(**kwargs) -> str:
             fire_condition=condition,
             count=count,
             action_type=action_type,
-            action_command=kwargs.get("action_command"),
-            action_tool=kwargs.get("action_tool"),
+            action_command=action_command,
+            action_tool=action_tool,
             action_args=action_args,
         )
         return (
-            f"Watcher #{res['id']} active: every {res['interval_seconds']:.0f}s check {res['monitor_type']} "
+            f"Watcher #{res['id']} active: every {res['interval_seconds']:.1f}s check {res['monitor_type']} "
             f"'{res['target']}' and fire when {res['fire_condition']}."
         )
 

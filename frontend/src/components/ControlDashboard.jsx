@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -909,6 +909,8 @@ const ControlDashboard = ({
     telegram_voice_replies: true,
     telegram_notify_reminders: true,
     telegram_verbose_tools: true,
+    proactive_nudge_mode: 'visual_only',
+    proactive_nudge_interval_min: 45,
     ...(profile?.settings || {})
   });
 
@@ -1610,16 +1612,16 @@ const ControlDashboard = ({
 
   // Internal Mood Spectrum State
   const [moodData, setMoodData] = useState({
-    happiness: 75,
-    energy: 65,
-    curiosity: 80,
-    affection: 70,
-    stress_level: 15,
-    doomer: 20,
+    happiness: 60,
+    energy: 55,
+    curiosity: 65,
+    affection: 55,
+    stress_level: 20,
     hunger: 30,
-    playfulness: 55,
-    horniness: 50,
-    anger: 10
+    playfulness: 50,
+    horniness: 45,
+    anger: 10,
+    boredom: 0
   });
 
   const fetchMood = async () => {
@@ -1987,8 +1989,15 @@ const ControlDashboard = ({
   };
 
   const schedCountdown = (t) => {
-    if (!t || t.remaining_seconds == null) return '';
-    const rem = Math.max(0, t.remaining_seconds);
+    if (!t) return '';
+    let rem = 0;
+    if (t.next_run_at) {
+      rem = Math.max(0, Math.floor(t.next_run_at - Date.now() / 1000));
+    } else if (t.remaining_seconds != null) {
+      rem = Math.max(0, t.remaining_seconds);
+    } else {
+      return '';
+    }
     const m = Math.floor(rem / 60);
     const s = rem % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
@@ -2025,13 +2034,22 @@ const ControlDashboard = ({
     fetchSavedEndpoints();
   }, []);
 
-  // Live mood_update WS listener — replaces polling while the dashboard is open
+  // Live mood_update and presence_update WS listener
   useEffect(() => {
     const handleWsMoodUpdate = (e) => {
       try {
         const msg = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail;
         if (msg && msg.type === 'mood_update' && msg.mood) {
           setMoodData(prev => ({ ...prev, ...msg.mood }));
+        } else if (msg && msg.type === 'presence_update') {
+          if (msg.mood) setMoodData(prev => ({ ...prev, ...msg.mood }));
+          if (msg.presence) {
+            setMoodData(prev => ({
+              ...prev,
+              boredom: msg.presence.boredom_pct !== undefined ? msg.presence.boredom_pct : prev.boredom,
+              presence: msg.presence
+            }));
+          }
         }
       } catch (_) { }
     };
@@ -2082,8 +2100,10 @@ const ControlDashboard = ({
             onProfileUpdate();
           }
         }
-        // Tasks tab: no polling — data is fetched once on open and after each user action.
-        // The 1-second setTick above handles smooth live display using local clock math.
+        if (activeTab === 'tasks') {
+          fetchTimeItems();
+          fetchScheduledTasks();
+        }
       }, 3000);
     }
     return () => {
@@ -2578,7 +2598,7 @@ const ControlDashboard = ({
                 </div>
 
                 {/* mood_source toggle — Script vs LLM */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', padding: '8px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', padding: '8px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.07)' }}>
                   <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', flex: 1 }}>Mood driver</span>
                   {['script', 'llm'].map(mode => (
                     <button
@@ -2594,7 +2614,7 @@ const ControlDashboard = ({
                         color: settings.mood_source === mode ? '#e9d5ff' : 'rgba(255,255,255,0.45)'
                       }}
                     >
-                      {mode === 'script' ? '⚙️ Script' : '🤖 LLM'}
+                      {mode === 'script' ? 'Script Rules' : 'LLM Tagged'}
                     </button>
                   ))}
                   <span style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.3)' }}>
@@ -2602,45 +2622,148 @@ const ControlDashboard = ({
                   </span>
                 </div>
 
-                {/* Mood Gauges Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  {[
-                    { key: 'happiness', label: 'Happiness', color: '#34d399', icon: '😊' },
-                    { key: 'energy', label: 'Energy Level', color: '#38bdf8', icon: '⚡' },
-                    { key: 'curiosity', label: 'Curiosity', color: '#a78bfa', icon: '🔍' },
-                    { key: 'affection', label: 'Affection', color: '#fb7185', icon: '❤️' },
-                    { key: 'stress_level', label: 'Stress Level', color: '#f59e0b', icon: '🧘' },
-                    { key: 'doomer', label: 'Doomer Index', color: '#818cf8', icon: '🖤' },
-                    { key: 'hunger', label: 'Hunger', color: '#fb923c', icon: '🍕' },
-                    { key: 'playfulness', label: 'Playfulness', color: '#c084fc', icon: '🎮' },
-                    { key: 'horniness', label: 'Intimacy', color: '#f43f5e', icon: '🔥' },
-                    { key: 'anger', label: 'Anger', color: '#f87171', icon: '😠' }
-                  ].map(stat => {
-                    const val = moodData[stat.key] !== undefined ? moodData[stat.key] : 50;
-                    const baseVal = moodData.baselines?.[stat.key];
-                    return (
-                      <div key={stat.key} style={{ background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>
-                            <span style={{ marginRight: '4px' }}>{stat.icon}</span> {stat.label}
-                          </span>
-                          <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', fontWeight: 600, color: stat.color }}>
-                            {val}/100
-                            {baseVal !== undefined && <span style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.3)', marginLeft: '4px' }}>({baseVal}↩)</span>}
-                          </span>
+                {/* LAYER 1: Physical Vitality & Biological Clock */}
+                <div style={{ marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <Zap className="w-3.5 h-3.5" style={{ color: '#38bdf8' }} />
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#93c5fd' }}>
+                      Physical Vitality & Biological Clock (Layer 1)
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    {[
+                      { key: 'energy', label: 'Energy', color: '#38bdf8', Icon: Zap },
+                      { key: 'hunger', label: 'Hunger', color: '#fb923c', Icon: Utensils },
+                      { key: 'boredom', label: 'Boredom', color: '#a855f7', Icon: Clock }
+                    ].map(stat => {
+                      const val = moodData[stat.key] !== undefined ? moodData[stat.key] : 50;
+                      const baseVal = moodData.baselines?.[stat.key];
+                      const IconComp = stat.Icon;
+                      return (
+                        <div key={stat.key} style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <IconComp className="w-3 h-3" style={{ color: stat.color }} /> {stat.label}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', fontFamily: 'monospace', fontWeight: 600, color: stat.color }}>
+                              {val}%
+                              {baseVal !== undefined && <span style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.3)', marginLeft: '3px' }}>({baseVal}↩)</span>}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={val}
+                            onChange={(e) => handleUpdateMood(stat.key, parseInt(e.target.value, 10))}
+                            style={{ width: '100%', accentColor: stat.color, cursor: 'pointer', height: '14px', marginTop: '2px' }}
+                          />
                         </div>
-                        {/* Slider */}
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={val}
-                          onChange={(e) => handleUpdateMood(stat.key, parseInt(e.target.value, 10))}
-                          style={{ width: '100%', accentColor: stat.color, cursor: 'pointer', height: '14px', marginTop: '4px' }}
-                        />
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* LAYER 2: Emotional Mood Spectrum */}
+                <div style={{ marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <Smile className="w-3.5 h-3.5" style={{ color: '#34d399' }} />
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#a7f3d0' }}>
+                      Emotional Mood Spectrum (Layer 2)
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {[
+                      { key: 'happiness', label: 'Happiness', color: '#34d399', Icon: Smile },
+                      { key: 'affection', label: 'Affection', color: '#fb7185', Icon: Heart },
+                      { key: 'curiosity', label: 'Curiosity', color: '#a78bfa', Icon: Search },
+                      { key: 'playfulness', label: 'Playfulness', color: '#c084fc', Icon: Gamepad2 },
+                      { key: 'stress_level', label: 'Stress Level', color: '#f59e0b', Icon: Activity },
+                      { key: 'anger', label: 'Anger', color: '#f87171', Icon: AlertCircle },
+                      { key: 'horniness', label: 'Intimacy', color: '#f43f5e', Icon: Flame }
+                    ].map(stat => {
+                      const val = moodData[stat.key] !== undefined ? moodData[stat.key] : 50;
+                      const baseVal = moodData.baselines?.[stat.key];
+                      const IconComp = stat.Icon;
+                      return (
+                        <div key={stat.key} style={{ background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <IconComp className="w-3 h-3" style={{ color: stat.color }} /> {stat.label}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', fontFamily: 'monospace', fontWeight: 600, color: stat.color }}>
+                              {val}/100
+                              {baseVal !== undefined && <span style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.3)', marginLeft: '4px' }}>({baseVal}↩)</span>}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={val}
+                            onChange={(e) => handleUpdateMood(stat.key, parseInt(e.target.value, 10))}
+                            style={{ width: '100%', accentColor: stat.color, cursor: 'pointer', height: '14px', marginTop: '3px' }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Autonomous Presence & Idle Nudges */}
+                <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Clock className="w-3.5 h-3.5 text-purple-400" />
+                      <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#e9d5ff' }}>Autonomous Presence & Idle Nudges</span>
+                    </div>
+                    {moodData?.presence?.active_window && (
+                      <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                        Active in: {moodData.presence.active_window.slice(0, 20)}...
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginBottom: '8px' }}>
+                    When bored (&gt;80% after 30m quiet), Yuki performs subtle desktop check-ins or knocks without interrupting your focus.
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Nudge Mode</span>
+                    {[
+                      { key: 'visual_only', label: 'Visual Subtle' },
+                      { key: 'spoken', label: 'Spoken Voice' },
+                      { key: 'disabled', label: 'Disabled' }
+                    ].map(opt => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => handleUpdateSetting('proactive_nudge_mode', opt.key)}
+                        style={{
+                          fontSize: '0.66rem', fontWeight: 600, padding: '3px 9px',
+                          borderRadius: '6px', cursor: 'pointer', transition: 'all 0.18s ease',
+                          background: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? 'rgba(168,85,247,0.35)' : 'rgba(255,255,255,0.06)',
+                          border: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? '1px solid rgba(168,85,247,0.7)' : '1px solid rgba(255,255,255,0.1)',
+                          color: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? '#f3e8ff' : 'rgba(255,255,255,0.45)'
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Cooldown</span>
+                    <input
+                      type="range"
+                      min="15"
+                      max="120"
+                      step="5"
+                      value={settings.proactive_nudge_interval_min || 45}
+                      onChange={(e) => handleUpdateSetting('proactive_nudge_interval_min', parseInt(e.target.value, 10))}
+                      style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
+                    />
+                    <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '45px', textAlign: 'right' }}>
+                      {settings.proactive_nudge_interval_min || 45}m
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -3963,15 +4086,18 @@ const ControlDashboard = ({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {/* Active Timers / Reminders */}
                     {(timeItems.reminders || []).map(r => {
-                      const mins = Math.floor(r.remaining_seconds / 60);
-                      const secs = r.remaining_seconds % 60;
+                      const rem = r.target_time
+                        ? Math.max(0, Math.floor(r.target_time - Date.now() / 1000))
+                        : Math.max(0, r.remaining_seconds || 0);
+                      const mins = Math.floor(rem / 60);
+                      const secs = rem % 60;
                       const timeFmt = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
                       const cat = (r.category || 'timer').toLowerCase();
                       const isAlarm = cat === 'alarm';
                       const isRem = cat === 'reminder';
                       const badgeBg = isAlarm ? 'rgba(244,63,94,0.2)' : isRem ? 'rgba(245,158,11,0.2)' : 'rgba(56,189,248,0.2)';
                       const badgeColor = isAlarm ? '#f43f5e' : isRem ? '#f59e0b' : '#38bdf8';
-                      const badgeText = isAlarm ? '⏰ ALARM' : isRem ? '📌 REMINDER' : '⏱️ TIMER';
+                      const badgeText = isAlarm ? 'ALARM' : isRem ? 'REMINDER' : 'TIMER';
 
                       return (
                         <div key={r.id} style={{ background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: `1px solid ${badgeColor}33`, overflow: 'hidden' }}>
@@ -4314,9 +4440,9 @@ const ControlDashboard = ({
                                   </span>
                                 </div>
                                 <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.4)', marginTop: '3px', fontFamily: 'monospace' }}>
-                                  {isWatcher ? `action: ${actionDesc} · poll ${Math.round(t.interval_seconds)}s` : (t.interval_seconds ? `every ${Math.round(t.interval_seconds)}s` : '')}
+                                  {isWatcher ? `action: ${actionDesc} · poll ${Math.round((t.interval_seconds || 1.5) * 10) / 10}s` : (t.interval_seconds ? `every ${Math.round(t.interval_seconds)}s${t.count == null ? ' (looping)' : ''}` : '')}
                                   {t.count != null ? ` · x${t.count}` : ''}
-                                  {t.remaining_seconds != null ? ` · ${schedCountdown(t)} left` : ''}
+                                  {schedCountdown(t) ? ` · ${t.kind === 'interval' ? 'next in ' : ''}${schedCountdown(t)}` : ''}
                                 </div>
                               </div>
                               <button

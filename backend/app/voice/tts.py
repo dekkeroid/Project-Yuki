@@ -694,6 +694,41 @@ def normalize_dates_for_speech(text: str) -> str:
     numeric_date_regex = re.compile(r'\b(\d{1,2})([/\-\.])(\d{1,2})\2(\d{4}|\d{2})\b')
     text = numeric_date_regex.sub(replace_numeric_date, text)
 
+    # 3b. 2-part dates: DD/MM or MM/DD (e.g. 11/03, 05/06, or preceded by date prepositions)
+    def replace_2part_date(m):
+        try:
+            prefix = m.group(1) or ""
+            n1 = int(m.group(2))
+            sep = m.group(3)
+            s2 = m.group(4)
+            n2 = int(s2)
+
+            is_date = bool(prefix.strip()) or m.group(2).startswith('0') or s2.startswith('0') or n1 > 12 or n2 > 12
+            if not is_date:
+                return m.group(0)
+
+            # Case A: n1 > 12 and 1 <= n2 <= 12 (e.g. 25/11)
+            if n1 > 12 and 1 <= n2 <= 12 and n1 <= 31:
+                return f"{prefix}{int_to_ordinal_words(n1)} of {_MONTH_NAMES[n2]}"
+
+            # Case B: 1 <= n1 <= 12 and n2 > 12 (e.g. 11/25)
+            if 1 <= n1 <= 12 and n2 > 12 and n2 <= 31:
+                return f"{prefix}{_MONTH_NAMES[n1]} {int_to_ordinal_words(n2)}"
+
+            # Case C: Both <= 12 -> AMBIGUOUS! Option 1: Safe spoken slash/dash/dot
+            if 1 <= n1 <= 12 and 1 <= n2 <= 12:
+                sep_word = "slash" if sep == "/" else ("dash" if sep == "-" else "dot")
+                return f"{prefix}{int_to_words_international(n1)} {sep_word} {int_to_words_international(n2)}"
+
+            return m.group(0)
+        except Exception:
+            return m.group(0)
+
+    two_part_date_regex = re.compile(
+        r'(?i)(\b(?:on|by|date:?|dated|until|due)\s+)?\b(\d{1,2})([/\-\.])(\d{1,2})\b(?![/\-\.]\d)'
+    )
+    text = two_part_date_regex.sub(replace_2part_date, text)
+
     # 4. Spoken Years when explicitly preceded by prepositions: "in 2024", "since 1998"
     def replace_prep_year(m):
         try:

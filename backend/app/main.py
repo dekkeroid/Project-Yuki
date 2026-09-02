@@ -436,6 +436,50 @@ async def lifespan(app: FastAPI):
                 presence_manager.step_idle(60.0)
                 if not presence_manager.is_sleeping():
                     memory_manager.step_mood()
+
+                # Live presence snapshot & mood broadcast to frontend
+                snapshot = presence_manager.get_presence_snapshot()
+                mood_data = memory_manager.get_mood_spectrum()
+                await broadcast_ws({
+                    "type": "presence_update",
+                    "presence": snapshot,
+                    "mood": mood_data
+                })
+
+                # Autonomous Proactive Nudges
+                now_ts = time.time()
+                nudge_mode = getattr(config, "PROACTIVE_NUDGE_MODE", "visual_only")
+                interval_sec = getattr(config, "PROACTIVE_NUDGE_INTERVAL_MIN", 45) * 60
+
+                if (
+                    nudge_mode != "disabled"
+                    and not presence_manager.is_sleeping()
+                    and snapshot["boredom"] >= 0.80
+                    and snapshot["silence_seconds"] >= 1800
+                    and (now_ts - presence_manager.last_nudge_time) >= interval_sec
+                ):
+                    presence_manager.last_nudge_time = now_ts
+                    dwell_mins = snapshot.get("active_window_dwell_mins", 0)
+                    win_title = snapshot.get("active_window", "")
+
+                    if dwell_mins >= 30 and win_title:
+                        clean_win = win_title.split("-")[-1].split("—")[-1].strip()[:24]
+                        text = f"*knocks gently* Still focused on {clean_win}, Master? Don't forget to take a quick stretch!"
+                        anim = "knock"
+                    elif snapshot["boredom"] >= 0.90:
+                        text = "*sighs softly and rests chin on hand* It's so quiet... did you get lost in your work?"
+                        anim = "boredarm"
+                    else:
+                        text = "*peers over your shoulder* Psst, Master... taking a break anytime soon?"
+                        anim = "peer"
+
+                    print(f"[Presence] Dispatched proactive nudge ({nudge_mode}): {text}")
+                    await broadcast_ws({
+                        "type": "proactive_nudge",
+                        "mode": nudge_mode,
+                        "anim": anim,
+                        "text": text
+                    })
             except Exception as _e:
                 print(f"[MoodEngine] idle step error: {_e}")
 
@@ -1338,6 +1382,8 @@ class SettingsUpdateRequest(BaseModel):
     telegram_voice_replies: Optional[bool] = None
     telegram_notify_reminders: Optional[bool] = None
     telegram_verbose_tools: Optional[bool] = None
+    proactive_nudge_mode: Optional[str] = None
+    proactive_nudge_interval_min: Optional[int] = None
 
 
 
@@ -1970,6 +2016,18 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.telegram_verbose_tools is not None:
         config.TELEGRAM_VERBOSE_TOOLS = bool(req.telegram_verbose_tools)
         memory_manager.update_setting("telegram_verbose_tools", bool(req.telegram_verbose_tools))
+
+    if req.proactive_nudge_mode is not None:
+        pmode = str(req.proactive_nudge_mode).strip().lower()
+        config.PROACTIVE_NUDGE_MODE = pmode
+        memory_manager.update_setting("proactive_nudge_mode", pmode)
+        print(f"[SETTINGS-UPDATE-BE] proactive_nudge_mode = {pmode}")
+
+    if req.proactive_nudge_interval_min is not None:
+        pinterval = max(15, min(240, int(req.proactive_nudge_interval_min)))
+        config.PROACTIVE_NUDGE_INTERVAL_MIN = pinterval
+        memory_manager.update_setting("proactive_nudge_interval_min", pinterval)
+        print(f"[SETTINGS-UPDATE-BE] proactive_nudge_interval_min = {pinterval}")
 
     if telegram_changed:
         try:
@@ -3298,9 +3356,16 @@ def cancel_scheduled_task(req: ScheduledCancelRequest):
 @app.get("/api/mood")
 def get_mood_spectrum():
     """
-    Returns current internal mood spectrum.
+    Returns current internal mood spectrum and presence snapshot.
     """
-    return memory_manager.get_mood_spectrum()
+    from app.memory.presence_engine import presence_manager
+    mood = memory_manager.get_mood_spectrum()
+    snapshot = presence_manager.get_presence_snapshot()
+    return {
+        **mood,
+        "boredom": snapshot.get("boredom_pct", 0),
+        "presence": snapshot
+    }
 
 class MoodUpdateRequest(BaseModel):
     updates: Dict[str, int]
@@ -3308,10 +3373,25 @@ class MoodUpdateRequest(BaseModel):
 @app.post("/api/mood/update")
 def update_mood_spectrum(req: MoodUpdateRequest):
     """
-    Updates mood spectrum values from UI sliders.
+    Updates mood spectrum values and boredom from UI sliders.
     """
-    updated = memory_manager.update_mood_spectrum(req.updates)
-    return {"status": "ok", "mood": updated}
+    from app.memory.presence_engine import presence_manager
+    mood_updates = {}
+    for k, v in req.updates.items():
+        if k == "boredom":
+            presence_manager.boredom = max(0.0, min(1.0, float(v) / 100.0))
+        else:
+            mood_updates[k] = v
+    updated = memory_manager.update_mood_spectrum(mood_updates) if mood_updates else memory_manager.get_mood_spectrum()
+    snapshot = presence_manager.get_presence_snapshot()
+    return {
+        "status": "ok",
+        "mood": {
+            **updated,
+            "boredom": snapshot.get("boredom_pct", 0),
+            "presence": snapshot
+        }
+    }
 
 @app.post("/api/mood/reset")
 def reset_mood_spectrum():

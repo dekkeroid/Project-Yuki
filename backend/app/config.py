@@ -252,6 +252,11 @@ TELEGRAM_VOICE_REPLIES = os.environ.get("TELEGRAM_VOICE_REPLIES", "true").strip(
 TELEGRAM_NOTIFY_REMINDERS = os.environ.get("TELEGRAM_NOTIFY_REMINDERS", "true").strip().lower() in ("1", "true", "yes", "on")
 TELEGRAM_VERBOSE_TOOLS = os.environ.get("TELEGRAM_VERBOSE_TOOLS", "true").strip().lower() in ("1", "true", "yes", "on")
 
+# Proactive Desktop Nudges & Ambient Presence
+PROACTIVE_NUDGE_MODE = os.environ.get("PROACTIVE_NUDGE_MODE", "visual_only").strip().lower()  # "visual_only", "spoken", "disabled"
+PROACTIVE_NUDGE_INTERVAL_MIN = int(os.environ.get("PROACTIVE_NUDGE_INTERVAL_MIN", "45"))
+
+
 
 def get_effective_base_url() -> str:
     """Get the effective LLM base URL based on backend type."""
