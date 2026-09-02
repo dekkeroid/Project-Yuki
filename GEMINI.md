@@ -56,32 +56,40 @@ Whenever adding a new AI action tool or system capability to Project Yuki, **ALW
 
 ---
 
-## Vector Memory, Database Migrations & Session Protocol
+## Python Class Indentation & Module-Level Helper Rule
 
-Whenever working on long-term memory, vector search, or SQLite storage in Project Yuki, **ALWAYS** observe these architectural standards:
+In Python, unindented code (column 0) terminates the preceding class definition. Whenever adding utility functions, connection pools, or module variables to large classes like `AgentExecutor` (`backend/app/agent/executor.py`):
 
-### 1. Schema & Auto-Migration (`backend/app/memory/vector_memory.py`)
-- **Table Schema**: `memories` table consists of:
-  `id (INTEGER PK)`, `content (TEXT)`, `category (TEXT)`, `embedding (TEXT JSON)`, `created_at (REAL)`, and `session_id (TEXT NULLABLE)`.
-- **Dynamic Migration**: Never rely solely on `CREATE TABLE IF NOT EXISTS` for existing user databases. `init_vector_db()` must inspect `PRAGMA table_info(memories)` and auto-apply `ALTER TABLE memories ADD COLUMN <name> <type>` if columns are missing.
-- **Indexes**: Maintain performance indexes on `category`, `created_at`, and `session_id`.
+- **NEVER** declare module-level helper functions, global variables, or unindented `def` / assignments in the middle of `class AgentExecutor:`.
+- **CRITICAL CONSEQUENCE**: An unindented `def` at column 0 silently closes the `class AgentExecutor:` body. All subsequent class methods (`execute_chat_turn_stream`, `_query_llm_stream`, etc.) become detached, causing catastrophic runtime errors: `'AgentExecutor' object has no attribute 'execute_chat_turn_stream'`.
+- **RULE**:
+  1. Place all module-level caches, HTTP connection pools, regex patterns, and global helper functions at the **top of the file** (before `class AgentExecutor:`).
+  2. If a helper belongs to the class, indent it by 4 spaces and give it a `self` or `@staticmethod` decorator.
 
-### 2. Coder Mode Isolation (`backend/app/agent/executor.py`)
-- **Pre-Turn Search**: If `is_coder_mode` (`overrides.get("coding_mode")` or `resolved_backend in ("coder", "complex_coder")`), **bypass** `search_relevant_memories` entirely and set `self.last_vector_timing["status"] = "disabled_coder_mode"`.
-- **Post-Turn Indexing**: **Bypass** `extract_and_index_turn` in Coder Mode. This prevents multi-line code diffs, terminal stack traces, and compiler errors from polluting `vectors.db`.
-- **Rationale**: Keeps coding turns at 0ms vector latency and eliminates the risk of recalling superseded or outdated code signatures from earlier sessions.
+---
 
-### 3. Temporal Context & Formatting (`backend/app/agent/prompts.py`)
-- Recalled episodic memories injected into the LLM system prompt must pass through `_format_memory_time(created_at, days_ago)`.
-- Always format memories with intuitive temporal labels (e.g., `[Just now (11:07 PM)]`, `[Today at 10:39 PM (15m ago)]`, `[Yesterday at 4:20 PM]`, `[Saturday at 9:55 PM (4d ago)]`) to grant the model precise chronological grounding.
+## SQLite Database Schema Migration Protocol (`init_*_db`)
 
-### 4. Chat Turn Timestamps & SQLite Persistence (`db.py` & UI)
-- All message objects (`final_history`, `App.jsx`, `ChatOverlay.jsx`) must carry a float UNIX `timestamp`.
-- In `backend/app/memory/db.py` (`save_chat_session_if_eligible`), always persist `m.get("timestamp") or now` so each message maintains its true creation time when reloaded from SQLite.
+`CREATE TABLE IF NOT EXISTS` only runs when creating a brand-new database file. It **DOES NOT** update or add columns to an existing database. Whenever adding a column or modifying tables in `vectors.db`, `yuki_files.db`, or any SQLite database:
 
-### 5. Packaging & Installed App Data Safety (`update_installed.ps1`)
-- **Robocopy Exclusion**: Fast-sync commands must explicitly exclude `*.db`, `*.db-wal`, and `*.db-shm` to ensure user memories and files are never overwritten from development templates.
-- **Full Rebuild Backup**: On PyInstaller rebuilds, `vectors.db` must be temporarily backed up to `$env:TEMP\yuki_vectors_backup` and restored after new binaries are laid down.
+### 1. Dynamic Column Migration Check
+Always inspect existing table columns using `PRAGMA table_info`:
+```python
+cursor.execute("PRAGMA table_info(table_name)")
+existing_cols = {row[1] for row in cursor.fetchall()}
 
-### 6. Code Structure Integrity in `executor.py`
-- **Class Indentation Rule**: **NEVER** declare module-level helper functions at column 0 in the middle of `class AgentExecutor`. In Python, an unindented `def` terminates the class body and detaches all subsequent methods (`execute_chat_turn_stream`, etc.). Keep all module-level helpers at the top of the file above the class.
+if "new_column" not in existing_cols:
+    cursor.execute("ALTER TABLE table_name ADD COLUMN new_column TEXT DEFAULT NULL")
+    print("[DB] Auto-migrated: added missing column 'new_column'")
+```
+
+### 2. Idempotent Index Creation
+Always create indexes using `IF NOT EXISTS`:
+```python
+cursor.execute("CREATE INDEX IF NOT EXISTS idx_table_col ON table_name(new_column)")
+```
+
+### 3. User Data Preservation During Builds
+Database files contain user memory, history, and embeddings.
+- In `update_installed.ps1` and build scripts, **ALWAYS** exclude `*.db`, `*.db-wal`, and `*.db-shm` from robocopy overwrites.
+- In full PyInstaller rebuilds, backup existing `.db` files before cleaning directories and restore them immediately after.
