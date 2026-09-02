@@ -11,7 +11,7 @@ import uuid
 from typing import Dict, Any, List, Tuple, Optional
 from app import config
 from app.agent.prompts import get_system_prompt, get_simple_system_prompt, get_advanced_jarvis_system_prompt, get_coding_agent_system_prompt, log_triggered_backend_tags
-from app.agent.llm_backend import get_backend, reset_backend
+from app.agent.llm_backend import get_backend, reset_backend, persistent_session_context, get_shared_backend_session
 from app.memory.local_mem import MemoryManager
 from app.memory.mood_engine import MoodTagScrubber
 from app.tools.definitions import get_tools_definition, get_filtered_tools
@@ -1098,9 +1098,8 @@ class AgentExecutor:
                 messages=messages,
                 temperature=0.5,
             )
-            timeout = aiohttp.ClientTimeout(total=5)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, json=payload) as resp:
+            async with persistent_session_context() as session:
+                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                     resp.raise_for_status()
                     data = await resp.json()
                     choices = data.get("choices", [])
@@ -1767,7 +1766,7 @@ class AgentExecutor:
         payload["max_tokens"] = 5  # "Yes" or "No" — single token
 
         try:
-            async with aiohttp.ClientSession() as check_session:
+            async with persistent_session_context() as check_session:
                 async with check_session.post(
                     backend.get_chat_url(),
                     headers=backend.build_headers(),
@@ -3007,7 +3006,7 @@ class AgentExecutor:
             traceback.print_exc()
             current_messages = [{"role": "user", "content": user_message}]
 
-        async with aiohttp.ClientSession() as session:
+        async with persistent_session_context() as session:
             is_coder_mode = bool(overrides.get("coding_mode")) or resolved_backend in ("coder", "complex_coder")
             max_iterations = 50 if is_coder_mode else 10
             iteration = 0

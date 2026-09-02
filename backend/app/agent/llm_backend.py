@@ -12,8 +12,54 @@ import re
 import aiohttp
 import requests
 from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional, Tuple
 from app import config
+
+_shared_backend_session: Optional[aiohttp.ClientSession] = None
+_shared_backend_connector: Optional[aiohttp.TCPConnector] = None
+
+
+async def get_shared_backend_session() -> aiohttp.ClientSession:
+    """
+    Returns a process-wide persistent aiohttp.ClientSession with keepalive connection pooling.
+    Eliminates TCP 3-way handshakes and TLS roundtrips across chat turns and tool loops.
+    """
+    global _shared_backend_session, _shared_backend_connector
+    if _shared_backend_session is None or _shared_backend_session.closed:
+        _shared_backend_connector = aiohttp.TCPConnector(
+            limit=40,
+            limit_per_host=20,
+            keepalive_timeout=300,  # 5 minutes socket reuse
+            enable_cleanup_closed=True,
+            force_close=False,
+        )
+        _shared_backend_session = aiohttp.ClientSession(
+            connector=_shared_backend_connector,
+            timeout=aiohttp.ClientTimeout(total=180, connect=10, sock_read=90)
+        )
+    return _shared_backend_session
+
+
+@asynccontextmanager
+async def persistent_session_context():
+    """
+    Async context manager yielding the shared persistent aiohttp.ClientSession.
+    Does NOT close the session on exit, preserving hot TCP/TLS sockets.
+    """
+    session = await get_shared_backend_session()
+    yield session
+
+
+async def close_shared_backend_session():
+    """Cleanly close persistent session on shutdown."""
+    global _shared_backend_session, _shared_backend_connector
+    if _shared_backend_session and not _shared_backend_session.closed:
+        await _shared_backend_session.close()
+        _shared_backend_session = None
+    if _shared_backend_connector and not _shared_backend_connector.closed:
+        await _shared_backend_connector.close()
+        _shared_backend_connector = None
 
 
 class LLMBackend(ABC):
@@ -136,9 +182,9 @@ class LMStudioBackend(LLMBackend):
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    return resp.status == 200
+            session = await get_shared_backend_session()
+            async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                return resp.status == 200
         except Exception:
             return False
 
@@ -146,46 +192,46 @@ class LMStudioBackend(LLMBackend):
         url = self.get_models_url()
         print(f"[LMStudio][list_models] Fetching {url}")
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    print(f"[LMStudio][list_models] HTTP {resp.status}")
-                    if resp.status != 200:
-                        body_preview = (await resp.text())[:300]
-                        print(f"[LMStudio][list_models] Non-200 body: {body_preview}")
-                        return []
-                    data = await resp.json()
-                    models = data.get("data", [])
-                    if isinstance(data, dict) and not models:
-                        models = data.get("models", [])
-                    print(f"[LMStudio][list_models] Response keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}, models count: {len(models)}")
-                    result = []
-                    for m in models:
-                        model_id = m.get("id") or m.get("key") or m.get("path") or ""
-                        if not model_id:
-                            continue
-                        is_loaded = (
-                            m.get("loaded", False) is True or
-                            m.get("state") == "loaded" or
-                            bool(m.get("loaded_instances"))
-                        )
-                        result.append({"id": model_id, "name": model_id, "loaded": is_loaded})
-                    print(f"[LMStudio][list_models] Returning {len(result)} models: {[m['id'] for m in result]}")
-                    return result
+            session = await get_shared_backend_session()
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                print(f"[LMStudio][list_models] HTTP {resp.status}")
+                if resp.status != 200:
+                    body_preview = (await resp.text())[:300]
+                    print(f"[LMStudio][list_models] Non-200 body: {body_preview}")
+                    return []
+                data = await resp.json()
+                models = data.get("data", [])
+                if isinstance(data, dict) and not models:
+                    models = data.get("models", [])
+                print(f"[LMStudio][list_models] Response keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}, models count: {len(models)}")
+                result = []
+                for m in models:
+                    model_id = m.get("id") or m.get("key") or m.get("path") or ""
+                    if not model_id:
+                        continue
+                    is_loaded = (
+                        m.get("loaded", False) is True or
+                        m.get("state") == "loaded" or
+                        bool(m.get("loaded_instances"))
+                    )
+                    result.append({"id": model_id, "name": model_id, "loaded": is_loaded})
+                print(f"[LMStudio][list_models] Returning {len(result)} models: {[m['id'] for m in result]}")
+                return result
         except Exception as e:
             print(f"[LMStudio] Could not list models — {e}")
             return []
 
     async def ensure_model_loaded(self, model_name: str) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    if resp.status != 200:
-                        print(f"[LMStudio] Failed to fetch models list. Status: {resp.status}")
-                        return False
-                    payload_data = await resp.json()
-                    available_models = payload_data.get("data", [])
-                    if isinstance(payload_data, dict) and not available_models:
-                        available_models = payload_data.get("models", [])
+            session = await get_shared_backend_session()
+            async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    print(f"[LMStudio] Failed to fetch models list. Status: {resp.status}")
+                    return False
+                payload_data = await resp.json()
+                available_models = payload_data.get("data", [])
+                if isinstance(payload_data, dict) and not available_models:
+                    available_models = payload_data.get("models", [])
 
                 search_keyword = "llama" if "llama" in model_name.lower() else "nemotron"
                 pattern = re.compile(rf".*{search_keyword}.*", re.IGNORECASE)
@@ -321,9 +367,9 @@ class OllamaBackend(LLMBackend):
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    return resp.status == 200
+            session = await get_shared_backend_session()
+            async with session.get(self.get_models_url(), timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                return resp.status == 200
         except Exception:
             return False
 
@@ -331,32 +377,32 @@ class OllamaBackend(LLMBackend):
         url = self.get_models_url()
         print(f"[Ollama][list_models] Fetching {url}")
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    print(f"[Ollama][list_models] HTTP {resp.status}")
-                    if resp.status != 200:
-                        body_preview = (await resp.text())[:300]
-                        print(f"[Ollama][list_models] Non-200 response body: {body_preview}")
-                        return []
-                    data = await resp.json()
-                    models_raw = data.get("data", [])
-                    print(f"[Ollama][list_models] 'data' key has {len(models_raw)} entries, full response keys: {list(data.keys())}")
-                    models = [{"id": m.get("id", ""), "name": m.get("id", ""), "loaded": True} for m in models_raw if m.get("id")]
-                    print(f"[Ollama][list_models] Returning {len(models)} models: {[m['id'] for m in models]}")
-                    return models
+            session = await get_shared_backend_session()
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                print(f"[Ollama][list_models] HTTP {resp.status}")
+                if resp.status != 200:
+                    body_preview = (await resp.text())[:300]
+                    print(f"[Ollama][list_models] Non-200 response body: {body_preview}")
+                    return []
+                data = await resp.json()
+                models_raw = data.get("data", [])
+                print(f"[Ollama][list_models] 'data' key has {len(models_raw)} entries, full response keys: {list(data.keys())}")
+                models = [{"id": m.get("id", ""), "name": m.get("id", ""), "loaded": True} for m in models_raw if m.get("id")]
+                print(f"[Ollama][list_models] Returning {len(models)} models: {[m['id'] for m in models]}")
+                return models
         except Exception as e:
             print(f"[Ollama] Could not list models — {e}")
             return []
 
     async def unload_model(self, model_name: str) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                if model_name:
-                    async with session.post(
-                        f"{self.base_url}/api/generate",
-                        json={"model": model_name, "prompt": "", "keep_alive": 0},
-                        timeout=aiohttp.ClientTimeout(total=15),
-                    ) as resp:
+            session = await get_shared_backend_session()
+            if model_name:
+                async with session.post(
+                    f"{self.base_url}/api/generate",
+                    json={"model": model_name, "prompt": "", "keep_alive": 0},
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
                         if resp.status == 200:
                             print(f"[Ollama] Unloaded '{model_name}' (keep_alive=0)")
                         else:
@@ -509,9 +555,9 @@ class OpenAICompatibleBackend(LLMBackend):
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.get_models_url(), headers=self.build_headers(), timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    return resp.status == 200
+            session = await get_shared_backend_session()
+            async with session.get(self.get_models_url(), headers=self.build_headers(), timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                return resp.status == 200
         except Exception:
             return False
 
@@ -519,19 +565,19 @@ class OpenAICompatibleBackend(LLMBackend):
         url = self.get_models_url()
         print(f"[OpenAI][list_models] Fetching {url}")
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=self.build_headers(), timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    print(f"[OpenAI][list_models] HTTP {resp.status}")
-                    if resp.status != 200:
-                        body_preview = (await resp.text())[:300]
-                        print(f"[OpenAI][list_models] Non-200 body: {body_preview}")
-                        return []
-                    data = await resp.json()
-                    models = data.get("data", [])
-                    print(f"[OpenAI][list_models] Response keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}, 'data' count: {len(models)}")
-                    result = [{"id": m.get("id", ""), "name": m.get("id", ""), "loaded": True} for m in models if m.get("id")]
-                    print(f"[OpenAI][list_models] Returning {len(result)} models: {[m['id'] for m in result]}")
-                    return result
+            session = await get_shared_backend_session()
+            async with session.get(url, headers=self.build_headers(), timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                print(f"[OpenAI][list_models] HTTP {resp.status}")
+                if resp.status != 200:
+                    body_preview = (await resp.text())[:300]
+                    print(f"[OpenAI][list_models] Non-200 body: {body_preview}")
+                    return []
+                data = await resp.json()
+                models = data.get("data", [])
+                print(f"[OpenAI][list_models] Response keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}, 'data' count: {len(models)}")
+                result = [{"id": m.get("id", ""), "name": m.get("id", ""), "loaded": True} for m in models if m.get("id")]
+                print(f"[OpenAI][list_models] Returning {len(result)} models: {[m['id'] for m in result]}")
+                return result
         except Exception as e:
             print(f"[OpenAI-compatible] Error listing models: {e}")
             return []

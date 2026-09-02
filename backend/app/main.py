@@ -484,6 +484,12 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    try:
+        from app.agent.llm_backend import close_shared_backend_session
+        await close_shared_backend_session()
+    except Exception:
+        pass
+
     if agent_executor:
         await agent_executor.mcp_tools.aclose()
 
