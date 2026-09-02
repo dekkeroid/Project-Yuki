@@ -451,8 +451,8 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
         tool_name = match.group(1).strip()
         tool_output = match.group(2).strip()
         clean_output = " ".join(tool_output.split())
-        if len(clean_output) > 200:
-            clean_output = clean_output[:197] + "..."
+        if len(clean_output) > 300:
+            clean_output = clean_output[:297] + "..."
         if clean_output:
             return f"[Tool: {tool_name} -> {clean_output}] "
         return f"[Tool: {tool_name}] "
