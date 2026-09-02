@@ -1719,6 +1719,26 @@ const ChatOverlay = ({
                           {badge.label}
                         </span>
                       )}
+                      {msg.timestamp && (() => {
+                        const date = new Date(msg.timestamp * 1000);
+                        const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                        const fullDateStr = date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+                        return (
+                          <span
+                            title={fullDateStr}
+                            style={{
+                              fontSize: '9.5px',
+                              color: '#94a3b8',
+                              opacity: 0.75,
+                              marginLeft: '3px',
+                              fontVariantNumeric: 'tabular-nums',
+                              cursor: 'default'
+                            }}
+                          >
+                            {timeStr}
+                          </span>
+                        );
+                      })()}
                       {!isUser && msg.responseTime !== undefined && (
                         <span style={{
                           fontSize: '9px',

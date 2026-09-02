@@ -3030,7 +3030,8 @@ def _get_shared_sync_session() -> requests.Session:
             final_history.append({
                 "role": "user",
                 "content": user_message,
-                "attachments": _sanitize_attachments_for_history(attachments)
+                "attachments": _sanitize_attachments_for_history(attachments),
+                "timestamp": overrides.get("timestamp") or time.time()
             })
 
             accumulated_response_total = []
@@ -3429,7 +3430,12 @@ def _get_shared_sync_session() -> requests.Session:
                     except Exception as e:
                         print(f"[RelationshipEngine] Evolution error: {e}")
                     assistant_final_speech = "\n".join(accumulated_response_total)
-                    final_history.append({"role": "assistant", "content": assistant_final_speech})
+                    final_history.append({
+                        "role": "assistant",
+                        "content": assistant_final_speech,
+                        "timestamp": time.time(),
+                        "backend": backend_used
+                    })
                     if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message and not is_coder_mode:
                         try:
                             from app.memory.vector_memory import extract_and_index_turn
@@ -3485,7 +3491,12 @@ def _get_shared_sync_session() -> requests.Session:
             except Exception as e:
                 print(f"[RelationshipEngine] Evolution error: {e}")
             assistant_final_speech = "\n".join(accumulated_response_total)
-            final_history.append({"role": "assistant", "content": assistant_final_speech})
+            final_history.append({
+                "role": "assistant",
+                "content": assistant_final_speech,
+                "timestamp": time.time(),
+                "backend": backend_used
+            })
             if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message and not is_coder_mode:
                 try:
                     from app.memory.vector_memory import extract_and_index_turn
