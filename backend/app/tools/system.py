@@ -1740,12 +1740,32 @@ def manage_process(action: str, name: str = None, pid: int = None) -> str:
         name_lower = name.lower().strip() if name else ""
         name_clean = name_lower[:-4] if name_lower.endswith(".exe") else name_lower
 
+        PROTECTED_SYSTEM_PROCESSES = {
+            "explorer.exe", "explorer", "dwm.exe", "dwm", "csrss.exe", "csrss",
+            "wininit.exe", "wininit", "services.exe", "services", "lsass.exe", "lsass",
+            "winlogon.exe", "winlogon", "smss.exe", "smss", "fontdrvhost.exe",
+            "sihost.exe", "ctfmon.exe", "runtimebroker.exe", "searchindexer.exe",
+            "svchost.exe", "svchost", "spoolsv.exe", "system", "idle", "registry",
+            "msmpeng.exe", "nissrv.exe", "securityhealthservice.exe",
+        }
+
+        # Guardrail: NEVER kill core Windows processes
+        if name_clean in ("file explorer", "windows explorer") or name_lower in ("file explorer", "windows explorer"):
+            # Special case for File Explorer: close the active folder window, NEVER kill the Windows shell
+            win_res = control_window("close", window_title="File Explorer")
+            if "closed" in win_res.lower() or "success" in win_res.lower():
+                return "Closed File Explorer folder window."
+            win_res2 = control_window("close", window_title="explorer")
+            if "closed" in win_res2.lower() or "success" in win_res2.lower():
+                return "Closed File Explorer window."
+            return "No open File Explorer windows found."
+
+        if name_clean in PROTECTED_SYSTEM_PROCESSES or name_lower in PROTECTED_SYSTEM_PROCESSES:
+            return f"Refused to terminate critical system process '{name}'. Killing core Windows components destabilizes the operating system."
+
         COMMON_APP_ALIASES = {
             "task manager": ["taskmgr.exe", "taskmgr"],
             "taskmgr": ["taskmgr.exe"],
-            "file explorer": ["explorer.exe"],
-            "windows explorer": ["explorer.exe"],
-            "explorer": ["explorer.exe"],
             "command prompt": ["cmd.exe"],
             "powershell": ["powershell.exe", "pwsh.exe"],
             "edge": ["msedge.exe"],
@@ -1771,6 +1791,14 @@ def manage_process(action: str, name: str = None, pid: int = None) -> str:
 
         for p in psutil.process_iter(['pid', 'name']):
             try:
+                p_name = (p.info.get('name') or '').lower()
+                p_clean = p_name[:-4] if p_name.endswith(".exe") else p_name
+
+                # Strict PID Guardrail: Never kill protected system processes even by PID
+                if p_name in PROTECTED_SYSTEM_PROCESSES or p_clean in PROTECTED_SYSTEM_PROCESSES:
+                    if pid is not None and p.info['pid'] == pid:
+                        return f"Refused to terminate system-critical process '{p.info['name']}' (PID {pid})."
+                    continue
                 if pid is not None and p.info['pid'] == pid:
                     try:
                         p.kill()
