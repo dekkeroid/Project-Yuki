@@ -484,7 +484,89 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
     # 1. Clean animation & emotion tags
     cleaned = re.sub(r'[<\[\(](?:yuki_)?(?:anim|emotion):[^>\]\)]*[>\]\)]', '', assistant_msg or "")
 
-    # 2. Extract tool name + tool output, completely dropping verbose tool_args JSON blocks
+    # Helper to extract the most informative/relevant window from a large tool output
+    def _extract_relevant_tool_output(tool_output: str, user_query: str, assistant_reply: str = "", max_chars: int = 250) -> str:
+        if not tool_output:
+            return ""
+        clean_full = " ".join(tool_output.split())
+        if len(clean_full) <= max_chars:
+            return clean_full
+
+        stop_words = {
+            "what", "where", "when", "which", "who", "whom", "whose", "why", "how",
+            "the", "is", "are", "was", "were", "be", "been", "being", "have", "has",
+            "had", "do", "does", "did", "can", "could", "should", "would", "will",
+            "shall", "may", "might", "must", "and", "or", "but", "if", "then",
+            "with", "at", "by", "for", "about", "against", "between", "into", "through",
+            "during", "before", "after", "above", "below", "to", "from", "up", "down",
+            "in", "out", "on", "off", "over", "under", "again", "further", "this", "that",
+            "these", "those", "am", "an", "a", "my", "your", "his", "her", "its", "our",
+            "their", "me", "you", "him", "us", "them", "i", "we", "yuki", "please", "can",
+            "you", "have", "here", "just", "done", "got", "check", "see", "show", "tell"
+        }
+
+        def _extract_terms(text):
+            words = [re.sub(r'[^a-zA-Z0-9_\-]', '', w.lower()) for w in (text or "").split()]
+            return {w for w in words if len(w) >= 3 and w not in stop_words}
+
+        query_terms = _extract_terms(user_query)
+        reply_terms = _extract_terms(assistant_reply)
+        status_terms = {"error", "failed", "success", "passed", "warning", "exception", "result", "version", "completed", "total"}
+
+        lines = [ln.strip() for ln in tool_output.splitlines() if ln.strip()]
+        if not lines:
+            lines = [s.strip() for s in re.split(r'(?<=[.!?])\s+', tool_output) if s.strip()]
+
+        scored_lines = []
+        for idx, line in enumerate(lines):
+            line_lower = line.lower()
+            score = 0.0
+            for term in query_terms:
+                if term in line_lower:
+                    score += 4.0
+            for term in reply_terms:
+                if term in line_lower:
+                    score += 2.0
+            for st in status_terms:
+                if re.search(rf'\b{re.escape(st)}\b', line_lower):
+                    score += 1.0
+            if idx >= len(lines) - 2:
+                score += 0.5
+            scored_lines.append((score, idx, line))
+
+        scored_lines.sort(key=lambda x: (x[0], -abs(x[1])), reverse=True)
+        best_score, best_idx, _ = scored_lines[0]
+
+        if best_score > 0.0:
+            window_parts = [lines[best_idx]]
+            curr_len = len(lines[best_idx])
+            fwd = best_idx + 1
+            while fwd < len(lines) and (curr_len + len(lines[fwd]) + 1 <= max_chars):
+                window_parts.append(lines[fwd])
+                curr_len += len(lines[fwd]) + 1
+                fwd += 1
+            bwd = best_idx - 1
+            while bwd >= 0 and (curr_len + len(lines[bwd]) + 1 <= max_chars):
+                window_parts.insert(0, lines[bwd])
+                curr_len += len(lines[bwd]) + 1
+                bwd -= 1
+            extracted = " ".join(" ".join(window_parts).split())
+            prefix = "... " if bwd >= 0 else ""
+            suffix = " ..." if fwd < len(lines) else ""
+            result = f"{prefix}{extracted}{suffix}".strip()
+        else:
+            result = clean_full
+
+        if len(result) > max_chars:
+            trimmed = result[:max_chars]
+            last_space = trimmed.rfind(' ')
+            if last_space > int(max_chars * 0.7):
+                result = trimmed[:last_space] + " ..."
+            else:
+                result = trimmed + " ..."
+        return result
+
+    # 2. Extract tool name + tool output, extracting the most relevant portion when large
     pattern = re.compile(
         r'🛠️\s*\*\*\[([a-zA-Z0-9_\-]+)[^\]]*\]\*\*'
         r'(?:\s*```tool_args[\s\S]*?```)?'
@@ -494,9 +576,7 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
     def _replace_tool_block(match):
         tool_name = match.group(1).strip()
         tool_output = match.group(2).strip()
-        clean_output = " ".join(tool_output.split())
-        if len(clean_output) > 200:
-            clean_output = clean_output[:197] + "..."
+        clean_output = _extract_relevant_tool_output(tool_output, user_trimmed, assistant_msg, max_chars=250)
         if clean_output:
             return f"[Tool: {tool_name} -> {clean_output}] "
         return f"[Tool: {tool_name}] "
