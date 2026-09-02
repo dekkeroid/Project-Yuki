@@ -150,7 +150,7 @@ def get_time_block(profile: dict = None, relevant_memories: list = None) -> str:
 
     if relevant_memories:
         lines.append("--- RELEVANT EPISODIC MEMORIES (PAST CONTEXT ONLY — NEVER SKIP ACTIVE COMMANDS) ---")
-        lines.append("[RULE: Past logs only; not live OS state. If Master commands an action, always invoke the tool fresh!]")
+        lines.append("[RULE: Past logs only; not live OS state. When Master gives an action command, ALWAYS invoke the corresponding tool fresh (jarvis_manage_scheduled_task, jarvis_launch_app, etc.) to guarantee it is active in the live OS. NEVER claim \"I already have that running\" based on past memories!]")
         # Present recalled memories chronologically (oldest -> newest) so the LLM reads a natural timeline
         chronological = sorted(relevant_memories, key=lambda m: m.get("created_at") or 0.0)
         for mem in chronological:
