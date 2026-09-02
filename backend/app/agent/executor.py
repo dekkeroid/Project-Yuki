@@ -929,6 +929,11 @@ class AgentExecutor:
             elif do.lower().startswith("power:"):
                 action_type = "power"
                 action_args = {"action": do.split(":", 1)[1].strip() or "shutdown"}
+            elif any(do.lower().startswith(p) for p in ("launch_app:", "app_name:", "app:", "launch:", "open:", "start:")):
+                target_app = do.split(":", 1)[1].strip()
+                action_type = "tool"
+                action_tool = "launch_app"
+                action_args = {"app_name": target_app, "query": target_app}
             elif ":" in do and (do.split(":", 1)[0].strip() in self.tools or self._resolve_tool_name(do.split(":", 1)[0].strip()) in self.tools):
                 t_cand, t_arg = do.split(":", 1)
                 action_type = "tool"
@@ -994,9 +999,21 @@ class AgentExecutor:
             monitor = (kwargs.get("kind") or kwargs.get("monitor_type") or kwargs.get("monitor") or "").lower().strip()
             target = kwargs.get("target") or kwargs.get("process") or kwargs.get("pid") or kwargs.get("window") or kwargs.get("file") or ""
             
-            # Auto-infer monitor kind if omitted
+            # Auto-infer monitor kind if omitted or if condition passed as 'process'
+            if condition == "process":
+                monitor = "process"
+                condition = "gone"
+            elif condition in ("battery", "charging", "discharging", "low"):
+                monitor = monitor or "battery"
+            elif condition in ("storage", "disk"):
+                monitor = monitor or "storage"
+            elif condition in ("network", "disconnected", "connected"):
+                monitor = monitor or "network"
+
             if not monitor:
-                if condition in ("minimized", "maximized", "focused", "unfocused", "open", "opened", "closed"):
+                if str(target).lower().endswith(".exe"):
+                    monitor = "process"
+                elif condition in ("minimized", "maximized", "focused", "unfocused", "open", "opened", "closed"):
                     monitor = "window"
                 elif condition in ("gone", "present", "running", "terminated"):
                     monitor = "process"
@@ -1007,17 +1024,24 @@ class AgentExecutor:
                 else:
                     monitor = "window"
 
+            # Normalize conditions across monitors
+            if monitor == "process":
+                if condition in ("closed", "close", "quit", "exit", "stopped", "killed", "terminated"):
+                    condition = "gone"
+                elif condition in ("open", "opened", "running", "started"):
+                    condition = "present"
+
             if not target:
                 return "Error: 'target' is required for watch."
 
             seconds = kwargs.get("seconds") or kwargs.get("interval") or kwargs.get("every")
             if seconds is None:
-                seconds = 1.5 if monitor == "window" else 30.0
+                seconds = 1.5 if monitor in ("window", "process") else 30.0
             else:
                 try:
                     seconds = float(seconds)
                 except (ValueError, TypeError):
-                    seconds = 1.5 if monitor == "window" else 30.0
+                    seconds = 1.5 if monitor in ("window", "process") else 30.0
 
             count = kwargs.get("count")
             if count is None:
@@ -1127,7 +1151,11 @@ class AgentExecutor:
             if handler is None:
                 return f"Unknown scheduled action tool '{action_tool}'."
             try:
-                result = handler(**action_args)
+                import inspect
+                sig = inspect.signature(handler)
+                has_var = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+                filtered_args = action_args if has_var else {k: v for k, v in action_args.items() if k in sig.parameters}
+                result = handler(**filtered_args)
                 return str(result)
             except Exception as e:
                 return f"Scheduled tool '{action_tool}' failed: {e}"
