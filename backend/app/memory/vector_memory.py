@@ -66,6 +66,10 @@ def is_conversational_filler(text: str) -> bool:
 
 
 def init_vector_db():
+    """
+    Initializes the vector SQLite database and applies auto-migrations for
+    any missing columns across schema updates (e.g. category, created_at, session_id).
+    """
     try:
         conn = sqlite3.connect(_DB_PATH)
         cursor = conn.cursor()
@@ -75,13 +79,37 @@ def init_vector_db():
                 content TEXT NOT NULL,
                 category TEXT NOT NULL DEFAULT 'general',
                 embedding TEXT NOT NULL,
-                created_at REAL NOT NULL
+                created_at REAL NOT NULL DEFAULT 0.0,
+                session_id TEXT DEFAULT NULL
             )
         """)
         conn.commit()
+
+        # Check existing columns to dynamically migrate missing columns on older databases
+        cursor.execute("PRAGMA table_info(memories)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+
+        if "category" not in existing_cols:
+            cursor.execute("ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'general'")
+            print("[VectorMemory] Auto-migrated: added missing column 'category'")
+
+        if "created_at" not in existing_cols:
+            cursor.execute("ALTER TABLE memories ADD COLUMN created_at REAL NOT NULL DEFAULT 0.0")
+            print("[VectorMemory] Auto-migrated: added missing column 'created_at'")
+
+        if "session_id" not in existing_cols:
+            cursor.execute("ALTER TABLE memories ADD COLUMN session_id TEXT DEFAULT NULL")
+            print("[VectorMemory] Auto-migrated: added missing column 'session_id'")
+
+        # Create indexes for fast lookup and filtering
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_session_id ON memories(session_id)")
+
+        conn.commit()
         conn.close()
     except Exception as e:
-        print(f"[VectorMemory] DB init error: {e}")
+        print(f"[VectorMemory] DB init/migration error: {e}")
 
 
 _init_db = init_vector_db
@@ -237,7 +265,7 @@ async def embed_text_async(text: str) -> Optional[List[float]]:
     return None
 
 
-def store_memory_sync(content: str, category: str, embedding: List[float]) -> bool:
+def store_memory_sync(content: str, category: str, embedding: List[float], session_id: Optional[str] = None) -> bool:
     """Synchronously insert an embedded memory into SQLite."""
     try:
         conn = sqlite3.connect(_DB_PATH)
@@ -245,8 +273,8 @@ def store_memory_sync(content: str, category: str, embedding: List[float]) -> bo
         emb_json = json.dumps(embedding)
         now = time.time()
         cursor.execute(
-            "INSERT INTO memories (content, category, embedding, created_at) VALUES (?, ?, ?, ?)",
-            (content.strip(), category, emb_json, now)
+            "INSERT INTO memories (content, category, embedding, created_at, session_id) VALUES (?, ?, ?, ?, ?)",
+            (content.strip(), category, emb_json, now, session_id)
         )
         conn.commit()
         conn.close()
@@ -256,14 +284,14 @@ def store_memory_sync(content: str, category: str, embedding: List[float]) -> bo
         return False
 
 
-async def store_memory(content: str, category: str = "general") -> bool:
+async def store_memory(content: str, category: str = "general", session_id: Optional[str] = None) -> bool:
     """Asynchronously embed and store a memory."""
     if not content or len(content.strip()) < 5:
         return False
     emb = await embed_text_async(content)
     if emb is None:
         return False
-    return await asyncio.to_thread(store_memory_sync, content, category, emb)
+    return await asyncio.to_thread(store_memory_sync, content, category, emb, session_id)
 
 
 def _load_all_memories_sync() -> List[Tuple[int, str, str, List[float], float]]:
@@ -365,7 +393,7 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
     return scored[:top_k]
 
 
-async def extract_and_index_turn(user_msg: str, assistant_msg: str):
+async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: Optional[str] = None):
     """
     Background worker that indexes significant user statements, preferences, and discussions.
     Runs 100% asynchronously after turn completion (0ms user impact).
@@ -413,7 +441,7 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str):
             memory_text = f"Master: {user_trimmed}"
 
     t_idx = time.time()
-    stored = await store_memory(memory_text, category=category)
+    stored = await store_memory(memory_text, category=category, session_id=session_id)
     idx_ms = (time.time() - t_idx) * 1000.0
     if stored:
         print(f"[VectorMemory] 💾 Background indexed '{category}' memory in {idx_ms:.1f}ms")

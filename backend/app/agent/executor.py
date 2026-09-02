@@ -3438,7 +3438,8 @@ class AgentExecutor:
                     if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message and not is_coder_mode:
                         try:
                             from app.memory.vector_memory import extract_and_index_turn
-                            asyncio.create_task(extract_and_index_turn(user_message, assistant_final_speech))
+                            _sid = (overrides or {}).get("session_id")
+                            asyncio.create_task(extract_and_index_turn(user_message, assistant_final_speech, session_id=_sid))
                         except Exception:
                             pass
                     yield "final_history", final_history, backend_used
@@ -3499,7 +3500,8 @@ class AgentExecutor:
             if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message and not is_coder_mode:
                 try:
                     from app.memory.vector_memory import extract_and_index_turn
-                    asyncio.create_task(extract_and_index_turn(user_message, assistant_final_speech))
+                    _sid = (overrides or {}).get("session_id")
+                    asyncio.create_task(extract_and_index_turn(user_message, assistant_final_speech, session_id=_sid))
                 except Exception:
                     pass
             yield "final_history", final_history, backend_used
