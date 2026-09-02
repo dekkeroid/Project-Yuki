@@ -76,11 +76,13 @@ def _check_process_alive(target) -> bool:
     try:
         if target.isdigit():
             return psutil.pid_exists(int(target))
-        wanted = target.lower()
+        wanted = target.lower().strip()
+        wanted_clean = wanted[:-4] if wanted.endswith(".exe") else wanted
         for proc in psutil.process_iter(["pid", "name"]):
             try:
-                name = proc.info.get("name") or ""
-                if name.lower() == wanted:
+                name = (proc.info.get("name") or "").lower()
+                name_clean = name[:-4] if name.endswith(".exe") else name
+                if name == wanted or name_clean == wanted_clean or (len(wanted_clean) > 3 and wanted_clean in name_clean):
                     return True
             except Exception:
                 continue
@@ -341,7 +343,12 @@ def evaluate_watcher_condition(task: Dict[str, Any], previous_fired: bool) -> bo
 
     if monitor == "process":
         alive = _check_process_alive(target)
-        curr_truth = not alive if condition == "gone" else alive if condition == "present" else False
+        if condition in ("gone", "closed", "close", "quit", "exit", "stopped", "killed", "terminated", "process"):
+            curr_truth = not alive
+        elif condition in ("present", "open", "opened", "running", "started"):
+            curr_truth = alive
+        else:
+            curr_truth = not alive
 
     elif monitor == "window":
         curr_truth = _check_window_state(target, condition)
@@ -467,6 +474,14 @@ def set_main_loop(loop):
 
 
 def _run_shell_action(command: str) -> str:
+    if not command:
+        return "empty shell command"
+    cmd_clean = command.strip()
+    for prefix in ("app_name:", "app:", "launch:", "open:", "launch_app:", "start:"):
+        if cmd_clean.lower().startswith(prefix):
+            app_target = cmd_clean.split(":", 1)[1].strip()
+            from app.tools.system import launch_app
+            return launch_app(app_name=app_target)
     try:
         subprocess.Popen(command, shell=True)
         print(f"[ScheduledTasks] Executed shell action: {command}")
