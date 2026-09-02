@@ -333,6 +333,11 @@ class AgentExecutor:
                 run_as_admin=bool(kwargs.get("run_as_admin", False)),
                 new_window=bool(kwargs.get("new_window", False))
             ),
+            "close_app": lambda **kwargs: manage_process(
+                "kill",
+                name=kwargs.get("app_name") or kwargs.get("name") or kwargs.get("target") or (list(kwargs.values())[0] if kwargs else ""),
+                pid=kwargs.get("pid")
+            ),
             "set_system_volume": lambda **kwargs: set_system_volume(
                 int(kwargs.get("volume_level") or kwargs.get("volume") or kwargs.get("level") or (list(kwargs.values())[0] if kwargs else 0))
             ),
@@ -934,6 +939,11 @@ class AgentExecutor:
                 action_type = "tool"
                 action_tool = "launch_app"
                 action_args = {"app_name": target_app, "query": target_app}
+            elif any(do.lower().startswith(p) for p in ("close_app:", "close:", "kill:", "terminate:")):
+                target_app = do.split(":", 1)[1].strip()
+                action_type = "tool"
+                action_tool = "close_app"
+                action_args = {"app_name": target_app, "name": target_app, "action": "kill"}
             elif ":" in do and (do.split(":", 1)[0].strip() in self.tools or self._resolve_tool_name(do.split(":", 1)[0].strip()) in self.tools):
                 t_cand, t_arg = do.split(":", 1)
                 action_type = "tool"
@@ -1116,6 +1126,8 @@ class AgentExecutor:
             return name
         if name.startswith("jarvis_") and name[len("jarvis_"):] in self.tools:
             return name[len("jarvis_"):]
+        if f"jarvis_{name}" in self.tools:
+            return f"jarvis_{name}"
         return name
 
     def _run_scheduled_action(self, action_type, action_command, action_tool, action_args) -> str:

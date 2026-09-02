@@ -489,7 +489,12 @@ def _dispatch_scheduled_task(**kwargs) -> str:
         elif do.lower().startswith("power:"):
             action_type = "power"
             action_args = {"action": do.split(":", 1)[1].strip() or "shutdown"}
-        elif ":" in do and do.split(":", 1)[0].strip().lower() in ("launch_app", "open_or_play_file", "take_screenshot"):
+        elif any(do.lower().startswith(p) for p in ("close_app:", "close:", "kill:", "terminate:")):
+            target_app = do.split(":", 1)[1].strip()
+            action_type = "tool"
+            action_tool = "close_app"
+            action_args = {"app_name": target_app, "name": target_app, "action": "kill"}
+        elif ":" in do and do.split(":", 1)[0].strip().lower() in ("launch_app", "close_app", "open_or_play_file", "take_screenshot"):
             p_clean, val = do.split(":", 1)
             action_type = "tool"
             action_tool = p_clean.strip()

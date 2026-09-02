@@ -1737,19 +1737,32 @@ def manage_process(action: str, name: str = None, pid: int = None) -> str:
             return "Error: name or pid is required to kill a process."
             
         killed_count = 0
+        name_lower = name.lower().strip() if name else ""
+        name_clean = name_lower[:-4] if name_lower.endswith(".exe") else name_lower
+
         for p in psutil.process_iter(['pid', 'name']):
             try:
                 if pid is not None and p.info['pid'] == pid:
                     p.kill()
                     return f"Successfully terminated process with PID {pid} ({p.info['name']})."
-                elif name and p.info['name'].lower() == name.lower():
-                    p.kill()
-                    killed_count += 1
+                elif name_lower:
+                    p_name = (p.info.get('name') or '').lower()
+                    p_clean = p_name[:-4] if p_name.endswith(".exe") else p_name
+                    if p_name == name_lower or p_clean == name_clean or (len(name_clean) > 3 and name_clean in p_clean):
+                        p.kill()
+                        killed_count += 1
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
                 
         if killed_count > 0:
             return f"Successfully terminated {killed_count} instance(s) of '{name}'."
+
+        # Fallback: try closing via window title if no direct process matched
+        if name:
+            win_res = control_window("close", window_title=name_clean)
+            if "closed" in win_res.lower() or "success" in win_res.lower():
+                return f"Closed window for '{name}'."
+
         return f"No active process found matching name='{name}' or pid={pid}."
         
     return f"Error: Unknown action '{action}'"
