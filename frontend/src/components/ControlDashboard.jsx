@@ -5957,7 +5957,7 @@ const ControlDashboard = ({
                           }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ fontSize: '0.76rem', fontWeight: 600, color: '#c4b5fd' }}>
-                                🖥️ Use Separate LLM for Embedding
+                                Use Separate LLM for Embedding
                               </span>
                               <button
                                 type="button"
