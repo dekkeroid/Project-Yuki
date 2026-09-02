@@ -15,23 +15,41 @@ def get_scheduled_task_schema(name: str = "manage_scheduled_task") -> dict:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["watch", "set_delayed", "set_interval", "list", "cancel", "pause", "resume"]
+                        "enum": ["watch", "set_delayed", "set_interval", "list", "cancel", "pause", "resume"],
+                        "description": "The scheduling action to perform."
                     },
                     "target": {
                         "type": "string",
-                        "description": "Target to watch: window/app name (e.g. 'antigravity', 'Chrome'), process name, file path, hardware metric (battery, storage, network), or command."
+                        "description": "App, window, or process name to monitor (e.g. 'antigravity', 'Task Manager', 'Spotify'). Also supports hardware metrics: 'battery', 'storage', 'network'."
                     },
                     "condition": {
                         "type": "string",
-                        "description": "Trigger condition: window (minimized/closed/open/focused), process (gone/present), battery (low/charging), storage (low), network (disconnected), file (changed/deleted)."
+                        "description": "Condition that triggers the action: 'closed' (when an app/window/process closes), 'opened' (when launched), 'minimized', 'maximized', 'focused', 'unfocused', 'battery_low', 'battery_charging', 'storage_low', 'network_disconnected', 'network_connected'."
+                    },
+                    "run_tool": {
+                        "type": "string",
+                        "description": "Name of the Yuki tool to execute when triggered (e.g. 'launch_app' to open an app, 'close_app' to close an app, 'take_screenshot', 'open_or_play_file')."
+                    },
+                    "run_args": {
+                        "type": "object",
+                        "description": "Key-value arguments for run_tool (e.g. {'app_name': 'Firefox'} for launch_app, {'app_name': 'Yuki AI.exe'} for close_app)."
+                    },
+                    "run_builtin": {
+                        "type": "string",
+                        "enum": ["shutdown", "restart", "sleep", "lock", "sound:tada", "sound:chime", "sound:beep"],
+                        "description": "Built-in system power or audio chime to execute."
+                    },
+                    "run_notify": {
+                        "type": "string",
+                        "description": "Message to show in a Windows popup dialog or notification toast (e.g. 'Take a break!')."
+                    },
+                    "run_command": {
+                        "type": "string",
+                        "description": "Raw shell command to execute."
                     },
                     "seconds": {
                         "type": "number",
-                        "description": "Delay duration, repeat interval, or watcher poll rate in seconds (defaults to 1.5s for window watchers)."
-                    },
-                    "do": {
-                        "type": "string",
-                        "description": "Action to run: 'popup:<msg>', 'notify:<msg>', 'sound:tada', 'telegram:<msg>', 'power:shutdown', tool name, or shell command."
+                        "description": "Delay duration, repeat interval, or watcher poll rate in seconds (defaults to 1.5s for watchers)."
                     },
                     "count": {
                         "type": "integer",
@@ -40,6 +58,10 @@ def get_scheduled_task_schema(name: str = "manage_scheduled_task") -> dict:
                     "item_id": {
                         "type": "integer",
                         "description": "Task ID (for action='cancel' | 'pause' | 'resume')."
+                    },
+                    "do": {
+                        "type": "string",
+                        "description": "Optional compact shorthand (e.g. 'power:shutdown', 'popup:Hello', 'sound:tada'). Structured fields above are preferred."
                     }
                 },
                 "required": ["action"]
