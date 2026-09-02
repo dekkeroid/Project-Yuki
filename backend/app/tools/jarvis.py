@@ -425,7 +425,7 @@ def jarvis_web_scrape(url: str, max_chars: int = None) -> str:
             import urllib.parse
             domain = urllib.parse.urlparse(url).netloc.replace("www.", "")
             from app.tools.web import extract_clean_markdown
-            clean_md = extract_clean_markdown(raw_html, max_chars=max_chars, domain=domain)
+            clean_md = extract_clean_markdown(raw_html, max_chars=max_chars, domain=domain, page_url=url)
             if clean_md and len(clean_md.strip()) >= 80:
                 return f"=== Scraped Content ({url}) ===\n{clean_md}"
         except Exception:
@@ -831,7 +831,11 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
     def generate_via_huggingface(prompt_text: str, token: str, model_name: str = "", chosen_style: str = "auto"):
         if not token:
             return None
-        target_model = model_name or "black-forest-labs/FLUX.1-dev"
+        raw_model = (model_name or "").strip().replace("models/", "")
+        if not raw_model or "/" not in raw_model or any(k in raw_model.lower() for k in ("gemini", "gpt", "claude", "qwen", "llama", "deepseek")):
+            target_model = "black-forest-labs/FLUX.1-dev"
+        else:
+            target_model = raw_model
         styled_prompt = enrich_prompt_for_style(prompt_text, chosen_style)
         endpoints = [
             f"https://router.huggingface.co/hf-inference/models/{target_model}",
@@ -855,7 +859,7 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
                     if retry_resp.status_code == 200 and len(retry_resp.content) > 5000:
                         return retry_resp.content
             except Exception as e:
-                print(f"[ImageGen][HuggingFace] Attempt error: {e}")
+                print(f"[ImageGen][HuggingFace] Attempt error via {ep}: {e}")
         return None
 
     def generate_via_stable_horde(prompt_text: str, aspect: str, api_token: str, model_choice: str, chosen_style: str = "auto"):
@@ -995,10 +999,11 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
 
     # Strategy 2: Google AI Studio / Gemini REST API (if base_url is Google or Strategy 1 failed)
     if not image_bytes and api_key and ("googleapis.com" in base_url or not base_url or "gemini" in (image_model or "").lower() or "imagen" in (image_model or "").lower()):
-        clean_model = image_model.replace("models/", "") if image_model else "imagen-3.0-generate-002"
+        clean_model = image_model.replace("models/", "").strip() if image_model else ""
+        imagen_target = clean_model if (clean_model and clean_model.lower().startswith("imagen-")) else "imagen-3.0-generate-002"
         # Try Imagen :predict endpoint
         try:
-            g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:predict?key={api_key}"
+            g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{imagen_target}:predict?key={api_key}"
             g_payload = {
                 "instances": [{"prompt": prompt}],
                 "parameters": {"sampleCount": 1, "aspectRatio": aspect_ratio}
@@ -1009,7 +1014,7 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
                 preds = g_data.get("predictions", [])
                 if preds and preds[0].get("bytesBase64Encoded"):
                     image_bytes = base64.b64decode(preds[0]["bytesBase64Encoded"])
-                    engine_used = clean_model
+                    engine_used = imagen_target
             else:
                 last_error = f"Google Predict HTTP {g_resp.status_code}: {g_resp.text[:300]}"
         except Exception as e:
@@ -1017,8 +1022,9 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
 
         # Try Gemini multimodal :generateContent inline_data
         if not image_bytes:
+            gemini_target = clean_model if (clean_model and "gemini" in clean_model.lower()) else "gemini-2.0-flash"
             try:
-                g_url2 = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
+                g_url2 = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_target}:generateContent?key={api_key}"
                 g_payload2 = {
                     "contents": [{"parts": [{"text": f"Generate an image of: {prompt}"}]}]
                 }
@@ -1031,13 +1037,13 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
                         for p in parts:
                             if "inline_data" in p and p["inline_data"].get("data"):
                                 image_bytes = base64.b64decode(p["inline_data"]["data"])
-                                engine_used = clean_model
+                                engine_used = gemini_target
                                 break
                             elif "text" in p:
                                 b64_match = re.search(r'data:image/[^;]+;base64,([A-Za-z0-9+/=]+)', p["text"])
                                 if b64_match:
                                     image_bytes = base64.b64decode(b64_match.group(1))
-                                    engine_used = clean_model
+                                    engine_used = gemini_target
                                     break
             except Exception as e:
                 last_error = str(e)

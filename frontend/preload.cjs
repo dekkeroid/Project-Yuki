@@ -117,6 +117,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openSettingsWindow: () => {
     ipcRenderer.send('open-settings-window');
   },
+  openPath: (targetPath) => {
+    return ipcRenderer.invoke('open-path', targetPath);
+  },
+  openExternalUrl: (url) => {
+    return ipcRenderer.invoke('open-external-url', url);
+  },
   openChatWindow: (payload) => {
     ipcRenderer.send('open-chat-window', payload);
   },
@@ -190,6 +196,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   minimizeCanvasWindow: () => {
     ipcRenderer.send('minimize-canvas-window');
+  },
+  maximizeCanvasWindow: () => {
+    ipcRenderer.send('toggle-maximize-canvas-window');
   },
   closeCanvasWindow: () => {
     ipcRenderer.send('close-canvas-window');

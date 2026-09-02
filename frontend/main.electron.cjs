@@ -995,25 +995,39 @@ function createWindow() {
 
     win.once('ready-to-show', () => {
       win.show();
-      // For graphics mode, measure SVG/canvas content and resize to fit
+      // For graphics mode, measure SVG, canvas, or HTML card content and resize to fit
       if (isGraphics) {
-        win.webContents.executeJavaScript(`
-          (() => {
-            const el = document.querySelector('svg') || document.querySelector('canvas');
-            if (!el) return null;
-            const rect = el.getBoundingClientRect();
-            return { w: Math.ceil(rect.width), h: Math.ceil(rect.height) };
-          })()
-        `).then((size) => {
-          if (size && size.w > 0 && size.h > 0) {
-            const pad = 40;
-            const newW = Math.max(MIN_W, size.w + pad * 2);
-            const newH = Math.max(MIN_H, size.h + pad * 2);
-            const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
-            win.setSize(Math.min(newW, screenW - 100), Math.min(newH, screenH - 100));
-            win.center();
-          }
-        }).catch(() => {});
+        const resizeToContent = () => {
+          if (win.isDestroyed()) return;
+          win.webContents.executeJavaScript(`
+            (() => {
+              const container = document.getElementById('zoom-container');
+              if (!container) return null;
+              const el = container.querySelector('svg') || 
+                         container.querySelector('canvas') || 
+                         container.querySelector('.card') || 
+                         container.firstElementChild || 
+                         container;
+              if (!el) return null;
+              const rect = el.getBoundingClientRect();
+              return { w: Math.ceil(rect.width), h: Math.ceil(rect.height) };
+            })()
+          `).then((size) => {
+            if (size && size.w > 0 && size.h > 0) {
+              const pad = 48;
+              const topBarHeight = 38;
+              const newW = Math.max(MIN_W, size.w + pad * 2);
+              const newH = Math.max(MIN_H, size.h + pad * 2 + topBarHeight);
+              const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
+              win.setSize(Math.min(newW, screenW - 80), Math.min(newH, screenH - 80));
+              win.center();
+            }
+          }).catch(() => {});
+        };
+
+        resizeToContent();
+        setTimeout(resizeToContent, 350);
+        setTimeout(resizeToContent, 1000);
       }
     });
 
@@ -1032,6 +1046,17 @@ function createWindow() {
     const senderWin = BrowserWindow.fromWebContents(event.sender);
     if (senderWin && !senderWin.isDestroyed()) {
       senderWin.minimize();
+    }
+  });
+
+  ipcMain.on('toggle-maximize-canvas-window', (event) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (senderWin && !senderWin.isDestroyed()) {
+      if (senderWin.isMaximized()) {
+        senderWin.unmaximize();
+      } else {
+        senderWin.maximize();
+      }
     }
   });
 
@@ -1075,12 +1100,22 @@ function createWindow() {
         if (!svgData) return { success: false, error: 'No SVG found in page' };
         fs.writeFileSync(savePath, svgData, 'utf-8');
       } else {
-        // Capture only the SVG/canvas element, hiding overlay buttons
+        // Capture the SVG/canvas/card element, hiding UI controls
         const bounds = await senderWin.webContents.executeJavaScript(`
           (() => {
             const overlay = document.querySelector('.canvas-overlay');
-            const el = document.querySelector('svg') || document.querySelector('canvas');
+            const topBar = document.querySelector('.canvas-top-bar');
+            const dragHint = document.querySelector('.drag-hint');
             if (overlay) overlay.style.display = 'none';
+            if (topBar) topBar.style.display = 'none';
+            if (dragHint) dragHint.style.display = 'none';
+
+            const container = document.getElementById('zoom-container');
+            const el = container ? (container.querySelector('svg') || 
+                                    container.querySelector('canvas') || 
+                                    container.querySelector('.card') || 
+                                    container.firstElementChild || 
+                                    container) : (document.querySelector('svg') || document.querySelector('canvas'));
             if (!el) return null;
             const r = el.getBoundingClientRect();
             return { x: Math.max(0, Math.round(r.x) - 1), y: Math.max(0, Math.round(r.y) - 1), width: Math.round(r.width) + 2, height: Math.round(r.height) + 2 };
@@ -1093,9 +1128,13 @@ function createWindow() {
         } else {
           image = await senderWin.webContents.capturePage();
         }
-        // Restore overlay
+        // Restore UI controls
         await senderWin.webContents.executeJavaScript(
-          `(() => { const o = document.querySelector('.canvas-overlay'); if (o) o.style.display = ''; })()`
+          `(() => { 
+            const o = document.querySelector('.canvas-overlay'); if (o) o.style.display = ''; 
+            const tb = document.querySelector('.canvas-top-bar'); if (tb) tb.style.display = '';
+            const dh = document.querySelector('.drag-hint'); if (dh) dh.style.display = '';
+          })()`
         );
         fs.writeFileSync(savePath, image.toPNG());
       }
@@ -1103,6 +1142,25 @@ function createWindow() {
     } catch (e) {
       console.error('[Canvas] Save failed:', e);
       return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('open-path', async (_event, targetPath) => {
+    if (!targetPath) return false;
+    try {
+      let cleanPath = targetPath.trim().replace(/^file:\/\/\/?/, '');
+      if (cleanPath.length === 2 && cleanPath[1] === ':') {
+        cleanPath += '\\';
+      }
+      console.log(`[Electron IPC] Opening path in default application: ${cleanPath}`);
+      const err = await shell.openPath(cleanPath);
+      if (err) {
+        console.warn(`[Electron IPC] shell.openPath returned notice: ${err}`);
+      }
+      return !err;
+    } catch (e) {
+      console.error('[Electron IPC] openPath failed:', e);
+      return false;
     }
   });
 

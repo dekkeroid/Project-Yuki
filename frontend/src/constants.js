@@ -504,7 +504,7 @@ export const cleanTextForTTS = (text) => {
   if (!text) return '';
 
   // 0. Strip unique animation and emotion tags
-  let clean = text.replace(/<(?:yuki_)?(?:anim|emotion):[a-zA-Z0-9_\-]+\/?>|\[(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\]/gi, '');
+  let clean = text.replace(/[<\[\(](?:yuki_)?(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\s*(?:\/?>|[\]\)])/gi, '');
 
   // 0.5 Convert LaTeX math into spoken English words
   clean = convertLatexToSpokenText(clean);

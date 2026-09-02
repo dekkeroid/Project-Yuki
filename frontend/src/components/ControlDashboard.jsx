@@ -500,8 +500,10 @@ const ControlDashboard = ({
   onVoiceVolumeChange,
   availableLlmModels = [],
   availableSimpleLlmModels = [],
+  availableEmbeddingModels = [],
   onRefreshLlmModels,
   onRefreshSimpleLlmModels,
+  onRefreshEmbeddingModels,
   preferHeadsetMic = false,
   onPreferHeadsetMicChange,
   hostPlatform = 'Unknown',
@@ -515,6 +517,7 @@ const ControlDashboard = ({
   const [settingsSubTab, setSettingsSubTab] = useState('general'); // 'general' | 'avatar' | 'voice' | 'brain'
   const refreshTimerRef = useRef(null);
   const refreshSimpleTimerRef = useRef(null);
+  const refreshEmbeddingTimerRef = useRef(null);
 
   const [showRelationshipCard, setShowRelationshipCard] = useState(false);
   const [showJournalModal, setShowJournalModal] = useState(false);
@@ -753,6 +756,12 @@ const ControlDashboard = ({
   // Settings State
   const [settings, setSettings] = useState({
     llm_model: '',
+    enable_vector_memory: false,
+    embedding_model: '',
+    embedding_use_local: false,
+    embedding_backend: 'lmstudio',
+    embedding_base_url: 'http://127.0.0.1:1234',
+    embedding_api_key: '',
     llm_backend: 'lmstudio',
     llm_base_url: '',
     llm_api_key: '',
@@ -781,6 +790,7 @@ const ControlDashboard = ({
     crawler_paused: false,
     tagger_paused: false,
     active_vrm_model: 'default.vrm',
+    start_with_last_avatar_size: true,
     whisper_model: 'base',
     use_local_whisper: true,
     stt_language: 'en',
@@ -5896,6 +5906,227 @@ const ControlDashboard = ({
                       })()}
                     </div>
 
+                    {/* Long-Term Vector Memory & Embeddings Selection */}
+                    <div className="identity-field" style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                        <span className="field-label" style={{ color: '#a78bfa' }}>🧠 Long-Term Memory (Embeddings)</span>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateSetting('enable_vector_memory', !settings.enable_vector_memory)}
+                          style={{
+                            background: settings.enable_vector_memory ? 'linear-gradient(135deg, #a855f7, #7c3aed)' : 'rgba(255,255,255,0.08)',
+                            border: `1px solid ${settings.enable_vector_memory ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                            borderRadius: '12px',
+                            width: '38px',
+                            height: '20px',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            flexShrink: 0
+                          }}
+                        >
+                          <div style={{
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: '#fff',
+                            position: 'absolute',
+                            top: '2px',
+                            left: settings.enable_vector_memory ? '20px' : '2px',
+                            transition: 'left 0.2s ease',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                          }} />
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '6px' }}>
+                        Uses your configured LLM endpoint and API key to retrieve episodic memories across days. Select an embedding model from your provider (e.g. <code style={{ color: '#a78bfa' }}>text-embedding-004</code>, <code style={{ color: '#a78bfa' }}>text-embedding-3-small</code>, or <code style={{ color: '#a78bfa' }}>nomic-embed-text</code>).
+                      </div>
+                      {settings.enable_vector_memory && (
+                        <div>
+                          {/* Toggle: Use Local / Dedicated Endpoint for Embedding */}
+                          <div style={{
+                            marginTop: '8px',
+                            marginBottom: '10px',
+                            padding: '10px 12px',
+                            background: 'rgba(167, 139, 250, 0.07)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(167, 139, 250, 0.2)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.76rem', fontWeight: 600, color: '#c4b5fd' }}>
+                                🖥️ Use Local LLM for Embedding
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextVal = !settings.embedding_use_local;
+                                  handleUpdateSetting('embedding_use_local', nextVal);
+                                  if (onRefreshEmbeddingModels) setTimeout(() => onRefreshEmbeddingModels(), 300);
+                                }}
+                                style={{
+                                  background: settings.embedding_use_local ? 'linear-gradient(135deg, #a855f7, #7c3aed)' : 'rgba(255,255,255,0.08)',
+                                  border: `1px solid ${settings.embedding_use_local ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                                  borderRadius: '12px',
+                                  width: '38px',
+                                  height: '20px',
+                                  cursor: 'pointer',
+                                  position: 'relative',
+                                  transition: 'all 0.2s ease',
+                                  flexShrink: 0
+                                }}
+                              >
+                                <div style={{
+                                  width: '14px',
+                                  height: '14px',
+                                  borderRadius: '50%',
+                                  background: '#fff',
+                                  position: 'absolute',
+                                  top: '2px',
+                                  left: settings.embedding_use_local ? '20px' : '2px',
+                                  transition: 'left 0.2s ease',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                                }} />
+                              </button>
+                            </div>
+                            <div style={{ fontSize: '0.70rem', color: '#94a3b8' }}>
+                              {settings.embedding_use_local
+                                ? "Routing embedding generation to your local server (LM Studio, Ollama, vLLM) or a custom URL."
+                                : "Using your configured primary LLM endpoint & API key for embeddings."}
+                            </div>
+
+                            {settings.embedding_use_local && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px', borderTop: '1px solid rgba(167, 139, 250, 0.15)', paddingTop: '8px' }}>
+                                {/* Separate Embedding Endpoint Selector */}
+                                <div>
+                                  <span className="field-label" style={{ fontSize: '0.72rem' }}>Separate embedding endpoint</span>
+                                  <select
+                                    value={settings.embedding_backend || 'lmstudio'}
+                                    onChange={async (e) => {
+                                      const b = e.target.value;
+                                      const defaults = {
+                                        lmstudio: 'http://127.0.0.1:1234',
+                                        ollama: 'http://127.0.0.1:11434',
+                                        vllm: 'http://127.0.0.1:8000/v1',
+                                        custom: 'http://127.0.0.1:1234'
+                                      };
+                                      const updates = { embedding_backend: b };
+                                      if (defaults[b]) updates.embedding_base_url = defaults[b];
+                                      await handleUpdateSetting(updates);
+                                      if (onRefreshEmbeddingModels) setTimeout(() => onRefreshEmbeddingModels(), 400);
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      padding: '6px 10px',
+                                      background: 'rgba(0,0,0,0.3)',
+                                      border: '1px solid rgba(255,255,255,0.12)',
+                                      borderRadius: '6px',
+                                      color: 'white',
+                                      fontSize: '0.76rem',
+                                      outline: 'none',
+                                      cursor: 'pointer',
+                                      marginTop: '3px'
+                                    }}
+                                  >
+                                    <option value="lmstudio">LM Studio (Local) — http://127.0.0.1:1234</option>
+                                    <option value="ollama">Ollama (Local) — http://127.0.0.1:11434</option>
+                                    <option value="vllm">vLLM (Local) — http://127.0.0.1:8000/v1</option>
+                                    <option value="custom">Custom Endpoint URL</option>
+                                  </select>
+                                </div>
+
+                                {/* Endpoint URL Input */}
+                                <div>
+                                  <span className="field-label" style={{ fontSize: '0.72rem' }}>Endpoint URL</span>
+                                  <input
+                                    type="text"
+                                    value={settings.embedding_base_url || ''}
+                                    onChange={(e) => handleUpdateSetting('embedding_base_url', e.target.value)}
+                                    onBlur={() => { if (onRefreshEmbeddingModels) setTimeout(() => onRefreshEmbeddingModels(), 300); }}
+                                    placeholder="http://127.0.0.1:1234"
+                                    style={{
+                                      width: '100%',
+                                      padding: '6px 10px',
+                                      background: 'rgba(0,0,0,0.3)',
+                                      border: '1px solid rgba(255,255,255,0.12)',
+                                      borderRadius: '6px',
+                                      color: 'white',
+                                      fontSize: '0.76rem',
+                                      outline: 'none',
+                                      marginTop: '3px'
+                                    }}
+                                  />
+                                </div>
+
+                                {/* Optional API Key Input */}
+                                <div>
+                                  <span className="field-label" style={{ fontSize: '0.72rem' }}>API Key (Optional)</span>
+                                  <input
+                                    type="password"
+                                    value={settings.embedding_api_key || ''}
+                                    onChange={(e) => handleUpdateSetting('embedding_api_key', e.target.value)}
+                                    placeholder="Leave empty for local LM Studio / Ollama..."
+                                    style={{
+                                      width: '100%',
+                                      padding: '6px 10px',
+                                      background: 'rgba(0,0,0,0.3)',
+                                      border: '1px solid rgba(255,255,255,0.12)',
+                                      borderRadius: '6px',
+                                      color: 'white',
+                                      fontSize: '0.76rem',
+                                      outline: 'none',
+                                      marginTop: '3px'
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Active Embedding Model Selection */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                            <span className="field-label">Active Embedding Model</span>
+                            <button
+                              type="button"
+                              onClick={onRefreshEmbeddingModels || onRefreshLlmModels}
+                              title="Refresh models from endpoint"
+                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                            >
+                              <RefreshCw style={{ width: '11px', height: '11px' }} /> Refresh
+                            </button>
+                          </div>
+                          {(() => {
+                            const candidateList = (settings.embedding_use_local && (availableEmbeddingModels || []).length > 0)
+                              ? availableEmbeddingModels
+                              : ((availableEmbeddingModels || []).length > 0 ? availableEmbeddingModels : availableLlmModels);
+                            const fetchedNames = (candidateList || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
+                            const allNames = Array.from(new Set([
+                              ...(settings.embedding_model ? [settings.embedding_model] : []),
+                              ...fetchedNames
+                            ]));
+                            const placeholder = settings.embedding_use_local
+                              ? "Search or select Local model (e.g. nomic-embed-text, all-minilm)..."
+                              : "Search or select Embedding model (e.g. models/gemini-embedding-001)...";
+                            return (
+                              <SearchableModelSelect
+                                value={settings.embedding_model || ''}
+                                onChange={(val) => handleUpdateSetting('embedding_model', val)}
+                                options={allNames}
+                                placeholder={placeholder}
+                              />
+                            );
+                          })()}
+                          {!settings.embedding_model && (
+                            <span style={{ fontSize: '0.66rem', color: '#fbbf24', marginTop: '4px', display: 'block' }}>
+                              ⚠️ No embedding model selected. Vector memory will remain dormant until a model is chosen.
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Image Generation Model Selection */}
                     <div className="identity-field" style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
@@ -7531,6 +7762,60 @@ const ControlDashboard = ({
                       <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px', display: 'block', lineHeight: '1.2' }}>
                         Use slider for quick 50%-200% scale, or type custom value (20% to 1000%).
                       </span>
+
+                      {/* Start with last used size toggle */}
+                      <div style={{
+                        background: (settings.start_with_last_avatar_size ?? true) ? 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(56,189,248,0.1) 100%)' : 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${(settings.start_with_last_avatar_size ?? true) ? 'rgba(168,85,247,0.35)' : 'rgba(255,255,255,0.08)'}`,
+                        borderRadius: '10px',
+                        padding: '8px 12px',
+                        marginTop: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '0.78rem', color: '#fff' }}>Start with last used size</div>
+                          <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+                            {(settings.start_with_last_avatar_size ?? true)
+                              ? 'Restores your customized avatar size on startup.'
+                              : 'Resets to 100% size every time Yuki launches.'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newVal = !(settings.start_with_last_avatar_size ?? true);
+                            handleUpdateSetting('start_with_last_avatar_size', newVal);
+                            try {
+                              localStorage.setItem('yuki-start-with-last-avatar-size', newVal ? 'true' : 'false');
+                            } catch (e) { }
+                          }}
+                          style={{
+                            background: (settings.start_with_last_avatar_size ?? true) ? 'linear-gradient(135deg, #a855f7, #7c3aed)' : 'rgba(255,255,255,0.08)',
+                            border: `1px solid ${(settings.start_with_last_avatar_size ?? true) ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                            borderRadius: '12px',
+                            width: '38px',
+                            height: '20px',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            flexShrink: 0
+                          }}
+                        >
+                          <div style={{
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: '#fff',
+                            position: 'absolute',
+                            top: '2px',
+                            left: (settings.start_with_last_avatar_size ?? true) ? '20px' : '2px',
+                            transition: 'left 0.2s ease',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                          }} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* VRM Avatar Model */}

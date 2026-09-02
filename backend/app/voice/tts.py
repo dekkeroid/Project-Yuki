@@ -506,8 +506,8 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*$', '', text, flags=re.IGNORECASE)
 
-    # 2. Strip unique animation and emotion tags (<yuki_anim:.../>, <yuki_emotion:.../>, [anim:...], [emotion:...])
-    text = re.sub(r'<(?:yuki_)?(?:anim|emotion):[a-zA-Z0-9_\-]+\/?>|\[(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\]', '', text, flags=re.IGNORECASE)
+    # 2. Strip unique animation and emotion tags (<yuki_anim:.../>, [yuki_anim:.../>, [anim:...], etc.)
+    text = re.sub(r'[<\[\(](?:yuki_)?(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\s*(?:\/?>|[\]\)])', '', text, flags=re.IGNORECASE)
 
     # 3. Selective Tag Stripping (only structural elements)
     # Replaces actual HTML tags (e.g. <div>, <br/>, <span ...>) but preserves <Enter>, <Ctrl>, etc.

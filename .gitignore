@@ -22,6 +22,12 @@ yuki_files.db-shm
 yuki.db
 yuki.db-wal
 yuki.db-shm
+vectors.db
+vectors.db-wal
+vectors.db-shm
+backend/app/memory/vectors.db*
+backend/.tool_cache/
+*.srt
 yuki_crawler.log
 metadata_tagger.log
 

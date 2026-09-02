@@ -67,35 +67,90 @@ export const parseMessageThought = (rawContent) => {
   // Strip raw tool badge lines, args blocks, & output blocks from clean text content
   cleanContent = cleanContent.replace(/🛠️\s*\*{0,2}\[[^\]]+\]\*{0,2}(?:\s*```tool_args\n[\s\S]*?\n```)?(?:\s*```(?:tool_output|terminal_stream)\n[\s\S]*?\n```)?\n?/g, '').trim();
 
-  // 3. Strip animation and emotion tags (<yuki_anim:.../>, <yuki_emotion:.../>)
-  const animTagRegex = /<(?:yuki_)?anim:([a-zA-Z0-9_\-]+)\/?>|\[anim:\s*([a-zA-Z0-9_\-]+)\]/gi;
-  const emotionTagRegex = /<(?:yuki_)?emotion:([a-zA-Z0-9_\-]+)\/?>|\[emotion:\s*([a-zA-Z0-9_\-]+)\]/gi;
+  // 3. Strip animation and emotion tags (<yuki_anim:.../>, [yuki_anim:.../>, etc.)
+  const animTagRegex = /[<\[\(](?:yuki_)?anim:\s*([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])/gi;
+  const emotionTagRegex = /[<\[\(](?:yuki_)?emotion:\s*([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])/gi;
   cleanContent = cleanContent.replace(animTagRegex, '').replace(emotionTagRegex, '').replace(/[ \t]{2,}/g, ' ').trim();
 
   return { thoughts, toolBadges, cleanContent };
 };
 
-const handleOpenFileInSidebar = (filePath) => {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('yuki:open-file', { detail: { path: filePath } }));
-    if (window.electronAPI?.openChatWindow) {
-      window.electronAPI.openChatWindow({ openFile: filePath });
+const isInsideAgenticWorkspace = () => {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('mode') === 'chat';
+};
+
+const TEXT_CODE_EXTENSIONS = new Set([
+  'js', 'jsx', 'ts', 'tsx', 'py', 'json', 'css', 'scss', 'sass', 'less',
+  'html', 'htm', 'md', 'txt', 'c', 'cpp', 'cc', 'h', 'hpp', 'cs', 'java',
+  'rb', 'go', 'rs', 'rust', 'php', 'yaml', 'yml', 'toml', 'log', 'env',
+  'sh', 'bat', 'cmd', 'ps1', 'sql', 'ini', 'xml', 'svg', 'lua', 'vue', 'svelte'
+]);
+
+export const isTextCodeFile = (filePath) => {
+  if (!filePath || typeof filePath !== 'string') return false;
+  const ext = filePath.split('.').pop().toLowerCase();
+  return TEXT_CODE_EXTENSIONS.has(ext);
+};
+
+export const openPathInDefaultApp = async (targetPath) => {
+  if (!targetPath) return;
+  let cleanPath = targetPath.trim().replace(/^file:\/\/\/?/, '');
+  if (/^[a-zA-Z]:[\\\/]/.test(cleanPath)) {
+    cleanPath = cleanPath.replace(/\//g, '\\');
+  }
+  if (cleanPath.length === 2 && cleanPath[1] === ':') {
+    cleanPath += '\\';
+  }
+
+  console.log(`[ChatOverlay] openPathInDefaultApp called for: '${cleanPath}'`);
+
+  // 1. Try native Electron shell.openPath first (opens immediately in Windows)
+  if (window.electronAPI?.openPath) {
+    try {
+      const opened = await window.electronAPI.openPath(cleanPath);
+      if (opened) {
+        console.log(`[ChatOverlay] Successfully opened via Electron shell: '${cleanPath}'`);
+        return;
+      }
+    } catch (err) {
+      console.warn('[ChatOverlay] Electron openPath warning:', err);
     }
+  }
+
+  // 2. Fallback to backend API endpoint
+  try {
+    const res = await fetch(`${API_BASE}/api/system/open_explorer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: cleanPath })
+    });
+    const data = await res.json();
+    console.log(`[ChatOverlay] open_explorer backend response:`, data);
+  } catch (err) {
+    console.error('[ChatOverlay] Failed to open path via backend:', err);
   }
 };
 
-const handleOpenFolderInSidebar = (folderPath) => {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('yuki:open-folder', { detail: { path: folderPath } }));
-    if (window.electronAPI?.openChatWindow) {
-      window.electronAPI.openChatWindow({ openFolder: folderPath });
-    }
-    fetch(`${API_BASE}/api/system/open_explorer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: folderPath })
-    }).catch(() => {});
+export const handleOpenFileInSidebar = (filePath) => {
+  if (typeof window === 'undefined' || !filePath) return;
+
+  const inAgentic = isInsideAgenticWorkspace();
+  const isCode = isTextCodeFile(filePath);
+
+  if (inAgentic && isCode) {
+    // Inside Agentic Workspace for text/code files: open in File Inspector tab
+    window.dispatchEvent(new CustomEvent('yuki:open-file', { detail: { path: filePath } }));
+  } else {
+    // Media files (.mp4, .mp3, etc.), PDFs, binaries, OR any file clicked from the Main App Chat: open with Windows default app!
+    openPathInDefaultApp(filePath);
   }
+};
+
+export const handleOpenFolderInSidebar = (folderPath) => {
+  if (typeof window === 'undefined' || !folderPath) return;
+  // Folders and storage drives always open in Windows File Explorer
+  openPathInDefaultApp(folderPath);
 };
 
 export const openExternalUrl = (url) => {
@@ -320,7 +375,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
             key={matchIndex}
             type="button"
             onClick={() => handleOpenFileInSidebar(rawPath)}
-            title={`Click to open ${rawPath} in File Inspector`}
+            title={`Click to open ${rawPath}`}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -350,7 +405,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
             key={matchIndex}
             type="button"
             onClick={() => handleOpenFolderInSidebar(rawPath)}
-            title={`Click to open directory ${rawPath} in File Viewer`}
+            title={`Click to open directory ${rawPath} in File Explorer`}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -426,7 +481,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           key={matchIndex}
           type="button"
           onClick={() => handleOpenFileInSidebar(rawPath)}
-          title={`Click to open ${rawPath} in File Inspector`}
+          title={`Click to open ${rawPath}`}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -458,7 +513,7 @@ export const formatMessageText = (text, disableFileLinks = false) => {
           key={matchIndex}
           type="button"
           onClick={() => handleOpenFolderInSidebar(rawPath)}
-          title={`Click to open directory ${rawPath} in File Viewer`}
+          title={`Click to open directory ${rawPath} in File Explorer`}
           style={{
             display: 'inline-flex',
             alignItems: 'center',

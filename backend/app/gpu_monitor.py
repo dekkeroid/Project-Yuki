@@ -109,6 +109,25 @@ def _get_ps_script_path() -> Path:
     return _PS_SCRIPT_PATH
 
 
+def _get_powershell_executable() -> str:
+    import shutil
+    for name in ("powershell", "pwsh", "powershell.exe", "pwsh.exe"):
+        found = shutil.which(name)
+        if found:
+            return found
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    candidates = [
+        os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+        os.path.join(system_root, "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe"),
+        os.path.join(program_files, "PowerShell", "7", "pwsh.exe"),
+        os.path.join(program_files, "PowerShell", "6", "pwsh.exe"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return "powershell"
+
 def get_gpu_memory_usage() -> Dict[str, Any]:
     """Get per-process VRAM usage for all GPUs. Cached for 3 seconds."""
     global _cache, _cache_time
@@ -119,8 +138,9 @@ def get_gpu_memory_usage() -> Dict[str, Any]:
 
     try:
         script_path = _get_ps_script_path()
+        ps_exe = _get_powershell_executable()
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script_path)],
+            [ps_exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script_path)],
             capture_output=True, text=True, timeout=10,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )

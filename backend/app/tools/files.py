@@ -1304,7 +1304,15 @@ def read_file_content(file_path: str) -> str:
     if not file_path or not file_path.strip():
         return "Error: File path must not be empty."
 
-    path = os.path.abspath(os.path.expanduser(os.path.expandvars(file_path.strip())))
+    clean_p = file_path.strip().strip('"\'')
+    from pathlib import Path
+    cand_path = Path(os.path.expanduser(os.path.expandvars(clean_p)))
+    if not cand_path.is_absolute():
+        base = getattr(config, "BASE_DIR", None)
+        if base and (Path(base) / cand_path).exists():
+            cand_path = Path(base) / cand_path
+    path = os.path.abspath(str(cand_path))
+
     if not _is_safe_path(path, write_operation=False):
         return f"Access Denied: Reading files in sensitive system directory '{path}' is blocked."
 

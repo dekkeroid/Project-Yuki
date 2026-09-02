@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 export function useSystemMonitor({
   API_BASE,
   setModelName,
+  setIsBackendFullyReady,
   isSettingsOpen,
   activeTab
 }) {
@@ -26,13 +27,17 @@ export function useSystemMonitor({
         if (data.model) setModelName(data.model); // App.jsx originally used data.model
         if (data.model_name) setModelName(data.model_name);
         
+        if (data.backend_ready && setIsBackendFullyReady) {
+          setIsBackendFullyReady(true);
+        }
+
         if (data.active_tasks !== undefined) setActiveBackendProcessCount(data.active_tasks);
         if (data.system_idle_time !== undefined) setSystemIdleTime(data.system_idle_time);
       }
     } catch (e) {
       console.warn("Could not load health details from API:", e);
     }
-  }, [API_BASE, setModelName]);
+  }, [API_BASE, setModelName, setIsBackendFullyReady]);
 
   const fetchCrawlerStatus = useCallback(async () => {
     try {

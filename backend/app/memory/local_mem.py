@@ -4,15 +4,15 @@ from app import config
 from app.memory.mood_engine import MoodEngine, AXES as MOOD_AXES
 
 DEFAULT_MOOD_SPECTRUM = {
-    "happiness": 75,
-    "energy": 65,
-    "curiosity": 80,
-    "affection": 70,
-    "stress_level": 15,
-    "doomer": 20,
+    "happiness": 60,
+    "energy": 55,
+    "curiosity": 65,
+    "affection": 55,
+    "stress_level": 20,
+    "doomer": 25,
     "hunger": 30,
-    "horniness": 50,
-    "playfulness": 55,
+    "horniness": 45,
+    "playfulness": 50,
     "anger": 10
 }
 
@@ -61,6 +61,13 @@ class MemoryManager:
                 "crawler_paused": False,
                 "tagger_paused": True,
                 "active_vrm_model": "default.vrm",
+                "start_with_last_avatar_size": True,
+                "enable_vector_memory": False,
+                "embedding_model": "",
+                "embedding_use_local": False,
+                "embedding_backend": "lmstudio",
+                "embedding_base_url": "http://127.0.0.1:1234",
+                "embedding_api_key": "",
                 "whisper_model": "small",
                 "whisper_compute_type": "int8_float16",
                 "use_local_whisper": True,
@@ -226,6 +233,12 @@ class MemoryManager:
                 from app.agent.personas import get_clean_character_backstory
                 config.CHARACTER_PERSONA = get_clean_character_backstory(data)
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
+                config.START_WITH_LAST_AVATAR_SIZE = bool(data["settings"].get("start_with_last_avatar_size", getattr(config, "START_WITH_LAST_AVATAR_SIZE", True)))
+                config.ENABLE_VECTOR_MEMORY = bool(data["settings"].get("enable_vector_memory", getattr(config, "ENABLE_VECTOR_MEMORY", False)))
+                config.EMBEDDING_MODEL = str(data["settings"].get("embedding_model", getattr(config, "EMBEDDING_MODEL", ""))).strip()
+                config.EMBEDDING_USE_LOCAL = bool(data["settings"].get("embedding_use_local", getattr(config, "EMBEDDING_USE_LOCAL", False)))
+                config.EMBEDDING_BACKEND = str(data["settings"].get("embedding_backend", getattr(config, "EMBEDDING_BACKEND", "lmstudio"))).strip()
+                config.EMBEDDING_BASE_URL = str(data["settings"].get("embedding_base_url", getattr(config, "EMBEDDING_BASE_URL", "http://127.0.0.1:1234"))).strip()
                 config.NO_LLM_MODE = data["settings"].get("no_llm_mode", False)
                 config.LLM_BACKEND = data["settings"].get("llm_backend", config.LLM_BACKEND)
                 config.LLM_BASE_URL = data["settings"].get("llm_base_url", config.LLM_BASE_URL)
@@ -233,16 +246,20 @@ class MemoryManager:
                 raw_key = data["settings"].get("llm_api_key", config.LLM_API_KEY)
                 simple_key = data["settings"].get("llm_simple_api_key", config.LLM_SIMPLE_API_KEY)
                 coder_key = data["settings"].get("llm_coder_api_key", getattr(config, "LLM_CODER_API_KEY", ""))
+                emb_key = data["settings"].get("embedding_api_key", getattr(config, "EMBEDDING_API_KEY", ""))
                 from app.utils.security import decrypt_api_key
                 dec_raw = decrypt_api_key(raw_key) if (raw_key and ("enc_v1:" in str(raw_key) or "gAAAA" in str(raw_key))) else (raw_key or "")
                 dec_simple = decrypt_api_key(simple_key) if (simple_key and ("enc_v1:" in str(simple_key) or "gAAAA" in str(simple_key))) else (simple_key or "")
                 dec_coder = decrypt_api_key(coder_key) if (coder_key and ("enc_v1:" in str(coder_key) or "gAAAA" in str(coder_key))) else (coder_key or "")
+                dec_emb = decrypt_api_key(emb_key) if (emb_key and ("enc_v1:" in str(emb_key) or "gAAAA" in str(emb_key))) else (emb_key or "")
                 config.LLM_API_KEY = dec_raw
                 config.LLM_SIMPLE_API_KEY = dec_simple
                 config.LLM_CODER_API_KEY = dec_coder
+                config.EMBEDDING_API_KEY = dec_emb
                 data["settings"]["llm_api_key"] = dec_raw
                 data["settings"]["llm_simple_api_key"] = dec_simple
                 data["settings"]["llm_coder_api_key"] = dec_coder
+                data["settings"]["embedding_api_key"] = dec_emb
                 for ep in data["settings"].get("saved_custom_endpoints", []):
                     if isinstance(ep, dict) and ep.get("api_key") and ("enc_v1:" in str(ep["api_key"]) or "gAAAA" in str(ep["api_key"])):
                         ep["api_key"] = decrypt_api_key(ep["api_key"])

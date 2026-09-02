@@ -345,25 +345,56 @@ def extract_youtube_content(url: str, max_chars: int = 5000) -> str:
                                    playlist_items, description, transcript=transcript,
                                    max_chars=max_chars)
 
-
-async def async_extract_youtube_content(client: httpx.AsyncClient, url: str, max_chars: int = 5000) -> str:
+async def async_extract_youtube_content(client: httpx.AsyncClient, url: str, max_chars: int = 5000, need_transcript: bool = False) -> str:
     """
-    Asynchronously extracts rich metadata, tracklists, transcripts, and description from any YouTube URL.
+    Asynchronously extracts rich metadata, tracklists, transcripts, and description from any YouTube URL
+    using concurrent parallel fetches for oEmbed, HTML details, and optional speech transcripts.
     """
     if not is_youtube_url(url):
         return ""
 
     video_id, playlist_id, fetch_url = parse_youtube_ids(url)
 
-    # Layer 1: Official YouTube oEmbed API
-    oembed_data = {}
-    try:
-        oe_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(url)}&format=json"
-        oe_resp = await client.get(oe_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
-        if oe_resp.status_code == 200:
-            oembed_data = oe_resp.json()
-    except Exception:
-        pass
+    # Layer 1: Official YouTube oEmbed API (fast ~200-400ms)
+    async def fetch_oe():
+        try:
+            oe_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(url)}&format=json"
+            oe_resp = await client.get(oe_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2.5)
+            if oe_resp.status_code == 200:
+                return oe_resp.json()
+        except Exception:
+            pass
+        return {}
+
+    # Layer 2: Optional Spoken Transcript (only if explicitly needed; strictly bounded to 2.0s timeout)
+    async def fetch_tr():
+        if not video_id or not need_transcript:
+            return ""
+        transcript_budget = min(max_chars, 4000)
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(fetch_youtube_transcript, video_id, max_chars=transcript_budget),
+                timeout=2.0
+            )
+        except Exception:
+            return ""
+
+    # Layer 3: Direct Page Fetch for rich playlist & video details (fast 2.5s timeout)
+    async def fetch_html():
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        try:
+            resp = await client.get(fetch_url, headers=headers, timeout=2.5)
+            if resp.status_code == 200:
+                return resp.text
+        except Exception:
+            pass
+        return ""
+
+    # Run oEmbed, HTML, and optional transcript concurrently in parallel
+    oembed_data, transcript, html = await asyncio.gather(fetch_oe(), fetch_tr(), fetch_html())
 
     title = oembed_data.get("title", "")
     channel = oembed_data.get("author_name", "")
@@ -376,108 +407,87 @@ async def async_extract_youtube_content(client: httpx.AsyncClient, url: str, max
     publish_date = ""
     playlist_title = ""
     playlist_items = []
-    transcript = ""
 
-    # Layer 2: Extract Spoken Transcript (threaded to keep event loop responsive)
-    if video_id:
-        transcript_budget = min(max_chars, 4000)
-        try:
-            transcript = await asyncio.to_thread(fetch_youtube_transcript, video_id, max_chars=transcript_budget)
-        except Exception:
-            pass
+    if html:
+        # 3a. Player response (video details)
+        m_player = re.search(r"ytInitialPlayerResponse\s*=\s*({.+?});", html)
+        if m_player:
+            try:
+                p_data = json.loads(m_player.group(1))
+                v_det = p_data.get("videoDetails", {})
+                title = title or v_det.get("title", "")
+                channel = channel or v_det.get("author", "")
+                description = description or v_det.get("shortDescription", "")
+                publish_date = p_data.get("microformat", {}).get("playerMicroformatRenderer", {}).get("publishDate", "")
 
-    # Layer 3: Direct Page Fetch & Deep Scraping
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
+                sec = int(v_det.get("lengthSeconds", "0") or "0")
+                if sec > 0:
+                    m, s = divmod(sec, 60)
+                    h, m = divmod(m, 60)
+                    duration = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
-    try:
-        resp = await client.get(fetch_url, headers=headers, timeout=8.0)
-        if resp.status_code == 200:
-            html = resp.text
+                vc = v_det.get("viewCount")
+                if vc:
+                    try:
+                        views = f"{int(vc):,} views"
+                    except Exception:
+                        views = f"{vc} views"
+                keywords = v_det.get("keywords", []) or []
+            except Exception:
+                pass
 
-            # 3a. Player response (video details)
-            m_player = re.search(r"ytInitialPlayerResponse\s*=\s*({.+?});", html)
-            if m_player:
-                try:
-                    p_data = json.loads(m_player.group(1))
-                    v_det = p_data.get("videoDetails", {})
-                    title = title or v_det.get("title", "")
-                    channel = channel or v_det.get("author", "")
-                    description = description or v_det.get("shortDescription", "")
-                    publish_date = p_data.get("microformat", {}).get("playerMicroformatRenderer", {}).get("publishDate", "")
+        # 3b. Initial data (playlist/mix tracks)
+        m_init = re.search(r"ytInitialData\s*=\s*({.+?});", html)
+        if m_init:
+            try:
+                i_data = json.loads(m_init.group(1))
+                pl_obj = i_data.get("contents", {}).get("twoColumnWatchNextResults", {}).get("playlist", {}).get("playlist", {})
+                if pl_obj:
+                    playlist_title = pl_obj.get("title", "")
+                    for item in pl_obj.get("contents", [])[:15]:
+                        r = item.get("playlistPanelVideoRenderer", {})
+                        if r:
+                            t = r.get("title", {}).get("simpleText", "") or "".join(s.get("text", "") for s in r.get("title", {}).get("runs", []))
+                            a = r.get("shortBylineText", {}).get("runs", [{}])[0].get("text", "")
+                            d = r.get("lengthText", {}).get("simpleText", "")
+                            vid = r.get("videoId", "")
+                            if t:
+                                tag = f"- **{t}**" + (f" by {a}" if a else "") + (f" `[{d}]`" if d else "") + (f" (https://youtu.be/{vid})" if vid else "")
+                                playlist_items.append(tag)
 
-                    sec = int(v_det.get("lengthSeconds", "0") or "0")
-                    if sec > 0:
-                        m, s = divmod(sec, 60)
-                        h, m = divmod(m, 60)
-                        duration = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+                if not playlist_items:
+                    tabs = i_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+                    for tab in tabs:
+                        sections = tab.get("tabRenderer", {}).get("content", {}).get("sectionListRenderer", {}).get("contents", [])
+                        for sec in sections:
+                            items = sec.get("itemSectionRenderer", {}).get("contents", [])
+                            for it in items:
+                                vids = it.get("playlistVideoListRenderer", {}).get("contents", [])
+                                for v in vids[:20]:
+                                    r = v.get("playlistVideoRenderer", {})
+                                    if r:
+                                        t = r.get("title", {}).get("simpleText", "") or "".join(s.get("text", "") for s in r.get("title", {}).get("runs", []))
+                                        a = r.get("shortBylineText", {}).get("runs", [{}])[0].get("text", "")
+                                        d = r.get("lengthText", {}).get("simpleText", "")
+                                        vid = r.get("videoId", "")
+                                        if t:
+                                            playlist_items.append(f"- **{t}**" + (f" by {a}" if a else "") + (f" `[{d}]`" if d else "") + (f" (https://youtu.be/{vid})" if vid else ""))
+            except Exception:
+                pass
 
-                    vc = v_det.get("viewCount")
-                    if vc:
-                        try:
-                            views = f"{int(vc):,} views"
-                        except Exception:
-                            views = f"{vc} views"
-                    keywords = v_det.get("keywords", []) or []
-                except Exception:
-                    pass
-
-            # 3b. Initial data (playlist/mix tracks)
-            m_init = re.search(r"ytInitialData\s*=\s*({.+?});", html)
-            if m_init:
-                try:
-                    i_data = json.loads(m_init.group(1))
-                    pl_obj = i_data.get("contents", {}).get("twoColumnWatchNextResults", {}).get("playlist", {}).get("playlist", {})
-                    if pl_obj:
-                        playlist_title = pl_obj.get("title", "")
-                        for item in pl_obj.get("contents", [])[:15]:
-                            r = item.get("playlistPanelVideoRenderer", {})
-                            if r:
-                                t = r.get("title", {}).get("simpleText", "") or "".join(s.get("text", "") for s in r.get("title", {}).get("runs", []))
-                                a = r.get("shortBylineText", {}).get("runs", [{}])[0].get("text", "")
-                                d = r.get("lengthText", {}).get("simpleText", "")
-                                vid = r.get("videoId", "")
-                                if t:
-                                    tag = f"- **{t}**" + (f" by {a}" if a else "") + (f" `[{d}]`" if d else "") + (f" (https://youtu.be/{vid})" if vid else "")
-                                    playlist_items.append(tag)
-
-                    if not playlist_items:
-                        tabs = i_data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
-                        for tab in tabs:
-                            sections = tab.get("tabRenderer", {}).get("content", {}).get("sectionListRenderer", {}).get("contents", [])
-                            for sec in sections:
-                                items = sec.get("itemSectionRenderer", {}).get("contents", [])
-                                for it in items:
-                                    vids = it.get("playlistVideoListRenderer", {}).get("contents", [])
-                                    for v in vids[:20]:
-                                        r = v.get("playlistVideoRenderer", {})
-                                        if r:
-                                            t = r.get("title", {}).get("simpleText", "") or "".join(s.get("text", "") for s in r.get("title", {}).get("runs", []))
-                                            a = r.get("shortBylineText", {}).get("runs", [{}])[0].get("text", "")
-                                            d = r.get("lengthText", {}).get("simpleText", "")
-                                            vid = r.get("videoId", "")
-                                            if t:
-                                                playlist_items.append(f"- **{t}**" + (f" by {a}" if a else "") + (f" `[{d}]`" if d else "") + (f" (https://youtu.be/{vid})" if vid else ""))
-                except Exception:
-                    pass
-
-            # 3c. Fallback OpenGraph / meta tags
-            if not title:
-                m_og_t = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']+)["\']', html)
-                if m_og_t:
-                    title = m_og_t.group(1)
-            if not description:
-                m_og_d = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\']([^"\']+)["\']', html)
-                if m_og_d:
-                    description = m_og_d.group(1)
-            if not channel:
-                m_ch = re.search(r'<link\s+itemprop=["\']name["\']\s+content=["\']([^"\']+)["\']', html)
-                if m_ch:
-                    channel = m_ch.group(1)
-    except Exception:
-        pass
+        # 3c. Fallback OpenGraph / meta tags
+        if not title:
+            m_og_t = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']+)["\']', html)
+            if m_og_t:
+                title = m_og_t.group(1)
+        if not description:
+            m_og_d = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\']([^"\']+)["\']', html)
+            if m_og_d:
+                description = m_og_d.group(1)
+        if not channel:
+            m_ch = re.search(r'<link\s+itemprop=["\']name["\']\s+content=["\']([^"\']+)["\']', html)
+            if m_ch:
+                channel = m_ch.group(1)
 
     return format_youtube_markdown(title, channel, channel_url, duration, views,
                                    publish_date, keywords, playlist_title,
@@ -516,10 +526,104 @@ def anchor_by_query(text: str, query: str) -> str:
     return text
 
 
-def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "", query: str = "") -> str:
+def _extract_image_candidate(img_tag, page_url: str = "") -> Optional[tuple[str, str]]:
+    """
+    Extracts a clean, valid (caption, absolute_url) from an <img> or <picture> tag.
+    Returns None if the image is an icon, tracking pixel, base64 data URI, ad, or avatar.
+    """
+    if not img_tag or not hasattr(img_tag, "get"):
+        return None
+
+    # 1. Resolve candidate URL from lazy-load / srcset / src attributes
+    raw_src = (
+        img_tag.get("data-src") or
+        img_tag.get("data-original") or
+        img_tag.get("data-lazy-src") or
+        img_tag.get("data-highres") or
+        img_tag.get("data-full-url") or
+        img_tag.get("src") or
+        ""
+    ).strip()
+
+    # If srcset is provided and no direct src, parse the highest resolution candidate
+    if not raw_src and img_tag.get("srcset"):
+        srcset = img_tag.get("srcset", "").strip()
+        candidates = [c.strip().split()[0] for c in srcset.split(",") if c.strip()]
+        if candidates:
+            raw_src = candidates[-1]
+
+    if not raw_src:
+        return None
+
+    # 2. Reject Base64, blob, file, javascript schemes
+    raw_lower = raw_src.lower()
+    if raw_lower.startswith(("data:", "blob:", "javascript:", "file:", "about:")):
+        return None
+
+    # 3. Resolve relative URLs to absolute HTTP/HTTPS
+    if page_url:
+        full_url = urllib.parse.urljoin(page_url, raw_src)
+    else:
+        full_url = raw_src
+
+    if not full_url.startswith(("http://", "https://")):
+        return None
+
+    url_lower = full_url.lower()
+
+    # 4. Check dimension attributes if explicitly present (filter tiny icons/pixels)
+    try:
+        w_val = img_tag.get("width")
+        h_val = img_tag.get("height")
+        w = int(re.sub(r'\D', '', str(w_val))) if w_val else None
+        h = int(re.sub(r'\D', '', str(h_val))) if h_val else None
+        if (w is not None and w < 80) or (h is not None and h < 80):
+            return None
+    except Exception:
+        pass
+
+    # 5. Blacklist filter: icons, avatars, tracking pixels, badges, logos, ad banners
+    img_class = " ".join(img_tag.get("class", [])) if isinstance(img_tag.get("class"), list) else str(img_tag.get("class", ""))
+    img_id = str(img_tag.get("id", ""))
+    img_alt = str(img_tag.get("alt", "")).strip()
+    img_title = str(img_tag.get("title", "")).strip()
+
+    junk_img_pattern = re.compile(
+        r"\b(icon|logo|avatar|gravatar|user|author|pixel|spacer|tracker|tracking|spinner|badge|banner|emoji|button|social|share|advert|ad-|placeholder|1x1|thumb-tiny)\b",
+        re.I
+    )
+    if junk_img_pattern.search(url_lower) or junk_img_pattern.search(img_class) or junk_img_pattern.search(img_id):
+        # Allow if alt specifically describes real content (>15 chars) and URL is from a known good CDN
+        if not (len(img_alt) > 15 and any(cdn in url_lower for cdn in ("unsplash.com", "wikimedia.org", "wikipedia.org", "wp-content/uploads", "media", "images", "cdn"))):
+            return None
+
+    # 6. Extract Caption
+    caption = ""
+    parent = img_tag.parent
+    if parent and parent.name == "figure":
+        figcaption = parent.find("figcaption")
+        if figcaption:
+            caption = figcaption.get_text(separator=" ", strip=True)
+
+    if not caption:
+        caption = img_alt or img_title or ""
+
+    # Clean caption: remove brackets, extra whitespace, "image of", etc.
+    caption = re.sub(r'[\[\]\r\n\t]+', ' ', caption).strip()
+    if caption.lower().startswith("image of ") or caption.lower().startswith("photo of "):
+        caption = caption[9:].strip()
+
+    if not caption:
+        caption = "Image"
+
+    return (caption, full_url)
+
+
+def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "", query: str = "", page_url: str = "") -> str:
     """
     Extracts clean, lossless Markdown from HTML content.
     - Strips unwanted tags, interactive forms, metadata boxes, cookie banners, popups, and ad sidebars.
+    - Preserves high-value content images with resolved absolute URLs and clean captions.
     - Applies domain-specific pre-cleaners for Reddit, Quora, Wikipedia, IMDb, etc.
     - Targets core content containers (<article>, <main>, .post-content, etc.).
     - Converts headings, bullet lists, code blocks, and tables to structured Markdown.
@@ -536,13 +640,12 @@ def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "
     except Exception:
         return raw_html[:max_chars]
 
-    # 1. Strip unwanted and interactive tags completely
+    # 1. Strip unwanted and interactive tags completely (keeping img/figure/picture for content extraction)
     junk_tags = [
         "script", "style", "header", "footer", "nav", "aside", "noscript", 
-        "svg", "img", "form", "button", "select", "option", "input", "textarea", "label",
+        "svg", "form", "button", "select", "option", "input", "textarea", "label",
         "fieldset", "legend", "datalist", "optgroup", "iframe", "canvas", "meta", 
-        "link", "dialog", "template", "figure", "figcaption", "picture", "source", 
-        "audio", "video"
+        "link", "dialog", "template", "source", "audio", "video"
     ]
     for tag in soup(junk_tags):
         tag.decompose()
@@ -629,6 +732,9 @@ def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "
 
     # 6. Clean conversion to Markdown blocks
     lines = []
+    seen_image_urls = set()
+    extracted_images = []
+    max_content_images = 5
     
     def process_node(node):
         if isinstance(node, NavigableString):
@@ -641,6 +747,20 @@ def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "
             return
 
         tag_name = node.name.lower()
+
+        # Handle Content Images and Figures
+        if tag_name in ("img", "figure", "picture"):
+            if len(extracted_images) < max_content_images:
+                target_img = node if tag_name == "img" else node.find("img")
+                if target_img:
+                    candidate = _extract_image_candidate(target_img, page_url)
+                    if candidate:
+                        caption, img_url = candidate
+                        if img_url not in seen_image_urls:
+                            seen_image_urls.add(img_url)
+                            extracted_images.append(candidate)
+                            lines.append(f"\n\n![{caption}]({img_url})\n\n")
+            return
 
         if tag_name in ("h1", "h2", "h3", "h4", "h5", "h6"):
             level = int(tag_name[1])
@@ -720,38 +840,50 @@ def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "
     return markdown_doc
 
 
-def clean_html(html_content: str) -> str:
+def clean_html(html_content: str, page_url: str = "") -> str:
     """
     Backwards-compatible wrapper that converts raw HTML to clean text/markdown.
     """
-    return extract_clean_markdown(html_content, max_chars=5000)
+    return extract_clean_markdown(html_content, max_chars=5000, page_url=page_url)
 
 
-async def web_search(query) -> str:
+async def web_search(query, image_search: bool = False) -> str:
     """
     Performs an async web search using DuckDuckGo HTML search, falling back to Yahoo HTML search.
     Supports both single query string and list/array of multiple queries (searching concurrently).
+    - If image_search=True: retrieves direct high-resolution image URLs with titles and sources.
+    - If image_search=False: performs standard web search with search snippets + deep article text.
     - Checks 15-minute in-memory cache for instant zero-latency responses.
-    - Authority-First Single Source Strategy: if an authoritative domain (Wikipedia, MAL, IMDb, Reddit, etc.)
-      is in the top results, it fetches only that 1 source with the full double character budget (e.g. 10k in advanced).
-    - Otherwise, fetches top 2 sources with standard per-page budget.
     """
-    # Normalize query input (handles str, list, tuple, dict, etc.)
+    # Normalize query input (handles str, list, tuple, dict, compound pipe strings)
+    raw_list = []
     if isinstance(query, (list, tuple)):
-        query_list = [str(q).strip() for q in query if str(q).strip()]
+        raw_list = [str(q).strip() for q in query if str(q).strip()]
     elif isinstance(query, dict):
-        query_list = [str(v).strip() for v in query.values() if str(v).strip()]
+        raw_list = [str(v).strip() for v in query.values() if str(v).strip()]
     elif isinstance(query, str):
-        query_list = [query.strip()] if query.strip() else []
+        raw_list = [query.strip()] if query.strip() else []
     elif query:
-        query_list = [str(query).strip()]
-    else:
-        query_list = []
+        raw_list = [str(query).strip()]
+
+    query_list = []
+    for item in raw_list:
+        # Auto-split compound query strings separated by pipes: e.g. "query 1 | query 2"
+        if " | " in item or " || " in item:
+            sub_queries = re.split(r'\s*\|{1,2}\s*', item)
+            for sq in sub_queries:
+                sq_clean = re.sub(r'["""]+', '"', sq.strip()).strip()
+                if sq_clean and sq_clean not in query_list:
+                    query_list.append(sq_clean)
+        else:
+            sq_clean = re.sub(r'["""]+', '"', item.strip()).strip()
+            if sq_clean and sq_clean not in query_list:
+                query_list.append(sq_clean)
 
     if not query_list:
         return "Please specify a query to search for."
 
-    cache_key = " | ".join(sorted(q.lower() for q in query_list))
+    cache_key = f"{' | '.join(sorted(q.lower() for q in query_list))} [img={bool(image_search)}]"
     now = time.time()
     
     # Check In-Memory Cache
@@ -858,10 +990,10 @@ async def web_search(query) -> str:
                 import sys
                 print(f"[web_search] Bing attempt failed for '{q}': {e}", file=sys.stderr)
             return bing_urls, bing_snips
-
         q_urls = []
         q_snippets = []
         seen_urls = set()
+        engine_used = "DuckDuckGo"
 
         # Step 1: Run primary DuckDuckGo search
         ddg_urls, ddg_snips = await fetch_ddg()
@@ -873,6 +1005,7 @@ async def web_search(query) -> str:
 
         # Step 2: If DDG returned insufficient results (< 4), fall back to Bing
         if len(q_urls) < 4:
+            engine_used = "Bing (DDG returned insufficient results / bot challenge)"
             is_latin_query = not bool(re.search(r'[\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u0900-\u097F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]', q))
 
             def is_junk_snippet(title_str, url_str):
@@ -890,6 +1023,7 @@ async def web_search(query) -> str:
 
         # Step 3: Tertiary Fallback: Try Yahoo Search if still empty
         if not q_urls:
+            engine_used = "Yahoo (DDG & Bing empty)"
             yahoo_url = f"https://search.yahoo.com/search?p={encoded_query_clean}"
             try:
                 resp = await client.get(yahoo_url, headers=headers, timeout=4.0)
@@ -911,21 +1045,45 @@ async def web_search(query) -> str:
 
                             if href and href not in q_urls and "yahoo.com" not in href:
                                 q_urls.append(href)
-                            q_snippets.append(f"- {title}: {desc} ({href})")
+                                q_snippets.append(f"- {title}: {desc} ({href})")
             except Exception as e:
                 import sys
                 print(f"[web_search] Yahoo attempt failed for '{q}': {e}", file=sys.stderr)
 
-        return q_urls, q_snippets
+        # Step 4: Final Emergency Fallback: Wikipedia Search API (ONLY if ALL primary web searches returned zero results)
+        if not q_urls:
+            engine_used = "Wikipedia Search API (Emergency Fallback - Web Engines Empty)"
+            try:
+                wiki_search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(q_clean)}&utf8=&format=json"
+                w_resp = await client.get(wiki_search_url, headers={"User-Agent": "ProjectYuki/2.0 (AI Assistant)"}, timeout=2.5)
+                if w_resp.status_code == 200:
+                    w_data = w_resp.json()
+                    for item in w_data.get("query", {}).get("search", [])[:3]:
+                        w_title = item.get("title", "")
+                        w_snippet_raw = item.get("snippet", "")
+                        w_snippet = re.sub(r'<[^>]+>', '', w_snippet_raw).replace('&quot;', '"').replace('&#039;', "'").strip()
+                        w_page_title = w_title.replace(" ", "_")
+                        w_url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(w_page_title)}"
+                        if w_url not in seen_urls and w_snippet:
+                            seen_urls.add(w_url)
+                            q_urls.append(w_url)
+                            q_snippets.append(f"- {w_title} - Wikipedia: {w_snippet} ({w_url})")
+            except Exception:
+                pass
+
+        return q_urls, q_snippets, engine_used
 
     all_urls = []
     all_snippets = []
+    engines_used = []
 
     async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
         search_tasks = [search_single_query(client, q) for q in query_list]
         search_results = await asyncio.gather(*search_tasks)
 
-        for q_urls, q_snippets in search_results:
+        for q_urls, q_snippets, eng in search_results:
+            if eng and eng not in engines_used:
+                engines_used.append(eng)
             for u in q_urls:
                 if u not in all_urls:
                     all_urls.append(u)
@@ -1068,7 +1226,8 @@ async def web_search(query) -> str:
         async def fetch_page(url: str):
             if is_youtube_url(url):
                 try:
-                    yt_text = await async_extract_youtube_content(client, url, max_chars=page_budget)
+                    need_tr = any(kw in full_query.lower() for kw in ("transcript", "lyrics", "subtitles", "say in", "said in", "speech", "caption", "words", "dialogue"))
+                    yt_text = await async_extract_youtube_content(client, url, max_chars=page_budget, need_transcript=need_tr)
                     if yt_text and len(yt_text.strip()) >= 50:
                         return f"[Source: YouTube ({url})]\n{yt_text}"
                 except Exception as e:
@@ -1086,7 +1245,7 @@ async def web_search(query) -> str:
             try:
                 resp = await client.get(url, headers=headers, follow_redirects=True, timeout=3.5)
                 if resp.status_code == 200 and resp.text:
-                    parsed_md = extract_clean_markdown(resp.text, max_chars=page_budget, domain=domain, query=full_query)
+                    parsed_md = extract_clean_markdown(resp.text, max_chars=page_budget, domain=domain, query=full_query, page_url=url)
                     if not is_bot_blocked(parsed_md):
                         clean_text = parsed_md
             except Exception as e:
@@ -1125,8 +1284,84 @@ async def web_search(query) -> str:
                 return f"[Source: {domain} ({url})]\n{clean_text}"
             return None
 
+        async def fetch_wiki_summary_image(client: httpx.AsyncClient, entity_name: str) -> Optional[dict]:
+            """Fetches canonical Wikipedia summary portrait/flag/image if available."""
+            try:
+                clean_title = entity_name.strip().replace(" ", "_")
+                url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(clean_title)}"
+                resp = await client.get(url, headers={"User-Agent": "ProjectYuki/2.0 (AI Assistant)"}, timeout=2.5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    img_src = data.get("originalimage", {}).get("source") or data.get("thumbnail", {}).get("source")
+                    desc = data.get("description", "")
+                    title = data.get("title", entity_name)
+                    if img_src and img_src.startswith(("http://", "https://")):
+                        return {
+                            "title": f"Canonical Wikipedia: {title}" + (f" ({desc})" if desc else ""),
+                            "image": img_src,
+                            "url": data.get("content_urls", {}).get("desktop", {}).get("page", f"https://en.wikipedia.org/wiki/{clean_title}"),
+                            "width": data.get("thumbnail", {}).get("width"),
+                            "height": data.get("thumbnail", {}).get("height"),
+                        }
+            except Exception:
+                pass
+            return None
+
+        async def fetch_image_results(client: httpx.AsyncClient, q: str, limit: int = 20) -> list[dict]:
+            img_results = []
+            seen_urls = set()
+            try:
+                url = f"https://www.bing.com/images/search?q={urllib.parse.quote(q)}&form=HDRSC2&first=1"
+                resp = await client.get(url, headers=headers, timeout=3.5)
+                if resp.status_code == 200 and resp.text:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    for a in soup.find_all("a", class_="iusc"):
+                        m = a.get("m")
+                        if m:
+                            try:
+                                m_json = json.loads(m)
+                                murl = m_json.get("murl")
+                                t = m_json.get("t", "").strip()
+                                purl = m_json.get("purl", "").strip()
+                                w = m_json.get("width")
+                                h = m_json.get("height")
+                                if murl and murl.startswith(("http://", "https://")) and murl not in seen_urls:
+                                    seen_urls.add(murl)
+                                    img_results.append({"title": t, "image": murl, "url": purl, "width": w, "height": h})
+                                    if len(img_results) >= limit:
+                                        break
+                            except Exception:
+                                pass
+            except Exception as e:
+                import sys
+                print(f"[web_search] Image search failed for '{q}': {e}", file=sys.stderr)
+            return img_results
+
+        async def fetch_entity_image_bundle(client: httpx.AsyncClient, q: str, limit: int = 4) -> tuple[str, list[dict]]:
+            """Fetches Wikipedia canonical image (if any) + Bing image results for a single query."""
+            wiki_task = fetch_wiki_summary_image(client, q)
+            bing_task = fetch_image_results(client, q, limit=limit)
+            wiki_res, bing_res = await asyncio.gather(wiki_task, bing_task)
+            
+            combined = []
+            if wiki_res:
+                combined.append(wiki_res)
+            for img in bing_res:
+                if wiki_res and img.get("image") == wiki_res.get("image"):
+                    continue
+                combined.append(img)
+                if len(combined) >= limit + (1 if wiki_res else 0):
+                    break
+            return q, combined
+
         page_contents = []
-        if candidate_urls:
+        image_search_by_query = []
+        if image_search:
+            per_query_limit = max(3, 20 // len(query_list))
+            tasks = [fetch_entity_image_bundle(client, q, limit=per_query_limit) for q in query_list]
+            image_search_by_query = await asyncio.gather(*tasks)
+        elif candidate_urls:
             tasks = [fetch_page(u) for u in candidate_urls]
             fetched = await asyncio.gather(*tasks)
             valid_pages = [f for f in fetched if f]
@@ -1135,11 +1370,27 @@ async def web_search(query) -> str:
     # Compile final context for the LLM
     context_parts = []
     display_query = " | ".join(query_list)
-    context_parts.append(f"Web search results for: \"{display_query}\"")
-    context_parts.append("Snippets:\n" + "\n".join(all_snippets))
 
-    if page_contents:
-        context_parts.append("\nDetailed Page Contents:\n" + "\n\n".join(page_contents))
+    if image_search_by_query:
+        context_parts.append(f"Image search results for: \"{display_query}\"")
+        for q_title, img_list in image_search_by_query:
+            if not img_list:
+                continue
+            if len(image_search_by_query) > 1:
+                context_parts.append(f"\n### Verified Images for \"{q_title}\":")
+            else:
+                context_parts.append(f"\n### Verified Images ({len(img_list)} Photos):")
+            for i, img in enumerate(img_list, 1):
+                title = img.get('title') or f"Image {i}"
+                img_url = img.get('image')
+                dim = f" [{img['width']}x{img['height']}]" if img.get('width') and img.get('height') else ""
+                context_parts.append(f"{i}. {img_url} ({title}{dim})")
+    else:
+        eng_header = f" [Engine: {', '.join(engines_used)}]" if engines_used else ""
+        context_parts.append(f"Web search results for: \"{display_query}\"{eng_header}")
+        context_parts.append("Snippets:\n" + "\n".join(all_snippets))
+        if page_contents:
+            context_parts.append("\nDetailed Page Contents:\n" + "\n\n".join(page_contents))
 
     final_result = "\n\n".join(context_parts)
     

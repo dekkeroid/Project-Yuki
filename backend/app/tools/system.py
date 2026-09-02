@@ -154,6 +154,77 @@ def get_system_stats() -> str:
 
 
 _UWP_APPS_CACHE = None
+_RESOLVED_POWERSHELL_PATH = None
+_RESOLVED_NVIDIA_SMI_PATH = None
+_NVIDIA_SMI_CHECKED = False
+
+def _get_powershell_executable() -> str | None:
+    global _RESOLVED_POWERSHELL_PATH
+    if _RESOLVED_POWERSHELL_PATH is not None:
+        return _RESOLVED_POWERSHELL_PATH or None
+    import shutil
+    for name in ("powershell", "pwsh", "powershell.exe", "pwsh.exe"):
+        found = shutil.which(name)
+        if found:
+            _RESOLVED_POWERSHELL_PATH = found
+            return _RESOLVED_POWERSHELL_PATH
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    candidates = [
+        os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+        os.path.join(system_root, "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe"),
+        os.path.join(program_files, "PowerShell", "7", "pwsh.exe"),
+        os.path.join(program_files, "PowerShell", "6", "pwsh.exe"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            _RESOLVED_POWERSHELL_PATH = c
+            return _RESOLVED_POWERSHELL_PATH
+    _RESOLVED_POWERSHELL_PATH = ""
+    return None
+
+def _run_powershell_command(command_str: str, timeout: float = 10.0) -> str | None:
+    """Execute a PowerShell command safely without shell=True or leaking stderr."""
+    ps_exe = _get_powershell_executable()
+    if not ps_exe:
+        return None
+    try:
+        res = subprocess.run(
+            [ps_exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command_str],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        if res.returncode == 0:
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+def _get_nvidia_smi_executable() -> str | None:
+    global _RESOLVED_NVIDIA_SMI_PATH, _NVIDIA_SMI_CHECKED
+    if _NVIDIA_SMI_CHECKED:
+        return _RESOLVED_NVIDIA_SMI_PATH or None
+    _NVIDIA_SMI_CHECKED = True
+    import shutil
+    for name in ("nvidia-smi", "nvidia-smi.exe"):
+        found = shutil.which(name)
+        if found:
+            _RESOLVED_NVIDIA_SMI_PATH = found
+            return _RESOLVED_NVIDIA_SMI_PATH
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    candidates = [
+        os.path.join(system_root, "System32", "nvidia-smi.exe"),
+        os.path.join(program_files, "NVIDIA Corporation", "NVSMI", "nvidia-smi.exe"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            _RESOLVED_NVIDIA_SMI_PATH = c
+            return _RESOLVED_NVIDIA_SMI_PATH
+    _RESOLVED_NVIDIA_SMI_PATH = ""
+    return None
 
 def _get_uwp_apps() -> list:
     global _UWP_APPS_CACHE
@@ -161,17 +232,17 @@ def _get_uwp_apps() -> list:
         return _UWP_APPS_CACHE
     
     import json
-    import subprocess
     try:
-        print("[UWP Search] Fetching UWP/Store apps via Get-StartApps...")
-        cmd = 'powershell -Command "Get-StartApps | ConvertTo-Json"'
-        out = subprocess.check_output(cmd, shell=True).decode('utf-8', errors='ignore')
-        apps = json.loads(out)
-        if isinstance(apps, dict):
-            apps = [apps]
-        _UWP_APPS_CACHE = apps
-        print(f"[UWP Search] Found {len(_UWP_APPS_CACHE)} apps in Start menu/UWP.")
-        return _UWP_APPS_CACHE
+        out = _run_powershell_command("Get-StartApps | ConvertTo-Json", timeout=8.0)
+        if out:
+            apps = json.loads(out)
+            if isinstance(apps, dict):
+                apps = [apps]
+            _UWP_APPS_CACHE = apps
+            print(f"[UWP Search] Found {len(_UWP_APPS_CACHE)} apps in Start menu/UWP.")
+            return _UWP_APPS_CACHE
+        _UWP_APPS_CACHE = []
+        return []
     except Exception as e:
         print(f"[UWP Search] Error listing apps: {e}")
         _UWP_APPS_CACHE = []
@@ -1270,6 +1341,15 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
     with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w", encoding="utf-8") as f:
         f.write(code)
         temp_file = f.name
+
+    saved_cache_path = ""
+    # Only cache substantial scripts (>= 300 chars or >= 5 lines) to avoid cluttering disk with trivial math/one-liners
+    if len(code.strip()) >= 300 or len(code.strip().splitlines()) >= 5:
+        try:
+            from app.tools.tool_cache import save_python_artifact
+            saved_cache_path = save_python_artifact(code)
+        except Exception:
+            pass
         
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
@@ -1324,17 +1404,21 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
 
         stdout_str = "\n".join(filter(None, stdout_chunks))
         stderr_str = "\n".join(filter(None, stderr_chunks))
-        
-        output = []
+
+        output_parts = []
         if stdout_str:
-            output.append(stdout_str)
+            output_parts.append(stdout_str)
         if stderr_str:
-            output.append(f"Error output:\n{stderr_str}")
-            
-        if not output:
-            return f"Script executed successfully (exit code: {proc.returncode}), but returned no output."
-            
-        return "\n".join(output)
+            output_parts.append(f"Error output:\n{stderr_str}")
+
+        if not output_parts:
+            res_text = f"Script executed successfully (exit code: {proc.returncode}), but returned no output."
+        else:
+            res_text = "\n".join(output_parts)
+
+        if saved_cache_path:
+            res_text += f"\n(Script source saved to: {saved_cache_path})"
+        return res_text
     except Exception as e:
         return f"Failed to execute Python script: {str(e)}"
     finally:
@@ -1751,18 +1835,17 @@ def get_detailed_stats() -> dict:
     # 1. Cache GPU names from WMI (hardware does not change at runtime)
     if _CACHED_DETECTED_GPUS is None:
         detected_gpus = []
-        try:
-            gpu_wmi_cmd = 'powershell -Command "Get-CimInstance Win32_VideoController | Select-Object Name | ConvertTo-Json"'
-            gpu_wmi_out = subprocess.check_output(gpu_wmi_cmd, shell=True).decode(errors='ignore').strip()
-            if gpu_wmi_out:
+        gpu_wmi_out = _run_powershell_command("Get-CimInstance Win32_VideoController | Select-Object Name | ConvertTo-Json", timeout=5.0)
+        if gpu_wmi_out:
+            try:
                 import json
                 gpu_wmi_data = json.loads(gpu_wmi_out)
                 if isinstance(gpu_wmi_data, list):
                     detected_gpus = [g['Name'] for g in gpu_wmi_data if g.get('Name')]
                 elif isinstance(gpu_wmi_data, dict) and gpu_wmi_data.get('Name'):
                     detected_gpus = [gpu_wmi_data['Name']]
-        except Exception:
-            pass
+            except Exception:
+                pass
         _CACHED_DETECTED_GPUS = detected_gpus
     else:
         detected_gpus = _CACHED_DETECTED_GPUS
@@ -1771,25 +1854,32 @@ def get_detailed_stats() -> dict:
     now = time.time()
     if now - _CACHED_NVIDIA_TIME > 10.0:
         nvidia_gpus = {}
-        try:
-            nvidia_cmd = 'nvidia-smi --query-gpu=name,utilization.gpu,utilization.memory,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits'
-            nvidia_out = subprocess.check_output(nvidia_cmd, shell=True).decode(errors='ignore').strip()
-            if nvidia_out:
-                for line in nvidia_out.split('\n'):
-                    if not line.strip():
-                        continue
-                    parts = [p.strip() for p in line.split(',')]
-                    if len(parts) >= 6:
-                        name = parts[0]
-                        nvidia_gpus[name] = {
-                            'utilization_percent': int(parts[1]),
-                            'mem_utilization_percent': int(parts[2]),
-                            'mem_total_mb': int(parts[3]),
-                            'mem_used_mb': int(parts[4]),
-                            'temp_c': int(parts[5])
-                        }
-        except Exception:
-            pass
+        ns_exe = _get_nvidia_smi_executable()
+        if ns_exe:
+            try:
+                ns_res = subprocess.run(
+                    [ns_exe, "--query-gpu=name,utilization.gpu,utilization.memory,memory.total,memory.used,temperature.gpu", "--format=csv,noheader,nounits"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5.0,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                )
+                if ns_res.returncode == 0 and ns_res.stdout.strip():
+                    for line in ns_res.stdout.strip().split('\n'):
+                        if not line.strip():
+                            continue
+                        parts = [p.strip() for p in line.split(',')]
+                        if len(parts) >= 6:
+                            name = parts[0]
+                            nvidia_gpus[name] = {
+                                'utilization_percent': int(parts[1]),
+                                'mem_utilization_percent': int(parts[2]),
+                                'mem_total_mb': int(parts[3]),
+                                'mem_used_mb': int(parts[4]),
+                                'temp_c': int(parts[5])
+                            }
+            except Exception:
+                pass
         _CACHED_NVIDIA_METRICS = nvidia_gpus
         _CACHED_NVIDIA_TIME = now
     else:
@@ -1827,16 +1917,15 @@ def get_detailed_stats() -> dict:
             }
             if now - _CACHED_BATTERY_TIME > 15.0:
                 bat_wmi = None
-                try:
-                    import json
-                    cmd = 'powershell -Command "Get-CimInstance -ClassName BatteryStatus -Namespace root\\wmi | Select-Object ChargeRate, DischargeRate, Charging, Discharging, Voltage | ConvertTo-Json"'
-                    out = subprocess.check_output(cmd, shell=True).decode(errors='ignore').strip()
-                    if out:
-                        bat_wmi = json.loads(out)
+                bat_out = _run_powershell_command('Get-CimInstance -ClassName BatteryStatus -Namespace root\\wmi | Select-Object ChargeRate, DischargeRate, Charging, Discharging, Voltage | ConvertTo-Json', timeout=5.0)
+                if bat_out:
+                    try:
+                        import json
+                        bat_wmi = json.loads(bat_out)
                         if isinstance(bat_wmi, list):
                             bat_wmi = bat_wmi[0]
-                except Exception:
-                    pass
+                    except Exception:
+                        pass
                 _CACHED_BATTERY_WMI = bat_wmi
                 _CACHED_BATTERY_TIME = now
             else:
