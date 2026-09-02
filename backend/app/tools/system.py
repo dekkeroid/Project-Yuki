@@ -1740,16 +1740,55 @@ def manage_process(action: str, name: str = None, pid: int = None) -> str:
         name_lower = name.lower().strip() if name else ""
         name_clean = name_lower[:-4] if name_lower.endswith(".exe") else name_lower
 
+        COMMON_APP_ALIASES = {
+            "task manager": ["taskmgr.exe", "taskmgr"],
+            "taskmgr": ["taskmgr.exe"],
+            "file explorer": ["explorer.exe"],
+            "windows explorer": ["explorer.exe"],
+            "explorer": ["explorer.exe"],
+            "command prompt": ["cmd.exe"],
+            "powershell": ["powershell.exe", "pwsh.exe"],
+            "edge": ["msedge.exe"],
+            "microsoft edge": ["msedge.exe"],
+            "chrome": ["chrome.exe"],
+            "google chrome": ["chrome.exe"],
+            "firefox": ["firefox.exe"],
+            "mozilla firefox": ["firefox.exe"],
+            "calculator": ["calc.exe", "calculatorapp.exe"],
+            "notepad": ["notepad.exe"],
+            "paint": ["mspaint.exe"],
+            "word": ["winword.exe"],
+            "excel": ["excel.exe"],
+            "powerpoint": ["powerpnt.exe"],
+            "antigravity": ["antigravity.exe", "antigravity"],
+            "yuki ai": ["yuki ai.exe", "yuki-ai.exe", "yuki.exe", "backend.exe"],
+            "snipping tool": ["snippingtool.exe", "screensketch.exe"],
+        }
+
+        candidate_names = {name_lower, name_clean, name_clean.replace(" ", "")}
+        if name_clean in COMMON_APP_ALIASES:
+            candidate_names.update(COMMON_APP_ALIASES[name_clean])
+
         for p in psutil.process_iter(['pid', 'name']):
             try:
                 if pid is not None and p.info['pid'] == pid:
-                    p.kill()
+                    try:
+                        p.kill()
+                    except psutil.AccessDenied:
+                        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
                     return f"Successfully terminated process with PID {pid} ({p.info['name']})."
                 elif name_lower:
                     p_name = (p.info.get('name') or '').lower()
                     p_clean = p_name[:-4] if p_name.endswith(".exe") else p_name
-                    if p_name == name_lower or p_clean == name_clean or (len(name_clean) > 3 and name_clean in p_clean):
-                        p.kill()
+                    if (
+                        p_name in candidate_names
+                        or p_clean in candidate_names
+                        or any(cand in p_clean or p_clean in cand for cand in candidate_names if len(cand) > 3)
+                    ):
+                        try:
+                            p.kill()
+                        except psutil.AccessDenied:
+                            subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.info['pid'])], capture_output=True)
                         killed_count += 1
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
