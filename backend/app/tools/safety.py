@@ -306,7 +306,10 @@ def canonicalize_tool_args(tool_name: str, arguments: dict[str, Any] | None) -> 
         return {"action": args.get("action") or ""}
     if tool == "manage_scheduled_task":
         out = {"action": args.get("action") or ""}
-        for key in ("action_type", "action_command", "action_tool", "kind", "target", "fire_condition"):
+        for key in (
+            "action_type", "action_command", "action_tool", "kind", "target", "fire_condition",
+            "run_tool", "run_args", "run_builtin", "run_notify", "run_command", "do", "condition", "monitor_type"
+        ):
             put_if_present(out, key, args.get(key))
         if args.get("seconds") is not None:
             out["seconds"] = args.get("seconds")
@@ -316,6 +319,8 @@ def canonicalize_tool_args(tool_name: str, arguments: dict[str, Any] | None) -> 
             out["item_id"] = int(args.get("item_id"))
         if args.get("action_args"):
             out["action_args"] = dict(args.get("action_args"))
+        if args.get("run_args"):
+            out["run_args"] = dict(args.get("run_args"))
         return out
     if tool == "web_search":
         return {"query": args.get("query") or args.get("search") or args.get("text") or _first_value(args)}
@@ -410,7 +415,7 @@ def _scheduled_task_needs_confirmation(args: dict[str, Any]) -> bool:
     if action in ("list", "cancel", ""):
         return False
     action_type = (args.get("action_type") or "shell").lower().strip()
-    if action_type == "power":
+    if action_type == "power" or str(args.get("run_builtin") or "").lower() in ("shutdown", "restart"):
         return True
     action_args = args.get("action_args") or {}
     if isinstance(action_args, str):
