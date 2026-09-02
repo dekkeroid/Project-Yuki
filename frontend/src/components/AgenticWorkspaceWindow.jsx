@@ -2962,16 +2962,41 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
                     }}
                   >
                     {/* Speaker Tag */}
-                    <span style={{
-                      fontSize: '0.64rem',
-                      fontWeight: 700,
-                      color: isUser ? '#a78bfa' : '#38bdf8',
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
                       marginBottom: '3px',
                       paddingLeft: '4px',
                       paddingRight: '4px'
                     }}>
-                      {isUser ? 'Master' : 'Yuki AI'}
-                    </span>
+                      <span style={{
+                        fontSize: '0.64rem',
+                        fontWeight: 700,
+                        color: isUser ? '#a78bfa' : '#38bdf8'
+                      }}>
+                        {isUser ? 'Master' : 'Yuki AI'}
+                      </span>
+                      {msg.timestamp && (() => {
+                        const ts = msg.timestamp > 1e11 ? msg.timestamp / 1000 : msg.timestamp;
+                        const date = new Date(ts * 1000);
+                        const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                        const fullDateStr = date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+                        return (
+                          <span
+                            title={fullDateStr}
+                            style={{
+                              fontSize: '0.58rem',
+                              color: '#64748b',
+                              fontVariantNumeric: 'tabular-nums',
+                              cursor: 'default'
+                            }}
+                          >
+                            {timeStr}
+                          </span>
+                        );
+                      })()}
+                    </div>
 
                     {/* Thought Block */}
                     {thoughts.map((thought, tIdx) => (

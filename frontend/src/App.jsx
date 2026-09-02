@@ -1032,13 +1032,15 @@ const App = () => {
           newMessages[newMessages.length - 1] = {
             ...last,
             content: combinedContent,
-            backend: msg.backend_used
+            backend: msg.backend_used,
+            timestamp: last.timestamp || (Date.now() / 1000)
           };
         } else {
           newMessages.push({
             role: 'assistant',
             content: combinedContent,
-            backend: msg.backend_used
+            backend: msg.backend_used,
+            timestamp: Date.now() / 1000
           });
         }
         return newMessages;
@@ -3135,14 +3137,40 @@ const App = () => {
                           flexDirection: 'column',
                           gap: '2px'
                         }}>
-                          <span style={{
-                            fontSize: '9px',
-                            color: isUser ? '#c4b5fd' : '#94a3b8',
-                            alignSelf: isUser ? 'flex-end' : 'flex-start',
-                            fontWeight: '600'
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            alignSelf: isUser ? 'flex-end' : 'flex-start'
                           }}>
-                            {isUser ? 'Master' : 'Yuki'}
-                          </span>
+                            <span style={{
+                              fontSize: '9px',
+                              color: isUser ? '#c4b5fd' : '#94a3b8',
+                              fontWeight: '600'
+                            }}>
+                              {isUser ? 'Master' : 'Yuki'}
+                            </span>
+                            {msg.timestamp && (() => {
+                              const ts = msg.timestamp > 1e11 ? msg.timestamp / 1000 : msg.timestamp;
+                              const date = new Date(ts * 1000);
+                              const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                              const fullDateStr = date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+                              return (
+                                <span
+                                  title={fullDateStr}
+                                  style={{
+                                    fontSize: '9px',
+                                    color: '#94a3b8',
+                                    opacity: 0.75,
+                                    fontVariantNumeric: 'tabular-nums',
+                                    cursor: 'default'
+                                  }}
+                                >
+                                  {timeStr}
+                                </span>
+                              );
+                            })()}
+                          </div>
                           <div style={{
                             background: isUser
                               ? 'rgba(139, 92, 246, 0.25)'
