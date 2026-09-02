@@ -5909,7 +5909,7 @@ const ControlDashboard = ({
                     {/* Long-Term Vector Memory & Embeddings Selection */}
                     <div className="identity-field" style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                        <span className="field-label" style={{ color: '#a78bfa' }}>🧠 Long-Term Memory (Embeddings)</span>
+                        <span className="field-label" style={{ color: '#a78bfa' }}>Long-Term Memory (Embeddings)</span>
                         <button
                           type="button"
                           onClick={() => handleUpdateSetting('enable_vector_memory', !settings.enable_vector_memory)}
