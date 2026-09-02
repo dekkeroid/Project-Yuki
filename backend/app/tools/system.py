@@ -817,7 +817,24 @@ def control_window(action: str, window_title: str = None, x: int = None, y: int 
             # Only focus one window
             break
         elif action == "close":
+            pid_val = ctypes.c_ulong()
+            ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_val))
             ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)
+            if pid_val.value and pid_val.value != os.getpid():
+                try:
+                    p_win = psutil.Process(pid_val.value)
+                    p_name = p_win.name().lower()
+                    # Guardrail: Never kill explorer.exe or core system processes when closing a window
+                    if p_name not in ("explorer.exe", "dwm.exe", "csrss.exe", "svchost.exe", "system", "idle", "registry"):
+                        import time
+                        time.sleep(0.15)
+                        if p_win.is_running():
+                            try:
+                                p_win.kill()
+                            except psutil.AccessDenied:
+                                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid_val.value)], capture_output=True)
+                except Exception:
+                    pass
             results.append(title)
         elif action == "move":
             if x is None or y is None:
