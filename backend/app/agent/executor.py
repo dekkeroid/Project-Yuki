@@ -1913,6 +1913,18 @@ class AgentExecutor:
             return backend, model
         return get_backend(), config.LLM_MODEL
 
+_shared_sync_session: Optional[requests.Session] = None
+
+def _get_shared_sync_session() -> requests.Session:
+    global _shared_sync_session
+    if _shared_sync_session is None:
+        _shared_sync_session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=20)
+        _shared_sync_session.mount("http://", adapter)
+        _shared_sync_session.mount("https://", adapter)
+    return _shared_sync_session
+
+
     def _query_lmstudio_model(self, messages: List[Dict[str, str]], model_name: str, temperature: float = 0.7, use_tools: bool = False, backend=None, max_tokens: Optional[int] = None) -> Tuple[str, List[Dict[str, Any]], str]:
         """
         Sends a request to the active LLM backend for the specified model.
@@ -1951,7 +1963,8 @@ class AgentExecutor:
         headers = backend.build_headers()
         if "Authorization" not in headers and not _is_local_url(url):
             return f"Missing API key for {url}. Add a valid API key for this endpoint, then try again.", None, self._get_model_label(model_name)
-        response = requests.post(
+        session = _get_shared_sync_session()
+        response = session.post(
             url,
             headers=headers,
             json=payload,
