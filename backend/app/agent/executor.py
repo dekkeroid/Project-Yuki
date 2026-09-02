@@ -915,6 +915,15 @@ class AgentExecutor:
             if do.lower().startswith("sound:"):
                 action_type = "sound"
                 action_command = do.split(":", 1)[1].strip() or "tada"
+            elif do.lower().startswith("popup:"):
+                action_type = "popup"
+                action_command = do.split(":", 1)[1].strip() or "Reminder"
+            elif do.lower().startswith("notify:"):
+                action_type = "notify"
+                action_command = do.split(":", 1)[1].strip() or "Notification"
+            elif do.lower().startswith("telegram:"):
+                action_type = "telegram"
+                action_command = do.split(":", 1)[1].strip() or "Alert"
             elif do.lower().startswith("power:"):
                 action_type = "power"
                 action_args = {"action": do.split(":", 1)[1].strip() or "shutdown"}
@@ -1035,6 +1044,20 @@ class AgentExecutor:
                 lines.append(f"- #{t['id']} [{kind}] {desc} -> {action_desc}")
             return "Active scheduled tasks:\n" + "\n".join(lines)
 
+        if action in ("pause", "hold"):
+            item_id = kwargs.get("item_id") or kwargs.get("id")
+            if item_id:
+                res = scheduled_tasks.pause_task(int(item_id))
+                return f"Paused scheduled task #{item_id}."
+            return "Missing item_id to pause."
+
+        if action in ("resume", "unpause"):
+            item_id = kwargs.get("item_id") or kwargs.get("id")
+            if item_id:
+                res = scheduled_tasks.resume_task(int(item_id))
+                return f"Resumed scheduled task #{item_id}."
+            return "Missing item_id to resume."
+
         if action in ("cancel", "delete", "stop"):
             item_id = kwargs.get("item_id") or kwargs.get("id")
             if item_id:
@@ -1058,6 +1081,10 @@ class AgentExecutor:
         the interactive safety flow — the task creation was already authorized.
         """
         action_args = dict(action_args or {})
+        if action_type in ("popup", "notify", "telegram"):
+            from app.tools.scheduled_tasks import execute_action
+            return execute_action({"action_type": action_type, "action_command": action_command, "action_args": action_args})
+
         if action_type == "sound":
             from app.tools.scheduled_tasks import _play_builtin_sound
             sound_target = action_command or (action_args.get("sound") if isinstance(action_args, dict) else "") or "tada"

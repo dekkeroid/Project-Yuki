@@ -314,6 +314,8 @@ def _file_signature(path: str) -> Optional[tuple]:
 
 # Last observed state for 'changed' file watchers (keyed by task id).
 _FILE_STATE: Dict[int, Any] = {}
+# Previous observed condition truth value for edge-triggered watchers (keyed by task id).
+_WATCHER_PREV_STATE: Dict[int, bool] = {}
 
 
 def evaluate_watcher_condition(task: Dict[str, Any], previous_fired: bool) -> bool:
@@ -325,22 +327,28 @@ def evaluate_watcher_condition(task: Dict[str, Any], previous_fired: bool) -> bo
       window  | minimized|maximized|focused|unfocused|open|closed
       file    | exists|deleted|changed
       command | exit0|exit_nonzero   (runs ``target`` as a shell command each tick)
+      battery | low|charging|discharging
+      storage | low|<N>gb
+      network | disconnected|connected
     """
     monitor = (task.get("monitor_type") or "").lower().strip()
     condition = (task.get("fire_condition") or "").lower().strip()
     target = task.get("target") or ""
+    task_id = int(task.get("id") or 0)
+    count = task.get("count")
+
+    curr_truth = False
 
     if monitor == "process":
         alive = _check_process_alive(target)
-        return not alive if condition == "gone" else alive if condition == "present" else False
+        curr_truth = not alive if condition == "gone" else alive if condition == "present" else False
 
-    if monitor == "window":
-        return _check_window_state(target, condition)
+    elif monitor == "window":
+        curr_truth = _check_window_state(target, condition)
 
-    if monitor == "file":
+    elif monitor == "file":
         path = os.path.abspath(os.path.expanduser(os.path.expandvars(target)))
         sig = _file_signature(path)
-        task_id = int(task.get("id") or 0)
         if condition == "exists":
             return sig is not None
         if condition == "deleted":
@@ -348,13 +356,12 @@ def evaluate_watcher_condition(task: Dict[str, Any], previous_fired: bool) -> bo
         if condition == "changed":
             prev = _FILE_STATE.get(task_id)
             _FILE_STATE[task_id] = sig
-            # First observation only records the baseline; never fires.
             if prev is None or sig is None:
                 return False
             return sig != prev
         return False
 
-    if monitor == "command":
+    elif monitor == "command":
         try:
             result = subprocess.run(
                 str(target), shell=True, capture_output=True, text=True, timeout=60
@@ -367,7 +374,55 @@ def evaluate_watcher_condition(task: Dict[str, Any], previous_fired: bool) -> bo
             return result.returncode != 0
         return False
 
-    return False
+    elif monitor in ("battery", "power"):
+        try:
+            import psutil
+            batt = psutil.sensors_battery()
+            if batt:
+                if condition in ("low", "<20"):
+                    curr_truth = (batt.percent <= 20 and not batt.power_plugged)
+                elif condition in ("charging", "plugged"):
+                    curr_truth = bool(batt.power_plugged)
+                elif condition in ("discharging", "unplugged"):
+                    curr_truth = not bool(batt.power_plugged)
+        except Exception:
+            curr_truth = False
+
+    elif monitor in ("storage", "disk"):
+        try:
+            import shutil
+            drive = str(target or "C:\\")
+            usage = shutil.disk_usage(drive)
+            free_gb = usage.free / (1024 ** 3)
+            if condition in ("low", "<10gb"):
+                curr_truth = free_gb < 10.0
+            elif "gb" in condition:
+                thresh = float(condition.replace("gb", "").replace("<", "").strip())
+                curr_truth = free_gb < thresh
+        except Exception:
+            curr_truth = False
+
+    elif monitor in ("network", "internet"):
+        try:
+            import socket
+            conn = socket.create_connection(("1.1.1.1", 53), timeout=1.5)
+            conn.close()
+            connected = True
+        except Exception:
+            connected = False
+        if condition in ("disconnected", "down", "offline"):
+            curr_truth = not connected
+        elif condition in ("connected", "up", "online"):
+            curr_truth = connected
+
+    # Edge-triggering for recurring watchers (count is None or > 1):
+    # Only fire when transitioning from False -> True (edge), not continuously while True.
+    if count is None or int(count) > 1:
+        prev_truth = _WATCHER_PREV_STATE.get(task_id, False)
+        _WATCHER_PREV_STATE[task_id] = curr_truth
+        return (not prev_truth) and curr_truth
+
+    return curr_truth
 
 
 def _describe_watcher(task: Dict[str, Any]) -> str:
@@ -382,6 +437,7 @@ def _describe_watcher(task: Dict[str, Any]) -> str:
 _action_executor = None
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
 _running_tasks: Dict[int, Any] = {}
+_fire_callback = None
 
 
 def set_action_executor(callback):
@@ -393,6 +449,16 @@ def set_action_executor(callback):
     """
     global _action_executor
     _action_executor = callback
+
+
+def set_fire_callback(callback):
+    """Register the callback invoked when a scheduled task or watcher fires.
+
+    Signature: ``async def callback(task: dict, result: str)``.
+    Used by ``main.py`` to broadcast live WebSocket events and synthesize TTS announcements.
+    """
+    global _fire_callback
+    _fire_callback = callback
 
 
 def set_main_loop(loop):
@@ -462,6 +528,40 @@ def execute_action(task: Dict[str, Any]) -> str:
     if action_type == "sound":
         sound_target = action_command or (action_args.get("sound") if isinstance(action_args, dict) else "") or "tada"
         return _play_builtin_sound(sound_target)
+
+    if action_type == "popup":
+        msg = str(action_command or (action_args.get("message") if isinstance(action_args, dict) else "") or "Yuki Reminder")
+        try:
+            safe_msg = msg.replace('"', '`"').replace("'", "''")
+            cmd = f'powershell -WindowStyle Hidden -NoProfile -Command "(New-Object -ComObject Wscript.Shell).Popup(\'{safe_msg}\', 6, \'Project Yuki\', 64)"'
+            subprocess.Popen(cmd, shell=True)
+            return f"displayed popup: {msg}"
+        except Exception as e:
+            return f"popup failed: {e}"
+
+    if action_type == "notify":
+        msg = str(action_command or (action_args.get("message") if isinstance(action_args, dict) else "") or "Yuki Notification")
+        try:
+            from app.tools.time_manager import trigger_windows_toast
+            trigger_windows_toast("Project Yuki", msg)
+            return f"dispatched notification: {msg}"
+        except Exception:
+            try:
+                subprocess.Popen(f'msg * "{msg}"', shell=True)
+                return f"dispatched notification: {msg}"
+            except Exception as e:
+                return f"notification failed: {e}"
+
+    if action_type == "telegram":
+        msg = str(action_command or (action_args.get("message") if isinstance(action_args, dict) else "") or "Scheduled alert from Yuki")
+        try:
+            from app.channels import telegram_service
+            loop = _target_loop()
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(telegram_service.send_telegram_message(msg), loop)
+            return f"sent telegram alert: {msg}"
+        except Exception as e:
+            return f"telegram alert failed: {e}"
 
     if action_type == "shell" and action_command:
         return _run_shell_action(action_command)
@@ -743,7 +843,7 @@ def process_single_due_task(task_id: int) -> Dict[str, Any]:
     Returns the fired task dict, or {} when nothing was due/active.
     """
     task = _fetch_task(task_id)
-    if not task or not task.get("is_active"):
+    if not task or not task.get("is_active") or bool(task.get("is_paused")):
         return {}
 
     kind = task.get("kind")
@@ -752,18 +852,19 @@ def process_single_due_task(task_id: int) -> Dict[str, Any]:
     if kind == "watcher":
         if not evaluate_watcher_condition(task, previous_fired=False):
             # Re-arm for the next poll interval (with current data as baseline).
-            _mark_fired(task_id, deactivate=False, next_run_at=time.time() + float(task.get("interval_seconds") or 1))
+            _mark_fired(task_id, deactivate=False, next_run_at=time.time() + float(task.get("interval_seconds") or 1.5))
             return {}
 
     result = execute_action(task)
+    now = time.time()
 
     deactivate = _deactivate_after_fire(task)
     if deactivate:
         _mark_fired(task_id, deactivate=True)
         stop_task(task_id)
     else:
-        interval = float(task.get("interval_seconds") or 1)
-        _mark_fired(task_id, deactivate=False, next_run_at=time.time() + interval)
+        interval = float(task.get("interval_seconds") or 1.0)
+        _mark_fired(task_id, deactivate=False, next_run_at=now + interval)
         # For intervals, decrement the count so it eventually stops.
         count = task.get("count")
         if count is not None:
@@ -775,7 +876,91 @@ def process_single_due_task(task_id: int) -> Dict[str, Any]:
 
     print(f"[ScheduledTasks] Task #{task_id} [{kind}] fired: {result}")
     task["_action_result"] = result
+
+    # 1. Audit Log to SQLite scheduled_task_runs table
+    action_desc = task.get("action_command") or task.get("action_tool") or task.get("action_type") or "action"
+    status = "error" if any(w in str(result).lower() for w in ("failed", "error", "exception")) else "success"
+    try:
+        with DB_WRITE_LOCK:
+            conn = get_connection()
+            conn.execute(
+                """
+                INSERT INTO scheduled_task_runs (task_id, kind, target, action_desc, result, status, fired_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (task_id, kind, task.get("target"), str(action_desc), str(result), status, now),
+            )
+            conn.commit()
+            conn.close()
+    except Exception as log_err:
+        print(f"[ScheduledTasks] Failed to log run to database: {log_err}")
+
+    # 2. Invoke Fire Callback (for WebSocket broadcast and Kokoro TTS speech announcement)
+    if _fire_callback is not None:
+        try:
+            loop = _target_loop()
+            if loop and loop.is_running():
+                if asyncio.iscoroutinefunction(_fire_callback):
+                    asyncio.run_coroutine_threadsafe(_fire_callback(task, result), loop)
+                else:
+                    loop.call_soon_threadsafe(_fire_callback, task, result)
+            else:
+                if not asyncio.iscoroutinefunction(_fire_callback):
+                    _fire_callback(task, result)
+        except Exception as cb_err:
+            print(f"[ScheduledTasks] Fire callback error: {cb_err}")
+
     return task
+
+
+@_write_locked
+def pause_task(task_id: int) -> Dict[str, Any]:
+    """Pauses an active scheduled task or watcher."""
+    task = _fetch_task(task_id)
+    if not task:
+        return {"status": "error", "message": f"Task #{task_id} not found."}
+    conn = get_connection()
+    conn.execute("UPDATE scheduled_tasks SET is_paused = 1 WHERE id = ?", (task_id,))
+    conn.commit()
+    conn.close()
+    stop_task(task_id)
+    print(f"[ScheduledTasks] Paused task #{task_id}")
+    return {"status": "ok", "id": task_id, "is_paused": True}
+
+
+@_write_locked
+def resume_task(task_id: int) -> Dict[str, Any]:
+    """Resumes a paused scheduled task or watcher."""
+    task = _fetch_task(task_id)
+    if not task:
+        return {"status": "error", "message": f"Task #{task_id} not found."}
+    now = time.time()
+    interval = float(task.get("interval_seconds") or 1.0)
+    next_run = now + interval
+    conn = get_connection()
+    conn.execute("UPDATE scheduled_tasks SET is_paused = 0, next_run_at = ? WHERE id = ?", (next_run, task_id))
+    conn.commit()
+    conn.close()
+    start_task(task_id)
+    print(f"[ScheduledTasks] Resumed task #{task_id}, next run in {interval:.1f}s")
+    return {"status": "ok", "id": task_id, "is_paused": False, "next_run_at": next_run}
+
+
+def list_task_runs(limit: int = 50, task_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Fetch recent execution runs from the audit table."""
+    conn = get_connection()
+    if task_id:
+        rows = conn.execute(
+            "SELECT * FROM scheduled_task_runs WHERE task_id = ? ORDER BY fired_at DESC LIMIT ?",
+            (task_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM scheduled_task_runs ORDER BY fired_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # ── Asyncio runners & startup restore ───────────────────────────────────────
@@ -907,7 +1092,7 @@ def init_scheduled_task_scheduler():
 
     init_db()
     conn = get_connection()
-    rows = conn.execute("SELECT id FROM scheduled_tasks WHERE is_active = 1").fetchall()
+    rows = conn.execute("SELECT id FROM scheduled_tasks WHERE is_active = 1 AND (is_paused IS NULL OR is_paused = 0)").fetchall()
     conn.close()
 
     for row in rows:

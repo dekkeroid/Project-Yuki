@@ -407,6 +407,7 @@ async def lifespan(app: FastAPI):
 
     from app.tools import scheduled_tasks as _scheduled_tasks
     _scheduled_tasks.set_main_loop(asyncio.get_running_loop())
+    _scheduled_tasks.set_fire_callback(broadcast_scheduled_task_fired)
     _scheduled_tasks.init_scheduled_task_scheduler()
 
     from app.tools import canvas as _canvas_tools
@@ -3027,6 +3028,60 @@ async def broadcast_due_reminders(due: List[Dict[str, Any]]):
                     except Exception as e:
                         print(f"[WebSocket] Error broadcasting due reminder: {e}")
 
+
+async def broadcast_scheduled_task_fired(task: Dict[str, Any], result: str):
+    """
+    Broadcasts scheduled_task_fired WebSocket events to frontend clients and
+    synthesizes a natural voice announcement via Kokoro TTS.
+    """
+    task_id = task.get("id")
+    kind = task.get("kind")
+    action_desc = task.get("action_command") or task.get("action_tool") or task.get("action_type") or "task"
+
+    # 1. Broadcast WebSocket event for real-time dashboard updates & toast notifications
+    payload = {
+        "type": "scheduled_task_fired",
+        "task_id": task_id,
+        "kind": kind,
+        "target": task.get("target"),
+        "condition": task.get("fire_condition"),
+        "action_desc": str(action_desc),
+        "result": str(result),
+        "timestamp": time.time(),
+    }
+    await broadcast_ws(payload)
+
+    # 2. Voice announcement via Kokoro TTS
+    # For rapid interval loops, only speak the first run or errors to avoid overwhelming speech.
+    should_speak = True
+    if kind == "interval":
+        count = task.get("count")
+        # If repeating indefinitely with a short interval (<60s), speak only on failure
+        if count is None and float(task.get("interval_seconds") or 0) < 60:
+            should_speak = "failed" in str(result).lower() or "error" in str(result).lower()
+
+    if should_speak and active_websockets:
+        if kind == "watcher":
+            mon = task.get("monitor_type", "window")
+            cond = task.get("fire_condition", "event")
+            tgt = task.get("target") or ""
+            announcement = f"Notice: {mon} {tgt} condition {cond} triggered. {result}"
+        elif kind == "delayed":
+            announcement = f"Scheduled task completed: {result}"
+        else:
+            announcement = f"Interval task executed: {result}"
+
+        # Dispatch speech event over WebSocket
+        for ws in list(active_websockets):
+            try:
+                await ws.send_json({
+                    "type": "speech",
+                    "text": announcement,
+                })
+            except Exception as e:
+                print(f"[WebSocket] Error broadcasting scheduled task speech: {e}")
+
+
 async def reminder_heartbeat_loop():
     """
     Background heartbeat running every 60 seconds.
@@ -3352,6 +3407,43 @@ def cancel_scheduled_task(req: ScheduledCancelRequest):
         return {"ok": True, "task": res}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/scheduled-tasks/runs")
+def get_scheduled_task_runs(limit: int = 50, task_id: Optional[int] = None):
+    """
+    Returns recent execution history of scheduled tasks.
+    """
+    from app.tools import scheduled_tasks
+    runs = scheduled_tasks.list_task_runs(limit=limit, task_id=task_id)
+    return {"runs": runs}
+
+
+@app.post("/api/scheduled-tasks/pause")
+def pause_scheduled_task(req: ScheduledCancelRequest):
+    """
+    Pauses an active scheduled task by item_id.
+    """
+    from app.tools import scheduled_tasks
+    try:
+        res = scheduled_tasks.pause_task(int(req.item_id))
+        return {"ok": True, "task": res}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/scheduled-tasks/resume")
+def resume_scheduled_task(req: ScheduledCancelRequest):
+    """
+    Resumes a paused scheduled task by item_id.
+    """
+    from app.tools import scheduled_tasks
+    try:
+        res = scheduled_tasks.resume_task(int(req.item_id))
+        return {"ok": True, "task": res}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 
 @app.get("/api/mood")
 def get_mood_spectrum():

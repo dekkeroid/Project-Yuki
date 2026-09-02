@@ -537,6 +537,24 @@ def init_db():
         cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN next_run_at REAL")
     if "last_run_at" not in st_cols:
         cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN last_run_at REAL")
+    if "is_paused" not in st_cols:
+        cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN is_paused INTEGER DEFAULT 0")
+
+    # 1d1b. Scheduled Task Execution Runs / Audit Logs
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS scheduled_task_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER,
+        kind TEXT,
+        target TEXT,
+        action_desc TEXT,
+        result TEXT,
+        status TEXT DEFAULT 'success',
+        fired_at REAL
+    );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sched_runs_task ON scheduled_task_runs(task_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sched_runs_fired ON scheduled_task_runs(fired_at DESC);")
 
     # 1d2. Persistent Agent TODO List (tasks & subtasks)
     cursor.execute("""
