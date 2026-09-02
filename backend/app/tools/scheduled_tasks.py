@@ -112,27 +112,47 @@ def _check_window_state(target: str, condition: str) -> bool:
     elif cond in ("unfocused", "inactive", "background"):
         cond = "unfocused"
 
-    # 1. Inspect user's interactive desktop via ctypes
+    # 1. Inspect user's interactive desktop via ctypes + process map
     try:
         import ctypes
         from ctypes import wintypes
+        import psutil
         user32 = ctypes.windll.user32
         h_desk = user32.OpenDesktopW("Default", 0, False, 0x0100)  # DESKTOP_ENUMERATE
-        matches = []
+        
+        pid_map = {}
+        try:
+            for p in psutil.process_iter(["pid", "name"]):
+                try:
+                    pid_map[p.info["pid"]] = (p.info.get("name") or "").lower()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        target_exe = target if target.endswith(".exe") else f"{target}.exe"
+        proc_matches = []
+        title_matches = []
         WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
         def _desk_cb(hwnd, _):
             try:
-                length = user32.GetWindowTextLengthW(hwnd)
-                if length > 0:
-                    buff = ctypes.create_unicode_buffer(length + 1)
-                    user32.GetWindowTextW(hwnd, buff, length + 1)
-                    title = buff.value.strip().lower()
-                    if target in title:
+                if user32.IsWindow(hwnd):
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buff = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buff, length + 1)
+                        title = buff.value.strip().lower()
                         is_vis = bool(user32.IsWindowVisible(hwnd))
                         is_ico = bool(user32.IsIconic(hwnd))
                         if is_vis or is_ico:
-                            matches.append((hwnd, is_ico))
+                            pid = wintypes.DWORD()
+                            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                            pname = pid_map.get(pid.value, "")
+                            if target in pname or pname == target_exe:
+                                proc_matches.append((hwnd, is_ico))
+                            elif target in title:
+                                title_matches.append((hwnd, is_ico))
             except Exception:
                 pass
             return True
@@ -140,6 +160,9 @@ def _check_window_state(target: str, condition: str) -> bool:
         if h_desk:
             user32.EnumDesktopWindows(h_desk, WNDENUMPROC(_desk_cb), 0)
             user32.CloseDesktop(h_desk)
+
+        # Prioritize windows belonging to the named application/process over incidental title substrings (e.g. browser tabs)
+        matches = proc_matches if proc_matches else title_matches
 
         if matches:
             if cond == "closed":
