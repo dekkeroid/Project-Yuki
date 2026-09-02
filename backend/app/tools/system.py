@@ -2019,23 +2019,43 @@ def get_detailed_stats() -> dict:
 _CACHED_PNP_DEVICES = None
 _CACHED_PNP_TIME = 0.0
 
+_PNP_IGNORE_KEYWORDS = (
+    # Bluetooth protocols, virtual transports, and sub-device nodes
+    "avrcp", "a2dp", "hands-free", "handsfree", "audio gateway",
+    "bluetooth enumerator", "bluetooth le enumerator", "rfcomm", "nap service", "pse service",
+    "streaming service proxy", "input configuration device", "system controller",
+    "consumer control", "vendor-defined", "touch pad", "digitizer", "i2c hid",
+    "generic attribute", "hid device", "usb input device", "composite device", "root hub",
+    # Virtual loopback audio software
+    "audiorelay", "virtual mic", "virtual speaker", "virtual audio", "cable input", "cable output",
+    "stereo mix", "steam streaming", "vb-audio",
+    # Internal motherboard / laptop hardware
+    "realtek(r) audio", "realtek audio", "integrated camera",
+    "intel display audio", "nvidia high definition audio", "amd high definition audio",
+    # System OS drivers
+    "microsoft ",
+)
+
 
 def _get_connected_pnp_devices():
     global _CACHED_PNP_DEVICES, _CACHED_PNP_TIME
     now = time.time()
-    if _CACHED_PNP_DEVICES is not None and (now - _CACHED_PNP_TIME) < 10.0:
+    # Cache for 30 seconds to avoid CPU spikes and periodic PowerShell stutter
+    if _CACHED_PNP_DEVICES is not None and (now - _CACHED_PNP_TIME) < 30.0:
         return _CACHED_PNP_DEVICES
 
     if sys.platform != "win32":
         return []
 
     try:
+        # Exclude 'Bluetooth' and 'Media' classes — they return offline paired Bluetooth profiles
+        # Querying AudioEndpoint dynamically captures active Bluetooth audio when actually connected
         ps_code = """
-$classes = @('Media','AudioEndpoint','Camera','Image','WPD','XboxComposite','HIDClass','Bluetooth')
+$classes = @('AudioEndpoint','Camera','Image','WPD','XboxComposite','HIDClass')
 Get-PnpDevice -PresentOnly | Where-Object { $classes -contains $_.Class -and $_.FriendlyName } | Select-Object FriendlyName, Class, InstanceId | ConvertTo-Json -Compress
 """
         cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_code]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=6, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if proc.returncode == 0 and proc.stdout.strip():
             import json
             raw_data = json.loads(proc.stdout.strip())
@@ -2048,7 +2068,7 @@ Get-PnpDevice -PresentOnly | Where-Object { $classes -contains $_.Class -and $_.
                 inst_id = item.get("InstanceId")
                 if not name or not inst_id:
                     continue
-                dev_type = _classify_pnp_device(name, pnp_class)
+                dev_type = _classify_pnp_device(name, pnp_class, inst_id)
                 devices.append({
                     "name": name,
                     "class": pnp_class,
@@ -2061,33 +2081,52 @@ Get-PnpDevice -PresentOnly | Where-Object { $classes -contains $_.Class -and $_.
     except Exception:
         pass
 
-    return _CACHED_PNP_DEVICES or []
+    # Never return an empty list if we previously had cached devices; preserve cache across transient errors
+    if _CACHED_PNP_DEVICES is not None:
+        return _CACHED_PNP_DEVICES
+    return []
 
 
-def _classify_pnp_device(name: str, pnp_class: str = "") -> str:
+def _classify_pnp_device(name: str, pnp_class: str = "", instance_id: str = "") -> str:
     n = (name or "").lower()
     c = (pnp_class or "").lower()
+    iid = (instance_id or "").upper()
 
-    # 1. Gamepads / Controllers
-    if any(k in n for k in ["controller", "gamepad", "dualsense", "dualshock", "xbox", "joystick", "8bitdo", "flydigi", "thrustmaster"]) or c == "xboxcomposite":
+    # 1. Ignore virtual root buses and known system/transport noise
+    if iid.startswith("ROOT\\"):
+        return "generic_hid"
+
+    for ign in _PNP_IGNORE_KEYWORDS:
+        if ign in n:
+            return "generic_hid"
+
+    # 2. Audio Devices (Mics, Headsets, Earbuds, DACs)
+    # Check audio BEFORE phone so 'Redmi Earbuds' / 'Galaxy Buds' are treated as audio
+    if any(k in n for k in ["earbuds", "earphone", "headphone", "headset", "buds", "airpods", "rockerz", "soundbar", "stone 260", "scarlett", "quadcast", "yeti", "dac", "amplifier", "audio interface"]):
+        return "audio"
+    if re.search(r"\b(mic|microphone)\b", n):
+        return "audio"
+    if c == "audioendpoint":
+        return "audio"
+
+    # 3. Gamepads / Controllers
+    if c == "xboxcomposite" or any(k in n for k in ["gamepad", "dualsense", "dualshock", "xbox", "joystick", "8bitdo", "flydigi", "thrustmaster"]):
+        return "gamepad"
+    if "controller" in n and "system" not in n:
         return "gamepad"
 
-    # 2. Drawing Tablets
+    # 4. Drawing Tablets
     if any(k in n for k in ["wacom", "xp-pen", "huion", "gaomon", "pen tablet", "drawing tablet"]):
         return "tablet"
 
-    # 3. Webcams / Cameras
-    if any(k in n for k in ["webcam", "brio", "cam link", "c920", "c922", "c930", "hd pro webcam"]) or c in ["camera", "image"]:
+    # 5. Webcams / Cameras (external only; integrated camera was already filtered)
+    if any(k in n for k in ["webcam", "brio", "cam link", "c920", "c922", "c930", "hd pro webcam", "obs virtual camera"]) or c in ["camera", "image"]:
         return "webcam"
 
-    # 4. Phones / Portable Media (WPD)
-    if c == "wpd" or any(k in n for k in ["iphone", "pixel", "galaxy", "redmi", "oneplus", "xperia", "android", "portable device", "lumia", "gopro"]):
+    # 6. Phones / Portable Media (WPD)
+    if c == "wpd" or any(k in n for k in ["iphone", "galaxy s", "galaxy a", "galaxy z", "pixel ", "xperia", "android", "portable device", "lumia", "gopro"]):
         return "phone"
 
-    # 5. Audio Devices (Mics, Headsets, DACs)
-    if any(k in n for k in ["microphone", "mic", "headset", "headphone", "earphone", "earbuds", "buds", "scarlett", "quadcast", "yeti", "dac", "amplifier", "audio interface", "airpods", "rockerz", "soundbar", "stone 260"]) or c in ["audioendpoint"]:
-        return "audio"
-
-    # 6. Generic Input / HID (mice, keyboards, etc. - ignored from voice spam)
+    # 7. Generic Input / HID (mice, keyboards, internal sensors - ignored from voice announcements)
     return "generic_hid"
 

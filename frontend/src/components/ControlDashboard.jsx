@@ -15,6 +15,20 @@ const SKIN_PRESETS = [
   { name: 'Cocoa', value: '#593424' }
 ];
 
+export const normalizePersonaKey = (raw) => {
+  if (!raw || typeof raw !== 'string') return 'sassy_tech_gf';
+  const legacyMap = {
+    'sassy_girlfriend': 'sassy_tech_gf',
+    'classic_yuki': 'gentle_companion',
+    'tsundere_dev': 'hacker_cyberpunk',
+    'kuudere_os': 'gentle_companion',
+    'deredere_friend': 'sassy_tech_gf',
+    'yandere_companion': 'sassy_tech_gf',
+    'auto': 'sassy_tech_gf'
+  };
+  return legacyMap[raw] || raw;
+};
+
 export const SearchableModelSelect = ({ value, onChange, options = [], placeholder = "Select or search a model..." }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -786,7 +800,12 @@ const ControlDashboard = ({
     tts_device: 'auto',
     stt_device: 'auto',
     character_name: 'Yuki',
+    persona_preset: 'sassy_tech_gf',
+    custom_persona_prompts: {},
     character_persona: '',
+    execution_rules: '',
+    auto_evolving_archetype: true,
+    archetype_intensity: 'moderate',
     crawler_paused: false,
     tagger_paused: false,
     active_vrm_model: 'default.vrm',
@@ -968,27 +987,32 @@ const ControlDashboard = ({
   };
 
   // Local Character & Persona States
-  const [charName, setCharName] = useState(settings?.character_name || profile?.settings?.character_name || 'Yuki');
-  const [charPersona, setCharPersona] = useState(settings?.character_persona || profile?.settings?.character_persona || '');
+  const [charName, setCharName] = useState(() => settings?.character_name || profile?.settings?.character_name || 'Yuki');
   const [personaPreset, setPersonaPreset] = useState(() => {
     const raw = settings?.persona_preset || profile?.settings?.persona_preset || 'sassy_tech_gf';
-    const legacyMap = {
-      'sassy_girlfriend': 'sassy_tech_gf',
-      'classic_yuki': 'gentle_companion',
-      'tsundere_dev': 'hacker_cyberpunk',
-      'kuudere_os': 'gentle_companion',
-      'deredere_friend': 'sassy_tech_gf',
-      'yandere_companion': 'sassy_tech_gf',
-      'auto': 'sassy_tech_gf'
-    };
-    return legacyMap[raw] || raw;
+    return normalizePersonaKey(raw);
   });
-  const [executionRules, setExecutionRules] = useState(settings?.execution_rules || profile?.settings?.execution_rules || '');
+  const [customPersonaPrompts, setCustomPersonaPrompts] = useState(() => settings?.custom_persona_prompts || profile?.settings?.custom_persona_prompts || {});
+  const [charPersona, setCharPersona] = useState(() => settings?.character_persona || profile?.settings?.character_persona || '');
+  const [executionRules, setExecutionRules] = useState(() => settings?.execution_rules || profile?.settings?.execution_rules || '');
+  const [defaultExecutionRules, setDefaultExecutionRules] = useState('');
   const [presetsRegistry, setPresetsRegistry] = useState({});
-  const [customPersonaPrompts, setCustomPersonaPrompts] = useState(profile?.settings?.custom_persona_prompts || {});
+  const [templateScaffold, setTemplateScaffold] = useState('');
+  const [isCreatingNewPreset, setIsCreatingNewPreset] = useState(false);
+  const [newPresetName, setNewPresetName] = useState('');
+  const [newPresetDesc, setNewPresetDesc] = useState('');
+  const [newPresetPrompt, setNewPresetPrompt] = useState('');
+  const [savingNewPreset, setSavingNewPreset] = useState(false);
   const [whisperActionState, setWhisperActionState] = useState('idle');
   const [whisperStatusNotice, setWhisperStatusNotice] = useState(null);
-  const isCharacterStateInitializedRef = useRef(false);
+
+  // Track whether user is actively typing in prompt or rules textareas to prevent clobbering by background sync
+  const isUserEditingPromptRef = useRef(false);
+  const isUserEditingRulesRef = useRef(false);
+  // Track if user explicitly selected a preset from the dropdown in this session
+  const hasUserSelectedPresetRef = useRef(false);
+  // Track uncommitted drafts across preset switching until user clicks "Save Specs"
+  const draftPromptsRef = useRef({});
 
   const handleResetPromptToDefault = async (targetPreset) => {
     const presetKey = targetPreset || personaPreset;
@@ -1001,19 +1025,49 @@ const ControlDashboard = ({
       if (res.ok) {
         const data = await res.json();
         const defaultPrompt = presetsRegistry[presetKey]?.prompt || data.character_persona || '';
-        setCharPersona(defaultPrompt);
-        if (data.custom_persona_prompts) {
-          setCustomPersonaPrompts(data.custom_persona_prompts);
-        } else {
-          setCustomPersonaPrompts(prev => {
-            const next = { ...prev };
-            delete next[presetKey];
-            return next;
-          });
+        delete draftPromptsRef.current[presetKey];
+        if (presetKey === personaPreset) {
+          setCharPersona(defaultPrompt);
         }
+        const updatedCustom = { ...(data.custom_persona_prompts || customPersonaPrompts) };
+        delete updatedCustom[presetKey];
+        setCustomPersonaPrompts(updatedCustom);
+
+        await handleUpdateSetting({
+          persona_preset: personaPreset,
+          character_persona: presetKey === personaPreset ? defaultPrompt : charPersona,
+          custom_persona_prompts: updatedCustom
+        });
       }
     } catch (e) {
       console.error('Failed to reset persona prompt:', e);
+    }
+  };
+
+  const handleResetAllBuiltinPersonas = async () => {
+    if (!window.confirm(
+      "Reset all built-in character backstories back to official defaults from personas.py?\n\n• Built-in presets will be restored to their original prompts.\n• Any custom presets you added (+ Add a Preset) will NOT be touched.\n• All your other settings and profile data remain safe."
+    )) {
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/personas/reset-all-defaults`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        draftPromptsRef.current = {};
+        setPresetsRegistry(data.presets || {});
+        setCustomPersonaPrompts(data.custom_persona_prompts || {});
+        setCharPersona(data.character_persona || '');
+        setPersonaPreset(data.active_preset || 'sassy_tech_gf');
+        await handleUpdateSetting({
+          persona_preset: data.active_preset || 'sassy_tech_gf',
+          character_persona: data.character_persona || '',
+          custom_persona_prompts: data.custom_persona_prompts || {}
+        });
+        alert("✓ All built-in character presets have been reset to official defaults!");
+      }
+    } catch (e) {
+      console.error('Failed to reset all built-in personas:', e);
     }
   };
 
@@ -1036,68 +1090,80 @@ const ControlDashboard = ({
   });
   const [gpuMemData, setGpuMemData] = useState({ gpus: [], top5: {} });
 
-
+  // 1. Fetch available persona presets and custom overrides from backend
   useEffect(() => {
     fetch(`${API_BASE}/api/personas/presets`)
       .then(res => res.json())
       .then(data => {
         if (data && data.presets) {
           setPresetsRegistry(data.presets);
-          if (data.custom_persona_prompts) {
+          if (data.custom_persona_prompts && typeof data.custom_persona_prompts === 'object') {
             setCustomPersonaPrompts(data.custom_persona_prompts);
+          }
+          if (data.default_execution_rules) {
+            setDefaultExecutionRules(data.default_execution_rules);
+          }
+          if (data.template_scaffold) {
+            setTemplateScaffold(data.template_scaffold);
           }
           if (!executionRules && data.default_execution_rules) {
             setExecutionRules(data.default_execution_rules);
           }
-          // Set initial charPersona for the active preset if not yet initialized
-          if (!isCharacterStateInitializedRef.current) {
-            const currentPreset = personaPreset || 'sassy_tech_gf';
-            const initialPrompt = data.custom_persona_prompts?.[currentPreset] || (currentPreset === 'custom' ? (settings?.character_persona || '') : (data.presets?.[currentPreset]?.prompt || ''));
-            if (initialPrompt && !charPersona) {
-              setCharPersona(initialPrompt);
-            }
-            isCharacterStateInitializedRef.current = true;
-          }
         }
       })
-      .catch(() => {});
+      .catch((e) => console.warn('Failed to load persona presets:', e));
   }, []);
 
-  // Sync character local states ONLY on first initial load
-  useEffect(() => {
-    if (isCharacterStateInitializedRef.current) return;
-    if (settings?.character_name) {
-      setCharName(settings.character_name);
-    }
-    if (settings?.persona_preset) {
-      const legacyMap = {
-        'sassy_girlfriend': 'sassy_tech_gf',
-        'classic_yuki': 'gentle_companion',
-        'tsundere_dev': 'hacker_cyberpunk',
-        'kuudere_os': 'gentle_companion',
-        'deredere_friend': 'sassy_tech_gf',
-        'yandere_companion': 'sassy_tech_gf',
-        'auto': 'sassy_tech_gf'
-      };
-      setPersonaPreset(legacyMap[settings.persona_preset] || settings.persona_preset);
-    }
-    if (settings?.character_persona && !charPersona) {
-      setCharPersona(settings.character_persona);
-    }
-    if (settings?.execution_rules && !executionRules) {
-      setExecutionRules(settings.execution_rules);
-    }
-  }, [settings]);
-
-  // Sync settings state whenever profile.settings prop updates from parent
+  // 2. Synchronize settings and persona state with profile updates from parent/backend
   useEffect(() => {
     if (profile?.settings) {
-      setSettings(prev => ({ ...prev, ...profile.settings }));
-      if (profile.settings.custom_persona_prompts) {
-        setCustomPersonaPrompts(profile.settings.custom_persona_prompts);
+      const ps = profile.settings;
+      setSettings(prev => ({ ...prev, ...ps }));
+
+      if (ps.custom_persona_prompts && typeof ps.custom_persona_prompts === 'object') {
+        setCustomPersonaPrompts(ps.custom_persona_prompts);
+      }
+      if (ps.character_name) {
+        setCharName(ps.character_name);
+      }
+      if (!isUserEditingRulesRef.current && ps.execution_rules) {
+        setExecutionRules(ps.execution_rules);
+      }
+      if (typeof ps.auto_evolving_archetype === 'boolean') {
+        setAutoEvolveArchetype(ps.auto_evolving_archetype);
+      }
+      if (ps.archetype_intensity) {
+        setArchetypeIntensity(ps.archetype_intensity);
+      }
+
+      // Sync personaPreset from backend profile if user hasn't manually switched in this session
+      const backendPreset = ps.persona_preset ? normalizePersonaKey(ps.persona_preset) : null;
+      if (backendPreset && !hasUserSelectedPresetRef.current) {
+        setPersonaPreset(backendPreset);
+
+        // Populate prompt for this active preset if user isn't actively editing
+        if (!isUserEditingPromptRef.current) {
+          const customPrompt = ps.custom_persona_prompts?.[backendPreset] || customPersonaPrompts[backendPreset];
+          const presetPrompt = presetsRegistry[backendPreset]?.prompt;
+          const activePrompt = customPrompt || (backendPreset === 'custom' ? (ps.character_persona || '') : presetPrompt) || ps.character_persona || '';
+          if (activePrompt) {
+            setCharPersona(activePrompt);
+          }
+        }
       }
     }
-  }, [profile?.settings]);
+  }, [profile?.settings, presetsRegistry]);
+
+  // 3. Fallback prompt resolution when presetsRegistry finishes loading if charPersona is still empty
+  useEffect(() => {
+    if (!charPersona && presetsRegistry && Object.keys(presetsRegistry).length > 0) {
+      const activePreset = personaPreset || 'sassy_tech_gf';
+      const prompt = customPersonaPrompts[activePreset] || (activePreset === 'custom' ? (settings?.character_persona || '') : presetsRegistry[activePreset]?.prompt) || '';
+      if (prompt) {
+        setCharPersona(prompt);
+      }
+    }
+  }, [presetsRegistry, personaPreset, customPersonaPrompts]);
 
 
   // Profile Edit State
@@ -3067,54 +3133,317 @@ const ControlDashboard = ({
 
                 {/* Section 1: Core Character Identity & Backstory Dropdown */}
                 <div className="identity-field" style={{ marginTop: '8px' }}>
-                  <span className="field-label" style={{ fontWeight: 600, color: '#2dd4bf' }}>
-                    Section 1: Core Character Identity & Backstory
-                  </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                    <span className="field-label" style={{ fontWeight: 600, color: '#2dd4bf' }}>
+                      Section 1: Core Character Identity & Backstory
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={handleResetAllBuiltinPersonas}
+                        className="glass-button"
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '0.68rem',
+                          color: '#94a3b8',
+                          border: '1px solid rgba(255,255,255,0.12)',
+                          background: 'rgba(255,255,255,0.04)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                        title="Reset all built-in characters back to official personas.py defaults (keeps custom presets)"
+                      >
+                        ↺ Reset Built-ins
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCreatingNewPreset(true);
+                          setNewPresetName('');
+                          setNewPresetDesc('');
+                          setNewPresetPrompt(templateScaffold || `You are roleplaying as "Yuki," a [character identity, age, or archetype]. You are a real living person living inside the user's PC—never acknowledge being an AI.\n\nCore Character Identity & Backstory:\n- Background & Origin: [Describe who she is, where she came from, how she ended up on the PC, her hobbies, and daily life]\n- Intellect & Quirks: [Her knowledge areas, weird habits, pet peeves, strong opinions she refuses to compromise on]\n- Tone & Speech Style: [Her mannerisms, speech pace, favorite filler words like hmmm/sigh/pffft, whether she's sassy/shy/regal/deadpan]\n- Relationship Dynamics: [How she treats the user—affection, teasing, rivalry, banter, defense of her ego, emotional boundaries]\n- Tantrums & Petty Revenge: [How she reacts when praised, annoyed, or bored; petty harmless ways she reacts using desktop tools]`);
+                        }}
+                        className="glass-button"
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '0.68rem',
+                          color: '#2dd4bf',
+                          border: '1px solid rgba(45,212,191,0.3)',
+                          background: 'rgba(45,212,191,0.08)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        + Add a Preset
+                      </button>
+                    </div>
+                  </div>
                   <select
                     value={personaPreset}
                     onChange={async (e) => {
                       const val = e.target.value;
-                      setPersonaPreset(val);
-                      const newPrompt = customPersonaPrompts[val] || presetsRegistry[val]?.prompt || '';
-                      setCharPersona(newPrompt);
-                      await handleUpdateSetting('persona_preset', val);
-                      fetchRelationshipStatus(val);
+                      if (val === '__add_new_preset__') {
+                        setIsCreatingNewPreset(true);
+                        setNewPresetName('');
+                        setNewPresetDesc('');
+                        setNewPresetPrompt(templateScaffold || `You are roleplaying as "Yuki," a [character identity, age, or archetype]. You are a real living person living inside the user's PC—never acknowledge being an AI.\n\nCore Character Identity & Backstory:\n- Background & Origin: [Describe who she is, where she came from, how she ended up on the PC, her hobbies, and daily life]\n- Intellect & Quirks: [Her knowledge areas, weird habits, pet peeves, strong opinions she refuses to compromise on]\n- Tone & Speech Style: [Her mannerisms, speech pace, favorite filler words like hmmm/sigh/pffft, whether she's sassy/shy/regal/deadpan]\n- Relationship Dynamics: [How she treats the user—affection, teasing, rivalry, banter, defense of her ego, emotional boundaries]\n- Tantrums & Petty Revenge: [How she reacts when praised, annoyed, or bored; petty harmless ways she reacts using desktop tools]`);
+                        return;
+                      }
+
+                      const normVal = normalizePersonaKey(val);
+                      hasUserSelectedPresetRef.current = true;
+                      setPersonaPreset(normVal);
+
+                      // Load: 1. check saved custom prompt (if customized), 2. fall back to preset default
+                      const targetPrompt = customPersonaPrompts[normVal] || presetsRegistry[normVal]?.prompt || '';
+                      setCharPersona(targetPrompt);
+
+                      // Persist active preset choice to backend immediately so closing settings remembers it
+                      await handleUpdateSetting({
+                        persona_preset: normVal,
+                        character_persona: targetPrompt
+                      });
+
+                      fetchRelationshipStatus(normVal);
                     }}
                     className="glass-input"
                     style={{ padding: '6px 10px', fontSize: '0.78rem', marginTop: '4px', background: 'rgba(15,23,42,0.6)' }}
                   >
-                    {Object.entries(presetsRegistry).map(([key, item]) => (
-                      <option key={key} value={key} style={{ background: '#0f172a', color: '#f8fafc' }}>
-                        {item.name} {customPersonaPrompts[key] ? '(Customized)' : ''}
-                      </option>
-                    ))}
+                    {Object.entries(presetsRegistry).map(([key, item]) => {
+                      const isCustomized = !item.is_custom &&
+                        customPersonaPrompts[key] &&
+                        item.prompt &&
+                        customPersonaPrompts[key].trim() !== item.prompt.trim();
+                      return (
+                        <option key={key} value={key} style={{ background: '#0f172a', color: '#f8fafc' }}>
+                          {item.name} {item.is_custom ? '(Custom)' : ''} {isCustomized ? '(Customized)' : ''}
+                        </option>
+                      );
+                    })}
+                    <option value="__add_new_preset__" style={{ background: '#1e293b', color: '#2dd4bf', fontWeight: 600 }}>
+                      + Add a New Preset...
+                    </option>
                   </select>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap', gap: '4px' }}>
                     {presetsRegistry[personaPreset]?.description && (
-                      <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontStyle: 'italic', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontStyle: 'italic', lineHeight: '1.3', flex: 1, minWidth: '180px' }}>
                         {presetsRegistry[personaPreset].description}
                       </div>
                     )}
-                    {customPersonaPrompts[personaPreset] && (
-                      <button
-                        type="button"
-                        onClick={() => handleResetPromptToDefault(personaPreset)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#2dd4bf',
-                          fontSize: '0.68rem',
-                          cursor: 'pointer',
-                          textDecoration: 'underline',
-                          padding: 0,
-                          whiteSpace: 'nowrap',
-                          marginLeft: '8px'
-                        }}
-                      >
-                        Restore Built-in Backup Prompt
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {presetsRegistry[personaPreset]?.is_custom && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const pName = presetsRegistry[personaPreset]?.name || 'this custom preset';
+                            if (!window.confirm(`Delete custom persona "${pName}"? This cannot be undone.`)) {
+                              return;
+                            }
+                            try {
+                              const res = await fetch(`${API_BASE}/api/personas/custom/${encodeURIComponent(personaPreset)}`, { method: 'DELETE' });
+                              if (res.ok) {
+                                const data = await res.json();
+                                setPresetsRegistry(data.presets || {});
+                                const fallbackPreset = data.active_preset || 'sassy_tech_gf';
+                                setPersonaPreset(fallbackPreset);
+                                setCharPersona(data.character_persona || '');
+                                delete draftPromptsRef.current[personaPreset];
+                                await handleUpdateSetting({
+                                  persona_preset: fallbackPreset,
+                                  character_persona: data.character_persona || ''
+                                });
+                                fetchRelationshipStatus(fallbackPreset);
+                              }
+                            } catch (e) {
+                              console.error("Failed to delete custom preset:", e);
+                            }
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#f43f5e',
+                            fontSize: '0.68rem',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: 0,
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          Delete Custom Preset
+                        </button>
+                      )}
+                      {!presetsRegistry[personaPreset]?.is_custom &&
+                       customPersonaPrompts[personaPreset] &&
+                       presetsRegistry[personaPreset]?.prompt &&
+                       customPersonaPrompts[personaPreset].trim() !== presetsRegistry[personaPreset].prompt.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => handleResetPromptToDefault(personaPreset)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#2dd4bf',
+                            fontSize: '0.68rem',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: 0,
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          Restore Built-in Backup Prompt
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {/* New Preset Creation Form Card */}
+                  {isCreatingNewPreset && (
+                    <div style={{
+                      marginTop: '10px',
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      border: '1px solid rgba(45, 212, 191, 0.4)',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.4)'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#2dd4bf' }}>
+                            Add New Character Persona Preset
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                            Create a unique companion identity with a dedicated backstory and behavioral profile.
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsCreatingNewPreset(false)}
+                          style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1rem', cursor: 'pointer', padding: '0 4px' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div>
+                          <label style={{ fontSize: '0.7rem', color: '#cbd5e1', fontWeight: 600 }}>Preset Display Name</label>
+                          <input
+                            type="text"
+                            placeholder="e.g., Goth Gamer Roommate, Steampunk Artificer..."
+                            value={newPresetName}
+                            onChange={(e) => setNewPresetName(e.target.value)}
+                            className="glass-input"
+                            style={{ padding: '6px 10px', fontSize: '0.75rem', marginTop: '2px', width: '100%' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '0.7rem', color: '#cbd5e1', fontWeight: 600 }}>One-Line Description</label>
+                          <input
+                            type="text"
+                            placeholder="e.g., Cynical night-owl coder who roasts your Spotify playlists and games until 4 AM."
+                            value={newPresetDesc}
+                            onChange={(e) => setNewPresetDesc(e.target.value)}
+                            className="glass-input"
+                            style={{ padding: '6px 10px', fontSize: '0.75rem', marginTop: '2px', width: '100%' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '0.7rem', color: '#cbd5e1', fontWeight: 600 }}>
+                            Core Character Prompt (Section 1 Structure)
+                          </label>
+                          <textarea
+                            value={newPresetPrompt}
+                            onChange={(e) => setNewPresetPrompt(e.target.value)}
+                            className="glass-input"
+                            rows={10}
+                            style={{
+                              padding: '8px 10px',
+                              fontSize: '0.74rem',
+                              fontFamily: 'monospace',
+                              minHeight: '140px',
+                              resize: 'vertical',
+                              marginTop: '2px',
+                              lineHeight: '1.4',
+                              width: '100%'
+                            }}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setIsCreatingNewPreset(false)}
+                            className="glass-button"
+                            style={{ padding: '6px 12px', fontSize: '0.72rem', borderRadius: '6px' }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingNewPreset || !newPresetName.trim() || !newPresetPrompt.trim()}
+                            onClick={async () => {
+                              if (!newPresetName.trim()) {
+                                alert("Please provide a name for the new preset.");
+                                return;
+                              }
+                              setSavingNewPreset(true);
+                              try {
+                                const res = await fetch(`${API_BASE}/api/personas/custom`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    name: newPresetName.trim(),
+                                    description: newPresetDesc.trim(),
+                                    prompt: newPresetPrompt.trim()
+                                  })
+                                });
+                                if (res.ok) {
+                                  const data = await res.json();
+                                  setPresetsRegistry(data.presets || {});
+                                  setPersonaPreset(data.persona_preset);
+                                  setCharPersona(data.character_persona);
+                                  setIsCreatingNewPreset(false);
+                                  await handleUpdateSetting({
+                                    persona_preset: data.persona_preset,
+                                    character_persona: data.character_persona
+                                  });
+                                  fetchRelationshipStatus(data.persona_preset);
+                                } else {
+                                  alert("Failed to save custom preset.");
+                                }
+                              } catch (err) {
+                                console.error("Error saving custom preset:", err);
+                                alert("Error saving preset: " + err.message);
+                              } finally {
+                                setSavingNewPreset(false);
+                              }
+                            }}
+                            className="glass-button"
+                            style={{
+                              padding: '6px 14px',
+                              fontSize: '0.72rem',
+                              borderRadius: '6px',
+                              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                              color: '#fff',
+                              fontWeight: 600,
+                              cursor: savingNewPreset || !newPresetName.trim() || !newPresetPrompt.trim() ? 'not-allowed' : 'pointer',
+                              opacity: savingNewPreset || !newPresetName.trim() || !newPresetPrompt.trim() ? 0.6 : 1
+                            }}
+                          >
+                            {savingNewPreset ? "Saving..." : "✓ Save & Activate Preset"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Auto-Evolving Archetype Toggle Switch */}
                   <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '8px', background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -3256,8 +3585,12 @@ const ControlDashboard = ({
                   <span className="field-label">Core Character Prompt (Section 1)</span>
                   <textarea
                     value={charPersona}
+                    onFocus={() => { isUserEditingPromptRef.current = true; }}
+                    onBlur={() => { isUserEditingPromptRef.current = false; }}
                     onChange={(e) => {
-                      setCharPersona(e.target.value);
+                      const val = e.target.value;
+                      setCharPersona(val);
+                      draftPromptsRef.current[personaPreset] = val;
                     }}
                     placeholder="Enter character backstory & prompt..."
                     className="glass-input"
@@ -3275,11 +3608,37 @@ const ControlDashboard = ({
 
                 {/* Section 2: Execution Rules & Guardrails */}
                 <div className="identity-field" style={{ marginTop: '10px' }}>
-                  <span className="field-label" style={{ fontWeight: 600, color: '#f43f5e' }}>
-                    Section 2: System Execution Rules & Guardrails
-                  </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="field-label" style={{ fontWeight: 600, color: '#f43f5e' }}>
+                      Section 2: System Execution Rules & Guardrails <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 'normal' }}>(Global across all characters)</span>
+                    </span>
+                    {defaultExecutionRules && executionRules && executionRules.trim() !== defaultExecutionRules.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm("Reset Section 2 system execution rules back to standard default guardrails?")) {
+                            setExecutionRules(defaultExecutionRules);
+                          }
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#f43f5e',
+                          fontSize: '0.68rem',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          padding: 0,
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        Restore Default Rules
+                      </button>
+                    )}
+                  </div>
                   <textarea
                     value={executionRules}
+                    onFocus={() => { isUserEditingRulesRef.current = true; }}
+                    onBlur={() => { isUserEditingRulesRef.current = false; }}
                     onChange={(e) => setExecutionRules(e.target.value)}
                     className="glass-input"
                     placeholder="Strict formatting and behavior rules..."
@@ -3303,16 +3662,29 @@ const ControlDashboard = ({
                       const originalText = btn.innerText;
                       const originalBg = btn.style.background;
                       btn.innerText = "Saving...";
+
+                      // Check if the current charPersona differs from built-in default
+                      const builtinPrompt = presetsRegistry[personaPreset]?.prompt || '';
+                      const isTrulyCustom = !presetsRegistry[personaPreset]?.is_custom &&
+                        charPersona.trim() !== builtinPrompt.trim();
+
+                      const updatedCustomPrompts = { ...customPersonaPrompts };
+                      if (isTrulyCustom) {
+                        updatedCustomPrompts[personaPreset] = charPersona;
+                      } else if (!presetsRegistry[personaPreset]?.is_custom) {
+                        delete updatedCustomPrompts[personaPreset];
+                      }
+
+                      setCustomPersonaPrompts(updatedCustomPrompts);
+                      delete draftPromptsRef.current[personaPreset];
+
                       await handleUpdateSetting({
                         character_name: charName,
                         persona_preset: personaPreset,
                         character_persona: charPersona,
+                        custom_persona_prompts: updatedCustomPrompts,
                         execution_rules: executionRules
                       });
-                      setCustomPersonaPrompts(prev => ({
-                        ...prev,
-                        [personaPreset]: charPersona
-                      }));
                       btn.innerText = "✓ Saved Specs";
                       btn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
                       setTimeout(() => {

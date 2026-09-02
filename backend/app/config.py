@@ -216,6 +216,9 @@ TTS_CLOUD_VOICE = ""     # Runtime only — voice/model name for cloud TTS
 
 # Character Settings
 CHARACTER_NAME = "Yuki"
+PERSONA_PRESET = os.environ.get("PERSONA_PRESET", "sassy_tech_gf")
+AUTO_EVOLVING_ARCHETYPE = os.environ.get("AUTO_EVOLVING_ARCHETYPE", "true").strip().lower() in ("1", "true", "yes", "on")
+ARCHETYPE_INTENSITY = os.environ.get("ARCHETYPE_INTENSITY", "moderate").strip().lower()
 from app.agent.personas import stitch_system_persona, PERSONA_PRESETS, DEFAULT_EXECUTION_RULES
 
 CHARACTER_PERSONA = stitch_system_persona()

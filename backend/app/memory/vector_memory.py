@@ -420,10 +420,43 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
         return
 
     import re
-    # Clean assistant response from animation tags and excessive whitespace
-    clean_assistant = re.sub(r'[<\[\(](?:yuki_)?(?:anim|emotion):[^>\]\)]*[>\]\)]', '', assistant_msg or "").strip()
-    # Normalize internal whitespace / newlines to single spaces for clean memory indexing
-    clean_assistant = " ".join(clean_assistant.split())
+
+    # 1. Clean animation & emotion tags
+    cleaned = re.sub(r'[<\[\(](?:yuki_)?(?:anim|emotion):[^>\]\)]*[>\]\)]', '', assistant_msg or "")
+
+    # 2. Extract tool name + tool output, completely dropping verbose tool_args JSON blocks
+    pattern = re.compile(
+        r'🛠️\s*\*\*\[([a-zA-Z0-9_\-]+)[^\]]*\]\*\*'
+        r'(?:\s*```tool_args[\s\S]*?```)?'
+        r'\s*```tool_output\s*([\s\S]*?)```',
+        re.MULTILINE
+    )
+    def _replace_tool_block(match):
+        tool_name = match.group(1).strip()
+        tool_output = match.group(2).strip()
+        clean_output = " ".join(tool_output.split())
+        if len(clean_output) > 200:
+            clean_output = clean_output[:197] + "..."
+        if clean_output:
+            return f"[Tool: {tool_name} -> {clean_output}] "
+        return f"[Tool: {tool_name}] "
+
+    cleaned = pattern.sub(_replace_tool_block, cleaned)
+    # Strip any leftover raw tool_args blocks
+    cleaned = re.sub(r'```tool_args[\s\S]*?```', '', cleaned)
+    # Normalize internal whitespace / newlines
+    lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+    clean_assistant = " ".join(" ".join(lines).split())
+
+    # 3. Trim to 1000 characters cleanly on a word boundary
+    max_chars = 1000
+    if len(clean_assistant) > max_chars:
+        trimmed = clean_assistant[:max_chars]
+        last_space = trimmed.rfind(' ')
+        if last_space > int(max_chars * 0.8):
+            clean_assistant = trimmed[:last_space] + '...'
+        else:
+            clean_assistant = trimmed + '...'
 
     # Detect user preference keywords to assign permanent high-priority category
     pref_triggers = ["i like", "i love", "i hate", "i dislike", "i prefer", "my favorite", "i always", "i never", "i am a", "my name is", "call me"]
@@ -436,7 +469,7 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
     else:
         # Conversational exchange: captures what Master asked/said AND what Yuki replied/recommended
         if clean_assistant and len(clean_assistant) > 10:
-            memory_text = f"Master: {user_trimmed} | Yuki: {clean_assistant[:350]}"
+            memory_text = f"Master: {user_trimmed} | Yuki: {clean_assistant}"
         else:
             memory_text = f"Master: {user_trimmed}"
 

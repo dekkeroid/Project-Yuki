@@ -308,7 +308,16 @@ const App = () => {
     user_likes: [],
     user_dislikes: [],
     custom_facts: {},
-    interaction_count: 0
+    interaction_count: 0,
+    settings: {
+      persona_preset: 'sassy_tech_gf',
+      custom_persona_prompts: {},
+      character_name: 'Yuki',
+      character_persona: '',
+      execution_rules: '',
+      auto_evolving_archetype: true,
+      archetype_intensity: 'moderate'
+    }
   });
 
   // Comprehensive Electron Settings Modal States
@@ -1290,7 +1299,7 @@ const App = () => {
 
           if (knownDrivesRef.current === null) {
             knownDrivesRef.current = currentDriveMap;
-          } else {
+          } else if (currentDriveMap.size > 0 || knownDrivesRef.current.size === 0) {
             const addedDrives = currentDrives.filter((d) => !knownDrivesRef.current.has(d.mountpoint));
             const removedDrives = Array.from(knownDrivesRef.current.values()).filter((d) => !currentDriveMap.has(d.mountpoint));
 
@@ -1307,6 +1316,9 @@ const App = () => {
             };
 
             for (const drive of addedDrives) {
+              // Ignore fixed internal OS system drive (C:\) on startup glitches
+              if (!drive.is_removable && drive.mountpoint && drive.mountpoint.toUpperCase().startsWith('C:')) continue;
+
               const letter = drive.mountpoint.replace(/[:\\]/g, '');
               const spoken = drive.free_gb && drive.total_gb
                 ? `I detected a storage drive on drive ${letter} with ${drive.free_gb} gigabytes free space!`
@@ -1320,6 +1332,9 @@ const App = () => {
             }
 
             for (const drive of removedDrives) {
+              // Do not announce OS drive C disconnection during transient anomalies
+              if (!drive.is_removable && drive.mountpoint && drive.mountpoint.toUpperCase().startsWith('C:')) continue;
+
               const letter = drive.mountpoint.replace(/[:\\]/g, '');
               const spoken = `Storage drive ${letter} was disconnected. Bye-bye drive!`;
               const chatContent = `*reacts to drive* Storage drive **${drive.mountpoint}** was disconnected.`;
@@ -1341,53 +1356,67 @@ const App = () => {
           if (knownDevicesRef.current === null) {
             knownDevicesRef.current = currentDeviceSet;
           } else {
-            const addedDevices = currentDevices.filter((d) => !knownDevicesRef.current.has(d.id || d.name));
+            // Guard: If current scan is empty while we previously had devices,
+            // this is a transient backend timeout or restart. Never wipe baseline to empty!
+            if (currentDeviceSet.size === 0 && knownDevicesRef.current.size > 0) {
+              // Keep previous baseline intact
+            } else {
+              const addedDevices = currentDevices.filter((d) => !knownDevicesRef.current.has(d.id || d.name));
 
-            const recordSystemEvent = (content) => {
-              if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-                try {
-                  socketRef.current.send(JSON.stringify({
-                    type: 'system_event',
-                    role: 'assistant',
-                    content
-                  }));
-                } catch (_) {}
-              }
-            };
+              // Guard: Anti-Surge / Flood Protection
+              // If more than 2 devices appear at once (e.g. system wake, dock re-enumeration, or glitch),
+              // update the baseline silently instead of flooding chat and TTS with dozens of messages!
+              if (addedDevices.length > 2) {
+                console.log(`[PnP] Peripheral surge detected (${addedDevices.length} devices). Updating baseline silently.`);
+                knownDevicesRef.current = currentDeviceSet;
+              } else {
+                const recordSystemEvent = (content) => {
+                  if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+                    try {
+                      socketRef.current.send(JSON.stringify({
+                        type: 'system_event',
+                        role: 'assistant',
+                        content
+                      }));
+                    } catch (_) {}
+                  }
+                };
 
-            for (const dev of addedDevices) {
-              if (dev.type === 'generic_hid' || dev.type === 'unknown' || !dev.name) {
-                continue; // Skip generic keyboards/mice/system services to prevent voice spam
-              }
+                for (const dev of addedDevices) {
+                  if (dev.type === 'generic_hid' || dev.type === 'unknown' || !dev.name) {
+                    continue; // Skip generic keyboards/mice/system services to prevent voice spam
+                  }
 
-              let spoken = '';
-              let chatContent = '';
+                  let spoken = '';
+                  let chatContent = '';
 
-              if (dev.type === 'gamepad') {
-                spoken = `Gamepad connected: ${dev.name}. Ready for gaming, Master!`;
-                chatContent = `*reacts to controller* **Gamepad Connected:** ${dev.name}`;
-              } else if (dev.type === 'phone') {
-                spoken = `Mobile device connected: ${dev.name}.`;
-                chatContent = `*reacts to phone* **Mobile Device Connected:** ${dev.name}`;
-              } else if (dev.type === 'audio') {
-                spoken = `Audio device connected: ${dev.name}.`;
-                chatContent = `*reacts to audio* **Audio Device Connected:** ${dev.name}`;
-              } else if (dev.type === 'tablet') {
-                spoken = `Drawing tablet connected: ${dev.name}.`;
-                chatContent = `*reacts to tablet* **Drawing Tablet Connected:** ${dev.name}`;
-              } else if (dev.type === 'webcam') {
-                spoken = `Webcam connected: ${dev.name}.`;
-                chatContent = `*reacts to camera* **Webcam Connected:** ${dev.name}`;
-              }
+                  if (dev.type === 'gamepad') {
+                    spoken = `Gamepad connected: ${dev.name}. Ready for gaming, Master!`;
+                    chatContent = `*reacts to controller* **Gamepad Connected:** ${dev.name}`;
+                  } else if (dev.type === 'phone') {
+                    spoken = `Mobile device connected: ${dev.name}.`;
+                    chatContent = `*reacts to phone* **Mobile Device Connected:** ${dev.name}`;
+                  } else if (dev.type === 'audio') {
+                    spoken = `Audio device connected: ${dev.name}.`;
+                    chatContent = `*reacts to audio* **Audio Device Connected:** ${dev.name}`;
+                  } else if (dev.type === 'tablet') {
+                    spoken = `Drawing tablet connected: ${dev.name}.`;
+                    chatContent = `*reacts to tablet* **Drawing Tablet Connected:** ${dev.name}`;
+                  } else if (dev.type === 'webcam') {
+                    spoken = `Webcam connected: ${dev.name}.`;
+                    chatContent = `*reacts to camera* **Webcam Connected:** ${dev.name}`;
+                  }
 
-              if (spoken && chatContent) {
-                setMessages((prev) => [...prev, { role: 'assistant', content: chatContent }]);
-                speakSystemMessage(spoken);
-                recordSystemEvent(chatContent);
+                  if (spoken && chatContent) {
+                    setMessages((prev) => [...prev, { role: 'assistant', content: chatContent }]);
+                    speakSystemMessage(spoken);
+                    recordSystemEvent(chatContent);
+                  }
+                }
+
+                knownDevicesRef.current = currentDeviceSet;
               }
             }
-
-            knownDevicesRef.current = currentDeviceSet;
           }
         }
       } catch (e) {

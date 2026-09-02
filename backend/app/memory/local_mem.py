@@ -57,7 +57,13 @@ class MemoryManager:
                 "tts_device": "auto",
                 "stt_device": "auto",
                 "character_name": "Yuki",
+                "persona_preset": "sassy_tech_gf",
+                "custom_persona_prompts": {},
+                "user_presets": {},
                 "character_persona": config.CHARACTER_PERSONA,
+                "execution_rules": getattr(config, "DEFAULT_EXECUTION_RULES", ""),
+                "auto_evolving_archetype": True,
+                "archetype_intensity": "moderate",
                 "crawler_paused": False,
                 "tagger_paused": True,
                 "active_vrm_model": "default.vrm",
@@ -221,17 +227,19 @@ class MemoryManager:
                 config.STABLE_HORDE_API_KEY = str(data["settings"].get("stable_horde_api_key", getattr(config, "STABLE_HORDE_API_KEY", "0000000000"))).strip()
                 config.STABLE_HORDE_MODEL = str(data["settings"].get("stable_horde_model", getattr(config, "STABLE_HORDE_MODEL", "Pony Diffusion V6 XL"))).strip()
                 config.CHARACTER_NAME = data["settings"].get("character_name", config.CHARACTER_NAME)
-                
-                # IMPORTANT FIX FOR PROD:
-                # If a legacy character_persona is saved in settings, but NO custom_persona_prompts exist, 
-                # we should NOT blindly load it for the "sassy_tech_gf" if they are a new user. 
-                # However, to preserve state for old users, we DO load it, but we also ensure 
-                # custom_persona_prompts dictionary is explicitly initialized if missing.
-                if "custom_persona_prompts" not in data["settings"]:
+                config.PERSONA_PRESET = data["settings"].get("persona_preset", getattr(config, "PERSONA_PRESET", "sassy_tech_gf"))
+                data["settings"]["persona_preset"] = config.PERSONA_PRESET
+                config.AUTO_EVOLVING_ARCHETYPE = bool(data["settings"].get("auto_evolving_archetype", getattr(config, "AUTO_EVOLVING_ARCHETYPE", True)))
+                config.ARCHETYPE_INTENSITY = str(data["settings"].get("archetype_intensity", getattr(config, "ARCHETYPE_INTENSITY", "moderate"))).strip().lower()
+
+                if "custom_persona_prompts" not in data["settings"] or not isinstance(data["settings"]["custom_persona_prompts"], dict):
                     data["settings"]["custom_persona_prompts"] = {}
-                
+                if "user_presets" not in data["settings"] or not isinstance(data["settings"]["user_presets"], dict):
+                    data["settings"]["user_presets"] = {}
+
                 from app.agent.personas import get_clean_character_backstory
                 config.CHARACTER_PERSONA = get_clean_character_backstory(data)
+                data["settings"]["character_persona"] = config.CHARACTER_PERSONA
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
                 config.START_WITH_LAST_AVATAR_SIZE = bool(data["settings"].get("start_with_last_avatar_size", getattr(config, "START_WITH_LAST_AVATAR_SIZE", True)))
                 config.ENABLE_VECTOR_MEMORY = bool(data["settings"].get("enable_vector_memory", getattr(config, "ENABLE_VECTOR_MEMORY", False)))
@@ -408,30 +416,62 @@ class MemoryManager:
         elif key == "character_persona":
             preset_key = self.profile.get("settings", {}).get("persona_preset", "sassy_tech_gf")
             val_str = str(value).strip()
-            from app.agent.personas import PERSONA_PRESETS
-            builtin_prompt = PERSONA_PRESETS.get(preset_key, {}).get("prompt", "").strip()
-            if "custom_persona_prompts" not in self.profile["settings"]:
+            if "custom_persona_prompts" not in self.profile["settings"] or not isinstance(self.profile["settings"]["custom_persona_prompts"], dict):
                 self.profile["settings"]["custom_persona_prompts"] = {}
-            if builtin_prompt and val_str == builtin_prompt:
-                self.profile["settings"]["custom_persona_prompts"].pop(preset_key, None)
-            else:
-                self.profile["settings"]["custom_persona_prompts"][preset_key] = val_str
+            self.profile["settings"]["custom_persona_prompts"][preset_key] = val_str
+            self.profile["settings"]["character_persona"] = val_str
+            config.CHARACTER_PERSONA = val_str
+            self._save_profile()
+        elif key == "custom_persona_prompts":
+            if "custom_persona_prompts" not in self.profile["settings"] or not isinstance(self.profile["settings"]["custom_persona_prompts"], dict):
+                self.profile["settings"]["custom_persona_prompts"] = {}
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    k_clean = str(k).strip()
+                    v_clean = str(v).strip() if v is not None else ""
+                    if v_clean:
+                        self.profile["settings"]["custom_persona_prompts"][k_clean] = v_clean
+                    else:
+                        self.profile["settings"]["custom_persona_prompts"].pop(k_clean, None)
             from app.agent.personas import get_clean_character_backstory
             config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
             self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
             self._save_profile()
         elif key == "persona_preset":
-            self.profile["settings"]["persona_preset"] = str(value).strip()
+            val_str = str(value).strip()
+            self.profile["settings"]["persona_preset"] = val_str
+            config.PERSONA_PRESET = val_str
             from app.agent.personas import get_clean_character_backstory
             config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
             self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
             self._save_profile()
+        elif key == "user_presets":
+            if isinstance(value, dict):
+                if "user_presets" not in self.profile["settings"] or not isinstance(self.profile["settings"]["user_presets"], dict):
+                    self.profile["settings"]["user_presets"] = {}
+                self.profile["settings"]["user_presets"] = value
+                from app.agent.personas import get_clean_character_backstory
+                config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+                self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
+                self._save_profile()
         elif key == "execution_rules":
             self.profile["settings"]["execution_rules"] = str(value).strip()
             from app.agent.personas import get_clean_character_backstory
             config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+            self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
             self._save_profile()
-        elif key in ("auto_evolving_archetype", "archetype_intensity"):
+        elif key == "auto_evolving_archetype":
+            val_bool = bool(value)
+            config.AUTO_EVOLVING_ARCHETYPE = val_bool
+            self.profile["settings"]["auto_evolving_archetype"] = val_bool
+            from app.agent.personas import get_clean_character_backstory
+            config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+            self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
+            self._save_profile()
+        elif key == "archetype_intensity":
+            val_str = str(value).strip().lower()
+            config.ARCHETYPE_INTENSITY = val_str
+            self.profile["settings"]["archetype_intensity"] = val_str
             from app.agent.personas import get_clean_character_backstory
             config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
             self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
@@ -541,17 +581,6 @@ class MemoryManager:
             
         return f"Successfully updated setting '{key}' to '{value}'."
 
-    def reset_custom_persona_prompt(self, preset: str = None) -> str:
-        """Deletes custom Section 1 prompt override for preset and restores built-in default backup prompt."""
-        preset_key = preset or self.profile.get("settings", {}).get("persona_preset", "sassy_tech_gf")
-        if "settings" in self.profile and "custom_persona_prompts" in self.profile["settings"]:
-            if preset_key in self.profile["settings"]["custom_persona_prompts"]:
-                del self.profile["settings"]["custom_persona_prompts"][preset_key]
-                self._save_profile()
-        from app.agent.personas import get_clean_character_backstory
-        config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
-        return config.CHARACTER_PERSONA
-
     def get_profile_summary(self) -> str:
         """
         Generates a summary string of the user to inject into the system prompt.
@@ -638,7 +667,10 @@ class MemoryManager:
             "app": "Project Yuki",
             "persona": {
                 "character_name": self.profile.get("settings", {}).get("character_name", config.CHARACTER_NAME),
+                "persona_preset": self.profile.get("settings", {}).get("persona_preset", getattr(config, "PERSONA_PRESET", "sassy_tech_gf")),
+                "custom_persona_prompts": self.profile.get("settings", {}).get("custom_persona_prompts", {}),
                 "character_persona": self.profile.get("settings", {}).get("character_persona", config.CHARACTER_PERSONA),
+                "execution_rules": self.profile.get("settings", {}).get("execution_rules", ""),
                 "tts_voice": self.profile.get("settings", {}).get("tts_voice", config.TTS_VOICE)
             },
             "user_profile": {
@@ -663,14 +695,30 @@ class MemoryManager:
         # If data is flat or structured
         char_name = persona.get("character_name") or data.get("character_name")
         char_persona = persona.get("character_persona") or data.get("character_persona")
+        persona_preset = persona.get("persona_preset") or data.get("persona_preset")
+        custom_prompts = persona.get("custom_persona_prompts") or data.get("custom_persona_prompts")
+        execution_rules = persona.get("execution_rules") or data.get("execution_rules")
         tts_voice = persona.get("tts_voice") or data.get("tts_voice")
 
         if char_name:
             self.profile["settings"]["character_name"] = str(char_name).strip()
             config.CHARACTER_NAME = str(char_name).strip()
+        if persona_preset:
+            self.profile["settings"]["persona_preset"] = str(persona_preset).strip()
+            config.PERSONA_PRESET = str(persona_preset).strip()
+        if isinstance(custom_prompts, dict):
+            if "custom_persona_prompts" not in self.profile["settings"]:
+                self.profile["settings"]["custom_persona_prompts"] = {}
+            self.profile["settings"]["custom_persona_prompts"].update(custom_prompts)
         if char_persona:
             self.profile["settings"]["character_persona"] = str(char_persona).strip()
             config.CHARACTER_PERSONA = str(char_persona).strip()
+        else:
+            from app.agent.personas import get_clean_character_backstory
+            config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+            self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
+        if execution_rules:
+            self.profile["settings"]["execution_rules"] = str(execution_rules).strip()
         if tts_voice:
             self.profile["settings"]["tts_voice"] = str(tts_voice).strip()
             config.TTS_VOICE = str(tts_voice).strip()
@@ -761,9 +809,16 @@ class MemoryManager:
         self._save_profile()
         
         from app.agent.personas import PERSONA_PRESETS
+        user_presets = settings.get("user_presets", {})
         
+        if preset_key in user_presets and isinstance(user_presets[preset_key], dict) and user_presets[preset_key].get("prompt"):
+            default_prompt = user_presets[preset_key]["prompt"]
+        elif preset_key in PERSONA_PRESETS:
+            default_prompt = PERSONA_PRESETS[preset_key]["prompt"]
+        else:
+            default_prompt = PERSONA_PRESETS["sassy_tech_gf"]["prompt"]
+
         # Also update character_persona if this is the currently active persona
-        default_prompt = PERSONA_PRESETS.get(preset_key, PERSONA_PRESETS["sassy_tech_gf"])["prompt"]
         if settings.get("persona_preset") == preset_key:
             from app.agent.personas import sanitize_base_backstory
             clean = sanitize_base_backstory(default_prompt)
@@ -774,5 +829,106 @@ class MemoryManager:
             return clean
             
         return default_prompt
+
+    def save_user_preset(self, name: str, description: str, prompt: str, preset_id: str = None) -> dict:
+        """Creates or updates a user-defined character persona preset."""
+        import re, time
+        if "settings" not in self.profile:
+            self.profile["settings"] = {}
+        if "user_presets" not in self.profile["settings"] or not isinstance(self.profile["settings"]["user_presets"], dict):
+            self.profile["settings"]["user_presets"] = {}
+
+        name_clean = str(name).strip() if name else "Custom Persona"
+        desc_clean = str(description).strip() if description else "User-defined character persona."
+        prompt_clean = str(prompt).strip() if prompt else ""
+
+        if preset_id and str(preset_id).strip():
+            pid = str(preset_id).strip()
+        else:
+            base_slug = re.sub(r'[^a-z0-9_]+', '_', name_clean.lower()).strip('_') or "custom"
+            pid = f"user_{base_slug}_{int(time.time())}"
+
+        self.profile["settings"]["user_presets"][pid] = {
+            "name": name_clean,
+            "description": desc_clean,
+            "prompt": prompt_clean
+        }
+
+        # Activate this preset
+        self.profile["settings"]["persona_preset"] = pid
+        from app import config
+        config.PERSONA_PRESET = pid
+        from app.agent.personas import get_clean_character_backstory
+        config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+        self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
+        self._save_profile()
+
+        return {
+            "preset_id": pid,
+            "name": name_clean,
+            "description": desc_clean,
+            "prompt": prompt_clean,
+            "all_user_presets": self.profile["settings"]["user_presets"]
+        }
+
+    def delete_user_preset(self, preset_id: str) -> dict:
+        """Deletes a user-defined persona preset."""
+        if "settings" not in self.profile:
+            self.profile["settings"] = {}
+        user_presets = self.profile["settings"].get("user_presets", {})
+        pid = str(preset_id).strip()
+
+        if pid in user_presets:
+            user_presets.pop(pid, None)
+            self.profile["settings"]["user_presets"] = user_presets
+
+            # If deleted preset was active, fall back to sassy_tech_gf
+            if self.profile["settings"].get("persona_preset") == pid:
+                self.profile["settings"]["persona_preset"] = "sassy_tech_gf"
+                from app import config
+                config.PERSONA_PRESET = "sassy_tech_gf"
+
+            if "custom_persona_prompts" in self.profile["settings"]:
+                self.profile["settings"]["custom_persona_prompts"].pop(pid, None)
+
+            from app.agent.personas import get_clean_character_backstory
+            from app import config
+            config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+            self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
+            self._save_profile()
+
+        return {
+            "active_preset": self.profile["settings"].get("persona_preset", "sassy_tech_gf"),
+            "user_presets": self.profile["settings"].get("user_presets", {})
+        }
+
+    def reset_all_builtin_personas(self) -> dict:
+        """Resets all built-in persona customizations back to personas.py defaults,
+        leaving user-defined custom presets (+ Add a Preset) completely untouched."""
+        if "settings" not in self.profile:
+            self.profile["settings"] = {}
+
+        user_presets = self.profile["settings"].get("user_presets", {})
+        custom_prompts = self.profile["settings"].get("custom_persona_prompts", {})
+
+        # Retain only overrides for user-created presets; clear all built-in overrides
+        cleaned_custom_prompts = {
+            k: v for k, v in custom_prompts.items() if k in user_presets
+        }
+        self.profile["settings"]["custom_persona_prompts"] = cleaned_custom_prompts
+
+        from app.agent.personas import get_clean_character_backstory
+        from app import config
+        config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
+        self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
+        self._save_profile()
+
+        return {
+            "status": "success",
+            "active_preset": self.profile["settings"].get("persona_preset", "sassy_tech_gf"),
+            "character_persona": config.CHARACTER_PERSONA,
+            "custom_persona_prompts": cleaned_custom_prompts,
+            "user_presets": user_presets
+        }
 
 

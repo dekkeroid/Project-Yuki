@@ -13,7 +13,12 @@ export default function SettingsApp() {
       tts_voice: 'af_bella',
       tts_rate: 'auto',
       character_name: 'Yuki',
-      character_persona: ''
+      persona_preset: 'sassy_tech_gf',
+      custom_persona_prompts: {},
+      character_persona: '',
+      execution_rules: '',
+      auto_evolving_archetype: true,
+      archetype_intensity: 'moderate'
     }
   });
   const [backendStatus, setBackendStatus] = useState('online');
