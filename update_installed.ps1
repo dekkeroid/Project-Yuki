@@ -81,7 +81,7 @@ Write-Host ""
 Write-Host "Checking for changes..."
 
 $backendSources = @(Get-ChildItem "$backendDir\app" -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -notmatch '\\__pycache__\\' -and $_.Extension -notin '.pyc', '.pyo' })
+    Where-Object { $_.FullName -notmatch '\\__pycache__\\' -and $_.Extension -notin '.pyc', '.pyo', '.db', '.db-wal', '.db-shm' })
 $backendSources += @(Get-Item "$backendDir\run.py", "$backendDir\requirements.txt", "$backendDir\yuki-backend.spec" -ErrorAction SilentlyContinue)
 $backendChanged = Is-AnyNewer (Join-Path $installDir 'resources\backend\backend.exe') $backendSources
 
@@ -311,10 +311,10 @@ if ($selBackend) {
         $destRootApp     = Join-Path $installDir 'resources\backend\app'
         $localDistApp    = "$root\$backendDir\dist\backend\_internal\app"
         
-        $rc1 = robocopy "$root\$backendDir\app" $destInternalApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
-        $rc2 = robocopy "$root\$backendDir\app" $destRootApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+        $rc1 = robocopy "$root\$backendDir\app" $destInternalApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo *.db *.db-wal *.db-shm /XD __pycache__
+        $rc2 = robocopy "$root\$backendDir\app" $destRootApp     /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo *.db *.db-wal *.db-shm /XD __pycache__
         if (Test-Path "$root\$backendDir\dist\backend\_internal") {
-            $rc3 = robocopy "$root\$backendDir\app" $localDistApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo /XD __pycache__
+            $rc3 = robocopy "$root\$backendDir\app" $localDistApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo *.db *.db-wal *.db-shm /XD __pycache__
         }
 
         # Automatically detect and sync any newly installed or updated packages from venv to installed app
@@ -373,12 +373,42 @@ if ($selBackend) {
         Pop-Location
 
         Write-Host "--- Backend engine: copying (preserving your .env / data) ---"
+        # Preserve installed vectors.db (and WAL/SHM) if present so memories are never lost on full rebuild
+        $backupVectorsDir = Join-Path $env:TEMP 'yuki_vectors_backup'
+        if (Test-Path $backupVectorsDir) { Remove-Item $backupVectorsDir -Recurse -Force -ErrorAction SilentlyContinue }
+        $installedMemoryDir = Join-Path $installDir 'resources\backend\_internal\app\memory'
+        if (-not (Test-Path (Join-Path $installedMemoryDir 'vectors.db'))) {
+            $installedMemoryDir = Join-Path $installDir 'resources\backend\app\memory'
+        }
+        if (Test-Path (Join-Path $installedMemoryDir 'vectors.db')) {
+            New-Item -ItemType Directory -Path $backupVectorsDir -Force | Out-Null
+            Get-ChildItem $installedMemoryDir -Filter "vectors.db*" -ErrorAction SilentlyContinue | ForEach-Object {
+                Copy-Item $_.FullName -Destination $backupVectorsDir -Force
+            }
+        }
+
         # Clean loose app Python folders so the new PyInstaller build is 100% fresh (preserves .env, db, profile, etc.)
         Remove-Item (Join-Path $installDir 'resources\backend\_internal\app') -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $installDir 'resources\backend\app') -Recurse -Force -ErrorAction SilentlyContinue
 
-        $rc = robocopy "$root\$backendDir\dist\backend" (Join-Path $installDir 'resources\backend') /E /XF .env /NFL /NDL /NJH /NJS
+        $rc = robocopy "$root\$backendDir\dist\backend" (Join-Path $installDir 'resources\backend') /E /XF .env *.db *.db-wal *.db-shm /NFL /NDL /NJH /NJS
         if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
+
+        # Restore preserved vectors.db
+        if (Test-Path $backupVectorsDir) {
+            $destDirs = @(
+                Join-Path $installDir 'resources\backend\_internal\app\memory',
+                Join-Path $installDir 'resources\backend\app\memory'
+            )
+            foreach ($destDir in $destDirs) {
+                if (Test-Path $destDir) {
+                    Get-ChildItem $backupVectorsDir -Filter "vectors.db*" -ErrorAction SilentlyContinue | ForEach-Object {
+                        Copy-Item $_.FullName -Destination $destDir -Force
+                    }
+                }
+            }
+            Remove-Item $backupVectorsDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
