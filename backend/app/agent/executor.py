@@ -949,6 +949,10 @@ class AgentExecutor:
             elif do in self.tools or self._resolve_tool_name(do) in self.tools:
                 action_type = "tool"
                 action_tool = self._resolve_tool_name(do)
+            elif do.lower().endswith(".exe") or (os.path.isabs(do) and os.path.exists(do)):
+                action_type = "tool"
+                action_tool = "launch_app"
+                action_args = {"app_name": do, "query": do}
             else:
                 action_type = "shell"
                 action_command = do
@@ -1159,6 +1163,13 @@ class AgentExecutor:
                 return str(result)
             except Exception as e:
                 return f"Scheduled tool '{action_tool}' failed: {e}"
+
+        if action_type == "shell":
+            from app.tools.scheduled_tasks import _run_shell_action
+            cmd = action_command or (action_args.get("command") if isinstance(action_args, dict) else "") or (action_args.get("app_name") if isinstance(action_args, dict) else "")
+            if not cmd and action_tool:
+                cmd = action_tool
+            return _run_shell_action(cmd)
 
         return f"No action configured (type={action_type})."
 
