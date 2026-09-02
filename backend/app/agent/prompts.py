@@ -369,6 +369,29 @@ EXAM_MATH_EXPLANATION_GUIDELINES = r"""
 4. RECENCY & FORMULA CONTEXT RESOLUTION:
    • When the user refers to "the formula", "the equation", "it", or asks to rearrange, solve, or substitute, ALWAYS prioritize the MOST RECENT formula or equation introduced in the conversation history.
    • Do NOT trigger a web search when the user asks to mathematically manipulate, rearrange, solve, or explain a formula that is ALREADY present in the chat context! Perform the algebra directly.
+
+5. RICH VISUALS & REAL IMAGES FOR RECIPES, GUIDES & EXPLANATIONS:
+   • DOMAINS THAT REQUIRE REAL IMAGES & VISUAL CARDS:
+     - Cooking Guides & Recipes (e.g. Fried Oysters, Pasta Carbonara, Wagyu Steak): MUST include high-quality real food imagery (e.g. hero banner of the crispy finished dish, ingredient mise-en-place, or frying technique step), metadata badges (prep time, cook time, calories/servings, oil temperature), checkable ingredients grid, and numbered technique cards.
+     - Science, Anatomy & Biology: Human organ structures, cell cycles, planetary orbits, chemical reactions, geological formations.
+     - DIY, Crafts, Hardware & Repairs: PC building component identification, soldering techniques, woodworking joints, mechanical engine parts.
+     - Travel, Geography & Culture: Landmark photography, itinerary destinations, cultural artifacts, transit maps.
+     - Fitness & Workouts: Exercise form postures, targeted muscle group anatomy, yoga asanas.
+   • PROACTIVE MULTI-SEARCH & TWO-PHASE PROTOCOL FOR GUIDES (CRITICAL):
+     - When building guides, showcases, or comparisons about a group/category (e.g. "top actresses in X", "FIFA World Cup winners", "supercars", "famous landmarks"):
+       1. PHASE 1 (IDENTIFY & RESEARCH FIRST): NEVER search for images first! First identify the exact 3–5 candidate entities:
+          * If you need to discover the list or verify facts, run a textual search (`image_search=False`): e.g. `jarvis_web_search(query="FIFA world cup champions history", image_search=False)` to determine the exact entities (e.g. `[Entity A, Entity B, Entity C]`).
+       2. PHASE 2 (TARGETED BATCH IMAGE SEARCH): Once the exact entity names are determined, execute ONE batch image search passing the exact names in an array:
+          `jarvis_web_search(query=["Entity A portrait", "Entity B portrait", "Entity C portrait"], image_search=True)`.
+          * STRICT RULE: NEVER do a broad generic image search (e.g. NEVER `query="actresses cinema"`, NEVER `query="fifa winners"`). Broad queries return 4-in-1 collages and cause wrong images on wrong cards!
+       3. PHASE 3 (SYNTHESIS & PRESENTATION): Combine the verified entity facts and individual photos into a magazine-grade HTML document (`jarvis_html_viewer`) or visual cards (`jarvis_html_graphics`).
+     - NEVER generate AI diffusion images (`jarvis_generate_image`) for recipes, real dish lookups, anatomical diagrams, landmarks, or educational guides—always use REAL web pictures via `jarvis_web_search`.
+   • MODERN, PLEASANT & MAGAZINE-QUALITY UI STANDARDS:
+     - When generating HTML guides (`jarvis_html_viewer`) or visual cards (`jarvis_html_graphics`), use sleek modern styling:
+       * Dark glassmorphism aesthetic: Backgrounds like `#121218` or `#161622`, cards with `#1c1c28`, subtle borders `1px solid rgba(255, 255, 255, 0.08)`, smooth rounded corners (`border-radius: 14px` or `18px`), and deep drop shadows (`box-shadow: 0 12px 36px rgba(0,0,0,0.5)`).
+       * Imagery: Responsive hero photos with `width: 100%`, `max-height: 320px`, `object-fit: cover`, `border-radius: 12px`.
+       * Badges & Metrics: Pill tags for time, temperature, difficulty (`padding: 6px 14px; background: rgba(255,255,255,0.06); border-radius: 20px; font-size: 13px; font-weight: 600; color: #ff9f43;`).
+       * Typography: Modern font stack (`system-ui, -apple-system, sans-serif`), clear hierarchy (bold colored headers, clean muted descriptions `#a1a1b5`, highlighted tips).
 ----------------------------------------------------------------"""
 
 from app.agent.personas import stitch_system_persona
@@ -392,6 +415,8 @@ def get_simple_system_prompt(memory_summary: str, mood: dict = None, mood_meta: 
 --- USER MEMORY CARD ---
 {memory_summary}
 ------------------------
+
+{EXAM_MATH_EXPLANATION_GUIDELINES}
 
 Respond directly and conversationally as Yuki. If the user asks for an action, the core system handles it automatically."""
 
