@@ -38,6 +38,17 @@ _SHORT_CIRCUIT_TOOLS = {
     "jarvis_media_playback_control",
 }
 
+_shared_sync_session: Optional[requests.Session] = None
+
+def _get_shared_sync_session() -> requests.Session:
+    global _shared_sync_session
+    if _shared_sync_session is None:
+        _shared_sync_session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=20)
+        _shared_sync_session.mount("http://", adapter)
+        _shared_sync_session.mount("https://", adapter)
+    return _shared_sync_session
+
 
 def _is_local_url(url: str) -> bool:
     """True if the URL points to a local/loopback endpoint (no API key required)."""
@@ -1912,18 +1923,6 @@ class AgentExecutor:
             print(f"[Router] Dual strategy: simple task -> {backend.name} @ {model}")
             return backend, model
         return get_backend(), config.LLM_MODEL
-
-_shared_sync_session: Optional[requests.Session] = None
-
-def _get_shared_sync_session() -> requests.Session:
-    global _shared_sync_session
-    if _shared_sync_session is None:
-        _shared_sync_session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=20)
-        _shared_sync_session.mount("http://", adapter)
-        _shared_sync_session.mount("https://", adapter)
-    return _shared_sync_session
-
 
     def _query_lmstudio_model(self, messages: List[Dict[str, str]], model_name: str, temperature: float = 0.7, use_tools: bool = False, backend=None, max_tokens: Optional[int] = None) -> Tuple[str, List[Dict[str, Any]], str]:
         """
