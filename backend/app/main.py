@@ -348,6 +348,15 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_init_executor())
 
+    async def _warmup_vector_memory():
+        try:
+            from app.memory.vector_memory import warmup_embedding_model_async
+            await warmup_embedding_model_async()
+        except Exception as e:
+            print(f"[Startup] Vector memory warmup error: {e}")
+
+    asyncio.create_task(_warmup_vector_memory())
+
     # Fire-and-forget: all heavy init runs after yield (server already accepting)
     if config.TOOL_TRANSPORT == "mcp-stdio":
         asyncio.create_task(_connect_mcp_bridge())
@@ -1603,6 +1612,12 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.embedding_api_key is not None:
         config.EMBEDDING_API_KEY = req.embedding_api_key.strip()
         memory_manager.update_setting("embedding_api_key", req.embedding_api_key.strip())
+    if any(x is not None for x in (req.enable_vector_memory, req.embedding_model, req.embedding_use_local, req.embedding_backend, req.embedding_base_url)):
+        try:
+            from app.memory.vector_memory import warmup_embedding_model_async
+            asyncio.create_task(warmup_embedding_model_async())
+        except Exception:
+            pass
     if req.whisper_model is not None:
         config.WHISPER_MODEL = req.whisper_model.strip()
         memory_manager.update_setting("whisper_model", req.whisper_model.strip())

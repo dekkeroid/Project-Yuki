@@ -28,7 +28,10 @@ _FILLER_PHRASES = {
     "awesome", "good", "great", "hmm", "hmmm", "okay", "ok ok", "okay okay", "alright",
     "alrighty", "yep", "yeah", "nope", "nah", "bye", "goodnight", "see ya", "thanks",
     "thank you", "sure", "fine", "understood", "fair enough", "noted", "tell me more",
-    "continue", "go on", "what else", "so true", "really", "oh really", "wow", "oh wow"
+    "continue", "go on", "what else", "so true", "really", "oh really", "wow", "oh wow",
+    "no no not at all", "not at all", "no not at all", "no no", "not really", "why tho",
+    "why", "why not", "what for", "idk", "dont know", "who knows", "nothing much",
+    "not much", "nevermind", "nvm", "just checking", "just saying", "i know", "you know"
 }
 
 _LAUGHTER_REGEX = re.compile(r'^(?:ha|he|ja|lol|lmao|rofl|kek|xd)+$', re.IGNORECASE)
@@ -89,10 +92,61 @@ def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     return dot_product / (norm_a * norm_b)
 
 
+async def warmup_embedding_model_async() -> bool:
+    """
+    Preload and warm up the embedding model in GPU memory on startup with 60m keep-alive.
+    Eliminates cold-start loading latency for conversation turns.
+    """
+    if not getattr(config, "ENABLE_VECTOR_MEMORY", False):
+        return False
+
+    model = getattr(config, "EMBEDDING_MODEL", "").strip()
+    if not model:
+        return False
+
+    base_url, api_key = config.get_effective_embedding_endpoint()
+    if not base_url:
+        return False
+
+    url = f"{base_url}/embeddings"
+    print(f"[VectorMemory][Startup] Pre-warming embedding model '{model}' at '{url}' (keep_alive=60m)...")
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload = {
+        "model": model,
+        "input": "warmup",
+        "keep_alive": "60m"
+    }
+
+    t_start = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            res = await client.post(url, json=payload, headers=headers)
+            warm_ms = (time.time() - t_start) * 1000.0
+            if res.status_code == 200:
+                data = res.json()
+                dims = len(data["data"][0].get("embedding", [])) if "data" in data and len(data["data"]) > 0 else 0
+                print(f"[VectorMemory][Startup] Model '{model}' warmed up in GPU ({dims} dims) in {warm_ms:.1f}ms! GPU keep-alive set to 60m.")
+                return True
+            else:
+                print(f"[VectorMemory][Startup] Warmup request failed ({warm_ms:.1f}ms): HTTP {res.status_code} from '{url}' - {res.text[:120]}")
+    except httpx.TimeoutException:
+        print(f"[VectorMemory][Startup] Warmup timed out (>25s) at '{url}' (model='{model}').")
+    except Exception as e:
+        print(f"[VectorMemory][Startup] Warmup error at '{url}': {e}")
+    return False
+
+
 async def embed_text_async(text: str) -> Optional[List[float]]:
     """
     Generate an embedding vector for the provided text using the configured LLM endpoint.
-    Guarded by a strict 2.5s timeout to guarantee chat responsiveness.
+    Guarded by a 3.5s timeout to guarantee chat responsiveness.
+    Includes keep_alive: 60m for local servers (Ollama, LM Studio) to prevent idle unloading.
     """
     if not getattr(config, "ENABLE_VECTOR_MEMORY", False):
         return None
@@ -116,12 +170,14 @@ async def embed_text_async(text: str) -> Optional[List[float]]:
 
     payload = {
         "model": model,
-        "input": text.strip()
+        "input": text.strip(),
+        "keep_alive": "60m"
     }
 
+    print(f"[VectorMemory] Requesting embedding: model='{model}' endpoint='{url}' (input chars={len(text.strip())})")
     t_start = time.time()
     try:
-        async with httpx.AsyncClient(timeout=2.5) as client:
+        async with httpx.AsyncClient(timeout=3.5) as client:
             res = await client.post(url, json=payload, headers=headers)
             call_ms = (time.time() - t_start) * 1000.0
             if res.status_code == 200:
@@ -129,14 +185,14 @@ async def embed_text_async(text: str) -> Optional[List[float]]:
                 if "data" in data and len(data["data"]) > 0:
                     emb = data["data"][0].get("embedding")
                     if isinstance(emb, list) and len(emb) > 0:
-                        print(f"[VectorMemory] Generated embedding vector ({len(emb)} dims) via '{model}' in {call_ms:.1f}ms")
+                        print(f"[VectorMemory] Generated embedding vector ({len(emb)} dims) via '{model}' from '{url}' in {call_ms:.1f}ms")
                         return emb
             else:
-                print(f"[VectorMemory] Embedding request failed ({call_ms:.1f}ms): HTTP {res.status_code} - {res.text[:120]}")
+                print(f"[VectorMemory] Embedding request failed ({call_ms:.1f}ms): HTTP {res.status_code} from '{url}' - {res.text[:120]}")
     except httpx.TimeoutException:
-        print(f"[VectorMemory] Embedding request timed out (>2.5s). Skipping vector search.")
+        print(f"[VectorMemory] Embedding request timed out (>3.5s): model='{model}' endpoint='{url}'. Skipping vector search.")
     except Exception as e:
-        print(f"[VectorMemory] Embedding error: {e}")
+        print(f"[VectorMemory] Embedding error from '{url}' (model='{model}'): {e}")
 
     return None
 
