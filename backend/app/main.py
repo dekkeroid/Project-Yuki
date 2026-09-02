@@ -1320,8 +1320,12 @@ class SettingsUpdateRequest(BaseModel):
     tts_cloud_voice: Optional[str] = None       # Voice/model name for cloud TTS
     mood_source: Optional[str] = None           # "script"|"llm" — mood driver mode
     persona_preset: Optional[str] = None        # Preset key
+    custom_persona_prompts: Optional[Dict[str, str]] = None  # Per-preset custom prompts mapping
+    user_presets: Optional[Dict[str, Any]] = None            # User-defined custom presets dictionary
     character_persona: Optional[str] = None     # Section 1 prompt override
     execution_rules: Optional[str] = None       # Section 2 guardrail rules
+    auto_evolving_archetype: Optional[bool] = None  # Dynamic archetype evolution toggle
+    archetype_intensity: Optional[str] = None       # "subtle" | "moderate" | "full_drama"
     hotkey_shortcut: Optional[str] = None
     hotkey_focus_chat: Optional[bool] = None
     hotkey_open_logs: Optional[bool] = None
@@ -1368,6 +1372,10 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("manage_todo_enabled", bool(req.manage_todo_enabled))
     if req.persona_preset is not None:
         memory_manager.update_setting("persona_preset", req.persona_preset.strip())
+    if req.custom_persona_prompts is not None:
+        memory_manager.update_setting("custom_persona_prompts", req.custom_persona_prompts)
+    if req.user_presets is not None:
+        memory_manager.update_setting("user_presets", req.user_presets)
     if req.character_persona is not None:
         memory_manager.update_setting("character_persona", req.character_persona.strip())
     if req.execution_rules is not None:
@@ -1979,7 +1987,13 @@ async def update_settings(req: SettingsUpdateRequest):
     current_settings.update({
         "llm_model": config.LLM_MODEL,
         "character_name": config.CHARACTER_NAME,
+        "persona_preset": memory_manager.profile.get("settings", {}).get("persona_preset", getattr(config, "PERSONA_PRESET", "sassy_tech_gf")),
+        "custom_persona_prompts": memory_manager.profile.get("settings", {}).get("custom_persona_prompts", {}),
+        "user_presets": memory_manager.profile.get("settings", {}).get("user_presets", {}),
         "character_persona": config.CHARACTER_PERSONA,
+        "execution_rules": memory_manager.profile.get("settings", {}).get("execution_rules", ""),
+        "auto_evolving_archetype": memory_manager.profile.get("settings", {}).get("auto_evolving_archetype", getattr(config, "AUTO_EVOLVING_ARCHETYPE", True)),
+        "archetype_intensity": memory_manager.profile.get("settings", {}).get("archetype_intensity", getattr(config, "ARCHETYPE_INTENSITY", "moderate")),
         "crawler_paused": crawler.is_crawler_paused(),
         "tagger_paused": crawler.is_tagger_paused(),
     })
@@ -1997,15 +2011,90 @@ async def update_settings(req: SettingsUpdateRequest):
 #  Relationship Engine & Persona API Endpoints                      #
 # ------------------------------------------------------------------ #
 
+class UserPresetCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    prompt: str
+    preset_id: Optional[str] = None
+
+
 @app.get("/api/personas/presets")
 async def get_persona_presets():
-    """Returns available persona presets registry and user custom prompt overrides."""
-    from app.agent.personas import PERSONA_PRESETS, DEFAULT_EXECUTION_RULES
+    """Returns available persona presets registry, user custom presets, and prompt overrides."""
+    from app.agent.personas import PERSONA_PRESETS, DEFAULT_EXECUTION_RULES, PRESET_TEMPLATE_SCAFFOLD
     custom_prompts = memory_manager.profile.get("settings", {}).get("custom_persona_prompts", {})
+    user_presets = memory_manager.profile.get("settings", {}).get("user_presets", {})
+
+    combined = dict(PERSONA_PRESETS)
+    for pid, pdata in user_presets.items():
+        if isinstance(pdata, dict):
+            combined[pid] = {
+                "name": pdata.get("name", "Custom Persona"),
+                "description": pdata.get("description", "User-defined character persona."),
+                "prompt": pdata.get("prompt", ""),
+                "is_custom": True
+            }
+
     return {
-        "presets": PERSONA_PRESETS,
+        "presets": combined,
         "custom_persona_prompts": custom_prompts,
-        "default_execution_rules": DEFAULT_EXECUTION_RULES
+        "user_presets": user_presets,
+        "default_execution_rules": DEFAULT_EXECUTION_RULES,
+        "template_scaffold": PRESET_TEMPLATE_SCAFFOLD
+    }
+
+
+@app.post("/api/personas/custom")
+async def create_or_update_custom_preset(req: UserPresetCreateRequest):
+    """Creates or updates a user-defined persona preset."""
+    result = memory_manager.save_user_preset(
+        name=req.name,
+        description=req.description or "",
+        prompt=req.prompt,
+        preset_id=req.preset_id
+    )
+    from app.agent.personas import PERSONA_PRESETS, DEFAULT_EXECUTION_RULES, PRESET_TEMPLATE_SCAFFOLD
+    user_presets = memory_manager.profile.get("settings", {}).get("user_presets", {})
+    combined = dict(PERSONA_PRESETS)
+    for pid, pdata in user_presets.items():
+        if isinstance(pdata, dict):
+            combined[pid] = {
+                "name": pdata.get("name", "Custom Persona"),
+                "description": pdata.get("description", "User-defined character persona."),
+                "prompt": pdata.get("prompt", ""),
+                "is_custom": True
+            }
+    return {
+        "status": "success",
+        "created_preset": result,
+        "persona_preset": result["preset_id"],
+        "character_persona": result["prompt"],
+        "presets": combined,
+        "user_presets": user_presets
+    }
+
+
+@app.delete("/api/personas/custom/{preset_id}")
+async def delete_custom_preset_api(preset_id: str):
+    """Deletes a user-defined persona preset."""
+    result = memory_manager.delete_user_preset(preset_id)
+    from app.agent.personas import PERSONA_PRESETS
+    user_presets = memory_manager.profile.get("settings", {}).get("user_presets", {})
+    combined = dict(PERSONA_PRESETS)
+    for pid, pdata in user_presets.items():
+        if isinstance(pdata, dict):
+            combined[pid] = {
+                "name": pdata.get("name", "Custom Persona"),
+                "description": pdata.get("description", "User-defined character persona."),
+                "prompt": pdata.get("prompt", ""),
+                "is_custom": True
+            }
+    return {
+        "status": "success",
+        "active_preset": result["active_preset"],
+        "character_persona": config.CHARACTER_PERSONA,
+        "presets": combined,
+        "user_presets": user_presets
     }
 
 
@@ -2019,6 +2108,26 @@ async def reset_persona_prompt(preset: Optional[str] = None):
         "character_persona": clean_prompt,
         "custom_persona_prompts": memory_manager.profile.get("settings", {}).get("custom_persona_prompts", {})
     }
+
+
+@app.post("/api/personas/reset-all-defaults")
+async def reset_all_builtin_personas_api():
+    """Resets all built-in persona backstories back to official personas.py defaults,
+    leaving user-defined custom presets (+ Add a Preset) completely untouched."""
+    result = memory_manager.reset_all_builtin_personas()
+    from app.agent.personas import PERSONA_PRESETS
+    user_presets = memory_manager.profile.get("settings", {}).get("user_presets", {})
+    combined = dict(PERSONA_PRESETS)
+    for pid, pdata in user_presets.items():
+        if isinstance(pdata, dict):
+            combined[pid] = {
+                "name": pdata.get("name", "Custom Persona"),
+                "description": pdata.get("description", "User-defined character persona."),
+                "prompt": pdata.get("prompt", ""),
+                "is_custom": True
+            }
+    result["presets"] = combined
+    return result
 
 
 @app.get("/api/relationship/status")

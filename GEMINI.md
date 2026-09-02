@@ -75,3 +75,13 @@ Whenever making changes to any database structure or table (`vectors.db`, `yuki_
 - `CREATE TABLE IF NOT EXISTS` only runs for brand-new files and does not update existing databases.
 - Always inspect existing columns (e.g. using `PRAGMA table_info`) and execute `ALTER TABLE ... ADD COLUMN` for any missing columns so existing databases upgrade seamlessly without crashing.
 - Ensure any new indexes use `CREATE INDEX IF NOT EXISTS`.
+
+---
+
+## Frontend UI & Design System Rules (No Emojis in UI)
+
+- **NEVER use colored emojis in the UI**: Do **NOT** use emojis (e.g., ⭐, 🚀, 💡, 🔥, 🎉, 🤖, ⚠️, ❌, etc.) in user interface components, buttons, dropdown options, badges, titles, or status labels. Emojis render inconsistently across operating systems and clash with Project Yuki's modern dark glassmorphic anime aesthetic.
+- **Use Lucide Icons or Styled Text Badges Instead**:
+  - For icons, always use vector icons from `lucide-react` (e.g., `<Star className="w-3.5 h-3.5" />`, `<Sparkles />`, `<Check />`, `<AlertCircle />`, `<Trash2 />`).
+  - For status indicators, use clean styled text badges (e.g., `(Custom)`, `(Global)`, `(Customized)`).
+  - Minimalist standard glyphs (like `✓`, `✕`, `↺`, `+`) are acceptable only for compact inline action buttons.
