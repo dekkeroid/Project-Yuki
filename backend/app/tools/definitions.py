@@ -276,8 +276,8 @@ def get_basic_tools_definition() -> list:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "show", "check", "uncheck", "remove", "clear_completed", "lists", "export"],
-                            "description": "Action to perform: 'add' (add items), 'show' (view list), 'check' (mark item done), 'uncheck' (reopen item), 'remove' (delete item), 'clear_completed' (purge completed items), 'lists' (overview of all active lists), 'export' (save to Desktop Markdown)."
+                            "enum": ["add", "show", "check", "uncheck", "remove", "clear", "clear_completed", "lists", "export"],
+                            "description": "Action to perform: 'add' (add items), 'show' (view list), 'check' (mark item done), 'uncheck' (reopen item), 'remove' (delete item), 'clear' (empty/wipe the entire list), 'clear_completed' (purge only completed items), 'lists' (overview of all active lists), 'export' (save to Desktop Markdown)."
                         },
                         "list_name": {
                             "type": "string",
@@ -975,8 +975,8 @@ def get_advanced_jarvis_tools_definition() -> list:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "show", "check", "uncheck", "remove", "clear_completed", "lists", "export"],
-                            "description": "Action to perform: 'add' (add items), 'show' (view list), 'check' (mark item done), 'uncheck' (reopen item), 'remove' (delete item), 'clear_completed' (purge completed items), 'lists' (overview of all active lists), 'export' (save to Desktop Markdown)."
+                            "enum": ["add", "show", "check", "uncheck", "remove", "clear", "clear_completed", "lists", "export"],
+                            "description": "Action to perform: 'add' (add items), 'show' (view list), 'check' (mark item done), 'uncheck' (reopen item), 'remove' (delete item), 'clear' (empty/wipe the entire list), 'clear_completed' (purge only completed items), 'lists' (overview of all active lists), 'export' (save to Desktop Markdown)."
                         },
                         "list_name": {
                             "type": "string",
@@ -1014,8 +1014,8 @@ def get_advanced_jarvis_tools_definition() -> list:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "show", "check", "uncheck", "remove", "clear_completed", "lists", "export"],
-                            "description": "Action to perform: 'add', 'show', 'check', 'uncheck', 'remove', 'clear_completed', 'lists', 'export'."
+                            "enum": ["add", "show", "check", "uncheck", "remove", "clear", "clear_completed", "lists", "export"],
+                            "description": "Action to perform: 'add', 'show', 'check', 'uncheck', 'remove', 'clear' (empty entire list), 'clear_completed' (clear only done items), 'lists', 'export'."
                         },
                         "list_name": {
                             "type": "string",
