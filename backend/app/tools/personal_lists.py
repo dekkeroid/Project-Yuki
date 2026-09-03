@@ -29,10 +29,17 @@ def _normalize_list_name(name: Optional[str]) -> str:
 
 
 @_write_locked
-def add_to_list(list_name: str, items: Union[str, List[str]], quantity: Optional[str] = None) -> Dict[str, Any]:
+def add_to_list(
+    list_name: str,
+    items: Union[str, List[str]],
+    quantity: Optional[str] = None,
+    clear_old: bool = False
+) -> Dict[str, Any]:
     """
     Adds one or more items to a named list.
     Supports single strings, comma-separated lists, or arrays of strings.
+    If clear_old is True, wipes prior items in this list before adding.
+    Deduplicates: avoids adding duplicate items that are already pending.
     """
     clean_name = _normalize_list_name(list_name)
     now = _now()
@@ -51,29 +58,57 @@ def add_to_list(list_name: str, items: Union[str, List[str]], quantity: Optional
             if clean:
                 item_list.append(clean)
 
-    if not item_list:
+    if not item_list and not clear_old:
         return {"status": "error", "message": "No valid items provided to add."}
 
     conn = get_connection()
     cursor = conn.cursor()
+
+    if clear_old:
+        cursor.execute("DELETE FROM personal_lists WHERE list_name = ?", (clean_name,))
+
+    cursor.execute("SELECT id, item FROM personal_lists WHERE list_name = ? AND status = 'pending'", (clean_name,))
+    existing_items = {row[1].strip().lower(): row[0] for row in cursor.fetchall()}
+
     added = []
+    already_present = []
 
     for it in item_list:
-        cursor.execute("""
-        INSERT INTO personal_lists (list_name, item, status, quantity, created_at, updated_at)
-        VALUES (?, ?, 'pending', ?, ?, ?)
-        """, (clean_name, it, quantity, now, now))
-        added.append(it)
+        it_lower = it.lower()
+        if it_lower in existing_items:
+            already_present.append(it)
+            if quantity:
+                cursor.execute(
+                    "UPDATE personal_lists SET quantity = ?, updated_at = ? WHERE id = ?",
+                    (quantity, now, existing_items[it_lower])
+                )
+        else:
+            cursor.execute("""
+            INSERT INTO personal_lists (list_name, item, status, quantity, created_at, updated_at)
+            VALUES (?, ?, 'pending', ?, ?, ?)
+            """, (clean_name, it, quantity, now, now))
+            existing_items[it_lower] = cursor.lastrowid
+            added.append(it)
 
     conn.commit()
     conn.close()
 
-    items_str = ", ".join(f"'{i}'" for i in added)
+    parts = []
+    if clear_old:
+        parts.append(f"Cleared previous '{clean_name}' list.")
+    if added:
+        items_str = ", ".join(f"'{i}'" for i in added)
+        parts.append(f"Added {len(added)} item(s) to '{clean_name}': {items_str}.")
+    if already_present and not clear_old:
+        dup_str = ", ".join(f"'{i}'" for i in already_present)
+        parts.append(f"Already on list: {dup_str}.")
+
+    msg = " ".join(parts) if parts else f"No new items added to '{clean_name}'."
     return {
         "status": "ok",
         "list_name": clean_name,
         "count": len(added),
-        "message": f"Added {len(added)} item(s) to '{clean_name}': {items_str}."
+        "message": msg
     }
 
 
@@ -301,7 +336,8 @@ def manage_personal_list(
     include_completed: bool = False,
     quantity: Optional[str] = None,
     target_path: Optional[str] = None,
-    item: Optional[str] = None
+    item: Optional[str] = None,
+    clear_old: bool = False
 ) -> str:
     """
     Main dispatcher for personal lists (shopping lists, daily agendas, errands, wishlists).
@@ -310,6 +346,10 @@ def manage_personal_list(
 
     if not items and item:
         items = item
+
+    if action in ("replace", "new_list"):
+        clear_old = True
+        action = "add"
 
     if action in ("lists", "all", "overview", "show_all"):
         return get_all_lists_summary()
@@ -321,9 +361,9 @@ def manage_personal_list(
     list_name = list_name or "shopping"
 
     if action in ("add", "create", "append", "new", "put"):
-        if not items:
+        if not items and not clear_old:
             return "Please provide the item(s) you would like to add."
-        res = add_to_list(list_name, items, quantity=quantity)
+        res = add_to_list(list_name, items or [], quantity=quantity, clear_old=clear_old)
         return res["message"]
 
     if action in ("show", "list", "view", "get", "display"):

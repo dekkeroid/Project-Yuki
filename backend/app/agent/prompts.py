@@ -490,10 +490,12 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
     - Task management: `action='list'`, `action='cancel'` (item_id=<id>), `action='pause'`, `action='resume'`.
   • `manage_personal_list` → ONLY when the user asks to manage everyday personal lists (shopping lists, groceries, things to do today, errands, wishlist, packing list):
     - Add items: `action='add', list_name='shopping', items=['Whole milk', 'Eggs', 'Avocados']` (or single item string)
+    - Make a new list or replace old list: `action='add', list_name='shopping', items=['...'], clear_old=True` (pass `clear_old=True` when user says "make a new one", "start fresh", or "replace my list")
     - View list: `action='show', list_name='shopping'` (or `list_name='today'`)
     - Check off item: `action='check', list_name='shopping', items=['Eggs']`
     - View all active lists: `action='lists'`
     - Clear completed: `action='clear_completed', list_name='shopping'`
+    - PRESENTING ITEMS: When answering what is on a list, ALWAYS format and present all items clearly in your response (e.g. as bullet points or numbered list with `[ ]`) so the user can easily see each item.
   • All other tools → ONLY for direct, unambiguous user requests to perform that exact action.
 
 RULE 3 — ONE TOOL PER TURN: Call at most one tool per response unless user explicitly asks for multiple actions.
@@ -619,11 +621,13 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
       BE CONSERVATIVE: ONLY save distinct, enduring facts. NEVER save temporary states ("I'm tired today").
    • `jarvis_manage_personal_list` → Executive Assistant list management for everyday human needs (shopping lists, groceries, things to do today, errands, wishlist, packing list). Never confuse this with coding tasks. Persists globally across all conversation turns:
      - Add items: `action='add', list_name='shopping', items=['Whole milk', 'Eggs', 'Avocados']` (or single item string)
+     - Make a new list or replace old list: `action='add', list_name='shopping', items=['...'], clear_old=True` (pass `clear_old=True` when the user says "make a new one", "start fresh", or "replace my list")
      - View list: `action='show', list_name='shopping'` (or `list_name='today'`)
      - Check off item: `action='check', list_name='shopping', items=['Eggs']`
      - View all active lists: `action='lists'`
      - Clear completed: `action='clear_completed', list_name='shopping'`
      - Export to Desktop: `action='export', list_name='shopping'`
+     - PRESENTING ITEMS: When answering what is on a list, ALWAYS format and present all items clearly in your response (e.g. as bullet points or numbered list with `[ ]`) so the user can easily see each item.
    • `jarvis_keyboard_mouse_input` → Send keys/mouse to the app currently in focus. Prefer keyboard actions (`type`, `press_keys` with Tab/Enter/arrows/shortcuts) over raw coordinates. If you must click, first call `jarvis_see_screen` and have it report the exact screen x,y of the target element, then click those coordinates; if the click misses, re-check the screen and adjust. For websites, use the browser tools instead.
 
 
