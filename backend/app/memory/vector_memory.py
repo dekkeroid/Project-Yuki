@@ -494,11 +494,17 @@ async def search_relevant_memories(
         return []
 
     q_lower = query_clean.lower()
-    is_user_target = bool(re.search(r'\b(?:my|i|me|mine|myself|i\'m)\b', q_lower))
-    is_assistant_target = bool(re.search(r'\b(?:your|ur|you|yours|yourself|u)\b', q_lower))
-    if is_user_target and not is_assistant_target:
+    # Check possessive ownership: "my" / "mine" (User) vs "your" / "ur" / "yours" (Yuki/Assistant)
+    has_user_target = bool(re.search(r'\b(?:my|mine|i like|i prefer|i love|who am i|about myself)\b', q_lower))
+    has_assistant_target = bool(re.search(r'\b(?:your|ur|yours|you like|who are you|about yourself)\b', q_lower))
+
+    # Deterministic Subject Partitioning:
+    # 1. Only "my"/"mine" -> search strictly User memories
+    # 2. Only "your"/"ur" -> search strictly Assistant/Yuki memories
+    # 3. Both present or neither present -> search ALL subjects (general, project, user, assistant)
+    if has_user_target and not has_assistant_target:
         target_subject = "user"
-    elif is_assistant_target and not is_user_target:
+    elif has_assistant_target and not has_user_target:
         target_subject = "assistant"
     else:
         target_subject = "all"
