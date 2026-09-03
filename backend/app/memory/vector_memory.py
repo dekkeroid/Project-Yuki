@@ -99,6 +99,33 @@ def is_referential_query(text: str) -> bool:
     return False
 
 
+_ACTION_COMMAND_PREFIXES = (
+    "run ", "start ", "launch ", "schedule ", "open ", "kill ", "terminate ",
+    "stop ", "close ", "delete ", "remove ", "create file ", "write a script ",
+    "write script ", "write a python script ", "execute ", "build ", "compile ",
+    "install ", "pip install ", "npm install ", "set timer ", "set delayed ",
+    "watch ", "monitor ", "take a screenshot ", "take screenshot ", "turn off ",
+    "turn on ", "shut down ", "shutdown ", "restart ", "sleep ", "reboot "
+)
+
+def is_action_command(text: str) -> bool:
+    """
+    Detects if the user query is an imperative operational instruction targeted at the live OS.
+    Live actions must not be primed or derailed by long-term vector memory searches.
+    """
+    if not text:
+        return False
+    cleaned = text.strip().lower()
+    for opener in ("please ", "kindly ", "hey yuki ", "yuki ", "can you please ", "could you please "):
+        if cleaned.startswith(opener):
+            cleaned = cleaned[len(opener):].strip()
+            break
+    for prefix in _ACTION_COMMAND_PREFIXES:
+        if cleaned.startswith(prefix):
+            return True
+    return False
+
+
 def init_vector_db():
     """
     Initializes the vector SQLite database and applies auto-migrations for
@@ -409,8 +436,8 @@ async def search_relevant_memories(
         return []
 
     query_clean = query.strip()
-    # Skip trivial greetings, pure laughter, conversational fillers, and referential follow-up queries
-    if is_conversational_filler(query_clean) or is_referential_query(query_clean):
+    # Skip trivial greetings, pure laughter, conversational fillers, referential follow-up queries, and live action commands
+    if is_conversational_filler(query_clean) or is_referential_query(query_clean) or is_action_command(query_clean):
         return []
 
     query_vec = await embed_text_async(query_clean)
@@ -523,8 +550,8 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
     if is_pure_query and len(user_trimmed) < 40:
         return
 
-    # Filter out pure laughter, greetings, conversational fillers, and short referential follow-ups
-    if is_conversational_filler(user_trimmed) or is_referential_query(user_trimmed):
+    # Filter out pure laughter, greetings, conversational fillers, short referential follow-ups, and mechanical action commands
+    if is_conversational_filler(user_trimmed) or is_referential_query(user_trimmed) or is_action_command(user_trimmed):
         return
 
     import re
