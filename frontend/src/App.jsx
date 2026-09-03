@@ -437,6 +437,9 @@ const App = () => {
       if (!shouldRemember) {
         localStorage.setItem('yuki-avatar-scale', '1.0');
         setAvatarScale(1.0);
+        if (window.electronAPI?.setWindowScale) {
+          window.electronAPI.setWindowScale(1.0);
+        }
       }
     } catch (e) { }
   }, []);
@@ -473,6 +476,7 @@ const App = () => {
     let cleanupSkin = null;
     let cleanupCam = null;
     let cleanupVoice = null;
+    let cleanupScale = null;
 
     if (window.electronAPI) {
       if (window.electronAPI.onSkinToneColorChanged) {
@@ -483,6 +487,14 @@ const App = () => {
       if (window.electronAPI.onCameraTrackingChanged) {
         cleanupCam = window.electronAPI.onCameraTrackingChanged((enabled) => {
           setCameraTracking(Boolean(enabled));
+        });
+      }
+      if (window.electronAPI.onAvatarScaleChanged) {
+        cleanupScale = window.electronAPI.onAvatarScaleChanged((scale) => {
+          const parsed = parseFloat(scale);
+          if (!isNaN(parsed) && parsed > 0) {
+            setAvatarScale(parsed);
+          }
         });
       }
       if (window.electronAPI.onVoiceSettingsChanged) {
@@ -503,6 +515,7 @@ const App = () => {
       if (cleanupSkin) cleanupSkin();
       if (cleanupCam) cleanupCam();
       if (cleanupVoice) cleanupVoice();
+      if (cleanupScale) cleanupScale();
     };
   }, []);
 
@@ -979,7 +992,15 @@ const App = () => {
       }
       if (msg?.profile?.settings?.start_with_last_avatar_size !== undefined) {
         try {
-          localStorage.setItem('yuki-start-with-last-avatar-size', msg.profile.settings.start_with_last_avatar_size ? 'true' : 'false');
+          const startWithLast = Boolean(msg.profile.settings.start_with_last_avatar_size);
+          localStorage.setItem('yuki-start-with-last-avatar-size', startWithLast ? 'true' : 'false');
+          if (!startWithLast) {
+            localStorage.setItem('yuki-avatar-scale', '1.0');
+            setAvatarScale(1.0);
+            if (window.electronAPI?.setWindowScale) {
+              window.electronAPI.setWindowScale(1.0);
+            }
+          }
         } catch { }
       }
     } else if (msg.type === 'status') {
@@ -1282,6 +1303,9 @@ const App = () => {
 
       const initPosition = async () => {
         try {
+          if (window.electronAPI.setWindowScale && typeof avatarScale === 'number' && avatarScale > 0) {
+            await window.electronAPI.setWindowScale(avatarScale);
+          }
           const screen = await window.electronAPI.getScreenSize();
           const bounds = await window.electronAPI.getWindowBounds();
           const targetX = screen.width - bounds.width - 40;
@@ -4430,6 +4454,9 @@ const App = () => {
                                     const clamped = Math.max(0.2, Math.min(10.0, parsed / 100));
                                     setAvatarScale(clamped);
                                     try { localStorage.setItem('yuki-avatar-scale', clamped.toString()); } catch { }
+                                    if (window.electronAPI && window.electronAPI.setWindowScale) {
+                                      window.electronAPI.setWindowScale(clamped);
+                                    }
                                   }
                                 }}
                                 style={{
@@ -4457,6 +4484,12 @@ const App = () => {
                             const newScale = parseFloat(e.target.value);
                             setAvatarScale(newScale);
                             localStorage.setItem('yuki-avatar-scale', newScale.toString());
+                            if (window.electronAPI && window.electronAPI.setWindowScale) {
+                              if (window._quickScaleTimer) clearTimeout(window._quickScaleTimer);
+                              window._quickScaleTimer = setTimeout(() => {
+                                window.electronAPI.setWindowScale(newScale);
+                              }, 50);
+                            }
                           }}
                           style={{ width: '100%', cursor: 'pointer', accentColor: '#a855f7' }}
                         />
