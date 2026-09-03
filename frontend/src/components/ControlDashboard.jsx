@@ -2766,7 +2766,7 @@ const ControlDashboard = ({
                     )}
                   </div>
                   <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginBottom: '8px' }}>
-                    When bored (&gt;80% after 30m quiet), Yuki performs subtle desktop check-ins or knocks without interrupting your focus.
+                    When bored (&gt;80% after 30m quiet), Yuki performs gentle desktop check-ins (leaning forward or daydreaming) without interrupting your focus.
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                     <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Nudge Mode</span>
