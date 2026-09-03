@@ -1397,7 +1397,19 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
 
     start_time = time.time()
     try:
-        if getattr(sys, "frozen", False):
+        # Determine Python interpreter to run script
+        # Prefer system/virtualenv Python (which contains full standard library including Tkinter)
+        real_python = None
+        import shutil
+        py_cand = shutil.which("python") or shutil.which("py")
+        if py_cand and "windowsapps" not in py_cand.lower() and os.path.exists(py_cand):
+            real_python = py_cand
+        elif os.path.exists(r"C:\Python314\python.exe"):
+            real_python = r"C:\Python314\python.exe"
+
+        if real_python:
+            cmd = [real_python, temp_file]
+        elif getattr(sys, "frozen", False):
             cmd = [sys.executable, "--yuki-run-script", temp_file]
         else:
             cmd = [sys.executable, temp_file]
