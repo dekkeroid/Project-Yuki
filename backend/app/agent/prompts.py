@@ -489,11 +489,11 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
     - Trigger conditions: `condition='closed'` (when an app closes), `condition='opened'` (when launched), `condition='minimized'`, `maximized`, `focused`, `battery_low`, `storage_low`, `network_disconnected`.
     - Task management: `action='list'`, `action='cancel'` (item_id=<id>), `action='pause'`, `action='resume'`.
   • `manage_personal_list` → ONLY when the user asks to manage everyday personal lists (shopping lists, groceries, things to do today, errands, wishlist, packing list):
-    - Add items: `action='add', list_name='shopping', items=['Whole milk', 'Eggs', 'Avocados']` (or single item string)
-    - Make a new list or replace old list: `action='add', list_name='shopping', items=['...'], clear_old=True` (pass `clear_old=True` when user says "make a new one", "start fresh", or "replace my list")
-    - View list: `action='show', list_name='shopping'` (or `list_name='today'`)
+    - Normal addition (APPEND): `action='add', list_name='shopping', items=['Whole milk', 'Eggs']` (NEVER set `clear_old=True` when normally adding or appending items!)
+    - Fresh/new list (RESET): `action='add', list_name='shopping', items=['...'], clear_old=True` (ONLY pass `clear_old=True` when the user explicitly asks to start fresh or make a brand-new list, e.g. "make a new one", "start fresh", "replace my list")
+    - View all lists: `action='lists'` (shows all active list names and counts so you can see which lists exist)
+    - View specific list: `action='show', list_name='shopping'` (or `list_name='today'`)
     - Check off item: `action='check', list_name='shopping', items=['Eggs']`
-    - View all active lists: `action='lists'`
     - Clear completed: `action='clear_completed', list_name='shopping'`
     - PRESENTING ITEMS: When answering what is on a list, ALWAYS format and present all items clearly in your response (e.g. as bullet points or numbered list with `[ ]`) so the user can easily see each item.
   • All other tools → ONLY for direct, unambiguous user requests to perform that exact action.
@@ -620,11 +620,11 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
      "Also love tea" → key="favourite drink", value="tea" → custom_facts: {{"favourite drink": ["coffee", "tea"]}}
       BE CONSERVATIVE: ONLY save distinct, enduring facts. NEVER save temporary states ("I'm tired today").
    • `jarvis_manage_personal_list` → Executive Assistant list management for everyday human needs (shopping lists, groceries, things to do today, errands, wishlist, packing list). Never confuse this with coding tasks. Persists globally across all conversation turns:
-     - Add items: `action='add', list_name='shopping', items=['Whole milk', 'Eggs', 'Avocados']` (or single item string)
-     - Make a new list or replace old list: `action='add', list_name='shopping', items=['...'], clear_old=True` (pass `clear_old=True` when the user says "make a new one", "start fresh", or "replace my list")
-     - View list: `action='show', list_name='shopping'` (or `list_name='today'`)
+     - Normal addition (APPEND): `action='add', list_name='shopping', items=['Whole milk', 'Eggs']` (NEVER set `clear_old=True` when normally adding or appending items!)
+     - Fresh/new list (RESET): `action='add', list_name='shopping', items=['...'], clear_old=True` (ONLY pass `clear_old=True` when the user explicitly asks to start fresh or make a brand-new list, e.g. "make a new one", "start fresh", "replace my list")
+     - View all lists: `action='lists'` (shows all active list names and item counts so you can see which lists exist)
+     - View specific list: `action='show', list_name='shopping'` (or `list_name='today'`)
      - Check off item: `action='check', list_name='shopping', items=['Eggs']`
-     - View all active lists: `action='lists'`
      - Clear completed: `action='clear_completed', list_name='shopping'`
      - Export to Desktop: `action='export', list_name='shopping'`
      - PRESENTING ITEMS: When answering what is on a list, ALWAYS format and present all items clearly in your response (e.g. as bullet points or numbered list with `[ ]`) so the user can easily see each item.
