@@ -113,7 +113,19 @@ const AvatarViewer = ({
 
   useEffect(() => {
     sleepStateRef.current = sleepState;
+    if (sleepState !== 'sleeping' && sleepState !== 'napping') {
+      sleepProgressRef.current = 0.0;
+    }
   }, [sleepState]);
+
+  useEffect(() => {
+    if (isThinking || audioLevel > 0.01) {
+      if (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping') {
+        sleepStateRef.current = 'active';
+        sleepProgressRef.current = 0.0;
+      }
+    }
+  }, [isThinking, audioLevel]);
 
   useEffect(() => {
     activeModelRef.current = activeModel;
@@ -1008,7 +1020,9 @@ const AvatarViewer = ({
       if (event.button === 0 && isHoveringCharacter) {
         const sleeping = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping');
         if (sleeping && typeof onWakeCharacterRef.current === 'function') {
-          console.log("[Presence] User clicked/touched sleeping avatar. Triggering wake up.");
+          console.log("[Presence] User clicked/touched sleeping avatar. Triggering immediate wake up.");
+          sleepStateRef.current = 'active';
+          sleepProgressRef.current = 0.0;
           onWakeCharacterRef.current();
         }
       }
@@ -1714,9 +1728,9 @@ const AvatarViewer = ({
           const xMult = isVRM1 ? -1 : 1;
           const zMult = isVRM1 ? -1 : 1;
           const yMult = 1;
-          const isSleeping = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping') || systemIdleTimeRef.current > 180;
+          const isSleeping = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping');
           const targetSleepProgress = isSleeping ? 1.0 : 0.0;
-          const sleepTransitionSpeed = isSleeping ? 0.2 : 0.8; // wake up is faster
+          const sleepTransitionSpeed = isSleeping ? 0.2 : 3.0; // wake up is snappy and immediate
           sleepProgressRef.current += (targetSleepProgress - sleepProgressRef.current) * (delta * 3.0 * sleepTransitionSpeed);
           sleepProgressRef.current = Math.max(0.0, Math.min(1.0, sleepProgressRef.current));
 

@@ -45,10 +45,11 @@ export const ANIMATIONS = [
     excludeFromRandomIdle: false,
     llmTag: '<yuki_anim:nap/>',
     commands: [
+      { cmd: '/nap', description: 'Take an instant companion power nap' },
       { cmd: '/ani-nap', description: 'Nod off and startle awake' },
       { cmd: '/ani-sleepy', description: 'Sleepy animation (alias)' }
     ],
-    responseText: '*nods off and startles awake*',
+    responseText: '*curls up and takes a power nap*',
     blendShapes: { relaxed: 0.4 }
   },
   {

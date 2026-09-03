@@ -1402,6 +1402,8 @@ class SettingsUpdateRequest(BaseModel):
     telegram_verbose_tools: Optional[bool] = None
     proactive_nudge_mode: Optional[str] = None
     proactive_nudge_interval_min: Optional[int] = None
+    desk_sleep_idle_min: Optional[int] = None
+    companion_nap_silence_min: Optional[int] = None
 
 
 
@@ -2046,6 +2048,18 @@ async def update_settings(req: SettingsUpdateRequest):
         config.PROACTIVE_NUDGE_INTERVAL_MIN = pinterval
         memory_manager.update_setting("proactive_nudge_interval_min", pinterval)
         print(f"[SETTINGS-UPDATE-BE] proactive_nudge_interval_min = {pinterval}")
+
+    if req.desk_sleep_idle_min is not None:
+        ds_min = max(1, min(120, int(req.desk_sleep_idle_min)))
+        config.DESK_SLEEP_IDLE_MIN = ds_min
+        memory_manager.update_setting("desk_sleep_idle_min", ds_min)
+        print(f"[SETTINGS-UPDATE-BE] desk_sleep_idle_min = {ds_min}")
+
+    if req.companion_nap_silence_min is not None:
+        cn_min = max(1, min(120, int(req.companion_nap_silence_min)))
+        config.COMPANION_NAP_SILENCE_MIN = cn_min
+        memory_manager.update_setting("companion_nap_silence_min", cn_min)
+        print(f"[SETTINGS-UPDATE-BE] companion_nap_silence_min = {cn_min}")
 
     if telegram_changed:
         try:

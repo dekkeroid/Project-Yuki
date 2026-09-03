@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -911,6 +911,8 @@ const ControlDashboard = ({
     telegram_verbose_tools: true,
     proactive_nudge_mode: 'visual_only',
     proactive_nudge_interval_min: 45,
+    desk_sleep_idle_min: 3,
+    companion_nap_silence_min: 5,
     ...(profile?.settings || {})
   });
 
@@ -8823,6 +8825,73 @@ const ControlDashboard = ({
                         </div>
                       );
                     })()}
+                  </div>
+
+                  {/* Sleep & Companion Nap Inactivity Triggers */}
+                  <div className="card-group" style={{ marginTop: '12px' }}>
+                    <div className="card-group-header">
+                      <Moon className="w-4 h-4 text-indigo-400" />
+                      <span className="card-group-title">Sleep & Companion Nap Timers</span>
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '4px', marginBottom: '10px' }}>
+                      Configure how long Yuki waits before resting at your desk or falling asleep when you leave.
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      {/* Desk Absence Inactivity Sleep */}
+                      <div style={{ background: 'rgba(0,0,0,0.2)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#e2e8f0' }}>Desk Inactivity Sleep</span>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#a78bfa', background: 'rgba(167,139,250,0.15)', padding: '2px 7px', borderRadius: '6px' }}>
+                            {settings.desk_sleep_idle_min ?? 3}m
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginBottom: '8px', lineHeight: '1.3' }}>
+                          Minutes of continuous PC inactivity before Yuki falls asleep when you leave.
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="30"
+                          step="1"
+                          value={settings.desk_sleep_idle_min ?? 3}
+                          onChange={(e) => handleUpdateSetting('desk_sleep_idle_min', parseInt(e.target.value, 10))}
+                          style={{ width: '100%', accentColor: '#8b5cf6', cursor: 'pointer' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'rgba(255,255,255,0.3)', marginTop: '2px' }}>
+                          <span>1m (Quick)</span>
+                          <span>15m</span>
+                          <span>30m (Long)</span>
+                        </div>
+                      </div>
+
+                      {/* Companion Focus Nap */}
+                      <div style={{ background: 'rgba(0,0,0,0.2)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#e2e8f0' }}>Companion Nap Silence</span>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#38bdf8', background: 'rgba(56,189,248,0.15)', padding: '2px 7px', borderRadius: '6px' }}>
+                            {settings.companion_nap_silence_min ?? 5}m
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginBottom: '8px', lineHeight: '1.3' }}>
+                          Minutes of quiet with Yuki when her energy is low (&le;40) before she dozes off.
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="30"
+                          step="1"
+                          value={settings.companion_nap_silence_min ?? 5}
+                          onChange={(e) => handleUpdateSetting('companion_nap_silence_min', parseInt(e.target.value, 10))}
+                          style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'rgba(255,255,255,0.3)', marginTop: '2px' }}>
+                          <span>1m (Quick)</span>
+                          <span>15m</span>
+                          <span>30m (Long)</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Dynamic Animations Toggles */}

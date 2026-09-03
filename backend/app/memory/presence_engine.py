@@ -12,6 +12,7 @@ Tracks:
 import time
 import datetime
 from typing import Optional, Dict, Any
+from app import config
 
 
 def is_media_or_audio_playing() -> bool:
@@ -81,7 +82,7 @@ class PresenceEngine:
         self.user_idle_seconds = max(0.0, float(idle_seconds))
 
         if new_state in ("sleeping", "napping"):
-            self.is_nap = is_nap or (new_state == "napping")
+            self.is_nap = is_nap if new_state == "sleeping" else True
             # Guard: If user is watching a video / listening to audio, suppress false sleep (except quiet companion naps)
             if not self.is_nap and is_media_or_audio_playing():
                 print("[Presence] Media/sound output detected; suppressing sleeping state to active idle.")
@@ -129,16 +130,21 @@ class PresenceEngine:
         elapsed_since_chat = max(0.0, now - self.last_interaction_time)
 
         # 1. Check for Companion Nap:
-        # If awake/idle, energy is low (<= 40), and no interaction with Yuki for 5 mins (300s):
-        if self.sleep_state in ("active", "idle") and current_energy <= 40.0 and elapsed_since_chat >= 300.0:
+        # If awake/idle, energy is low (<= 40), and no interaction with Yuki for configured minutes:
+        silence_threshold = getattr(config, "COMPANION_NAP_SILENCE_MIN", 5) * 60.0
+        if self.sleep_state in ("active", "idle") and current_energy <= 40.0 and elapsed_since_chat >= silence_threshold:
             print(f"[Presence] Energy is low ({current_energy}/100) after {int(elapsed_since_chat)}s silence. Yuki is nodding off for a nap.")
-            self.set_sleep_state("napping", idle_seconds=300.0, is_nap=True)
+            self.set_sleep_state("napping", idle_seconds=silence_threshold, is_nap=True)
             self.boredom = 0.0
             return "started_nap"
 
         # 2. Check for Natural Recovery from Nap:
         # If napping and energy has recharged to healthy level (>= 65):
         if self.sleep_state == "napping" and current_energy >= 65.0:
+            if self.user_idle_seconds >= 180.0:
+                print(f"[Presence] Yuki recharged energy ({current_energy}/100), but Master is away from PC. Seamlessly transitioning from nap to full sleep.")
+                self.set_sleep_state("sleeping", idle_seconds=self.user_idle_seconds, is_nap=False)
+                return None
             print(f"[Presence] Yuki has recharged energy to {current_energy}/100! Waking up naturally refreshed from nap.")
             self.set_sleep_state("waking", is_nap=True)
             return "woke_from_nap"

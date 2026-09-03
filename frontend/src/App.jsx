@@ -1005,6 +1005,10 @@ const App = () => {
       }
     } else if (msg.type === 'status') {
       if (msg.status === 'thinking') {
+        if (isSleepingRef.current) {
+          isSleepingRef.current = false;
+          sleepTypeRef.current = null;
+        }
         setIsThinking(true);
         setTtsStreamActive(true); // WebSocket stream starts
         // Clear speech bubble immediately since a new response generation starts
@@ -1813,6 +1817,7 @@ const App = () => {
     const isNap = sleepTypeRef.current === 'napping';
     isSleepingRef.current = false;
     sleepTypeRef.current = null;
+    setPresenceState(prev => ({ ...prev, sleep_state: 'waking' }));
     const sleepDurationMs = Date.now() - (sleepStartedAtRef.current || Date.now());
     const sleepMins = Math.max(1, Math.round(sleepDurationMs / 60000));
     sleepStartedAtRef.current = null;
@@ -1847,13 +1852,25 @@ const App = () => {
   }, [muteVoice, profile?.settings?.no_llm_mode]);
 
   useEffect(() => {
-    // 3 minutes (180s) of continuous inactivity initiates sleep state
-    if (systemIdleTime >= 180) {
+    const deskSleepSeconds = (profile?.settings?.desk_sleep_idle_min ?? 3) * 60;
+    // Continuous inactivity initiates sleep state
+    if (systemIdleTime >= deskSleepSeconds) {
       if (!isSleepingRef.current) {
         isSleepingRef.current = true;
         sleepTypeRef.current = 'inactivity';
         // Back-date sleep start by systemIdleTime so the initial 3m threshold is included in nap duration
         sleepStartedAtRef.current = Date.now() - (systemIdleTime * 1000);
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          socketRef.current.send(JSON.stringify({
+            type: 'sleep_state',
+            state: 'sleeping',
+            idle_seconds: systemIdleTime
+          }));
+        }
+      } else if (sleepTypeRef.current === 'napping') {
+        // She was already taking a companion nap, and now user has also stepped away from desk for 3+ mins!
+        // Seamlessly upgrade napping to full inactivity sleep so user return will wake her up:
+        sleepTypeRef.current = 'inactivity';
         if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
           socketRef.current.send(JSON.stringify({
             type: 'sleep_state',
@@ -1872,6 +1889,7 @@ const App = () => {
       // User just returned / moved mouse or typed — wake up sequence
       isSleepingRef.current = false;
       sleepTypeRef.current = null;
+      setPresenceState(prev => ({ ...prev, sleep_state: 'waking' }));
       const sleepDurationMs = Date.now() - (sleepStartedAtRef.current || Date.now());
       const sleepMins = Math.max(1, Math.round(sleepDurationMs / 60000));
       sleepStartedAtRef.current = null;
@@ -1906,7 +1924,7 @@ const App = () => {
         speakSystemMessage(fallbackWakeMsg, 'relaxed');
       }
     }
-  }, [systemIdleTime, muteVoice, profile?.settings?.no_llm_mode]);
+  }, [systemIdleTime, muteVoice, profile?.settings?.no_llm_mode, profile?.settings?.desk_sleep_idle_min]);
 
   // Internet connectivity polling — detects drops/recovery within 1-2 seconds
   useEffect(() => {
@@ -2653,6 +2671,19 @@ const App = () => {
           responseText = matchingAnim.responseText;
           setCustomAnimation(matchingAnim.name);
           setTimeout(() => setCustomAnimation(''), 100);
+          if (matchingAnim.name === 'napping' || cmd === '/nap' || cmd === '/ani-nap') {
+            isSleepingRef.current = true;
+            sleepTypeRef.current = 'napping';
+            sleepStartedAtRef.current = Date.now();
+            setPresenceState(prev => ({ ...prev, sleep_state: 'napping' }));
+            if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+              socketRef.current.send(JSON.stringify({
+                type: 'sleep_state',
+                state: 'napping',
+                idle_seconds: 0
+              }));
+            }
+          }
           resolvedCmd = true;
         }
       }
@@ -2673,6 +2704,18 @@ const App = () => {
     }
 
     // Default chat turn: Set stream active and thinking state FIRST to prevent coordinator race
+    if (isSleepingRef.current) {
+      isSleepingRef.current = false;
+      sleepTypeRef.current = null;
+      setPresenceState(prev => ({ ...prev, sleep_state: 'waking' }));
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({
+          type: 'sleep_state',
+          state: 'waking',
+          idle_seconds: 0
+        }));
+      }
+    }
     setTtsStreamActive(true);
     setIsThinking(true);
     setMessages((prev) => [...prev, { role: 'user', content: text, attachments: attachmentsList || [], timestamp: Date.now() / 1000 }]);

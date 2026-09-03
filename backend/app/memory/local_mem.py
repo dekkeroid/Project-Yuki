@@ -149,7 +149,9 @@ class MemoryManager:
                 "telegram_notify_reminders": True,
                 "telegram_verbose_tools": True,
                 "proactive_nudge_mode": "visual_only",
-                "proactive_nudge_interval_min": 45
+                "proactive_nudge_interval_min": 45,
+                "desk_sleep_idle_min": 3,
+                "companion_nap_silence_min": 5
             }
         }
         if not os.path.exists(self.profile_path):
@@ -243,6 +245,8 @@ class MemoryManager:
                 data["settings"]["character_persona"] = config.CHARACTER_PERSONA
                 config.PROACTIVE_NUDGE_MODE = str(data["settings"].get("proactive_nudge_mode", getattr(config, "PROACTIVE_NUDGE_MODE", "visual_only"))).strip().lower()
                 config.PROACTIVE_NUDGE_INTERVAL_MIN = int(data["settings"].get("proactive_nudge_interval_min", getattr(config, "PROACTIVE_NUDGE_INTERVAL_MIN", 45)))
+                config.DESK_SLEEP_IDLE_MIN = int(data["settings"].get("desk_sleep_idle_min", getattr(config, "DESK_SLEEP_IDLE_MIN", 3)))
+                config.COMPANION_NAP_SILENCE_MIN = int(data["settings"].get("companion_nap_silence_min", getattr(config, "COMPANION_NAP_SILENCE_MIN", 5)))
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
                 config.START_WITH_LAST_AVATAR_SIZE = bool(data["settings"].get("start_with_last_avatar_size", getattr(config, "START_WITH_LAST_AVATAR_SIZE", True)))
                 config.ENABLE_VECTOR_MEMORY = bool(data["settings"].get("enable_vector_memory", getattr(config, "ENABLE_VECTOR_MEMORY", False)))
@@ -585,6 +589,10 @@ class MemoryManager:
             config.PROACTIVE_NUDGE_MODE = str(value).strip().lower()
         elif key == "proactive_nudge_interval_min":
             config.PROACTIVE_NUDGE_INTERVAL_MIN = int(value)
+        elif key == "desk_sleep_idle_min":
+            config.DESK_SLEEP_IDLE_MIN = int(value)
+        elif key == "companion_nap_silence_min":
+            config.COMPANION_NAP_SILENCE_MIN = int(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 
