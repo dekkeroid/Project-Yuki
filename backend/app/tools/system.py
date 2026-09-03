@@ -307,9 +307,16 @@ def _find_app_in_windows_apps(app_name: str) -> str:
         app_name_clean = app_name.lower().replace(".exe", "").replace(" ", "")
         for file in os.listdir(win_apps_dir):
             if file.endswith(".exe"):
+                full_path = os.path.join(win_apps_dir, file)
+                # Skip 0-byte or broken WindowsApps execution alias stubs (e.g. fake python.exe)
+                try:
+                    if os.path.getsize(full_path) == 0:
+                        continue
+                except Exception:
+                    continue
                 name_clean = os.path.splitext(file)[0].lower().replace(" ", "")
                 if app_name_clean == name_clean:
-                    return os.path.join(win_apps_dir, file)
+                    return full_path
     return None
 
 def _find_app_in_start_menu_exact(app_name: str) -> str:
@@ -350,7 +357,7 @@ def _find_app_in_start_menu_partial(app_name: str) -> str:
             for file in files:
                 if file.endswith(".lnk"):
                     name_clean = os.path.splitext(file)[0].lower().replace(" ", "")
-                    if app_name_clean in name_clean or name_clean in app_name_clean:
+                    if len(name_clean) > 2 and len(app_name_clean) > 2:
                         is_prefix = name_clean.startswith(app_name_clean) or app_name_clean.startswith(name_clean)
                         is_high_ratio = len(app_name_clean) >= (len(name_clean) * 0.5) or len(name_clean) >= (len(app_name_clean) * 0.5)
                         if is_prefix or is_high_ratio:
@@ -358,6 +365,17 @@ def _find_app_in_start_menu_partial(app_name: str) -> str:
     return None
 
 def _find_app_path(app_name: str):
+    app_name_lower = app_name.lower().strip()
+
+    # If asking for Python, resolve to a real, working Python interpreter (never the 0-byte WindowsApps stub)
+    if app_name_lower in ("python", "python3", "py"):
+        import shutil
+        py_cand = shutil.which("python") or shutil.which("py")
+        if py_cand and "windowsapps" not in py_cand.lower() and os.path.exists(py_cand):
+            return py_cand
+        if hasattr(sys, "executable") and os.path.exists(sys.executable):
+            return sys.executable
+
     aliases = {
         "calculator": "calc.exe",
         "calc": "calc.exe",
@@ -368,7 +386,6 @@ def _find_app_path(app_name: str):
         "taskmgr": "taskmgr.exe",
     }
     
-    app_name_lower = app_name.lower().strip()
     search_term = aliases.get(app_name_lower, app_name_lower)
     
     if not search_term.endswith(".exe") and search_term not in ["cmd", "powershell"]:
@@ -619,8 +636,13 @@ def launch_app(app_name: str, args: str = None, run_as_admin: bool = False, new_
             return f"Success: Triggered startup for '{app_name}' as Administrator!"
         else:
             if args:
+                import shlex
+                try:
+                    split_args = shlex.split(args, posix=False)
+                except Exception:
+                    split_args = args.split()
                 if app_path:
-                    subprocess.Popen([app_path] + args.split())
+                    subprocess.Popen([app_path] + split_args)
                 else:
                     subprocess.Popen(["powershell", "-Command", f'Start-Process "{executable}" -ArgumentList "{args}"'])
             else:
