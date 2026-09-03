@@ -482,11 +482,11 @@ async def lifespan(app: FastAPI):
 
                     if dwell_mins >= 30 and win_title:
                         clean_win = win_title.split("-")[-1].split("—")[-1].strip()[:24]
-                        text = f"*knocks gently* Still focused on {clean_win}, Master? Don't forget to take a quick stretch!"
-                        anim = "knock"
+                        text = f"*peers over curiously* Still focused on {clean_win}, Master? Don't forget to take a quick break!"
+                        anim = "peer"
                     elif snapshot["boredom"] >= 0.90:
                         text = "*sighs softly and rests chin on hand* It's so quiet... did you get lost in your work?"
-                        anim = "boredarm"
+                        anim = "pout"
                     else:
                         text = "*peers over your shoulder* Psst, Master... taking a break anytime soon?"
                         anim = "peer"

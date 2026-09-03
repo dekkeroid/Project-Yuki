@@ -900,8 +900,15 @@ const App = () => {
     if (msg.type === 'presence_update') {
       if (msg.presence) {
         setPresenceState(msg.presence);
-        if (msg.presence.sleep_state === 'napping' && !isSleepingRef.current) {
-          isSleepingRef.current = true;
+        if (msg.presence.sleep_state === 'napping') {
+          if (!isSleepingRef.current) {
+            isSleepingRef.current = true;
+            sleepTypeRef.current = 'napping';
+            sleepStartedAtRef.current = Date.now() - (300 * 1000);
+          }
+        } else if (msg.presence.sleep_state === 'active' || msg.presence.sleep_state === 'idle') {
+          isSleepingRef.current = false;
+          sleepTypeRef.current = null;
         }
       }
       if (msg.mood) {
@@ -913,6 +920,7 @@ const App = () => {
       }
       if (msg.wake_reason === 'refreshed') {
         isSleepingRef.current = false;
+        sleepTypeRef.current = null;
         setCustomAnimation('yawning');
         setTimeout(() => setCustomAnimation(''), 100);
       }
@@ -1773,13 +1781,53 @@ const App = () => {
 
   // Living Presence & Sleep / Awakening Controller
   const isSleepingRef = useRef(false);
+  const sleepTypeRef = useRef(null); // 'inactivity' | 'napping'
   const sleepStartedAtRef = useRef(null);
+
+  const handleWakeCharacter = useCallback(() => {
+    if (!isSleepingRef.current) return;
+    const isNap = sleepTypeRef.current === 'napping';
+    isSleepingRef.current = false;
+    sleepTypeRef.current = null;
+    const sleepDurationMs = Date.now() - (sleepStartedAtRef.current || Date.now());
+    const sleepMins = Math.max(1, Math.round(sleepDurationMs / 60000));
+    sleepStartedAtRef.current = null;
+
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({
+        type: 'sleep_state',
+        state: 'waking',
+        idle_seconds: 0
+      }));
+    }
+
+    setCustomAnimation('yawning');
+    setTimeout(() => setCustomAnimation(''), 100);
+
+    const isSocketOpen = socketRef.current && socketRef.current.readyState === WebSocket.OPEN;
+    if (!profile?.settings?.no_llm_mode && isSocketOpen) {
+      console.log(`[Presence] Yuki awakened by user click/touch after ${sleepMins}m nap.`);
+      setTtsStreamActive(true);
+      setIsThinking(true);
+      const wakePrompt = isNap
+        ? `[SYSTEM EVENT: Master just clicked/touched you to wake you up from your ${sleepMins}-minute desk nap while Master was working. Give a short, groggy, warm 1-sentence response (under 12 words) apologizing for nodding off.]`
+        : `[SYSTEM EVENT: Master clicked on you to wake you up after a ${sleepMins}-minute nap. Give a short, warm, groggy 1-sentence wake-up greeting (under 12 words) acknowledging how long you were asleep.]`;
+      socketRef.current.send(JSON.stringify({ type: 'chat', message: wakePrompt, is_wake_greeting: true }));
+    } else if (!muteVoice) {
+      const fallbackMsg = isNap
+        ? `Mmh... sorry, Master. I ended up nodding off for ${sleepMins} minutes while you were working.`
+        : `Mmh... good morning, Master! Did I sleep for ${sleepMins} minutes?`;
+      setMessages((prev) => [...prev, { role: 'assistant', content: `*wakes up* ${fallbackMsg}` }]);
+      speakSystemMessage(fallbackMsg, 'relaxed');
+    }
+  }, [muteVoice, profile?.settings?.no_llm_mode]);
 
   useEffect(() => {
     // 3 minutes (180s) of continuous inactivity initiates sleep state
     if (systemIdleTime >= 180) {
       if (!isSleepingRef.current) {
         isSleepingRef.current = true;
+        sleepTypeRef.current = 'inactivity';
         // Back-date sleep start by systemIdleTime so the initial 3m threshold is included in nap duration
         sleepStartedAtRef.current = Date.now() - (systemIdleTime * 1000);
         if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
@@ -1791,8 +1839,15 @@ const App = () => {
         }
       }
     } else if (systemIdleTime === 0 && isSleepingRef.current) {
+      // If she is in a companion nap while the user is actively working,
+      // moving mouse or typing in other apps should NOT trigger 'Master returned' wake greeting!
+      if (sleepTypeRef.current === 'napping') {
+        return;
+      }
+
       // User just returned / moved mouse or typed — wake up sequence
       isSleepingRef.current = false;
+      sleepTypeRef.current = null;
       const sleepDurationMs = Date.now() - (sleepStartedAtRef.current || Date.now());
       const sleepMins = Math.max(1, Math.round(sleepDurationMs / 60000));
       sleepStartedAtRef.current = null;
@@ -1805,9 +1860,8 @@ const App = () => {
         }));
       }
 
-      // Play waking stretch or yawn animation
-      const wakeAnim = sleepMins > 30 ? 'stretching' : 'yawning';
-      setCustomAnimation(wakeAnim);
+      // Play waking yawn animation
+      setCustomAnimation('yawning');
       setTimeout(() => setCustomAnimation(''), 100);
 
       const isSocketOpen = socketRef.current && socketRef.current.readyState === WebSocket.OPEN;
@@ -2985,6 +3039,7 @@ const App = () => {
               energy={liveMood.energy}
               playfulness={liveMood.playfulness}
               sleepState={presenceState.sleep_state}
+              onWakeCharacter={handleWakeCharacter}
             />
           </Suspense>
         </main>
@@ -5534,6 +5589,7 @@ const App = () => {
             energy={liveMood.energy}
             playfulness={liveMood.playfulness}
             sleepState={presenceState.sleep_state}
+            onWakeCharacter={handleWakeCharacter}
           />
         </Suspense>
       </main>

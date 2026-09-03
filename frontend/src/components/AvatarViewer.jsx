@@ -40,7 +40,8 @@ const AvatarViewer = ({
   boredom = 0,
   energy = 55,
   playfulness = 50,
-  sleepState = 'active'
+  sleepState = 'active',
+  onWakeCharacter = null
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -103,6 +104,12 @@ const AvatarViewer = ({
   useEffect(() => {
     playfulnessRef.current = playfulness;
   }, [playfulness]);
+
+  const onWakeCharacterRef = useRef(onWakeCharacter);
+
+  useEffect(() => {
+    onWakeCharacterRef.current = onWakeCharacter;
+  }, [onWakeCharacter]);
 
   useEffect(() => {
     sleepStateRef.current = sleepState;
@@ -993,12 +1000,20 @@ const AvatarViewer = ({
     const mouseNDC = new THREE.Vector2(0, 0);
 
     const handleMouseDown = async (event) => {
-      if (!window.electronAPI) return;
-
       // If user clicked inside settings or other HTML UI elements, do not drag
       if (event.target.closest('.interactive-element')) {
         return;
       }
+
+      if (event.button === 0 && isHoveringCharacter) {
+        const sleeping = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping');
+        if (sleeping && typeof onWakeCharacterRef.current === 'function') {
+          console.log("[Presence] User clicked/touched sleeping avatar. Triggering wake up.");
+          onWakeCharacterRef.current();
+        }
+      }
+
+      if (!window.electronAPI) return;
 
       if (event.button === 0 && isHoveringCharacter && !isDragging) {
         isDragging = true;
@@ -1287,9 +1302,7 @@ const AvatarViewer = ({
     };
 
     const handleDblClick = () => {
-      if (isHoveringCharacter && !disabledAnimationsRef.current.includes('knocking')) {
-        triggerScreenKnock();
-      }
+      // Screen knock disabled by user request
     };
 
     window.addEventListener('dblclick', handleDblClick);
@@ -1531,7 +1544,7 @@ const AvatarViewer = ({
 
                   if (currentBoredom >= 0.6) {
                     if (name.includes('bored') || name.includes('pout')) weight += currentBoredom * 8;
-                    else if (name.includes('peer') || name.includes('shrug') || name.includes('knock')) weight += currentBoredom * 4;
+                    else if (name.includes('peer') || name.includes('shrug')) weight += currentBoredom * 4;
                   }
 
                   if (currentEnergy <= 40) {
