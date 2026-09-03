@@ -65,6 +65,40 @@ def is_conversational_filler(text: str) -> bool:
     return False
 
 
+_REFERENTIAL_PREFIXES = (
+    "yes", "yeah", "yep", "no", "nah", "nope", "do it", "run it", "execute it",
+    "open it", "launch it", "cancel it", "stop it", "try that", "what about",
+    "guess what", "what did you", "what did i", "what do you mean",
+    "what was i", "why did you", "which one", "the other one", "that one",
+    "idiot", "dumb", "stupid", "wrong", "what u think", "what you think"
+)
+
+_REFERENTIAL_PRONOUNS_PATTERN = re.compile(
+    r'\b(?:it|that|this|those|them|the script|the file|the app|the tool|what u mean|what you mean|what i meant|what i mean|what u did|what you did|what i was asking)\b',
+    re.IGNORECASE
+)
+
+def is_referential_query(text: str) -> bool:
+    """
+    Detects if a user query is an anaphoric follow-up, referential command, confirmation,
+    or conversational correction whose meaning exists exclusively in the active recent chat history.
+    Such queries MUST NOT trigger long-term vector memory searches that hallucinate or hijack context.
+    """
+    if not text:
+        return True
+    cleaned = " ".join(text.strip().lower().split())
+    if len(cleaned) < 5:
+        return True
+    # Fast prefix check
+    for p in _REFERENTIAL_PREFIXES:
+        if cleaned == p or cleaned.startswith(p + " ") or cleaned.startswith(p + ","):
+            return True
+    # Short query (< 50 chars) relying on referential pronouns or meta-references
+    if len(cleaned) <= 50 and _REFERENTIAL_PRONOUNS_PATTERN.search(cleaned):
+        return True
+    return False
+
+
 def init_vector_db():
     """
     Initializes the vector SQLite database and applies auto-migrations for
@@ -320,18 +354,26 @@ async def store_memory(content: str, category: str = "general", session_id: Opti
     return await asyncio.to_thread(store_memory_sync, content, category, emb, session_id)
 
 
-def _load_all_memories_sync() -> List[Tuple[int, str, str, Any, float]]:
-    """Loads all stored memories, deserializing binary BLOBs or legacy JSON text transparently."""
+def _load_all_memories_sync(exclude_session_id: Optional[str] = None) -> List[Tuple[int, str, str, Any, float]]:
+    """Loads stored memories, excluding the current active session and deserializing binary BLOBs or legacy JSON text transparently."""
     try:
         import numpy as np
         conn = sqlite3.connect(_DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT id, content, category, embedding, created_at FROM memories ORDER BY id DESC")
+        if exclude_session_id:
+            cursor.execute("SELECT id, content, category, embedding, created_at, session_id FROM memories WHERE session_id IS NULL OR session_id != ? ORDER BY id DESC", (exclude_session_id,))
+        else:
+            cursor.execute("SELECT id, content, category, embedding, created_at, session_id FROM memories ORDER BY id DESC")
         rows = cursor.fetchall()
         conn.close()
         results = []
-        for row_id, content, cat, emb_raw, created_at in rows:
+        now = time.time()
+        for row_id, content, cat, emb_raw, created_at, sid in rows:
             try:
+                # If conversational turn from the last 15 minutes, skip so active exchange in context window is not duplicated
+                if cat not in ("preference", "core_fact") and created_at and (now - created_at < 900):
+                    if sid == exclude_session_id or not sid:
+                        continue
                 if isinstance(emb_raw, bytes):
                     emb = np.frombuffer(emb_raw, dtype=np.float32)
                 elif isinstance(emb_raw, str):
@@ -347,12 +389,18 @@ def _load_all_memories_sync() -> List[Tuple[int, str, str, Any, float]]:
         return []
 
 
-async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: float = 0.60) -> List[Dict[str, Any]]:
+async def search_relevant_memories(
+    query: str,
+    top_k: int = 5,
+    min_similarity: float = 0.60,
+    exclude_session_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """
     Search stored memories semantically related to the user's query.
     Uses fast NumPy matrix vectorization (1-2ms for tens of thousands of memories)
     and grants permanent recall priority to user preferences and core facts.
     Guards against dimension mismatch when switching embedding models.
+    Excludes the active session to prevent contextual pollution.
     """
     if not getattr(config, "ENABLE_VECTOR_MEMORY", False):
         return []
@@ -361,15 +409,15 @@ async def search_relevant_memories(query: str, top_k: int = 5, min_similarity: f
         return []
 
     query_clean = query.strip()
-    # Skip trivial greetings, pure laughter, and conversational fillers
-    if is_conversational_filler(query_clean):
+    # Skip trivial greetings, pure laughter, conversational fillers, and referential follow-up queries
+    if is_conversational_filler(query_clean) or is_referential_query(query_clean):
         return []
 
     query_vec = await embed_text_async(query_clean)
     if query_vec is None:
         return []
 
-    all_memories = await asyncio.to_thread(_load_all_memories_sync)
+    all_memories = await asyncio.to_thread(_load_all_memories_sync, exclude_session_id)
     if not all_memories:
         return []
 
@@ -475,8 +523,8 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
     if is_pure_query and len(user_trimmed) < 40:
         return
 
-    # Filter out pure laughter, greetings, and conversational fillers
-    if is_conversational_filler(user_trimmed):
+    # Filter out pure laughter, greetings, conversational fillers, and short referential follow-ups
+    if is_conversational_filler(user_trimmed) or is_referential_query(user_trimmed):
         return
 
     import re
