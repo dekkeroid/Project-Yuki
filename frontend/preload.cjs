@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('set-ignore-mouse-events', ignore, options);
   },
   setWindowScale: (scale) => {
-    ipcRenderer.send('set-window-scale', scale);
+    return ipcRenderer.invoke('set-window-scale', Number(scale));
   },
   onAvatarScaleChanged: (callback) => {
     const handler = (event, scale) => callback(scale);
@@ -180,9 +180,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (event, data) => callback(data);
     ipcRenderer.on('yuki-voice-settings-changed', listener);
     return () => ipcRenderer.removeListener('yuki-voice-settings-changed', listener);
-  },
-  setWindowScale: (scale) => {
-    ipcRenderer.send('set-window-scale', Number(scale));
   },
   sendLog: (msg) => {
     ipcRenderer.send('yuki-renderer-log', msg);

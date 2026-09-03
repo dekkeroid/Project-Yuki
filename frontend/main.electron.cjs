@@ -843,7 +843,7 @@ function createWindow() {
     }
   });
 
-  ipcMain.on('set-window-scale', (event, scale) => {
+  const applyWindowScale = (scale) => {
     // Always target the main avatar window (mainWindow), never the Settings panel window
     if (mainWindow && !mainWindow.isDestroyed()) {
       const numScale = parseFloat(scale) || 1.0;
@@ -870,7 +870,17 @@ function createWindow() {
 
       // Broadcast new scale to mainWindow webContents so React state in App.jsx updates!
       mainWindow.webContents.send('yuki-avatar-scale-changed', numScale);
+      return { width: newWidth + windowWidthExtra, height: newHeight, x: newX, y: newY, scale: numScale };
     }
+    return null;
+  };
+
+  ipcMain.on('set-window-scale', (event, scale) => {
+    applyWindowScale(scale);
+  });
+
+  ipcMain.handle('set-window-scale', async (event, scale) => {
+    return applyWindowScale(scale);
   });
 
   ipcMain.on('yuki-renderer-log', (event, msg) => {
