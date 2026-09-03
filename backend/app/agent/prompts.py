@@ -482,7 +482,9 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
       * System power on trigger: `action='watch', target='antigravity', condition='closed', run_builtin='shutdown'` (or 'restart' / 'sleep' / 'lock')
       * Sound on trigger: `action='watch', target='antigravity', condition='minimized', run_builtin='sound:tada'`
       * Timed popup: `action='set_interval', seconds=30, run_notify='Take a break!'`
-      * Delayed action: `action='set_delayed', seconds=30, run_tool='take_screenshot'`
+      * Delayed screenshot: `action='set_delayed', seconds=30, run_tool='take_screenshot'`
+      * Delayed Python script: `action='set_delayed', seconds=10, run_tool='run_python_script', run_args={'code': 'import tkinter as tk...'}`
+      * Delayed shell command: `action='set_delayed', seconds=10, run_command='python \"C:/path/to/script.py\"'`
     - Trigger conditions: `condition='closed'` (when an app closes), `condition='opened'` (when launched), `condition='minimized'`, `maximized`, `focused`, `battery_low`, `storage_low`, `network_disconnected`.
     - Task management: `action='list'`, `action='cancel'` (item_id=<id>), `action='pause'`, `action='resume'`.
   • All other tools → ONLY for direct, unambiguous user requests to perform that exact action.
@@ -592,7 +594,9 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
         * System power on trigger: `action='watch', target='antigravity', condition='closed', run_builtin='shutdown'` (or 'restart' / 'sleep' / 'lock')
         * Sound on trigger: `action='watch', target='antigravity', condition='minimized', run_builtin='sound:tada'`
         * Timed popup: `action='set_interval', seconds=30, run_notify='Take a break!'`
-        * Delayed action: `action='set_delayed', seconds=30, run_tool='take_screenshot'`
+        * Delayed screenshot: `action='set_delayed', seconds=30, run_tool='take_screenshot'`
+        * Delayed Python execution: `action='set_delayed', seconds=10, run_tool='jarvis_run_python', run_args={'code': 'import tkinter as tk...'}`
+        * Delayed shell command: `action='set_delayed', seconds=10, run_command='python \"C:/path/to/script.py\"'`
       - Trigger conditions: `condition='closed'` (when an app closes), `condition='opened'` (when launched), `condition='minimized'`, `maximized`, `focused`, `battery_low`, `storage_low`, `network_disconnected`.
       - Task management: `action='list'`, `action='cancel'` (item_id=<id>), `action='pause'`, `action='resume'`.
    • `jarvis_remember_user_fact` → When the USER reveals a clear, definite personal fact or preference about THEMSELVES. Use structured keys when possible: `like` (preferences), `dislike` (aversions), `interest` (topics), `hobby` (activities), `name`. For anything else, use a custom label (e.g. `"favourite drink"`). Multiple entries for the same key accumulate as a list automatically:
