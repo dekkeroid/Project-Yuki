@@ -281,7 +281,7 @@ def get_basic_tools_definition() -> list:
                         },
                         "list_name": {
                             "type": "string",
-                            "description": "Name of the list: 'shopping', 'today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
+                            "description": "Name of the list: 'shopping', 'to do today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
                         },
                         "items": {
                             "type": "array",
@@ -980,7 +980,7 @@ def get_advanced_jarvis_tools_definition() -> list:
                         },
                         "list_name": {
                             "type": "string",
-                            "description": "Name of the list: 'shopping', 'today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
+                            "description": "Name of the list: 'shopping', 'to do today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
                         },
                         "items": {
                             "type": "array",
@@ -1008,7 +1008,7 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "manage_personal_list",
-                "description": "Alias for jarvis_manage_personal_list. Manage everyday personal checklists and agendas (shopping, today, errands, wishlist).",
+                "description": "Alias for jarvis_manage_personal_list. Manage everyday personal checklists and agendas (shopping, to do today, errands, wishlist).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -1019,7 +1019,7 @@ def get_advanced_jarvis_tools_definition() -> list:
                         },
                         "list_name": {
                             "type": "string",
-                            "description": "Name of the list: 'shopping', 'today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
+                            "description": "Name of the list: 'shopping', 'to do today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
                         },
                         "items": {
                             "type": "array",
