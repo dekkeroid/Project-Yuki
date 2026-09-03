@@ -295,6 +295,10 @@ def get_basic_tools_definition() -> list:
                         "quantity": {
                             "type": "string",
                             "description": "Optional quantity or detail (e.g. '2 cartons', '1 lb')."
+                        },
+                        "clear_old": {
+                            "type": "boolean",
+                            "description": "Set to true when the user wants to start fresh, create a brand-new list, or replace the previous list of that name (e.g. 'make a new shopping list', 'replace my shopping list'). Wipes the previous list before adding. Default is false."
                         }
                     },
                     "required": ["action"]
@@ -990,6 +994,10 @@ def get_advanced_jarvis_tools_definition() -> list:
                         "quantity": {
                             "type": "string",
                             "description": "Optional quantity or detail (e.g. '2 cartons', '1 lb')."
+                        },
+                        "clear_old": {
+                            "type": "boolean",
+                            "description": "Set to true when the user wants to start fresh, create a brand-new list, or replace the previous list of that name (e.g. 'make a new shopping list', 'replace my shopping list', 'start fresh'). Wipes the previous list before adding. Default is false."
                         }
                     },
                     "required": ["action"]
@@ -1025,6 +1033,10 @@ def get_advanced_jarvis_tools_definition() -> list:
                         "quantity": {
                             "type": "string",
                             "description": "Optional quantity or detail."
+                        },
+                        "clear_old": {
+                            "type": "boolean",
+                            "description": "Set to true when the user asks for a new list or to replace/reset the existing list."
                         }
                     },
                     "required": ["action"]

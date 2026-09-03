@@ -1285,6 +1285,7 @@ class AgentExecutor:
         list_name = kwargs.get("list_name") or kwargs.get("name") or "shopping"
         items = kwargs.get("items") or kwargs.get("item") or kwargs.get("title")
         include_completed = bool(kwargs.get("include_completed", False))
+        clear_old = bool(kwargs.get("clear_old", False))
         quantity = kwargs.get("quantity")
         target_path = kwargs.get("target_path") or kwargs.get("path")
 
@@ -1301,7 +1302,8 @@ class AgentExecutor:
             items=items,
             include_completed=include_completed,
             quantity=quantity,
-            target_path=target_path
+            target_path=target_path,
+            clear_old=clear_old
         )
 
     async def ensure_model_loaded(self, model_name: str) -> bool:
