@@ -494,7 +494,8 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
     - View all lists: `action='lists'` (shows all active list names and counts so you can see which lists exist)
     - View specific list: `action='show', list_name='shopping'` (or `list_name='to do today'`)
     - Check off item: `action='check', list_name='shopping', items=['Eggs']`
-    - Clear completed: `action='clear_completed', list_name='shopping'`
+    - Clear entire list: `action='clear', list_name='shopping'` (wipes all items when user asks to clear, wipe, or empty the list)
+    - Clear completed only: `action='clear_completed', list_name='shopping'` (ONLY clears checked-off items)
     - PRESENTING ITEMS: When answering what is on a list, ALWAYS format and present all items clearly in your response (e.g. as bullet points or numbered list with `[ ]`) so the user can easily see each item.
   • All other tools → ONLY for direct, unambiguous user requests to perform that exact action.
 
@@ -625,7 +626,8 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
      - View all lists: `action='lists'` (shows all active list names and item counts so you can see which lists exist)
      - View specific list: `action='show', list_name='shopping'` (or `list_name='to do today'`)
      - Check off item: `action='check', list_name='shopping', items=['Eggs']`
-     - Clear completed: `action='clear_completed', list_name='shopping'`
+     - Clear entire list: `action='clear', list_name='shopping'` (wipes all items when user asks to clear, wipe, or empty the list)
+     - Clear completed only: `action='clear_completed', list_name='shopping'` (ONLY clears checked-off items)
      - Export to Desktop: `action='export', list_name='shopping'`
      - PRESENTING ITEMS: When answering what is on a list, ALWAYS format and present all items clearly in your response (e.g. as bullet points or numbered list with `[ ]`) so the user can easily see each item.
    • `jarvis_keyboard_mouse_input` → Send keys/mouse to the app currently in focus. Prefer keyboard actions (`type`, `press_keys` with Tab/Enter/arrows/shortcuts) over raw coordinates. If you must click, first call `jarvis_see_screen` and have it report the exact screen x,y of the target element, then click those coordinates; if the click misses, re-check the screen and adjust. For websites, use the browser tools instead.

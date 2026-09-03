@@ -304,6 +304,22 @@ def clear_completed_items(list_name: str) -> str:
     return f"No completed items to clear in '{clean_name}'."
 
 
+@_write_locked
+def clear_entire_list(list_name: str) -> str:
+    """Removes all items (both pending and completed) from a list."""
+    clean_name = _normalize_list_name(list_name)
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM personal_lists WHERE list_name = ?", (clean_name,))
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    if count > 0:
+        return f"Cleared all {count} item(s) from '{clean_name}'. The list is now empty."
+    return f"List '{clean_name}' is already empty."
+
+
 def export_list_to_markdown(list_name: str, target_path: Optional[str] = None) -> str:
     """Exports a list to a Markdown file on the user's Desktop or custom path."""
     clean_name = _normalize_list_name(list_name)
@@ -384,10 +400,13 @@ def manage_personal_list(
             return "Please specify which item(s) to remove."
         return remove_items(list_name, items)
 
-    if action in ("clear", "clear_completed", "cleanup", "purge"):
+    if action in ("clear", "empty", "clear_all", "delete_list", "reset") or (action == "clear_completed" and clear_old):
+        return clear_entire_list(list_name)
+
+    if action in ("clear_completed", "cleanup", "purge", "clear_done"):
         return clear_completed_items(list_name)
 
     if action in ("export", "save", "write_md"):
         return export_list_to_markdown(list_name, target_path=target_path)
 
-    return f"Unknown action '{action}'. Valid actions: add, show, check, uncheck, remove, clear_completed, lists, export."
+    return f"Unknown action '{action}'. Valid actions: add, show, check, uncheck, remove, clear, clear_completed, lists, export."
