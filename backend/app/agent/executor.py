@@ -3195,7 +3195,8 @@ class AgentExecutor:
             _vm_t0 = time.time()
             try:
                 from app.memory.vector_memory import search_relevant_memories
-                rel_mem = await search_relevant_memories(user_message, top_k=5, min_similarity=0.60)
+                _sid = (overrides or {}).get("session_id")
+                rel_mem = await search_relevant_memories(user_message, top_k=5, min_similarity=0.60, exclude_session_id=_sid)
                 _vm_dur = (time.time() - _vm_t0) * 1000.0
                 recalled_count = len(rel_mem) if rel_mem else 0
                 self.last_vector_timing = {
@@ -3207,7 +3208,7 @@ class AgentExecutor:
                     overrides["relevant_memories"] = rel_mem
                     print(f"[VectorMemory] Recalled {len(rel_mem)} relevant memory item(s) in {_vm_dur:.1f}ms")
                 elif _vm_dur < 5.0:
-                    print(f"[VectorMemory] Skipped memory lookup for conversational banter/filler ({_vm_dur:.1f}ms)")
+                    print(f"[VectorMemory] Skipped memory lookup for conversational banter/filler or referential command ({_vm_dur:.1f}ms)")
                 else:
                     print(f"[VectorMemory] Searched in {_vm_dur:.1f}ms (0 matches >= 60%)")
             except Exception as _ve:

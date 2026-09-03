@@ -85,3 +85,14 @@ Whenever making changes to any database structure or table (`vectors.db`, `yuki_
   - For icons, always use vector icons from `lucide-react` (e.g., `<Star className="w-3.5 h-3.5" />`, `<Sparkles />`, `<Check />`, `<AlertCircle />`, `<Trash2 />`).
   - For status indicators, use clean styled text badges (e.g., `(Custom)`, `(Global)`, `(Customized)`).
   - Minimalist standard glyphs (like `✓`, `✕`, `↺`, `+`) are acceptable only for compact inline action buttons.
+
+---
+
+## Production / Installed App Location
+
+- **Build Pipeline**: Created by running `start_build.bat` (which builds frontend, PyInstaller backend, Electron packaging, and Inno Setup installer into `frontend\installer-output\`).
+- **Installed Location**: After running the installer created by `start_build.bat`, Yuki AI is installed at:
+  `C:\Users\ihars\AppData\Local\Programs\Yuki AI\` (or `%LOCALAPPDATA%\Programs\Yuki AI\`).
+- **Packaged Backend**: The bundled backend executable and internal resources reside at:
+  `C:\Users\ihars\AppData\Local\Programs\Yuki AI\resources\backend\`.
+
