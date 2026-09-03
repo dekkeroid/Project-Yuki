@@ -39,7 +39,8 @@ const AvatarViewer = ({
   cameraTracking = true,
   boredom = 0,
   energy = 55,
-  playfulness = 50
+  playfulness = 50,
+  sleepState = 'active'
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -89,6 +90,7 @@ const AvatarViewer = ({
   const boredomRef = useRef(boredom);
   const energyRef = useRef(energy);
   const playfulnessRef = useRef(playfulness);
+  const sleepStateRef = useRef(sleepState);
 
   useEffect(() => {
     boredomRef.current = boredom;
@@ -101,6 +103,10 @@ const AvatarViewer = ({
   useEffect(() => {
     playfulnessRef.current = playfulness;
   }, [playfulness]);
+
+  useEffect(() => {
+    sleepStateRef.current = sleepState;
+  }, [sleepState]);
 
   useEffect(() => {
     activeModelRef.current = activeModel;
@@ -1530,7 +1536,7 @@ const AvatarViewer = ({
 
                   if (currentEnergy <= 40) {
                     const fatigueFactor = (40 - currentEnergy) / 40;
-                    if (name.includes('yawn') || name.includes('stretch') || name.includes('nap')) weight += fatigueFactor * 6;
+                    if (name.includes('yawn') || name.includes('nap')) weight += fatigueFactor * 6;
                   }
 
                   if (currentPlayfulness >= 65) {
@@ -1695,7 +1701,7 @@ const AvatarViewer = ({
           const xMult = isVRM1 ? -1 : 1;
           const zMult = isVRM1 ? -1 : 1;
           const yMult = 1;
-          const isSleeping = systemIdleTimeRef.current > 180;
+          const isSleeping = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping') || systemIdleTimeRef.current > 180;
           const targetSleepProgress = isSleeping ? 1.0 : 0.0;
           const sleepTransitionSpeed = isSleeping ? 0.2 : 0.8; // wake up is faster
           sleepProgressRef.current += (targetSleepProgress - sleepProgressRef.current) * (delta * 3.0 * sleepTransitionSpeed);
