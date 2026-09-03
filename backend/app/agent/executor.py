@@ -3226,7 +3226,13 @@ class AgentExecutor:
         except Exception as e:
             import traceback
             traceback.print_exc()
-            current_messages = [{"role": "user", "content": user_message}]
+            # Preserve history even on fallback so the LLM doesn't lose conversation context!
+            fallback_msgs = []
+            for m in (chat_history or []):
+                if m.get("role") in ("user", "assistant") and m.get("content"):
+                    fallback_msgs.append({"role": m["role"], "content": m["content"]})
+            fallback_msgs.append({"role": "user", "content": user_message})
+            current_messages = fallback_msgs
 
         async with persistent_session_context() as session:
             is_coder_mode = bool(overrides.get("coding_mode")) or resolved_backend in ("coder", "complex_coder")
