@@ -492,7 +492,7 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
     - Normal addition (APPEND): `action='add', list_name='shopping', items=['Whole milk', 'Eggs']` (NEVER set `clear_old=True` when normally adding or appending items!)
     - Fresh/new list (RESET): `action='add', list_name='shopping', items=['...'], clear_old=True` (ONLY pass `clear_old=True` when the user explicitly asks to start fresh or make a brand-new list, e.g. "make a new one", "start fresh", "replace my list")
     - View all lists: `action='lists'` (shows all active list names and counts so you can see which lists exist)
-    - View specific list: `action='show', list_name='shopping'` (or `list_name='today'`)
+    - View specific list: `action='show', list_name='shopping'` (or `list_name='to do today'`)
     - Check off item: `action='check', list_name='shopping', items=['Eggs']`
     - Clear completed: `action='clear_completed', list_name='shopping'`
     - PRESENTING ITEMS: When answering what is on a list, ALWAYS format and present all items clearly in your response (e.g. as bullet points or numbered list with `[ ]`) so the user can easily see each item.
@@ -623,7 +623,7 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
      - Normal addition (APPEND): `action='add', list_name='shopping', items=['Whole milk', 'Eggs']` (NEVER set `clear_old=True` when normally adding or appending items!)
      - Fresh/new list (RESET): `action='add', list_name='shopping', items=['...'], clear_old=True` (ONLY pass `clear_old=True` when the user explicitly asks to start fresh or make a brand-new list, e.g. "make a new one", "start fresh", "replace my list")
      - View all lists: `action='lists'` (shows all active list names and item counts so you can see which lists exist)
-     - View specific list: `action='show', list_name='shopping'` (or `list_name='today'`)
+     - View specific list: `action='show', list_name='shopping'` (or `list_name='to do today'`)
      - Check off item: `action='check', list_name='shopping', items=['Eggs']`
      - Clear completed: `action='clear_completed', list_name='shopping'`
      - Export to Desktop: `action='export', list_name='shopping'`

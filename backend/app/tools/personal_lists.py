@@ -23,8 +23,8 @@ def _normalize_list_name(name: Optional[str]) -> str:
     name = (name or "default").lower().strip()
     if name in ("groceries", "grocery", "grocery list", "buy"):
         return "shopping"
-    if name in ("tasks", "daily", "agenda", "todo", "todos"):
-        return "today"
+    if name in ("today", "tasks", "daily", "agenda", "todo", "todos", "to do", "to-do", "to do today", "things to do today"):
+        return "to do today"
     return name
 
 
