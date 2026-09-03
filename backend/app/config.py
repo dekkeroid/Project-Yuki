@@ -256,6 +256,10 @@ TELEGRAM_VERBOSE_TOOLS = os.environ.get("TELEGRAM_VERBOSE_TOOLS", "true").strip(
 PROACTIVE_NUDGE_MODE = os.environ.get("PROACTIVE_NUDGE_MODE", "visual_only").strip().lower()  # "visual_only", "spoken", "disabled"
 PROACTIVE_NUDGE_INTERVAL_MIN = int(os.environ.get("PROACTIVE_NUDGE_INTERVAL_MIN", "45"))
 
+# Desk Sleep & Companion Nap Timers
+DESK_SLEEP_IDLE_MIN = int(os.environ.get("DESK_SLEEP_IDLE_MIN", "3"))
+COMPANION_NAP_SILENCE_MIN = int(os.environ.get("COMPANION_NAP_SILENCE_MIN", "5"))
+
 
 
 def get_effective_base_url() -> str:
