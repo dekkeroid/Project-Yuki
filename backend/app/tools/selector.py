@@ -92,6 +92,7 @@ _ALWAYS_INCLUDED_BASIC_TOOLS = {
     "run_python_script",
     "update_user_fact",
     "web_search",
+    "manage_personal_list",
 }
 
 _TOOL_HINTS = {
@@ -106,7 +107,9 @@ _TOOL_HINTS = {
     "jarvis_replace_file_content": ("replace", "edit", "change", "file", "modify", "patch"),
     "jarvis_list_dir_tree": ("dir", "directory", "tree", "list", "folder", "files", "ls"),
     "jarvis_git_status": ("git", "repo", "commit", "status", "branch", "diff", "vcs"),
-    "manage_todo": ("todo", "task", "checklist", "subtask", "track", "progress", "plan", "steps"),
+    "manage_personal_list": ("shopping", "groceries", "grocery", "list", "checklist", "buy", "errands", "today", "wishlist", "pack", "items"),
+    "jarvis_manage_personal_list": ("shopping", "groceries", "grocery", "list", "checklist", "buy", "errands", "today", "wishlist", "pack", "items"),
+    "manage_todo": ("todo", "subtask", "track", "progress", "plan", "steps"),
     "jarvis_system_diagnostics": ("cpu", "ram", "memory", "disk", "stats", "system", "health", "battery", "performance"),
     "jarvis_launch_app": ("open", "launch", "start", "app", "application", "program", "browser", "exec"),
     "jarvis_open_or_play_file": ("open", "play", "media", "video", "audio", "file", "folder", "watch", "music"),

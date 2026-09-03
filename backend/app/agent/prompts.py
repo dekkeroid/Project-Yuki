@@ -488,6 +488,12 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
       * Delayed shell command: `action='set_delayed', seconds=10, run_command='python \"C:/path/to/script.py\"'`
     - Trigger conditions: `condition='closed'` (when an app closes), `condition='opened'` (when launched), `condition='minimized'`, `maximized`, `focused`, `battery_low`, `storage_low`, `network_disconnected`.
     - Task management: `action='list'`, `action='cancel'` (item_id=<id>), `action='pause'`, `action='resume'`.
+  • `manage_personal_list` → ONLY when the user asks to manage everyday personal lists (shopping lists, groceries, things to do today, errands, wishlist, packing list):
+    - Add items: `action='add', list_name='shopping', items=['Whole milk', 'Eggs', 'Avocados']` (or single item string)
+    - View list: `action='show', list_name='shopping'` (or `list_name='today'`)
+    - Check off item: `action='check', list_name='shopping', items=['Eggs']`
+    - View all active lists: `action='lists'`
+    - Clear completed: `action='clear_completed', list_name='shopping'`
   • All other tools → ONLY for direct, unambiguous user requests to perform that exact action.
 
 RULE 3 — ONE TOOL PER TURN: Call at most one tool per response unless user explicitly asks for multiple actions.
@@ -611,6 +617,13 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
      "My favourite drink is coffee" → key="favourite drink", value="coffee" → custom_facts: {{"favourite drink": "coffee"}}
      "Also love tea" → key="favourite drink", value="tea" → custom_facts: {{"favourite drink": ["coffee", "tea"]}}
       BE CONSERVATIVE: ONLY save distinct, enduring facts. NEVER save temporary states ("I'm tired today").
+   • `jarvis_manage_personal_list` → Executive Assistant list management for everyday human needs (shopping lists, groceries, things to do today, errands, wishlist, packing list). Never confuse this with coding tasks. Persists globally across all conversation turns:
+     - Add items: `action='add', list_name='shopping', items=['Whole milk', 'Eggs', 'Avocados']` (or single item string)
+     - View list: `action='show', list_name='shopping'` (or `list_name='today'`)
+     - Check off item: `action='check', list_name='shopping', items=['Eggs']`
+     - View all active lists: `action='lists'`
+     - Clear completed: `action='clear_completed', list_name='shopping'`
+     - Export to Desktop: `action='export', list_name='shopping'`
    • `jarvis_keyboard_mouse_input` → Send keys/mouse to the app currently in focus. Prefer keyboard actions (`type`, `press_keys` with Tab/Enter/arrows/shortcuts) over raw coordinates. If you must click, first call `jarvis_see_screen` and have it report the exact screen x,y of the target element, then click those coordinates; if the click misses, re-check the screen and adjust. For websites, use the browser tools instead.
 
 

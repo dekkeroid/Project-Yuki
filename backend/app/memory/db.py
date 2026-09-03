@@ -571,6 +571,21 @@ def init_db():
     );
     """)
 
+    # 1d2b. Persistent Personal Assistant Lists (shopping, today, errands, wishlist)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS personal_lists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        list_name TEXT NOT NULL,
+        item TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        quantity TEXT,
+        created_at REAL,
+        updated_at REAL
+    );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_personal_lists_name ON personal_lists(list_name);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_personal_lists_status ON personal_lists(status);")
+
     # 1d3. Multi-Vector Relationship Engine & Economy
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS relationship_vectors (

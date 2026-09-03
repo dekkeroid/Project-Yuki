@@ -265,6 +265,41 @@ def get_basic_tools_definition() -> list:
                     "required": ["file_or_folder_path"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "manage_personal_list",
+                "description": "WHEN TO USE: Manage personal everyday lists and agendas for the user (shopping lists, groceries, things to do today, errands, wishlist, packing list). Supports adding items, viewing lists, checking off completed items, removing items, and clearing finished tasks. Persists globally across all conversation turns. NOT FOR CODE TASKS.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["add", "show", "check", "uncheck", "remove", "clear_completed", "lists", "export"],
+                            "description": "Action to perform: 'add' (add items), 'show' (view list), 'check' (mark item done), 'uncheck' (reopen item), 'remove' (delete item), 'clear_completed' (purge completed items), 'lists' (overview of all active lists), 'export' (save to Desktop Markdown)."
+                        },
+                        "list_name": {
+                            "type": "string",
+                            "description": "Name of the list: 'shopping', 'today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
+                        },
+                        "items": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "One or more item names to add, check off, or remove (e.g. ['Whole milk', 'Eggs', 'Avocados']). Can also pass a single string."
+                        },
+                        "include_completed": {
+                            "type": "boolean",
+                            "description": "Whether to include completed items when viewing the list. Default is false."
+                        },
+                        "quantity": {
+                            "type": "string",
+                            "description": "Optional quantity or detail (e.g. '2 cartons', '1 lb')."
+                        }
+                    },
+                    "required": ["action"]
+                }
+            }
         }
     ]
 
@@ -923,6 +958,76 @@ def get_advanced_jarvis_tools_definition() -> list:
                         "caption": {"type": "string", "description": "Optional message caption on Telegram."}
                     },
                     "required": ["file_or_folder_path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "jarvis_manage_personal_list",
+                "description": "WHEN TO USE: Manage personal everyday lists and agendas for the user (shopping lists, groceries, things to do today, errands, wishlist, packing list, memos). Supports adding items, viewing lists, checking off completed items, removing items, clearing finished tasks, and exporting to Desktop Markdown. Persists globally across all conversation turns. NOT FOR CODE IMPLEMENTATION TASKS.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["add", "show", "check", "uncheck", "remove", "clear_completed", "lists", "export"],
+                            "description": "Action to perform: 'add' (add items), 'show' (view list), 'check' (mark item done), 'uncheck' (reopen item), 'remove' (delete item), 'clear_completed' (purge completed items), 'lists' (overview of all active lists), 'export' (save to Desktop Markdown)."
+                        },
+                        "list_name": {
+                            "type": "string",
+                            "description": "Name of the list: 'shopping', 'today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
+                        },
+                        "items": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "One or more item names to add, check off, or remove (e.g. ['Whole milk', 'Eggs', 'Avocados']). Can also pass a single string."
+                        },
+                        "include_completed": {
+                            "type": "boolean",
+                            "description": "Whether to include completed items when viewing the list. Default is false."
+                        },
+                        "quantity": {
+                            "type": "string",
+                            "description": "Optional quantity or detail (e.g. '2 cartons', '1 lb')."
+                        }
+                    },
+                    "required": ["action"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "manage_personal_list",
+                "description": "Alias for jarvis_manage_personal_list. Manage everyday personal checklists and agendas (shopping, today, errands, wishlist).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["add", "show", "check", "uncheck", "remove", "clear_completed", "lists", "export"],
+                            "description": "Action to perform: 'add', 'show', 'check', 'uncheck', 'remove', 'clear_completed', 'lists', 'export'."
+                        },
+                        "list_name": {
+                            "type": "string",
+                            "description": "Name of the list: 'shopping', 'today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
+                        },
+                        "items": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "One or more item names to add, check off, or remove."
+                        },
+                        "include_completed": {
+                            "type": "boolean",
+                            "description": "Whether to include completed items when viewing the list. Default is false."
+                        },
+                        "quantity": {
+                            "type": "string",
+                            "description": "Optional quantity or detail."
+                        }
+                    },
+                    "required": ["action"]
                 }
             }
         }
