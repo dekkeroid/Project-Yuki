@@ -2999,10 +2999,8 @@ class AgentExecutor:
                 print(f"[Fallback Parser] Successfully parsed text JSON into tool calls: {fallback_calls}")
                 yield "tool_calls", fallback_calls, last_label
             else:
-                # Not a valid tool call JSON, flush the buffer to the user (stripping any hallucinated leading timestamp badge)
-                cleaned_text = _TIMESTAMP_PREFIX_REGEX.sub('', text_buffer).lstrip()
-                if cleaned_text:
-                    yield "token", cleaned_text, last_label
+                # Not a valid tool call JSON, flush the buffer to the user
+                yield "token", text_buffer, last_label
         elif not accumulated_tool_calls and text_buffer:
             # Check for hallucinated markdown tool call blocks inside full text buffer
             fallback_calls = self._try_parse_json_tool_call(text_buffer)
@@ -3645,7 +3643,7 @@ class AgentExecutor:
                         process_relationship_turn_evolution(user_message, assistant_speech, persona_preset=preset)
                     except Exception as e:
                         print(f"[RelationshipEngine] Evolution error: {e}")
-                    assistant_final_speech = _TIMESTAMP_PREFIX_REGEX.sub('', "\n".join(accumulated_response_total)).strip()
+                    assistant_final_speech = "\n".join(accumulated_response_total)
                     final_history.append({
                         "role": "assistant",
                         "content": assistant_final_speech,
@@ -3707,7 +3705,7 @@ class AgentExecutor:
                 process_relationship_turn_evolution(user_message, wrap_speech, persona_preset=preset)
             except Exception as e:
                 print(f"[RelationshipEngine] Evolution error: {e}")
-            assistant_final_speech = _TIMESTAMP_PREFIX_REGEX.sub('', "\n".join(accumulated_response_total)).strip()
+            assistant_final_speech = "\n".join(accumulated_response_total)
             final_history.append({
                 "role": "assistant",
                 "content": assistant_final_speech,
