@@ -162,10 +162,24 @@ def init_vector_db():
             cursor.execute("ALTER TABLE memories ADD COLUMN session_id TEXT DEFAULT NULL")
             print("[VectorMemory] Auto-migrated: added missing column 'session_id'")
 
+        if "subject" not in existing_cols:
+            cursor.execute("ALTER TABLE memories ADD COLUMN subject TEXT NOT NULL DEFAULT 'general'")
+            print("[VectorMemory] Auto-migrated: added missing column 'subject'")
+
+        if "anchor" not in existing_cols:
+            cursor.execute("ALTER TABLE memories ADD COLUMN anchor TEXT DEFAULT NULL")
+            print("[VectorMemory] Auto-migrated: added missing column 'anchor'")
+
         # Create indexes for fast lookup and filtering
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_subject ON memories(subject)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_session_id ON memories(session_id)")
+
+        # Auto-align subjects for existing records on older databases
+        cursor.execute("UPDATE memories SET subject = 'user' WHERE category IN ('preference', 'core_fact') AND (subject IS NULL OR subject = 'general')")
+        cursor.execute("UPDATE memories SET subject = 'assistant' WHERE (content LIKE '%whats ur fav%' OR content LIKE '%name ur fav%' OR content LIKE '%whats your fav%') AND (subject IS NULL OR subject = 'general')")
+        cursor.execute("UPDATE memories SET subject = 'project' WHERE (content LIKE '%matrix_rain%' OR content LIKE '%cyber_pong%' OR content LIKE '%popup_script%' OR content LIKE '%firefox%') AND (subject IS NULL OR subject = 'general')")
 
         # Auto-migrate legacy JSON text embeddings to compact float32 binary BLOBs
         cursor.execute("SELECT id, embedding FROM memories WHERE typeof(embedding) = 'text'")
@@ -284,11 +298,12 @@ async def _get_shared_client() -> httpx.AsyncClient:
     return _shared_http_client
 
 
-async def embed_text_async(text: str) -> Optional[List[float]]:
+async def embed_text_async(text: str, is_query: bool = False) -> Optional[List[float]]:
     """
     Generate an embedding vector for the provided text using the configured LLM endpoint.
     Guarded by a 5.0s timeout to guarantee chat responsiveness.
     Includes keep_alive: 60m for Ollama and local servers to prevent idle unloading.
+    Applies official Nomic task prefixes (search_query: / search_document:) for nomic models.
     """
     if not getattr(config, "ENABLE_VECTOR_MEMORY", False):
         return None
@@ -308,6 +323,13 @@ async def embed_text_async(text: str) -> Optional[List[float]]:
     else:
         url = f"{base_url}/embeddings"
 
+    # Apply official Nomic task prefixes for asymmetric search
+    clean_text = text.strip()
+    if "nomic" in model.lower():
+        prefix = "search_query: " if is_query else "search_document: "
+        if not clean_text.startswith("search_query:") and not clean_text.startswith("search_document:"):
+            clean_text = f"{prefix}{clean_text}"
+
     headers = {
         "Content-Type": "application/json"
     }
@@ -316,7 +338,7 @@ async def embed_text_async(text: str) -> Optional[List[float]]:
 
     payload = {
         "model": model,
-        "input": text.strip(),
+        "input": clean_text,
         "keep_alive": "60m"
     }
 
@@ -351,8 +373,15 @@ async def embed_text_async(text: str) -> Optional[List[float]]:
     return None
 
 
-def store_memory_sync(content: str, category: str, embedding: List[float], session_id: Optional[str] = None) -> bool:
-    """Synchronously insert an embedded memory into SQLite as a compact float32 binary BLOB."""
+def store_memory_sync(
+    content: str,
+    category: str,
+    embedding: List[float],
+    session_id: Optional[str] = None,
+    subject: str = "general",
+    anchor: Optional[str] = None
+) -> bool:
+    """Synchronously insert an embedded memory into SQLite with subject metadata and asymmetric search anchor."""
     try:
         import numpy as np
         conn = sqlite3.connect(_DB_PATH)
@@ -360,8 +389,8 @@ def store_memory_sync(content: str, category: str, embedding: List[float], sessi
         emb_blob = sqlite3.Binary(np.array(embedding, dtype=np.float32).tobytes())
         now = time.time()
         cursor.execute(
-            "INSERT INTO memories (content, category, embedding, created_at, session_id) VALUES (?, ?, ?, ?, ?)",
-            (content.strip(), category, emb_blob, now, session_id)
+            "INSERT INTO memories (content, category, embedding, created_at, session_id, subject, anchor) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (content.strip(), category, emb_blob, now, session_id, subject, (anchor or "").strip() or None)
         )
         conn.commit()
         conn.close()
@@ -371,31 +400,57 @@ def store_memory_sync(content: str, category: str, embedding: List[float], sessi
         return False
 
 
-async def store_memory(content: str, category: str = "general", session_id: Optional[str] = None) -> bool:
-    """Asynchronously embed and store a memory."""
+async def store_memory(
+    content: str,
+    category: str = "general",
+    session_id: Optional[str] = None,
+    subject: str = "general",
+    anchor: Optional[str] = None
+) -> bool:
+    """Asynchronously embed and store a memory using asymmetric search anchor."""
     if not content or len(content.strip()) < 5:
         return False
-    emb = await embed_text_async(content)
+    # Embed the high-precision search anchor if provided; otherwise embed the content
+    text_to_embed = anchor if (anchor and len(anchor.strip()) >= 5) else content
+    emb = await embed_text_async(text_to_embed, is_query=False)
     if emb is None:
         return False
-    return await asyncio.to_thread(store_memory_sync, content, category, emb, session_id)
+    return await asyncio.to_thread(store_memory_sync, content, category, emb, session_id, subject, anchor)
 
 
-def _load_all_memories_sync(exclude_session_id: Optional[str] = None) -> List[Tuple[int, str, str, Any, float]]:
-    """Loads stored memories, excluding the current active session and deserializing binary BLOBs or legacy JSON text transparently."""
+def _load_all_memories_sync(
+    exclude_session_id: Optional[str] = None,
+    target_subject: Optional[str] = None
+) -> List[Tuple[int, str, str, Any, float, str, Optional[str]]]:
+    """
+    Loads stored memories, applying deterministic subject partitioning:
+    - If target_subject == 'user': excludes assistant-only turns.
+    - If target_subject == 'assistant': excludes user-only turns.
+    - Otherwise: loads all valid memories.
+    """
     try:
         import numpy as np
         conn = sqlite3.connect(_DB_PATH)
         cursor = conn.cursor()
+        
+        query = "SELECT id, content, category, embedding, created_at, session_id, subject, anchor FROM memories WHERE 1=1"
+        params = []
         if exclude_session_id:
-            cursor.execute("SELECT id, content, category, embedding, created_at, session_id FROM memories WHERE session_id IS NULL OR session_id != ? ORDER BY id DESC", (exclude_session_id,))
-        else:
-            cursor.execute("SELECT id, content, category, embedding, created_at, session_id FROM memories ORDER BY id DESC")
+            query += " AND (session_id IS NULL OR session_id != ?)"
+            params.append(exclude_session_id)
+        if target_subject == "user":
+            query += " AND (subject IS NULL OR subject != 'assistant')"
+        elif target_subject == "assistant":
+            query += " AND (subject IS NULL OR subject != 'user')"
+            
+        query += " ORDER BY id DESC"
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
+
         results = []
         now = time.time()
-        for row_id, content, cat, emb_raw, created_at, sid in rows:
+        for row_id, content, cat, emb_raw, created_at, sid, subj, anchor in rows:
             try:
                 # If conversational turn from the last 15 minutes, skip so active exchange in context window is not duplicated
                 if cat not in ("preference", "core_fact") and created_at and (now - created_at < 900):
@@ -407,7 +462,7 @@ def _load_all_memories_sync(exclude_session_id: Optional[str] = None) -> List[Tu
                     emb = np.array(json.loads(emb_raw), dtype=np.float32)
                 else:
                     continue
-                results.append((row_id, content, cat, emb, created_at))
+                results.append((row_id, content, cat, emb, created_at, subj or "general", anchor))
             except Exception:
                 continue
         return results
@@ -419,15 +474,13 @@ def _load_all_memories_sync(exclude_session_id: Optional[str] = None) -> List[Tu
 async def search_relevant_memories(
     query: str,
     top_k: int = 5,
-    min_similarity: float = 0.60,
+    min_similarity: float = 0.50,
     exclude_session_id: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Search stored memories semantically related to the user's query.
-    Uses fast NumPy matrix vectorization (1-2ms for tens of thousands of memories)
-    and grants permanent recall priority to user preferences and core facts.
-    Guards against dimension mismatch when switching embedding models.
-    Excludes the active session to prevent contextual pollution.
+    Uses fast NumPy matrix vectorization with deterministic subject partitioning.
+    Guards against dimension mismatch and active session context duplication.
     """
     if not getattr(config, "ENABLE_VECTOR_MEMORY", False):
         return []
@@ -440,11 +493,22 @@ async def search_relevant_memories(
     if is_conversational_filler(query_clean) or is_referential_query(query_clean) or is_action_command(query_clean):
         return []
 
-    query_vec = await embed_text_async(query_clean)
+    q_lower = query_clean.lower()
+    is_user_target = bool(re.search(r'\b(?:my|i|me|mine|myself|i\'m)\b', q_lower))
+    is_assistant_target = bool(re.search(r'\b(?:your|ur|you|yours|yourself|u)\b', q_lower))
+    if is_user_target and not is_assistant_target:
+        target_subject = "user"
+    elif is_assistant_target and not is_user_target:
+        target_subject = "assistant"
+    else:
+        target_subject = "all"
+
+    # Generate query embedding using official search_query: prefix
+    query_vec = await embed_text_async(query_clean, is_query=True)
     if query_vec is None:
         return []
 
-    all_memories = await asyncio.to_thread(_load_all_memories_sync, exclude_session_id)
+    all_memories = await asyncio.to_thread(_load_all_memories_sync, exclude_session_id, target_subject)
     if not all_memories:
         return []
 
@@ -459,31 +523,16 @@ async def search_relevant_memories(
     if not valid_memories:
         return []
 
-    q_lower = query_clean.lower()
-    is_user_query = bool(re.search(r'\b(?:my|i|me|mine|myself|i\'m)\b', q_lower))
-    is_assistant_query = bool(re.search(r'\b(?:your|ur|you|yours|yourself|u)\b', q_lower))
-
-    def _compute_effective_score(raw_sim: float, cat: str, content: str, created_at: float) -> float:
+    def _compute_effective_score(raw_sim: float, cat: str, subj: str, created_at: float) -> float:
         score = raw_sim
-        c_lower = content.lower()
-        # Priority boost for core facts and preferences so they never get overshadowed
-        if cat in ("preference", "core_fact"):
-            if is_user_query:
-                # When Master asks about themselves ("whats my fav food?"), boost confirmed user facts heavily!
-                score += 0.20
-            elif is_assistant_query:
-                # When Master asks about Yuki ("whats your fav food?"), do not boost Master's facts
-                pass
-            else:
-                score += 0.08
-        elif is_user_query:
-            # If Master is asking about themselves, penalize memories where Master was interrogating Yuki about HER tastes
-            if any(p in c_lower for p in ("whats ur fav", "whats your fav", "name ur fav", "do u like", "what do u think", "what u feel")):
-                score -= 0.18
-        elif is_assistant_query:
-            # If Master is asking about Yuki, penalize user statements
-            if content.startswith("Master said:"):
-                score -= 0.15
+        if target_subject == "user":
+            if subj == "user" or cat in ("preference", "core_fact"):
+                score += 0.15
+        elif target_subject == "assistant":
+            if subj == "assistant":
+                score += 0.15
+        elif cat in ("preference", "core_fact"):
+            score += 0.08
 
         # Recency bonus: grants newer memories priority over stale ones when relevance is comparable
         if created_at and created_at > 0:
@@ -508,15 +557,17 @@ async def search_relevant_memories(
             sims = np.dot(matrix, q_vec) / (m_norms * q_norm + 1e-9)
 
             scored = []
-            for i, (mem_id, content, cat, _, created_at) in enumerate(valid_memories):
+            for i, (mem_id, content, cat, _, created_at, subj, anchor) in enumerate(valid_memories):
                 raw_sim = float(sims[i])
                 if raw_sim >= min_similarity:
-                    eff_score = _compute_effective_score(raw_sim, cat, content, created_at)
+                    eff_score = _compute_effective_score(raw_sim, cat, subj, created_at)
                     days_ago = max(0, int((now - created_at) // 86400))
                     scored.append({
                         "id": mem_id,
                         "content": content,
                         "category": cat,
+                        "subject": subj,
+                        "anchor": anchor,
                         "similarity": eff_score,
                         "raw_similarity": raw_sim,
                         "days_ago": days_ago,
@@ -530,15 +581,17 @@ async def search_relevant_memories(
 
     # Fallback to pure-python search
     scored = []
-    for mem_id, content, cat, emb, created_at in valid_memories:
+    for mem_id, content, cat, emb, created_at, subj, anchor in valid_memories:
         raw_sim = _cosine_similarity(query_vec, emb)
         if raw_sim >= min_similarity:
-            eff_score = _compute_effective_score(raw_sim, cat, content, created_at)
+            eff_score = _compute_effective_score(raw_sim, cat, subj, created_at)
             days_ago = max(0, int((now - created_at) // 86400))
             scored.append({
                 "id": mem_id,
                 "content": content,
                 "category": cat,
+                "subject": subj,
+                "anchor": anchor,
                 "similarity": eff_score,
                 "raw_similarity": raw_sim,
                 "days_ago": days_ago,
@@ -709,27 +762,45 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
     # Detect user preference keywords to assign permanent high-priority category
     pref_triggers = ["i like", "i love", "i hate", "i dislike", "i prefer", "my favorite", "i always", "i never", "i am a", "my name is", "call me"]
     is_pref = any(trig in user_trimmed.lower() for trig in pref_triggers)
-    category = "preference" if is_pref else "conversation_turn"
 
-    if is_pref:
-        # Core user fact / preference
-        memory_text = f"Master said: {user_trimmed}"
+    assistant_triggers = ["whats ur fav", "whats your fav", "name ur fav", "what do u like", "what do you like", "do u like", "what u feel", "what do u think"]
+    is_assistant_query = any(trig in user_trimmed.lower() for trig in assistant_triggers)
+
+    is_project = bool(re.search(r'\b(?:script|code|python|html|file|game|desktop|project|watcher|taskmgr|firefox)\b', user_trimmed.lower()))
+
+    # 1. Full conversation transcript (preserved for LLM prompt context & banter)
+    if clean_assistant and len(clean_assistant) > 10:
+        full_content = f"Master: {user_trimmed} | Yuki: {clean_assistant}"
     else:
-        # Conversational exchange: captures what Master asked/said AND what Yuki replied/recommended
-        if clean_assistant and len(clean_assistant) > 10:
-            memory_text = f"Master: {user_trimmed} | Yuki: {clean_assistant}"
-        else:
-            memory_text = f"Master: {user_trimmed}"
+        full_content = f"Master: {user_trimmed}"
+
+    # 2. Asymmetric search anchor & subject classification
+    if is_pref:
+        subject = "user"
+        category = "preference"
+        anchor = f"Master stated preference: {user_trimmed}"
+    elif is_assistant_query and clean_assistant:
+        subject = "assistant"
+        category = "persona"
+        anchor = f"Yuki persona opinion: {clean_assistant[:250]}"
+    elif is_project:
+        subject = "project"
+        category = "project"
+        anchor = f"Project work on {user_trimmed[:100]}: {clean_assistant[:150]}"
+    else:
+        subject = "general"
+        category = "conversation_turn"
+        anchor = f"Master: {user_trimmed[:120]} | Yuki: {clean_assistant[:150]}"
 
     t_idx = time.time()
-    stored = await store_memory(memory_text, category=category, session_id=session_id)
+    stored = await store_memory(full_content, category=category, session_id=session_id, subject=subject, anchor=anchor)
     idx_ms = (time.time() - t_idx) * 1000.0
     if stored:
-        print(f"[VectorMemory] 💾 Background indexed '{category}' memory in {idx_ms:.1f}ms")
+        print(f"[VectorMemory] 💾 Background indexed '{category}' memory (subject='{subject}') in {idx_ms:.1f}ms")
 
 
 def get_vector_db_stats() -> Dict[str, Any]:
-    """Returns total count and counts by category from vectors.db."""
+    """Returns total count and counts by category and subject from vectors.db."""
     try:
         conn = sqlite3.connect(_DB_PATH)
         cursor = conn.cursor()
@@ -737,10 +808,12 @@ def get_vector_db_stats() -> Dict[str, Any]:
         total = cursor.fetchone()[0]
         cursor.execute("SELECT category, COUNT(*) FROM memories GROUP BY category")
         by_category = {row[0]: row[1] for row in cursor.fetchall()}
+        cursor.execute("SELECT subject, COUNT(*) FROM memories GROUP BY subject")
+        by_subject = {row[0]: row[1] for row in cursor.fetchall()}
         conn.close()
-        return {"success": True, "total": total, "by_category": by_category}
+        return {"success": True, "total": total, "by_category": by_category, "by_subject": by_subject}
     except Exception as e:
-        return {"success": False, "total": 0, "by_category": {}, "error": str(e)}
+        return {"success": False, "total": 0, "by_category": {}, "by_subject": {}, "error": str(e)}
 
 
 def clear_vector_db(scope: str = "all") -> Dict[str, Any]:
