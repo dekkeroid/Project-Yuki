@@ -142,6 +142,12 @@ manual_hidden = [
     'tinytag',
     'colorlog',
     'anyio',
+
+    # GUI & Script Runner support
+    'tkinter',
+    '_tkinter',
+    'tkinter.messagebox',
+    'tkinter.ttk',
 ]
 
 # ---------------------------------------------------------------------------
@@ -179,7 +185,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'tkinter',
         'matplotlib',
         'numpy.random._examples',
     ],

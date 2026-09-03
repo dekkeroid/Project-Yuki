@@ -1400,6 +1400,17 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
         # Use Yuki's internal self-contained Python interpreter (supporting Tkinter and %APPDATA%/packages self-healing)
         if getattr(sys, "frozen", False):
             cmd = [sys.executable, "--yuki-run-script", temp_file]
+            # Resilient fallback: If running an older build missing _tkinter.pyd and the script needs Tkinter,
+            # fall back to host machine's Python if installed
+            if "tkinter" in code or "_tkinter" in code:
+                _internal_tk = os.path.join(os.path.dirname(sys.executable), "_internal", "_tkinter.pyd")
+                if not os.path.exists(_internal_tk):
+                    import shutil
+                    host_py = shutil.which("python") or shutil.which("py")
+                    if host_py and "windowsapps" not in host_py.lower() and os.path.exists(host_py):
+                        cmd = [host_py, temp_file]
+                    elif os.path.exists(r"C:\Python314\python.exe"):
+                        cmd = [r"C:\Python314\python.exe", temp_file]
         else:
             cmd = [sys.executable, temp_file]
         proc = subprocess.Popen(
