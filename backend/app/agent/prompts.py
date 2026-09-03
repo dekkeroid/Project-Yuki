@@ -149,7 +149,8 @@ def get_time_block(profile: dict = None, relevant_memories: list = None) -> str:
         pass
 
     if relevant_memories:
-        lines.append("--- RELEVANT EPISODIC MEMORIES (PAST CONTEXT ONLY — NEVER SKIP ACTIVE COMMANDS) ---")
+        lines.append("--- HISTORICAL BACKGROUND MEMORIES (OPTIONAL CONTEXT ONLY) ---")
+        lines.append("[DISREGARD RULE: These are historical logs from past sessions. If Master's current message is an operational command, continuation, or referential question ('run it', 'do it', 'schedule it', 'what did you do?'), ALWAYS DISREGARD these background memories and resolve the action 100% from the immediate chat history above!]")
         lines.append("[RULE: Past logs only; not live OS state. When Master gives an action command, ALWAYS invoke the corresponding tool fresh (jarvis_manage_scheduled_task, jarvis_launch_app, etc.) to guarantee it is active in the live OS. NEVER claim \"I already have that running\" based on past memories!]")
         # Present recalled memories chronologically (oldest -> newest) so the LLM reads a natural timeline
         chronological = sorted(relevant_memories, key=lambda m: m.get("created_at") or 0.0)
