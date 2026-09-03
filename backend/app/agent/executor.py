@@ -1602,14 +1602,16 @@ class AgentExecutor:
                 if preserved_actions:
                     final_text_parts.extend(preserved_actions)
                 if clean_speech:
+                    # Strip any legacy timestamp prefix from past turns so it doesn't train the model to mimic it
+                    clean_speech = _TIMESTAMP_PREFIX_REGEX.sub('', clean_speech).strip()
                     final_text_parts.append(clean_speech)
 
                 clean_content = "\n\n".join(final_text_parts).strip()
                 if not clean_content:
                     clean_content = "Task step executed."
 
-                if ts_badge and not _TIMESTAMP_PREFIX_REGEX.match(clean_content):
-                    clean_content = f"{ts_badge} {clean_content}"
+                # DO NOT prepend ts_badge to assistant's dialogue: prepending [HH:MM] to assistant
+                # turns causes LLMs to copy the prefix pattern into their own spoken responses!
 
                 msg_obj = {"role": "assistant", "content": clean_content}
                 if m.get("tool_calls"):
@@ -1642,11 +1644,9 @@ class AgentExecutor:
                         "content": hist_content
                     })
 
-        curr_ts = (overrides or {}).get("timestamp") or time.time()
-        curr_ts_badge = _format_msg_timestamp(curr_ts)
+        # Current time is already clearly declared in system prompt context header;
+        # do not prepend timestamps to user message text to avoid inducing pattern mimicry
         user_content = user_message
-        if curr_ts_badge and not _TIMESTAMP_PREFIX_REGEX.match(user_content):
-            user_content = f"{curr_ts_badge} {user_content}"
         is_native_vision = is_vision_model(active_model)
 
         if attachments:
@@ -2999,8 +2999,10 @@ class AgentExecutor:
                 print(f"[Fallback Parser] Successfully parsed text JSON into tool calls: {fallback_calls}")
                 yield "tool_calls", fallback_calls, last_label
             else:
-                # Not a valid tool call JSON, flush the buffer to the user
-                yield "token", text_buffer, last_label
+                # Not a valid tool call JSON, flush the buffer to the user (stripping any hallucinated leading timestamp badge)
+                cleaned_text = _TIMESTAMP_PREFIX_REGEX.sub('', text_buffer).lstrip()
+                if cleaned_text:
+                    yield "token", cleaned_text, last_label
         elif not accumulated_tool_calls and text_buffer:
             # Check for hallucinated markdown tool call blocks inside full text buffer
             fallback_calls = self._try_parse_json_tool_call(text_buffer)
@@ -3643,7 +3645,7 @@ class AgentExecutor:
                         process_relationship_turn_evolution(user_message, assistant_speech, persona_preset=preset)
                     except Exception as e:
                         print(f"[RelationshipEngine] Evolution error: {e}")
-                    assistant_final_speech = "\n".join(accumulated_response_total)
+                    assistant_final_speech = _TIMESTAMP_PREFIX_REGEX.sub('', "\n".join(accumulated_response_total)).strip()
                     final_history.append({
                         "role": "assistant",
                         "content": assistant_final_speech,
@@ -3705,7 +3707,7 @@ class AgentExecutor:
                 process_relationship_turn_evolution(user_message, wrap_speech, persona_preset=preset)
             except Exception as e:
                 print(f"[RelationshipEngine] Evolution error: {e}")
-            assistant_final_speech = "\n".join(accumulated_response_total)
+            assistant_final_speech = _TIMESTAMP_PREFIX_REGEX.sub('', "\n".join(accumulated_response_total)).strip()
             final_history.append({
                 "role": "assistant",
                 "content": assistant_final_speech,

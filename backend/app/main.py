@@ -4462,6 +4462,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                                         sentence = sentence_buffer[:boundary + 1].strip()
                                                         sentence_buffer = sentence_buffer[boundary + 1:]
                                                         clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
+                                                        clean_s = re.sub(r'^\[(?:[A-Za-z]{3}\s+\d{1,2},\s*)?\d{1,2}:\d{2}\s*(?:AM|PM)\]\s*', '', clean_s, flags=re.IGNORECASE).strip()
                                                         if clean_s:
                                                             queue_sentence(clean_s, audio_idx)
                                                             audio_idx += 1
