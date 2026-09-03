@@ -410,6 +410,8 @@ class AgentExecutor:
             ),
             "manage_timer_stopwatch_alarms": lambda **kwargs: self._execute_manage_timer_stopwatch_alarms(**kwargs),
             "manage_todo": lambda **kwargs: self._execute_manage_todo(**kwargs),
+            "manage_personal_list": lambda **kwargs: self._execute_manage_personal_list(**kwargs),
+            "jarvis_manage_personal_list": lambda **kwargs: self._execute_manage_personal_list(**kwargs),
             "manage_scheduled_task": lambda **kwargs: self._execute_manage_scheduled_task(**kwargs),
             "web_search": _async_web_search,
             "ask_user": _ask_user_async,
@@ -1275,6 +1277,32 @@ class AgentExecutor:
             except Exception as e:
                 print(f"[ManageTodo] Auto-render TODO.md failed: {e}")
         return result
+
+    def _execute_manage_personal_list(self, **kwargs) -> str:
+        from app.tools.personal_lists import manage_personal_list
+
+        action = (kwargs.get("action") or "").lower().strip()
+        list_name = kwargs.get("list_name") or kwargs.get("name") or "shopping"
+        items = kwargs.get("items") or kwargs.get("item") or kwargs.get("title")
+        include_completed = bool(kwargs.get("include_completed", False))
+        quantity = kwargs.get("quantity")
+        target_path = kwargs.get("target_path") or kwargs.get("path")
+
+        # Smart action inferring if model omitted action parameter
+        if not action:
+            if items:
+                action = "add"
+            else:
+                action = "show"
+
+        return manage_personal_list(
+            action=action,
+            list_name=list_name,
+            items=items,
+            include_completed=include_completed,
+            quantity=quantity,
+            target_path=target_path
+        )
 
     async def ensure_model_loaded(self, model_name: str) -> bool:
         """
@@ -2345,13 +2373,19 @@ class AgentExecutor:
     def _drop_disabled_tools(self, tools: list, overrides: Optional[Dict[str, Any]] = None) -> list:
         """Remove tools whose feature toggle is disabled (e.g. manage_todo, ask_user)."""
         overrides = overrides or {}
-        override = overrides.get("manage_todo_enabled")
-        if override is not None:
-            enabled = bool(override)
-        else:
-            enabled = bool(self.memory.profile.get("settings", {}).get("manage_todo_enabled", True))
-        if not enabled:
+        is_coder_mode = bool(overrides.get("coding_mode") or overrides.get("is_coder_mode") or overrides.get("backend") in ("coder", "complex_coder"))
+
+        # manage_todo is strictly restricted to Coder Mode
+        if not is_coder_mode:
             tools = [t for t in tools if t.get("function", {}).get("name") != "manage_todo"]
+        else:
+            override = overrides.get("manage_todo_enabled")
+            if override is not None:
+                enabled = bool(override)
+            else:
+                enabled = bool(self.memory.profile.get("settings", {}).get("manage_todo_enabled", True))
+            if not enabled:
+                tools = [t for t in tools if t.get("function", {}).get("name") != "manage_todo"]
 
         ask_override = overrides.get("ask_user_enabled")
         if ask_override is not None:
