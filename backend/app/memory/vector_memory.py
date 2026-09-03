@@ -459,11 +459,32 @@ async def search_relevant_memories(
     if not valid_memories:
         return []
 
-    def _compute_effective_score(raw_sim: float, cat: str, created_at: float) -> float:
+    q_lower = query_clean.lower()
+    is_user_query = bool(re.search(r'\b(?:my|i|me|mine|myself|i\'m)\b', q_lower))
+    is_assistant_query = bool(re.search(r'\b(?:your|ur|you|yours|yourself|u)\b', q_lower))
+
+    def _compute_effective_score(raw_sim: float, cat: str, content: str, created_at: float) -> float:
         score = raw_sim
+        c_lower = content.lower()
         # Priority boost for core facts and preferences so they never get overshadowed
         if cat in ("preference", "core_fact"):
-            score += 0.05
+            if is_user_query:
+                # When Master asks about themselves ("whats my fav food?"), boost confirmed user facts heavily!
+                score += 0.20
+            elif is_assistant_query:
+                # When Master asks about Yuki ("whats your fav food?"), do not boost Master's facts
+                pass
+            else:
+                score += 0.08
+        elif is_user_query:
+            # If Master is asking about themselves, penalize memories where Master was interrogating Yuki about HER tastes
+            if any(p in c_lower for p in ("whats ur fav", "whats your fav", "name ur fav", "do u like", "what do u think", "what u feel")):
+                score -= 0.18
+        elif is_assistant_query:
+            # If Master is asking about Yuki, penalize user statements
+            if content.startswith("Master said:"):
+                score -= 0.15
+
         # Recency bonus: grants newer memories priority over stale ones when relevance is comparable
         if created_at and created_at > 0:
             age_sec = max(0.0, now - created_at)
@@ -490,7 +511,7 @@ async def search_relevant_memories(
             for i, (mem_id, content, cat, _, created_at) in enumerate(valid_memories):
                 raw_sim = float(sims[i])
                 if raw_sim >= min_similarity:
-                    eff_score = _compute_effective_score(raw_sim, cat, created_at)
+                    eff_score = _compute_effective_score(raw_sim, cat, content, created_at)
                     days_ago = max(0, int((now - created_at) // 86400))
                     scored.append({
                         "id": mem_id,
@@ -512,7 +533,7 @@ async def search_relevant_memories(
     for mem_id, content, cat, emb, created_at in valid_memories:
         raw_sim = _cosine_similarity(query_vec, emb)
         if raw_sim >= min_similarity:
-            eff_score = _compute_effective_score(raw_sim, cat, created_at)
+            eff_score = _compute_effective_score(raw_sim, cat, content, created_at)
             days_ago = max(0, int((now - created_at) // 86400))
             scored.append({
                 "id": mem_id,
@@ -552,6 +573,18 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
 
     # Filter out pure laughter, greetings, conversational fillers, short referential follow-ups, and mechanical action commands
     if is_conversational_filler(user_trimmed) or is_referential_query(user_trimmed) or is_action_command(user_trimmed):
+        return
+
+    # Filter out quizzing / testing questions where user asks Yuki what she remembers about the user
+    # (e.g. "whats my fav food", "who am i", "what do i like", "do you know my name")
+    # Storing the assistant's answer to a quiz creates hallucination feedback loops!
+    u_lower = user_trimmed.lower()
+    is_recall_test = any(u_lower.startswith(p) for p in (
+        "whats my ", "what is my ", "what's my ", "who am i", "what do i like",
+        "where do i live", "where do i work", "do you remember my ", "do u remember my ",
+        "do you know my ", "do u know my ", "guess what i "
+    ))
+    if is_recall_test:
         return
 
     import re

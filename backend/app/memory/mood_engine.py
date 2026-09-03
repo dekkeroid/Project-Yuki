@@ -830,6 +830,45 @@ class MoodEngine:
             self._write(current)
         return changed
 
+    def nap_drift(self, delta_minutes: float = 1.0) -> bool:
+        """
+        Companion nap restorative physics:
+        Recharges energy at 1 point per minute up to a refreshed 75.
+        Dissipates stress and cools down anger smoothly.
+        """
+        if delta_minutes <= 0:
+            return False
+        current = self._read()
+        changed = False
+
+        # Energy recharges at exactly 1 point per minute during nap (user-tuned)
+        if current["energy"] < 75:
+            gain = min(75.0 - current["energy"], delta_minutes * 1.0)
+            new_energy = _clamp(current["energy"] + gain)
+            if new_energy != current["energy"]:
+                current["energy"] = new_energy
+                changed = True
+
+        # Stress dissipates during nap (2.0 pts/min, down to restful baseline 10)
+        if current["stress_level"] > 10:
+            drop = min(current["stress_level"] - 10.0, delta_minutes * 2.0)
+            new_stress = _clamp(current["stress_level"] - drop)
+            if new_stress != current["stress_level"]:
+                current["stress_level"] = new_stress
+                changed = True
+
+        # Anger cools down during nap (2.0 pts/min, down to calm baseline 5)
+        if current["anger"] > 5:
+            drop = min(current["anger"] - 5.0, delta_minutes * 2.0)
+            new_anger = _clamp(current["anger"] - drop)
+            if new_anger != current["anger"]:
+                current["anger"] = new_anger
+                changed = True
+
+        if changed:
+            self._write(current)
+        return changed
+
     def _daily_shakeup(self, now: float) -> bool:
         date_str = time.strftime("%Y-%m-%d", time.localtime(now))
         if self._profile.get("mood_day_seed") == date_str:

@@ -900,9 +900,21 @@ const App = () => {
     if (msg.type === 'presence_update') {
       if (msg.presence) {
         setPresenceState(msg.presence);
+        if (msg.presence.sleep_state === 'napping' && !isSleepingRef.current) {
+          isSleepingRef.current = true;
+        }
       }
       if (msg.mood) {
         setLiveMood(prev => ({ ...prev, ...msg.mood }));
+      }
+      if (msg.anim) {
+        setCustomAnimation(msg.anim);
+        setTimeout(() => setCustomAnimation(''), 100);
+      }
+      if (msg.wake_reason === 'refreshed') {
+        isSleepingRef.current = false;
+        setCustomAnimation('yawning');
+        setTimeout(() => setCustomAnimation(''), 100);
       }
       return;
     }
@@ -2972,6 +2984,7 @@ const App = () => {
               boredom={presenceState.boredom}
               energy={liveMood.energy}
               playfulness={liveMood.playfulness}
+              sleepState={presenceState.sleep_state}
             />
           </Suspense>
         </main>
@@ -5520,6 +5533,7 @@ const App = () => {
             boredom={presenceState.boredom}
             energy={liveMood.energy}
             playfulness={liveMood.playfulness}
+            sleepState={presenceState.sleep_state}
           />
         </Suspense>
       </main>

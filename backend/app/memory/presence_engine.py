@@ -54,7 +54,8 @@ class PresenceEngine:
         self.sleep_started_at: Optional[float] = None
         self.last_sleep_duration_sec: float = 0.0
         self.last_awakened_at: float = 0.0
-        self.sleep_state: str = "active"  # "active", "idle", "drowsy", "sleeping", "waking"
+        self.is_nap: bool = False
+        self.sleep_state: str = "active"  # "active", "idle", "drowsy", "sleeping", "napping", "waking"
         self.boredom: float = 0.0         # 0.0 (fully engaged) to 1.0 (very bored)
         self.user_idle_seconds: float = 0.0
         self.active_window_title: str = ""
@@ -66,33 +67,36 @@ class PresenceEngine:
         now = time.time()
         self.last_interaction_time = now
         self.boredom = 0.0
-        if self.sleep_state == "sleeping":
-            self.set_sleep_state("waking")
+        if self.is_sleeping():
+            self.set_sleep_state("waking", is_nap=self.is_nap)
         else:
             self.sleep_state = "active"
 
     def is_sleeping(self) -> bool:
-        return self.sleep_state == "sleeping"
+        return self.sleep_state in ("sleeping", "napping")
 
-    def set_sleep_state(self, new_state: str, idle_seconds: float = 0.0):
-        """Update sleep state ('active', 'idle', 'drowsy', 'sleeping', 'waking')."""
+    def set_sleep_state(self, new_state: str, idle_seconds: float = 0.0, is_nap: bool = False):
+        """Update sleep state ('active', 'idle', 'drowsy', 'sleeping', 'napping', 'waking')."""
         now = time.time()
         self.user_idle_seconds = max(0.0, float(idle_seconds))
 
-        if new_state == "sleeping":
-            # Guard: If user is watching a video / listening to audio, suppress false sleep
-            if is_media_or_audio_playing():
+        if new_state in ("sleeping", "napping"):
+            self.is_nap = is_nap or (new_state == "napping")
+            # Guard: If user is watching a video / listening to audio, suppress false sleep (except quiet companion naps)
+            if not self.is_nap and is_media_or_audio_playing():
                 print("[Presence] Media/sound output detected; suppressing sleeping state to active idle.")
                 self.sleep_state = "idle"
                 return
 
-            if self.sleep_state != "sleeping":
+            if not self.is_sleeping():
                 # Back-date sleep start by idle_seconds so the full inactive absence is counted
                 self.sleep_started_at = now - self.user_idle_seconds if self.user_idle_seconds > 0 else now
                 self.boredom = 0.0
-                self.sleep_state = "sleeping"
+                self.sleep_state = new_state
+            else:
+                self.sleep_state = new_state
         elif new_state in ("waking", "active"):
-            if self.sleep_state == "sleeping" and self.sleep_started_at:
+            if self.is_sleeping() and self.sleep_started_at:
                 self.last_sleep_duration_sec = max(0.0, now - self.sleep_started_at)
                 self.last_awakened_at = now
                 self.sleep_started_at = None
@@ -106,8 +110,12 @@ class PresenceEngine:
         else:
             self.sleep_state = new_state
 
-    def step_idle(self, delta_seconds: float = 60.0):
-        """Accumulates or pauses subconscious state drifts during idle periods."""
+    def step_idle(self, delta_seconds: float = 60.0, current_energy: float = 55.0) -> Optional[str]:
+        """
+        Accumulates or pauses subconscious state drifts during idle periods.
+        Evaluates companion naps when energy is low (<= 40) after 5m of silence.
+        Evaluates natural recovery waking when energy reaches healthy level (>= 65).
+        """
         now = time.time()
 
         # Update active window and dwell time
@@ -118,17 +126,34 @@ class PresenceEngine:
             self.active_window_title = curr_win
             self.active_window_dwell_seconds = 0.0
 
+        elapsed_since_chat = max(0.0, now - self.last_interaction_time)
+
+        # 1. Check for Companion Nap:
+        # If awake/idle, energy is low (<= 40), and no interaction with Yuki for 5 mins (300s):
+        if self.sleep_state in ("active", "idle") and current_energy <= 40.0 and elapsed_since_chat >= 300.0:
+            print(f"[Presence] Energy is low ({current_energy}/100) after {int(elapsed_since_chat)}s silence. Yuki is nodding off for a nap.")
+            self.set_sleep_state("napping", idle_seconds=300.0, is_nap=True)
+            self.boredom = 0.0
+            return "started_nap"
+
+        # 2. Check for Natural Recovery from Nap:
+        # If napping and energy has recharged to healthy level (>= 65):
+        if self.sleep_state == "napping" and current_energy >= 65.0:
+            print(f"[Presence] Yuki has recharged energy to {current_energy}/100! Waking up naturally refreshed from nap.")
+            self.set_sleep_state("waking", is_nap=True)
+            return "woke_from_nap"
+
         if self.is_sleeping():
             self.boredom = 0.0
-            return
-
-        elapsed_since_chat = max(0.0, now - self.last_interaction_time)
+            return None
 
         # Boredom rises smoothly when awake and idle (reaches 1.0 after ~30 minutes of no interaction)
         if elapsed_since_chat > 300:  # after 5 minutes of silence
             self.boredom = min(1.0, self.boredom + (delta_seconds / 1800.0))
         else:
             self.boredom = max(0.0, self.boredom - (delta_seconds / 600.0))
+
+        return None
 
     def get_presence_snapshot(self) -> Dict[str, Any]:
         """Returns live presence metrics for WebSocket broadcasts & UI gauges."""
@@ -137,6 +162,7 @@ class PresenceEngine:
             "boredom": round(self.boredom, 2),
             "boredom_pct": int(round(self.boredom * 100)),
             "sleep_state": self.sleep_state,
+            "is_nap": self.is_nap,
             "silence_seconds": int(max(0.0, now - self.last_interaction_time)),
             "active_window": self.active_window_title,
             "active_window_dwell_seconds": int(self.active_window_dwell_seconds),
@@ -156,10 +182,16 @@ class PresenceEngine:
         # 1. Just woke up state
         if self.sleep_state == "waking" and self.last_sleep_duration_sec > 10:
             duration_mins = max(1, int(round(self.last_sleep_duration_sec / 60.0)))
-            if duration_mins <= 30:
+            if self.is_nap:
+                return (
+                    f"[INTERNAL SENSE: You just woke up from a {duration_mins}-minute nap at your desk while Master was working. "
+                    f"It is {time_str} on {day_str}. You feel refreshed, blinking and yawning softly with <yuki_anim:yawn/>. "
+                    f"You know you took a {duration_mins}-minute nap.]"
+                )
+            elif duration_mins <= 30:
                 return (
                     f"[INTERNAL SENSE: You just woke up from a {duration_mins}-minute power nap because Master returned. "
-                    f"It is {time_str} on {day_str}. You feel a little groggy, blinking and stretching with <yuki_anim:stretch/>. "
+                    f"It is {time_str} on {day_str}. You feel a little groggy, blinking and yawning with <yuki_anim:yawn/>. "
                     f"You know you were asleep for {duration_mins} minute{'s' if duration_mins != 1 else ''}.]"
                 )
             elif duration_mins <= 180:
@@ -172,7 +204,7 @@ class PresenceEngine:
                 hours = round(duration_mins / 60.0, 1)
                 return (
                     f"[INTERNAL SENSE: You just woke up after a long rest of {hours} hours ({duration_mins} minutes). "
-                    f"It is {time_str} on {day_str}. You are stretching and ready for the day.]"
+                    f"It is {time_str} on {day_str}. You are yawning softly with <yuki_anim:yawn/> and ready for the day.]"
                 )
 
         # 2. Active or awake state
@@ -218,7 +250,8 @@ class PresenceEngine:
                 duration_desc = f"{hrs} hours ({nap_mins} minutes)"
             wake_m = int(round(recent_wake_mins))
             wake_desc = "just now" if wake_m < 1 else f"{wake_m}m ago"
-            sleep_memo = f" You woke up {wake_desc} after sleeping for {duration_desc}. If Master asks how long you were asleep, you were asleep for {duration_desc}."
+            sleep_kind = "taking a power nap at your desk while Master was working" if self.is_nap else "being asleep"
+            sleep_memo = f" You woke up {wake_desc} after {sleep_kind} for {duration_desc}. If Master asks how long you were asleep or napping, you were asleep for {duration_desc}."
 
         return (
             f"[INTERNAL SENSE: Time is {time_str} ({day_str} {period}). {silence_desc}{dwell_desc}{sleep_memo} "

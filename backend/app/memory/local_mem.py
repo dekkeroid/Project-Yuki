@@ -637,6 +637,22 @@ class MemoryManager:
         """Time-based drift toward baseline + random walk + circadian."""
         return self._mood_engine.step()
 
+    def nap_drift(self, delta_minutes: float = 1.0) -> bool:
+        """Recharges energy at 1 pt/min during companion nap."""
+        changed = self._mood_engine.nap_drift(delta_minutes)
+        if changed:
+            self._mood_engine._save()
+            self._mood_engine._notify()
+        return changed
+
+    def sleep_drift(self, hours: float) -> bool:
+        """Recharges energy during full sleep."""
+        changed = self._mood_engine._sleep_drift(time.time(), hours)
+        if changed:
+            self._mood_engine._save()
+            self._mood_engine._notify()
+        return changed
+
     def react_mood(self, text: str, scope: str = "full") -> dict:
         """Script/regex reactions to a user message. scope: full | physical | emotion."""
         return self._mood_engine.react_to_message(text, scope=scope)

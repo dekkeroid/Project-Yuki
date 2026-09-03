@@ -434,18 +434,35 @@ async def lifespan(app: FastAPI):
         while True:
             await asyncio.sleep(60)
             try:
-                presence_manager.step_idle(60.0)
-                if not presence_manager.is_sleeping():
+                mood_data = memory_manager.get_mood_spectrum()
+                current_energy = float(mood_data.get("energy", 55.0))
+                event = presence_manager.step_idle(60.0, current_energy=current_energy)
+
+                if presence_manager.sleep_state == "napping":
+                    # Recharges energy at 1 pt/min during companion nap (user requested)
+                    memory_manager.nap_drift(1.0)
+                elif not presence_manager.is_sleeping():
                     memory_manager.step_mood()
+                else:
+                    # Overnight / long absence sleep drift
+                    memory_manager.sleep_drift(60.0 / 3600.0)
 
                 # Live presence snapshot & mood broadcast to frontend
                 snapshot = presence_manager.get_presence_snapshot()
                 mood_data = memory_manager.get_mood_spectrum()
-                await broadcast_ws({
+
+                payload = {
                     "type": "presence_update",
                     "presence": snapshot,
                     "mood": mood_data
-                })
+                }
+                if event == "started_nap":
+                    payload["anim"] = "napping"
+                elif event == "woke_from_nap":
+                    payload["anim"] = "yawning"
+                    payload["wake_reason"] = "refreshed"
+
+                await broadcast_ws(payload)
 
                 # Autonomous Proactive Nudges
                 now_ts = time.time()
