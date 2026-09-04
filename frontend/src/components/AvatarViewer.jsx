@@ -42,7 +42,8 @@ const AvatarViewer = ({
   energy = 55,
   playfulness = 50,
   sleepState = 'active',
-  onWakeCharacter = null
+  onWakeCharacter = null,
+  onAnimationTriggered = null
 }) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -55,6 +56,10 @@ const AvatarViewer = ({
   const fingerBonesRef = useRef({ left: {}, right: {} });
   const startGreetingRef = useRef(false);
   const startCustomAnimationRef = useRef(null);
+  const onAnimationTriggeredRef = useRef(onAnimationTriggered);
+  useEffect(() => {
+    onAnimationTriggeredRef.current = onAnimationTriggered;
+  }, [onAnimationTriggered]);
   const ignoreTimeoutRef = useRef(null);
   const isIgnoringMouseRef = useRef(false);
   const cursorOffsetRef = useRef({ x: 0, y: 0 });
@@ -145,6 +150,10 @@ const AvatarViewer = ({
     enableRotationRef.current = enableRotation;
   }, [enableRotation]);
 
+  useEffect(() => {
+    autoResetRotationRef.current = autoResetRotation;
+  }, [autoResetRotation]);
+
   const cameraTrackingRef = useRef(cameraTracking);
   const isRotatingRef = useRef(false);
 
@@ -232,7 +241,7 @@ const AvatarViewer = ({
   }, [skinToneColor]);
 
   useEffect(() => {
-    if (customAnimation && customAnimation !== '') {
+    if (customAnimation && (typeof customAnimation === 'object' || customAnimation !== '')) {
       startCustomAnimationRef.current = customAnimation;
     }
   }, [customAnimation]);
@@ -656,6 +665,24 @@ const AvatarViewer = ({
     let isRotating = false;
     let lastRotationTime = Date.now();
 
+    // Persistent quaternion cache for clean additive bone transformation without accumulation drift
+    const savedMixerNeckQuat = new THREE.Quaternion();
+    const savedMixerSpineQuat = new THREE.Quaternion();
+    const savedMixerHipsQuat = new THREE.Quaternion();
+    const savedMixerLeftUpperArmQuat = new THREE.Quaternion();
+    const savedMixerRightUpperArmQuat = new THREE.Quaternion();
+    const savedMixerLeftLowerArmQuat = new THREE.Quaternion();
+    const savedMixerRightLowerArmQuat = new THREE.Quaternion();
+    const savedMixerLeftHandQuat = new THREE.Quaternion();
+    const savedMixerRightHandQuat = new THREE.Quaternion();
+    const savedMixerLeftUpperLegQuat = new THREE.Quaternion();
+    const savedMixerRightUpperLegQuat = new THREE.Quaternion();
+    const savedMixerLeftLowerLegQuat = new THREE.Quaternion();
+    const savedMixerRightLowerLegQuat = new THREE.Quaternion();
+    let hasSavedMixerQuats = false;
+    const tempAdditiveEuler = new THREE.Euler();
+    const tempAdditiveQuat = new THREE.Quaternion();
+
     const onControlsStart = () => {
       if (isElectron && enableRotationRef.current) {
         isRotating = true;
@@ -770,6 +797,11 @@ const AvatarViewer = ({
     // Initialize VRM Animation Manager
     const animManager = new VRMAnimationManager();
     animManager.setDisabledAnimations(disabledAnimationsRef.current);
+    animManager.onAnimationTriggered = (name, category, reason) => {
+      if (onAnimationTriggeredRef.current) {
+        onAnimationTriggeredRef.current(name, category, reason);
+      }
+    };
     animManagerRef.current = animManager;
     if (vrmRef.current) {
       animManager.setVrm(vrmRef.current);
@@ -1509,7 +1541,7 @@ const AvatarViewer = ({
             const now = Date.now();
             if (!isRotating && autoResetRotationRef.current && (now - lastRotationTime > 10000)) {
               // Smooth return to front-facing position
-              const defaultOffset = new THREE.Vector3(0, 0.65 * scaleRef.current, baseCameraZ * scaleRef.current);
+              const defaultOffset = new THREE.Vector3(0, (baseTargetOffset - baseCameraOffset) * scaleRef.current, baseCameraZ * scaleRef.current);
               const targetCamPos = new THREE.Vector3().copy(controls.target).add(defaultOffset);
               const dist = camera.position.distanceTo(targetCamPos);
               if (dist > 0.001) {
@@ -1547,9 +1579,70 @@ const AvatarViewer = ({
           }
         }
 
+        // Restore clean bone quaternions from previous frame before mixer evaluation to prevent additive accumulation
+        if (hasSavedMixerQuats && vrmRef.current) {
+          const neckNode = getBoneNode(vrmRef.current, 'neck');
+          if (neckNode) neckNode.quaternion.copy(savedMixerNeckQuat);
+          const spineNode = getBoneNode(vrmRef.current, 'spine');
+          if (spineNode) spineNode.quaternion.copy(savedMixerSpineQuat);
+          const hipsNode = getBoneNode(vrmRef.current, 'hips');
+          if (hipsNode) hipsNode.quaternion.copy(savedMixerHipsQuat);
+          const luaNode = getBoneNode(vrmRef.current, 'leftUpperArm');
+          if (luaNode) luaNode.quaternion.copy(savedMixerLeftUpperArmQuat);
+          const ruaNode = getBoneNode(vrmRef.current, 'rightUpperArm');
+          if (ruaNode) ruaNode.quaternion.copy(savedMixerRightUpperArmQuat);
+          const llaNode = getBoneNode(vrmRef.current, 'leftLowerArm');
+          if (llaNode) llaNode.quaternion.copy(savedMixerLeftLowerArmQuat);
+          const rlaNode = getBoneNode(vrmRef.current, 'rightLowerArm');
+          if (rlaNode) rlaNode.quaternion.copy(savedMixerRightLowerArmQuat);
+          const lhNode = getBoneNode(vrmRef.current, 'leftHand');
+          if (lhNode) lhNode.quaternion.copy(savedMixerLeftHandQuat);
+          const rhNode = getBoneNode(vrmRef.current, 'rightHand');
+          if (rhNode) rhNode.quaternion.copy(savedMixerRightHandQuat);
+          const lulNode = getBoneNode(vrmRef.current, 'leftUpperLeg');
+          if (lulNode) lulNode.quaternion.copy(savedMixerLeftUpperLegQuat);
+          const rulNode = getBoneNode(vrmRef.current, 'rightUpperLeg');
+          if (rulNode) rulNode.quaternion.copy(savedMixerRightUpperLegQuat);
+          const lllNode = getBoneNode(vrmRef.current, 'leftLowerLeg');
+          if (lllNode) lllNode.quaternion.copy(savedMixerLeftLowerLegQuat);
+          const rllNode = getBoneNode(vrmRef.current, 'rightLowerLeg');
+          if (rllNode) rllNode.quaternion.copy(savedMixerRightLowerLegQuat);
+        }
+
         // Update VRMA Animation Manager
         if (animManagerRef.current) {
           animManagerRef.current.update(delta);
+        }
+
+        // Record the pristine output of mixer.update for this frame
+        if (vrmRef.current) {
+          const neckNode = getBoneNode(vrmRef.current, 'neck');
+          if (neckNode) savedMixerNeckQuat.copy(neckNode.quaternion);
+          const spineNode = getBoneNode(vrmRef.current, 'spine');
+          if (spineNode) savedMixerSpineQuat.copy(spineNode.quaternion);
+          const hipsNode = getBoneNode(vrmRef.current, 'hips');
+          if (hipsNode) savedMixerHipsQuat.copy(hipsNode.quaternion);
+          const luaNode = getBoneNode(vrmRef.current, 'leftUpperArm');
+          if (luaNode) savedMixerLeftUpperArmQuat.copy(luaNode.quaternion);
+          const ruaNode = getBoneNode(vrmRef.current, 'rightUpperArm');
+          if (ruaNode) savedMixerRightUpperArmQuat.copy(ruaNode.quaternion);
+          const llaNode = getBoneNode(vrmRef.current, 'leftLowerArm');
+          if (llaNode) savedMixerLeftLowerArmQuat.copy(llaNode.quaternion);
+          const rlaNode = getBoneNode(vrmRef.current, 'rightLowerArm');
+          if (rlaNode) savedMixerRightLowerArmQuat.copy(rlaNode.quaternion);
+          const lhNode = getBoneNode(vrmRef.current, 'leftHand');
+          if (lhNode) savedMixerLeftHandQuat.copy(lhNode.quaternion);
+          const rhNode = getBoneNode(vrmRef.current, 'rightHand');
+          if (rhNode) savedMixerRightHandQuat.copy(rhNode.quaternion);
+          const lulNode = getBoneNode(vrmRef.current, 'leftUpperLeg');
+          if (lulNode) savedMixerLeftUpperLegQuat.copy(lulNode.quaternion);
+          const rulNode = getBoneNode(vrmRef.current, 'rightUpperLeg');
+          if (rulNode) savedMixerRightUpperLegQuat.copy(rulNode.quaternion);
+          const lllNode = getBoneNode(vrmRef.current, 'leftLowerLeg');
+          if (lllNode) savedMixerLeftLowerLegQuat.copy(lllNode.quaternion);
+          const rllNode = getBoneNode(vrmRef.current, 'rightLowerLeg');
+          if (rllNode) savedMixerRightLowerLegQuat.copy(rllNode.quaternion);
+          hasSavedMixerQuats = true;
         }
 
         // Update contact shadow floor grounding
@@ -1571,25 +1664,35 @@ const AvatarViewer = ({
         if (startGreetingRef.current) {
           startGreetingRef.current = false;
           if (animManagerRef.current && animManagerRef.current.hasAnimation('wave')) {
-            animManagerRef.current.playAction('wave');
+            animManagerRef.current.playAction('wave', {
+              category: 'user_interaction',
+              reason: 'Startup greeting wave on avatar connect'
+            });
           } else {
             idleAnimState = 'greeting_wave';
             idleAnimDuration = 3.5;
             idleAnimProgress = 0;
             inactivityTimer = 0;
+            onAnimationTriggeredRef.current?.('greeting_wave', 'user_interaction', 'Startup greeting wave on avatar connect');
           }
         }
 
         if (startCustomAnimationRef.current) {
-          const customName = startCustomAnimationRef.current;
+          const customItem = startCustomAnimationRef.current;
           startCustomAnimationRef.current = null;
+          const customName = (typeof customItem === 'object' && customItem !== null) ? customItem.name : customItem;
+          const customCategory = (typeof customItem === 'object' && customItem !== null && customItem.category) ? customItem.category : 'action';
+          const customReason = (typeof customItem === 'object' && customItem !== null && customItem.reason) ? customItem.reason : `Custom action '${customName}' requested`;
 
           if (!disabledAnimationsRef.current.includes(customName)) {
             // Guard: If sleeping/napping, do not run the temporary 5s nod-off gesture that startles awake
             if (customName === 'napping' && (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping')) {
               // Procedural sleeping already maintains sleeping pose
             } else if (animManagerRef.current && animManagerRef.current.hasAnimation(customName)) {
-              animManagerRef.current.playAction(customName);
+              animManagerRef.current.playAction(customName, {
+                category: customCategory,
+                reason: customReason
+              });
             } else {
               idleAnimState = customName;
               const matchingAnim = ANIMATIONS.find(a => a.name === customName);
@@ -1601,6 +1704,7 @@ const AvatarViewer = ({
 
               idleAnimProgress = 0;
               inactivityTimer = 0;
+              onAnimationTriggeredRef.current?.(customName, customCategory, customReason);
             }
           }
         }
@@ -1623,12 +1727,23 @@ const AvatarViewer = ({
             }
           }
         } else {
+          // If VRMA is actively playing an action or gesture, keep inactivity timer paused at 0
+          const isVrmaActionActive = animManagerRef.current && !animManagerRef.current.isIdlePlaying;
+          if (isVrmaActionActive) {
+            inactivityTimer = 0;
+          }
+
           if (idleAnimState === 'none') {
-            inactivityTimer += delta;
-            if (inactivityTimer >= 15.0) {
+            if (!isVrmaActionActive) {
+              inactivityTimer += delta;
+            }
+            // Trigger random full-body idle action only after prolonged inactivity (90 seconds)
+            if (inactivityTimer >= 90.0) {
               // Trigger an organically weighted idle animation based on boredom, energy, and mood
               const enabledIdleAnims = ANIMATIONS.filter(
-                a => !a.excludeFromRandomIdle && !disabledAnimationsRef.current.includes(a.name)
+                a => !a.excludeFromRandomIdle &&
+                     !disabledAnimationsRef.current.includes(a.name) &&
+                     (animManagerRef.current?.isVrmaActive() ? animManagerRef.current.hasAnimation(a.name) : true)
               );
               if (enabledIdleAnims.length > 0) {
                 const currentBoredom = boredomRef.current || 0;
@@ -1678,13 +1793,18 @@ const AvatarViewer = ({
                   randomRoll -= weights[i];
                 }
 
+                const reason = `Inactivity timeout (90s) with mood weighting (boredom: ${Math.round(currentBoredom * 100)}%, energy: ${Math.round(currentEnergy)}%, playfulness: ${Math.round(currentPlayfulness)}%)`;
                 if (animManagerRef.current && animManagerRef.current.hasAnimation(selectedAnim.name)) {
-                  animManagerRef.current.playAction(selectedAnim.name);
+                  animManagerRef.current.playAction(selectedAnim.name, {
+                    category: 'random_idle',
+                    reason
+                  });
                   idleAnimState = 'none';
                   idleAnimDuration = selectedAnim.duration;
                 } else {
                   idleAnimState = selectedAnim.name;
                   idleAnimDuration = selectedAnim.duration;
+                  onAnimationTriggeredRef.current?.(selectedAnim.name, 'random_idle', reason);
                 }
               } else {
                 idleAnimState = 'none';
@@ -2152,14 +2272,91 @@ const AvatarViewer = ({
               if (dragStateProgress > 0) {
                 const hips = getBoneNode(vrm, 'hips');
                 if (hips) {
-                  hips.rotation.z += dragSwayAngle * 0.5 * zMult;
-                  hips.rotation.x += dragPitchAngle * 0.4 * xMult;
+                  tempAdditiveEuler.set(dragPitchAngle * 0.4 * xMult, 0, dragSwayAngle * 0.5 * zMult, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  hips.quaternion.multiply(tempAdditiveQuat);
                 }
                 const spine = getBoneNode(vrm, 'spine');
                 if (spine) {
-                  spine.rotation.z += dragSwayAngle * 0.35 * zMult;
-                  spine.rotation.x += dragPitchAngle * 0.35 * xMult;
+                  tempAdditiveEuler.set(dragPitchAngle * 0.35 * xMult, 0, dragSwayAngle * 0.35 * zMult, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  spine.quaternion.multiply(tempAdditiveQuat);
                 }
+
+                // Balance arms: raise up and outward sideways with natural dangle sway
+                const leftArm = getBoneNode(vrm, 'leftUpperArm');
+                if (leftArm) {
+                  const armSwayZ = (0.50 + Math.sin(dragDangleTimer * 0.8) * 0.08) * dragStateProgress;
+                  const armPitchX = (0.15 + dragPitchAngle * 0.5) * dragStateProgress * xMult;
+                  tempAdditiveEuler.set(armPitchX, 0, armSwayZ, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  leftArm.quaternion.multiply(tempAdditiveQuat);
+                }
+                const rightArm = getBoneNode(vrm, 'rightUpperArm');
+                if (rightArm) {
+                  const armSwayZ = (-0.50 + Math.cos(dragDangleTimer * 0.8) * 0.08) * dragStateProgress;
+                  const armPitchX = (0.15 + dragPitchAngle * 0.5) * dragStateProgress * xMult;
+                  tempAdditiveEuler.set(armPitchX, 0, armSwayZ, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  rightArm.quaternion.multiply(tempAdditiveQuat);
+                }
+
+                // Forearms extend outward sideways and flex slightly for natural balancing posture
+                const leftForearm = getBoneNode(vrm, 'leftLowerArm');
+                if (leftForearm) {
+                  tempAdditiveEuler.set(0.10 * dragStateProgress * xMult, 0, 0.25 * dragStateProgress, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  leftForearm.quaternion.multiply(tempAdditiveQuat);
+                }
+                const rightForearm = getBoneNode(vrm, 'rightLowerArm');
+                if (rightForearm) {
+                  tempAdditiveEuler.set(0.10 * dragStateProgress * xMult, 0, -0.25 * dragStateProgress, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  rightForearm.quaternion.multiply(tempAdditiveQuat);
+                }
+
+                // Hands / Wrists angle outward
+                const leftHand = getBoneNode(vrm, 'leftHand');
+                if (leftHand) {
+                  tempAdditiveEuler.set(0, 0, 0.15 * dragStateProgress, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  leftHand.quaternion.multiply(tempAdditiveQuat);
+                }
+                const rightHand = getBoneNode(vrm, 'rightHand');
+                if (rightHand) {
+                  tempAdditiveEuler.set(0, 0, -0.15 * dragStateProgress, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  rightHand.quaternion.multiply(tempAdditiveQuat);
+                }
+
+                // Legs dangle and swing gently
+                const leftLeg = getBoneNode(vrm, 'leftUpperLeg');
+                if (leftLeg) {
+                  tempAdditiveEuler.set(0, 0, 0.06 * dragStateProgress, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  leftLeg.quaternion.multiply(tempAdditiveQuat);
+                }
+                const rightLeg = getBoneNode(vrm, 'rightUpperLeg');
+                if (rightLeg) {
+                  tempAdditiveEuler.set(0, 0, -0.06 * dragStateProgress, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  rightLeg.quaternion.multiply(tempAdditiveQuat);
+                }
+                const leftKnee = getBoneNode(vrm, 'leftLowerLeg');
+                if (leftKnee) {
+                  const kneeBend = (0.25 + Math.sin(dragDangleTimer * 1.3) * 0.08) * dragStateProgress * xMult;
+                  tempAdditiveEuler.set(kneeBend, 0, 0, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  leftKnee.quaternion.multiply(tempAdditiveQuat);
+                }
+                const rightKnee = getBoneNode(vrm, 'rightLowerLeg');
+                if (rightKnee) {
+                  const kneeBend = (0.25 + Math.cos(dragDangleTimer * 1.3 + 0.3) * 0.08) * dragStateProgress * xMult;
+                  tempAdditiveEuler.set(kneeBend, 0, 0, 'YXZ');
+                  tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                  rightKnee.quaternion.multiply(tempAdditiveQuat);
+                }
+
                 vrm.scene.position.y = -0.09 * dragStateProgress;
                 vrm.scene.position.z = -dragPitchAngle * 0.3;
                 vrm.scene.position.x = 0;
@@ -2171,8 +2368,11 @@ const AvatarViewer = ({
               // Subtle additive head look-around guidance blended with mocap
               const neck = getBoneNode(vrm, 'neck');
               if (neck) {
-                neck.rotation.y += currentLookY * 0.18 * yMult;
-                neck.rotation.x += currentLookX * 0.15 * xMult;
+                const thinkPitch = isThinkingRef.current ? -0.05 * xMult : 0;
+                const thinkTiltZ = isThinkingRef.current ? -0.035 * zMult : 0;
+                tempAdditiveEuler.set(currentLookX * 0.15 * xMult + thinkPitch, currentLookY * 0.18 * yMult, thinkTiltZ, 'YXZ');
+                tempAdditiveQuat.setFromEuler(tempAdditiveEuler);
+                neck.quaternion.multiply(tempAdditiveQuat);
               }
 
               // Anatomical eye saccades & cursor gaze tracking
@@ -2997,7 +3197,14 @@ const AvatarViewer = ({
           let targetBrowUp = 0.0;
           let targetBrowDown = 0.0;
 
-          if (currentExpr && currentExpr !== 'neutral') {
+          if (dragStateProgress > 0) {
+            targetSurprised = 1.0 * dragStateProgress; // wide eyes in surprise
+            targetBrowUp = 0.90 * dragStateProgress;   // brows raised in surprise
+            targetHappy = 0.0;
+            targetSad = 0.0;
+            targetAngry = 0.0;
+            targetRelaxed = 0.0;
+          } else if (currentExpr && currentExpr !== 'neutral') {
             const emotionDef = EMOTIONS[currentExpr];
             if (currentExpr === 'wink') {
               targetRelaxed = winkVal * 0.5;
@@ -3117,9 +3324,6 @@ const AvatarViewer = ({
               const t = idleAnimProgress / idleAnimDuration;
               const easeVal = Math.sin(t * Math.PI);
               targetRelaxed = 0.9 * easeVal;
-            } else if (dragStateProgress > 0) {
-              targetSurprised = 0.85 * dragStateProgress; // wide eyes
-              targetBrowUp = 0.75 * dragStateProgress;   // brows raised in surprise
             } else if (cpuLoadRef.current > 80) {
               targetSad = 0.45; // stressed/exhausted look
               targetAngry = 0.2;
@@ -3139,7 +3343,7 @@ const AvatarViewer = ({
           // Smoothly interpolate current values towards targets (using delta * speed)
           // A speed of 5.5s is fast enough to feel responsive, but slow enough to be beautifully smooth.
           const exprSpeed = 5.5;
-          currentRelaxed += (targetHappy - currentHappy) * delta * exprSpeed;
+          currentHappy += (targetHappy - currentHappy) * delta * exprSpeed;
           currentSad += (targetSad - currentSad) * delta * exprSpeed;
           currentAngry += (targetAngry - currentAngry) * delta * exprSpeed;
           currentSurprised += (targetSurprised - currentSurprised) * delta * exprSpeed;

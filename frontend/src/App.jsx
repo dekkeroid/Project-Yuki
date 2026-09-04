@@ -123,9 +123,16 @@ const App = () => {
   const cmdSuggestions = useMemo(() => {
     if (!inputText.startsWith('/')) return [];
     const q = inputText.toLowerCase();
+    const seen = new Set();
     return SLASH_COMMANDS.filter(({ cmd, animName }) => {
       if (animName && disabledAnimations.includes(animName)) return false;
-      return cmd.startsWith(q);
+      if (seen.has(cmd)) return false;
+      const matches = cmd.startsWith(q) || (q.length > 2 && cmd.replace('/ani-', '/').startsWith(q));
+      if (matches) {
+        seen.add(cmd);
+        return true;
+      }
+      return false;
     });
   }, [inputText, disabledAnimations]);
 
@@ -928,13 +935,21 @@ const App = () => {
         setLiveMood(prev => ({ ...prev, ...msg.mood }));
       }
       if (msg.anim) {
-        setCustomAnimation(msg.anim);
+        setCustomAnimation({
+          name: msg.anim,
+          category: 'proactive_nudge',
+          reason: 'Autonomous proactive nudge'
+        });
         setTimeout(() => setCustomAnimation(''), 100);
       }
       if (msg.wake_reason === 'refreshed') {
         isSleepingRef.current = false;
         sleepTypeRef.current = null;
-        setCustomAnimation('yawning');
+        setCustomAnimation({
+          name: 'yawning',
+          category: 'user_interaction',
+          reason: 'Avatar refreshed and waking up'
+        });
         setTimeout(() => setCustomAnimation(''), 100);
       }
       return;
@@ -943,7 +958,11 @@ const App = () => {
     // ── proactive_nudge: autonomous idle nudges / check-ins ──────────────
     if (msg.type === 'proactive_nudge') {
       if (msg.anim) {
-        setCustomAnimation(msg.anim);
+        setCustomAnimation({
+          name: msg.anim,
+          category: 'proactive_nudge',
+          reason: `Autonomous proactive nudge: "${(msg.text || '').slice(0, 40)}..."`
+        });
         setTimeout(() => setCustomAnimation(''), 100);
       }
       if (msg.text) {
@@ -1108,7 +1127,11 @@ const App = () => {
       const { cleanText, animations, emotions } = parseResponseTags(currentResponseTextRef.current, {
         onAnimation: (animName) => {
           if (!disabledAnimations.includes(animName)) {
-            setCustomAnimation(animName);
+            setCustomAnimation({
+              name: animName,
+              category: 'llm_tag',
+              reason: `Parsed <yuki_anim:${animName}/> from LLM response`
+            });
             setTimeout(() => setCustomAnimation(''), 100);
           }
         },
@@ -1820,7 +1843,11 @@ const App = () => {
         fallbackMsg = `Working late tonight, ${userName}? Remember to take care of yourself.`;
         fallbackAnim = 'yawning';
       }
-      setCustomAnimation(fallbackAnim);
+      setCustomAnimation({
+        name: fallbackAnim,
+        category: 'user_interaction',
+        reason: `Initial startup greeting (${currentHour}:00 greeting)`
+      });
       setTimeout(() => setCustomAnimation(''), 100);
       speakSystemMessage(fallbackMsg, 'relaxed');
     }
@@ -1830,6 +1857,21 @@ const App = () => {
   const isSleepingRef = useRef(false);
   const sleepTypeRef = useRef(null); // 'inactivity' | 'napping'
   const sleepStartedAtRef = useRef(null);
+
+  const handleAnimationTriggered = useCallback((name, category, reason) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      try {
+        socketRef.current.send(JSON.stringify({
+          type: 'animation_triggered',
+          name,
+          category,
+          reason
+        }));
+      } catch (err) {
+        console.warn('[AnimationTelemetry] Failed to send animation_triggered event:', err);
+      }
+    }
+  }, []);
 
   const handleWakeCharacter = useCallback(() => {
     if (!isSleepingRef.current) return;
@@ -1849,7 +1891,11 @@ const App = () => {
       }));
     }
 
-    setCustomAnimation('yawning');
+    setCustomAnimation({
+      name: 'yawning',
+      category: 'user_interaction',
+      reason: `Avatar awakened by user click/touch after ${sleepMins}m nap`
+    });
     setTimeout(() => setCustomAnimation(''), 100);
 
     const isSocketOpen = socketRef.current && socketRef.current.readyState === WebSocket.OPEN;
@@ -1922,7 +1968,11 @@ const App = () => {
       }
 
       // Play waking yawn animation
-      setCustomAnimation('yawning');
+      setCustomAnimation({
+        name: 'yawning',
+        category: 'user_interaction',
+        reason: `Avatar awakened after ${sleepMins}m nap as Master returned`
+      });
       setTimeout(() => setCustomAnimation(''), 100);
 
       const isSocketOpen = socketRef.current && socketRef.current.readyState === WebSocket.OPEN;
@@ -2719,7 +2769,11 @@ const App = () => {
           responseText = matchingAnim.responseText;
           const isNapCmd = matchingAnim.name === 'napping' || cmd === '/nap' || cmd === '/ani-nap';
           if (!isNapCmd) {
-            setCustomAnimation(matchingAnim.name);
+            setCustomAnimation({
+              name: matchingAnim.name,
+              category: 'slash_command',
+              reason: `User executed slash command '${cmd}'`
+            });
             setTimeout(() => setCustomAnimation(''), 100);
           } else {
             isSleepingRef.current = true;
@@ -3161,6 +3215,7 @@ const App = () => {
               playfulness={liveMood.playfulness}
               sleepState={presenceState.sleep_state}
               onWakeCharacter={handleWakeCharacter}
+              onAnimationTriggered={handleAnimationTriggered}
             />
           </Suspense>
         </main>
@@ -5294,7 +5349,7 @@ const App = () => {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '110px', overflowY: 'auto', paddingRight: '4px' }}>
                         {ANIMATIONS.map((anim) => {
                           const isEnabled = !disabledAnimations.includes(anim.name);
-                          const displayName = anim.name
+                          const displayName = anim.label || anim.name
                             .split('_')
                             .map(w => w.charAt(0).toUpperCase() + w.slice(1))
                             .join(' ');
@@ -5720,6 +5775,7 @@ const App = () => {
             playfulness={liveMood.playfulness}
             sleepState={presenceState.sleep_state}
             onWakeCharacter={handleWakeCharacter}
+            onAnimationTriggered={handleAnimationTriggered}
           />
         </Suspense>
       </main>

@@ -4577,6 +4577,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"[Presence] Sleep state updated to '{new_state}' (idle: {idle_sec}s)")
                 continue
 
+            if msg_type == "animation_triggered":
+                anim_name = data.get("name", "unknown")
+                category = str(data.get("category", "action")).upper()
+                reason = data.get("reason", "no reason provided")
+                print(f"[Animation] [{category}] '{anim_name}' -> Reason: {reason}")
+                continue
+
             if msg_type == "chat":
                 from app.memory.presence_engine import presence_manager
                 presence_manager.record_interaction()

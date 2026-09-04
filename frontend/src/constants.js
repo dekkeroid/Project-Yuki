@@ -208,6 +208,8 @@ export const STATIC_COMMANDS = [
   { cmd: '/ani-relaxed',   description: 'Yuki smiles relaxedly (alias)' },
   { cmd: '/neutral',       description: 'Reset expression to neutral' },
   { cmd: '/ani-neutral',   description: 'Reset expression to neutral (alias)' },
+  { cmd: '/stretch',       description: 'Stretch arms overhead' },
+  { cmd: '/ani-stretch',   description: 'Stretch arms overhead (alias)' },
 ];
 
 export const SLASH_COMMANDS = [
@@ -527,7 +529,11 @@ export const cleanTextForTTS = (text) => {
   const actionStems = [
     'wink', 'smile', 'giggle', 'laugh', 'sigh', 'pout', 'wave', 'nod',
     'shrug', 'chuckle', 'blush', 'cry', 'gasp', 'yawn', 'look', 'reset',
-    'facepalm', 'point', 'cough', 'scream', 'whisper'
+    'facepalm', 'point', 'cough', 'scream', 'whisper', 'stretch', 'dance',
+    'guitar', 'sing', 'kiss', 'backflip', 'airplane', 'peace', 'crouch',
+    'squat', 'sport', 'workout', 'spin', 'pose', 'turn', 'type', 'typing',
+    'salute', 'fidget', 'cheer', 'bounce', 'knock', 'shake', 'hop', 'sob',
+    'recoil', 'inspect', 'groove'
   ];
 
   const replaceSingle = (match, p1, p2) => {

@@ -9437,7 +9437,7 @@ const ControlDashboard = ({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
                       {ANIMATIONS.map((anim) => {
                         const isEnabled = !disabledAnimations.includes(anim.name);
-                        const displayName = anim.name
+                        const displayName = anim.label || anim.name
                           .split('_')
                           .map(w => w.charAt(0).toUpperCase() + w.slice(1))
                           .join(' ');

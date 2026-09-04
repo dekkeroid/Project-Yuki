@@ -1359,9 +1359,16 @@ const ChatOverlay = ({
   const suggestions = useMemo(() => {
     if (!inputText.startsWith('/')) return [];
     const q = inputText.toLowerCase();
+    const seen = new Set();
     return SLASH_COMMANDS.filter(({ cmd, animName }) => {
       if (animName && disabledAnimations.includes(animName)) return false;
-      return cmd.startsWith(q);
+      if (seen.has(cmd)) return false;
+      const matches = cmd.startsWith(q) || (q.length > 2 && cmd.replace('/ani-', '/').startsWith(q));
+      if (matches) {
+        seen.add(cmd);
+        return true;
+      }
+      return false;
     });
   }, [inputText, disabledAnimations]);
 
