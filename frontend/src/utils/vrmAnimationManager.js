@@ -26,10 +26,37 @@ export const VRMA_DEFINITIONS = {
   angry: { url: './animations/Angry.vrma', isIdle: false },
   pouting: { url: './animations/Angry.vrma', isIdle: false },
   sad: { url: './animations/Sad.vrma', isIdle: false },
+  crying_sob: { url: './animations/Sad.vrma', isIdle: false },
+  crying: { url: './animations/Sad.vrma', isIdle: false },
+  cry: { url: './animations/Sad.vrma', isIdle: false },
+  sob: { url: './animations/Sad.vrma', isIdle: false },
+  disappointed_nod: { url: './animations/Sad.vrma', isIdle: false },
+  disappointed: { url: './animations/Sad.vrma', isIdle: false },
   surprised: { url: './animations/Surprised.vrma', isIdle: false },
   shocked_recoil: { url: './animations/Surprised.vrma', isIdle: false },
   blush: { url: './animations/Blush.vrma', isIdle: false },
   shy_fidget: { url: './animations/Blush.vrma', isIdle: false },
+  shy: { url: './animations/Blush.vrma', isIdle: false },
+  fidget: { url: './animations/Blush.vrma', isIdle: false },
+  giggle_cover: { url: './animations/Blush.vrma', isIdle: false },
+  giggle: { url: './animations/Clapping.vrma', isIdle: false },
+  laughing: { url: './animations/Clapping.vrma', isIdle: false },
+  laugh: { url: './animations/Clapping.vrma', isIdle: false },
+  peering: { url: './animations/LookAround.vrma', isIdle: false },
+  peer: { url: './animations/LookAround.vrma', isIdle: false },
+  curious: { url: './animations/LookAround.vrma', isIdle: false },
+  grooving: { url: './animations/TwistDance.vrma', isIdle: false },
+  groove: { url: './animations/TwistDance.vrma', isIdle: false },
+  knocking: { url: './animations/Salute.vrma', isIdle: false },
+  knock: { url: './animations/Salute.vrma', isIdle: false },
+  nodding: { url: './animations/Relax.vrma', isIdle: false },
+  nod: { url: './animations/Relax.vrma', isIdle: false },
+  head_shake: { url: './animations/Shrug.vrma', isIdle: false },
+  shake: { url: './animations/Shrug.vrma', isIdle: false },
+  pointing: { url: './animations/Shoot.vrma', isIdle: false },
+  point: { url: './animations/Shoot.vrma', isIdle: false },
+  inspect_screen: { url: './animations/LookAround.vrma', isIdle: false },
+  inspect: { url: './animations/LookAround.vrma', isIdle: false },
 
   // Greetings & interactions
   wave: { url: './animations/Goodbye.vrma', isIdle: false },
@@ -40,6 +67,18 @@ export const VRMA_DEFINITIONS = {
   peace: { url: './animations/PeaceSign.vrma', isIdle: false },
   blow_kiss: { url: './animations/BlowKiss.vrma', isIdle: false },
   kiss: { url: './animations/BlowKiss.vrma', isIdle: false },
+  shoot: { url: './animations/Shoot.vrma', isIdle: false },
+  finger_gun: { url: './animations/Shoot.vrma', isIdle: false },
+  spin: { url: './animations/Spin.vrma', isIdle: false },
+  twirl: { url: './animations/Spin.vrma', isIdle: false },
+  model_pose: { url: './animations/ModelPose.vrma', isIdle: false },
+  pose: { url: './animations/ModelPose.vrma', isIdle: false },
+  squat: { url: './animations/Squat.vrma', isIdle: false },
+  crouch: { url: './animations/Squat.vrma', isIdle: false },
+  sport: { url: './animations/Sport.vrma', isIdle: false },
+  workout: { url: './animations/Sport.vrma', isIdle: false },
+  turn_around: { url: './animations/TurnAround.vrma', isIdle: false },
+  turn: { url: './animations/TurnAround.vrma', isIdle: false },
 
   // Celebrations & dances
   cheering: { url: './animations/Clapping.vrma', isIdle: false },
@@ -80,6 +119,33 @@ export const CANONICAL_MAP = {
   shocked_recoil: 'shocked_recoil',
   blush: 'shy_fidget',
   shy_fidget: 'shy_fidget',
+  shy: 'shy_fidget',
+  fidget: 'shy_fidget',
+  laugh: 'laughing',
+  laughing: 'laughing',
+  giggle: 'giggle_cover',
+  giggle_cover: 'giggle_cover',
+  peer: 'peering',
+  peering: 'peering',
+  curious: 'peering',
+  groove: 'grooving',
+  grooving: 'grooving',
+  knock: 'knocking',
+  knocking: 'knocking',
+  nod: 'nodding',
+  nodding: 'nodding',
+  shake: 'head_shake',
+  head_shake: 'head_shake',
+  point: 'pointing',
+  pointing: 'pointing',
+  inspect: 'inspect_screen',
+  inspect_screen: 'inspect_screen',
+  crying: 'crying_sob',
+  cry: 'crying_sob',
+  sob: 'crying_sob',
+  crying_sob: 'crying_sob',
+  disappointed: 'disappointed_nod',
+  disappointed_nod: 'disappointed_nod',
   guitar: 'air_guitar',
   air_guitar: 'air_guitar',
   sing: 'singing',
@@ -118,6 +184,22 @@ export const CANONICAL_MAP = {
   backflip: 'backflip',
   zoom: 'airplane',
   airplane: 'airplane',
+  shoot: 'shoot',
+  finger_gun: 'shoot',
+  fingergun: 'shoot',
+  spin: 'spin',
+  twirl: 'spin',
+  model_pose: 'model_pose',
+  modelpose: 'model_pose',
+  pose: 'model_pose',
+  squat: 'squat',
+  crouch: 'squat',
+  sport: 'sport',
+  workout: 'sport',
+  jumpingjacks: 'sport',
+  turn: 'turn_around',
+  turn_around: 'turn_around',
+  turnaround: 'turn_around',
   salute: 'salute',
   jump: 'jump',
   walk: 'walk',
@@ -142,6 +224,10 @@ export class VRMAnimationManager {
     this.isThinking = false;
     this.isSleeping = false;
     this.isSitting = false;
+    this._thinkingTimer = null;
+
+    // Telemetry callback for backend / diagnostics: (name, category, reason) => void
+    this.onAnimationTriggered = null;
 
     // Dynamic idle shifting parameters
     this.idleTimer = 0;
@@ -151,9 +237,19 @@ export class VRMAnimationManager {
     this.preloadDefinitions();
   }
 
+  _notifyAnimation(name, category, reason) {
+    if (typeof this.onAnimationTriggered === 'function') {
+      try {
+        this.onAnimationTriggered(name, category, reason);
+      } catch (e) {
+        console.warn('[VRMAnimationManager] Error in onAnimationTriggered listener:', e);
+      }
+    }
+  }
+
   _getRandomIdleShiftInterval() {
-    // Shift idle variation every 16 to 28 seconds
-    return 16 + Math.random() * 12;
+    // Shift subtle idle variation every 60 to 90 seconds (natural and calm)
+    return 60 + Math.random() * 30;
   }
 
   /**
@@ -212,6 +308,25 @@ export class VRMAnimationManager {
   _bindAllClips() {
     if (!this.vrm || !this.mixer) return;
 
+    const restHipsY = this.vrm.humanoid?.normalizedRestPose?.hips?.position?.[1] ?? 0.85;
+
+    // Step 1: Pre-generate Relax clip to extract baseline rest tracks for all 52 humanoid bones
+    let relaxTracks = [];
+    const relaxDef = VRMA_DEFINITIONS.relax;
+    if (relaxDef) {
+      const relaxAnim = this.rawAnimations.get(relaxDef.url);
+      if (relaxAnim) {
+        try {
+          const rawRelaxClip = createVRMAnimationClip(relaxAnim, this.vrm);
+          if (rawRelaxClip && rawRelaxClip.tracks) {
+            relaxTracks = rawRelaxClip.tracks;
+          }
+        } catch (e) {
+          console.warn('[VRMAnimationManager] Could not build reference relax tracks:', e);
+        }
+      }
+    }
+
     for (const [key, def] of Object.entries(VRMA_DEFINITIONS)) {
       const vrmAnim = this.rawAnimations.get(def.url);
       if (!vrmAnim) continue;
@@ -221,6 +336,67 @@ export class VRMAnimationManager {
         const clip = createVRMAnimationClip(vrmAnim, this.vrm);
         if (clip) {
           clip.name = key;
+
+          // ROOT MOTION & POSITION TRACK SAFETY:
+          // Prevent any animation from drifting laterally (X/Z), sinking, or zooming out into space
+          const isSittingClip = key === 'sit' || key === 'sitting' || key === 'sit_wave';
+          const isVerticalAction = key === 'jump' || key === 'squat' || key === 'crouch' || key === 'sport';
+
+          clip.tracks = clip.tracks.filter((track) => {
+            if (track.name.endsWith('.position')) {
+              // Seated postures: hips move down towards taskbar/seat
+              if (isSittingClip) {
+                for (let i = 0; i < track.values.length; i += 3) {
+                  track.values[i] = 0; // Lock lateral X to 0
+                  // Clamp Y safely between 0.15m and restHipsY so model doesn't plunge through ground
+                  track.values[i + 1] = Math.max(0.15, Math.min(track.values[i + 1], restHipsY + 0.1));
+                  track.values[i + 2] = 0; // Lock Z to 0
+                }
+                return true;
+              }
+
+              // Vertical actions (jump, squat, sport workout): preserve controlled vertical bounce
+              if (isVerticalAction) {
+                for (let i = 0; i < track.values.length; i += 3) {
+                  track.values[i] = 0; // Lock lateral X to 0
+                  // Clamp Y delta safely around restHipsY
+                  track.values[i + 1] = Math.max(restHipsY - 0.45, Math.min(track.values[i + 1], restHipsY + 0.6));
+                  track.values[i + 2] = 0; // Lock Z to 0
+                }
+                return true;
+              }
+
+              // All other standing gestures and dances: drop translation track entirely
+              // to guarantee 100% stationary, glitch-free in-place animation!
+              return false;
+            }
+            return true;
+          });
+
+          // SKELETON COMPLETENESS / T-POSE PREVENTION:
+          // If this clip is missing tracks for certain bones (e.g. fingers, toes, shoulders),
+          // supplement with the resting pose from Relax.vrma so Three.js never falls back to bind pose (T-pose)!
+          if (relaxTracks.length > 0 && key !== 'relax') {
+            const existingTrackNames = new Set(clip.tracks.map((t) => t.name));
+            for (const refTrack of relaxTracks) {
+              if (refTrack.name.endsWith('.quaternion') && !existingTrackNames.has(refTrack.name)) {
+                // Construct a 2-key resting quaternion track spanning [0, clip.duration]
+                const q = [
+                  refTrack.values[0] || 0,
+                  refTrack.values[1] || 0,
+                  refTrack.values[2] || 0,
+                  refTrack.values[3] !== undefined ? refTrack.values[3] : 1
+                ];
+                const filledTrack = new THREE.QuaternionKeyframeTrack(
+                  refTrack.name,
+                  [0, clip.duration],
+                  [q[0], q[1], q[2], q[3], q[0], q[1], q[2], q[3]]
+                );
+                clip.tracks.push(filledTrack);
+              }
+            }
+          }
+
           const action = this.mixer.clipAction(clip);
           this.actions.set(key, action);
         }
@@ -249,9 +425,10 @@ export class VRMAnimationManager {
   /**
    * Plays the base idle animation (standing Relax or seated Sit) with smooth cross-fading.
    */
-  playIdle(fadeDuration = 0.45) {
+  playIdle(fadeDuration = 0.75, reason = 'Standing resting idle loop') {
     if (this.isSitting) {
       if (this.actions.has('sit')) {
+        this._notifyAnimation('sit', 'cognitive_state', reason || 'Seated taskbar posture');
         this._crossFadeToAction('sit', {
           loop: THREE.LoopRepeat,
           fadeDuration,
@@ -262,6 +439,7 @@ export class VRMAnimationManager {
     }
     this.isIdlePlaying = true;
     this.isThinking = false;
+    this._notifyAnimation(this.baseIdleName, 'base_idle', reason);
     this._crossFadeToAction(this.baseIdleName, {
       loop: THREE.LoopRepeat,
       fadeDuration,
@@ -272,11 +450,12 @@ export class VRMAnimationManager {
   /**
    * Toggles taskbar seated posture.
    */
-  setSitting(isSitting, fadeDuration = 0.5) {
+  setSitting(isSitting, fadeDuration = 0.5, reason = '') {
     if (isSitting) {
       this.isSitting = true;
       this.isIdlePlaying = true;
       if (this.actions.has('sit')) {
+        this._notifyAnimation('sit', 'cognitive_state', reason || 'Taskbar seated posture activated');
         this._crossFadeToAction('sit', {
           loop: THREE.LoopRepeat,
           fadeDuration,
@@ -286,33 +465,46 @@ export class VRMAnimationManager {
     } else if (this.isSitting) {
       this.isSitting = false;
       if (this.actions.has('stand_up')) {
+        this._notifyAnimation('stand_up', 'cognitive_state', reason || 'Standing up from seated posture');
         this._crossFadeToAction('stand_up', {
           loop: THREE.LoopOnce,
           fadeDuration,
           clampWhenFinished: true
         });
       } else {
-        this.playIdle(fadeDuration);
+        this.playIdle(fadeDuration, reason || 'Standing up from seated posture');
       }
     }
   }
 
   /**
-   * Sets thinking cognitive state (cross-fades to Thinking.vrma or returns to idle).
+   * Sets thinking cognitive state.
+   * Quick conversational pauses (< 3.5s) remain in relaxed idle with procedural head tilt & brow furrow.
+   * Full-body Thinking.vrma mocap only escalates if thinking is prolonged (e.g. multi-step tool execution).
    */
-  setThinking(isThinking, fadeDuration = 0.4) {
+  setThinking(isThinking, fadeDuration = 0.4, reason = '') {
     this.isThinking = isThinking;
     if (this.isSleeping) return;
 
+    if (this._thinkingTimer) {
+      clearTimeout(this._thinkingTimer);
+      this._thinkingTimer = null;
+    }
+
     if (isThinking && !this.disabledAnimations.has('thinking')) {
-      this._crossFadeToAction('thinking', {
-        loop: THREE.LoopRepeat,
-        fadeDuration,
-        clampWhenFinished: false
-      });
+      this._thinkingTimer = setTimeout(() => {
+        if (this.isThinking && !this.isSleeping && this.currentActionName !== 'thinking') {
+          this._notifyAnimation('thinking', 'cognitive_state', reason || 'Prolonged AI thinking / tool execution');
+          this._crossFadeToAction('thinking', {
+            loop: THREE.LoopRepeat,
+            fadeDuration: 0.8,
+            clampWhenFinished: false
+          });
+        }
+      }, 3500);
     } else {
-      if (this.currentActionName === 'thinking' || !isThinking) {
-        this.playIdle(fadeDuration);
+      if (this.currentActionName === 'thinking') {
+        this.playIdle(fadeDuration, 'Thinking completed, returned to base idle');
       }
     }
   }
@@ -320,10 +512,11 @@ export class VRMAnimationManager {
   /**
    * Sets sleeping / napping state.
    */
-  setSleeping(isSleeping, fadeDuration = 0.6) {
+  setSleeping(isSleeping, fadeDuration = 0.6, reason = '') {
     this.isSleeping = isSleeping;
     if (isSleeping) {
       this.isSitting = false;
+      this._notifyAnimation('sleepy', 'cognitive_state', reason || 'Sleep / napping mode activated');
       this._crossFadeToAction('sleepy', {
         loop: THREE.LoopRepeat,
         fadeDuration,
@@ -331,7 +524,7 @@ export class VRMAnimationManager {
       });
     } else {
       if (this.currentActionName === 'sleepy') {
-        this.playIdle(fadeDuration);
+        this.playIdle(fadeDuration, 'Awakened from sleep, returned to base idle');
       }
     }
   }
@@ -340,7 +533,7 @@ export class VRMAnimationManager {
    * Plays a one-shot or continuous action animation, returning true if handled by VRMA.
    * Respects user-disabled animations from Settings.
    */
-  playAction(key, { fadeDuration = 0.35, onComplete = null } = {}) {
+  playAction(key, { fadeDuration = 0.5, onComplete = null, category = 'action', reason = '' } = {}) {
     if (!key) return false;
     const lowerKey = key.toLowerCase();
     const canonical = CANONICAL_MAP[lowerKey] || lowerKey;
@@ -357,12 +550,15 @@ export class VRMAnimationManager {
     this.isIdlePlaying = false;
     this.onActionComplete = onComplete;
 
+    const actionReason = reason || `Triggered action '${lowerKey}'`;
+    this._notifyAnimation(lowerKey, category, actionReason);
+
     // Seated posture handling
     if (lowerKey === 'sit' || lowerKey === 'sitting') {
       this.isSitting = true;
       this._crossFadeToAction(lowerKey, {
         loop: THREE.LoopRepeat,
-        fadeDuration: 0.5,
+        fadeDuration: 0.6,
         clampWhenFinished: false
       });
       return true;
@@ -399,7 +595,7 @@ export class VRMAnimationManager {
     return true;
   }
 
-  _crossFadeToAction(name, { loop = THREE.LoopRepeat, fadeDuration = 0.4, clampWhenFinished = false } = {}) {
+  _crossFadeToAction(name, { loop = THREE.LoopRepeat, fadeDuration = 0.5, clampWhenFinished = (loop === THREE.LoopOnce) } = {}) {
     if (!this.mixer) return;
     const nextAction = this.actions.get(name);
     if (!nextAction) return;
@@ -413,13 +609,15 @@ export class VRMAnimationManager {
     nextAction.reset();
     nextAction.setLoop(loop, loop === THREE.LoopOnce ? 1 : Infinity);
     nextAction.clampWhenFinished = clampWhenFinished;
-    nextAction.weight = 1.0;
     nextAction.play();
 
-    if (prevAction && prevAction !== nextAction) {
-      prevAction.crossFadeTo(nextAction, fadeDuration, true);
+    // Prevent zero-weight gap / T-pose flicker:
+    // Only fade out prevAction if it is actually active and contributing weight to the skeleton.
+    // Use warp = false so clip timescale ratios are never distorted during cross-fades!
+    if (prevAction && prevAction !== nextAction && prevAction.enabled && prevAction.getEffectiveWeight() > 0.05) {
+      prevAction.crossFadeTo(nextAction, fadeDuration, false);
     } else {
-      nextAction.fadeIn(fadeDuration);
+      nextAction.setEffectiveWeight(1.0);
     }
 
     this.currentActionName = name;
@@ -428,6 +626,11 @@ export class VRMAnimationManager {
   _onMixerFinished(e) {
     const finishedAction = e.action;
     const finishedClipName = finishedAction.getClip().name;
+
+    // CRITICAL: Ignore finished events from stale/older actions that were already cross-faded out!
+    if (this.currentActionName && this.currentActionName !== finishedClipName) {
+      return;
+    }
 
     if (this.onActionComplete) {
       const cb = this.onActionComplete;
@@ -439,20 +642,21 @@ export class VRMAnimationManager {
     if (this.isSitting) {
       if (finishedClipName === 'stand_up' || finishedClipName === 'stand') {
         this.isSitting = false;
-        this.playIdle(0.5);
+        this.playIdle(0.75, `Action '${finishedClipName}' finished, returning to standing base idle`);
       } else {
+        this._notifyAnimation('sit', 'cognitive_state', `Action '${finishedClipName}' finished, returning to seated posture`);
         this._crossFadeToAction('sit', {
           loop: THREE.LoopRepeat,
-          fadeDuration: 0.45,
+          fadeDuration: 0.5,
           clampWhenFinished: false
         });
       }
     } else if (this.isSleeping) {
-      this.setSleeping(true, 0.4);
+      this.setSleeping(true, 0.5, `Action '${finishedClipName}' finished, returning to sleep posture`);
     } else if (this.isThinking) {
-      this.setThinking(true, 0.4);
+      this.setThinking(true, 0.5, `Action '${finishedClipName}' finished, returning to thinking posture`);
     } else {
-      this.playIdle(0.5);
+      this.playIdle(0.75, `Action '${finishedClipName}' finished, returning to base idle`);
     }
   }
 
@@ -494,10 +698,11 @@ export class VRMAnimationManager {
 
           if (idleCandidates.length > 0) {
             const chosen = idleCandidates[Math.floor(Math.random() * idleCandidates.length)];
+            this._notifyAnimation(chosen, 'idle_variation', `Periodic subtle idle variation (${chosen})`);
             this._crossFadeToAction(chosen, {
               loop: THREE.LoopOnce,
-              fadeDuration: 0.6,
-              clampWhenFinished: false
+              fadeDuration: 0.75,
+              clampWhenFinished: true
             });
           }
         }
@@ -506,6 +711,10 @@ export class VRMAnimationManager {
   }
 
   dispose() {
+    if (this._thinkingTimer) {
+      clearTimeout(this._thinkingTimer);
+      this._thinkingTimer = null;
+    }
     if (this.mixer) {
       this.mixer.stopAllAction();
       this.mixer.removeEventListener('finished', this._onMixerFinished);

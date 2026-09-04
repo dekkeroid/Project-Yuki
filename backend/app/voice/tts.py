@@ -1186,7 +1186,11 @@ def clean_text_for_tts(text: str) -> str:
     action_stems = [
         'wink', 'smile', 'giggle', 'laugh', 'sigh', 'pout', 'wave', 'nod',
         'shrug', 'chuckle', 'blush', 'cry', 'gasp', 'yawn', 'look', 'reset',
-        'facepalm', 'point', 'cough', 'scream', 'whisper'
+        'facepalm', 'point', 'cough', 'scream', 'whisper', 'stretch', 'dance',
+        'guitar', 'sing', 'kiss', 'backflip', 'airplane', 'peace', 'crouch',
+        'squat', 'sport', 'workout', 'spin', 'pose', 'turn', 'type', 'typing',
+        'salute', 'fidget', 'cheer', 'bounce', 'knock', 'shake', 'hop', 'sob',
+        'recoil', 'inspect', 'groove'
     ]
     def replace_single(m):
         inner = (m.group(1) or m.group(2) or "").strip()
@@ -1534,6 +1538,12 @@ async def generate_speech_bytes(
             kokoro.create, target_payload, voice=kokoro_voice, speed=speed_factor, lang=lang_code, is_phonemes=is_pho
         )
         
+        # Add 150ms trailing silence padding so browser/OS audio buffers never cut off the final syllable
+        import numpy as np
+        if len(samples) > 0:
+            pad_len = int(sample_rate * 0.15)
+            samples = np.pad(samples, (0, pad_len), mode='constant')
+
         # Write to WAV bytes in-memory
         audio_buffer = io.BytesIO()
         sf.write(audio_buffer, samples, sample_rate, format='WAV')
@@ -1551,6 +1561,10 @@ async def generate_speech_bytes(
                 samples, sample_rate = await asyncio.to_thread(
                     kokoro_cpu.create, target_payload, voice=kokoro_voice, speed=speed_factor, lang=lang_code, is_phonemes=is_pho
                 )
+                if len(samples) > 0:
+                    import numpy as np
+                    pad_len = int(sample_rate * 0.15)
+                    samples = np.pad(samples, (0, pad_len), mode='constant')
                 audio_buffer = io.BytesIO()
                 sf.write(audio_buffer, samples, sample_rate, format='WAV')
                 print("[TTS] CPU fallback synthesis succeeded!")

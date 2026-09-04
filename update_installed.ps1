@@ -86,6 +86,7 @@ $backendSources += @(Get-Item "$backendDir\run.py", "$backendDir\requirements.tx
 $backendChanged = Is-AnyNewer (Join-Path $installDir 'resources\backend\backend.exe') $backendSources
 
 $frontendSources = @(Get-ChildItem "$frontendDir\src" -Recurse -File -ErrorAction SilentlyContinue)
+$frontendSources += @(Get-ChildItem "$frontendDir\public" -Recurse -File -ErrorAction SilentlyContinue)
 $frontendSources += @(Get-Item "$frontendDir\index.html", "$frontendDir\vite.config.js" -ErrorAction SilentlyContinue)
 $frontendChanged = Is-AnyNewer (Join-Path $installDir 'resources\frontend\dist\index.html') $frontendSources
 
@@ -174,6 +175,30 @@ foreach ($r in $rows) {
                 $env:YUKI_FULL_REBUILD = ''
             } else {
                 $env:YUKI_FULL_REBUILD = '1'
+            }
+        }
+    }
+    
+    if ($r.Name -eq 'Frontend UI' -and $isSelected) {
+        $installedIndex = Join-Path $installDir 'resources\frontend\dist\index.html'
+        if (Test-Path $installedIndex) {
+            $changedFrontendFiles = Get-NewerFiles $installedIndex $frontendSources
+            if ($changedFrontendFiles.Count -gt 0) {
+                Write-Host ""
+                Write-Host "  Modified frontend / asset files ($($changedFrontendFiles.Count)):" -ForegroundColor Cyan
+                $maxToShow = 25
+                $toShow = $changedFrontendFiles | Select-Object -First $maxToShow
+                foreach ($f in $toShow) {
+                    $relPath = $f.FullName
+                    if ($relPath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $relPath = $relPath.Substring($root.Length).TrimStart('\', '/')
+                    }
+                    Write-Host "    - $relPath" -ForegroundColor DarkCyan
+                }
+                if ($changedFrontendFiles.Count -gt $maxToShow) {
+                    Write-Host "    ... and $($changedFrontendFiles.Count - $maxToShow) more file(s)" -ForegroundColor DarkGray
+                }
+                Write-Host ""
             }
         }
     }
