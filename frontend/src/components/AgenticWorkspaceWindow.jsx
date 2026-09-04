@@ -605,7 +605,12 @@ export const AgenticWorkspaceWindow = ({
           });
         }
       } else if (data.type === 'chat_update' && data.messages) {
-        setViewMessages(data.messages);
+        const cleanMsgs = data.messages.filter(m => !(m.role === 'user' && typeof m.content === 'string' && (
+          m.content.includes('[SYSTEM EVENT:') || 
+          m.content.includes('[SCENARIO:') || 
+          m.content.includes('[STARTUP_GREETING]')
+        )));
+        setViewMessages(cleanMsgs);
         fetchSessionTree();
       } else if (data.type === 'stream_done') {
         setIsTurnRunning(false);

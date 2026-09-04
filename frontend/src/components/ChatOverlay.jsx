@@ -67,10 +67,11 @@ export const parseMessageThought = (rawContent) => {
   // Strip raw tool badge lines, args blocks, & output blocks from clean text content
   cleanContent = cleanContent.replace(/🛠️\s*\*{0,2}\[[^\]]+\]\*{0,2}(?:\s*```tool_args\n[\s\S]*?\n```)?(?:\s*```(?:tool_output|terminal_stream)\n[\s\S]*?\n```)?\n?/g, '').trim();
 
-  // 3. Strip animation and emotion tags (<yuki_anim:.../>, [yuki_anim:.../>, etc.)
-  const animTagRegex = /[<\[\(](?:yuki_)?anim:\s*([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])/gi;
-  const emotionTagRegex = /[<\[\(](?:yuki_)?emotion:\s*([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])/gi;
-  cleanContent = cleanContent.replace(animTagRegex, '').replace(emotionTagRegex, '').replace(/[ \t]{2,}/g, ' ').trim();
+  // 3. Strip animation and emotion tags (<yuki_anim:.../>, <yuki_anim eer >, [yuki_anim:.../>, etc.)
+  const animTagRegex = /[<\[\(](?:yuki_)?anim[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
+  const emotionTagRegex = /[<\[\(](?:yuki_)?emotion[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
+  const anyYukiTag = /<yuki_[^>]*>/gi;
+  cleanContent = cleanContent.replace(animTagRegex, '').replace(emotionTagRegex, '').replace(anyYukiTag, '').replace(/[ \t]{2,}/g, ' ').trim();
 
   return { thoughts, toolBadges, cleanContent };
 };

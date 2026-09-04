@@ -112,7 +112,11 @@ def get_basic_tools_definition() -> list:
                         "query": {
                             "description": "Specific search query string, OR a list/array of multiple entity names (e.g. ['Eiffel Tower Paris', 'Colosseum Rome', 'Taj Mahal Agra'] or ['Brazil football team', 'Germany football team']) to search all entities concurrently in parallel in a single call."
                         },
-                        "image_search": {"type": "boolean", "description": "Set to true ONLY when you need visual photos/diagrams exclusively (returns direct image URLs and SKIPS deep article text reading). Leave false (default) when researching facts, topics, news, documentation, coding solutions, or recipes."}
+                        "search_mode": {
+                            "type": "string",
+                            "enum": ["text_and_snippet", "news", "image"],
+                            "description": "The search mode to use. Defaults to 'text_and_snippet'. Use 'text_and_snippet' for general web facts, documentation, coding solutions, and knowledge. Use 'news' for real-time news, breaking events, current updates, and disaster/political coverage (combines Google News & Bing News feeds with publication timestamps). Use 'image' for direct verified photo/image URLs."
+                        }
                     },
                     "required": ["query"]
                 }
@@ -450,7 +454,11 @@ def get_advanced_jarvis_tools_definition() -> list:
                         "query": {
                             "description": "Search query string, OR a list/array of multiple entity names (e.g. ['Eiffel Tower Paris', 'Colosseum Rome', 'Taj Mahal Agra'] or ['Brazil football team', 'Germany football team']) to search all entities concurrently in parallel in a single call."
                         },
-                        "image_search": {"type": "boolean", "description": "Set to true ONLY when you need visual photos/diagrams exclusively (returns direct image URLs and SKIPS deep article text reading). Leave false (default) when researching facts, topics, news, documentation, coding solutions, or recipes."}
+                        "search_mode": {
+                            "type": "string",
+                            "enum": ["text_and_snippet", "news", "image"],
+                            "description": "The search mode to use. Defaults to 'text_and_snippet'. Use 'text_and_snippet' for general web facts, documentation, coding solutions, and knowledge. Use 'news' for real-time news, breaking events, current updates, and disaster/political coverage (combines Google News & Bing News feeds with publication timestamps). Use 'image' for direct verified photo/image URLs."
+                        }
                     },
                     "required": ["query"]
                 }

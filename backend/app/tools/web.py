@@ -3,6 +3,9 @@ import urllib.request
 import json
 import re
 import time
+import datetime
+import html
+import xml.etree.ElementTree as ET
 import asyncio
 import requests
 import httpx
@@ -42,7 +45,8 @@ AUTHORITY_DOMAINS = (
     "reddit.com", "quora.com",
     "developer.mozilla.org", "docs.python.org", "react.dev", "stackoverflow.com", "github.com",
     "testbook.com", "geeksforgeeks.org", "w3schools.com", "tutorialspoint.com", "khanacademy.org", "fandom.com",
-    "youtube.com", "youtu.be"
+    "youtube.com", "youtu.be",
+    "cnbc.com", "bloomberg.com", "reuters.com", "marketwatch.com", "tradingeconomics.com", "finance.yahoo.com"
 )
 
 
@@ -847,14 +851,28 @@ def clean_html(html_content: str, page_url: str = "") -> str:
     return extract_clean_markdown(html_content, max_chars=5000, page_url=page_url)
 
 
-async def web_search(query, image_search: bool = False) -> str:
+async def web_search(
+    query,
+    search_mode: str = "text_and_snippet",
+    country_code: Optional[str] = None,
+    **kwargs
+) -> str:
     """
-    Performs an async web search using DuckDuckGo HTML search, falling back to Yahoo HTML search.
-    Supports both single query string and list/array of multiple queries (searching concurrently).
-    - If image_search=True: retrieves direct high-resolution image URLs with titles and sources.
-    - If image_search=False: performs standard web search with search snippets + deep article text.
+    Performs an async web search supporting three specialized modes:
+    - search_mode="text_and_snippet" (Default): Organic web search returning 8 snippets + automatically deep-scraping top pages.
+    - search_mode="news": Real-time news search (Google News RSS with Bing News fallback) with exact timestamps, sources, snippets, and deep article scrape.
+    - search_mode="image": Visual search retrieving direct high-resolution image URLs with dimensions, titles, and sources.
     - Checks 15-minute in-memory cache for instant zero-latency responses.
     """
+    # Normalize mode (with internal fallback for legacy image_search argument)
+    mode_raw = (search_mode or kwargs.get("mode") or "text_and_snippet").strip().lower()
+    if kwargs.get("image_search") is True or mode_raw in ("image", "images", "img", "photo", "photos"):
+        effective_mode = "image"
+    elif mode_raw in ("news", "breaking", "headlines"):
+        effective_mode = "news"
+    else:
+        effective_mode = "text_and_snippet"
+
     # Normalize query input (handles str, list, tuple, dict, compound pipe strings)
     raw_list = []
     if isinstance(query, (list, tuple)):
@@ -883,7 +901,7 @@ async def web_search(query, image_search: bool = False) -> str:
     if not query_list:
         return "Please specify a query to search for."
 
-    cache_key = f"{' | '.join(sorted(q.lower() for q in query_list))} [img={bool(image_search)}]"
+    cache_key = f"{' | '.join(sorted(q.lower() for q in query_list))} [mode={effective_mode}]"
     now = time.time()
     
     # Check In-Memory Cache
@@ -893,9 +911,16 @@ async def web_search(query, image_search: bool = False) -> str:
             return cached_result
 
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://html.duckduckgo.com/',
+        'Origin': 'https://html.duckduckgo.com',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
     }
 
     def decode_bing_url(bing_url: str) -> str:
@@ -917,13 +942,16 @@ async def web_search(query, image_search: bool = False) -> str:
         # Prepare both verbatim query (for DDG quotes/boolean) and cleaned query (for Bing to avoid quote-spam bug)
         q_clean = re.sub(r'[\'"]', ' ', q)
         q_clean = re.sub(r'\s+', ' ', q_clean).strip()
-        encoded_query_clean = urllib.parse.quote(q_clean)
+        encoded_query_clean = urllib.parse.quote_plus(q_clean)
 
-        # 1. Primary Engine: DuckDuckGo POST (Fast ~300ms, accurate, ad-free, worldwide)
+        # 1. Primary Engine: DuckDuckGo (Dual-Layer: Direct HTML + TLS-fingerprinted ddgs)
         async def fetch_ddg():
             ddg_urls, ddg_snips = [], []
+            ddg_post_query = q_clean if (q.startswith(('"', "'")) and q.endswith(('"', "'"))) or " | " in q else q
+
+            # Layer A: Direct HTML POST with modern browser headers and SafeSearch off (kp=-1, p=-1)
             try:
-                resp = await client.post("https://html.duckduckgo.com/html/", data={"q": q, "b": ""}, headers=headers, timeout=4.0)
+                resp = await client.post("https://html.duckduckgo.com/html/", data={"q": ddg_post_query, "b": "", "kp": "-1", "p": "-1"}, headers=headers, timeout=4.0)
                 if resp.status_code == 200 and "captcha" not in resp.text.lower() and "anomaly" not in resp.text.lower():
                     from bs4 import BeautifulSoup
                     soup = BeautifulSoup(resp.text, "html.parser")
@@ -937,19 +965,40 @@ async def web_search(query, image_search: bool = False) -> str:
 
                             parsed = urllib.parse.urlparse(href)
                             qs = urllib.parse.parse_qs(parsed.query)
-                            real_url = qs.get("uddg", [href])[0]
-                            if real_url.startswith("//"):
-                                real_url = "https:" + real_url
-
-                            if real_url.startswith("http") and not real_url.startswith("/") and real_url not in ddg_urls:
-                                ddg_urls.append(real_url)
-                                ddg_snips.append((title, desc, real_url))
+                            actual_url = qs.get("uddg", [None])[0] or href
+                            if actual_url.startswith("http") and "duckduckgo.com" not in actual_url and actual_url not in ddg_urls:
+                                ddg_urls.append(actual_url)
+                                ddg_snips.append((title, desc, actual_url))
             except Exception as e:
                 import sys
-                print(f"[web_search] DDG attempt failed for '{q}': {e}", file=sys.stderr)
+                print(f"[web_search] Direct DDG HTML attempt failed for '{q}': {e}", file=sys.stderr)
+
+            # Layer B: ddgs fallback using primp TLS fingerprint impersonation
+            if not ddg_urls:
+                try:
+                    def _do_ddgs():
+                        try:
+                            from ddgs import DDGS
+                        except ImportError:
+                            from duckduckgo_search import DDGS
+                        with DDGS(timeout=4) as ddgs_client:
+                            return list(ddgs_client.text(q_clean, safesearch="off", max_results=10))
+
+                    results = await asyncio.to_thread(_do_ddgs)
+                    for r in results:
+                        u = r.get("href") or r.get("link")
+                        t = r.get("title", "")
+                        b = r.get("body") or r.get("snippet", "")
+                        if u and u.startswith("http") and u not in ddg_urls:
+                            ddg_urls.append(u)
+                            ddg_snips.append((t, b, u))
+                except Exception as e:
+                    import sys
+                    print(f"[web_search] DDGS fallback attempt failed for '{q}': {e}", file=sys.stderr)
+
             return ddg_urls, ddg_snips
 
-        # 2. Fallback Engine: Bing Search (Engaged when DDG returns < 4 results)
+        # 2. Secondary Fallback: Bing Search (with dedicated clean headers to prevent bot deflection)
         async def fetch_bing():
             bing_urls, bing_snips = [], []
             try:
@@ -965,12 +1014,25 @@ async def web_search(query, image_search: bool = False) -> str:
                 else:
                     lang_param = "&setmkt=en-us&setlang=en-us"
 
-                bing_url = f"https://www.bing.com/search?q={encoded_query_clean}{lang_param}"
-                resp = await client.get(bing_url, headers=headers, timeout=4.0)
+                bing_headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Cookie': 'SRCHHPGUSR=ADLT=OFF&NRSLT=10; SRCHD=AF=NOFORM;',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Upgrade-Insecure-Requests': '1',
+                }
+
+                bing_url = f"https://www.bing.com/search?q={encoded_query_clean}&adlt=off{lang_param}"
+                resp = await client.get(bing_url, headers=bing_headers, timeout=4.0)
                 if resp.status_code == 200 and resp.text:
                     from bs4 import BeautifulSoup
                     soup = BeautifulSoup(resp.text, "html.parser")
-                    for r in soup.find_all("li", class_="b_algo")[:10]:
+                    main_results = soup.find("ol", id="b_results") or soup
+                    for r in main_results.find_all("li", class_="b_algo")[:10]:
                         h2 = r.find("h2")
                         if not h2:
                             continue
@@ -990,6 +1052,7 @@ async def web_search(query, image_search: bool = False) -> str:
                 import sys
                 print(f"[web_search] Bing attempt failed for '{q}': {e}", file=sys.stderr)
             return bing_urls, bing_snips
+
         q_urls = []
         q_snippets = []
         seen_urls = set()
@@ -1003,9 +1066,9 @@ async def web_search(query, image_search: bool = False) -> str:
                 q_urls.append(u)
                 q_snippets.append(f"- {t}: {d} ({u})")
 
-        # Step 2: If DDG returned insufficient results (< 4), fall back to Bing
-        if len(q_urls) < 4:
-            engine_used = "Bing (DDG returned insufficient results / bot challenge)"
+        # Step 2: If DuckDuckGo returned 0 results across both layers, fall back to Bing
+        if not q_urls:
+            engine_used = "Bing (DuckDuckGo empty / blocked)"
             is_latin_query = not bool(re.search(r'[\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u0900-\u097F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]', q))
 
             def is_junk_snippet(title_str, url_str):
@@ -1024,19 +1087,32 @@ async def web_search(query, image_search: bool = False) -> str:
         # Step 3: Tertiary Fallback: Try Yahoo Search if still empty
         if not q_urls:
             engine_used = "Yahoo (DDG & Bing empty)"
-            yahoo_url = f"https://search.yahoo.com/search?p={encoded_query_clean}"
             try:
-                resp = await client.get(yahoo_url, headers=headers, timeout=4.0)
-                if resp.status_code == 200:
+                def _do_yahoo_fallback():
+                    try:
+                        import primp
+                        p_client = primp.Client(impersonate="random")
+                        return p_client.get(f"https://search.yahoo.com/search?p={encoded_query_clean}")
+                    except Exception:
+                        return None
+
+                p_resp = await asyncio.to_thread(_do_yahoo_fallback)
+                html_text = p_resp.text if p_resp and p_resp.status_code == 200 else ""
+                if not html_text and client:
+                    resp = await client.get(f"https://search.yahoo.com/search?p={encoded_query_clean}", headers=headers, timeout=4.0)
+                    if resp.status_code == 200:
+                        html_text = resp.text
+
+                if html_text:
                     from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(resp.text, "html.parser")
-                    for algo in soup.find_all("div", class_=lambda c: c and "algo" in c)[:8]:
-                        link_el = algo.find("a")
-                        desc_el = algo.find("div", class_=lambda c: c and "compText" in c)
-                        if link_el and desc_el:
+                    soup = BeautifulSoup(html_text, "html.parser")
+                    for item in soup.select("div.algo, #web ol > li, div.dd")[:8]:
+                        link_el = item.find("a")
+                        desc_el = item.find(class_=lambda c: c and any(k in c for k in ["compText", "fz-m", "s-desc"])) or item.find("p")
+                        if link_el:
                             title = link_el.get_text(strip=True)
                             href = link_el.get("href", "")
-                            desc = desc_el.get_text(strip=True)
+                            desc = desc_el.get_text(strip=True) if desc_el else ""
 
                             if "r.search.yahoo.com" in href:
                                 ru_match = re.search(r'/RU=([^/]+)/', href)
@@ -1073,141 +1149,12 @@ async def web_search(query, image_search: bool = False) -> str:
 
         return q_urls, q_snippets, engine_used
 
-    all_urls = []
-    all_snippets = []
-    engines_used = []
+    full_query = " ".join(query_list)
+    display_query = " | ".join(query_list)
+    is_advanced = getattr(config, "TOOL_MODE", "basic") == "advanced"
+    base_budget = 5000 if is_advanced else 1000
 
     async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
-        search_tasks = [search_single_query(client, q) for q in query_list]
-        search_results = await asyncio.gather(*search_tasks)
-
-        for q_urls, q_snippets, eng in search_results:
-            if eng and eng not in engines_used:
-                engines_used.append(eng)
-            for u in q_urls:
-                if u not in all_urls:
-                    all_urls.append(u)
-            for s in q_snippets:
-                if s not in all_snippets:
-                    all_snippets.append(s)
-
-        if not all_snippets:
-            query_display = ", ".join(f"'{q}'" for q in query_list)
-            return f"No search results found for {query_display}."
-
-        # Inject direct query URLs if present in query_list
-        for q_item in query_list:
-            if q_item.startswith(('http://', 'https://')) and q_item not in all_urls:
-                all_urls.insert(0, q_item)
-
-        # Re-rank candidates based on query subtopic terms, synonym clusters, deep links, and explicit requested domains
-        full_query = " ".join(query_list)
-        q_words = set(re.findall(r'\b[a-zA-Z0-9_]+\b', full_query.lower()))
-
-        synonym_clusters = [
-            {"cast", "character", "characters", "voice", "actor", "actors", "staff", "seiyuu", "crew", "fullcredits"},
-            {"episode", "episodes", "chapter", "chapters", "season", "guide"},
-            {"lyric", "lyrics", "tracklist", "track", "ost", "song"},
-            {"documentation", "docs", "guide", "tutorial", "reference", "manual", "api"},
-            {"solution", "example", "syntax", "answers"}
-        ]
-
-        # Technical/Formula topic boost
-        is_formula_or_science = any(w in q_words for w in ("formula", "equation", "law", "theorem", "definition", "engineering", "calculate", "calculation", "derivation", "proof", "method", "unit"))
-        if is_formula_or_science:
-            synonym_clusters.append({"geeksforgeeks", "testbook", "sanfoundry", "byjus", "unacademy", "vedantu", "tutorialspoint", "w3schools", "sciencedirect", "wikipedia", "engineering"})
-
-        scored_urls = []
-        for i, u in enumerate(all_urls):
-            score = 100 - i * 5
-            u_lower = u.lower()
-            parsed_u = urllib.parse.urlparse(u)
-            is_root = parsed_u.path.strip("/") == "" or parsed_u.path.strip("/").lower() in ("index.html", "index.php", "home")
-
-            # Heavily demote generic root homepages (e.g. https://www.youtube.com/)
-            if is_root:
-                score -= 80
-
-            # Boost exact URL match or direct query tokens
-            for q_item in query_list:
-                if q_item.lower() == u_lower:
-                    score += 200
-                elif is_youtube_url(q_item):
-                    vid_id, pl_id, _ = parse_youtube_ids(q_item)
-                    if vid_id and vid_id in u:
-                        score += 150
-                    if pl_id and pl_id in u:
-                        score += 60
-                elif len(q_item) >= 6 and q_item.lower() in u_lower:
-                    score += 50
-
-            # Boost if query explicitly requested domain
-            for domain_kw in ("wikipedia", "imdb", "reddit", "quora", "testbook", "github", "fandom", "myanimelist", "animenewsnetwork", "behindthevoiceactors", "btva", "youtube", "geeksforgeeks", "sanfoundry"):
-                if domain_kw in q_words and domain_kw in u_lower:
-                    score += 50
-
-            # Boost educational / scientific / reference domains for technical formula queries
-            if is_formula_or_science:
-                for edu_kw in ("testbook", "geeksforgeeks", "sanfoundry", "byjus", "unacademy", "vedantu", "tutorialspoint", "wikipedia.org/wiki/"):
-                    if edu_kw in u_lower:
-                        score += 45
-
-            # Boost synonym cluster terms found in URL
-            for cluster in synonym_clusters:
-                if any(w in q_words for w in cluster):
-                    if any(w in u_lower for w in cluster):
-                        score += 35
-
-            # Boost dedicated character list pages on Wikipedia and encyclopedia pages on ANN
-            if "wikipedia.org/wiki/list_of_" in u_lower:
-                score += 30
-            if "animenewsnetwork.com" in u_lower:
-                score += 25
-
-            # Demote BTVA show index pages (they truncate non-English VAs to 'and X others') unless BTVA was explicitly queried
-            if "behindthevoiceactors.com" in u_lower and "behindthevoiceactors" not in q_words and "btva" not in q_words:
-                score -= 30
-
-            # Demote spinoff remakes if original anime/series exists in candidates
-            if "(2017)" in u_lower or "tt1241317" in u_lower or "2017_film" in u_lower:
-                if any("tt0877057" in x.lower() or "character" in x.lower() for x in all_urls):
-                    score -= 40
-
-            scored_urls.append((score, u))
-
-        scored_urls.sort(key=lambda x: x[0], reverse=True)
-        all_urls = [u for _, u in scored_urls]
-
-        # Determine mode-aware character budget
-        is_advanced = getattr(config, "TOOL_MODE", "basic") == "advanced"
-        base_budget = 5000 if is_advanced else 1000
-
-        # Authority-First Strategy: Check top deep link from authoritative domains (ignoring root homepages)
-        top_authority_url = None
-        for u in all_urls[:5]:
-            parsed_u = urllib.parse.urlparse(u)
-            if parsed_u.path.strip("/") == "":
-                continue  # Never choose a root homepage as the deep authority source
-            domain_part = parsed_u.netloc.lower()
-            if any(auth_d in domain_part for auth_d in AUTHORITY_DOMAINS):
-                # Ensure the authority URL path shares key terms with the query
-                meaningful_q_words = [w for w in q_words if len(w) > 2 and w not in ("in", "on", "at", "the", "a", "an", "and", "or", "for", "of", "to", "with", "is", "was", "are", "were")]
-                if len(meaningful_q_words) >= 2 and not any(w in u.lower() for w in meaningful_q_words):
-                    continue
-                top_authority_url = u
-                break
-
-        if top_authority_url:
-            # Single authoritative source: Double the budget for this 1 deep link
-            target_page_count = 1
-            page_budget = base_budget * 2  # 10,000 for Advanced, 2,000 for Basic
-            candidate_urls = [top_authority_url] + [u for u in all_urls if u != top_authority_url][:4]
-        else:
-            # Multi-source mode: 2 sources with standard per-page budget
-            target_page_count = 2
-            page_budget = base_budget  # 5,000 for Advanced, 1,000 for Basic
-            candidate_urls = all_urls[:6]
-
         def is_bot_blocked(text: str) -> bool:
             if not text:
                 return True
@@ -1223,11 +1170,12 @@ async def web_search(query, image_search: bool = False) -> str:
             )
             return any(p in t_lower for p in blocked_phrases) and len(text) < 1500
 
-        async def fetch_page(url: str):
+        async def fetch_page(url: str, custom_budget: Optional[int] = None):
+            budget = custom_budget or base_budget
             if is_youtube_url(url):
                 try:
                     need_tr = any(kw in full_query.lower() for kw in ("transcript", "lyrics", "subtitles", "say in", "said in", "speech", "caption", "words", "dialogue"))
-                    yt_text = await async_extract_youtube_content(client, url, max_chars=page_budget, need_transcript=need_tr)
+                    yt_text = await async_extract_youtube_content(client, url, max_chars=budget, need_transcript=need_tr)
                     if yt_text and len(yt_text.strip()) >= 50:
                         return f"[Source: YouTube ({url})]\n{yt_text}"
                 except Exception as e:
@@ -1245,7 +1193,7 @@ async def web_search(query, image_search: bool = False) -> str:
             try:
                 resp = await client.get(url, headers=headers, follow_redirects=True, timeout=3.5)
                 if resp.status_code == 200 and resp.text:
-                    parsed_md = extract_clean_markdown(resp.text, max_chars=page_budget, domain=domain, query=full_query, page_url=url)
+                    parsed_md = extract_clean_markdown(resp.text, max_chars=budget, domain=domain, query=full_query, page_url=url)
                     if not is_bot_blocked(parsed_md):
                         clean_text = parsed_md
             except Exception as e:
@@ -1270,10 +1218,10 @@ async def web_search(query, image_search: bool = False) -> str:
                             if full_query:
                                 jina_text = anchor_by_query(jina_text, full_query)
 
-                            if len(jina_text) > page_budget:
-                                cutoff = page_budget
-                                last_para = jina_text.rfind("\n", 0, page_budget)
-                                if last_para > page_budget * 0.7:
+                            if len(jina_text) > budget:
+                                cutoff = budget
+                                last_para = jina_text.rfind("\n", 0, budget)
+                                if last_para > budget * 0.7:
                                     cutoff = last_para
                                 jina_text = jina_text[:cutoff].strip() + f"\n\n... [Content truncated at {cutoff} characters. Call 'jarvis_web_scrape' on this URL to read up to 15,000+ characters if this page looks promising]"
                             clean_text = jina_text
@@ -1284,6 +1232,7 @@ async def web_search(query, image_search: bool = False) -> str:
                 return f"[Source: {domain} ({url})]\n{clean_text}"
             return None
 
+        # Helper 1: Image Search Functions
         async def fetch_wiki_summary_image(client: httpx.AsyncClient, entity_name: str) -> Optional[dict]:
             """Fetches canonical Wikipedia summary portrait/flag/image if available."""
             try:
@@ -1310,33 +1259,91 @@ async def web_search(query, image_search: bool = False) -> str:
         async def fetch_image_results(client: httpx.AsyncClient, q: str, limit: int = 20) -> list[dict]:
             img_results = []
             seen_urls = set()
-            try:
-                url = f"https://www.bing.com/images/search?q={urllib.parse.quote(q)}&form=HDRSC2&first=1"
-                resp = await client.get(url, headers=headers, timeout=3.5)
-                if resp.status_code == 200 and resp.text:
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(resp.text, "html.parser")
-                    for a in soup.find_all("a", class_="iusc"):
-                        m = a.get("m")
-                        if m:
+
+            is_nsfw = bool(re.search(
+                r'\b(hentai|porn|porno|xxx|rule34|r34|nsfw|nude|naked|sex|lewd|ecchi|gore|erotic|milf|waifu\s+nsfw|boobs|ass|tits)\b',
+                q, re.I
+            ))
+
+            async def _fetch_bing_images():
+                b_imgs = []
+                try:
+                    bing_img_headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                        'Cookie': 'SRCHHPGUSR=ADLT=OFF&NRSLT=20;',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                    }
+                    encoded_img_q = urllib.parse.quote_plus(q)
+                    url = f"https://www.bing.com/images/search?q={encoded_img_q}&adlt=off&form=HDRSC2&first=1"
+                    resp = await client.get(url, headers=bing_img_headers, timeout=4.5)
+                    if resp.status_code == 200 and resp.text:
+                        from bs4 import BeautifulSoup
+                        soup = BeautifulSoup(resp.text, "html.parser")
+                        for a in soup.find_all("a", class_="iusc"):
+                            m_raw = a.get("m")
+                            if not m_raw:
+                                continue
                             try:
-                                m_json = json.loads(m)
-                                murl = m_json.get("murl")
-                                t = m_json.get("t", "").strip()
-                                purl = m_json.get("purl", "").strip()
-                                w = m_json.get("width")
-                                h = m_json.get("height")
+                                m_data = json.loads(m_raw)
+                                murl = m_data.get("murl")
+                                turl = m_data.get("turl")
+                                purl = m_data.get("purl")
+                                t = m_data.get("t", "")
+                                desc = m_data.get("desc", "")
+                                title_text = t or desc or "Image"
                                 if murl and murl.startswith(("http://", "https://")) and murl not in seen_urls:
                                     seen_urls.add(murl)
-                                    img_results.append({"title": t, "image": murl, "url": purl, "width": w, "height": h})
-                                    if len(img_results) >= limit:
+                                    b_imgs.append({"title": title_text, "image": murl, "thumb": turl, "url": purl, "source": "Bing"})
+                                    if len(b_imgs) >= limit:
                                         break
                             except Exception:
                                 pass
-            except Exception as e:
-                import sys
-                print(f"[web_search] Image search failed for '{q}': {e}", file=sys.stderr)
-            return img_results
+                except Exception:
+                    pass
+                return b_imgs
+
+            async def _fetch_ddg_images():
+                d_imgs = []
+                try:
+                    def _do_ddgs_images():
+                        try:
+                            from ddgs import DDGS
+                        except ImportError:
+                            from duckduckgo_search import DDGS
+                        with DDGS(timeout=5) as ddgs_client:
+                            return list(ddgs_client.images(q, safesearch="off", max_results=limit))
+                    raw = await asyncio.to_thread(_do_ddgs_images)
+                    for item in raw:
+                        murl = item.get("image")
+                        t = item.get("title", "").strip()
+                        purl = item.get("url", "").strip()
+                        turl = item.get("thumbnail", "").strip()
+                        w = item.get("width")
+                        h = item.get("height")
+                        if murl and murl.startswith(("http://", "https://")) and murl not in seen_urls:
+                            seen_urls.add(murl)
+                            d_imgs.append({"title": t, "image": murl, "thumb": turl, "url": purl, "width": w, "height": h, "source": "DuckDuckGo"})
+                            if len(d_imgs) >= limit:
+                                break
+                except Exception:
+                    pass
+                return d_imgs
+
+            if is_nsfw:
+                img_results = await _fetch_bing_images()
+                if len(img_results) < 3:
+                    ddg_results = await _fetch_ddg_images()
+                    img_results.extend(ddg_results)
+            else:
+                img_results = await _fetch_ddg_images()
+                if len(img_results) < 3:
+                    bing_results = await _fetch_bing_images()
+                    img_results.extend(bing_results)
+
+            return img_results[:limit]
 
         async def fetch_entity_image_bundle(client: httpx.AsyncClient, q: str, limit: int = 4) -> tuple[str, list[dict]]:
             """Fetches Wikipedia canonical image (if any) + Bing image results for a single query."""
@@ -1355,49 +1362,585 @@ async def web_search(query, image_search: bool = False) -> str:
                     break
             return q, combined
 
-        page_contents = []
-        image_search_by_query = []
-        if image_search:
-            per_query_limit = max(3, 20 // len(query_list))
+        # Helper 2: News Search Functions
+        def parse_relative_time(pub_date_str: str) -> str:
+            if not pub_date_str:
+                return ""
+            try:
+                dt = email.utils.parsedate_to_datetime(pub_date_str)
+                if dt:
+                    now_dt = datetime.datetime.now(datetime.timezone.utc)
+                    diff = now_dt - dt.astimezone(datetime.timezone.utc)
+                    total_seconds = int(diff.total_seconds())
+                    if total_seconds < 0:
+                        return "Just now"
+                    if total_seconds < 60:
+                        return f"{total_seconds}s ago"
+                    minutes = total_seconds // 60
+                    if minutes < 60:
+                        return f"{minutes}m ago"
+                    hours = minutes // 60
+                    if hours < 24:
+                        return f"{hours}h ago"
+                    days = hours // 24
+                    if days == 1:
+                        return "Yesterday"
+                    if days < 30:
+                        return f"{days}d ago"
+                    return dt.strftime("%b %d, %Y")
+            except Exception:
+                pass
+            return pub_date_str[:16]
+
+        async def fetch_news_for_query(client: httpx.AsyncClient, q: str, country_code: Optional[str] = None) -> tuple[list[dict], str]:
+            cc = (country_code or "US").strip().upper()
+            if len(cc) != 2:
+                cc = "US"
+            encoded_q = urllib.parse.quote(q)
+            encoded_bing_q = urllib.parse.quote_plus(q)
+            g_url = f"https://news.google.com/rss/search?q={encoded_q}&hl=en&gl={cc}&ceid={cc}:en"
+            b_url = f"https://www.bing.com/news/search?q={encoded_bing_q}&format=rss"
+
+            news_headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+                'Accept': 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+            }
+
+            def _parse_g_items(items):
+                parsed = []
+                for it in items:
+                    t = it.find("title")
+                    l = it.find("link")
+                    d = it.find("pubDate")
+                    src_el = it.find("source")
+                    pub = src_el.text.strip() if src_el is not None and src_el.text else ""
+                    raw_title = t.text.strip() if t is not None and t.text else ""
+                    if not raw_title:
+                        continue
+                    clean_t = html.unescape(raw_title)
+                    if " - " in clean_t:
+                        title_part, pub_part = clean_t.rsplit(" - ", 1)
+                    else:
+                        title_part, pub_part = clean_t, pub
+                    link = l.text.strip() if l is not None and l.text else ""
+                    pub_date = d.text.strip() if d is not None and d.text else ""
+                    parsed.append({
+                        "title": title_part.strip(),
+                        "publisher": pub_part.strip() or pub,
+                        "snippet": "",
+                        "link": link,
+                        "time": parse_relative_time(pub_date),
+                    })
+                return parsed
+
+            def _parse_b_items(items):
+                parsed = []
+                for it in items:
+                    t = it.find("title")
+                    l = it.find("link")
+                    desc = it.find("description")
+                    d = it.find("pubDate")
+                    src_el = it.find("{http://schemas.microsoft.com/search/local/news}source") or it.find("source")
+                    pub = src_el.text.strip() if src_el is not None and src_el.text else ""
+                    raw_title = t.text.strip() if t is not None and t.text else ""
+                    if not raw_title:
+                        continue
+                    clean_t = html.unescape(raw_title)
+                    if " - " in clean_t:
+                        title_part, pub_part = clean_t.rsplit(" - ", 1)
+                    else:
+                        title_part, pub_part = clean_t, pub
+                    snip_raw = desc.text.strip() if desc is not None and desc.text else ""
+                    clean_snip = re.sub(r'<[^>]+>', '', snip_raw) if snip_raw else ""
+                    link = l.text.strip() if l is not None and l.text else ""
+                    pub_date = d.text.strip() if d is not None and d.text else ""
+                    parsed.append({
+                        "title": title_part.strip(),
+                        "publisher": pub_part.strip() or pub,
+                        "snippet": html.unescape(clean_snip).strip(),
+                        "link": link,
+                        "time": parse_relative_time(pub_date),
+                    })
+                return parsed
+
+            # Step 1: Query Primary Engine: Google News RSS (higher relevance, global coverage, exact timestamps)
+            engine_name = "Google News RSS"
+            try:
+                r = await client.get(g_url, headers=news_headers, timeout=4.0)
+                if r.status_code == 200 and r.text:
+                    root = ET.fromstring(r.text)
+                    g_items = root.findall(".//item")[:15]
+                    parsed_g = _parse_g_items(g_items)
+                    if len(parsed_g) >= 3:
+                        return parsed_g, engine_name
+            except Exception as e:
+                import sys
+                print(f"[web_search] Google News RSS primary attempt failed for '{q}': {e}", file=sys.stderr)
+
+            # Step 2: Fallback Engine: Bing News RSS (if Google News returned <3 items or failed)
+            engine_name = "Bing News RSS (Fallback)"
+            try:
+                r = await client.get(b_url, headers=news_headers, timeout=4.0)
+                if r.status_code == 200 and r.text:
+                    root = ET.fromstring(r.text)
+                    b_items = root.findall(".//item")[:15]
+                    parsed_b = _parse_b_items(b_items)
+                    if parsed_b:
+                        return parsed_b, engine_name
+            except Exception as e:
+                import sys
+                print(f"[web_search] Bing News RSS fallback attempt failed for '{q}': {e}", file=sys.stderr)
+
+            return [], "None"
+
+        # Mode Branch 1: Image Search
+        if effective_mode == "image":
+            per_query_limit = max(4, 20 // len(query_list))
             tasks = [fetch_entity_image_bundle(client, q, limit=per_query_limit) for q in query_list]
             image_search_by_query = await asyncio.gather(*tasks)
-        elif candidate_urls:
-            tasks = [fetch_page(u) for u in candidate_urls]
-            fetched = await asyncio.gather(*tasks)
-            valid_pages = [f for f in fetched if f]
-            page_contents = valid_pages[:target_page_count]
 
-    # Compile final context for the LLM
-    context_parts = []
-    display_query = " | ".join(query_list)
+            context_parts = [f"Image search results for: \"{display_query}\""]
+            has_images = False
+            for q_title, img_list in image_search_by_query:
+                if not img_list:
+                    continue
+                has_images = True
+                if len(image_search_by_query) > 1:
+                    context_parts.append(f"\n### Verified Images for \"{q_title}\":")
+                else:
+                    context_parts.append(f"\n### Verified Images ({len(img_list)} Photos):")
+                for i, img in enumerate(img_list, 1):
+                    title = img.get('title') or f"Image {i}"
+                    img_url = img.get('image')
+                    dim = f" [{img['width']}x{img['height']}]" if img.get('width') and img.get('height') else ""
+                    context_parts.append(f"{i}. {img_url} ({title}{dim})")
 
-    if image_search_by_query:
-        context_parts.append(f"Image search results for: \"{display_query}\"")
-        for q_title, img_list in image_search_by_query:
-            if not img_list:
-                continue
-            if len(image_search_by_query) > 1:
-                context_parts.append(f"\n### Verified Images for \"{q_title}\":")
+            final_result = "\n\n".join(context_parts) if has_images else f"No images found for {display_query}."
+            _SEARCH_CACHE[cache_key] = (now, final_result)
+            return final_result
+
+        # Mode Branch 2: News Search
+        elif effective_mode == "news":
+            news_tasks = [fetch_news_for_query(client, q, country_code=country_code) for q in query_list]
+            news_results = await asyncio.gather(*news_tasks)
+
+            all_news = []
+            news_engines = []
+            seen_titles = set()
+            stop_words = {"with", "from", "this", "that", "after", "says", "news", "over", "into", "amid", "will", "have", "about"}
+
+            for q_news, q_eng in news_results:
+                if q_eng and q_eng != "None" and q_eng not in news_engines:
+                    news_engines.append(q_eng)
+                for item in q_news:
+                    title = item.get("title", "").strip()
+                    if not title:
+                        continue
+                    words = frozenset(set(re.findall(r'\b[a-zA-Z]{4,}\b', title.lower())) - stop_words)
+                    if words and any(len(words & st) >= 3 for st in seen_titles):
+                        continue
+                    if words:
+                        seen_titles.add(words)
+                    all_news.append(item)
+
+            if not all_news:
+                # Resilient fallback: Query general web search with news keyword
+                fb_urls, fb_snips, fb_eng = await search_single_query(client, f"{display_query} news")
+                if fb_snips:
+                    final_result = f"Breaking News & Updates for: \"{display_query}\" [Web Engine Fallback: {fb_eng}]\n\n" + "\n".join(fb_snips[:6])
+                    _SEARCH_CACHE[cache_key] = (now, final_result)
+                    return final_result
+                final_result = f"No recent news or headlines found for '{display_query}'."
+                _SEARCH_CACHE[cache_key] = (now, final_result)
+                return final_result
+
+            # Deep scrape the top 1-2 candidate articles
+            deep_scraped_articles = []
+            scrape_candidates = [it["link"] for it in all_news if it.get("link") and it["link"].startswith(("http://", "https://"))][:2]
+            if scrape_candidates:
+                scrape_tasks = [fetch_page(u, custom_budget=base_budget) for u in scrape_candidates]
+                scraped_res = await asyncio.gather(*scrape_tasks)
+                deep_scraped_articles = [s for s in scraped_res if s]
+
+            eng_header = f" [Engine: {', '.join(news_engines)}]" if news_engines else ""
+            context_parts = [f"Breaking News & Updates for: \"{display_query}\"{eng_header}"]
+            context_parts.append("### Latest Headlines & Coverage:")
+            for idx, it in enumerate(all_news[:8], 1):
+                pub = f" [Source: {it['publisher']}]" if it.get('publisher') else ""
+                tm = f" [{it['time']}]" if it.get('time') else ""
+                line = f"{idx}. {it['title']}{pub}{tm}"
+                if it.get('snippet'):
+                    line += f"\n   Summary: {it['snippet']}"
+                if it.get('link'):
+                    line += f"\n   Link: {it['link']}"
+                context_parts.append(line)
+
+            if deep_scraped_articles:
+                context_parts.append("\n### Detailed News Coverage:\n" + "\n\n".join(deep_scraped_articles))
+
+            final_result = "\n\n".join(context_parts)
+            _SEARCH_CACHE[cache_key] = (now, final_result)
+            return final_result
+
+        # Mode Branch 3: Standard Organic Search (text_and_snippet)
+        else:
+            all_urls = []
+            all_snippets = []
+            engines_used = []
+
+            async def _execute_with_stagger(index: int, query_item: str):
+                if index > 0:
+                    await asyncio.sleep(index * 0.15)
+                return await search_single_query(client, query_item)
+
+            search_tasks = [_execute_with_stagger(i, q) for i, q in enumerate(query_list)]
+            search_results = await asyncio.gather(*search_tasks)
+
+            for q_urls, q_snippets, eng in search_results:
+                if eng and eng not in engines_used:
+                    engines_used.append(eng)
+                for u in q_urls:
+                    if u not in all_urls:
+                        all_urls.append(u)
+                for s in q_snippets:
+                    if s not in all_snippets:
+                        all_snippets.append(s)
+
+            if not all_snippets:
+                query_display = ", ".join(f"'{q}'" for q in query_list)
+                return f"No search results found for {query_display}."
+
+            for q_item in query_list:
+                if q_item.startswith(('http://', 'https://')) and q_item not in all_urls:
+                    all_urls.insert(0, q_item)
+
+            q_words = set(re.findall(r'\b[a-zA-Z0-9_]+\b', full_query.lower()))
+
+            synonym_clusters = [
+                {"cast", "character", "characters", "voice", "actor", "actors", "staff", "seiyuu", "crew", "fullcredits"},
+                {"episode", "episodes", "chapter", "chapters", "season", "guide"},
+                {"lyric", "lyrics", "tracklist", "track", "ost", "song"},
+                {"documentation", "docs", "guide", "tutorial", "reference", "manual", "api"},
+                {"solution", "example", "syntax", "answers"}
+            ]
+
+            is_formula_or_science = any(w in q_words for w in ("formula", "equation", "law", "theorem", "definition", "engineering", "calculate", "calculation", "derivation", "proof", "method", "unit"))
+            if is_formula_or_science:
+                synonym_clusters.append({"geeksforgeeks", "testbook", "sanfoundry", "byjus", "unacademy", "vedantu", "tutorialspoint", "w3schools", "sciencedirect", "wikipedia", "engineering"})
+
+            scored_urls = []
+            for i, u in enumerate(all_urls):
+                score = 100 - i * 5
+                u_lower = u.lower()
+                parsed_u = urllib.parse.urlparse(u)
+                is_root = parsed_u.path.strip("/") == "" or parsed_u.path.strip("/").lower() in ("index.html", "index.php", "home")
+
+                if is_root:
+                    score -= 80
+
+                for q_item in query_list:
+                    if q_item.lower() == u_lower:
+                        score += 200
+                    elif is_youtube_url(q_item):
+                        vid_id, pl_id, _ = parse_youtube_ids(q_item)
+                        if vid_id and vid_id in u:
+                            score += 150
+                        if pl_id and pl_id in u:
+                            score += 60
+                    elif len(q_item) >= 6 and q_item.lower() in u_lower:
+                        score += 50
+
+                for domain_kw in ("wikipedia", "imdb", "reddit", "quora", "testbook", "github", "fandom", "myanimelist", "animenewsnetwork", "behindthevoiceactors", "btva", "youtube", "geeksforgeeks", "sanfoundry"):
+                    if domain_kw in q_words and domain_kw in u_lower:
+                        score += 50
+
+                if is_formula_or_science:
+                    for edu_kw in ("testbook", "geeksforgeeks", "sanfoundry", "byjus", "unacademy", "vedantu", "tutorialspoint", "wikipedia.org/wiki/"):
+                        if edu_kw in u_lower:
+                            score += 45
+
+                for cluster in synonym_clusters:
+                    if any(w in q_words for w in cluster):
+                        if any(w in u_lower for w in cluster):
+                            score += 35
+
+                if "wikipedia.org/wiki/list_of_" in u_lower:
+                    score += 30
+                if "animenewsnetwork.com" in u_lower:
+                    score += 25
+
+                if "behindthevoiceactors.com" in u_lower and "behindthevoiceactors" not in q_words and "btva" not in q_words:
+                    score -= 30
+
+                if "(2017)" in u_lower or "tt1241317" in u_lower or "2017_film" in u_lower:
+                    if any("tt0877057" in x.lower() or "character" in x.lower() for x in all_urls):
+                        score -= 40
+
+                scored_urls.append((score, u))
+
+            scored_urls.sort(key=lambda x: x[0], reverse=True)
+            all_urls = [u for _, u in scored_urls]
+
+            is_news_or_market = any(w in q_words for w in ("news", "latest", "today", "yesterday", "current", "yields", "yield", "treasury", "treasuries", "market", "markets", "stocks", "bonds", "crypto", "price", "prices", "earnings"))
+            top_authority_url = None
+            for u in all_urls[:5]:
+                parsed_u = urllib.parse.urlparse(u)
+                if parsed_u.path.strip("/") == "":
+                    continue
+                domain_part = parsed_u.netloc.lower()
+                if is_news_or_market and any(wiki_d in domain_part for wiki_d in ("wikipedia.org", "wiktionary.org", "wikiquote.org", "britannica.com")):
+                    continue
+                if any(auth_d in domain_part for auth_d in AUTHORITY_DOMAINS):
+                    meaningful_q_words = [w for w in q_words if len(w) > 2 and w not in ("in", "on", "at", "the", "a", "an", "and", "or", "for", "of", "to", "with", "is", "was", "are", "were")]
+                    if len(meaningful_q_words) >= 2 and not any(w in u.lower() for w in meaningful_q_words):
+                        continue
+                    top_authority_url = u
+                    break
+
+            if top_authority_url:
+                target_page_count = 1
+                current_page_budget = base_budget * 2
+                candidate_urls = [top_authority_url] + [u for u in all_urls if u != top_authority_url][:4]
             else:
-                context_parts.append(f"\n### Verified Images ({len(img_list)} Photos):")
-            for i, img in enumerate(img_list, 1):
-                title = img.get('title') or f"Image {i}"
-                img_url = img.get('image')
-                dim = f" [{img['width']}x{img['height']}]" if img.get('width') and img.get('height') else ""
-                context_parts.append(f"{i}. {img_url} ({title}{dim})")
-    else:
-        eng_header = f" [Engine: {', '.join(engines_used)}]" if engines_used else ""
-        context_parts.append(f"Web search results for: \"{display_query}\"{eng_header}")
-        context_parts.append("Snippets:\n" + "\n".join(all_snippets))
-        if page_contents:
-            context_parts.append("\nDetailed Page Contents:\n" + "\n\n".join(page_contents))
+                target_page_count = 2
+                current_page_budget = base_budget
+                candidate_urls = all_urls[:6]
 
-    final_result = "\n\n".join(context_parts)
-    
-    # Save to Cache
-    _SEARCH_CACHE[cache_key] = (now, final_result)
-    
-    return final_result
+            page_contents = []
+            if candidate_urls:
+                tasks = [fetch_page(u, custom_budget=current_page_budget) for u in candidate_urls]
+                fetched = await asyncio.gather(*tasks)
+                valid_pages = [f for f in fetched if f]
+                page_contents = valid_pages[:target_page_count]
+
+            context_parts = []
+            eng_header = f" [Engine: {', '.join(engines_used)}]" if engines_used else ""
+            context_parts.append(f"Web search results for: \"{display_query}\"{eng_header}")
+            context_parts.append("Snippets:\n" + "\n".join(all_snippets))
+            if page_contents:
+                context_parts.append("\nDetailed Page Contents:\n" + "\n\n".join(page_contents))
+
+            final_result = "\n\n".join(context_parts)
+            _SEARCH_CACHE[cache_key] = (now, final_result)
+            return final_result
+
+
+
+async def compare_search_engines(query: str) -> dict:
+    """
+    Executes live multi-engine comparison across:
+    - DuckDuckGo Text vs. Bing Text vs. Yahoo Text
+    - DuckDuckGo Images vs. Bing Images (both SafeSearch off)
+    - Yuki Synthesized Agent Context
+    """
+    q_clean = re.sub(r'[\'"]', ' ', query).strip()
+    encoded_q = urllib.parse.quote_plus(q_clean)
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://html.duckduckgo.com/',
+        'Origin': 'https://html.duckduckgo.com',
+    }
+
+    bing_headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cookie': 'SRCHHPGUSR=ADLT=OFF&NRSLT=10; SRCHD=AF=NOFORM;',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+    }
+
+    async with httpx.AsyncClient(timeout=8.0, verify=False) as client:
+        # 1. DuckDuckGo Text
+        async def get_ddg_text():
+            results = []
+            try:
+                def _do_ddgs():
+                    try:
+                        from ddgs import DDGS
+                    except ImportError:
+                        from duckduckgo_search import DDGS
+                    with DDGS(timeout=5) as ddgs_client:
+                        return list(ddgs_client.text(q_clean, safesearch="off", max_results=10))
+                raw = await asyncio.to_thread(_do_ddgs)
+                for r in raw:
+                    results.append({
+                        "title": r.get("title", ""),
+                        "snippet": r.get("body", ""),
+                        "url": r.get("href", "")
+                    })
+            except Exception as e:
+                results.append({"title": f"Error querying DDG: {e}", "snippet": "", "url": ""})
+            return results
+
+        # 2. Bing Text
+        async def get_bing_text():
+            results = []
+            try:
+                b_url = f"https://www.bing.com/search?q={encoded_q}&adlt=off&setmkt=en-us&setlang=en-us"
+                resp = await client.get(b_url, headers=bing_headers)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    main_results = soup.find("ol", id="b_results") or soup
+                    for r in main_results.find_all("li", class_="b_algo")[:10]:
+                        h2 = r.find("h2")
+                        p = r.find("p") or r.find(class_="b_caption")
+                        if h2 and h2.find("a"):
+                            a = h2.find("a")
+                            raw_href = a.get("href", "")
+                            if "bing.com/ck/a" in raw_href and "&u=" in raw_href:
+                                import base64
+                                try:
+                                    qs = urllib.parse.parse_qs(urllib.parse.urlparse(raw_href).query)
+                                    u_val = qs.get("u", [""])[0]
+                                    if u_val.startswith("a1"):
+                                        b64_str = u_val[2:] + "=" * ((4 - len(u_val[2:]) % 4) % 4)
+                                        raw_href = base64.urlsafe_b64decode(b64_str).decode("utf-8")
+                                except Exception:
+                                    pass
+                            results.append({
+                                "title": a.get_text(strip=True),
+                                "snippet": p.get_text(strip=True) if p else "",
+                                "url": raw_href
+                            })
+            except Exception as e:
+                results.append({"title": f"Error querying Bing: {e}", "snippet": "", "url": ""})
+            return results
+
+        # 3. Yahoo Text
+        async def get_yahoo_text():
+            results = []
+            try:
+                def _do_yahoo_compare():
+                    try:
+                        import primp
+                        p_client = primp.Client(impersonate="random")
+                        return p_client.get(f"https://search.yahoo.com/search?p={encoded_q}")
+                    except Exception:
+                        return None
+
+                p_resp = await asyncio.to_thread(_do_yahoo_compare)
+                html_text = p_resp.text if p_resp and p_resp.status_code == 200 else ""
+                if not html_text:
+                    resp = await client.get(f"https://search.yahoo.com/search?p={encoded_q}", headers=headers)
+                    if resp.status_code == 200:
+                        html_text = resp.text
+
+                if html_text:
+                    soup = BeautifulSoup(html_text, "html.parser")
+                    seen_y_urls = set()
+                    for item in soup.select("div.algo, #web ol > li, div.dd"):
+                        link_el = item.find("a")
+                        desc_el = item.find(class_=lambda c: c and any(k in c for k in ["compText", "fz-m", "s-desc"])) or item.find("p")
+                        if link_el:
+                            href = link_el.get("href", "")
+                            if "r.search.yahoo.com" in href:
+                                ru_match = re.search(r'/RU=([^/]+)/', href)
+                                if ru_match:
+                                    href = urllib.parse.unquote(ru_match.group(1))
+                            title = link_el.get_text(strip=True)
+                            if href and "yahoo.com" not in href and href not in seen_y_urls and len(title) > 3:
+                                seen_y_urls.add(href)
+                                desc = desc_el.get_text(strip=True) if desc_el else ""
+                                results.append({
+                                    "title": title,
+                                    "snippet": desc,
+                                    "url": href
+                                })
+                                if len(results) >= 8:
+                                    break
+            except Exception as e:
+                results.append({"title": f"Error querying Yahoo: {e}", "snippet": "", "url": ""})
+            return results
+
+        # 4. DuckDuckGo Images
+        async def get_ddg_images():
+            results = []
+            try:
+                def _do_ddgs_img():
+                    try:
+                        from ddgs import DDGS
+                    except ImportError:
+                        from duckduckgo_search import DDGS
+                    with DDGS(timeout=5) as ddgs_client:
+                        return list(ddgs_client.images(q_clean, safesearch="off", max_results=12))
+                raw = await asyncio.to_thread(_do_ddgs_img)
+                for r in raw:
+                    results.append({
+                        "title": r.get("title", ""),
+                        "image": r.get("image", ""),
+                        "url": r.get("url", ""),
+                        "width": r.get("width"),
+                        "height": r.get("height"),
+                        "source": r.get("source", "")
+                    })
+            except Exception as e:
+                pass
+            return results
+
+        # 5. Bing Images
+        async def get_bing_images():
+            results = []
+            try:
+                b_url = f"https://www.bing.com/images/search?q={encoded_q}&adlt=off&form=HDRSC2&first=1"
+                resp = await client.get(b_url, headers=headers, cookies={"SRCHHPGUSR": "ADLT=OFF"})
+                if resp.status_code == 200 and resp.text:
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    for a in soup.find_all("a", class_="iusc")[:12]:
+                        m = a.get("m")
+                        if m:
+                            try:
+                                mj = json.loads(m)
+                                results.append({
+                                    "title": mj.get("t", "").strip(),
+                                    "image": mj.get("murl", "").strip(),
+                                    "url": mj.get("purl", "").strip(),
+                                    "width": mj.get("width"),
+                                    "height": mj.get("height"),
+                                    "source": "Bing Scrape"
+                                })
+                            except Exception:
+                                pass
+            except Exception as e:
+                pass
+            return results
+
+        # 6. Yuki Agent View
+        async def get_yuki_result():
+            try:
+                return await web_search(query)
+            except Exception as e:
+                return f"Error executing web_search: {e}"
+
+        ddg_t, bing_t, yahoo_t, ddg_i, bing_i, yuki_res = await asyncio.gather(
+            get_ddg_text(),
+            get_bing_text(),
+            get_yahoo_text(),
+            get_ddg_images(),
+            get_bing_images(),
+            get_yuki_result()
+        )
+
+        return {
+            "query": query,
+            "text": {
+                "duckduckgo": ddg_t,
+                "bing": bing_t,
+                "yahoo": yahoo_t
+            },
+            "images": {
+                "duckduckgo": ddg_i,
+                "bing": bing_i
+            },
+            "yuki_context": yuki_res
+        }
+
 
 
 

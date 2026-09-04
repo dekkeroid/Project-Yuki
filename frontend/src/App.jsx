@@ -1173,7 +1173,11 @@ const App = () => {
       }
     } else if (msg.type === 'session_switched' || msg.type === 'chat_update') {
       if (msg.messages && Array.isArray(msg.messages)) {
-        const cleanMsgs = msg.messages.filter(m => !(m.role === 'user' && typeof m.content === 'string' && m.content.includes('[SYSTEM EVENT:')));
+        const cleanMsgs = msg.messages.filter(m => !(m.role === 'user' && typeof m.content === 'string' && (
+          m.content.includes('[SYSTEM EVENT:') || 
+          m.content.includes('[SCENARIO:') || 
+          m.content.includes('[STARTUP_GREETING]')
+        )));
         setMessages(cleanMsgs);
       }
     } else if (msg.type === 'speech') {
@@ -1792,20 +1796,35 @@ const App = () => {
         return;
       }
       hasSentStartupGreetingRef.current = true;
-      console.log('[Startup] Requesting mood-driven LLM startup greeting...');
+      console.log('[Startup] Requesting dynamic contextual LLM startup greeting...');
       setTtsStreamActive(true);
       setIsThinking(true);
-      const greetingPrompt = "[SYSTEM EVENT: User just opened Project Yuki. Give a brief, warm 1-sentence greeting (under 12 words) reflecting your current mood state. Start your reply with <yuki_anim:wave/> (using angle brackets <>).]";
-      socketRef.current.send(JSON.stringify({ type: 'chat', message: greetingPrompt, is_startup_greeting: true }));
+      socketRef.current.send(JSON.stringify({ type: 'chat', message: '[STARTUP_GREETING]', is_startup_greeting: true }));
     } else {
       hasSentStartupGreetingRef.current = true;
-      // Fallback offline TTS voice greeting + wave motion
-      setCustomAnimation('greeting_wave');
+      // Fallback offline TTS voice greeting + motion
+      const currentHour = new Date().getHours();
+      const userName = profile?.user_name || 'Master';
+      let fallbackMsg = `Welcome back, ${userName}! I'm ready to help you today.`;
+      let fallbackAnim = 'greeting_wave';
+      if (currentHour >= 5 && currentHour < 12) {
+        fallbackMsg = `Good morning, ${userName}! Ready for what's ahead today.`;
+        fallbackAnim = 'stretching';
+      } else if (currentHour >= 12 && currentHour < 17) {
+        fallbackMsg = `Good afternoon, ${userName}! Hope your day is going smoothly.`;
+        fallbackAnim = 'greeting_wave';
+      } else if (currentHour >= 17 && currentHour < 22) {
+        fallbackMsg = `Good evening, ${userName}! Welcome back to your desk.`;
+        fallbackAnim = 'greeting_wave';
+      } else {
+        fallbackMsg = `Working late tonight, ${userName}? Remember to take care of yourself.`;
+        fallbackAnim = 'yawning';
+      }
+      setCustomAnimation(fallbackAnim);
       setTimeout(() => setCustomAnimation(''), 100);
-      const fallbackMsg = "Welcome back, Master! I'm ready to help you today.";
       speakSystemMessage(fallbackMsg, 'relaxed');
     }
-  }, [isBackendFullyReady, backendStatus, profile?.settings?.no_llm_mode]);
+  }, [isBackendFullyReady, backendStatus, profile?.settings?.no_llm_mode, profile?.user_name]);
 
   // Living Presence & Sleep / Awakening Controller
   const isSleepingRef = useRef(false);
@@ -2282,6 +2301,35 @@ const App = () => {
         return;
       }
 
+      if (cmd === '/tts-test' || cmd === '/tts') {
+        const rawWords = text.slice(parts[0].length).trim();
+        if (!rawWords) {
+          const helpMsg = "Please provide text to test. E.g. /tts-test Mm... you were gone for eleven whole minutes. Welcome back, dekki.";
+          setMessages((prev) => [
+            ...prev,
+            { role: 'user', content: text },
+            { role: 'assistant', content: helpMsg }
+          ]);
+          speakSystemMessage(helpMsg, 'neutral');
+          return;
+        }
+
+        setMessages((prev) => [
+          ...prev,
+          { role: 'user', content: text },
+          {
+            role: 'assistant',
+            content: rawWords,
+            backend: 'tts_test',
+            timestamp: Date.now() / 1000
+          }
+        ]);
+
+        const expr = detectExpression(rawWords);
+        speakSystemMessage(rawWords, expr);
+        return;
+      }
+
       if (cmd === '/read' || cmd === '/sum') {
         const filePath = parts.slice(1).join(' ').trim().replace(/^"(.*)"$/, '$1'); // strip quotes if any
         if (!filePath) {
@@ -2669,9 +2717,11 @@ const App = () => {
             return;
           }
           responseText = matchingAnim.responseText;
-          setCustomAnimation(matchingAnim.name);
-          setTimeout(() => setCustomAnimation(''), 100);
-          if (matchingAnim.name === 'napping' || cmd === '/nap' || cmd === '/ani-nap') {
+          const isNapCmd = matchingAnim.name === 'napping' || cmd === '/nap' || cmd === '/ani-nap';
+          if (!isNapCmd) {
+            setCustomAnimation(matchingAnim.name);
+            setTimeout(() => setCustomAnimation(''), 100);
+          } else {
             isSleepingRef.current = true;
             sleepTypeRef.current = 'napping';
             sleepStartedAtRef.current = Date.now();
@@ -2698,7 +2748,11 @@ const App = () => {
 
         const expr = detectExpression(responseText);
         setAvatarExpression(expr);
-        speakSystemMessage(responseText, expr);
+        // Do NOT speak audio for companion naps to prevent audio/thinking events from immediately waking her up
+        const isNapCmd = cmd === '/nap' || cmd === '/ani-nap' || responseText.includes('power nap');
+        if (!isNapCmd) {
+          speakSystemMessage(responseText, expr);
+        }
         return;
       }
     }

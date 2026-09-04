@@ -27,6 +27,8 @@ _ort_datas, _ort_bins, _ort_hidden = collect_all('onnxruntime')
 _hf_datas, _hf_bins, _hf_hidden = collect_all('huggingface_hub')
 _pip_datas, _pip_bins, _pip_hidden = collect_all('pip')
 _imageio_datas, _imageio_bins, _imageio_hidden = collect_all('imageio_ffmpeg')
+_ddgs_datas, _ddgs_bins, _ddgs_hidden = collect_all('ddgs')
+_primp_datas, _primp_bins, _primp_hidden = collect_all('primp')
 
 # NVIDIA CUDA DLLs only (skip headers, .lib, Python files to save ~2GB)
 # Only CUDA 12 components are bundled — cublas/cudart/cudnn/cufft are required by BOTH
@@ -103,6 +105,9 @@ manual_hidden = [
     'bs4',
     'httpx',
     'aiohttp',
+    'ddgs',
+    'primp',
+    'duckduckgo_search',
     'app.channels',
     'app.channels.telegram_service',
     'app.tools.telegram_tools',
@@ -159,6 +164,7 @@ all_datas = (
     + _segments_datas + _csvw_datas + _langtags_datas
     + _faster_datas + _ct2_datas + _ort_datas
     + _nvidia_datas + _hf_datas + _pip_datas + _imageio_datas
+    + _ddgs_datas + _primp_datas
 )
 all_binaries = (
     manual_binaries
@@ -166,6 +172,7 @@ all_binaries = (
     + _segments_bins + _csvw_bins + _langtags_bins
     + _faster_bins + _ct2_bins + _ort_bins
     + _nvidia_bins + _hf_bins + _pip_bins + _imageio_bins
+    + _ddgs_bins + _primp_bins
 )
 all_hidden = (
     manual_hidden
@@ -173,6 +180,7 @@ all_hidden = (
     + _segments_hidden + _csvw_hidden + _langtags_hidden
     + _faster_hidden + _ct2_hidden + _ort_hidden
     + _nvidia_hidden + _hf_hidden + _pip_hidden + _imageio_hidden
+    + _ddgs_hidden + _primp_hidden
 )
 
 a = Analysis(

@@ -119,13 +119,13 @@ const AvatarViewer = ({
   }, [sleepState]);
 
   useEffect(() => {
-    if (isThinking || audioLevel > 0.01) {
+    if (isThinking) {
       if (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping') {
         sleepStateRef.current = 'active';
         sleepProgressRef.current = 0.0;
       }
     }
-  }, [isThinking, audioLevel]);
+  }, [isThinking]);
 
   useEffect(() => {
     activeModelRef.current = activeModel;
@@ -1505,16 +1505,21 @@ const AvatarViewer = ({
           startCustomAnimationRef.current = null;
 
           if (!disabledAnimationsRef.current.includes(customName)) {
-            idleAnimState = customName;
-            const matchingAnim = ANIMATIONS.find(a => a.name === customName);
-            if (matchingAnim) {
-              idleAnimDuration = matchingAnim.duration;
+            // Guard: If sleeping/napping, do not run the temporary 5s nod-off gesture that startles awake
+            if (customName === 'napping' && (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping')) {
+              // Procedural sleeping already maintains sleeping pose
             } else {
-              idleAnimDuration = 4.0;
-            }
+              idleAnimState = customName;
+              const matchingAnim = ANIMATIONS.find(a => a.name === customName);
+              if (matchingAnim) {
+                idleAnimDuration = matchingAnim.duration;
+              } else {
+                idleAnimDuration = 4.0;
+              }
 
-            idleAnimProgress = 0;
-            inactivityTimer = 0;
+              idleAnimProgress = 0;
+              inactivityTimer = 0;
+            }
           }
         }
 

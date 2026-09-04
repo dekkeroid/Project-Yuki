@@ -77,6 +77,10 @@ TOOL_MODE = os.environ.get("TOOL_MODE", "basic").strip().lower()
 
 # User Location / Country setting ("Auto" for system detection, or custom country string)
 USER_COUNTRY = os.environ.get("USER_COUNTRY", "Auto")
+USER_LOCATION = os.environ.get("USER_LOCATION", "Auto")
+GREETING_WEATHER_ENABLED = os.environ.get("GREETING_WEATHER_ENABLED", "True").lower() == "true"
+GREETING_NEWS_ENABLED = os.environ.get("GREETING_NEWS_ENABLED", "True").lower() == "true"
+GREETING_NEWS_TOPICS = os.environ.get("GREETING_NEWS_TOPICS", "")
 
 # User-configurable list of tools ALWAYS included when dynamic tool calling is active.
 # None = not configured -> selector falls back to its hardcoded defaults.
@@ -174,6 +178,7 @@ TTS_PRELOAD = os.environ.get("TTS_PRELOAD", "true").strip().lower() in ("1", "tr
 TTS_GPU_MEM_LIMIT_MB = int(os.environ.get("TTS_GPU_MEM_LIMIT_MB", "0"))  # 0 = Dynamic allocation with HEURISTIC cuDNN search
 TTS_IDLE_TIMEOUT = int(os.environ.get("TTS_IDLE_TIMEOUT", "300"))  # seconds before auto-unload when idle
 TTS_AUTO_UNLOAD = os.environ.get("TTS_AUTO_UNLOAD", "false").strip().lower() in ("1", "true", "yes", "on")
+KOKORO_IPA_INTERJECTIONS = os.environ.get("KOKORO_IPA_INTERJECTIONS", "false").strip().lower() in ("1", "true", "yes", "on")
 STT_PRELOAD = os.environ.get("STT_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload STT Whisper model on startup
 STT_DEVICE = os.environ.get("STT_DEVICE", "auto")  # "auto", "gpu", "cpu"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
@@ -255,10 +260,15 @@ TELEGRAM_VERBOSE_TOOLS = os.environ.get("TELEGRAM_VERBOSE_TOOLS", "true").strip(
 # Proactive Desktop Nudges & Ambient Presence
 PROACTIVE_NUDGE_MODE = os.environ.get("PROACTIVE_NUDGE_MODE", "visual_only").strip().lower()  # "visual_only", "spoken", "disabled"
 PROACTIVE_NUDGE_INTERVAL_MIN = int(os.environ.get("PROACTIVE_NUDGE_INTERVAL_MIN", "45"))
+PROACTIVE_NUDGE_ENGINE = os.environ.get("PROACTIVE_NUDGE_ENGINE", "template").strip().lower()  # "template", "llm"
+PROACTIVE_NUDGE_INCLUDE_SCREEN = os.environ.get("PROACTIVE_NUDGE_INCLUDE_SCREEN", "false").strip().lower() in ("true", "1", "yes")
+PROACTIVE_NUDGE_QUIET_MIN = int(os.environ.get("PROACTIVE_NUDGE_QUIET_MIN", "30"))
+PROACTIVE_NUDGE_BOREDOM_PCT = int(os.environ.get("PROACTIVE_NUDGE_BOREDOM_PCT", "80"))
 
 # Desk Sleep & Companion Nap Timers
 DESK_SLEEP_IDLE_MIN = int(os.environ.get("DESK_SLEEP_IDLE_MIN", "3"))
 COMPANION_NAP_SILENCE_MIN = int(os.environ.get("COMPANION_NAP_SILENCE_MIN", "5"))
+COMPANION_NAP_ENERGY_PCT = int(os.environ.get("COMPANION_NAP_ENERGY_PCT", "30"))
 
 
 

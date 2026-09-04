@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon, Camera, CloudSun, Newspaper, MapPin } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -532,6 +532,28 @@ const ControlDashboard = ({
   const refreshTimerRef = useRef(null);
   const refreshSimpleTimerRef = useRef(null);
   const refreshEmbeddingTimerRef = useRef(null);
+  const locationDebounceTimerRef = useRef(null);
+  const newsTopicsDebounceTimerRef = useRef(null);
+
+  const handleLocationChange = (val) => {
+    setSettings(prev => ({ ...prev, user_location: val, user_country: val }));
+    if (locationDebounceTimerRef.current) {
+      clearTimeout(locationDebounceTimerRef.current);
+    }
+    locationDebounceTimerRef.current = setTimeout(() => {
+      handleUpdateSetting({ user_location: val, user_country: val });
+    }, 400);
+  };
+
+  const handleNewsTopicsChange = (val) => {
+    setSettings(prev => ({ ...prev, greeting_news_topics: val }));
+    if (newsTopicsDebounceTimerRef.current) {
+      clearTimeout(newsTopicsDebounceTimerRef.current);
+    }
+    newsTopicsDebounceTimerRef.current = setTimeout(() => {
+      handleUpdateSetting('greeting_news_topics', val);
+    }, 400);
+  };
 
   const [showRelationshipCard, setShowRelationshipCard] = useState(false);
   const [showJournalModal, setShowJournalModal] = useState(false);
@@ -832,6 +854,10 @@ const ControlDashboard = ({
     llm_base_url: '',
     llm_api_key: '',
     user_country: 'Auto',
+    user_location: 'Auto',
+    greeting_weather_enabled: true,
+    greeting_news_enabled: true,
+    greeting_news_topics: '',
     send_tools_in_simple: false,
     endpoint_strategy: 'single',
     llm_simple_backend: 'lmstudio',
@@ -850,6 +876,7 @@ const ControlDashboard = ({
     tts_voice: 'af_bella',
     tts_rate: 'auto',
     tts_device: 'auto',
+    kokoro_ipa_interjections: false,
     stt_device: 'auto',
     character_name: 'Yuki',
     persona_preset: 'sassy_tech_gf',
@@ -911,8 +938,13 @@ const ControlDashboard = ({
     telegram_verbose_tools: true,
     proactive_nudge_mode: 'visual_only',
     proactive_nudge_interval_min: 45,
+    proactive_nudge_engine: 'template',
+    proactive_nudge_include_screen: false,
+    proactive_nudge_quiet_min: 30,
+    proactive_nudge_boredom_pct: 80,
     desk_sleep_idle_min: 3,
     companion_nap_silence_min: 5,
+    companion_nap_energy_pct: 30,
     ...(profile?.settings || {})
   });
 
@@ -2768,7 +2800,7 @@ const ControlDashboard = ({
                     )}
                   </div>
                   <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginBottom: '8px' }}>
-                    When bored (&gt;80% after 30m quiet), Yuki performs gentle desktop check-ins (leaning forward or daydreaming) without interrupting your focus.
+                    When bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}% after {settings.proactive_nudge_quiet_min ?? 30}m quiet), Yuki performs gentle desktop check-ins (leaning forward or daydreaming) without interrupting your focus.
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                     <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Nudge Mode</span>
@@ -2793,8 +2825,87 @@ const ControlDashboard = ({
                       </button>
                     ))}
                   </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>AI Engine</span>
+                    {[
+                      { key: 'template', label: 'Scripted (0 VRAM)' },
+                      { key: 'llm', label: 'LLM Dynamic' }
+                    ].map(opt => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => handleUpdateSetting('proactive_nudge_engine', opt.key)}
+                        style={{
+                          fontSize: '0.66rem', fontWeight: 600, padding: '3px 9px',
+                          borderRadius: '6px', cursor: 'pointer', transition: 'all 0.18s ease',
+                          background: (settings.proactive_nudge_engine || 'template') === opt.key ? 'rgba(45,212,191,0.3)' : 'rgba(255,255,255,0.06)',
+                          border: (settings.proactive_nudge_engine || 'template') === opt.key ? '1px solid rgba(45,212,191,0.7)' : '1px solid rgba(255,255,255,0.1)',
+                          color: (settings.proactive_nudge_engine || 'template') === opt.key ? '#ccfbf1' : 'rgba(255,255,255,0.45)'
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {(settings.proactive_nudge_engine || 'template') === 'llm' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Screen Vision</span>
+                      {[
+                        { val: false, label: 'Off' },
+                        { val: true, label: 'Enabled' }
+                      ].map(opt => {
+                        const active = (settings.proactive_nudge_include_screen ?? false) === opt.val;
+                        return (
+                          <button
+                            key={String(opt.val)}
+                            type="button"
+                            onClick={() => handleUpdateSetting('proactive_nudge_include_screen', opt.val)}
+                            style={{
+                              fontSize: '0.66rem', fontWeight: 600, padding: '3px 9px',
+                              borderRadius: '6px', cursor: 'pointer', transition: 'all 0.18s ease',
+                              background: active ? 'rgba(168,85,247,0.45)' : 'rgba(255,255,255,0.06)',
+                              border: active ? '1px solid rgba(168,85,247,0.8)' : '1px solid rgba(255,255,255,0.1)',
+                              color: active ? '#fff' : 'rgba(255,255,255,0.45)'
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Quiet Silence</span>
+                    <input
+                      type="range"
+                      min="10"
+                      max="60"
+                      step="5"
+                      value={settings.proactive_nudge_quiet_min ?? 30}
+                      onChange={(e) => handleUpdateSetting('proactive_nudge_quiet_min', parseInt(e.target.value, 10))}
+                      style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
+                    />
+                    <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '45px', textAlign: 'right' }}>
+                      {settings.proactive_nudge_quiet_min ?? 30}m
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Boredom Trigger</span>
+                    <input
+                      type="range"
+                      min="50"
+                      max="95"
+                      step="5"
+                      value={settings.proactive_nudge_boredom_pct ?? 80}
+                      onChange={(e) => handleUpdateSetting('proactive_nudge_boredom_pct', parseInt(e.target.value, 10))}
+                      style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
+                    />
+                    <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '45px', textAlign: 'right' }}>
+                      {settings.proactive_nudge_boredom_pct ?? 80}%
+                    </span>
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Cooldown</span>
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Repeat Delay</span>
                     <input
                       type="range"
                       min="15"
@@ -3974,6 +4085,198 @@ const ControlDashboard = ({
                   />
                 </div>
               </div>
+
+              {/* Autonomous Proactive Nudges & Persona Check-ins Card */}
+              <div className="card-group" style={{ marginTop: '12px' }}>
+                <div className="card-group-header">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <span className="card-group-title">Autonomous Presence & Proactive Check-ins</span>
+                </div>
+                <div style={{ padding: '4px 0' }}>
+                  <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', marginBottom: '10px', lineHeight: 1.4 }}>
+                    Configure how Yuki spontaneously checks in on you when bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}% after {settings.proactive_nudge_quiet_min ?? 30}m quiet). She observes your active window, dwell time, and time of day to deliver a warm, in-character check-in.
+                  </div>
+
+                  {/* Engine Selection */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f1f5f9' }}>Generation Engine</div>
+                      <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.45)' }}>
+                        {(settings.proactive_nudge_engine || 'template') === 'llm'
+                          ? 'AI-generated 1-sentence companion check-in using your active persona voice'
+                          : 'Versatile natural spoken dialogues with zero GPU VRAM overhead'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {[
+                        { key: 'template', label: 'Scripted (0 VRAM)' },
+                        { key: 'llm', label: 'LLM Dynamic' }
+                      ].map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => handleUpdateSetting('proactive_nudge_engine', opt.key)}
+                          style={{
+                            fontSize: '0.68rem', fontWeight: 600, padding: '5px 11px',
+                            borderRadius: '8px', cursor: 'pointer', transition: 'all 0.18s ease',
+                            background: (settings.proactive_nudge_engine || 'template') === opt.key ? 'rgba(168,85,247,0.35)' : 'rgba(255,255,255,0.06)',
+                            border: (settings.proactive_nudge_engine || 'template') === opt.key ? '1px solid rgba(168,85,247,0.7)' : '1px solid rgba(255,255,255,0.1)',
+                            color: (settings.proactive_nudge_engine || 'template') === opt.key ? '#f3e8ff' : 'rgba(255,255,255,0.5)'
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Conditional Screen Context Toggle (LLM Mode Only) */}
+                  {(settings.proactive_nudge_engine || 'template') === 'llm' && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      marginBottom: '12px',
+                      flexWrap: 'wrap',
+                      background: 'rgba(168,85,247,0.08)',
+                      border: '1px solid rgba(168,85,247,0.25)',
+                      padding: '8px 12px',
+                      borderRadius: '10px'
+                    }}>
+                      <div style={{ flex: 1, minWidth: '180px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Camera className="w-3.5 h-3.5 text-purple-300" />
+                          <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f3e8ff' }}>Include Screen Snapshot</span>
+                        </div>
+                        <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px', lineHeight: 1.3 }}>
+                          Sends a lightweight desktop screenshot so Yuki can see what you're working on (automatically adapts if your model supports vision).
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {[
+                          { val: false, label: 'Off' },
+                          { val: true, label: 'Enabled' }
+                        ].map(opt => {
+                          const active = (settings.proactive_nudge_include_screen ?? false) === opt.val;
+                          return (
+                            <button
+                              key={String(opt.val)}
+                              type="button"
+                              onClick={() => handleUpdateSetting('proactive_nudge_include_screen', opt.val)}
+                              style={{
+                                fontSize: '0.66rem',
+                                fontWeight: 600,
+                                padding: '4px 10px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                transition: 'all 0.18s ease',
+                                background: active ? 'rgba(168,85,247,0.45)' : 'rgba(255,255,255,0.06)',
+                                border: active ? '1px solid rgba(168,85,247,0.8)' : '1px solid rgba(255,255,255,0.1)',
+                                color: active ? '#fff' : 'rgba(255,255,255,0.45)'
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Nudge Delivery Mode */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f1f5f9' }}>Delivery Mode</div>
+                      <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.45)' }}>
+                        Speech bubble only or voiced through TTS audio
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {[
+                        { key: 'visual_only', label: 'Visual Subtle' },
+                        { key: 'spoken', label: 'Spoken Voice' },
+                        { key: 'disabled', label: 'Disabled' }
+                      ].map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => handleUpdateSetting('proactive_nudge_mode', opt.key)}
+                          style={{
+                            fontSize: '0.68rem', fontWeight: 600, padding: '5px 11px',
+                            borderRadius: '8px', cursor: 'pointer', transition: 'all 0.18s ease',
+                            background: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? 'rgba(45,212,191,0.3)' : 'rgba(255,255,255,0.06)',
+                            border: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? '1px solid rgba(45,212,191,0.7)' : '1px solid rgba(255,255,255,0.1)',
+                            color: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? '#ccfbf1' : 'rgba(255,255,255,0.5)'
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Quiet Silence Threshold */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
+                    <div style={{ width: '130px' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Quiet Silence</div>
+                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Silence before check-in</div>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="60"
+                      step="5"
+                      value={settings.proactive_nudge_quiet_min ?? 30}
+                      onChange={(e) => handleUpdateSetting('proactive_nudge_quiet_min', parseInt(e.target.value, 10))}
+                      style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
+                    />
+                    <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '40px', textAlign: 'right' }}>
+                      {settings.proactive_nudge_quiet_min ?? 30}m
+                    </span>
+                  </div>
+
+                  {/* Boredom Trigger Threshold */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
+                    <div style={{ width: '130px' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Boredom Trigger</div>
+                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Companion boredom target</div>
+                    </div>
+                    <input
+                      type="range"
+                      min="50"
+                      max="95"
+                      step="5"
+                      value={settings.proactive_nudge_boredom_pct ?? 80}
+                      onChange={(e) => handleUpdateSetting('proactive_nudge_boredom_pct', parseInt(e.target.value, 10))}
+                      style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
+                    />
+                    <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '40px', textAlign: 'right' }}>
+                      {settings.proactive_nudge_boredom_pct ?? 80}%
+                    </span>
+                  </div>
+
+                  {/* Cooldown Interval */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ width: '130px' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Repeat Cooldown</div>
+                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Delay between check-ins</div>
+                    </div>
+                    <input
+                      type="range"
+                      min="15"
+                      max="120"
+                      step="5"
+                      value={settings.proactive_nudge_interval_min || 45}
+                      onChange={(e) => handleUpdateSetting('proactive_nudge_interval_min', parseInt(e.target.value, 10))}
+                      style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
+                    />
+                    <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '40px', textAlign: 'right' }}>
+                      {settings.proactive_nudge_interval_min || 45}m
+                    </span>
+                  </div>
+                </div>
+              </div>
             </>
           ) : activeTab === 'tasks' ? (
             <>
@@ -5107,21 +5410,29 @@ const ControlDashboard = ({
                     </div>
                   </div>
 
-                  {/* User Location & Country Card */}
+                  {/* User Location & Startup Greeting Context Card */}
                   <div className="card-group" style={{ marginBottom: '12px' }}>
                     <div className="card-group-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Globe className="w-4 h-4 text-emerald-400" />
-                      <span className="card-group-title">User Location & Country Context</span>
+                      <span className="card-group-title">User Location & Startup Greeting Context</span>
                     </div>
+
                     <div style={{ marginTop: '10px' }}>
-                      <label style={{ fontSize: '0.72rem', color: '#cbd5e1', display: 'block', marginBottom: '4px' }}>
-                        Country / Location Name (Set "Auto" for automatic OS detection):
+                      <label style={{ fontSize: '0.72rem', color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                        <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>City, State / Region, Country (Set "Auto" for automatic detection):</span>
                       </label>
                       <input
                         type="text"
-                        placeholder="Auto (e.g. India, United States, Japan)"
-                        value={settings.user_country ?? 'Auto'}
-                        onChange={(e) => handleUpdateSetting('user_country', e.target.value)}
+                        placeholder="Auto (e.g. Patna, Bihar, India or Tokyo, Japan or London)"
+                        value={settings.user_location !== undefined ? settings.user_location : (settings.user_country || 'Auto')}
+                        onChange={(e) => handleLocationChange(e.target.value)}
+                        onBlur={(e) => {
+                          if (locationDebounceTimerRef.current) {
+                            clearTimeout(locationDebounceTimerRef.current);
+                          }
+                          handleUpdateSetting({ user_location: e.target.value, user_country: e.target.value });
+                        }}
                         style={{
                           width: '100%',
                           padding: '6px 10px',
@@ -5133,8 +5444,76 @@ const ControlDashboard = ({
                         }}
                       />
                       <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.45)', marginTop: '4px' }}>
-                        Injected into Yuki's system environment prompt so she is aware of your location.
+                        Injected into Yuki's environment so she knows your exact city, state, and local weather.
                       </div>
+                    </div>
+
+                    {/* Greeting Real-World Context Toggles */}
+                    <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>
+                        Startup Situational Context:
+                      </div>
+
+                      {/* Weather Toggle */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={settings.greeting_weather_enabled ?? true}
+                          onChange={(e) => handleUpdateSetting('greeting_weather_enabled', e.target.checked)}
+                          style={{ accentColor: '#10b981', width: '14px', height: '14px', cursor: 'pointer' }}
+                        />
+                        <CloudSun className="w-3.5 h-3.5 text-emerald-400" />
+                        <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.85)' }}>
+                          Include local weather in startup greeting context
+                        </span>
+                      </label>
+
+                      {/* News Toggle */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={settings.greeting_news_enabled ?? true}
+                          onChange={(e) => handleUpdateSetting('greeting_news_enabled', e.target.checked)}
+                          style={{ accentColor: '#10b981', width: '14px', height: '14px', cursor: 'pointer' }}
+                        />
+                        <Newspaper className="w-3.5 h-3.5 text-cyan-400" />
+                        <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.85)' }}>
+                          Include regional / targeted news headlines in startup greeting
+                        </span>
+                      </label>
+
+                      {/* Custom News Topics input */}
+                      {(settings.greeting_news_enabled ?? true) && (
+                        <div style={{ marginTop: '4px', marginLeft: '22px' }}>
+                          <label style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', marginBottom: '3px' }}>
+                            Custom News Topics or Keywords (leave empty for general regional news):
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. PSU vacancies, engineering govt jobs, tech, AI research"
+                            value={settings.greeting_news_topics ?? ''}
+                            onChange={(e) => handleNewsTopicsChange(e.target.value)}
+                            onBlur={(e) => {
+                              if (newsTopicsDebounceTimerRef.current) {
+                                clearTimeout(newsTopicsDebounceTimerRef.current);
+                              }
+                              handleUpdateSetting('greeting_news_topics', e.target.value);
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '5px 8px',
+                              fontSize: '0.75rem',
+                              background: 'rgba(0,0,0,0.3)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '6px',
+                              color: '#fff'
+                            }}
+                          />
+                          <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.4)', marginTop: '3px' }}>
+                            Yuki only mentions a headline if it genuinely seems important or relevant to you.
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -7251,6 +7630,57 @@ const ControlDashboard = ({
                         </button>
                       </div>
                     </div>
+
+                    {/* Expressive Interjections & Direct IPA */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ paddingRight: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span className="field-label" style={{ margin: 0 }}>Expressive Interjections & Direct IPA</span>
+                            <span style={{
+                              fontSize: '0.62rem',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              background: settings.kokoro_ipa_interjections ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)',
+                              color: settings.kokoro_ipa_interjections ? '#4ade80' : '#94a3b8',
+                              border: `1px solid ${settings.kokoro_ipa_interjections ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                              fontWeight: 600
+                            }}>
+                              {settings.kokoro_ipa_interjections ? 'Active' : 'Off'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '2px', lineHeight: '1.35' }}>
+                            Injects native Kokoro IPA phonemes for sleepy murmurs, groans, and anime sounds. When off, expressive sounds are spoken as clean conversational words.
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateSetting('kokoro_ipa_interjections', !settings.kokoro_ipa_interjections)}
+                          style={{
+                            background: settings.kokoro_ipa_interjections ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.08)',
+                            border: `1px solid ${settings.kokoro_ipa_interjections ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                            borderRadius: '12px',
+                            width: '40px',
+                            height: '22px',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            flexShrink: 0
+                          }}
+                        >
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            background: settings.kokoro_ipa_interjections ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                            position: 'absolute',
+                            top: '2px',
+                            left: settings.kokoro_ipa_interjections ? '20px' : '2px',
+                            transition: 'all 0.2s ease'
+                          }} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   {/* STT Input Card Group */}
@@ -8874,7 +9304,7 @@ const ControlDashboard = ({
                           </span>
                         </div>
                         <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginBottom: '8px', lineHeight: '1.3' }}>
-                          Minutes of quiet with Yuki when her energy is low (&le;40) before she dozes off.
+                          Minutes of quiet with Yuki when her energy is low (&le;{settings.companion_nap_energy_pct ?? 30}%) before she dozes off.
                         </div>
                         <input
                           type="range"
@@ -8889,6 +9319,33 @@ const ControlDashboard = ({
                           <span>1m (Quick)</span>
                           <span>15m</span>
                           <span>30m (Long)</span>
+                        </div>
+                      </div>
+
+                      {/* Nap Trigger Energy Threshold */}
+                      <div style={{ background: 'rgba(0,0,0,0.2)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)', marginTop: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#e2e8f0' }}>Nap Trigger Energy</span>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#38bdf8', background: 'rgba(56,189,248,0.15)', padding: '2px 7px', borderRadius: '6px' }}>
+                            {settings.companion_nap_energy_pct ?? 30}%
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginBottom: '8px', lineHeight: '1.3' }}>
+                          Yuki takes a companion power nap only when her stamina drops below this percentage.
+                        </div>
+                        <input
+                          type="range"
+                          min="15"
+                          max="50"
+                          step="5"
+                          value={settings.companion_nap_energy_pct ?? 30}
+                          onChange={(e) => handleUpdateSetting('companion_nap_energy_pct', parseInt(e.target.value, 10))}
+                          style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'rgba(255,255,255,0.3)', marginTop: '2px' }}>
+                          <span>15% (Deep Fatigue)</span>
+                          <span>30% (Default)</span>
+                          <span>50% (Frequent Naps)</span>
                         </div>
                       </div>
                     </div>
