@@ -197,11 +197,17 @@ export const STATIC_COMMANDS = [
   { cmd: '/read',          description: 'Search and read document content' },
   { cmd: '/sum',           description: 'Search and summarize document content' },
   { cmd: '/wink',          description: 'Yuki winks at you' },
+  { cmd: '/ani-wink',      description: 'Yuki winks at you (alias)' },
   { cmd: '/angry',         description: 'Yuki pouts angrily' },
+  { cmd: '/ani-angry',     description: 'Yuki pouts angrily (alias)' },
   { cmd: '/sad',           description: 'Yuki sighs sadly' },
+  { cmd: '/ani-sad',       description: 'Yuki sighs sadly (alias)' },
   { cmd: '/surprised',     description: 'Yuki looks surprised' },
+  { cmd: '/ani-surprised', description: 'Yuki looks surprised (alias)' },
   { cmd: '/relaxed',       description: 'Yuki smiles relaxedly' },
+  { cmd: '/ani-relaxed',   description: 'Yuki smiles relaxedly (alias)' },
   { cmd: '/neutral',       description: 'Reset expression to neutral' },
+  { cmd: '/ani-neutral',   description: 'Reset expression to neutral (alias)' },
 ];
 
 export const SLASH_COMMANDS = [

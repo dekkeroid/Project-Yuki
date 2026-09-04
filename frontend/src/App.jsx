@@ -2682,22 +2682,22 @@ const App = () => {
       let resolvedCmd = false;
       let responseText = '';
 
-      if (cmd === '/wink') {
+      if (cmd === '/wink' || cmd === '/ani-wink') {
         responseText = "*winks at you*";
         resolvedCmd = true;
-      } else if (cmd === '/angry') {
+      } else if (cmd === '/angry' || cmd === '/ani-angry') {
         responseText = "*pouts angrily*";
         resolvedCmd = true;
-      } else if (cmd === '/sad') {
+      } else if (cmd === '/sad' || cmd === '/ani-sad') {
         responseText = "*sighs sadly*";
         resolvedCmd = true;
-      } else if (cmd === '/surprised') {
+      } else if (cmd === '/surprised' || cmd === '/ani-surprised') {
         responseText = "*looks surprised*";
         resolvedCmd = true;
-      } else if (cmd === '/relaxed') {
+      } else if (cmd === '/relaxed' || cmd === '/ani-relaxed') {
         responseText = "*smiles relaxedly*";
         resolvedCmd = true;
-      } else if (cmd === '/neutral') {
+      } else if (cmd === '/neutral' || cmd === '/ani-neutral') {
         responseText = "*resets expression*";
         resolvedCmd = true;
       } else {
