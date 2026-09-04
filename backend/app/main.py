@@ -1189,21 +1189,23 @@ def serve_vrm_file(name: str):
     from pathlib import Path
     from fastapi.responses import FileResponse
 
+    safe_name = Path(name).name
+
     # Check bundled first
     for candidate in [
         BASE_DIR.parent / "models",
         BASE_DIR.parent / "frontend" / "public" / "models",
         BASE_DIR / "models",
     ]:
-        fpath = candidate / name
+        fpath = candidate / safe_name
         if fpath.exists() and fpath.suffix.lower() == ".vrm":
-            return FileResponse(fpath, media_type="model/vnd+gltf.binary", filename=name)
+            return FileResponse(fpath, media_type="model/vnd+gltf.binary", filename=safe_name)
 
     # Check custom uploads
     custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
-    fpath = custom_dir / name
+    fpath = custom_dir / safe_name
     if fpath.exists() and fpath.suffix.lower() == ".vrm":
-        return FileResponse(fpath, media_type="model/vnd+gltf.binary", filename=name)
+        return FileResponse(fpath, media_type="model/vnd+gltf.binary", filename=safe_name)
 
     return Response(status_code=404, content="Model not found")
 
@@ -1220,13 +1222,28 @@ async def upload_vrm_model(file: UploadFile = File(...)):
     custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
     custom_dir.mkdir(parents=True, exist_ok=True)
 
+    safe_filename = Path(file.filename).name
+    dest = custom_dir / safe_filename
+
+    try:
+        with open(dest, "wb") as buffer:
+            while chunk := await file.read(1024 * 1024):
+                buffer.write(chunk)
+    except Exception as e:
+        if dest.exists():
+            try:
+                dest.unlink()
+            except Exception:
+                pass
+        return Response(status_code=500, content=f"Failed to save VRM model: {e}")
+
     try:
         from app.memory.optimizer import optimize_all_processes
         optimize_all_processes(force=True)
     except Exception:
         pass
 
-    return {"status": "ok", "filename": file.filename}
+    return {"status": "ok", "filename": safe_filename}
 
 
 @app.post("/api/settings/alarm-tone/upload")
@@ -1389,6 +1406,8 @@ def delete_vrm_model(name: str):
     from pathlib import Path
     import os
 
+    safe_name = Path(name).name
+
     # Prevent deleting bundled models
     from app.config import BASE_DIR
     for candidate in [
@@ -1396,14 +1415,14 @@ def delete_vrm_model(name: str):
         BASE_DIR.parent / "frontend" / "public" / "models",
         BASE_DIR / "models",
     ]:
-        if (candidate / name).exists():
+        if (candidate / safe_name).exists():
             return Response(status_code=403, content="Cannot delete bundled model")
 
     custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
-    fpath = custom_dir / name
+    fpath = custom_dir / safe_name
     if fpath.exists():
         fpath.unlink()
-        return {"status": "ok", "deleted": name}
+        return {"status": "ok", "deleted": safe_name}
 
     return Response(status_code=404, content="Model not found")
 
@@ -4574,17 +4593,21 @@ async def websocket_endpoint(websocket: WebSocket):
                     # paged out mid-turn (the guard clears on cancel/interrupt too).
                     with own_process_busy_guard():
                         try:
-                            user_msg = payload_data.get("message", "").strip()
-                            is_startup_greeting = bool(payload_data.get("is_startup_greeting") or "[SYSTEM EVENT:" in user_msg or user_msg == "[STARTUP_GREETING]")
+                            raw_msg = payload_data.get("message", "").strip()
+                            is_wake_greeting = bool(payload_data.get("is_wake_greeting") or "[SYSTEM EVENT:" in raw_msg)
+                            is_startup_greeting = bool(payload_data.get("is_startup_greeting") or raw_msg == "[STARTUP_GREETING]")
+                            user_msg = raw_msg
                             if is_startup_greeting:
                                 try:
                                     from app.agent.prompts import generate_startup_greeting_prompt
                                     from app.memory.presence_engine import presence_manager
                                     absence_sec = memory_manager.get_absence_duration_seconds()
+                                    recent_greets = memory_manager.get_recent_greetings(limit=2)
                                     user_msg = generate_startup_greeting_prompt(
                                         profile=memory_manager.profile,
                                         presence_manager=presence_manager,
-                                        absence_duration_sec=absence_sec
+                                        absence_duration_sec=absence_sec,
+                                        recent_greetings=recent_greets
                                     )
                                     memory_manager.record_session_active()
                                 except Exception as _greet_err:
@@ -4923,6 +4946,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                                                 m.get("content") == user_msg
                                                             ))
                                                         ]
+                                                        # Save the assistant's greeting text to prevent repeating in upcoming sessions
+                                                        for m in reversed(global_chat_history):
+                                                            if m.get("role") == "assistant" and m.get("content"):
+                                                                memory_manager.record_greeting(m.get("content"))
+                                                                break
                                                     else:
                                                         global_chat_history = value
                                                     memory_manager.record_session_active()

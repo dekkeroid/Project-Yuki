@@ -260,76 +260,81 @@ def _warmup_cpu(kokoro):
 
 
 _kks_instance = None
+_NON_LATIN_CHUNK_RE = re.compile(r'([^\u0000-\u024F\u2000-\u206F\u2E00-\u2E7F\s]+)')
 
-def transliterate_for_tts(text: str) -> str:
+
+def _transliterate_non_latin_chunk(chunk: str) -> str:
+    """Helper to transliterate non-Latin chunks (Japanese, Chinese, Cyrillic, etc.) to Latin/Romaji/Pinyin."""
     global _kks_instance
-    if not text:
-        return ""
-    if all(ord(c) < 128 for c in text):
-        return text
-
-    # Initialize pykakasi on demand
-    if _kks_instance is None:
-        import pykakasi
-        _kks_instance = pykakasi.kakasi()
-
-    import pypinyin
-    from anyascii import anyascii
-
-    # 1. Run pykakasi to convert Japanese parts to Romaji.
-    #    We align the results to prevent pykakasi from dropping characters.
+    # 1. Try pykakasi (covers Japanese Kanji, Hiragana, Katakana)
     try:
-        res_kakasi = _kks_instance.convert(text)
-        parts = []
-        i = 0
-        for item in res_kakasi:
-            orig = item['orig']
-            hepburn = item['hepburn']
-            if not orig:
-                continue
-            idx = text.find(orig, i)
-            if idx == -1:
-                val = hepburn if hepburn else orig
-                parts.append(val)
-                continue
-            if idx > i:
-                parts.append(text[i:idx])
-            # Add spaces around transliterated Japanese words for better TTS pronunciation
-            if hepburn and hepburn != orig:
-                val = f" {hepburn} "
-            else:
-                val = orig
-            parts.append(val)
-            i = idx + len(orig)
-        if i < len(text):
-            parts.append(text[i:])
-        text_kakasi = "".join(parts)
+        if _kks_instance is None:
+            import pykakasi
+            _kks_instance = pykakasi.kakasi()
+        res_kakasi = _kks_instance.convert(chunk)
+        hepburn = [item['hepburn'] for item in res_kakasi if item.get('hepburn')]
+        if hepburn and any(item.get('orig') != item.get('hepburn') for item in res_kakasi):
+            return f" {' '.join(hepburn)} "
     except Exception:
-        text_kakasi = text
+        pass
 
-    # 2. Run pypinyin to convert remaining Chinese/Hanzi characters to Pinyin.
+    # 2. Try pypinyin for Chinese/Hanzi
     try:
-        pinyin_parts = []
-        for char in text_kakasi:
+        import pypinyin
+        py_list = []
+        for char in chunk:
             if 0x4E00 <= ord(char) <= 0x9FFF:
                 py = pypinyin.lazy_pinyin(char)
                 if py:
-                    pinyin_parts.append(f" {py[0]} ")
+                    py_list.append(py[0])
                 else:
-                    pinyin_parts.append(char)
+                    py_list.append(char)
             else:
-                pinyin_parts.append(char)
-        text_pinyin = "".join(pinyin_parts)
+                py_list.append(char)
+        if py_list and any(c != p for c, p in zip(chunk, py_list)):
+            return f" {' '.join(py_list)} "
     except Exception:
-        text_pinyin = text_kakasi
+        pass
 
-    # 3. Finally run anyascii for remaining non-ASCII characters
+    # 3. Fallback to anyascii for Cyrillic, Korean Hangul, Arabic, etc.
     try:
-        text_ascii = anyascii(text_pinyin)
+        from anyascii import anyascii
+        return f" {anyascii(chunk)} "
     except Exception:
-        text_ascii = text_pinyin
+        return chunk
 
-    return text_ascii
+
+def transliterate_for_tts(text: str) -> str:
+    """
+    Transliterates non-Latin scripts (Japanese Kana/Kanji to Romaji, Chinese to Pinyin,
+    Cyrillic to Latin) for Kokoro TTS.
+    
+    CRITICAL: Preserves all Latin characters including Latin-1 Supplement and Latin Extended
+    accents (é, è, ê, à, á, ñ, ü, ö, ç, etc.). Kokoro's eSpeak engine natively understands
+    accented Latin loanwords (e.g. café -> 'ka-fay', résumé -> 're-zoo-may', touché -> 'too-shay').
+    We must NEVER run pykakasi or anyascii on Latin accented words, which would split them into
+    isolated letters (e.g. 'café' -> 'caf e' -> 'cafi').
+    """
+    if not text:
+        return ""
+
+    # Fast path: If all characters are Latin (Basic Latin + Latin-1 + Latin Extended)
+    # and standard punctuation/spaces, Kokoro natively handles them with 100% accuracy.
+    if not re.search(r'[^\u0000-\u024F\u2000-\u206F\u2E00-\u2E7F\s]', text):
+        return text
+
+    # Transliterate only the non-Latin chunks, keeping all Latin words with accents completely intact
+    parts = _NON_LATIN_CHUNK_RE.split(text)
+    out = []
+    for part in parts:
+        if not part:
+            continue
+        if re.search(r'[^\u0000-\u024F\u2000-\u206F\u2E00-\u2E7F\s]', part):
+            out.append(_transliterate_non_latin_chunk(part))
+        else:
+            out.append(part)
+
+    return re.sub(r'\s+', ' ', "".join(out)).strip()
 
 
 _ONES = [
@@ -816,6 +821,97 @@ def normalize_numbers_for_speech(text: str) -> str:
     return text
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Declarative Pronunciation Lexicon (W3C PLS Tier 2 Overrides)
+# ─────────────────────────────────────────────────────────────────────────────
+# Centralized dictionary for words that eSpeak-ng mispronounces due to dictionary
+# gaps (e.g. missing diacritic entries), tech acronyms, libraries, or proper nouns.
+PRONUNCIATION_LEXICON: dict[str, str] = {
+    # ── eSpeak-ng English Loanword Dictionary Gaps ───────────────────────────
+    # eSpeak indexed the plain-ASCII spelling with authentic /h/ and /nj/,
+    # but omitted the diacritic spelling, falling back to English /dʒ/ ("j").
+    "jalapeño": "jalapeno",
+    "jalapeños": "jalapenos",
+    "habanero": "habanero",
+    "habañero": "habanero",
+
+    # ── Initialisms & Short Forms (Spelled letter-by-letter) ────────────────
+    # Prevent eSpeak from reading abbreviations with vowels as phonetic words (e.g. 'upsk')
+    "upsc": "U.P.S.C.",
+    "iocl": "I.O.C.L.",
+    "obc": "O.B.C.",
+    "vad": "V.A.D.",
+
+    # ── Conversational & Chat Shorthand (Expanded to spoken words) ───────────
+    "btw": "by the way",
+    "tbh": "to be honest",
+    "idk": "I don't know",
+    "imo": "in my opinion",
+    "imho": "in my humble opinion",
+    "aka": "also known as",
+    "asap": "as soon as possible",
+    "afaik": "as far as I know",
+    "iirc": "if I recall correctly",
+    "bff": "best friend forever",
+    "bffs": "best friends forever",
+    "gf": "girlfriend",
+    "gfs": "girlfriends",
+    "bf": "boyfriend",
+    "bfs": "boyfriends",
+    "brb": "be right back",
+    "np": "no problem",
+    "omg": "oh my god",
+    "pov": "point of view",
+    "wip": "work in progress",
+    "tbd": "to be determined",
+    "tba": "to be announced",
+    "eta": "E.T.A.",
+    "fyi": "for your information",
+    "poc": "proof of concept",
+    "dm": "D.M.",
+    "dms": "D.M.s",
+
+    # ── Tech Terms, Libraries & Acronyms ─────────────────────────────────────
+    "sqlite": "sequel lite",
+    "fastapi": "fast A P I",
+    "regex": "reg ex",
+    "regexes": "reg exes",
+    "pytorch": "pie torch",
+    "github": "git hub",
+    "gitlab": "git lab",
+    "npm": "N P M",
+    "stdout": "standard out",
+    "stdin": "standard in",
+    "stderr": "standard error",
+    "wifi": "why fye",
+    "wi-fi": "why fye",
+}
+
+
+def apply_pronunciation_lexicon(text: str) -> str:
+    """
+    Applies the declarative PRONUNCIATION_LEXICON to text with case-preserving replacements.
+    Uses regex word boundaries so substrings inside other words are never accidentally altered.
+    """
+    import re
+    if not text:
+        return text
+
+    for word, replacement in PRONUNCIATION_LEXICON.items():
+        pattern = rf'\b{re.escape(word)}\b'
+        def _match_case(m):
+            matched = m.group(0)
+            if matched.isupper() and not any(c.isspace() for c in replacement):
+                return replacement.upper()
+            if matched[0].isupper() and not matched.islower():
+                # Capitalize first letter while preserving inner acronym casing (e.g. "Fast A P I")
+                return replacement[0].upper() + replacement[1:]
+            return replacement
+        text = re.sub(pattern, _match_case, text, flags=re.IGNORECASE)
+
+    return text
+
+
 def clean_text_for_tts(text: str) -> str:
     import re
     if not text:
@@ -1082,6 +1178,9 @@ def clean_text_for_tts(text: str) -> str:
     # 9. Foreign Character Transliteration
     text = transliterate_for_tts(text)
 
+    # 9.5 Declarative Pronunciation Lexicon (loanword gaps & tech terms)
+    text = apply_pronunciation_lexicon(text)
+
     # 10. Roleplay Actions in Asterisks (strip gesture actions, preserve emphasis text)
     text = re.sub(r'\*\*(.*?)\*\*|__(.*?)__', lambda m: m.group(1) or m.group(2) or "", text)
     action_stems = [
@@ -1139,7 +1238,7 @@ KOKORO_IPA_INTERJECTIONS = [
     (r'\b[Gg]+u+h+\b|\b[Gg]+a+h+\b', 'ɡˈʌ'),       # Guh, gah -> "guh" (flustered choke)
     (r'\b[Bb]+l+e+h+\b', 'blˈɛ'),                  # Bleh -> "bleh" (playful tongue-out)
     (r'\b[Ee]+w+\b', 'ˈiːjuː'),                    # Eww, ew -> "ee-yoo" (disgusted cringe)
-    (r'\b[Oo]+f{2,}\b', 'ˈuːf'),                   # Oof, ooff -> "oof" (gut-punch reaction)
+    (r'\b[Oo]{2,}f+\b', 'ˈuːf'),                   # Oof, ooff -> "oof" (requires >=2 o's, never matches "off")
     
     # Hums, fillers & contemplation
     (r'\b[Mm]+-[Hh]+m+\b|\b[Mm]+h+m+\b', 'mˈhm̩'), # Mm-hmm, mmhmm, mhm -> affirmative nod
@@ -1183,7 +1282,7 @@ KOKORO_CLEAN_TEXT_FALLBACKS = [
     (r'\b[Gg]+u+h+\b|\b[Gg]+a+h+\b', 'Gah'),      # Guh, gah -> Gah
     (r'\b[Bb]+l+e+h+\b', 'Bleh'),                 # Bleh -> Bleh
     (r'\b[Ee]+w+\b', 'Ew'),                       # Eww, ewww -> Ew
-    (r'\b[Oo]+f{2,}\b', 'Oof'),                   # Oof, ooff -> Oof
+    (r'\b[Oo]{2,}f+\b', 'Oof'),                   # Oof, ooff -> Oof (requires >=2 o's, never matches "off")
     
     # Hums, fillers & contemplation
     (r'\b[Mm]+-[Hh]+m+\b|\b[Mm]+h+m+\b', 'Uh-huh'), # Mm-hmm, mmhmm, mhm -> Uh-huh
