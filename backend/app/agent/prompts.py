@@ -853,7 +853,8 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
 def generate_startup_greeting_prompt(
     profile: Optional[dict] = None,
     presence_manager: Any = None,
-    absence_duration_sec: Optional[float] = None
+    absence_duration_sec: Optional[float] = None,
+    recent_greetings: Optional[list] = None
 ) -> str:
     """
     Constructs a living, spontaneous startup greeting prompt for Yuki.
@@ -917,6 +918,8 @@ def generate_startup_greeting_prompt(
         feed_block = get_startup_context_block(profile)
         weather_str = feed_block.get("weather")
         weather_analysis = feed_block.get("weather_analysis") or {}
+        custom_news = feed_block.get("custom_news") or {}
+        general_news = feed_block.get("general_news") or []
         headlines = feed_block.get("headlines") or []
         news_topics = feed_block.get("news_topics") or ""
 
@@ -931,20 +934,91 @@ def generate_startup_greeting_prompt(
             else:
                 feed_context.append(f"- Local Weather (Ordinary ambient context — do NOT make this your main topic): {weather_condition}")
 
-        has_custom_topics = bool(news_topics and news_topics.strip())
-        if headlines:
-            if has_custom_topics:
-                feed_context.append(f"- Watched News Topics: '{news_topics}' (HIGH PRIORITY — {user_name} explicitly configured Yuki to track this!):")
-                for h in headlines:
-                    feed_context.append(f"  • {h}")
-            else:
-                feed_context.append(f"- Today's Headlines & Current Events:")
-                for h in headlines:
-                    feed_context.append(f"  • {h}")
+        has_custom_topics = bool(custom_news or (news_topics and news_topics.strip()))
+        is_opening_greeting = (absence_duration_sec is None or absence_duration_sec >= 14400)
+
+        # 1. Custom news topics (if configured)
+        if custom_news:
+            priority_label = "HIGH PRIORITY — Opening greeting of the day!" if is_opening_greeting else "LOW / OPTIONAL — User already saw earlier updates today; do NOT force or repeat unless there is brand-new breaking news!"
+            feed_context.append(f"- Custom News Topics ({priority_label}):")
+            for t_name, t_items in custom_news.items():
+                feed_context.append(f"  [{t_name}]:")
+                for h in t_items:
+                    feed_context.append(f"    • {h}")
+        elif headlines and has_custom_topics:
+            priority_label = "HIGH PRIORITY — Opening greeting of the day!" if is_opening_greeting else "LOW / OPTIONAL — User already saw earlier updates today; do NOT force or repeat unless there is brand-new breaking news!"
+            feed_context.append(f"- Custom News Topics: '{news_topics}' ({priority_label}):")
+            for h in headlines:
+                feed_context.append(f"  • {h}")
+
+        # 2. General breaking & tech news (available alongside custom topics)
+        if general_news:
+            feed_context.append("- Today's Breaking & Tech Headlines:")
+            for h in general_news:
+                feed_context.append(f"  • {h}")
+        elif headlines and not has_custom_topics:
+            feed_context.append("- Today's Headlines & Current Events:")
+            for h in headlines:
+                feed_context.append(f"  • {h}")
     except Exception as e:
         print(f"[Prompts] Context feed fetch failed: {e}")
 
     feed_text = "\n".join(feed_context) if feed_context else "- Real-world info: none available"
+
+    # Prior greetings context: dynamically extract previous openers and discussed headlines
+    recent_greetings_list = recent_greetings or profile.get("recent_greetings", [])
+    if isinstance(recent_greetings_list, list) and recent_greetings_list:
+        clean_recents = [g.strip() for g in recent_greetings_list[-3:] if isinstance(g, str) and g.strip()]
+    else:
+        clean_recents = []
+
+    prior_greetings_block = ""
+    if clean_recents:
+        # Dynamically extract opening sentence hooks from recent greetings
+        prior_openers = []
+        for g in clean_recents:
+            sentences = [s.strip() for s in re.split(r'[.?!]+', g) if s.strip()]
+            if sentences:
+                # Take first sentence or up to 15 words
+                opener = sentences[0]
+                words = opener.split()
+                if len(words) > 15:
+                    opener = " ".join(words[:15]) + "..."
+                if opener not in prior_openers:
+                    prior_openers.append(opener)
+
+        # Dynamically check which feed headlines were already mentioned in previous greetings
+        already_covered_headlines = []
+        all_feed_items = []
+        if isinstance(feed_block, dict):
+            for t_items in (feed_block.get("custom_news") or {}).values():
+                all_feed_items.extend(t_items)
+            all_feed_items.extend(feed_block.get("general_news") or [])
+            all_feed_items.extend(feed_block.get("headlines") or [])
+
+        _STOP_WORDS_TOPIC = {'with', 'from', 'this', 'that', 'after', 'says', 'news', 'over', 'into', 'amid', 'will', 'have', 'more', 'posts', 'open', 'apply', 'check', 'dates', 'last', 'date'}
+        for g in clean_recents:
+            g_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', g.lower().replace(',', '')))
+            for item in all_feed_items:
+                title_clean = item.split('[Source:')[0].strip()
+                item_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', title_clean.lower().replace(',', ''))) - _STOP_WORDS_TOPIC
+                if item_words and len(item_words & g_words) >= 2:
+                    if title_clean not in already_covered_headlines:
+                        already_covered_headlines.append(title_clean)
+
+        openers_formatted = "\n".join(f'  - "{op}"' for op in prior_openers[-2:])
+        covered_note = ""
+        if already_covered_headlines:
+            covered_str = "; ".join(already_covered_headlines[:3])
+            covered_note = f"\n• Stories already covered earlier: {covered_str}\n  (Do NOT repeat these stories! Mention a different headline or skip news entirely)."
+
+        prior_greetings_block = f"""
+CONVERSATIONAL VARIETY & ANTI-REPETITION:
+You already greeted {user_name} recently. To keep your banter lively, natural, and never robotic:
+• Your previous opening lines today:
+{openers_formatted}
+  (Do NOT reuse those opening words, same complaints, or same jokes! Start with a fresh observation, a new angle, or a completely different greeting hook).{covered_note}
+"""
 
     # Dynamic creative angles tailored to what context is actually present
     angles = [
@@ -964,34 +1038,47 @@ def generate_startup_greeting_prompt(
     elif weather_str:
         angles.append("• Normal Weather: The weather today is ordinary/mild. Do NOT make it a focal point of your greeting.")
 
-    if headlines:
-        if has_custom_topics:
+    if custom_news or (has_custom_topics and headlines):
+        topic_summary = ", ".join(f"'{k}'" for k in custom_news.keys()) if custom_news else f"'{news_topics}'"
+        if is_opening_greeting:
             angles.append(
-                f"• Watched Topics ('{news_topics}'): {user_name} asked to keep an eye on '{news_topics}'. "
-                f"Check the headlines with a critical eye. If there is a real announcement or hiring notice by an actual organization, you can casually bring it up as a heads-up. "
+                f"• Custom News Topics ({topic_summary}): Since this is the first greeting of the day, {user_name} asked to keep an eye on these custom topics. "
+                f"Check the headlines with a critical eye. If there are real announcements or hiring notices by actual organizations, casually bring them up as a heads-up. "
+                f"You are NOT limited to just one: if you spot solid updates across topics, you can mention them together fluidly in a single natural sentence! "
                 f"Do NOT mistake the news source or portal in '[Source: ...]' (like Times of India, PW, Adda247) for the employer! "
-                f"If you bring it up, name the specific organization/PSU (e.g. BEL, HPCL, PNB, CPCL, ISRO) and mention concrete details like vacancy counts or roles. "
+                f"Always name the specific organizations/PSUs (e.g. BEL, HPCL, PNB, CPCL, OSSC, ISRO) and cite concrete numbers or roles (e.g. '764 posts', '50 engineer roles'). "
                 f"CRITICAL: If the headlines are just generic coaching guides, listicles, or uninteresting clickbait, IGNORE THEM completely and just chat naturally!"
             )
         else:
             angles.append(
-                f"• Current Events & News: If any headline caught your eye, feel free to react naturally to it! "
-                f"Always match your emotional tone to the gravity of the story: "
-                f"- For national tragedies or major disasters (floods, earthquakes, train accidents, severe crises): React with genuine human empathy, solemn concern, or quiet shock (e.g. 'Did you see what's happening with the floods up north? It looks really heartbreaking...'). NEVER joke or tease about human suffering or disasters! "
-                f"- For exciting, nerdy, or bizarre news (space missions, tech breakthroughs, wild discoveries): React with curiosity, excitement, passionate geekiness, or playful banter."
+                f"• Custom News Topics ({topic_summary}): This is a return/reload greeting later in the day (not the first opening greeting). "
+                f"Do NOT force or recite news again! You already greeted them earlier. Only mention news if you genuinely feel like making a quick passing remark; otherwise focus on their return, banter, or casual chitchat."
             )
 
+    if general_news or (headlines and not has_custom_topics):
+        angles.append(
+            f"• Current Events & Tech News: If any breaking headline or tech breakthrough caught your eye, feel free to react naturally to it! "
+            f"Always match your emotional tone to the gravity of the story: "
+            f"- For national tragedies or major disasters (floods, earthquakes, train accidents, severe crises): React with genuine human empathy, solemn concern, or quiet shock. NEVER joke or tease about human suffering or disasters! "
+            f"- For exciting, nerdy, or bizarre news (space missions, tech breakthroughs, AI discoveries): React with curiosity, excitement, passionate geekiness, or playful banter."
+        )
+
     angles.append(
-        f"• Natural Conversational Flow: Weave thoughts together fluidly like someone sitting on the couch next to {user_name}. "
-        f"Never deliver news like a morning briefing anchor! Bring it up casually as an aside (e.g. 'Oh, before I forget...', 'Did you see that news earlier?', 'Before you get buried in code...')."
+        f"• Natural Roommate Delivery: Deliver your line naturally and effortlessly like a roommate sitting next to {user_name}. "
+        f"Never deliver news like a morning briefing anchor! If mentioning a topic, bring it up casually as a quick passing heads-up."
     )
 
-    if not has_custom_topics:
+    if not has_custom_topics or not is_opening_greeting:
         angles.append("• You do NOT need to force conversation about news, weather, or absence unless you genuinely feel like talking about them.")
-    if has_custom_topics and headlines:
-        rule_2_text = f"""2. Weather vs. Watched Topics:
+    if has_custom_topics:
+        if is_opening_greeting:
+            rule_2_text = f"""2. Weather vs. Custom News & Breaking Headlines:
 - Weather is only background context: ONLY mention weather if it is tagged as NOTABLE / INTENSE. If it is ordinary ambient weather, completely IGNORE the weather!
-- Watched News Topics: Since {user_name} tracks '{news_topics}', mention it ONLY if a headline contains a genuine concrete update. If it's just generic advice or coaching clickbait, skip it! Never mistake the news outlet in '[Source: ...]' for the employer."""
+- Custom News Topics: Since this is the opening greeting and {user_name} tracks custom topics, mention updates ONLY if a headline contains a genuine concrete announcement. If it's just generic advice or coaching clickbait, skip it! Never mistake the news outlet in '[Source: ...]' for the employer. You can also react to general breaking or tech news if something caught your eye."""
+        else:
+            rule_2_text = f"""2. Return Greeting (Low News Priority):
+- User is just returning to their desk / reloading after a short break. Do NOT lecture them about news or recite jobs again!
+- Keep it light, casual, and focused on them returning to work or casual banter."""
     else:
         rule_2_text = """2. Weather vs. Real-World News:
 - Weather is Background Context: ONLY mention weather if it is tagged as NOTABLE / INTENSE. If it is ordinary ambient weather, completely IGNORE the weather!
@@ -1008,23 +1095,37 @@ ATMOSPHERE & CONTEXT:
 - Presence: {presence_context}
 - Persona: {preset_name} ({preset_desc})
 - How you feel right now: {mood_summary} (Energy {energy}/100)
-{feed_text}
-
+{feed_text}{prior_greetings_block}
 CREATIVE FREEDOM (MAKE IT FUN & NATURAL):
 You are NOT a scripted greeting bot. Say whatever you genuinely feel like saying right now!
-Pick whatever angles feel most spontaneous and fun (you can weave multiple thoughts together fluidly):
+Find a natural sweet spot—chatty and full of personality, but not an exhausting monologue.
 {angles_text}
 
 RULES:
-1. Natural Speech & Zero Robotic Formulas: Speak naturally with full creative freedom. Say whatever you want and take as much room as you need to express your thought naturally—just don't get overly verbose or ramble on like an essay.
-- NEVER follow the robotic 3-beat script: `[Generic greeting] -> [Abrupt news readout] -> ["What are we tackling today?"]`. That sounds like an agile project manager running a standup, not a companion!
-- Conversational Transitions: If you mention a watched topic or news, transition smoothly as a natural aside (e.g. "Oh, by the way...", "Saw a heads-up earlier...", "Before you get buried in your terminal...").
-- Varied Closings: You do NOT always have to ask what to work on or what to tackle! You can banter, tease, complain about sleep, or just make an observation.
+1. The Sweet Spot Length & Structure:
+- For pure chitchat / banter (no news): 2 to 3 natural sentences (~35-50 words).
+- When sharing custom news or hiring notices: 3 to 4 sentences (~55-75 words) structured in two natural parts:
+  • Part 1: Your opening reaction / roommate banter / mood.
+  • Part 2: A dedicated news heads-up introduced with a clear conversational pivot.
+- Avoid being too abrupt (no dry 1-sentence one-liners), and avoid 90+ word essays. Give yourself enough breathing room to introduce news properly without feeling rushed!
+
+2. Clear News Transitions & Multi-Topic Freedom (CRITICAL):
+- Dedicated News Transitions: When bringing up custom topics or headlines, NEVER bury the update as a vague throwaway clause inside an unrelated sentence (e.g. do NOT say "let me nap while you deal with 1,748 posts" without even saying who is hiring). Give the news its own distinct, conversational sentence introduced with natural phrases like "Oh, by the way...", "Also, I noticed earlier...", "Before you get buried in whatever you're coding...", or "Saw a quick heads-up on...".
+- Freedom Across Multiple Topics: You are NOT locked into only one topic! If you spot interesting updates across different custom topics (e.g. civil engineering jobs AND ISRO or AI breakthroughs), you have full creative freedom to highlight both fluidly (e.g. "Oh, by the way, saw SSC JE opened up 1,748 junior engineer posts, and ISRO is prepping a launch tomorrow if you're keeping tabs on those.").
+- Always Name the Organization: Always clearly name the specific organization/PSU (e.g. SSC JE, OSSC, ISRO, BEL, CPCL) and vacancy/role numbers from the headlines so your update is genuinely informative and helpful!
+
+3. Avoid Forced Trailing Interrogations:
+- Do NOT habitually tack on a robotic work interrogation at the end (e.g. avoid repeating "Are we actually going to get work done or stare at the screen/IDE until we fall asleep?").
+- You can simply end on a witty remark, a sleepy complaint, or an observation. Let the conversation breathe naturally without forcing an artificial call-to-action every time.
+
+4. Natural Speech & Zero Theatrics:
+- Subtle Roommate Banter: Keep banter light and effortless. Avoid piling on dramatic anime clichés. Talk like a real person hanging out in the room.
 {rule_2_text}
-3. Number Guidelines (Weather vs. News):
-- For WEATHER: NEVER recite temperature numbers or weather stats like a bot (react to the heat/cold physical sensation instead).
+5. Number Guidelines (Weather vs. News):
+- For WEATHER: NEVER recite temperature numbers or weather stats like a bot (react to physical sensation instead).
 - For NEWS & JOBS: DO cite specific numbers, vacancy counts, and organization names from the headlines (e.g. "60 posts", "30 vacancies", "CPCL", "BEL", "PNB"). Specific details make you genuinely helpful!
-4. Natural Roommate Familiarity: You and {user_name} are in the same room. NEVER name-drop the city or state when mentioning weather (e.g. say 'it's baking outside today' or 'this heat is crazy', NEVER say 'in this city heat' or 'here in town'). Talk naturally like someone looking out the window.
-5. Concrete News Updates (No Generic Fluff & No Source Confusion): When sharing tracked topic updates, always name the specific organization/PSU and the vacancy numbers or role from the headline (e.g. "saw BEL opened up deputy engineer posts" or "PNB put out 30 engineer posts") rather than just saying vague phrases like "fresh postings dropped". The '[Source: ...]' tag only indicates the news publisher or portal—NEVER say the publisher (like Physics Wallah, PW, Adda247, or Times of India) is the one hiring, and NEVER read news source credits like an RSS bot (do NOT say "Physics Wallah dropped a guide" or "According to Adda247...").
-6. Pure Spoken Dialogue (No Animation or XML Tags): Speak aloud naturally as a living companion. Do NOT output any animation tags, motion tags, or XML tags (NEVER write `<yuki_anim>` or similar). No tools, no markdown formatting, no asterisks (*yawns*), stage directions, or AI disclaimers."""
+6. Natural Roommate Familiarity: You and {user_name} are in the same room. NEVER name-drop the city or state when mentioning weather. Talk naturally like someone looking out the window.
+7. Concrete News Updates (No Generic Fluff & No Source Confusion): When sharing custom topic updates, always name the specific organization/PSU and the vacancy numbers or role from the headline rather than vague phrases. The '[Source: ...]' tag only indicates the news publisher or portal—NEVER say the publisher (like Physics Wallah, PW, Adda247, or Times of India) is the one hiring, and NEVER read news source credits like an RSS bot.
+8. Anti-Repetition Rule (CRITICAL): Check the ANTI-REPETITION block above. You are STRICTLY FORBIDDEN from repeating the opening words, the "revolving door" joke, the "sluggish" complaint, or the same job numbers/organizations from your prior greetings! Surprise the user with a completely new thought, a different opening remark, or a different headline!
+9. Pure Spoken Dialogue (No Animation or XML Tags): Speak aloud naturally as a living companion. Do NOT output any animation tags, motion tags, or XML tags (NEVER write `<yuki_anim>` or similar). No tools, no markdown formatting, no asterisks (*yawns*), stage directions, or AI disclaimers."""
 

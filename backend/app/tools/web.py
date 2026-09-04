@@ -1396,9 +1396,16 @@ async def web_search(
             cc = (country_code or "US").strip().upper()
             if len(cc) != 2:
                 cc = "US"
-            encoded_q = urllib.parse.quote(q)
+            
+            # Smart Freshness Guard: If query has no explicit temporal operator, add when:14d for genuinely recent news
+            has_time_filter = any(w in q.lower() for w in ("when:", "after:", "before:", "year", "2024", "2025"))
+            q_fresh = f"{q} when:14d" if not has_time_filter else q
+
+            encoded_q = urllib.parse.quote(q_fresh)
+            encoded_q_broad = urllib.parse.quote(q)
             encoded_bing_q = urllib.parse.quote_plus(q)
             g_url = f"https://news.google.com/rss/search?q={encoded_q}&hl=en&gl={cc}&ceid={cc}:en"
+            g_url_broad = f"https://news.google.com/rss/search?q={encoded_q_broad}&hl=en&gl={cc}&ceid={cc}:en"
             b_url = f"https://www.bing.com/news/search?q={encoded_bing_q}&format=rss"
 
             news_headers = {
@@ -1466,13 +1473,23 @@ async def web_search(
             # Step 1: Query Primary Engine: Google News RSS (higher relevance, global coverage, exact timestamps)
             engine_name = "Google News RSS"
             try:
-                r = await client.get(g_url, headers=news_headers, timeout=4.0)
+                r = await client.get(g_url, headers=news_headers, follow_redirects=True, timeout=5.0)
                 if r.status_code == 200 and r.text:
                     root = ET.fromstring(r.text)
                     g_items = root.findall(".//item")[:15]
                     parsed_g = _parse_g_items(g_items)
                     if len(parsed_g) >= 3:
                         return parsed_g, engine_name
+
+                # If 14-day window had < 3 items, try broader search without time constraint
+                if q_fresh != q:
+                    r_broad = await client.get(g_url_broad, headers=news_headers, follow_redirects=True, timeout=5.0)
+                    if r_broad.status_code == 200 and r_broad.text:
+                        root = ET.fromstring(r_broad.text)
+                        g_items = root.findall(".//item")[:15]
+                        parsed_g = _parse_g_items(g_items)
+                        if len(parsed_g) >= 3:
+                            return parsed_g, engine_name
             except Exception as e:
                 import sys
                 print(f"[web_search] Google News RSS primary attempt failed for '{q}': {e}", file=sys.stderr)
@@ -1480,7 +1497,7 @@ async def web_search(
             # Step 2: Fallback Engine: Bing News RSS (if Google News returned <3 items or failed)
             engine_name = "Bing News RSS (Fallback)"
             try:
-                r = await client.get(b_url, headers=news_headers, timeout=4.0)
+                r = await client.get(b_url, headers=news_headers, follow_redirects=True, timeout=5.0)
                 if r.status_code == 200 and r.text:
                     root = ET.fromstring(r.text)
                     b_items = root.findall(".//item")[:15]
@@ -1536,11 +1553,20 @@ async def web_search(
                     title = item.get("title", "").strip()
                     if not title:
                         continue
-                    words = frozenset(set(re.findall(r'\b[a-zA-Z]{4,}\b', title.lower())) - stop_words)
-                    if words and any(len(words & st) >= 3 for st in seen_titles):
+                    words = set(re.findall(r'\b[a-zA-Z]{4,}\b', title.lower())) - stop_words
+                    if not words:
                         continue
-                    if words:
-                        seen_titles.add(words)
+                    # Jaccard overlap check: only drop if > 45% of distinct non-stop words overlap
+                    is_dup = False
+                    for st in seen_titles:
+                        inter = len(words & st)
+                        union = len(words | st)
+                        if union and (inter / union) > 0.45:
+                            is_dup = True
+                            break
+                    if is_dup:
+                        continue
+                    seen_titles.add(frozenset(words))
                     all_news.append(item)
 
             if not all_news:
@@ -1565,7 +1591,7 @@ async def web_search(
             eng_header = f" [Engine: {', '.join(news_engines)}]" if news_engines else ""
             context_parts = [f"Breaking News & Updates for: \"{display_query}\"{eng_header}"]
             context_parts.append("### Latest Headlines & Coverage:")
-            for idx, it in enumerate(all_news[:8], 1):
+            for idx, it in enumerate(all_news[:10], 1):
                 pub = f" [Source: {it['publisher']}]" if it.get('publisher') else ""
                 tm = f" [{it['time']}]" if it.get('time') else ""
                 line = f"{idx}. {it['title']}{pub}{tm}"

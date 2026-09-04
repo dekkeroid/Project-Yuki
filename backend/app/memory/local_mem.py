@@ -47,6 +47,7 @@ class MemoryManager:
             "interaction_count": 0,
             "last_active_epoch": None,
             "last_shutdown_epoch": None,
+            "recent_greetings": [],
             "mood_spectrum": dict(DEFAULT_MOOD_SPECTRUM),
             "settings": {
                 # [SEARCH FOR MODEL CHANGE] Old: "llm_model": "ministra-3",
@@ -362,6 +363,32 @@ class MemoryManager:
         self.profile["last_shutdown_epoch"] = now
         self.profile["last_active_epoch"] = now
         self._save_profile()
+
+    def record_greeting(self, text: str, max_keep: int = 3):
+        """Records the text of a completed startup greeting to prevent repeating news/topics."""
+        if not text or not text.strip():
+            return
+        greetings = self.profile.setdefault("recent_greetings", [])
+        clean = text.strip()
+        # Avoid duplicate or near-identical sequential entries (e.g. sharing the same first 5 words)
+        clean_prefix = " ".join(clean.lower().split()[:5])
+        if greetings:
+            last_prefix = " ".join(greetings[-1].lower().split()[:5])
+            if clean_prefix and clean_prefix == last_prefix:
+                greetings[-1] = clean
+                self._save_profile()
+                return
+        greetings.append(clean)
+        if len(greetings) > max_keep:
+            self.profile["recent_greetings"] = greetings[-max_keep:]
+        self._save_profile()
+
+    def get_recent_greetings(self, limit: int = 3) -> list:
+        """Returns the last N greetings spoken by Yuki."""
+        greetings = self.profile.get("recent_greetings", [])
+        if not isinstance(greetings, list):
+            return []
+        return [g.strip() for g in greetings[-limit:] if isinstance(g, str) and g.strip()]
 
     def get_absence_duration_seconds(self) -> float:
         """Returns elapsed seconds since last active/shutdown session."""
@@ -746,17 +773,17 @@ class MemoryManager:
         """Script/regex reactions to Yuki's OWN response text — her speech feeds back into her mood."""
         return self._mood_engine.react_to_self(text, scope=scope)
 
-    def apply_turn_effects(self) -> dict:
+    def apply_turn_effects(self, llm_handled_energy: bool = False) -> dict:
         """mood_effecter — per-turn couplings run once at the end of each turn."""
-        return self._mood_engine.apply_turn_effects()
+        return self._mood_engine.apply_turn_effects(llm_handled_energy=llm_handled_energy)
 
     def apply_llm_mood(self, deltas: dict) -> bool:
         """Apply LLM-parsed <mood_update> deltas (script-only axes blocked)."""
         return self._mood_engine.apply_llm_deltas(deltas)
 
-    def react_mood_outcome(self, tool_name: str, success: bool):
+    def react_mood_outcome(self, tool_name: str, success: bool, drain_energy: bool = True):
         """Reactions to her own tool results."""
-        self._mood_engine.react_to_outcome(tool_name, success)
+        self._mood_engine.react_to_outcome(tool_name, success, drain_energy=drain_energy)
 
     def on_mood_startup(self) -> bool:
         """Offline catch-up + daily shake-up + hourly jitter."""

@@ -236,7 +236,7 @@ SELF_REACTIONS = [
     ("self_tired", [
         "tired", "exhausted", "sleepy", "drowsy", "yawning", "yawn", "long day",
         "drained", "worn out", "so sleepy",
-    ], {"energy": -5, "stress_level": 1}),
+    ], {"energy": -2, "stress_level": 1}),
     ("self_stressed", [
         "ugh", "sigh", "frustrated", "annoyed", "so annoyed", "this is hard",
         "overwhelmed", "stressed", "stressing", "i'm sorry", "sorry", "apologize",
@@ -608,7 +608,7 @@ class MoodEngine:
             self.apply_deltas(updates)
         return updates
 
-    def apply_turn_effects(self) -> dict:
+    def apply_turn_effects(self, llm_handled_energy: bool = False) -> dict:
         """mood_effecter — per-turn psychological dynamics & stamina expenditure.
 
         Runs once at the end of every turn.
@@ -622,11 +622,21 @@ class MoodEngine:
         deltas = {}
 
         # 1. Base conversational stamina drain (talking & reasoning costs energy)
-        deltas["energy"] = -1.5
+        # If the LLM already specified an explicit energy delta in <mood_update>, skip
+        # the base conversational drain to prevent harsh double-dipping.
+        if not llm_handled_energy:
+            deltas["energy"] = -0.6
 
-        # 2. Metabolic cost of high emotional arousal (excitement burns energy faster)
-        if m["playfulness"] >= 70 or m["anger"] >= 60 or m["affection"] >= 75:
-            deltas["energy"] -= 1.0
+            # 2. Metabolic cost of high emotional arousal (excitement burns energy faster)
+            if m["playfulness"] >= 70 or m["anger"] >= 60 or m["affection"] >= 75:
+                deltas["energy"] -= 0.5
+
+            # High hunger causes peckish irritability and physical drag ("hangry")
+            if m["hunger"] >= 70:
+                deltas["energy"] -= 1.0
+        elif m["hunger"] >= 70:
+            # Even if LLM handled energy, severe hunger still adds a subtle physical drag
+            deltas["energy"] = -0.5
 
         # 3. Turn-based hedonic adaptation (relaxation toward baseline, ~5% per turn)
         # Prevents spikes from persisting indefinitely during fast conversation.
@@ -644,6 +654,8 @@ class MoodEngine:
         if m["anger"] >= 60:
             deltas["happiness"] = deltas.get("happiness", 0.0) - 1.5
             deltas["stress_level"] = deltas.get("stress_level", 0.0) + 1.0
+        if m.get("doomer", 0) >= 70:
+            deltas["happiness"] = deltas.get("happiness", 0.0) - 1.5
 
         # High boredom (from PresenceEngine) dampens curiosity and channels restless energy
         try:
@@ -657,10 +669,9 @@ class MoodEngine:
         except Exception:
             pass
 
-        # High hunger causes peckish irritability and physical drag ("hangry")
+        # High hunger causes peckish irritability and psychological drag ("hangry")
         if m["hunger"] >= 70:
-            deltas["energy"] -= 1.5
-            deltas["stress_level"] = deltas.get("stress_level", 0.0) + 1.5
+            deltas["stress_level"] = deltas.get("stress_level", 0.0) + 1.0
             deltas["happiness"] = deltas.get("happiness", 0.0) - 1.0
 
         # Low energy causes cognitive sluggishness
@@ -672,7 +683,8 @@ class MoodEngine:
         # Affection/Intimacy warmth provides emotional resilience against stress
         if m["affection"] >= 65 or m["horniness"] >= 70:
             deltas["stress_level"] = deltas.get("stress_level", 0.0) - 1.0
-            deltas["happiness"] = deltas.get("happiness", 0.0) + 1.0
+            if m["happiness"] < baselines.get("happiness", 60):
+                deltas["happiness"] = deltas.get("happiness", 0.0) + 0.5
 
         if deltas:
             self.apply_deltas(deltas)
@@ -734,12 +746,18 @@ class MoodEngine:
         self._write(current)
         self._touch()
 
-    def react_to_outcome(self, tool_name: str, success: bool):
+    def react_to_outcome(self, tool_name: str, success: bool, drain_energy: bool = True):
         """Reactions to her own tool results — doing work saps energy, failing stresses her."""
         if success:
-            self.apply_deltas({"happiness": 3, "energy": -2, "stress_level": -2})
+            deltas = {"happiness": 1.5, "stress_level": -1.0}
+            if drain_energy:
+                deltas["energy"] = -0.6
+            self.apply_deltas(deltas)
         else:
-            self.apply_deltas({"happiness": -3, "stress_level": 4, "energy": -3})
+            deltas = {"happiness": -2.0, "stress_level": 2.5}
+            if drain_energy:
+                deltas["energy"] = -1.2
+            self.apply_deltas(deltas)
 
     def on_startup(self, now: float = None) -> bool:
         """Offline catch-up + daily shake-up + hourly jitter so each launch differs."""

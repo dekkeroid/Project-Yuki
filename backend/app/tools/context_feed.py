@@ -18,6 +18,7 @@ import re
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
+import concurrent.futures
 from typing import Dict, Any, List, Optional, Tuple
 from app import config
 
@@ -392,106 +393,202 @@ def _fetch_rss_titles(url: str, limit: int = 20) -> List[str]:
         return []
 
 
-def get_targeted_news(topics: Optional[str] = None, country_code: str = "US", max_items: int = 5) -> List[str]:
-    """
-    Fetches the latest headlines from Google News RSS.
-    - If `topics` is provided (e.g. 'PSU vacancies engineering'), searches Google News for that topic.
-      Filters out coaching blog clickbait / guides to ensure actual recruitment notices are prioritized.
-    - Otherwise (general news), returns a wide, balanced blend of regional breaking news / national events
-      (disasters, major stories) and technology/science breakthroughs for the user's country code.
-    """
+_STOP_WORDS = {"with", "from", "this", "that", "after", "says", "news", "over", "into", "amid", "will", "have", "more"}
+
+
+def _extract_and_format(raw_title: str) -> Tuple[str, str, set]:
+    if " - " in raw_title:
+        title_part, pub_part = raw_title.rsplit(" - ", 1)
+    else:
+        title_part, pub_part = raw_title, ""
+    words = set(re.findall(r'\b[a-zA-Z]{4,}\b', title_part.lower())) - _STOP_WORDS
+    formatted = f"{title_part.strip()} [Source: {pub_part.strip()}]" if pub_part else title_part.strip()
+    return formatted, title_part, words
+
+
+def _fetch_single_topic_news(topic: str, country_code: str = "US", max_items: int = 4) -> List[str]:
+    """Fetches and deduplicates fresh news headlines for a single custom topic."""
     now = time.time()
-    topics_clean = (topics or "").strip()
+    topic_clean = (topic or "").strip()
+    if not topic_clean:
+        return []
     cc = (country_code or "US").strip().upper()
-    cache_key = f"{cc}_{topics_clean.lower()}"
+    cache_key = f"topic_{cc}_{topic_clean.lower()}"
 
     if cache_key in _NEWS_CACHE:
         entry = _NEWS_CACHE[cache_key]
         if now - entry["timestamp"] < NEWS_TTL_SEC:
             return entry["data"]
 
-    stop_words = {"with", "from", "this", "that", "after", "says", "news", "over", "into", "amid", "will", "have", "more"}
-    seen_words: set = set()
+    clean_q = re.sub(r'[,;]+', ' ', topic_clean).strip()
+    has_time_filter = any(w in clean_q.lower() for w in ("when:", "after:", "before:", "year", "2024", "2025", "2026"))
+    q_fresh = f"{clean_q} when:14d" if not has_time_filter else clean_q
+
+    q_encoded = urllib.parse.quote(q_fresh)
+    url = f"https://news.google.com/rss/search?q={q_encoded}&hl=en&gl={cc}&ceid={cc}:en"
+
+    is_recruitment_query = any(k in topic_clean.lower() for k in (
+        'job', 'vacancy', 'vacancies', 'recruit', 'hiring', 'post', 'internship', 'walk-in', 'psu'
+    ))
+
+    raw_items = _fetch_rss_titles(url, limit=25)
+    # Fallback to broader search if 14-day window had very few items
+    if len(raw_items) < 3 and q_fresh != clean_q:
+        url_broad = f"https://news.google.com/rss/search?q={urllib.parse.quote(clean_q)}&hl=en&gl={cc}&ceid={cc}:en"
+        raw_items = _fetch_rss_titles(url_broad, limit=25)
+
     headlines: List[str] = []
-
-    def _extract_and_format(raw_title: str) -> Tuple[str, str, set]:
-        if " - " in raw_title:
-            title_part, pub_part = raw_title.rsplit(" - ", 1)
-        else:
-            title_part, pub_part = raw_title, ""
-        words = set(re.findall(r'\b[a-zA-Z]{4,}\b', title_part.lower())) - stop_words
-        formatted = f"{title_part.strip()} [Source: {pub_part.strip()}]" if pub_part else title_part.strip()
-        return formatted, title_part, words
-
-    if topics_clean:
-        # Custom search query mode
-        clean_q = re.sub(r'[,;]+', ' ', topics_clean)
-        clean_q = re.sub(r'\s+', ' ', clean_q).strip()
-        q_encoded = urllib.parse.quote(clean_q)
-        url = f"https://news.google.com/rss/search?q={q_encoded}&hl=en&gl={cc}&ceid={cc}:en"
-
-        is_recruitment_query = any(k in topics_clean.lower() for k in (
-            'job', 'vacancy', 'vacancies', 'recruit', 'hiring', 'post', 'internship', 'walk-in', 'psu'
-        ))
-
-        raw_items = _fetch_rss_titles(url, limit=25)
-        for raw in raw_items:
-            formatted, title_part, words = _extract_and_format(raw)
-            if is_recruitment_query and any(re.search(pat, title_part.lower()) for pat in _STUDY_MATERIAL_SPAM_PATTERNS):
-                continue
-            if len(words & seen_words) >= 2:
-                continue
-            headlines.append(formatted)
-            seen_words.update(words)
-            if len(headlines) >= max_items:
+    seen_title_wordsets: List[set] = []
+    for raw in raw_items:
+        formatted, title_part, words = _extract_and_format(raw)
+        if is_recruitment_query and any(re.search(pat, title_part.lower()) for pat in _STUDY_MATERIAL_SPAM_PATTERNS):
+            continue
+        if not words:
+            continue
+        # Pairwise Jaccard overlap check: drop if > 45% overlap with previous headline
+        is_dup = False
+        for st in seen_title_wordsets:
+            inter = len(words & st)
+            union = len(words | st)
+            if union and (inter / union) > 0.45:
+                is_dup = True
                 break
-    else:
-        # General wide variety mode: blend top breaking/national news + tech/science breakthroughs
-        main_url = f"https://news.google.com/rss?hl=en&gl={cc}&ceid={cc}:en"
-        tech_url = f"https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en&gl={cc}&ceid={cc}:en"
-
-        main_items = _fetch_rss_titles(main_url, limit=15)
-        tech_items = _fetch_rss_titles(tech_url, limit=10)
-
-        # 1. Add top national/world breaking news (up to 3 items)
-        for raw in main_items:
-            formatted, _, words = _extract_and_format(raw)
-            if len(words & seen_words) >= 2:
-                continue
-            headlines.append(formatted)
-            seen_words.update(words)
-            if len(headlines) >= min(3, max_items):
-                break
-
-        # 2. Add technology / science breakthroughs (up to 2 items)
-        for raw in tech_items:
-            formatted, _, words = _extract_and_format(raw)
-            if len(words & seen_words) >= 2:
-                continue
-            headlines.append(formatted)
-            seen_words.update(words)
-            if len(headlines) >= max_items:
-                break
-
-        # Fallback if tech feed unavailable: fill remaining from main feed
-        if len(headlines) < max_items:
-            for raw in main_items:
-                formatted, _, words = _extract_and_format(raw)
-                if formatted not in headlines:
-                    headlines.append(formatted)
-                    if len(headlines) >= max_items:
-                        break
+        if is_dup:
+            continue
+        headlines.append(formatted)
+        seen_title_wordsets.append(words)
+        if len(headlines) >= max_items:
+            break
 
     if headlines:
         _NEWS_CACHE[cache_key] = {"data": headlines, "timestamp": now}
-        return headlines
+    return headlines
 
-    return []
+
+def _fetch_general_news(country_code: str = "US", max_items: int = 4) -> List[str]:
+    """Fetches top regional breaking news and technology breakthroughs."""
+    now = time.time()
+    cc = (country_code or "US").strip().upper()
+    cache_key = f"general_{cc}"
+
+    if cache_key in _NEWS_CACHE:
+        entry = _NEWS_CACHE[cache_key]
+        if now - entry["timestamp"] < NEWS_TTL_SEC:
+            return entry["data"]
+
+    main_url = f"https://news.google.com/rss?hl=en&gl={cc}&ceid={cc}:en"
+    tech_url = f"https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en&gl={cc}&ceid={cc}:en"
+
+    main_items = _fetch_rss_titles(main_url, limit=15)
+    tech_items = _fetch_rss_titles(tech_url, limit=10)
+
+    headlines: List[str] = []
+    seen_words: set = set()
+
+    # 1. Add top national/world breaking news (up to 2 items)
+    for raw in main_items:
+        formatted, _, words = _extract_and_format(raw)
+        if len(words & seen_words) >= 2:
+            continue
+        headlines.append(formatted)
+        seen_words.update(words)
+        if len(headlines) >= min(2, max_items):
+            break
+
+    # 2. Add technology / science breakthroughs (up to 2 items)
+    for raw in tech_items:
+        formatted, _, words = _extract_and_format(raw)
+        if len(words & seen_words) >= 2:
+            continue
+        headlines.append(formatted)
+        seen_words.update(words)
+        if len(headlines) >= max_items:
+            break
+
+    # Fallback if tech feed was sparse
+    if len(headlines) < max_items:
+        for raw in main_items:
+            formatted, _, words = _extract_and_format(raw)
+            if formatted not in headlines:
+                headlines.append(formatted)
+                if len(headlines) >= max_items:
+                    break
+
+    if headlines:
+        _NEWS_CACHE[cache_key] = {"data": headlines, "timestamp": now}
+    return headlines
+
+
+def fetch_all_greeting_news(topics: Optional[str] = None, country_code: str = "US") -> Dict[str, Any]:
+    """
+    Concurrently fetches both custom news topics and general regional/tech news.
+    Supports multiple custom topics separated by semicolons (;) or newlines.
+    Uses ThreadPoolExecutor for fast parallel execution and individual caching per topic.
+    """
+    raw_topics = (topics or "").strip()
+    topic_list = []
+    if raw_topics:
+        for part in re.split(r'[;\n]+', raw_topics):
+            cleaned = part.strip()
+            if cleaned and cleaned not in topic_list:
+                topic_list.append(cleaned)
+    topic_list = topic_list[:5]  # Cap at 5 topics max
+
+    custom_news: Dict[str, List[str]] = {}
+    general_news: List[str] = []
+
+    # Parallel retrieval of all custom topics and general news
+    worker_count = max(2, min(6, len(topic_list) + 1))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_general = executor.submit(_fetch_general_news, country_code, max_items=4)
+        topic_futures = {
+            executor.submit(_fetch_single_topic_news, t, country_code, max_items=4): t
+            for t in topic_list
+        }
+
+        try:
+            general_news = future_general.result(timeout=4.0)
+        except Exception as e:
+            _safe_log(f"[ContextFeed] General news thread error: {e}")
+            general_news = []
+
+        for fut in concurrent.futures.as_completed(topic_futures, timeout=4.5):
+            t_name = topic_futures[fut]
+            try:
+                t_headlines = fut.result()
+                if t_headlines:
+                    custom_news[t_name] = t_headlines
+            except Exception as e:
+                _safe_log(f"[ContextFeed] Topic thread error for '{t_name}': {e}")
+
+    # Build backward-compatible flat headlines list (custom topics first, then general)
+    all_headlines: List[str] = []
+    for t in topic_list:
+        if t in custom_news:
+            for item in custom_news[t]:
+                if item not in all_headlines:
+                    all_headlines.append(item)
+    for item in general_news:
+        if item not in all_headlines:
+            all_headlines.append(item)
+
+    return {
+        "custom_news": custom_news,
+        "general_news": general_news,
+        "all_headlines": all_headlines,
+        "topics_searched": topic_list
+    }
+
+
+def get_targeted_news(topics: Optional[str] = None, country_code: str = "US", max_items: int = 5) -> List[str]:
+    """Backward compatibility wrapper returning a flat list of headlines."""
+    res = fetch_all_greeting_news(topics=topics, country_code=country_code)
+    return res.get("all_headlines", [])[:max_items]
 
 
 def get_startup_context_block(profile: Optional[dict] = None) -> Dict[str, Any]:
     """
-    Builds the situational context dictionary (location, weather, news headlines)
+    Builds the situational context dictionary (location, weather, custom news, general headlines)
     evaluating user profile settings, toggles, and VPN presence.
     """
     profile = profile or {}
@@ -525,21 +622,26 @@ def get_startup_context_block(profile: Optional[dict] = None) -> Dict[str, Any]:
     if not weather_analysis:
         weather_analysis = analyze_weather(None, country_code=cc)
 
-    # 2. News: Targeted by user country or custom search topics
-    headlines = []
+    # 2. News: Parallel fetching for custom topics and general breaking news
+    custom_news: Dict[str, List[str]] = {}
+    general_news: List[str] = []
+    headlines: List[str] = []
     if news_enabled:
-        headlines = get_targeted_news(topics=news_topics, country_code=cc, max_items=5)
-        if headlines:
-            topic_str = f" (topics: '{news_topics}')" if news_topics else ""
-            _safe_log(f"[ContextFeed] Fetched {len(headlines)} headlines for region '{cc}'{topic_str}")
-        else:
-            _safe_log(f"[ContextFeed] No headlines returned for region '{cc}'.")
+        news_bundle = fetch_all_greeting_news(topics=news_topics, country_code=cc)
+        custom_news = news_bundle.get("custom_news", {})
+        general_news = news_bundle.get("general_news", [])
+        headlines = news_bundle.get("all_headlines", [])
+
+        custom_count = sum(len(v) for v in custom_news.values())
+        _safe_log(f"[ContextFeed] News ready for region '{cc}': {custom_count} custom headlines ({len(custom_news)} topics), {len(general_news)} general headlines.")
 
     return {
         "location": loc_info,
         "weather": weather_str,
         "weather_analysis": weather_analysis,
         "headlines": headlines,
+        "custom_news": custom_news,
+        "general_news": general_news,
         "news_topics": news_topics
     }
 

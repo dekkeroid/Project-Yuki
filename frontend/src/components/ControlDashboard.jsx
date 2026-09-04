@@ -5490,7 +5490,7 @@ const ControlDashboard = ({
                           </label>
                           <input
                             type="text"
-                            placeholder="e.g. PSU vacancies, engineering govt jobs, tech, AI research"
+                            placeholder="e.g. civil engineering jobs; ISRO space; AI chips (separate with ;)"
                             value={settings.greeting_news_topics ?? ''}
                             onChange={(e) => handleNewsTopicsChange(e.target.value)}
                             onBlur={(e) => {
@@ -5510,7 +5510,7 @@ const ControlDashboard = ({
                             }}
                           />
                           <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.4)', marginTop: '3px' }}>
-                            Yuki only mentions a headline if it genuinely seems important or relevant to you.
+                            Separate multiple topics with semicolons (;) to search each in parallel alongside general breaking news.
                           </div>
                         </div>
                       )}

@@ -1352,7 +1352,7 @@ class AgentExecutor:
     #  Message builder (history cap + prompt selection)                    #
     # ------------------------------------------------------------------ #
 
-    def _finalize_llm_mood(self, scrubber: MoodTagScrubber, user_message: str):
+    def _finalize_llm_mood(self, scrubber: MoodTagScrubber, user_message: str) -> bool:
         """Apply LLM <mood_update> deltas. In LLM mode, only script fallback is physical axes.
         No script fallback for emotional axes — the LLM is solely responsible for those when mood_source=llm."""
         try:
@@ -1360,11 +1360,13 @@ class AgentExecutor:
                 deltas = scrubber.parsed_deltas()
                 if deltas:
                     self.memory.apply_llm_mood(deltas)
+                    return "energy" in deltas
             # NOTE: No emotion-scope fallback in LLM mode — that was causing the "revert to script" bug.
             # Physical hunger is already handled by react_mood(scope="physical")
             # at the START of the turn, before the LLM responds.
         except Exception as e:
             print(f"[MoodEngine] finalize error: {e}")
+        return False
 
     def _build_messages(
         self,
@@ -2632,7 +2634,7 @@ class AgentExecutor:
                 else:
                     task = self._classify_task(user_message) if user_message else "simple"
                     source = "regex"
-                temp = 0.1 if task in ("coder", "complex_coder") else (0.2 if task == "complex" else 0.6)
+                temp = 0.75 if overrides.get("is_startup_greeting") else (0.1 if task in ("coder", "complex_coder") else (0.2 if task == "complex" else 0.6))
                 tb, tm = self._get_backend_and_model_for_task(task)
                 print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {tm} via {tb.name} with {'full' if task in ('complex', 'coder', 'complex_coder') else 'lean'} prompt (temp={temp})")
                 async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides):
@@ -2643,8 +2645,9 @@ class AgentExecutor:
                 yield err_msg, self._get_model_label(tm_e)
         elif backend == "complex":
             try:
-                print(f"[Router][Mode 2] Task=complex -> streaming {config.LLM_MODEL} with full prompt (temp=0.2)")
-                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=0.2, use_tools=use_tools, intent_tool_hint=intent_tool_hint, overrides=overrides):
+                temp = 0.75 if overrides.get("is_startup_greeting") else 0.2
+                print(f"[Router][Mode 2] Task=complex -> streaming {config.LLM_MODEL} with full prompt (temp={temp})")
+                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, overrides=overrides):
                     yield chunk, label
             except Exception as e:
                 llm_backend = get_backend()
@@ -2653,8 +2656,9 @@ class AgentExecutor:
         else:
             try:
                 tb, tm = self._get_backend_and_model_for_task("simple")
-                print(f"[Router] Task=simple -> streaming {tm} via {tb.name} (temp=0.6)")
-                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=0.6, use_tools=use_tools, backend=tb, overrides=overrides):
+                temp = 0.75 if overrides.get("is_startup_greeting") else 0.6
+                print(f"[Router] Task=simple -> streaming {tm} via {tb.name} (temp={temp})")
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, backend=tb, overrides=overrides):
                     yield chunk, label
             except Exception as e:
                 tb_e, tm_e = self._get_backend_and_model_for_task("simple")
@@ -3300,6 +3304,7 @@ class AgentExecutor:
             })
 
             accumulated_response_total = []
+            turn_tool_energy_drained = 0.0
             backend_used = "local"
             executed_calls = set()
             consecutive_signature = None
@@ -3517,8 +3522,12 @@ class AgentExecutor:
                                 tool_failed = True
 
                         # Her own work affects her mood — done well is satisfying, failing stresses.
+                        # Energy drain is capped at 2.0 pts per turn so multi-tool agent loops don't instantly exhaust her.
+                        can_drain_energy = turn_tool_energy_drained < 2.0
                         try:
-                            self.memory.react_mood_outcome(tool_name, success=not tool_failed)
+                            self.memory.react_mood_outcome(tool_name, success=not tool_failed, drain_energy=can_drain_energy)
+                            if can_drain_energy:
+                                turn_tool_energy_drained += 1.2 if tool_failed else 0.6
                         except Exception:
                             pass
 
@@ -3672,8 +3681,9 @@ class AgentExecutor:
                     if accumulated_response.strip():
                         accumulated_response_total.append(accumulated_response.strip())
                     
+                    llm_handled_energy = False
                     if mood_scrubber is not None and mood_llm_mode:
-                        self._finalize_llm_mood(mood_scrubber, user_message)
+                        llm_handled_energy = bool(self._finalize_llm_mood(mood_scrubber, user_message))
                     # React to Yuki's own words — her speech also affects her mood
                     assistant_speech = accumulated_response.strip()
                     if assistant_speech:
@@ -3684,7 +3694,7 @@ class AgentExecutor:
                             pass
                     # mood_effecter — per-turn couplings of her own state
                     try:
-                        self.memory.apply_turn_effects()
+                        self.memory.apply_turn_effects(llm_handled_energy=llm_handled_energy)
                     except Exception:
                         pass
                     # Relationship Engine turn evolution
@@ -3733,8 +3743,9 @@ class AgentExecutor:
                 if event_type == "token":
                     wrap_response += value
                     yield "token", value, label
+            llm_handled_energy = False
             if mood_scrubber is not None and mood_llm_mode:
-                self._finalize_llm_mood(mood_scrubber, user_message)
+                llm_handled_energy = bool(self._finalize_llm_mood(mood_scrubber, user_message))
             if wrap_response.strip():
                 accumulated_response_total.append(wrap_response.strip())
             wrap_speech = wrap_response.strip()
@@ -3746,7 +3757,7 @@ class AgentExecutor:
                     pass
             # mood_effecter — per-turn couplings of her own state
             try:
-                self.memory.apply_turn_effects()
+                self.memory.apply_turn_effects(llm_handled_energy=llm_handled_energy)
             except Exception:
                 pass
             # Relationship Engine turn evolution
