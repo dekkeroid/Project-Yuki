@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon, Camera, CloudSun, Newspaper, MapPin } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, RotateCcw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon, Camera, CloudSun, Newspaper, MapPin } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -1696,6 +1696,25 @@ const ControlDashboard = ({
     }
   };
 
+  const [presenceResetFeedback, setPresenceResetFeedback] = useState(false);
+
+  const handleResetPresenceNudges = async () => {
+    try {
+      await handleUpdateSetting({
+        proactive_nudge_mode: 'visual_only',
+        proactive_nudge_engine: 'template',
+        proactive_nudge_include_screen: false,
+        proactive_nudge_quiet_min: 30,
+        proactive_nudge_boredom_pct: 80,
+        proactive_nudge_interval_min: 45
+      });
+      setPresenceResetFeedback(true);
+      setTimeout(() => setPresenceResetFeedback(false), 2000);
+    } catch (e) {
+      console.error("Failed to reset presence nudge settings:", e);
+    }
+  };
+
   // Active Time Items State (Timers, Reminders, Stopwatches)
   const [timeItems, setTimeItems] = useState({ reminders: [], stopwatches: [] });
   const [, setTick] = useState(0); // forces re-render every second for live stopwatch display
@@ -2788,16 +2807,45 @@ const ControlDashboard = ({
 
                 {/* Autonomous Presence & Idle Nudges */}
                 <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <Clock className="w-3.5 h-3.5 text-purple-400" />
                       <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#e9d5ff' }}>Autonomous Presence & Idle Nudges</span>
                     </div>
-                    {moodData?.presence?.active_window && (
-                      <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
-                        Active in: {moodData.presence.active_window.slice(0, 20)}...
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {moodData?.presence?.active_window && (
+                        <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                          Active in: {moodData.presence.active_window.slice(0, 20)}...
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleResetPresenceNudges}
+                        className="glass-button"
+                        title="Reset Autonomous Presence & Idle Nudges to default settings"
+                        style={{
+                          fontSize: '0.64rem',
+                          fontWeight: 500,
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(255,255,255,0.12)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          color: presenceResetFeedback ? '#34d399' : '#d8b4fe',
+                          background: presenceResetFeedback ? 'rgba(52, 211, 153, 0.15)' : 'rgba(255,255,255,0.05)',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        {presenceResetFeedback ? (
+                          <CheckCircle className="w-3 h-3 text-emerald-400" />
+                        ) : (
+                          <RotateCcw className="w-3 h-3" />
+                        )}
+                        <span>{presenceResetFeedback ? 'Defaults Reset!' : 'Reset Defaults'}</span>
+                      </button>
+                    </div>
                   </div>
                   <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginBottom: '8px' }}>
                     When bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}% after {settings.proactive_nudge_quiet_min ?? 30}m quiet), Yuki performs gentle desktop check-ins (leaning forward or daydreaming) without interrupting your focus.
@@ -4088,9 +4136,38 @@ const ControlDashboard = ({
 
               {/* Autonomous Proactive Nudges & Persona Check-ins Card */}
               <div className="card-group" style={{ marginTop: '12px' }}>
-                <div className="card-group-header">
-                  <Sparkles className="w-4 h-4 text-purple-400" />
-                  <span className="card-group-title">Autonomous Presence & Proactive Check-ins</span>
+                <div className="card-group-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sparkles className="w-4 h-4 text-purple-400" />
+                    <span className="card-group-title">Autonomous Presence & Proactive Check-ins</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResetPresenceNudges}
+                    className="glass-button"
+                    title="Reset Autonomous Presence & Idle Nudges to default settings"
+                    style={{
+                      fontSize: '0.65rem',
+                      fontWeight: 500,
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      color: presenceResetFeedback ? '#34d399' : '#d8b4fe',
+                      background: presenceResetFeedback ? 'rgba(52, 211, 153, 0.15)' : 'rgba(255,255,255,0.05)',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    {presenceResetFeedback ? (
+                      <CheckCircle className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <RotateCcw className="w-3 h-3" />
+                    )}
+                    <span>{presenceResetFeedback ? 'Defaults Reset!' : 'Reset Defaults'}</span>
+                  </button>
                 </div>
                 <div style={{ padding: '4px 0' }}>
                   <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', marginBottom: '10px', lineHeight: 1.4 }}>

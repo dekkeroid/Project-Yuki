@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { computeDesktopBubblePosition } from '../utils/desktopBubblePosition';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { VRMAnimationManager } from '../utils/vrmAnimationManager';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Upload, Sparkles } from 'lucide-react';
 import { ANIMATIONS, EMOTIONS } from '../animationsRegistry';
@@ -65,6 +66,8 @@ const AvatarViewer = ({
   const rendererRef = useRef(null);
   const vrmDprRef = useRef(vrmDpr);
   const vrmFpsRef = useRef(vrmFps);
+  const animManagerRef = useRef(null);
+  const contactShadowRef = useRef(null);
 
   // Hologram particle parameters
   const particleSystemRef = useRef(null);
@@ -116,6 +119,9 @@ const AvatarViewer = ({
     if (sleepState !== 'sleeping' && sleepState !== 'napping') {
       sleepProgressRef.current = 0.0;
     }
+    if (animManagerRef.current) {
+      animManagerRef.current.setSleeping(sleepState === 'sleeping' || sleepState === 'napping');
+    }
   }, [sleepState]);
 
   useEffect(() => {
@@ -159,6 +165,9 @@ const AvatarViewer = ({
 
   useEffect(() => {
     disabledAnimationsRef.current = disabledAnimations || [];
+    if (animManagerRef.current) {
+      animManagerRef.current.setDisabledAnimations(disabledAnimations || []);
+    }
   }, [disabledAnimations]);
 
   useEffect(() => {
@@ -179,6 +188,9 @@ const AvatarViewer = ({
 
   useEffect(() => {
     isThinkingRef.current = isThinking;
+    if (animManagerRef.current) {
+      animManagerRef.current.setThinking(isThinking);
+    }
   }, [isThinking]);
 
   useEffect(() => {
@@ -434,6 +446,9 @@ const AvatarViewer = ({
     if (vrmRef.current) {
       const oldVrm = vrmRef.current;
       vrmRef.current = null;
+      if (animManagerRef.current) {
+        animManagerRef.current.setVrm(null);
+      }
 
       if (oldVrm.scene) {
         const parent = oldVrm.scene.parent;
@@ -572,6 +587,9 @@ const AvatarViewer = ({
           });
         });
         fingerBonesRef.current = cachedBones;
+        if (animManagerRef.current) {
+          animManagerRef.current.setVrm(vrm);
+        }
 
         // Auto-position camera to look at the face/body
         const headNode = getBoneNode(vrm, 'head');
@@ -748,6 +766,46 @@ const AvatarViewer = ({
     // 1. Setup Three Scene
     const scene = new THREE.Scene();
     window.vrmScene = scene;
+
+    // Initialize VRM Animation Manager
+    const animManager = new VRMAnimationManager();
+    animManager.setDisabledAnimations(disabledAnimationsRef.current);
+    animManagerRef.current = animManager;
+    if (vrmRef.current) {
+      animManager.setVrm(vrmRef.current);
+    }
+
+    // Grounding Contact Shadow (eliminates floating-in-space feeling)
+    let contactShadow = null;
+    try {
+      const shadowCanvas = document.createElement('canvas');
+      shadowCanvas.width = 128;
+      shadowCanvas.height = 128;
+      const sCtx = shadowCanvas.getContext('2d');
+      const sGrad = sCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      sGrad.addColorStop(0, 'rgba(10, 8, 16, 0.65)');
+      sGrad.addColorStop(0.35, 'rgba(10, 8, 16, 0.42)');
+      sGrad.addColorStop(0.65, 'rgba(10, 8, 16, 0.12)');
+      sGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
+      sCtx.fillStyle = sGrad;
+      sCtx.fillRect(0, 0, 128, 128);
+
+      const shadowTexture = new THREE.CanvasTexture(shadowCanvas);
+      const shadowGeo = new THREE.PlaneGeometry(0.7 * scale, 0.7 * scale);
+      const shadowMat = new THREE.MeshBasicMaterial({
+        map: shadowTexture,
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false
+      });
+      contactShadow = new THREE.Mesh(shadowGeo, shadowMat);
+      contactShadow.rotation.x = -Math.PI / 2;
+      contactShadow.position.set(0, 0.001, 0);
+      scene.add(contactShadow);
+      contactShadowRef.current = contactShadow;
+    } catch (err) {
+      console.warn('[AvatarViewer] Failed to create contact shadow:', err);
+    }
 
     // Add space dust / star background (only in browser web mode, disable in desktop transparent mode)
     if (!isElectron) {
@@ -1489,15 +1547,37 @@ const AvatarViewer = ({
           }
         }
 
+        // Update VRMA Animation Manager
+        if (animManagerRef.current) {
+          animManagerRef.current.update(delta);
+        }
+
+        // Update contact shadow floor grounding
+        if (contactShadow) {
+          contactShadow.visible = visibleRef.current && (isElectron || hasVrm);
+          if (dragStateProgress > 0) {
+            const scaleFactor = 1.0 + dragStateProgress * 0.35;
+            contactShadow.scale.set(scaleFactor, scaleFactor, scaleFactor);
+            contactShadow.material.opacity = Math.max(0.08, 0.5 * (1.0 - dragStateProgress * 0.6));
+          } else {
+            contactShadow.scale.set(1.0, 1.0, 1.0);
+            contactShadow.material.opacity = 0.5;
+          }
+        }
+
         // Check for inactivity to trigger procedural idle animations
-        const isActive = (audioLevelRef.current > 0.015) || isThinkingRef.current || isListeningRef.current || isWalkingRef.current || expressionRef.current !== 'neutral' || isDragging || (dragStateProgress > 0);
+        const isActive = (audioLevelRef.current > 0.015) || isThinkingRef.current || isWalkingRef.current || expressionRef.current !== 'neutral' || isDragging || (dragStateProgress > 0);
 
         if (startGreetingRef.current) {
           startGreetingRef.current = false;
-          idleAnimState = 'greeting_wave';
-          idleAnimDuration = 3.5;
-          idleAnimProgress = 0;
-          inactivityTimer = 0;
+          if (animManagerRef.current && animManagerRef.current.hasAnimation('wave')) {
+            animManagerRef.current.playAction('wave');
+          } else {
+            idleAnimState = 'greeting_wave';
+            idleAnimDuration = 3.5;
+            idleAnimProgress = 0;
+            inactivityTimer = 0;
+          }
         }
 
         if (startCustomAnimationRef.current) {
@@ -1508,6 +1588,8 @@ const AvatarViewer = ({
             // Guard: If sleeping/napping, do not run the temporary 5s nod-off gesture that startles awake
             if (customName === 'napping' && (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping')) {
               // Procedural sleeping already maintains sleeping pose
+            } else if (animManagerRef.current && animManagerRef.current.hasAnimation(customName)) {
+              animManagerRef.current.playAction(customName);
             } else {
               idleAnimState = customName;
               const matchingAnim = ANIMATIONS.find(a => a.name === customName);
@@ -1556,7 +1638,7 @@ const AvatarViewer = ({
                 // State-weighted selection:
                 // High boredom (> 0.6) heavily weights: boredarm, pout, peer, shrug
                 // Low energy (< 40) heavily weights: yawn, stretch, nap
-                // High playfulness (> 65) heavily weights: groove, laugh, cheer
+                // High playfulness (> 65) heavily weights: groove, laugh, cheer, peace
                 const weights = enabledIdleAnims.map(anim => {
                   let weight = 1.0;
                   const name = anim.name.toLowerCase();
@@ -1569,11 +1651,16 @@ const AvatarViewer = ({
                   if (currentEnergy <= 40) {
                     const fatigueFactor = (40 - currentEnergy) / 40;
                     if (name.includes('yawn') || name.includes('nap')) weight += fatigueFactor * 6;
+                    else if (name.includes('stretch')) weight += fatigueFactor * 4;
                   }
 
                   if (currentPlayfulness >= 65) {
                     const playFactor = (currentPlayfulness - 65) / 35;
-                    if (name.includes('groove') || name.includes('cheer') || name.includes('laugh')) weight += playFactor * 5;
+                    if (name.includes('groove') || name.includes('cheer') || name.includes('laugh') || name.includes('peace')) weight += playFactor * 5;
+                  }
+
+                  if (name.includes('weight_shift') || name.includes('look_around')) {
+                    weight += 2.0;
                   }
 
                   return weight;
@@ -1591,8 +1678,14 @@ const AvatarViewer = ({
                   randomRoll -= weights[i];
                 }
 
-                idleAnimState = selectedAnim.name;
-                idleAnimDuration = selectedAnim.duration;
+                if (animManagerRef.current && animManagerRef.current.hasAnimation(selectedAnim.name)) {
+                  animManagerRef.current.playAction(selectedAnim.name);
+                  idleAnimState = 'none';
+                  idleAnimDuration = selectedAnim.duration;
+                } else {
+                  idleAnimState = selectedAnim.name;
+                  idleAnimDuration = selectedAnim.duration;
+                }
               } else {
                 idleAnimState = 'none';
               }
@@ -1676,8 +1769,6 @@ const AvatarViewer = ({
           } else if (idleAnimState === 'stretching') {
             spineOffsetX = 0.12 * easeVal;
             neckOffsetX = -0.10 * easeVal;
-          } else if (idleAnimState === 'facepalm') {
-            neckOffsetX = -0.15 * easeVal;
           } else if (idleAnimState === 'shy_fidget') {
             spineOffsetX = -0.05 * easeVal;
             neckOffsetX = 0.08 * easeVal;
@@ -2041,9 +2132,6 @@ const AvatarViewer = ({
             } else if (isThinkingRef.current) {
               baseBreathingSpeed = 0.95; // slower, deeper breathing when thinking
               baseBreathingDepth = 0.016;
-            } else if (isListeningRef.current) {
-              baseBreathingSpeed = 1.1; // calmer breathing when listening
-              baseBreathingDepth = 0.011;
             }
 
             let breathingSpeed = THREE.MathUtils.lerp(baseBreathingSpeed, 0.65, sleepProgressRef.current);
@@ -2055,8 +2143,54 @@ const AvatarViewer = ({
               breathingDepth = 0;
             }
 
-            // 4. Natural breathing & gentle swaying
-            const chest = getBoneNode(vrm, 'chest');
+            const isProceduralRunning = idleAnimState !== 'none';
+            const isVrmaActive = animManagerRef.current && animManagerRef.current.isVrmaActive() && !isWalkingRef.current && !isProceduralRunning;
+
+            if (isVrmaActive) {
+              // --- High-Fidelity VRMA Mode (Mocap Animation Active) ---
+              // Additive drag dynamics when avatar is dragged by cursor
+              if (dragStateProgress > 0) {
+                const hips = getBoneNode(vrm, 'hips');
+                if (hips) {
+                  hips.rotation.z += dragSwayAngle * 0.5 * zMult;
+                  hips.rotation.x += dragPitchAngle * 0.4 * xMult;
+                }
+                const spine = getBoneNode(vrm, 'spine');
+                if (spine) {
+                  spine.rotation.z += dragSwayAngle * 0.35 * zMult;
+                  spine.rotation.x += dragPitchAngle * 0.35 * xMult;
+                }
+                vrm.scene.position.y = -0.09 * dragStateProgress;
+                vrm.scene.position.z = -dragPitchAngle * 0.3;
+                vrm.scene.position.x = 0;
+              } else {
+                // Grounded: eliminate zero-g floating drift when VRMA is active
+                vrm.scene.position.set(0, 0, 0);
+              }
+
+              // Subtle additive head look-around guidance blended with mocap
+              const neck = getBoneNode(vrm, 'neck');
+              if (neck) {
+                neck.rotation.y += currentLookY * 0.18 * yMult;
+                neck.rotation.x += currentLookX * 0.15 * xMult;
+              }
+
+              // Anatomical eye saccades & cursor gaze tracking
+              const leftEye = getBoneNode(vrm, 'leftEye');
+              const rightEye = getBoneNode(vrm, 'rightEye');
+              if (leftEye && rightEye) {
+                const rawEyeYaw = currentGazeY * 0.08 + saccadeY;
+                const rawEyePitch = currentGazeX * 0.08 - 0.015 + saccadeX;
+                const eyeYaw = Math.max(-0.12, Math.min(0.12, rawEyeYaw));
+                const eyePitch = Math.max(-0.06, Math.min(0.06, rawEyePitch));
+                leftEye.rotation.y = eyeYaw * yMult;
+                leftEye.rotation.x = eyePitch * xMult;
+                rightEye.rotation.y = eyeYaw * yMult;
+                rightEye.rotation.x = eyePitch * xMult;
+              }
+            } else {
+              // 4. Natural breathing & gentle swaying
+              const chest = getBoneNode(vrm, 'chest');
             if (chest) {
               if (dragStateProgress > 0) {
                 chest.rotation.x = dragPitchAngle * 0.3 * xMult;
@@ -2452,13 +2586,6 @@ const AvatarViewer = ({
                   awakeShoulderY = (0.45 * easeVal - 0.08 * (1 - easeVal)) * yMult;
                   awakeShoulderZ = (-0.6 * easeVal - 1.25 * (1 - easeVal)) * zMult;
                   rightElbowOffsetY = -0.9 * easeVal;
-                } else if (idleAnimState === 'facepalm') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.85 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.3 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-0.7 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                  rightElbowOffsetY = -1.1 * easeVal;
                 } else if (idleAnimState === 'cheering') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
@@ -2736,6 +2863,7 @@ const AvatarViewer = ({
               });
             }
           }
+        }
 
           // Blinking calculation
           const enableBlinking = !disabledAnimationsRef.current.includes('blinking') && (window.yukiDebugToggles ? window.yukiDebugToggles.blinking !== false : true);
@@ -2965,11 +3093,6 @@ const AvatarViewer = ({
               const easeVal = Math.sin(t * Math.PI);
               targetHappy = 0 * easeVal;
               targetBrowUp = 0.3 * easeVal;
-            } else if (idleAnimState === 'facepalm') {
-              const t = idleAnimProgress / idleAnimDuration;
-              const easeVal = Math.sin(t * Math.PI);
-              targetSad = 0.5 * easeVal;
-              targetBrowDown = 0.4 * easeVal;
             } else if (idleAnimState === 'cheering') {
               const t = idleAnimProgress / idleAnimDuration;
               const easeVal = Math.sin(t * Math.PI);
@@ -3005,10 +3128,6 @@ const AvatarViewer = ({
               targetRelaxed = 0.5;
               targetSurprised = 0.0;
               targetBrowDown = 0.55; // furrow brows while concentrating
-            } else if (isListeningRef.current) {
-              targetRelaxed = 0.3;
-              targetHappy = 0;
-              targetBrowUp = 0.45;   // raise brows on listening interest
             } else {
               targetHappy = 0;
               targetRelaxed = 0.0;
@@ -3225,6 +3344,20 @@ const AvatarViewer = ({
           }
         }
       });
+
+      if (animManagerRef.current) {
+        animManagerRef.current.dispose();
+        animManagerRef.current = null;
+      }
+      if (contactShadow) {
+        if (contactShadow.geometry) contactShadow.geometry.dispose();
+        if (contactShadow.material) {
+          if (contactShadow.material.map) contactShadow.material.map.dispose();
+          contactShadow.material.dispose();
+        }
+        scene.remove(contactShadow);
+        contactShadowRef.current = null;
+      }
 
       renderer.dispose();
       if (customVrmBlobUrlRef.current) {
