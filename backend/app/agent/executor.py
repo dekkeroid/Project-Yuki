@@ -293,8 +293,9 @@ class AgentExecutor:
             query_val = kwargs.get("query") or kwargs.get("queries") or kwargs.get("search") or kwargs.get("text")
             if query_val is None and kwargs:
                 query_val = list(kwargs.values())[0]
-            img_search = bool(kwargs.get("image_search", False))
-            return await web_search(query=query_val, image_search=img_search)
+            s_mode = kwargs.get("search_mode") or ("image" if kwargs.get("image_search") else "text_and_snippet")
+            cc = kwargs.get("country_code")
+            return await web_search(query=query_val, search_mode=s_mode, country_code=cc)
         
         # Lazy-import tool modules to avoid blocking module-level imports
         from app.tools.system import (
@@ -1380,6 +1381,16 @@ class AgentExecutor:
         preventing cache invalidations on every single turn.
         """
         overrides = overrides or {}
+        if overrides.get("is_startup_greeting"):
+            profile_obj = getattr(self.memory, "profile", None) if hasattr(self, "memory") else None
+            settings = profile_obj.get("settings", {}) if isinstance(profile_obj, dict) else {}
+            char_name = settings.get("character_name") or getattr(config, "CHARACTER_NAME", "Yuki")
+            print(f"[Executor] Standalone startup greeting prompt active: bypassing full system prompt, tool guides, and prior history")
+            return [
+                {"role": "system", "content": user_message},
+                {"role": "user", "content": f"[User booted up the PC and just sat down at the desk. Greet them aloud naturally as {char_name}.]"}
+            ]
+
         if overrides.get("manage_todo_enabled") is None:
             overrides["manage_todo_enabled"] = bool(self.memory.profile.get("settings", {}).get("manage_todo_enabled", True))
         memory_summary = self.memory.get_profile_summary()
@@ -2425,6 +2436,10 @@ class AgentExecutor:
     async def _get_tool_definitions_for_messages(self, messages: List[Dict[str, str]], intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None, active_model: str = "") -> list:
         """Return tool schemas from MCP discovery, with local-schema fallback."""
         overrides = overrides or {}
+        if overrides.get("no_tools") or overrides.get("tool_mode") == "none" or overrides.get("is_startup_greeting"):
+            print("[Tools] No-tools override active (startup greeting or conversational turn): 0 tools sent to LLM")
+            return []
+
         effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
         use_dynamic = overrides.get("dynamic_tool_calling") if overrides.get("dynamic_tool_calling") is not None else self.memory.profile.get("settings", {}).get("dynamic_tool_calling", True)
         user_message = ""
@@ -3082,8 +3097,8 @@ class AgentExecutor:
         from app.tools.safety import strip_internal_auth_fields, issue_confirmation_grant, describe_tool_target
 
         # ── Layer 1: Zero-LLM Instant Resolver ───────────────────────────────
-        # Skip in advanced/autonomous Jarvis mode — the LLM should decide tool calls
-        resolved = resolve_command(user_message) if effective_tool_mode == "basic" else None
+        # Skip in advanced/autonomous Jarvis mode or when tools are disabled
+        resolved = resolve_command(user_message) if (effective_tool_mode == "basic" and not overrides.get("no_tools") and not overrides.get("is_startup_greeting")) else None
         if resolved:
             tool_name, tool_args = resolved
             print(f"[Resolver] '{user_message}' -> {tool_name}({tool_args}) - LLM skipped")
@@ -3227,7 +3242,7 @@ class AgentExecutor:
 
         is_coder_mode = bool(overrides.get("coding_mode")) or resolved_backend in ("coder", "complex_coder")
         self.last_vector_timing = {"duration_ms": 0.0, "count": 0, "status": "disabled_coder_mode" if is_coder_mode else "disabled"}
-        if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message and not is_coder_mode:
+        if getattr(config, "ENABLE_VECTOR_MEMORY", False) and getattr(config, "EMBEDDING_MODEL", "").strip() and user_message and not is_coder_mode and not overrides.get("is_startup_greeting"):
             _vm_t0 = time.time()
             try:
                 from app.memory.vector_memory import search_relevant_memories

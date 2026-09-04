@@ -1,0 +1,2039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yuki — Dev, Tool & Voice Lab</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #171a23;
+    --panel: #1d212c;
+    --panel2: #232836;
+    --border: #2c3344;
+    --border-hl: #3d465c;
+    --text: #e6e9f2;
+    --muted: #8b93a7;
+    --accent: #6ea8fe;
+    --accent2: #b184ff;
+    --cyan: #38bdf8;
+    --pink: #f472b6;
+    --green: #34d399;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --mono: "Cascadia Code", "JetBrains Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    overflow: hidden;
+  }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: #333b4e; border-radius: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 16px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; display: flex; align-items: center; gap: 8px; }
+  header h1 .dot { color: var(--accent2); }
+  .backend-box { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .backend-box label { color: var(--muted); font-size: 12px; }
+  #backendUrl {
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; width: 230px; font-family: var(--mono); font-size: 12px;
+  }
+  #statusDot { width: 10px; height: 10px; border-radius: 50%; background: #555; flex: none; }
+  #statusDot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #statusDot.off { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  #statusDot.loading { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+  
+  button {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 12px; cursor: pointer; font-size: 13px;
+    transition: all .15s ease;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  button:hover { border-color: var(--accent); background: #2a3144; }
+  button.primary {
+    background: linear-gradient(135deg, #2b6cb0, #553c9a);
+    border: 1px solid #4b5f8a; font-weight: 600;
+  }
+  button.primary:hover { filter: brightness(1.15); border-color: var(--accent); }
+  button.primary:disabled { opacity: .55; cursor: not-allowed; filter: none; }
+  button.accent-tts {
+    background: linear-gradient(135deg, #be185d, #7c3aed);
+    border: 1px solid #c084fc; font-weight: 600; color: #fff;
+  }
+  button.accent-tts:hover { filter: brightness(1.15); }
+  button.accent-stt {
+    background: linear-gradient(135deg, #0284c7, #0d9488);
+    border: 1px solid #38bdf8; font-weight: 600; color: #fff;
+  }
+  button.accent-stt:hover { filter: brightness(1.15); }
+  button.danger {
+    background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #f87171;
+  }
+  button.danger:hover { background: rgba(239, 68, 68, 0.28); border-color: var(--red); }
+
+  .layout { display: flex; height: calc(100% - 57px); }
+  aside {
+    width: 340px; min-width: 270px; flex: none;
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    background: var(--bg2);
+    overflow: hidden;
+  }
+  aside .sidebar-section { display: flex; flex-direction: column; height: 100%; }
+  aside .filters { padding: 10px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
+  aside .filters input, aside .filters select {
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px;
+  }
+  aside .filters input { flex: 1; }
+  .count-bar { padding: 8px 10px 4px; color: var(--muted); font-size: 11px; }
+  .list-scroll { overflow-y: auto; flex: 1; padding: 6px; }
+  
+  .tool-item, .preset-item, .history-item {
+    padding: 9px 10px; border-radius: 8px; cursor: pointer;
+    border: 1px solid transparent; margin-bottom: 4px;
+    transition: all .12s ease;
+  }
+  .tool-item:hover, .preset-item:hover, .history-item:hover { background: var(--panel); }
+  .tool-item.selected, .preset-item.selected { background: var(--panel2); border-color: var(--accent); }
+  .tool-item .tname { font-family: var(--mono); font-size: 12.5px; font-weight: 600; word-break: break-all; }
+  .tool-item .tdesc {
+    color: var(--muted); font-size: 11.5px; margin-top: 2px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  
+  .tags { margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .tag {
+    font-size: 10px; padding: 1px 7px; border-radius: 10px;
+    border: 1px solid var(--border); color: var(--muted); background: var(--panel);
+    white-space: nowrap;
+  }
+  .tag.cat { color: #9ecbff; border-color: #2b4a6e; }
+  .tag.basic { color: var(--green); border-color: #1f5c47; }
+  .tag.adv { color: var(--accent2); border-color: #4b3d77; }
+  .tag.tts { color: var(--pink); border-color: #702459; }
+  .tag.stt { color: var(--cyan); border-color: #1e4976; }
+
+  main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg2); padding: 0 10px; gap: 4px; }
+  .tabs button {
+    border: none; background: transparent; border-radius: 0;
+    padding: 11px 16px; color: var(--muted); font-size: 13px; font-weight: 500;
+    border-bottom: 2px solid transparent;
+  }
+  .tabs button:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .tabs button.active { color: #fff; font-weight: 600; border-bottom-color: var(--accent); }
+  .tabs button.active[data-tab="tts"] { border-bottom-color: var(--pink); color: #fbcfe8; }
+  .tabs button.active[data-tab="stt"] { border-bottom-color: var(--cyan); color: #bae6fd; }
+
+  .tab-panel { flex: 1; overflow-y: auto; padding: 16px 20px; display: none; }
+  .tab-panel.active { display: block; }
+
+  .tool-header h2 { margin: 0 0 4px; font-size: 19px; font-family: var(--mono); }
+  .tool-header p { margin: 6px 0 0; color: var(--muted); line-height: 1.5; }
+
+  .section { margin-top: 18px; }
+  .section > h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
+  }
+  .card.highlight-tts { border-color: rgba(244, 114, 182, 0.3); background: linear-gradient(180deg, rgba(244, 114, 182, 0.04) 0%, var(--panel) 100%); }
+  .card.highlight-stt { border-color: rgba(56, 189, 248, 0.3); background: linear-gradient(180deg, rgba(56, 189, 248, 0.04) 0%, var(--panel) 100%); }
+
+  .field-label {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 5px;
+  }
+  .field-label .hint { font-size: 11px; font-weight: 400; color: var(--muted); }
+  .field-desc { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+
+  input[type="text"], input[type="password"], input[type="number"], select, textarea {
+    width: 100%; background: var(--bg2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 10px; font-size: 12.5px; font-family: inherit;
+    transition: border-color .15s ease;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 70px; font-family: var(--mono); }
+
+  .arg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .arg {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+  }
+  .arg.missing { border-color: var(--red); }
+  .arg label { display: flex; align-items: center; gap: 6px; font-weight: 600; font-family: var(--mono); font-size: 12.5px; }
+  .arg label .req { color: var(--red); font-family: sans-serif; font-weight: 700; }
+  .arg label .type { color: var(--muted); font-weight: 400; font-size: 11px; font-family: var(--mono); }
+  .arg .pdesc { color: var(--muted); font-size: 11.5px; margin: 4px 0 8px; line-height: 1.4; }
+
+  .runbar { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .runbar select {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 7px 9px; font-size: 12.5px; width: auto;
+  }
+  .meta { color: var(--muted); font-size: 12px; }
+
+  .output-wrap { margin-top: 18px; display: none; }
+  .output-wrap.visible { display: block; }
+  .output-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+  .output-head .badge { padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+  .badge.ok { background: #0d3b2e; color: var(--green); }
+  .badge.err { background: #471515; color: var(--red); }
+  .badge.confirm { background: #4a3a08; color: var(--yellow); }
+  .badge.info { background: #163854; color: var(--cyan); }
+  
+  pre {
+    margin: 0; background: #0b0d12; border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px; overflow: auto;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word; max-height: 50vh;
+  }
+  pre.err { border-color: #5c2b2b; }
+  pre.confirm { border-color: #66531b; }
+
+  .metrics-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px; margin-top: 12px;
+  }
+  .metric-box {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; text-align: center;
+  }
+  .metric-box .val { font-size: 16px; font-weight: 700; color: #fff; font-family: var(--mono); }
+  .metric-box .lbl { font-size: 10.5px; color: var(--muted); text-transform: uppercase; margin-top: 2px; }
+
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .chip {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 14px;
+    padding: 3px 10px; font-size: 11.5px; color: #cbd5e1; cursor: pointer;
+    transition: all .15s ease; user-select: none;
+  }
+  .chip:hover { border-color: var(--accent); color: #fff; transform: translateY(-1px); }
+  .chip.active { background: rgba(110, 168, 254, 0.2); border-color: var(--accent); color: #fff; }
+
+  .visualizer-canvas {
+    width: 100%; height: 70px; background: #090b10; border-radius: 6px;
+    border: 1px solid var(--border); margin-top: 8px; display: block;
+  }
+
+  .dropzone {
+    border: 2px dashed var(--border-hl); border-radius: 8px;
+    padding: 20px; text-align: center; cursor: pointer;
+    background: rgba(255,255,255,0.01); transition: all .2s ease;
+  }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--cyan); background: rgba(56,189,248,0.05); }
+
+  .impl-note {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px; line-height: 1.6; font-size: 13px;
+  }
+  .impl-note b { color: var(--accent); }
+  .impl-note .path { font-family: var(--mono); color: #c8b6ff; }
+  .impl-note ul { margin: 6px 0 0; padding-left: 18px; }
+  .impl-note li { margin-bottom: 4px; }
+
+  .notice {
+    border: 1px dashed var(--border); border-radius: 8px;
+    padding: 10px 14px; color: var(--muted); font-size: 12.5px; line-height: 1.6;
+  }
+  .notice.safe-vram {
+    border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.05); color: #6ee7b7;
+  }
+  .notice code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); }
+
+  .empty-state { color: var(--muted); padding: 30px; text-align: center; font-size: 13px; line-height: 1.7; }
+  .empty-state .big { font-size: 36px; margin-bottom: 8px; }
+
+  .toast {
+    position: fixed; bottom: 18px; right: 18px; background: var(--panel2);
+    border: 1px solid var(--accent); color: var(--text);
+    padding: 10px 16px; border-radius: 8px; font-size: 13px;
+    opacity: 0; transform: translateY(8px); transition: all .2s ease; pointer-events: none; z-index: 9999;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  .toggle-switch { position: relative; display: inline-block; width: 38px; height: 20px; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #333b4e; transition: .2s; border-radius: 20px;
+  }
+  .toggle-slider:before {
+    position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px;
+    background-color: white; transition: .2s; border-radius: 50%;
+  }
+  input:checked + .toggle-slider { background-color: var(--accent2); }
+  input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+  .collapsible-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: var(--panel2); border-radius: 6px;
+    cursor: pointer; user-select: none; font-size: 12px; font-weight: 600; color: #cbd5e1;
+    border: 1px solid var(--border); margin-top: 10px;
+  }
+  .collapsible-body { padding: 12px; background: rgba(0,0,0,0.2); border-radius: 0 0 6px 6px; border: 1px solid var(--border); border-top: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span class="dot">◆</span> Yuki Dev & Voice Lab</h1>
+  <div class="backend-box">
+    <label for="backendUrl">Backend</label>
+    <input id="backendUrl" spellcheck="false" placeholder="http://localhost:58392">
+    <span id="statusDot" title="Connection status"></span>
+    <span id="statusText" style="color:var(--muted);font-size:12px;">connecting…</span>
+    <button id="connectBtn">Connect</button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR (Contextual) -->
+  <aside>
+    <!-- Tools Sidebar View -->
+    <div id="side-tools" class="sidebar-section">
+      <div class="filters">
+        <input id="search" placeholder="Search tools…" autocomplete="off">
+        <select id="catFilter">
+          <option value="">All categories</option>
+        </select>
+      </div>
+      <div class="count-bar" id="toolCount"></div>
+      <div class="list-scroll" id="toolList"><div class="empty-state" id="listEmpty">Loading tools…</div></div>
+    </div>
+
+    <!-- Kokoro TTS Sidebar View -->
+    <div id="side-tts" class="sidebar-section" style="display:none;">
+      <div style="padding:10px;border-bottom:1px solid var(--border);">
+        <div style="font-size:12px;font-weight:600;color:var(--pink);margin-bottom:6px;">🗣️ Kokoro Voice Presets</div>
+        <div style="font-size:11px;color:var(--muted);">Click to load prompt & voice</div>
+      </div>
+      <div class="list-scroll" id="ttsPresetList"></div>
+      <div style="padding:10px;border-top:1px solid var(--border);background:var(--bg2);">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px;">Recent TTS Runs</div>
+        <div id="ttsHistoryList" style="max-height:160px;overflow-y:auto;font-size:11px;"></div>
+      </div>
+    </div>
+
+    <!-- Whisper STT Sidebar View -->
+    <div id="side-stt" class="sidebar-section" style="display:none;">
+      <div style="padding:10px;border-bottom:1px solid var(--border);">
+        <div style="font-size:12px;font-weight:600;color:var(--cyan);margin-bottom:6px;">🎙️ Whisper Test Bench</div>
+        <div style="font-size:11px;color:var(--muted);">Audio test clips & inspector turns</div>
+      </div>
+      <div class="list-scroll" id="sttClipList"></div>
+      <div style="padding:10px;border-top:1px solid var(--border);background:var(--bg2);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:11px;font-weight:600;color:var(--muted);">Inspector Turns</span>
+          <button id="btnFetchInspector" style="padding:2px 6px;font-size:10px;">Fetch 5</button>
+        </div>
+        <div id="sttHistoryList" style="max-height:160px;overflow-y:auto;font-size:11px;"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN VIEWPORT -->
+  <main>
+    <div class="tabs">
+      <button class="active" data-tab="test">🔧 Tools</button>
+      <button data-tab="tts">🗣️ Test Kokoro (TTS)</button>
+      <button data-tab="stt">🎙️ Test Whisper (STT)</button>
+      <button data-tab="code">💻 Source Code</button>
+      <button data-tab="how">📖 Architecture</button>
+    </div>
+
+    <!-- ==================== 1. TOOLS TESTER TAB ==================== -->
+    <div class="tab-panel active" id="panel-test">
+      <div class="empty-state" id="emptyMain">
+        <div class="big">🔧</div>
+        Select a tool from the list on the left to inspect it, fill in arguments,<br>
+        and run it against the backend.
+      </div>
+
+      <div id="toolContent" style="display:none">
+        <div class="tool-header">
+          <div class="tags" id="toolTags"></div>
+          <h2 id="toolName"></h2>
+          <p id="toolDesc"></p>
+        </div>
+
+        <div class="section" id="argsSection">
+          <h3>Arguments</h3>
+          <div class="arg-grid" id="argGrid"></div>
+          <div class="runbar">
+            <button class="primary" id="runBtn">▶ Run Tool</button>
+            <select id="modeSel" title="Tool safety policy mode">
+              <option value="assistant">mode: assistant (confirmation-gated)</option>
+              <option value="advanced">mode: advanced (autonomous)</option>
+              <option value="coder">mode: coder (workspace sandbox)</option>
+            </select>
+            <button id="copyCurlBtn" title="Copy a cURL command for this call">Copy cURL</button>
+            <span class="meta" id="runMeta"></span>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Request arguments (JSON)</h3>
+          <pre id="jsonPreview">{}</pre>
+        </div>
+
+        <div class="output-wrap" id="outputWrap">
+          <div class="output-head">
+            <span class="badge" id="outBadge">OK</span>
+            <span class="meta" id="outMeta"></span>
+            <button id="copyOutBtn" style="margin-left:auto;">Copy output</button>
+          </div>
+          <pre id="output"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 2. KOKORO TTS STUDIO TAB ==================== -->
+    <div class="tab-panel" id="panel-tts">
+      <div class="tool-header">
+        <div class="tags">
+          <span class="tag tts">Kokoro ONNX Neural TTS</span>
+          <span class="tag cat">24kHz Audio Output</span>
+          <span class="tag basic">Safe Preview Mode</span>
+        </div>
+        <h2 style="color:var(--pink);">🗣️ Kokoro Neural Speech Synthesis Studio</h2>
+        <p>Test, benchmark, and fine-tune text-to-speech voices with live latency tracking and waveform visualizer. Tweaks here are isolated previews and won't affect the live Yuki app unless you choose to apply them.</p>
+      </div>
+
+      <!-- Settings & Controls Bar -->
+      <div class="section">
+        <h3>TTS Configuration & Voice Tuning</h3>
+        <div class="grid-3">
+          <div class="card highlight-tts">
+            <div class="field-label">Speech Voice (Kokoro / Cloud)</div>
+            <select id="ttsVoiceSel"></select>
+            <div class="field-desc">19+ Kokoro neural voices (US/UK/JP) across accents & moods.</div>
+          </div>
+
+          <div class="card highlight-tts">
+            <div class="field-label">
+              <span>Speech Delivery Rate / Speed</span>
+              <span id="ttsRateVal" style="color:var(--pink);font-weight:700;">1.0x</span>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select id="ttsRateSel" style="flex:1;">
+                <option value="auto">Auto (Mood Driven)</option>
+                <option value="0.8">0.8x (Slow)</option>
+                <option value="0.9">0.9x (Relaxed)</option>
+                <option value="1.0" selected>1.0x (Normal)</option>
+                <option value="1.1">1.1x (Snappy)</option>
+                <option value="1.2">1.2x (Fast)</option>
+                <option value="1.3">1.3x (Brisk)</option>
+                <option value="1.4">1.4x (Faster)</option>
+              </select>
+              <input type="range" id="ttsRateSlider" min="0.5" max="2.0" step="0.05" value="1.0" style="width:70px;accent-color:var(--pink);">
+            </div>
+            <div class="field-desc">Speech delivery pace without pitch distortion.</div>
+          </div>
+
+          <div class="card highlight-tts">
+            <div class="field-label">TTS Provider</div>
+            <select id="ttsProviderSel">
+              <option value="local" selected>🖥️ Local — Kokoro ONNX (Offline, Private)</option>
+              <option value="google">☁️ Google Cloud TTS</option>
+              <option value="azure">☁️ Azure Cognitive TTS</option>
+              <option value="elevenlabs">☁️ ElevenLabs</option>
+              <option value="openai">☁️ OpenAI TTS</option>
+              <option value="custom">🔧 Custom API Endpoint</option>
+            </select>
+            <div class="field-desc">Local Kokoro runs fully in RAM/GPU with zero API cost.</div>
+          </div>
+        </div>
+
+        <!-- Optional Cloud Params (Collapsible) -->
+        <div id="ttsCloudPanel" style="display:none;margin-top:10px;" class="card">
+          <div class="field-label" style="color:var(--pink);">☁️ Cloud TTS Provider Settings</div>
+          <div class="grid-3" style="margin-top:8px;">
+            <div>
+              <span class="field-label">API Key</span>
+              <input type="password" id="ttsCloudKey" placeholder="Provider API Key">
+            </div>
+            <div>
+              <span class="field-label">Cloud Voice / Model ID</span>
+              <input type="text" id="ttsCloudVoice" placeholder="e.g. en-US-Standard-C">
+            </div>
+            <div>
+              <span class="field-label">Region / Custom Endpoint</span>
+              <input type="text" id="ttsCloudEndpoint" placeholder="e.g. eastus or https://...">
+            </div>
+          </div>
+        </div>
+
+        <!-- Expressive Interjections & Direct IPA Injection Card -->
+        <div class="card highlight-tts" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid rgba(244,114,182,0.45);background:linear-gradient(135deg,rgba(190,24,93,0.15),rgba(124,58,237,0.1));">
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;color:#fff;">
+              <span style="color:var(--pink);">Expressive Interjections & Direct IPA</span>
+              <span class="badge" id="ipaInterjectionsBadge" style="font-size:10px;padding:2px 8px;color:#94a3b8;border:1px solid rgba(255,255,255,0.1);">(Default: Off)</span>
+            </div>
+            <div class="field-desc" style="margin-top:3px;color:#cbd5e1;line-height:1.45;">
+              Translates non-dictionary vocalizations, groans, sleepy murmurs, fillers, and anime expressions (<code>Mmrgh</code>, <code>Hmmmm</code>, <code>Pfft</code>, <code>Shhh</code>, <code>Fufufu</code>, <code>E-eh?!</code>, <code>Mm-hmm</code>) directly into native Kokoro IPA phonemes. When off, expressive sounds are spoken as clean conversational words.
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex:none;">
+            <span id="ipaInterjectionsToggleStatus" style="font-size:11px;font-weight:700;color:var(--muted);font-family:var(--mono);">DISABLED</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="ttsIpaInterjectionsToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap;">
+          <div class="notice safe-vram" style="flex:1;padding:6px 12px;">
+            🛡️ <b>VRAM Safe:</b> Kokoro ONNX reuses its loaded session across all voices in RAM (~250MB). Testing voices will NOT duplicate models.
+          </div>
+          <button id="btnApplyTtsSettings" title="Apply these voice settings to Yuki's live profile">💾 Apply to Yuki Profile</button>
+        </div>
+      </div>
+
+      <!-- Synthesis Test Area -->
+      <div class="section">
+        <h3>Prompt & Synthesis Workbench</h3>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span class="field-label" style="margin:0;">Text to Synthesize</span>
+            <span id="ttsCharCount" style="font-size:11px;color:var(--muted);">0 / 400 chars</span>
+          </div>
+          <textarea id="ttsInputText" style="min-height:90px;" placeholder="Type text here or pick a sample below…">Hello Master! I am Yuki, your desktop AI companion. My Kokoro ONNX neural voice engine is running lightning fast!</textarea>
+          
+          <!-- Sample phrase chips -->
+          <div class="chip-row" id="ttsPhraseChips"></div>
+
+          <!-- Action bar -->
+          <div class="runbar" style="margin-top:12px;">
+            <button class="accent-tts" id="btnSynthesize" style="padding:9px 20px;font-size:14px;">▶ Synthesize & Play</button>
+            <button id="btnDownloadTtsWav">💾 Download WAV</button>
+            <button id="btnStopTtsAudio">⏹️ Stop</button>
+            <button id="btnCopyTtsCurl">Copy cURL</button>
+            <span class="meta" id="ttsStatusMeta"></span>
+          </div>
+
+          <!-- Audio Player & Visualizer -->
+          <div style="margin-top:16px;">
+            <audio id="ttsAudioPlayer" controls style="width:100%;height:36px;border-radius:6px;"></audio>
+            <canvas id="ttsCanvas" class="visualizer-canvas"></canvas>
+          </div>
+
+          <!-- Performance Metrics -->
+          <div class="metrics-grid" id="ttsMetricsGrid" style="display:none;">
+            <div class="metric-box">
+              <div class="val" id="metricTtsTime" style="color:var(--pink);">-</div>
+              <div class="lbl">Synthesis Latency</div>
+            </div>
+            <div class="metric-box">
+              <div class="val" id="metricTtsDur">-</div>
+              <div class="lbl">Audio Duration</div>
+            </div>
+            <div class="metric-box">
+              <div class="val" id="metricTtsRtf" style="color:var(--green);">-</div>
+              <div class="lbl">Real-Time Factor</div>
+            </div>
+            <div class="metric-box">
+              <div class="val" id="metricTtsSize">-</div>
+              <div class="lbl">WAV Payload</div>
+            </div>
+            <div class="metric-box">
+              <div class="val">24,000 Hz</div>
+              <div class="lbl">Sample Rate</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 3. WHISPER STT LAB TAB ==================== -->
+    <div class="tab-panel" id="panel-stt">
+      <div class="tool-header">
+        <div class="tags">
+          <span class="tag stt">Faster-Whisper (CTranslate2)</span>
+          <span class="tag cat">Silero Neural VAD</span>
+          <span class="tag basic">VRAM Guard Active</span>
+        </div>
+        <h2 style="color:var(--cyan);">🎙️ Faster-Whisper Speech Recognition Lab</h2>
+        <p>Test audio transcription with live microphone VU metering, dropzone file processing, model memory management, and dual-stage VAD parameters.</p>
+      </div>
+
+      <!-- Whisper Model Memory & Hardware Settings -->
+      <div class="section">
+        <h3>Model Memory & Compute Settings</h3>
+        <div class="grid-3">
+          <div class="card highlight-stt">
+            <div class="field-label">Whisper Model Size</div>
+            <select id="sttModelSel">
+              <option value="distil-small.en">⚡ Distil-Small.en (&lt;100ms / ~150MB VRAM)</option>
+              <option value="base" selected>Base Model (Accurate / ~140MB)</option>
+              <option value="small">Small Model (High Accuracy / ~460MB)</option>
+              <option value="tiny">Tiny Model (Fastest / ~70MB)</option>
+              <option value="medium">Medium Model (Pro / ~1.5GB)</option>
+            </select>
+            <div class="field-desc">Distil-Small & Base deliver near-instant response times.</div>
+          </div>
+
+          <div class="card highlight-stt">
+            <div class="field-label">Compute Type / Quantization</div>
+            <select id="sttComputeSel">
+              <option value="int8_float16" selected>Int8 Weights + FP16 Activations (Recommended)</option>
+              <option value="int8">Full Int8 Quantization (Max VRAM Savings)</option>
+              <option value="float16">Standard Float16</option>
+            </select>
+            <div class="field-desc">Lowers VRAM footprint by up to 60% without losing accuracy.</div>
+          </div>
+
+          <div class="card highlight-stt">
+            <div class="field-label">Processing Device & Language</div>
+            <div style="display:flex;gap:6px;">
+              <select id="sttDeviceSel" style="flex:1;">
+                <option value="auto" selected>Auto (GPU/CUDA)</option>
+                <option value="gpu">GPU (Force CUDA)</option>
+                <option value="cpu">CPU (Force CPU)</option>
+              </select>
+              <select id="sttLangSel" style="flex:1;">
+                <option value="en" selected>English</option>
+                <option value="hi">Hindi</option>
+                <option value="ja">Japanese</option>
+                <option value="auto">Auto Detect</option>
+              </select>
+            </div>
+            <div class="field-desc">CUDA execution provider provides sub-200ms latency.</div>
+          </div>
+        </div>
+
+        <!-- Memory Control Action Bar -->
+        <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap;">
+          <button id="btnLoadWhisper" class="accent-stt">⚡ Pre-warm Whisper</button>
+          <button id="btnUnloadWhisper" class="danger">🧹 Unload Model & Free VRAM</button>
+          <span id="sttMemBadge" class="badge info">Model Status: Active</span>
+          <div class="notice safe-vram" style="flex:1;padding:6px 12px;">
+            🛡️ <b>VRAM Guard:</b> Whisper model is a singleton. Tests reuse the loaded instance and will not allocate duplicate VRAM.
+          </div>
+          <button id="btnApplySttSettings">💾 Apply to Yuki Profile</button>
+        </div>
+
+        <!-- Collapsible VAD & Audio Tuning -->
+        <div class="collapsible-header" id="vadToggleBtn">
+          <span>⚙️ Advanced VAD & Audio Anti-Noise Tuning</span>
+          <span id="vadToggleIcon">▼ Expand fine-tuning (RMS, Silero thresholds, timeouts)</span>
+        </div>
+        <div class="collapsible-body" id="vadPanel" style="display:none;">
+          <div class="grid-2">
+            <div>
+              <div class="field-label">
+                <span>Microphone Speech Activation Threshold (RMS)</span>
+                <span id="vadRmsVal" style="color:var(--green);font-weight:700;">0.030</span>
+              </div>
+              <input type="range" id="vadRmsSlider" min="0.002" max="0.300" step="0.002" value="0.030" style="accent-color:var(--green);">
+              <div class="field-desc">Sensitivity cutoff for mic volume before recording starts.</div>
+            </div>
+
+            <div>
+              <div class="field-label">
+                <span>Backend Whisper Anti-Noise Filter (PyTorch Silero)</span>
+                <span id="vadSileroVal" style="color:var(--cyan);font-weight:700;">0.50</span>
+              </div>
+              <input type="range" id="vadSileroSlider" min="0.10" max="0.90" step="0.05" value="0.50" style="accent-color:var(--cyan);">
+              <div class="field-desc">Confidence required for human voice to be passed to Whisper.</div>
+            </div>
+
+            <div>
+              <div class="field-label">Silence Timeout (Turn-Taking)</div>
+              <select id="sttSilenceTimeoutSel">
+                <option value="300">300ms (Fast Turn-Taking)</option>
+                <option value="450">450ms (Balanced)</option>
+                <option value="600">600ms (Relaxed)</option>
+                <option value="800" selected>800ms (Recommended)</option>
+                <option value="1000">1000ms (Standard Turn-Taking)</option>
+                <option value="1500">1500ms (Patient)</option>
+                <option value="2000">2000ms (Dictation)</option>
+              </select>
+            </div>
+
+            <div>
+              <div class="field-label">Transport & Anti-Hallucination</div>
+              <div style="display:flex;gap:12px;align-items:center;margin-top:6px;">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                  <input type="checkbox" id="sttAdaptiveSilence" checked style="accent-color:var(--cyan);">
+                  Adaptive Cutoff
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                  <input type="checkbox" id="sttNeuralBrowserVad" checked style="accent-color:var(--cyan);">
+                  Browser Neural VAD
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Mic & Audio Dropzone Test Workbench -->
+      <div class="section">
+        <h3>Live Audio Testing Workbench</h3>
+        <div class="grid-2">
+          <!-- Mic Input Card -->
+          <div class="card highlight-stt">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span class="field-label" style="margin:0;">Microphone Input</span>
+              <button id="btnRefreshMics" style="padding:2px 8px;font-size:11px;">🔄 Refresh Devices</button>
+            </div>
+            <select id="micDeviceSel" style="margin-bottom:8px;"></select>
+            
+            <!-- Live VU Level Meter -->
+            <div style="position:relative;">
+              <canvas id="micVuCanvas" class="visualizer-canvas" style="height:48px;"></canvas>
+              <div id="micThresholdMarker" style="position:absolute;top:0;bottom:0;width:2px;background:var(--yellow);pointer-events:none;display:none;" title="RMS Threshold"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:2px;">
+              <span>VU Level: <b id="micLevelText" style="color:#fff;">0.000</b></span>
+              <span>Threshold: <b id="micThreshText" style="color:var(--green);">0.030</b></span>
+              <span id="micVadIndicator" style="color:var(--muted);">● Silence</span>
+            </div>
+
+            <!-- Record Button -->
+            <div style="display:flex;gap:8px;margin-top:12px;align-items:center;">
+              <button id="btnRecordMic" class="accent-stt" style="flex:1;padding:9px;">🎙️ Start Recording</button>
+              <span id="recordTimer" style="font-family:var(--mono);font-size:13px;color:var(--cyan);min-width:50px;">0.0s</span>
+            </div>
+          </div>
+
+          <!-- File Upload Dropzone Card -->
+          <div class="card highlight-stt">
+            <div class="field-label">Audio File Dropzone</div>
+            <div class="dropzone" id="audioDropzone">
+              <div style="font-size:24px;margin-bottom:4px;">📁</div>
+              <div style="font-weight:600;color:#cbd5e1;">Drag & drop audio file here</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">.wav, .webm, .mp3, .ogg, .m4a</div>
+              <input type="file" id="audioFileInput" accept="audio/*" style="display:none;">
+            </div>
+            <div id="sttFileInfo" style="font-size:11.5px;color:var(--cyan);margin-top:6px;display:none;"></div>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+              <button id="btnBrowseFile" style="flex:1;">Select Audio File</button>
+              <button id="btnTranscribeFile" class="accent-stt" disabled>Transcribe File</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transcription Output Box -->
+      <div class="section">
+        <h3>Transcription Result & Diagnostics</h3>
+        <div class="card">
+          <div class="output-head">
+            <span class="badge ok" id="sttBadge">READY</span>
+            <span class="meta" id="sttMetaText">Waiting for audio input…</span>
+            <button id="btnCopyTranscript" style="margin-left:auto;">Copy Transcript</button>
+          </div>
+          <pre id="sttOutputPre" style="min-height:70px;">(Transcribed text will appear here…)</pre>
+
+          <!-- Performance Metrics -->
+          <div class="metrics-grid" id="sttMetricsGrid" style="display:none;">
+            <div class="metric-box">
+              <div class="val" id="metricSttWhisperMs" style="color:var(--cyan);">-</div>
+              <div class="lbl">Whisper Inference</div>
+            </div>
+            <div class="metric-box">
+              <div class="val" id="metricSttTotalMs">-</div>
+              <div class="lbl">Roundtrip Time</div>
+            </div>
+            <div class="metric-box">
+              <div class="val" id="metricSttSize">-</div>
+              <div class="lbl">Audio Payload</div>
+            </div>
+            <div class="metric-box">
+              <div class="val" id="metricSttModel" style="color:var(--accent2);">-</div>
+              <div class="lbl">Active Model</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 4. SOURCE CODE TAB ==================== -->
+    <div class="tab-panel" id="panel-code">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
+        <span style="font-size:12px;font-weight:600;color:var(--muted);">Select Module to Inspect:</span>
+        <select id="codeModuleSel" style="max-width:320px;font-family:var(--mono);">
+          <option value="app/agent/executor.py">app/agent/executor.py (Tool Dispatcher)</option>
+          <option value="app/tools/definitions.py">app/tools/definitions.py (Tool Schemas)</option>
+          <option value="app/voice/tts.py">app/voice/tts.py (Kokoro ONNX TTS Engine)</option>
+          <option value="app/voice/stt.py">app/voice/stt.py (Faster-Whisper & VAD)</option>
+          <option value="app/tools/safety.py">app/tools/safety.py (Tool Authorization & Policy)</option>
+          <option value="app/tools/system.py">app/tools/system.py (OS & Diagnostics)</option>
+          <option value="app/tools/files.py">app/tools/files.py (Filesystem Tools)</option>
+          <option value="app/tools/jarvis.py">app/tools/jarvis.py (Advanced Jarvis Tools)</option>
+          <option value="app/tools/web.py">app/tools/web.py (Web Search & Scrape)</option>
+        </select>
+        <button id="btnCopyModuleCode" style="margin-left:auto;">Copy Module Code</button>
+      </div>
+
+      <div class="code-section">
+        <pre id="rawModuleCode" style="max-height:75vh;"></pre>
+      </div>
+    </div>
+
+    <!-- ==================== 5. ARCHITECTURE & HOW IT WORKS TAB ==================== -->
+    <div class="tab-panel" id="panel-how">
+      <div class="section">
+        <h3>1. Tool Execution & Safety Architecture</h3>
+        <div class="impl-note">
+          <ul>
+            <li><b>Registration:</b> Tools are declared in <span class="path">app/tools/definitions.py</span> as OpenAI schemas and dispatched in <span class="path">app/agent/executor.py</span>.</li>
+            <li><b>Safety Preflight:</b> <span class="path">app/tools/safety.py::authorize_tool_call</span> checks path safety, confirmation gates for destructive actions in assistant mode, and sandboxing.</li>
+            <li><b>Dual Dispatch:</b> Forwarded via MCP stdio (<span class="path">app/mcp_server.py</span>) or executed locally on worker threads (<span class="path">asyncio.to_thread</span>).</li>
+            <li><b>Logging:</b> Execution duration, arguments, and outcomes are journaled into <span class="path">backend/tool_runs.jsonl</span>.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>2. Kokoro Neural Speech Synthesis Pipeline</h3>
+        <div class="impl-note">
+          <ul>
+            <li><b>Model Weights:</b> Kokoro ONNX uses a unified FP16 ONNX model (<span class="path">kokoro-v1.0.fp16.onnx</span>) and a binary voice matrix (<span class="path">voices-v1.0.bin</span>).</li>
+            <li><b>Zero-Reload Switching:</b> Switching between 19+ voices loads only the target voice vector in memory; the ONNX graph stays resident in RAM/VRAM without re-initialization.</li>
+            <li><b>Speed Scaling:</b> Speed factor (0.5x to 2.0x) is calculated into the phoneme duration model without pitch changes.</li>
+            <li><b>Streaming:</b> Generates pure 24,000 Hz 16-bit PCM WAV audio delivered in RAM directly via <span class="path">GET /api/tts</span>.</li>
+            <li><b>Expressive Interjections (Direct IPA Injection):</b> Intercepts non-dictionary vocal groans and conversational fillers (<code>Mmrgh</code>, <code>Hmmmm</code>, <code>Pfft</code>, <code>Shhh</code>, <code>Fufufu</code>, <code>E-eh?!</code>, <code>Mm-hmm</code>) and translates them into native Kokoro IPA phonemes, eliminating espeak letter-spelling artifacts.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>3. Faster-Whisper & Dual-Stage VAD Pipeline</h3>
+        <div class="impl-note">
+          <ul>
+            <li><b>Stage 1 (Frontend):</b> Browser Web Audio API analyzes microphone RMS audio level and applies Silero WebAssembly neural confidence filter before capturing.</li>
+            <li><b>Stage 2 (In-Memory Transit):</b> Audio blobs are streamed to <span class="path">POST /api/speech/transcribe</span> or over WebSocket streams.</li>
+            <li><b>Stage 3 (PyTorch Silero VAD):</b> Backend Silero VAD purges background noise and isolates valid speech timestamps.</li>
+            <li><b>Stage 4 (CTranslate2 Faster-Whisper):</b> Low-latency beam_size=1 greedy decoding transcribes speech on CUDA/CPU with anti-hallucination post-filtering.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ================================================================== */
+/*  Constants & Config                                                */
+/* ================================================================== */
+const DEFAULT_BACKEND = "http://localhost:58392";
+const LS_KEY = "yuki_tool_tester_backend";
+
+const KOKORO_VOICES = [
+  // US Female
+  { id: "af_sarah", name: "Sarah (US Female - Soft/Cute)", group: "🇺🇸 US Female" },
+  { id: "af_sky", name: "Sky (US Female - Natural)", group: "🇺🇸 US Female" },
+  { id: "af_bella", name: "Bella (US Female - Warm)", group: "🇺🇸 US Female" },
+  { id: "af_alloy", name: "Alloy (US Female - Neutral)", group: "🇺🇸 US Female" },
+  { id: "af_aoede", name: "Aoede (US Female - Expressive)", group: "🇺🇸 US Female" },
+  { id: "af_heart", name: "Heart (US Female - Friendly)", group: "🇺🇸 US Female" },
+  { id: "af_jessica", name: "Jessica (US Female - Crisp)", group: "🇺🇸 US Female" },
+  { id: "af_kore", name: "Kore (US Female - Balanced)", group: "🇺🇸 US Female" },
+  { id: "af_nicole", name: "Nicole (US Female - Energetic)", group: "🇺🇸 US Female" },
+  { id: "af_nova", name: "Nova (US Female - Clear)", group: "🇺🇸 US Female" },
+  { id: "af_river", name: "River (US Female - Smooth)", group: "🇺🇸 US Female" },
+
+  // UK Female
+  { id: "bf_isabella", name: "Isabella (UK Female - Crisp)", group: "🇬🇧 UK Female" },
+  { id: "bf_alice", name: "Alice (UK Female - Clear)", group: "🇬🇧 UK Female" },
+  { id: "bf_lily", name: "Lily (UK Female - Gentle)", group: "🇬🇧 UK Female" },
+  { id: "bf_emma", name: "Emma (UK Female - Natural)", group: "🇬🇧 UK Female" },
+
+  // JP Female
+  { id: "jf_alpha", name: "Alpha (JP Female - Bright)", group: "🇯🇵 JP Female" },
+  { id: "jf_gongitsune", name: "Gongitsune (JP Female - Traditional)", group: "🇯🇵 JP Female" },
+  { id: "jf_nezumi", name: "Nezumi (JP Female - Sweet)", group: "🇯🇵 JP Female" },
+  { id: "jf_tebukuro", name: "Tebukuro (JP Female - Soft)", group: "🇯🇵 JP Female" },
+
+  // US Male
+  { id: "am_adam", name: "Adam (US Male - Deep)", group: "🇺🇸 US Male" },
+  { id: "am_michael", name: "Michael (US Male - Clear)", group: "🇺🇸 US Male" },
+];
+
+const TTS_SAMPLE_PHRASES = [
+  { label: "Groan: Mmrgh", text: "Mmrgh... sorry, I fell asleep again. Hmmmm, what time is it?" },
+  { label: "Scoff & Hush: Pfft / Shhh", text: "Pfft, as if! Shhh, you're going to wake everyone up." },
+  { label: "Anime Giggle: Fufufu", text: "Fufufu, you really thought you could defeat me? E-Ehh?! W-Wait a second!" },
+  { label: "Fillers & Nods: Mm-hmm", text: "Mm-hmm, exactly! Uh-huh, I understand completely. Ummm, let me check." },
+  { label: "Yuki Greeting", text: "Hello Master! I am Yuki, your desktop AI companion. What shall we work on today?" },
+  { label: "Tongue Twister", text: "Peter Piper picked a peck of pickled peppers. How many pickled peppers did Peter Piper pick?" },
+  { label: "Japanese Test", text: "こんにちは、マスター！今日も一緒に頑張りましょうね！" },
+  { label: "Numbers & Dates", text: "System diagnostics completed at 11:45 PM on August 20th. All 42 services are active." },
+  { label: "Emotion & Punctuation", text: "Wait, really?! That's incredible... I can't believe how fast Kokoro generates speech!" },
+];
+
+/* State */
+let state = {
+  tools: [],
+  basicNames: new Set(),
+  advancedNames: new Set(),
+  categories: [],
+  modules: {},
+  selectedTool: null,
+  activeTab: "test",
+  filter: { q: "", cat: "" },
+  settings: {},
+  
+  // TTS State
+  ttsAudioBlob: null,
+  ttsAudioUrl: null,
+  ttsHistory: [],
+  
+  // STT State
+  micStream: null,
+  mediaRecorder: null,
+  recordedChunks: [],
+  isRecording: false,
+  recordStartTime: 0,
+  recordTimerHandle: null,
+  micAudioCtx: null,
+  micAnalyser: null,
+  sttUploadedFile: null,
+  sttHistory: [],
+};
+
+const $ = (id) => document.getElementById(id);
+
+/* ================================================================== */
+/*  Networking Helpers                                                */
+/* ================================================================== */
+function backendBase() {
+  return ($("backendUrl").value || DEFAULT_BACKEND).replace(/\/+$/, "");
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(backendBase() + path, {
+    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+    ...opts,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = await res.text(); } catch (e) {}
+    throw new Error("HTTP " + res.status + (detail ? ": " + detail.slice(0, 200) : ""));
+  }
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return res.json();
+  }
+  return res.text();
+}
+
+function setStatus(kind, text) {
+  const dot = $("statusDot");
+  dot.className = kind;
+  $("statusText").textContent = text;
+}
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove("show"), 2400);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+/* ================================================================== */
+/*  Init & Bootstrapping                                              */
+/* ================================================================== */
+function initBackendUrl() {
+  let url = DEFAULT_BACKEND;
+  if (location.protocol === "http:" || location.protocol === "https:") {
+    if (location.port === "58392") {
+      url = location.origin;
+    }
+  }
+  $("backendUrl").value = localStorage.getItem(LS_KEY) || url;
+}
+
+async function loadAll() {
+  setStatus("loading", "loading…");
+  try {
+    const [basic, adv, all, src, settingsData] = await Promise.all([
+      api("/api/tools?mode=basic").catch(() => ({ tools: [] })),
+      api("/api/tools?mode=advanced").catch(() => ({ tools: [] })),
+      api("/api/tools?mode=all").catch(() => ({ tools: [] })),
+      api("/api/tools/source").catch(() => ({ modules: {} })),
+      api("/api/settings").catch(() => ({})),
+    ]);
+
+    state.basicNames = new Set((basic.tools || []).map(t => t.name));
+    state.advancedNames = new Set((adv.tools || []).map(t => t.name));
+    state.tools = all.tools || [];
+    state.modules = src.modules || {};
+    state.settings = settingsData || {};
+    state.categories = [...new Set(state.tools.map(t => t.category).filter(Boolean))].sort();
+
+    renderCatFilter();
+    renderToolList();
+    initTtsControls();
+    initSttControls();
+    renderCodeModule();
+
+    setStatus("on", state.tools.length + " tools ready");
+    toast(`Connected — ${state.tools.length} tools, TTS & Whisper ready`);
+  } catch (e) {
+    setStatus("off", "unreachable");
+    $("listEmpty").innerHTML = `<div class="big">⚠️</div>Could not reach backend at <b>${escapeHtml(backendBase())}</b>.<br><br>
+      Make sure the backend is running on port 58392.<br><br>
+      Best opened via <b>http://localhost:58392/tool-tester</b> (served directly by Yuki backend).`;
+    toast("Backend unreachable: " + e.message);
+  }
+}
+
+/* ================================================================== */
+/*  Tab Switching & Layout                                            */
+/* ================================================================== */
+function switchTab(tab) {
+  state.activeTab = tab;
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "panel-" + tab));
+
+  // Contextual sidebar
+  $("side-tools").style.display = tab === "test" ? "flex" : "none";
+  $("side-tts").style.display = tab === "tts" ? "flex" : "none";
+  $("side-stt").style.display = tab === "stt" ? "flex" : "none";
+
+  // Tab departure cleanups & lazy activation
+  if (tab !== "stt") {
+    stopMicMeter();
+  } else {
+    // Only init mic meter when entering STT tab
+    initMicMeter();
+  }
+
+  if (tab !== "tts") {
+    const p = $("ttsAudioPlayer");
+    if (p) { p.pause(); p.currentTime = 0; }
+    if (audioVisualizerCtx && audioVisualizerCtx.state === "running") {
+      audioVisualizerCtx.suspend();
+    }
+  }
+
+  if (tab === "code") renderCodeModule();
+}
+
+/* ================================================================== */
+/*  Tools Tester                                                      */
+/* ================================================================== */
+function toolTags(t) {
+  const tags = [];
+  tags.push({ cls: "cat", text: t.category || "uncategorized" });
+  if (state.basicNames.has(t.name) && state.advancedNames.has(t.name)) tags.push({ cls: "adv", text: "basic+advanced" });
+  else if (state.advancedNames.has(t.name)) tags.push({ cls: "adv", text: "advanced" });
+  else if (state.basicNames.has(t.name)) tags.push({ cls: "basic", text: "basic" });
+  else tags.push({ cls: "adv", text: "mcp/other" });
+  return tags;
+}
+
+function renderCatFilter() {
+  const sel = $("catFilter");
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">All categories</option>` +
+    state.categories.map(c => `<option>${escapeHtml(c)}</option>`).join("");
+  sel.value = cur;
+}
+
+function renderToolList() {
+  const { q, cat } = state.filter;
+  const ql = q.toLowerCase();
+  const filtered = state.tools.filter(t =>
+    (!ql || (t.name + " " + (t.description || "")).toLowerCase().includes(ql)) &&
+    (!cat || t.category === cat)
+  );
+  filtered.sort((a, b) => a.name.localeCompare(b.name));
+  $("toolCount").textContent = `${filtered.length} / ${state.tools.length} tools`;
+  const list = $("toolList");
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state">No tools match your filter.</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(t => `
+    <div class="tool-item ${state.selectedTool && state.selectedTool.name === t.name ? "selected" : ""}" data-name="${escapeAttr(t.name)}">
+      <div class="tname">${escapeHtml(t.name)}</div>
+      <div class="tdesc">${escapeHtml(t.description || "")}</div>
+      <div class="tags">${toolTags(t).map(x => `<span class="tag ${x.cls}">${escapeHtml(x.text)}</span>`).join("")}</div>
+    </div>`).join("");
+  list.querySelectorAll(".tool-item").forEach(el => {
+    el.addEventListener("click", () => selectTool(el.dataset.name));
+  });
+}
+
+function selectTool(name) {
+  const t = state.tools.find(x => x.name === name);
+  if (!t) return;
+  state.selectedTool = t;
+  document.querySelectorAll(".tool-item").forEach(el =>
+    el.classList.toggle("selected", el.dataset.name === name));
+  $("emptyMain").style.display = "none";
+  $("toolContent").style.display = "block";
+  $("toolName").textContent = t.name;
+  $("toolDesc").textContent = t.description || "";
+  $("toolTags").innerHTML = toolTags(t).map(x => `<span class="tag ${x.cls}">${escapeHtml(x.text)}</span>`).join("");
+  renderForm();
+  updateJsonPreview();
+  $("outputWrap").classList.remove("visible");
+}
+
+function renderForm() {
+  const t = state.selectedTool;
+  const grid = $("argGrid");
+  const params = t.parameters || {};
+  const required = new Set(t.required_parameters || []);
+  const names = Object.keys(params);
+  if (!names.length) {
+    grid.innerHTML = `<div class="notice" style="grid-column: 1 / -1;">This tool takes no arguments.</div>`;
+    return;
+  }
+  grid.innerHTML = names.map(p => {
+    const spec = params[p] || {};
+    const type = spec.type || "string";
+    const req = required.has(p);
+    return `
+      <div class="arg ${req ? "missing" : ""}" data-arg="${escapeAttr(p)}">
+        <label>${escapeHtml(p)}
+          ${req ? `<span class="req" title="required">*</span>` : ""}
+          <span class="type">${escapeHtml(type)}</span>
+        </label>
+        ${spec.description ? `<div class="pdesc">${escapeHtml(spec.description)}</div>` : ""}
+        ${fieldControl(p, spec, type)}
+      </div>`;
+  }).join("");
+  grid.querySelectorAll("input, select, textarea").forEach(el => {
+    el.addEventListener("input", () => updateJsonPreview());
+  });
+}
+
+function fieldControl(name, spec, type) {
+  const id = "f_" + name.replace(/[^a-zA-Z0-9_]/g, "_");
+  if (Array.isArray(spec.enum) && spec.enum.length) {
+    return `<select id="${id}"><option value="">— select —</option>${spec.enum.map(v => `<option value="${escapeAttr(String(v))}">${escapeHtml(String(v))}</option>`).join("")}</select>`;
+  }
+  if (type === "boolean") {
+    return `<select id="${id}"><option value="">— unset —</option><option value="true">true</option><option value="false">false</option></select>`;
+  }
+  if (type === "integer" || type === "number") {
+    return `<input id="${id}" type="number" step="any" placeholder="(number)">`;
+  }
+  if (type === "array" || type === "object") {
+    return `<textarea id="${id}" spellcheck="false" placeholder="${type === "array" ? '["a","b"]' : '{"key": "value"}'}">${type === "array" ? "[]" : "{}"}</textarea>`;
+  }
+  return `<input id="${id}" type="text" spellcheck="false" placeholder="(string)">`;
+}
+
+function collectArgs() {
+  const t = state.selectedTool;
+  if (!t) return {};
+  const params = t.parameters || {};
+  const args = {};
+  Object.keys(params).forEach(name => {
+    const spec = params[name] || {};
+    const type = spec.type || "string";
+    const el = $("f_" + name.replace(/[^a-zA-Z0-9_]/g, "_"));
+    if (!el) return;
+    const raw = el.value;
+    if (raw === "" || raw === null || raw === undefined) return;
+    if (Array.isArray(spec.enum)) { args[name] = raw; return; }
+    if (type === "boolean") { args[name] = raw === "true"; return; }
+    if (type === "integer") { const n = parseInt(raw, 10); if (!Number.isNaN(n)) args[name] = n; return; }
+    if (type === "number") { const n = parseFloat(raw); if (!Number.isNaN(n)) args[name] = n; return; }
+    if (type === "array" || type === "object") {
+      try { args[name] = JSON.parse(raw); } catch (e) { args[name] = raw; }
+      return;
+    }
+    args[name] = raw;
+  });
+  return args;
+}
+
+function updateJsonPreview() {
+  const args = state.selectedTool ? collectArgs() : {};
+  $("jsonPreview").textContent = JSON.stringify(args, null, 2);
+}
+
+async function runTool() {
+  const t = state.selectedTool;
+  if (!t) return;
+  const args = collectArgs();
+  const btn = $("runBtn");
+  btn.disabled = true;
+  btn.textContent = "Running…";
+  $("runMeta").textContent = "";
+  $("outputWrap").classList.remove("visible");
+
+  const t0 = performance.now();
+  try {
+    const res = await api("/api/tools/run", {
+      method: "POST",
+      body: JSON.stringify({
+        name: t.name,
+        arguments: args,
+        mode: $("modeSel").value,
+      }),
+    });
+    const ms = Math.round(performance.now() - t0);
+    renderOutput(res, ms);
+  } catch (e) {
+    renderOutput({ ok: false, error: e.message, result: "" }, Math.round(performance.now() - t0));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "▶ Run Tool";
+  }
+}
+
+function renderOutput(res, clientMs) {
+  const wrap = $("outputWrap");
+  wrap.classList.add("visible");
+  const out = $("output");
+  const badge = $("outBadge");
+  const meta = $("outMeta");
+  const text = String(res.result ?? res.error ?? "(no output)");
+
+  let cls = "ok", label = "OK";
+  if (text.startsWith("CONFIRM_REQUIRED") || text.includes("CONFIRM_REQUIRED:")) {
+    cls = "confirm"; label = "CONFIRM REQUIRED";
+  } else if (res.ok === false || /^(error|failed)[:\s]/i.test(text.trim())) {
+    cls = "err"; label = "ERROR";
+  }
+  badge.className = "badge " + cls;
+  badge.textContent = label;
+  out.className = cls;
+  out.textContent = text;
+  meta.textContent = `backend ${(res.duration_ms ?? 0)}ms · client ${clientMs}ms · tool=${res.tool || "?"} · mode=${res.mode ?? "-"}`;
+}
+
+/* ================================================================== */
+/*  Kokoro TTS Studio Implementation                                  */
+/* ================================================================== */
+function initTtsControls() {
+  // Populate voices dropdown
+  const vSel = $("ttsVoiceSel");
+  vSel.innerHTML = "";
+  const groups = {};
+  KOKORO_VOICES.forEach(v => {
+    if (!groups[v.group]) groups[v.group] = [];
+    groups[v.group].push(v);
+  });
+  Object.keys(groups).forEach(g => {
+    const optGroup = document.createElement("optgroup");
+    optGroup.label = g;
+    groups[g].forEach(v => {
+      const opt = document.createElement("option");
+      opt.value = v.id;
+      opt.textContent = v.name;
+      optGroup.appendChild(opt);
+    });
+    vSel.appendChild(optGroup);
+  });
+
+  // Set default from profile settings or af_sarah
+  const savedVoice = state.settings.tts_voice || "af_sarah";
+  if (vSel.querySelector(`option[value="${savedVoice}"]`)) {
+    vSel.value = savedVoice;
+  }
+
+  // Populate sample phrase chips
+  const chipContainer = $("ttsPhraseChips");
+  chipContainer.innerHTML = TTS_SAMPLE_PHRASES.map((p, idx) => `
+    <span class="chip" data-idx="${idx}">${escapeHtml(p.label)}</span>
+  `).join("");
+  chipContainer.querySelectorAll(".chip").forEach(c => {
+    c.addEventListener("click", () => {
+      const p = TTS_SAMPLE_PHRASES[parseInt(c.dataset.idx, 10)];
+      if (p) {
+        $("ttsInputText").value = p.text;
+        updateTtsCharCount();
+      }
+    });
+  });
+
+  // Render presets in sidebar
+  renderTtsSidebarPresets();
+
+  // Wire rate slider and select
+  $("ttsRateSlider").addEventListener("input", (e) => {
+    const val = parseFloat(e.target.value).toFixed(2);
+    $("ttsRateVal").textContent = val + "x";
+  });
+  $("ttsRateSel").addEventListener("change", (e) => {
+    if (e.target.value !== "auto") {
+      $("ttsRateSlider").value = e.target.value;
+      $("ttsRateVal").textContent = parseFloat(e.target.value).toFixed(2) + "x";
+    } else {
+      $("ttsRateVal").textContent = "auto";
+    }
+  });
+
+  $("ttsProviderSel").addEventListener("change", (e) => {
+    $("ttsCloudPanel").style.display = e.target.value !== "local" ? "block" : "none";
+  });
+
+  $("ttsInputText").addEventListener("input", updateTtsCharCount);
+  updateTtsCharCount();
+
+  $("btnSynthesize").addEventListener("click", synthesizeAndPlay);
+  $("btnStopTtsAudio").addEventListener("click", stopTtsAudio);
+  $("btnDownloadTtsWav").addEventListener("click", downloadTtsWav);
+  $("btnCopyTtsCurl").addEventListener("click", copyTtsCurl);
+  $("btnApplyTtsSettings").addEventListener("click", applyTtsSettingsToProfile);
+
+  // Wire Expressive Interjections & IPA Toggle
+  const ipaToggle = $("ttsIpaInterjectionsToggle");
+  if (ipaToggle) {
+    if (state.settings && state.settings.kokoro_ipa_interjections !== undefined) {
+      ipaToggle.checked = Boolean(state.settings.kokoro_ipa_interjections);
+    } else {
+      ipaToggle.checked = false;
+    }
+    const updateIpaStatus = () => {
+      const isChecked = ipaToggle.checked;
+      const statusEl = $("ipaInterjectionsToggleStatus");
+      const badgeEl = $("ipaInterjectionsBadge");
+      if (statusEl) {
+        statusEl.textContent = isChecked ? "ACTIVE" : "DISABLED";
+        statusEl.style.color = isChecked ? "var(--green)" : "var(--muted)";
+      }
+      if (badgeEl) {
+        badgeEl.className = isChecked ? "badge ok" : "badge";
+        badgeEl.textContent = isChecked ? "Active" : "(Default: Off)";
+        badgeEl.style.color = isChecked ? "" : "#94a3b8";
+        badgeEl.style.border = isChecked ? "" : "1px solid rgba(255,255,255,0.1)";
+      }
+    };
+    ipaToggle.addEventListener("change", () => {
+      updateIpaStatus();
+      toast(`IPA Interjections ${ipaToggle.checked ? "Enabled (Direct IPA ON)" : "Disabled (Clean Words Fallback)"}`);
+    });
+    updateIpaStatus();
+  }
+}
+
+function updateTtsCharCount() {
+  const len = ($("ttsInputText").value || "").length;
+  $("ttsCharCount").textContent = `${len} / 400 chars`;
+  $("ttsCharCount").style.color = len > 400 ? "var(--red)" : "var(--muted)";
+}
+
+function renderTtsSidebarPresets() {
+  const list = $("ttsPresetList");
+  list.innerHTML = KOKORO_VOICES.map(v => `
+    <div class="preset-item" data-vid="${escapeAttr(v.id)}">
+      <div style="font-weight:600;font-size:12px;color:#fff;">${escapeHtml(v.name.split(" - ")[0])}</div>
+      <div style="font-size:11px;color:var(--muted);">${escapeHtml(v.group)} · <span style="font-family:var(--mono);color:var(--pink);">${escapeHtml(v.id)}</span></div>
+    </div>
+  `).join("");
+  list.querySelectorAll(".preset-item").forEach(item => {
+    item.addEventListener("click", () => {
+      $("ttsVoiceSel").value = item.dataset.vid;
+      list.querySelectorAll(".preset-item").forEach(x => x.classList.toggle("selected", x === item));
+      toast(`Voice set to: ${item.dataset.vid}`);
+    });
+  });
+}
+
+let audioVisualizerInitialized = false;
+let audioVisualizerCtx = null;
+let audioAnalyser = null;
+let audioSourceNode = null;
+
+function setupAudioVisualizer(audioEl) {
+  if (audioVisualizerInitialized) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    audioVisualizerCtx = new AudioCtx();
+    audioAnalyser = audioVisualizerCtx.createAnalyser();
+    audioAnalyser.fftSize = 128;
+    audioSourceNode = audioVisualizerCtx.createMediaElementSource(audioEl);
+    audioSourceNode.connect(audioAnalyser);
+    audioAnalyser.connect(audioVisualizerCtx.destination);
+    audioVisualizerInitialized = true;
+    drawTtsVisualizer();
+  } catch (e) {
+    console.warn("Visualizer init note:", e);
+  }
+}
+
+function drawTtsVisualizer() {
+  const canvas = $("ttsCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const bufferLength = audioAnalyser ? audioAnalyser.frequencyBinCount : 0;
+  const dataArray = audioAnalyser ? new Uint8Array(bufferLength) : null;
+
+  function render() {
+    requestAnimationFrame(render);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!audioAnalyser) return;
+    audioAnalyser.getByteFrequencyData(dataArray);
+
+    ctx.fillStyle = "#090b10";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const barWidth = (canvas.width / bufferLength) * 1.5;
+    let x = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      const barHeight = (dataArray[i] / 255) * canvas.height;
+      const r = 244, g = 114, b = 182;
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.2 + (barHeight / canvas.height) * 0.8})`;
+      ctx.fillRect(x, canvas.height - barHeight, barWidth - 1, barHeight);
+      x += barWidth;
+    }
+  }
+  render();
+}
+
+async function synthesizeAndPlay() {
+  const text = $("ttsInputText").value.trim();
+  if (!text) { toast("Please enter text to synthesize"); return; }
+
+  const voice = $("ttsVoiceSel").value;
+  const rateSel = $("ttsRateSel").value;
+  const rate = rateSel === "auto" ? "auto" : $("ttsRateSlider").value;
+
+  const btn = $("btnSynthesize");
+  btn.disabled = true;
+  btn.textContent = "Synthesizing…";
+  $("ttsStatusMeta").textContent = "Generating audio on backend…";
+
+  const t0 = performance.now();
+  try {
+    const ipaOn = $("ttsIpaInterjectionsToggle") ? $("ttsIpaInterjectionsToggle").checked : true;
+    const params = new URLSearchParams({
+      text: text,
+      voice: voice,
+      rate: rate,
+      ipa_enhancement: ipaOn ? "true" : "false"
+    });
+    const res = await fetch(`${backendBase()}/api/tts?${params.toString()}`);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`TTS synthesis error: HTTP ${res.status} ${errText}`);
+    }
+
+    const arrayBuffer = await res.arrayBuffer();
+    const durationMs = Math.round(performance.now() - t0);
+    const blob = new Blob([arrayBuffer], { type: "audio/wav" });
+    
+    if (state.ttsAudioUrl) URL.revokeObjectURL(state.ttsAudioUrl);
+    state.ttsAudioBlob = blob;
+    state.ttsAudioUrl = URL.createObjectURL(blob);
+
+    const audioPlayer = $("ttsAudioPlayer");
+    audioPlayer.src = state.ttsAudioUrl;
+    
+    // Connect visualizer
+    setupAudioVisualizer(audioPlayer);
+    if (audioVisualizerCtx && audioVisualizerCtx.state === "suspended") {
+      audioVisualizerCtx.resume();
+    }
+
+    await audioPlayer.play();
+
+    // Compute metrics
+    audioPlayer.onloadedmetadata = () => {
+      const audioDur = audioPlayer.duration;
+      const rtf = audioDur > 0 ? (audioDur / (durationMs / 1000)).toFixed(1) : "-";
+      $("metricTtsTime").textContent = durationMs + "ms";
+      $("metricTtsDur").textContent = audioDur.toFixed(2) + "s";
+      $("metricTtsRtf").textContent = rtf + "x";
+      $("metricTtsSize").textContent = (blob.size / 1024).toFixed(1) + " KB";
+      $("ttsMetricsGrid").style.display = "grid";
+      $("ttsStatusMeta").textContent = `Done in ${durationMs}ms (${rtf}x real-time) · IPA Interjections: ${ipaOn ? 'ON' : 'OFF'}`;
+    };
+
+    // Add to history
+    addTtsHistory({
+      text: text.slice(0, 45) + (text.length > 45 ? "…" : ""),
+      voice: voice,
+      latency: durationMs,
+      size: (blob.size / 1024).toFixed(1) + " KB",
+      time: new Date().toLocaleTimeString()
+    });
+
+  } catch (e) {
+    $("ttsStatusMeta").textContent = "Synthesis failed: " + e.message;
+    toast("TTS error: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "▶ Synthesize & Play";
+  }
+}
+
+function stopTtsAudio() {
+  const p = $("ttsAudioPlayer");
+  p.pause();
+  p.currentTime = 0;
+  toast("Audio stopped");
+}
+
+function downloadTtsWav() {
+  if (!state.ttsAudioBlob) { toast("No synthesized audio to download yet"); return; }
+  const a = document.createElement("a");
+  a.href = state.ttsAudioUrl;
+  a.download = `yuki_kokoro_${$("ttsVoiceSel").value}_${Date.now()}.wav`;
+  a.click();
+  toast("Downloaded WAV file");
+}
+
+function copyTtsCurl() {
+  const text = encodeURIComponent($("ttsInputText").value.trim());
+  const voice = $("ttsVoiceSel").value;
+  const rate = $("ttsRateSel").value === "auto" ? "auto" : $("ttsRateSlider").value;
+  const ipaOn = $("ttsIpaInterjectionsToggle") ? $("ttsIpaInterjectionsToggle").checked : true;
+  const cmd = `curl -s "${backendBase()}/api/tts?text=${text}&voice=${voice}&rate=${rate}&ipa_enhancement=${ipaOn}" --output speech.wav`;
+  copyText(cmd);
+}
+
+async function applyTtsSettingsToProfile() {
+  try {
+    const payload = {
+      tts_voice: $("ttsVoiceSel").value,
+      tts_rate: $("ttsRateSel").value === "auto" ? "auto" : $("ttsRateSlider").value,
+      tts_provider: $("ttsProviderSel").value,
+      kokoro_ipa_interjections: $("ttsIpaInterjectionsToggle") ? $("ttsIpaInterjectionsToggle").checked : true
+    };
+    await api("/api/settings/update", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    toast("Voice settings saved to Yuki profile!");
+  } catch (e) {
+    toast("Failed to update profile settings: " + e.message);
+  }
+}
+
+function addTtsHistory(item) {
+  state.ttsHistory.unshift(item);
+  if (state.ttsHistory.length > 8) state.ttsHistory.pop();
+  const list = $("ttsHistoryList");
+  list.innerHTML = state.ttsHistory.map(h => `
+    <div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="font-weight:600;color:#fff;">${escapeHtml(h.text)}</div>
+      <div style="color:var(--muted);">${escapeHtml(h.voice)} · <span style="color:var(--pink);">${h.latency}ms</span> · ${h.size}</div>
+    </div>
+  `).join("");
+}
+
+/* ================================================================== */
+/*  Whisper STT Lab Implementation                                    */
+/* ================================================================== */
+function initSttControls() {
+  // Populate audio test clips in sidebar
+  renderSttSidebarClips();
+
+  // Wire VAD collapsible
+  $("vadToggleBtn").addEventListener("click", () => {
+    const panel = $("vadPanel");
+    const isHidden = panel.style.display === "none";
+    panel.style.display = isHidden ? "block" : "none";
+    $("vadToggleIcon").textContent = isHidden ? "▲ Collapse fine-tuning" : "▼ Expand fine-tuning (RMS, Silero thresholds, timeouts)";
+  });
+
+  $("vadRmsSlider").addEventListener("input", (e) => {
+    const val = parseFloat(e.target.value).toFixed(3);
+    $("vadRmsVal").textContent = val;
+    $("micThreshText").textContent = val;
+  });
+
+  $("vadSileroSlider").addEventListener("input", (e) => {
+    $("vadSileroVal").textContent = parseFloat(e.target.value).toFixed(2);
+  });
+
+  // Memory management buttons
+  $("btnLoadWhisper").addEventListener("click", loadWhisperModel);
+  $("btnUnloadWhisper").addEventListener("click", unloadWhisperModel);
+  $("btnApplySttSettings").addEventListener("click", applySttSettingsToProfile);
+
+  // Mic recording & dropzone
+  $("btnRefreshMics").addEventListener("click", refreshMicDevices);
+  $("btnRecordMic").addEventListener("click", toggleMicRecording);
+  $("btnBrowseFile").addEventListener("click", () => $("audioFileInput").click());
+  $("audioFileInput").addEventListener("change", handleFileSelect);
+  $("btnTranscribeFile").addEventListener("click", transcribeUploadedFile);
+  $("btnCopyTranscript").addEventListener("click", () => copyText($("sttOutputPre").textContent));
+  $("btnFetchInspector").addEventListener("click", fetchDebugHistory);
+
+  // Dropzone drag-drop
+  const dz = $("audioDropzone");
+  dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("dragover"); });
+  dz.addEventListener("dragleave", () => dz.classList.remove("dragover"));
+  dz.addEventListener("drop", (e) => {
+    e.preventDefault(); dz.classList.remove("dragover");
+    if (e.dataTransfer.files && e.dataTransfer.files.length) {
+      handleSelectedFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  refreshMicDevices();
+  $("micDeviceSel").addEventListener("change", () => {
+    if (state.activeTab === "stt") {
+      stopMicMeter();
+      initMicMeter();
+    }
+  });
+}
+
+function renderSttSidebarClips() {
+  const clips = [
+    { title: "Live Mic Test", desc: "Speak directly into your microphone to benchmark latency." },
+    { title: "Audio File Drop", desc: "Drop pre-recorded voice clips to test Silero noise filters." },
+    { title: "VRAM Memory Test", desc: "Test CTranslate2 lazy model loading and unloading." },
+  ];
+  $("sttClipList").innerHTML = clips.map(c => `
+    <div class="preset-item">
+      <div style="font-weight:600;font-size:12px;color:#fff;">${escapeHtml(c.title)}</div>
+      <div style="font-size:11px;color:var(--muted);">${escapeHtml(c.desc)}</div>
+    </div>
+  `).join("");
+}
+
+async function refreshMicDevices() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter(d => d.kind === "audioinput");
+    const sel = $("micDeviceSel");
+    sel.innerHTML = `<option value="">System Default Microphone</option>` +
+      audioInputs.map(d => `<option value="${escapeAttr(d.deviceId)}">${escapeHtml(d.label || `Microphone (${d.deviceId.slice(0, 8)}…)`)}</option>`).join("");
+  } catch (e) {
+    console.warn("Could not enumerate mic devices:", e);
+  }
+}
+
+function stopMicMeter() {
+  if (state.isRecording) {
+    stopRecordingAndTranscribe();
+  }
+  if (state.micStream) {
+    state.micStream.getTracks().forEach(t => t.stop());
+    state.micStream = null;
+  }
+  if (state.micAudioCtx) {
+    try { state.micAudioCtx.close(); } catch (e) {}
+    state.micAudioCtx = null;
+    state.micAnalyser = null;
+  }
+  const canvas = $("micVuCanvas");
+  if (canvas) {
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#090b10";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  const lvl = $("micLevelText");
+  if (lvl) lvl.textContent = "0.000";
+  const ind = $("micVadIndicator");
+  if (ind) {
+    ind.textContent = "● Mic Standby";
+    ind.style.color = "var(--muted)";
+  }
+}
+
+async function initMicMeter() {
+  if (state.activeTab !== "stt") return;
+  try {
+    const deviceId = $("micDeviceSel")?.value || undefined;
+    const constraints = {
+      audio: deviceId ? { deviceId: { exact: deviceId } } : true
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    if (state.activeTab !== "stt") {
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
+    state.micStream = stream;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    state.micAudioCtx = new AudioCtx();
+    state.micAnalyser = state.micAudioCtx.createAnalyser();
+    state.micAnalyser.fftSize = 256;
+    const src = state.micAudioCtx.createMediaStreamSource(stream);
+    src.connect(state.micAnalyser);
+    drawMicMeter();
+    refreshMicDevices();
+  } catch (e) {
+    console.warn("Microphone meter not active:", e);
+    const ind = $("micVadIndicator");
+    if (ind) {
+      ind.textContent = "● Mic Standby (Click Record)";
+      ind.style.color = "var(--muted)";
+    }
+  }
+}
+
+function drawMicMeter() {
+  const canvas = $("micVuCanvas");
+  if (!canvas || !state.micAnalyser) return;
+  const ctx = canvas.getContext("2d");
+  const data = new Uint8Array(state.micAnalyser.frequencyBinCount);
+
+  function render() {
+    if (!state.micAnalyser || state.activeTab !== "stt") return;
+    requestAnimationFrame(render);
+    state.micAnalyser.getByteFrequencyData(data);
+    
+    // Calculate RMS volume level
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+    const rms = Math.sqrt(sum / data.length) / 255.0;
+    
+    const lvlEl = $("micLevelText");
+    if (lvlEl) lvlEl.textContent = rms.toFixed(3);
+    const thresh = parseFloat($("vadRmsSlider")?.value || 0.03);
+    const isVoice = rms >= thresh;
+
+    const ind = $("micVadIndicator");
+    if (ind) {
+      ind.textContent = isVoice ? "● Voice Detected" : "● Silence / Noise";
+      ind.style.color = isVoice ? "var(--green)" : "var(--muted)";
+    }
+
+    ctx.fillStyle = "#090b10";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw level meter bar
+    const w = rms * canvas.width * 2.2;
+    const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
+    grad.addColorStop(0, "#34d399");
+    grad.addColorStop(0.6, "#38bdf8");
+    grad.addColorStop(1, "#f87171");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, Math.min(canvas.width, w), canvas.height);
+
+    // Threshold line
+    const threshX = thresh * canvas.width * 2.2;
+    ctx.strokeStyle = "#fbbf24";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(threshX, 0);
+    ctx.lineTo(threshX, canvas.height);
+    ctx.stroke();
+  }
+  render();
+}
+
+async function toggleMicRecording() {
+  if (state.isRecording) {
+    stopRecordingAndTranscribe();
+  } else {
+    startMicRecording();
+  }
+}
+
+async function startMicRecording() {
+  try {
+    if (!state.micStream) {
+      await initMicMeter();
+    }
+    if (!state.micStream) {
+      toast("Microphone stream not active. Please grant microphone access.");
+      return;
+    }
+    const stream = state.micStream;
+    state.recordedChunks = [];
+    
+    const options = { mimeType: "audio/webm;codecs=opus" };
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      delete options.mimeType;
+    }
+
+    state.mediaRecorder = new MediaRecorder(stream, options);
+    state.mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) state.recordedChunks.push(e.data);
+    };
+
+    state.mediaRecorder.onstop = async () => {
+      const blob = new Blob(state.recordedChunks, { type: state.mediaRecorder.mimeType || "audio/webm" });
+      await sendAudioForTranscription(blob, "mic_recording.webm");
+    };
+
+    state.mediaRecorder.start(100);
+    state.isRecording = true;
+    state.recordStartTime = performance.now();
+
+    const btn = $("btnRecordMic");
+    btn.className = "danger";
+    btn.textContent = "⏹️ Stop & Transcribe";
+
+    state.recordTimerHandle = setInterval(() => {
+      const elapsed = ((performance.now() - state.recordStartTime) / 1000).toFixed(1);
+      $("recordTimer").textContent = elapsed + "s";
+    }, 100);
+
+    $("sttBadge").className = "badge info";
+    $("sttBadge").textContent = "RECORDING";
+    $("sttMetaText").textContent = "Recording live microphone audio…";
+
+  } catch (e) {
+    toast("Microphone capture failed: " + e.message);
+  }
+}
+
+function stopRecordingAndTranscribe() {
+  if (!state.isRecording || !state.mediaRecorder) return;
+  state.isRecording = false;
+  clearInterval(state.recordTimerHandle);
+  state.mediaRecorder.stop();
+
+  const btn = $("btnRecordMic");
+  btn.className = "accent-stt";
+  btn.textContent = "🎙️ Start Recording";
+  $("sttBadge").className = "badge info";
+  $("sttBadge").textContent = "TRANSCRIBING";
+  $("sttMetaText").textContent = "Processing audio with Faster-Whisper on backend…";
+}
+
+function handleFileSelect(e) {
+  if (e.target.files && e.target.files.length) {
+    handleSelectedFile(e.target.files[0]);
+  }
+}
+
+function handleSelectedFile(file) {
+  state.sttUploadedFile = file;
+  $("sttFileInfo").style.display = "block";
+  $("sttFileInfo").textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+  $("btnTranscribeFile").disabled = false;
+  toast(`Loaded: ${file.name}`);
+}
+
+async function transcribeUploadedFile() {
+  if (!state.sttUploadedFile) return;
+  await sendAudioForTranscription(state.sttUploadedFile, state.sttUploadedFile.name);
+}
+
+async function sendAudioForTranscription(blobOrFile, filename) {
+  const t0 = performance.now();
+  const formData = new FormData();
+  formData.append("file", blobOrFile, filename || "audio.webm");
+
+  const modelSize = $("sttModelSel").value;
+  formData.append("model", modelSize);
+
+  try {
+    const res = await fetch(`${backendBase()}/api/speech/transcribe`, {
+      method: "POST",
+      body: formData
+    });
+
+    if (!res.ok) {
+      throw new Error(`Transcription HTTP error: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const totalMs = Math.round(performance.now() - t0);
+    const transcript = data.text || "(no speech detected)";
+    const whisperMs = data.timing?.whisper_ms ? `${data.timing.whisper_ms}ms` : "-";
+
+    $("sttOutputPre").textContent = transcript;
+    $("sttBadge").className = transcript.startsWith("(") ? "badge info" : "badge ok";
+    $("sttBadge").textContent = transcript.startsWith("(") ? "SILENCE" : "TRANSCRIBED";
+    $("sttMetaText").textContent = `Completed in ${totalMs}ms (Whisper: ${whisperMs})`;
+
+    $("metricSttWhisperMs").textContent = whisperMs;
+    $("metricSttTotalMs").textContent = totalMs + "ms";
+    $("metricSttSize").textContent = (blobOrFile.size / 1024).toFixed(1) + " KB";
+    $("metricSttModel").textContent = modelSize;
+    $("sttMetricsGrid").style.display = "grid";
+
+    // Add to history
+    addSttHistory({
+      text: transcript.slice(0, 45) + (transcript.length > 45 ? "…" : ""),
+      latency: totalMs,
+      whisperMs: whisperMs,
+      size: (blobOrFile.size / 1024).toFixed(1) + " KB",
+      time: new Date().toLocaleTimeString()
+    });
+
+  } catch (e) {
+    $("sttBadge").className = "badge err";
+    $("sttBadge").textContent = "ERROR";
+    $("sttMetaText").textContent = "Transcription error: " + e.message;
+    toast("STT failed: " + e.message);
+  }
+}
+
+async function loadWhisperModel() {
+  const btn = $("btnLoadWhisper");
+  btn.disabled = true;
+  btn.textContent = "Loading Model…";
+  try {
+    const res = await api("/api/speech/whisper/load", { method: "POST" });
+    $("sttMemBadge").className = "badge ok";
+    $("sttMemBadge").textContent = "Model: Loaded in VRAM";
+    toast(res.message || "Whisper model loaded into VRAM");
+  } catch (e) {
+    toast("Failed to load Whisper: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "⚡ Pre-warm Whisper";
+  }
+}
+
+async function unloadWhisperModel() {
+  const btn = $("btnUnloadWhisper");
+  btn.disabled = true;
+  btn.textContent = "Unloading…";
+  try {
+    const res = await api("/api/speech/whisper/unload", { method: "POST" });
+    $("sttMemBadge").className = "badge info";
+    $("sttMemBadge").textContent = "Model: Unloaded (VRAM Free)";
+    toast("Whisper model unloaded & VRAM freed!");
+  } catch (e) {
+    toast("Failed to unload Whisper: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🧹 Unload Model & Free VRAM";
+  }
+}
+
+async function applySttSettingsToProfile() {
+  try {
+    const payload = {
+      whisper_model: $("sttModelSel").value,
+      whisper_compute_type: $("sttComputeSel").value,
+      stt_device: $("sttDeviceSel").value,
+      stt_language: $("sttLangSel").value,
+      vad_threshold: parseFloat($("vadRmsSlider").value),
+      silero_vad_threshold: parseFloat($("vadSileroSlider").value),
+      silence_timeout_ms: parseInt($("sttSilenceTimeoutSel").value, 10),
+      adaptive_silence_cutoff: $("sttAdaptiveSilence").checked,
+      use_neural_browser_vad: $("sttNeuralBrowserVad").checked,
+    };
+    await api("/api/settings/update", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    toast("STT & VAD settings saved to Yuki profile!");
+  } catch (e) {
+    toast("Failed to save settings: " + e.message);
+  }
+}
+
+async function fetchDebugHistory() {
+  try {
+    const data = await api("/api/speech/debug_history");
+    const turns = data.turns || [];
+    const list = $("sttHistoryList");
+    if (!turns.length) {
+      list.innerHTML = `<div style="color:var(--muted);padding:4px 0;">No debug turns found yet.</div>`;
+      return;
+    }
+    list.innerHTML = turns.map(t => `
+      <div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+        <div style="font-weight:600;color:#fff;">${escapeHtml(t.transcript || "(silence)")}</div>
+        <div style="color:var(--muted);">${escapeHtml(t.model || "whisper")} · <span style="color:var(--cyan);">${t.whisper_ms}ms</span></div>
+      </div>
+    `).join("");
+    toast(`Loaded ${turns.length} inspector turns`);
+  } catch (e) {
+    toast("Could not fetch debug turns: " + e.message);
+  }
+}
+
+function addSttHistory(item) {
+  state.sttHistory.unshift(item);
+  if (state.sttHistory.length > 8) state.sttHistory.pop();
+  const list = $("sttHistoryList");
+  list.innerHTML = state.sttHistory.map(h => `
+    <div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="font-weight:600;color:#fff;">${escapeHtml(h.text)}</div>
+      <div style="color:var(--muted);">${h.whisperMs} inference · <span style="color:var(--cyan);">${h.latency}ms total</span> · ${h.size}</div>
+    </div>
+  `).join("");
+}
+
+/* ================================================================== */
+/*  Source Code Viewer                                                */
+/* ================================================================== */
+function renderCodeModule() {
+  const sel = $("codeModuleSel");
+  const modPath = sel.value;
+  const code = state.modules[modPath] || `// Source for ${modPath} not loaded or unavailable.`;
+  $("rawModuleCode").textContent = code;
+}
+
+$("codeModuleSel").addEventListener("change", renderCodeModule);
+$("btnCopyModuleCode").addEventListener("click", () => copyText($("rawModuleCode").textContent));
+
+/* ================================================================== */
+/*  Copy Helpers                                                      */
+/* ================================================================== */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Copied to clipboard");
+  } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); toast("Copied to clipboard"); } catch (e2) { toast("Copy failed"); }
+    ta.remove();
+  }
+}
+
+/* ================================================================== */
+/*  Wiring & Listeners                                                */
+/* ================================================================== */
+$("search").addEventListener("input", (e) => { state.filter.q = e.target.value; renderToolList(); });
+$("catFilter").addEventListener("change", (e) => { state.filter.cat = e.target.value; renderToolList(); });
+$("connectBtn").addEventListener("click", () => { localStorage.setItem(LS_KEY, $("backendUrl").value); loadAll(); });
+$("backendUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") { localStorage.setItem(LS_KEY, $("backendUrl").value); loadAll(); } });
+$("runBtn").addEventListener("click", runTool);
+$("copyOutBtn").addEventListener("click", () => copyText($("output").textContent));
+$("copyCurlBtn").addEventListener("click", () => {
+  const t = state.selectedTool;
+  if (!t) return;
+  const args = collectArgs();
+  copyText(`curl -s -X POST ${backendBase()}/api/tools/run \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify({ name: t.name, arguments: args, mode: $("modeSel").value })}'`);
+});
+
+document.querySelectorAll(".tabs button").forEach(b => {
+  b.addEventListener("click", () => switchTab(b.dataset.tab));
+});
+
+/* ================================================================== */
+/*  Start!                                                            */
+/* ================================================================== */
+initBackendUrl();
+switchTab("test");
+loadAll();
+</script>
+</body>
+</html>

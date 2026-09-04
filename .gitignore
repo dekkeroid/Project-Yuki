@@ -5,8 +5,9 @@ frontend/build/
 
 #yuki home
 yuki home/
-testing/
+testing/*
 !testing/tool_tester.html
+!testing/websearch_tester.html
 
 # Python caching and environments
 __pycache__/
@@ -43,6 +44,7 @@ backend/scratch/
 backend/tests/
 scratch_scripts/
 backend/test.mp3
+backend/test_*.wav
 backend/TODO.md
 
 # Virtual Environment configuration tracking

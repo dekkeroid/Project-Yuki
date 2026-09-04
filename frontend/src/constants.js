@@ -185,6 +185,8 @@ export const BATTERY_PLUG_RESPONSES = {
 import { ANIMATIONS } from './animationsRegistry';
 
 export const STATIC_COMMANDS = [
+  { cmd: '/tts-test',      description: 'Test TTS speech directly on custom text without querying the LLM' },
+  { cmd: '/tts',           description: 'Test TTS speech directly (Alias for /tts-test)' },
   { cmd: '/pcstat',        description: 'Show live PC stats (CPU, RAM, GPU...)' },
   { cmd: '/boost-ram',     description: 'Deep RAM boost (optimizes Yuki + system background processes)' },
   { cmd: '/self-optimize', description: 'Trim Yuki working set & garbage collect (self-only)' },

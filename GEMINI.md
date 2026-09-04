@@ -30,29 +30,99 @@ Whenever adding, updating, or modifying any configuration setting, VAD parameter
 
 ---
 
-## New Tool Integration Protocol (5-Step Checklist)
+## New Tool Integration Protocol (Foolproof 8-Step Checklist)
 
-Whenever adding a new AI action tool or system capability to Project Yuki, **ALWAYS** follow this end-to-end 5-step checklist:
+Whenever adding a new AI action tool or system capability to Project Yuki, **ALWAYS** follow this end-to-end 8-step checklist to ensure proper schema exposure, executor routing, safety checks, MCP compatibility, and prompt formatting:
 
-### 1. Tool Implementation (`backend/app/tools/<module>.py`)
-- Implement the async or sync tool function with robust error handling, type conversion, and descriptive string output for the LLM.
-- If the tool interacts with visual windows (Canvas, HTML viewer, notifications), use `_broadcast_canvas_ws()` or WebSocket emitters.
+### 1. Tool Implementation (`backend/app/tools/<module>.py` or `AgentExecutor`)
+- **Standalone / System Tools**: Implement the function in a tool module (e.g. `backend/app/tools/system.py`, `files.py`, `web.py`, or a new dedicated module).
+- **State- / Memory-Bound Tools**: If the tool requires access to `AgentExecutor` state (`self.memory`, session IDs, active turn ID, etc.), implement it as a helper method on `AgentExecutor` in `backend/app/agent/executor.py` (e.g. `def _execute_<name>(self, **kwargs) -> str:`). *Remember the class indentation rule: indent by 4 spaces and include `self`!*
+- **Signatures & Typing**: Accept explicit typed parameters or `**kwargs` with robust fallbacks for argument aliases (e.g. `kwargs.get("path") or kwargs.get("file_path")`).
+- **Return Contract**:
+  - **Always return a string** (or JSON string).
+  - On failure, prefix the return string with `"Error: ..."` or `"Failed: ..."`. The agent executor detects errors via `lower_res.startswith("error:")` to register failures and update Yuki's mood (`react_mood_outcome(..., success=False)`).
+- **Canvas / UI Broadcasts**: If the tool interacts with floating visual windows (Canvas, HTML viewer, notifications), emit WebSocket events or use `_broadcast_canvas_ws()`.
 
 ### 2. Tool Schema Definitions (`backend/app/tools/definitions.py`)
-- **Schema Declaration**: Add the OpenAI-compatible function schema into `get_advanced_jarvis_tools_definition()` (Jarvis Mode) and/or `get_basic_tools_definition()` (Basic Mode).
-- **Disambiguation**: Write precise descriptions specifying what the tool does, parameter constraints, and explicit contrast against similar tools (e.g. vector diagrams vs. image diffusion).
+- **Schema Declaration**: Add the OpenAI-compatible function schema into:
+  - `get_advanced_jarvis_tools_definition()` (Jarvis / Autonomous Mode).
+  - `get_basic_tools_definition()` (Basic / Assistant Mode, if applicable).
+  - `get_codegraph_tool_definitions()` (Code navigation tools, if applicable).
+- **Schema Structure**:
+  - `type: "function"` with `function.name`, `function.description`, `function.parameters` (`type: "object"`, `properties`, and `required`).
+- **Disambiguation**: Write precise descriptions specifying what the tool does, parameter constraints, and explicit contrast against similar tools (e.g. vector diagrams vs. image diffusion, content search vs. file name search).
 
-### 3. Agent Dispatcher & Execution (`backend/app/agent/executor.py`)
-- **Import**: Import the new tool function inside `execute_tool()` / `_execute_single_tool()`.
-- **Dispatch Mapping**: Register the tool name in the execution dictionary to route tool call arguments to the Python function.
+### 3. Agent Dispatcher & Execution Routing (`backend/app/agent/executor.py`)
+- **Lazy Import**: Lazy-import the function inside `AgentExecutor.__init__` (under `# Lazy-import tool modules`, lines ~301–325).
+- **Register in `self.tools`**: Map the tool name in `self.tools = { ... }` (lines ~330–596). Use a lambda for argument normalization:
+  ```python
+  "my_tool": lambda **kwargs: my_tool(
+      kwargs.get("target") or kwargs.get("name") or "",
+      count=int(kwargs.get("count", 1))
+  ),
+  ```
+- **CRITICAL Basic Mode Allowlist (`basic_allowed`)**:
+  - If the tool is intended for Basic Mode, **you MUST add its name to `basic_allowed`** inside `_get_tool_definitions_for_messages()` (around line 2483). If omitted, `filtered_tools` silently drops it in Basic Mode!
+- **Voice-Mode Safety (`_VOICE_CONFIRM_TOOLS`)**:
+  - If the tool modifies files, executes terminal commands, or runs code, add its name to `_VOICE_CONFIRM_TOOLS` (around line 3452) so voice STT commands trigger explicit confirmation dialogs.
+- **Basic Mode Post-Tool Follow-Up Loops**:
+  - In Basic Mode, the executor uses categorization sets to guide the LLM after tool completion (around line 3579):
+    - `_INFO_TOOLS` (e.g. web search, read file): forces hard-stop; LLM summarizes in <3 sentences without chaining tools.
+    - `_DATA_TOOLS` (e.g. file search, system stats): conditional; allows 1 follow-up action if requested.
+    - `_MEMORY_TOOLS` (e.g. remember facts): forces hard-stop; silent conversational reply without mentioning memory updates.
+    - Default Action tools: confirms action in 1 short sentence and stops.
+    *(Autonomous Jarvis and Coder modes loop freely until task completion).*
 
 ### 4. Semantic Tool Selector & Keywords (`backend/app/tools/selector.py`)
-- **Hints**: Add colloquial trigger keywords to `_TOOL_HINTS` (e.g. `"paint"`, `"wallpaper"`, `"render"`) to grant high-confidence semantic matching bonus (`+0.12` / `+0.22`).
-- **Query Expansions**: Add common user slang or synonyms to `_QUERY_EXPANSIONS`.
-- **Allowlists**: If the tool is a core coding utility, include it in `_DEFAULT_CODING_TOOLS` or `_ALWAYS_INCLUDED_JARVIS_TOOLS`.
+- **Relevance Hints (`_TOOL_HINTS`)**:
+  - Add mapping in `_TOOL_HINTS`: `"my_tool": ("keyword1", "keyword2", "synonym")` to grant high-confidence semantic matching bonus (`+0.12` / `+0.22`) when dynamic tool calling matches user query tokens.
+- **Query Expansions (`_QUERY_EXPANSIONS`)**:
+  - Add common user slang or synonyms to `_QUERY_EXPANSIONS` if the tool concept is described with colloquial terms.
+- **Coder Mode Allowlist (`_DEFAULT_CODING_TOOLS`)**:
+  - If the tool is for Coder Mode, include it in `_DEFAULT_CODING_TOOLS`. This automatically populates the "Included Coder Tools" UI list.
+- **Always-Included Tools**:
+  - If the tool must NEVER be omitted by dynamic tool selection, include it in `_ALWAYS_INCLUDED_JARVIS_TOOLS` or `_ALWAYS_INCLUDED_BASIC_TOOLS`.
 
-### 5. System Prompt Directives (`backend/app/agent/prompts.py`)
-- Add a bullet under `2. JARVIS TOOLSET GUIDELINES` in `generate_jarvis_system_prompt()` instructing the AI on exact usage boundaries, required parameters, and best practices.
+### 5. System Prompt Directives & Scrubbing Syntax (`backend/app/agent/prompts.py`)
+- **Jarvis / Autonomous Mode**:
+  - Add a guideline bullet under `2. JARVIS TOOLSET GUIDELINES` in `get_advanced_jarvis_system_prompt()`.
+  - **CRITICAL SCRUBBING REGEX SYNTAX**: The line MUST start with a bullet, backticked name, and arrow:
+    `   • \`my_tool\` → Usage instructions, required parameters, and best practices.`
+    *Why?* `_scrub_blocked_tools()` uses regex `^[•\-*]?\s*`?([a-zA-Z0-9_]+)`?` to cleanly strip the entire line from the system prompt if the user blacklists or disables the tool!
+- **Basic Mode**: If applicable, add usage notes in `get_system_prompt()`.
+- **Coder Mode**: If applicable, add instructions in `get_coding_agent_system_prompt()`.
+
+### 6. Safety Policies, Confirmation Grants & Aliases (`backend/app/tools/safety.py`)
+- **Destructive Action Confirmation**:
+  - If the tool performs destructive, irreversible, or sensitive actions (killing processes, modifying system power, formatting, deleting files), add checks in `_requires_confirmation()`.
+- **Blocked Arguments / Commands**:
+  - If certain command patterns or critical targets must be blocked unconditionally (e.g. terminating Windows critical processes), add rules to `_blocked_reason()`.
+- **Tool Aliases (`_TOOL_ALIASES`)**:
+  - If the tool has both a Jarvis name (`jarvis_my_tool`) and a canonical base name (`my_tool`), map it in `_TOOL_ALIASES` so security policies apply symmetrically.
+- **Confirmation Target Formatting**:
+  - Ensure `describe_tool_target()` can extract a clean target string for display in confirmation dialogs (e.g. `[Safety Confirmation] Run 'my_tool' on 'file.txt'?`).
+
+### 7. Stdio FastMCP Server Registration (`backend/app/mcp_server.py`)
+- When `TOOL_TRANSPORT == "mcp-stdio"`, Yuki runs tools via FastMCP over stdio JSON-RPC.
+- Register the tool with `@mcp.tool()` in `backend/app/mcp_server.py` using `_guarded_tool_call()`:
+  ```python
+  @mcp.tool()
+  async def my_tool(param1: str, run_flag: bool = False, confirmation_grant_id: str | None = None) -> str:
+      """Tool description matching definitions.py."""
+      return await _guarded_tool_call("my_tool", tool_module.my_tool, {"param1": param1, "run_flag": run_flag, "confirmation_grant_id": confirmation_grant_id})
+  ```
+- *Note*: If omitted from `mcp_server.py`, the stdio MCP bridge will fail and fall back to in-process execution. Registering it ensures native MCP support.
+
+### 8. Diagnostics, Testing & Packaging (`main.py`, `resolver.py`, `yuki-backend.spec`)
+- **API Categorization (`backend/app/main.py`)**:
+  - In `get_tools_list()` (`/api/tools`), add the tool name to the appropriate category (e.g. `"Code & Filesystem"`, `"System & OS"`, `"Media & Control"`) so the diagnostics tool tester (`testing/tool_tester.html`) and frontend dashboard categorize it cleanly.
+  - Test the tool directly via `POST /api/tools/run`.
+- **Zero-Latency Resolver (`backend/app/agent/resolver.py`)** *(Optional)*:
+  - If the tool handles deterministic, instant user commands without needing LLM reasoning (like volume, mute, screenshot, time), add a regex rule in `resolve_command()`. Add announcement text in `executor.py` (`announcements` dict) if it steals focus.
+- **Autonomous Scheduled Tasks (`backend/app/tools/definitions.py`)** *(Optional)*:
+  - If the tool can be invoked by background watchers/intervals, add its name to `get_scheduled_task_schema()` under `run_tool` description.
+- **PyInstaller Hidden Imports (`backend/yuki-backend.spec`)**:
+  - If you created a new tool module (e.g. `backend/app/tools/my_tool.py`) or introduced new packages/libraries, add `'app.tools.my_tool'` to `manual_hidden`. If binary DLLs or assets are needed, follow the **Packaging & Installer Bundling Protocol**.
 
 ---
 
@@ -88,11 +158,52 @@ Whenever making changes to any database structure or table (`vectors.db`, `yuki_
 
 ---
 
-## Production / Installed App Location
+## Production / Installed App Location & Sync Boundary
 
 - **Build Pipeline**: Created by running `start_build.bat` (which builds frontend, PyInstaller backend, Electron packaging, and Inno Setup installer into `frontend\installer-output\`).
 - **Installed Location**: After running the installer created by `start_build.bat`, Yuki AI is installed at:
   `C:\Users\ihars\AppData\Local\Programs\Yuki AI\` (or `%LOCALAPPDATA%\Programs\Yuki AI\`).
 - **Packaged Backend**: The bundled backend executable and internal resources reside at:
   `C:\Users\ihars\AppData\Local\Programs\Yuki AI\resources\backend\`.
+- **STRICT PROD SYNC RULE (NEVER Robocopy to Installed Location)**:
+  - **NEVER** run `robocopy`, `Copy-Item`, `npx asar pack`, or any file copy commands targeting the installed production directory (`%LOCALAPPDATA%\Programs\Yuki AI\` or `C:\Users\ihars\AppData\Local\Programs\Yuki AI\`).
+  - Deploying, fast-syncing, or updating the installed production app is **strictly reserved for the user** (who runs `update_installed.ps1` or `start_build.bat` when ready).
+  - All AI modifications, builds (`npm run build`), and testing must strictly remain within the project workspace repository (`d:\Projects New\Projects Misc\Projects C\Project Yuki\`).
+
+---
+
+## Packaging & Installer Bundling Protocol (`start_build.bat`)
+
+Whenever adding new dependencies, external binaries, AI models, or C-extensions to Project Yuki, **ALWAYS** follow this checklist to ensure they package into the Inno Setup installer and load cleanly at runtime:
+
+### 1. Dynamic / Unlinked DLLs (NVIDIA CUDA, cuDNN, Audio / Video Codecs)
+- **The Pitfall**: PyInstaller's static binary scanner only detects DLLs listed in the Portable Executable (PE) import table at compile-time. Libraries that load DLLs dynamically at runtime via `LoadLibraryW()` or `ctypes.CDLL` (e.g. `onnxruntime-gpu`, `ctranslate2`, `torch`, `soundfile`, `imageio-ffmpeg`, `av`) will **silently fail** to package those DLLs.
+- **Spec Mapping (`backend/yuki-backend.spec`)**:
+  - Locate native `.dll` files in `backend/venv/Lib/site-packages/<package>/...`
+  - Explicitly append them to `manual_datas` or `all_binaries` (similar to how `_nvidia_dlls` and `av.libs` are bundled).
+- **Windows DLL Search Directory (`backend/run.py`)**:
+  - On Windows with Python 3.8+, Python no longer searches `PATH` or the working directory for DLLs loaded by Python/extensions.
+  - If DLLs are placed in a subfolder (e.g. `_internal/nvidia/.../bin` or custom tool directories), you **must** register that path using `os.add_dll_directory(str(dir_path))` early in `backend/run.py` before any module imports the C-extension.
+
+### 2. Dynamic / String-Based Python Imports
+- **The Pitfall**: Modules loaded via `importlib.import_module()`, dynamic dispatch (e.g., `app.tools.*`, `app.channels.*`), or conditional ASGI server adapters (Uvicorn protocols/lifespan) are invisible to PyInstaller's AST parser.
+- **Spec Hidden Imports (`backend/yuki-backend.spec`)**:
+  - Add the full module name string to `manual_hidden` or use `collect_all('<package>')` / `collect_submodules('<package>')`.
+
+### 3. Non-Code Runtime Data, Dictionaries & AI Models
+- **The Pitfall**: Non-Python files (`.onnx`, `.bin`, `.pt`, `.json`, `.html`, `.dic`, `.dat`) are completely ignored unless declared.
+- **Backend Model Assets**: Add to `manual_datas` in `backend/yuki-backend.spec` (e.g., Kokoro ONNX, Whisper base weights, pykakasi data).
+- **Frontend / 3D Avatar Models (`.vrm`)**: Add to `extraResources` in `frontend/electron-builder.yml` under `./bundled-models` so they remain outside the Electron `app.asar` archive and can be served directly.
+
+### 4. Standalone Binaries & Language Servers
+- If introducing standalone executables (e.g., LSP language servers `pyright`, `typescript-language-server`, or CLI tools):
+  - Place portable versions in `backend/app/bin/<tool>/`.
+  - Include the directory in `manual_datas` in `yuki-backend.spec`.
+  - Access them at runtime using path resolution that checks both development mode (`Path(__file__).parent...`) and frozen mode (`sys._MEIPASS` or `sys.executable` parent).
+
+### 5. Installer Upgrade Hygiene (`frontend/installer.iss`)
+- Inno Setup must not leave behind stale or conflicting `.dll` / `.pyd` files from older builds when a user updates.
+- Check `[InstallDelete]` in `installer.iss`: ensure `{app}\resources\backend\_internal` is wiped during installation so incompatible binary mixtures never occur.
+
+
 

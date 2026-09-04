@@ -99,7 +99,7 @@ _TOOL_HINTS = {
     # Jarvis Autonomous Mode Tools
     "jarvis_run_python": ("python", "script", "code", "run", "execute", "math", "pandas", "numpy", "calc", "data", "processing"),
     "jarvis_remember_user_fact": ("remember", "memory", "preference", "name", "fact", "user", "like", "dislike", "save"),
-    "jarvis_web_search": ("web", "internet", "search", "google", "lookup", "browse", "find", "online"),
+    "jarvis_web_search": ("web", "internet", "search", "google", "lookup", "browse", "find", "online", "news", "breaking", "headlines", "latest", "article", "update"),
     "jarvis_web_scrape": ("scrape", "extract", "fetch", "url", "page", "site", "webpage", "article", "html", "download", "link"),
     "jarvis_query_file_db": ("find", "search", "file", "db", "query", "database", "index", "folder", "locate"),
     "jarvis_read_file": ("read", "view", "open", "file", "cat", "lines", "source", "code", "content"),
@@ -139,7 +139,7 @@ _TOOL_HINTS = {
     "search_files": ("search", "find", "file", "folder", "directory", "locate", "anime"),
     "list_directory": ("list", "directory", "folder", "files"),
     "launch_app": ("open", "launch", "start", "app", "application", "program", "browser"),
-    "web_search": ("web", "internet", "search", "google", "lookup", "browse"),
+    "web_search": ("web", "internet", "search", "google", "lookup", "browse", "news", "breaking", "headlines", "latest"),
     "run_terminal_command": ("terminal", "command", "shell", "powershell", "cmd", "run", "execute"),
     "run_python_script": ("python", "script", "code", "run", "execute"),
     "take_screenshot": ("screenshot", "capture", "screen", "image"),

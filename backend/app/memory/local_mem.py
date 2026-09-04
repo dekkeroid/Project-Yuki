@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from app import config
 from app.memory.mood_engine import MoodEngine, AXES as MOOD_AXES
 
@@ -44,6 +45,8 @@ class MemoryManager:
             "user_dislikes": [],
             "custom_facts": {},
             "interaction_count": 0,
+            "last_active_epoch": None,
+            "last_shutdown_epoch": None,
             "mood_spectrum": dict(DEFAULT_MOOD_SPECTRUM),
             "settings": {
                 # [SEARCH FOR MODEL CHANGE] Old: "llm_model": "ministra-3",
@@ -105,6 +108,7 @@ class MemoryManager:
                 "auto_reset_rotation": False,
                 "mood_source": "script",
                 "tts_preload": True,
+                "kokoro_ipa_interjections": False,
                 "vrm_dpr": 1.5,
                 "vrm_fps": 40,
                 "chat_mode": False,
@@ -140,6 +144,10 @@ class MemoryManager:
                 "stable_horde_api_key": "0000000000",
                 "stable_horde_model": "Pony Diffusion V6 XL",
                 "user_country": "Auto",
+                "user_location": "Auto",
+                "greeting_weather_enabled": True,
+                "greeting_news_enabled": True,
+                "greeting_news_topics": "",
                 "allow_voice_barge_in": True,
                 "barge_in_sensitivity": 1.0,
                 "telegram_enabled": False,
@@ -150,8 +158,13 @@ class MemoryManager:
                 "telegram_verbose_tools": True,
                 "proactive_nudge_mode": "visual_only",
                 "proactive_nudge_interval_min": 45,
+                "proactive_nudge_engine": "template",
+                "proactive_nudge_include_screen": False,
+                "proactive_nudge_quiet_min": 30,
+                "proactive_nudge_boredom_pct": 80,
                 "desk_sleep_idle_min": 3,
-                "companion_nap_silence_min": 5
+                "companion_nap_silence_min": 5,
+                "companion_nap_energy_pct": 30
             }
         }
         if not os.path.exists(self.profile_path):
@@ -184,6 +197,7 @@ class MemoryManager:
                 config.TTS_VOICE = data["settings"].get("tts_voice", config.TTS_VOICE)
                 config.TTS_RATE = data["settings"].get("tts_rate", config.TTS_RATE)
                 config.TTS_DEVICE = data["settings"].get("tts_device", config.TTS_DEVICE)
+                config.KOKORO_IPA_INTERJECTIONS = bool(data["settings"].get("kokoro_ipa_interjections", getattr(config, "KOKORO_IPA_INTERJECTIONS", False)))
                 config.STT_DEVICE = data["settings"].get("stt_device", config.STT_DEVICE)
                 config.WHISPER_MODEL = data["settings"].get("whisper_model", getattr(config, "WHISPER_MODEL", "small"))
                 config.WHISPER_COMPUTE_TYPE = data["settings"].get("whisper_compute_type", getattr(config, "WHISPER_COMPUTE_TYPE", "int8_float16"))
@@ -208,6 +222,10 @@ class MemoryManager:
                 config.ADAPTIVE_SILENCE_CUTOFF = bool(data["settings"].get("adaptive_silence_cutoff", getattr(config, "ADAPTIVE_SILENCE_CUTOFF", True)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
                 config.USER_COUNTRY = data["settings"].get("user_country", getattr(config, "USER_COUNTRY", "Auto"))
+                config.USER_LOCATION = data["settings"].get("user_location", getattr(config, "USER_LOCATION", "Auto"))
+                config.GREETING_WEATHER_ENABLED = bool(data["settings"].get("greeting_weather_enabled", getattr(config, "GREETING_WEATHER_ENABLED", True)))
+                config.GREETING_NEWS_ENABLED = bool(data["settings"].get("greeting_news_enabled", getattr(config, "GREETING_NEWS_ENABLED", True)))
+                config.GREETING_NEWS_TOPICS = str(data["settings"].get("greeting_news_topics", getattr(config, "GREETING_NEWS_TOPICS", "")))
                 config.SEND_TOOLS_IN_SIMPLE = bool(data["settings"].get("send_tools_in_simple", False))
                 config.HOTKEY_SHORTCUT = data["settings"].get("hotkey_shortcut", getattr(config, "HOTKEY_SHORTCUT", "Alt+S"))
                 config.HOTKEY_FOCUS_CHAT = bool(data["settings"].get("hotkey_focus_chat", getattr(config, "HOTKEY_FOCUS_CHAT", True)))
@@ -245,8 +263,13 @@ class MemoryManager:
                 data["settings"]["character_persona"] = config.CHARACTER_PERSONA
                 config.PROACTIVE_NUDGE_MODE = str(data["settings"].get("proactive_nudge_mode", getattr(config, "PROACTIVE_NUDGE_MODE", "visual_only"))).strip().lower()
                 config.PROACTIVE_NUDGE_INTERVAL_MIN = int(data["settings"].get("proactive_nudge_interval_min", getattr(config, "PROACTIVE_NUDGE_INTERVAL_MIN", 45)))
+                config.PROACTIVE_NUDGE_ENGINE = str(data["settings"].get("proactive_nudge_engine", getattr(config, "PROACTIVE_NUDGE_ENGINE", "template"))).strip().lower()
+                config.PROACTIVE_NUDGE_INCLUDE_SCREEN = bool(data["settings"].get("proactive_nudge_include_screen", getattr(config, "PROACTIVE_NUDGE_INCLUDE_SCREEN", False)))
+                config.PROACTIVE_NUDGE_QUIET_MIN = int(data["settings"].get("proactive_nudge_quiet_min", getattr(config, "PROACTIVE_NUDGE_QUIET_MIN", 30)))
+                config.PROACTIVE_NUDGE_BOREDOM_PCT = int(data["settings"].get("proactive_nudge_boredom_pct", getattr(config, "PROACTIVE_NUDGE_BOREDOM_PCT", 80)))
                 config.DESK_SLEEP_IDLE_MIN = int(data["settings"].get("desk_sleep_idle_min", getattr(config, "DESK_SLEEP_IDLE_MIN", 3)))
                 config.COMPANION_NAP_SILENCE_MIN = int(data["settings"].get("companion_nap_silence_min", getattr(config, "COMPANION_NAP_SILENCE_MIN", 5)))
+                config.COMPANION_NAP_ENERGY_PCT = int(data["settings"].get("companion_nap_energy_pct", getattr(config, "COMPANION_NAP_ENERGY_PCT", 30)))
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
                 config.START_WITH_LAST_AVATAR_SIZE = bool(data["settings"].get("start_with_last_avatar_size", getattr(config, "START_WITH_LAST_AVATAR_SIZE", True)))
                 config.ENABLE_VECTOR_MEMORY = bool(data["settings"].get("enable_vector_memory", getattr(config, "ENABLE_VECTOR_MEMORY", False)))
@@ -320,7 +343,49 @@ class MemoryManager:
 
     def increment_interactions(self):
         self.profile["interaction_count"] += 1
+        self.record_session_active()
+
+    def record_session_active(self):
+        """Records the current timestamp as the last active interaction time."""
+        now = time.time()
+        self.profile["last_active_epoch"] = now
+        try:
+            from app.memory.presence_engine import presence_manager
+            presence_manager.record_interaction()
+        except Exception:
+            pass
         self._save_profile()
+
+    def record_session_shutdown(self):
+        """Records the current timestamp as the last shutdown/exit time."""
+        now = time.time()
+        self.profile["last_shutdown_epoch"] = now
+        self.profile["last_active_epoch"] = now
+        self._save_profile()
+
+    def get_absence_duration_seconds(self) -> float:
+        """Returns elapsed seconds since last active/shutdown session."""
+        now = time.time()
+        candidates = []
+        for key in ("last_shutdown_epoch", "last_active_epoch", "mood_last_update"):
+            val = self.profile.get(key)
+            if val and isinstance(val, (int, float)) and 0 < val <= now:
+                candidates.append(float(val))
+
+        try:
+            from app.memory.db import get_relationship_status
+            rel = get_relationship_status()
+            rel_epoch = rel.get("last_interaction_epoch")
+            if rel_epoch and isinstance(rel_epoch, (int, float)) and 0 < rel_epoch <= now:
+                candidates.append(float(rel_epoch))
+        except Exception:
+            pass
+
+        if not candidates:
+            return 0.0
+
+        last_time = max(candidates)
+        return max(0.0, now - last_time)
 
     def update_fact(self, key: str, value: str):
         raw_items = [v.strip() for v in str(value).split(",") if v.strip()]
@@ -589,10 +654,22 @@ class MemoryManager:
             config.PROACTIVE_NUDGE_MODE = str(value).strip().lower()
         elif key == "proactive_nudge_interval_min":
             config.PROACTIVE_NUDGE_INTERVAL_MIN = int(value)
+        elif key == "proactive_nudge_engine":
+            config.PROACTIVE_NUDGE_ENGINE = str(value).strip().lower()
+        elif key == "proactive_nudge_include_screen":
+            config.PROACTIVE_NUDGE_INCLUDE_SCREEN = bool(value)
+        elif key == "proactive_nudge_quiet_min":
+            config.PROACTIVE_NUDGE_QUIET_MIN = int(value)
+        elif key == "proactive_nudge_boredom_pct":
+            config.PROACTIVE_NUDGE_BOREDOM_PCT = int(value)
         elif key == "desk_sleep_idle_min":
             config.DESK_SLEEP_IDLE_MIN = int(value)
         elif key == "companion_nap_silence_min":
             config.COMPANION_NAP_SILENCE_MIN = int(value)
+        elif key == "companion_nap_energy_pct":
+            config.COMPANION_NAP_ENERGY_PCT = int(value)
+        elif key == "kokoro_ipa_interjections":
+            config.KOKORO_IPA_INTERJECTIONS = bool(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 

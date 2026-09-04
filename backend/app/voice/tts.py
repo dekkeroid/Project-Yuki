@@ -828,12 +828,21 @@ def clean_text_for_tts(text: str) -> str:
     emoticon_pattern = r'(?::[-~]?[)DPOopd(\[\]\\/|]|;[-~]?[)D]|<3|>_<|>_>|<_<|>_~|T_T|o_O|O_o|>\.<)'
     text = re.sub(emoticon_pattern, ' ', text)
 
+    # 0.6 Collapse repeated character elongations (e.g. "soooo" -> "soo", "noooo" -> "noo", "hmmmm" -> "hmm")
+    # This prevents G2P models from stuttering or spelling out words letter-by-letter.
+    text = re.sub(r'([a-zA-Z])\1{2,}', r'\1\1', text)
+    # Strip sleep/snore tokens like zzz / zzzz
+    text = re.sub(r'\b[zZ]{2,}\b', '', text)
+    # Normalize 3+ multi-dots into standard ellipsis
+    text = re.sub(r'\.{3,}', '...', text)
+
     # 1. Strip thought / reasoning / think blocks (including unclosed tags)
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*$', '', text, flags=re.IGNORECASE)
 
-    # 2. Strip unique animation and emotion tags (<yuki_anim:.../>, [yuki_anim:.../>, [anim:...], etc.)
-    text = re.sub(r'[<\[\(](?:yuki_)?(?:anim|emotion):\s*[a-zA-Z0-9_\-]+\s*(?:\/?>|[\]\)])', '', text, flags=re.IGNORECASE)
+    # 2. Strip unique animation and emotion tags (<yuki_anim:.../>, <yuki_anim eer >, [yuki_anim:...], [anim:...], etc.)
+    text = re.sub(r'[<\[\(](?:yuki_)?(?:anim|emotion)[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<yuki_[^>]*>', '', text, flags=re.IGNORECASE)
 
     # 3. Selective Tag Stripping (only structural elements)
     # Replaces actual HTML tags (e.g. <div>, <br/>, <span ...>) but preserves <Enter>, <Ctrl>, etc.
@@ -1118,9 +1127,187 @@ def clean_text_for_tts(text: str) -> str:
     return text
 
 
-async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) -> bytes:
+# ─────────────────────────────────────────────────────────────────────────────
+# Kokoro Expressive Interjections: Direct IPA Injections
+# ─────────────────────────────────────────────────────────────────────────────
+KOKORO_IPA_INTERJECTIONS = [
+    # Sleepy sounds, groans & vocal murmurs
+    (r'\b[Mm]+r+g+h*\b', 'mɚːɡ'),                 # Mmrgh, mrgh -> "mrrg" (sleepy groan)
+    (r'\b[Mm]+g+h+\b', 'mː'),                      # Mgh, mmgh -> "mmm" (closed mouth mutter)
+    (r'\b[Hh]+m+p+h+!*\b', 'hˈəmf!'),              # Hmph, hmph! -> "humph!" (sassy scoff)
+    (r'\b[Uu]+g+h+\b', 'ˈʌɡ'),                     # Ugh -> "ugh" (exasperated sigh)
+    (r'\b[Gg]+u+h+\b|\b[Gg]+a+h+\b', 'ɡˈʌ'),       # Guh, gah -> "guh" (flustered choke)
+    (r'\b[Bb]+l+e+h+\b', 'blˈɛ'),                  # Bleh -> "bleh" (playful tongue-out)
+    (r'\b[Ee]+w+\b', 'ˈiːjuː'),                    # Eww, ew -> "ee-yoo" (disgusted cringe)
+    (r'\b[Oo]+f{2,}\b', 'ˈuːf'),                   # Oof, ooff -> "oof" (gut-punch reaction)
+    
+    # Hums, fillers & contemplation
+    (r'\b[Mm]+-[Hh]+m+\b|\b[Mm]+h+m+\b', 'mˈhm̩'), # Mm-hmm, mmhmm, mhm -> affirmative nod
+    (r'\b[Hh]+m+\b\?', 'hmˈ↗?'),                  # Hmm? -> inquisitive rising hum
+    (r'\b[Hh]+m+\b', 'hmː'),                      # Hmmm, hmm -> smooth closed-mouth hum without 'uh' vowel
+    (r'\b[Mm]{2,}\b\?', 'mˈ↗?'),                   # Mm? -> inquisitive rising closed-mouth hum
+    (r'\b[Mm]{2,}\b', 'mː'),                       # Mm, Mmm, Mmmm -> gentle closed-mouth humming murmur
+    (r'\b[Mm]+h+\b', 'mː'),                        # Mmh, mmh -> soft hum
+    (r'\b[Nn]{2,}\b', 'nː'),                       # Nn, Nnn -> soft nasal hum
+    (r'\b[Uu]+h+-[Hh]+u+h+\b', 'ˈʌhˈʌ'),          # Uh-huh -> casual affirmative
+    (r'\b[Uu]+h+-[Oo]+h+!*\b|\b[Uu]+h+o+h+!*\b', 'ˈʌˈoʊ!'), # Uh-oh -> playful melodic alarm
+    (r'\b[Uu]+m+\b', 'ˈʌmː'),                      # Ummm, um -> thinking hesitation filler
+    
+    # Whispers, scoffs & non-verbal sounds
+    (r'\b[Pp]+f+t+\b', 'pˈfət'),                   # Pfft -> dismissive puff / snort
+    (r'\b[Ss]+h{2,}\b', 'ʃː'),                     # Shh, shhh -> sustained hush whisper
+    (r'\b[Tt]+s+k+(?:-[Tt]+s+k+)*\b', 'tˈəsk'),    # Tsk, tsk-tsk -> tongue-clicking reprimand
+    (r'\b[Aa]+r+g+h*\b', 'ˈɑːɹɡ'),                # Argh, arghhh -> dramatic frustrated outburst
+    (r'\b[Aa]+w+\b', 'ˈɔːː'),                      # Aww, awww -> soft coo
+    
+    # Anime persona expressive sounds
+    (r'\b[Ff]+u+f+u+f+u+\b', 'həhəhə'),           # Fufufu -> aristocratic anime chuckles
+    (r'\b[Ff]+u+e{2,}\b', 'fjˈuːː'),              # Fueee -> flustered anime whine
+    (r'\b[Ee]+-[Ee]+h+\b\??', 'ˈeːːʔ?!'),          # E-Ehh?! -> surprised high-pitched gasp
+    (r'\b[Nn]+y+a+h*\b', 'njˈɑː'),                # Nya, nyah -> crisp anime cat sound
+    (r'\b[Hh]+e+h+e+\b', 'hˈɛhɛ'),                # Hehe -> chuckle
+    (r'\b[Hh]+e+h+\b', 'hˈɛ'),                     # Heh -> quiet smirk
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Clean Text Fallbacks (When Direct IPA Injection is OFF)
+# Replaces non-dictionary groans/fillers with clean spoken words so Kokoro
+# never spells out letters like "M-M-R-G-H" or "P-E-E-F-F-T".
+# ─────────────────────────────────────────────────────────────────────────────
+KOKORO_CLEAN_TEXT_FALLBACKS = [
+    # Sleepy sounds, groans & vocal murmurs
+    (r'\b[Mm]+r+g+h*\b', 'Ugh'),                  # Mmrgh, mrgh -> Ugh
+    (r'\b[Mm]+g+h+\b', 'Mmh'),                    # Mgh, mmgh -> Mmh
+    (r'\b[Hh]+m+p+h+!*\b', 'Humph!'),              # Hmph, hmph! -> Humph!
+    (r'\b[Uu]+g+h+\b', 'Ugh'),                    # Ugh -> Ugh
+    (r'\b[Gg]+u+h+\b|\b[Gg]+a+h+\b', 'Gah'),      # Guh, gah -> Gah
+    (r'\b[Bb]+l+e+h+\b', 'Bleh'),                 # Bleh -> Bleh
+    (r'\b[Ee]+w+\b', 'Ew'),                       # Eww, ewww -> Ew
+    (r'\b[Oo]+f{2,}\b', 'Oof'),                   # Oof, ooff -> Oof
+    
+    # Hums, fillers & contemplation
+    (r'\b[Mm]+-[Hh]+m+\b|\b[Mm]+h+m+\b', 'Uh-huh'), # Mm-hmm, mmhmm, mhm -> Uh-huh
+    (r'\b[Hh]+m+\b\?', 'Hm?'),                    # Hmm? -> Hm?
+    (r'\b[Hh]+m+\b', 'Hmm'),                      # Hmmmm, hmm -> Hmm
+    (r'\b[Mm]{2,}\b\?', 'Hm?'),                   # Mm? -> Hm?
+    (r'\b[Mm]{2,}\b', 'Hmm'),                     # Mm, Mmm -> Hmm (spoken as "hum" instead of spelling "M-M")
+    (r'\b[Mm]+h+\b', 'Hmm'),                      # Mmh -> Hmm
+    (r'\b[Nn]{2,}\b', 'Hmm'),                     # Nn, Nnn -> Hmm
+    (r'\b[Uu]+h+-[Hh]+u+h+\b', 'Uh-huh'),         # Uh-huh -> Uh-huh
+    (r'\b[Uu]+h+-[Oo]+h+!*\b|\b[Uu]+h+o+h+!*\b', 'Uh-oh!'), # Uh-oh -> Uh-oh!
+    (r'\b[Uu]+m+\b', 'Um'),                       # Ummm, um -> Um
+    
+    # Whispers, scoffs & non-verbal sounds
+    (r'\b[Pp]+f+t+\b', 'Hah'),                    # Pfft -> Hah
+    (r'\b[Ss]+h{2,}\b', 'Hush'),                  # Shh, shhh -> Hush
+    (r'\b[Tt]+s+k+(?:-[Tt]+s+k+)*\b', 'Tsk'),     # Tsk, tsk-tsk -> Tsk
+    (r'\b[Aa]+r+g+h*\b', 'Ah'),                   # Argh, arghhh -> Ah
+    (r'\b[Aa]+w+\b', 'Aw'),                       # Aww, awww -> Aw
+    
+    # Anime persona expressive sounds
+    (r'\b[Ff]+u+f+u+f+u+\b', 'Hehehe'),           # Fufufu -> Hehehe
+    (r'\b[Ff]+u+e{2,}\b', 'Whaa'),                # Fueee -> Whaa
+    (r'\b[Ee]+-[Ee]+h+\b\??', 'Eh?!'),            # E-Ehh?! -> Eh?!
+    (r'\b[Nn]+y+a+h*\b', 'Nya'),                  # Nya, nyah -> Nya
+    (r'\b[Hh]+e+h+e+\b', 'Hehe'),                 # Hehe -> Hehe
+    (r'\b[Hh]+e+h+\b', 'Heh'),                    # Heh -> Heh
+]
+
+
+def clean_text_fallback_interjections(text: str) -> str:
+    """
+    Substitutes non-dictionary conversational vocalizations with standard
+    dictionary English words so standard TTS produces natural speech without
+    spelling out abbreviations or acronyms letter-by-letter.
+    """
+    if not text:
+        return ""
+    modified = text
+    for pattern, fallback_word in KOKORO_CLEAN_TEXT_FALLBACKS:
+        def _repl(match):
+            raw_punc = match.group('trailing_punc') or ''
+            if fallback_word.endswith(('!', '?')) and raw_punc.startswith(('!', '?')):
+                raw_punc = ''
+            return f" {fallback_word}{raw_punc} "
+        full_pattern = pattern + r'(?P<trailing_punc>\.{3,}|…|[.,!?;])?'
+        modified = re.sub(full_pattern, _repl, modified, flags=re.IGNORECASE)
+    return re.sub(r'\s+', ' ', modified).strip()
+
+_IPA_PLACEHOLDER_WORDS = [
+    'xyzalpha', 'xyzbravo', 'xyzcharlie', 'xyzdelta', 'xyzecho',
+    'xyzfoxtrot', 'xyzgolf', 'xyzhotel', 'xyzindia', 'xyzjuliet'
+]
+_IPA_TAG_PHONEME_CACHE = {}
+
+
+def _get_placeholder_phoneme(tag: str, tokenizer, lang: str) -> str:
+    key = (tag, lang)
+    if key not in _IPA_TAG_PHONEME_CACHE:
+        _IPA_TAG_PHONEME_CACHE[key] = tokenizer.phonemize(tag, lang)
+    return _IPA_TAG_PHONEME_CACHE[key]
+
+
+def phonemize_with_ipa_interjections(text: str, tokenizer, lang: str = "en-us") -> str:
+    """
+    Substitutes non-dictionary conversational vocalizations and anime expressions
+    with exact Kokoro IPA symbols, bypassing espeak letter-by-letter spelling.
+    Uses cached placeholder tokens and preserves sentence punctuation to achieve
+    zero latency penalty compared to raw synthesis.
+    """
+    if not text or not tokenizer:
+        return text
+
+    placeholders = {}
+    counter = 0
+    modified_text = text
+
+    for pattern, ipa_val in KOKORO_IPA_INTERJECTIONS:
+        def _repl(match):
+            nonlocal counter
+            tag = _IPA_PLACEHOLDER_WORDS[counter % len(_IPA_PLACEHOLDER_WORDS)]
+            raw_punc = match.group('trailing_punc')
+            if raw_punc:
+                if ipa_val.endswith(('!', '?')) and raw_punc.startswith(('!', '?')):
+                    punc = ''
+                else:
+                    punc = raw_punc
+            else:
+                punc = '' if ipa_val.endswith(('!', '?')) else ','
+            placeholders[tag] = f"{ipa_val}{punc}"
+            counter += 1
+            return f" {tag} "
+        # Capture optional trailing punctuation (. , ! ? ... etc.)
+        full_pattern = pattern + r'(?P<trailing_punc>\.{3,}|…|[.,!?;])?'
+        modified_text = re.sub(full_pattern, _repl, modified_text, flags=re.IGNORECASE)
+
+    if not placeholders:
+        return tokenizer.phonemize(text, lang)
+
+    # Exactly ONE single espeak phonemization pass for the entire text
+    phonemes = tokenizer.phonemize(modified_text, lang)
+
+    # Instant in-memory substitution using cached tag phonemes
+    for tag, ipa_replacement in placeholders.items():
+        tag_phoneme = _get_placeholder_phoneme(tag, tokenizer, lang)
+        phonemes = phonemes.replace(tag_phoneme, ipa_replacement)
+
+    # Clean any accidental double punctuation or spacing
+    phonemes = re.sub(r',[,.]+', ',', phonemes)
+    phonemes = re.sub(r'\s+', ' ', phonemes).strip()
+    if phonemes.endswith(','):
+        phonemes = phonemes[:-1].strip()
+    return phonemes
+
+
+async def generate_speech_bytes(
+    text: str,
+    voice: str = None,
+    rate: str = None,
+    ipa_enhancement: bool = None,
+) -> bytes:
     """
     Generates WAV audio bytes for a given text using Kokoro-ONNX locally.
+    Supports ipa_enhancement (Direct IPA Interjections) for natural conversational filler sounds.
     """
     update_last_tts_time()
     text = clean_text_for_tts(text)
@@ -1226,8 +1413,26 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
         t0 = time.time()
         kokoro = await get_kokoro_async()
         import asyncio
+
+        effective_ipa = ipa_enhancement if ipa_enhancement is not None else getattr(config, "KOKORO_IPA_INTERJECTIONS", False)
+        target_payload = text
+        is_pho = False
+
+        if effective_ipa and lang_code.startswith("en") and hasattr(kokoro, "tokenizer"):
+            try:
+                target_payload = phonemize_with_ipa_interjections(text, kokoro.tokenizer, lang=lang_code)
+                is_pho = True
+            except Exception as pe:
+                print(f"[TTS] IPA interjections phonemization fallback: {pe}")
+                target_payload = clean_text_fallback_interjections(text)
+                is_pho = False
+        else:
+            # When IPA injection is OFF: apply Clean Text Fallback to avoid letter-by-letter spelling
+            target_payload = clean_text_fallback_interjections(text)
+            is_pho = False
+
         samples, sample_rate = await asyncio.to_thread(
-            kokoro.create, text, voice=kokoro_voice, speed=speed_factor, lang=lang_code
+            kokoro.create, target_payload, voice=kokoro_voice, speed=speed_factor, lang=lang_code, is_phonemes=is_pho
         )
         
         # Write to WAV bytes in-memory
@@ -1245,7 +1450,7 @@ async def generate_speech_bytes(text: str, voice: str = None, rate: str = None) 
                 session_cpu = _build_session(["CPUExecutionProvider"])
                 kokoro_cpu = Kokoro.from_session(session_cpu, str(VOICES_PATH))
                 samples, sample_rate = await asyncio.to_thread(
-                    kokoro_cpu.create, text, voice=kokoro_voice, speed=speed_factor, lang=lang_code
+                    kokoro_cpu.create, target_payload, voice=kokoro_voice, speed=speed_factor, lang=lang_code, is_phonemes=is_pho
                 )
                 audio_buffer = io.BytesIO()
                 sf.write(audio_buffer, samples, sample_rate, format='WAV')

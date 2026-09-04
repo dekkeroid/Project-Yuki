@@ -57,6 +57,27 @@ tts_warmed_up_event = asyncio.Event()
 whisper_warmed_up_event = asyncio.Event()
 backend_fully_ready = False
 
+# Dynamic cache of probed vision model capabilities: model_name -> bool
+_VISION_CAPABILITY_CACHE: dict[str, bool] = {}
+
+def _capture_screen_thumbnail_b64(max_dim: int = 768) -> Optional[str]:
+    """Capture a lightweight, fast screenshot thumbnail encoded as a base64 data URL."""
+    try:
+        from PIL import Image, ImageGrab
+        import io, base64
+        img = ImageGrab.grab()
+        if max(img.size) > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.Resampling.BILINEAR)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=65)
+        b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{b64_str}"
+    except Exception as e:
+        print(f"[Presence] Screen thumbnail capture failed: {e}")
+        return None
+
 def is_backend_ready() -> bool:
     """Check if all critical models (LLM, Kokoro TTS, Whisper STT) have finished warming up."""
     return backend_fully_ready or (
@@ -428,6 +449,160 @@ async def lifespan(app: FastAPI):
     except Exception as _me:
         print(f"[MoodEngine] Startup error: {_me}")
 
+    async def _generate_llm_proactive_nudge(active_window: str, dwell_mins: int, boredom: float, energy: float) -> tuple[str, str]:
+        """Generates an autonomous, concise in-character proactive check-in (nudge) from the LLM."""
+        try:
+            from app.agent.llm_backend import get_backend, persistent_session_context
+            import aiohttp
+            import re
+            
+            backend = get_backend()
+            model_name = config.LLM_MODEL
+            clean_app = active_window.split("-")[-1].split("—")[-1].strip()[:24] if active_window else "desktop work"
+            now_dt = datetime.datetime.now()
+            time_str = now_dt.strftime("%I:%M %p")
+            
+            char_name = getattr(config, "CHARACTER_NAME", "Yuki")
+            persona_text = getattr(config, "CHARACTER_PERSONA", "") or f"You are {char_name}, a real living companion living on Master's PC."
+            
+            include_screen = getattr(config, "PROACTIVE_NUDGE_INCLUDE_SCREEN", False)
+            data_url = None
+            is_multimodal = False
+
+            async def _describe_screen_with_jarvis() -> str:
+                try:
+                    from app.tools.jarvis import jarvis_see_screen
+                    res = await asyncio.to_thread(
+                        jarvis_see_screen,
+                        "Give a concise 1-2 sentence summary of what the user is currently doing, watching, or reading on screen. Keep it objective and brief."
+                    )
+                    if res and not res.lower().startswith("vision error") and not res.lower().startswith("vision exception"):
+                        return res.strip()
+                except Exception as _e:
+                    print(f"[Presence] jarvis_see_screen fallback failed: {_e}")
+                return ""
+
+            # If user enabled screenshot context and model isn't known to be text-only:
+            if include_screen and _VISION_CAPABILITY_CACHE.get(model_name) is not False:
+                data_url = _capture_screen_thumbnail_b64(768)
+                if data_url:
+                    is_multimodal = True
+
+            has_vision_model = bool(
+                getattr(config, "LLM_VISION_MODEL", "").strip() or
+                memory_manager.profile.get("settings", {}).get("llm_vision_model", "").strip()
+            )
+
+            screen_note = ""
+            if is_multimodal:
+                screen_note = "- A live screenshot of Master's screen is attached so you can see what they're looking at or working on.\n"
+            elif include_screen and getattr(config, "TOOL_MODE", "basic") != "basic" and has_vision_model:
+                # Middle fallback for known text-only models when a vision model is configured in settings:
+                print(f"[Presence] Model '{model_name}' is text-only; using jarvis_see_screen to describe screen as text context...")
+                desc = await _describe_screen_with_jarvis()
+                if desc:
+                    screen_note = f"- What's on Master's screen right now: {desc}\n"
+
+            prompt_system = (
+                f"{persona_text}\n\n"
+                f"[SCENARIO: AUTONOMOUS DESKTOP NUDGE]\n"
+                f"You are sitting quietly on Master's desktop watching them work.\n"
+                f"- Master is currently active in: {clean_app} (focused for {dwell_mins} minutes).\n"
+                f"- Local Time: {time_str}.\n"
+                f"- Your feelings: Boredom {int(boredom * 100)}%, Energy {int(energy)}/100.\n"
+                f"{screen_note}"
+                f"TASK: Deliver a spontaneous, warm 1-sentence check-in or playful nudge.\n"
+                f"STRICT RULES:\n"
+                f"1. Exactly ONE short spoken sentence (under 14 words).\n"
+                f"2. You are a REAL human companion speaking aloud. NEVER use asterisks or stage directions (NO *peers*, NO *yawns*, NO *sighs*). Speak ONLY actual words or natural vocal sounds (e.g. 'Psst...', 'Hey...', 'Mmh...').\n"
+                f"3. Start your response with ONE motion tag: `<yuki_anim:peer/>`, `<yuki_anim:pout/>`, or `<yuki_anim:wave/>`.\n"
+                f"4. Never say you are an AI or mention assistant prompts."
+            )
+            
+            user_text = "Look at what Master is doing right now and say a brief, natural check-in." if is_multimodal else "Say a brief, natural check-in to Master right now."
+            
+            if is_multimodal:
+                user_msg_content = [
+                    {"type": "text", "text": user_text},
+                    {"type": "image_url", "image_url": {"url": data_url}}
+                ]
+            else:
+                user_msg_content = user_text
+
+            messages = [
+                {"role": "system", "content": prompt_system},
+                {"role": "user", "content": user_msg_content}
+            ]
+            
+            payload = backend.build_payload(
+                model=model_name,
+                messages=messages,
+                temperature=0.75,
+                stream=False,
+                use_tools=False
+            )
+            headers = backend.build_headers()
+            chat_url = backend.get_chat_url()
+            
+            async with persistent_session_context() as session:
+                async with session.post(chat_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=8.0)) as resp:
+                    resp_data = None
+                    if resp.status == 200:
+                        resp_data = await resp.json()
+                        if is_multimodal:
+                            _VISION_CAPABILITY_CACHE[model_name] = True
+                    elif is_multimodal:
+                        # Multimodal payload failed (e.g. model doesn't support image inputs)
+                        err_text = await resp.text()
+                        print(f"[Presence] Model '{model_name}' rejected image payload (HTTP {resp.status}: {err_text[:120]}). Caching vision=False.")
+                        _VISION_CAPABILITY_CACHE[model_name] = False
+
+                        # Middle fallback: If a vision model is set in settings and not in basic mode, try jarvis_see_screen description
+                        fallback_screen_note = ""
+                        if getattr(config, "TOOL_MODE", "basic") != "basic" and has_vision_model:
+                            print(f"[Presence] Using jarvis_see_screen middle fallback with configured vision model...")
+                            desc = await _describe_screen_with_jarvis()
+                            if desc:
+                                fallback_screen_note = f"- What's on Master's screen right now: {desc}\n"
+
+                        # Retry immediately as pure text
+                        text_payload = backend.build_payload(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": prompt_system.replace(screen_note, fallback_screen_note)},
+                                {"role": "user", "content": "Say a brief, natural check-in to Master right now."}
+                            ],
+                            temperature=0.75,
+                            stream=False,
+                            use_tools=False
+                        )
+                        async with session.post(chat_url, json=text_payload, headers=headers, timeout=aiohttp.ClientTimeout(total=7.0)) as retry_resp:
+                            if retry_resp.status == 200:
+                                resp_data = await retry_resp.json()
+
+                    if resp_data:
+                        raw_text = resp_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                        
+                        anim = "peer"
+                        m = re.search(r'<yuki_anim:([a-zA-Z0-9_-]+)/>', raw_text)
+                        if m:
+                            anim = m.group(1).lower()
+                            if anim not in ("peer", "pout", "wave", "yawn"):
+                                anim = "peer"
+                        
+                        # Clean tags, thoughts, asterisks, quotes
+                        cleaned = re.sub(r'[<\[\(](?:yuki_)?(?:anim|emotion)[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])', '', raw_text, flags=re.IGNORECASE)
+                        cleaned = re.sub(r'<yuki_[^>]*>', '', cleaned, flags=re.IGNORECASE)
+                        cleaned = re.sub(r'<\/?(?:think|thought|reasoning)[^>]*>[\s\S]*?(?:<\/(?:think|thought|reasoning)>|$)', '', cleaned, flags=re.IGNORECASE)
+                        cleaned = re.sub(r'\*.*?\*', '', cleaned)  # remove *actions*
+                        cleaned = cleaned.replace('*', '').replace('"', '').strip()
+                        
+                        if len(cleaned) >= 4:
+                            return cleaned, anim
+        except Exception as _err:
+            print(f"[Presence] LLM proactive nudge skipped ({_err}), using versatile template.")
+        return "", ""
+
     # 3. Background idle drift — step every 60 s so mood moves between messages.
     async def _mood_idle_loop():
         from app.memory.presence_engine import presence_manager
@@ -468,30 +643,30 @@ async def lifespan(app: FastAPI):
                 now_ts = time.time()
                 nudge_mode = getattr(config, "PROACTIVE_NUDGE_MODE", "visual_only")
                 interval_sec = getattr(config, "PROACTIVE_NUDGE_INTERVAL_MIN", 45) * 60
+                nudge_engine = getattr(config, "PROACTIVE_NUDGE_ENGINE", "template")
+                quiet_sec = getattr(config, "PROACTIVE_NUDGE_QUIET_MIN", 30) * 60
+                boredom_thresh = getattr(config, "PROACTIVE_NUDGE_BOREDOM_PCT", 80) / 100.0
 
                 if (
                     nudge_mode != "disabled"
                     and not presence_manager.is_sleeping()
-                    and snapshot["boredom"] >= 0.80
-                    and snapshot["silence_seconds"] >= 1800
+                    and snapshot["boredom"] >= boredom_thresh
+                    and snapshot["silence_seconds"] >= quiet_sec
                     and (now_ts - presence_manager.last_nudge_time) >= interval_sec
                 ):
                     presence_manager.last_nudge_time = now_ts
                     dwell_mins = snapshot.get("active_window_dwell_mins", 0)
                     win_title = snapshot.get("active_window", "")
 
-                    if dwell_mins >= 30 and win_title:
-                        clean_win = win_title.split("-")[-1].split("—")[-1].strip()[:24]
-                        text = f"*peers over curiously* Still focused on {clean_win}, Master? Don't forget to take a quick break!"
-                        anim = "peer"
-                    elif snapshot["boredom"] >= 0.90:
-                        text = "*sighs softly and rests chin on hand* It's so quiet... did you get lost in your work?"
-                        anim = "pout"
-                    else:
-                        text = "*peers over your shoulder* Psst, Master... taking a break anytime soon?"
-                        anim = "peer"
+                    text, anim = "", ""
+                    if nudge_engine == "llm" and not config.NO_LLM_MODE:
+                        text, anim = await _generate_llm_proactive_nudge(win_title, dwell_mins, snapshot["boredom"], current_energy)
 
-                    print(f"[Presence] Dispatched proactive nudge ({nudge_mode}): {text}")
+                    if not text:
+                        from app.memory.presence_engine import get_versatile_template_nudge
+                        text, anim = get_versatile_template_nudge(win_title, dwell_mins, snapshot["boredom"], current_energy)
+
+                    print(f"[Presence] Dispatched proactive nudge ({nudge_mode}, engine: {nudge_engine}): {text}")
                     await broadcast_ws({
                         "type": "proactive_nudge",
                         "mode": nudge_mode,
@@ -555,6 +730,11 @@ async def lifespan(app: FastAPI):
     if agent_executor:
         await agent_executor.mcp_tools.aclose()
 
+    try:
+        memory_manager.record_session_shutdown()
+    except Exception:
+        pass
+
 
 app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.5-beta", lifespan=lifespan)
 
@@ -568,7 +748,7 @@ app.add_middleware(
 )
 
 import traceback
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi import Request
 
 @app.exception_handler(Exception)
@@ -625,8 +805,16 @@ def load_persistent_chat_history() -> list:
                 with open(h_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, list):
-                        print(f"[Startup] Loaded {len(data)} persistent chat messages from chat_history.json")
-                        return data
+                        clean_data = [
+                            m for m in data
+                            if not (m.get("role") == "user" and (
+                                "[SCENARIO:" in m.get("content", "") or
+                                "[STARTUP_GREETING]" in m.get("content", "") or
+                                "[SYSTEM EVENT:" in m.get("content", "")
+                            ))
+                        ]
+                        print(f"[Startup] Loaded {len(clean_data)} persistent chat messages from chat_history.json")
+                        return clean_data
     except Exception as e:
         print(f"[Startup] Could not load chat_history.json: {e}")
     return []
@@ -1085,6 +1273,20 @@ def get_alarm_tone_file(filename: str):
     return FileResponse(target)
 
 
+@app.get("/api/search/compare")
+async def api_search_compare(q: str = Query(..., description="Search query to compare")):
+    from app.tools.web import compare_search_engines
+    return await compare_search_engines(q)
+
+
+@app.get("/test/search", response_class=HTMLResponse)
+async def test_search_page():
+    test_html_path = Path(__file__).parent / "search_test.html"
+    if test_html_path.exists():
+        return HTMLResponse(content=test_html_path.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Search test page not found</h1>", status_code=404)
+
+
 @app.get("/api/system/file_content")
 def get_file_content(path: str):
     """
@@ -1267,6 +1469,7 @@ class SettingsUpdateRequest(BaseModel):
     tts_voice: Optional[str] = None
     tts_rate: Optional[str] = None
     tts_device: Optional[str] = None
+    kokoro_ipa_interjections: Optional[bool] = None
     stt_device: Optional[str] = None
     character_name: Optional[str] = None
     character_persona: Optional[str] = None
@@ -1333,6 +1536,10 @@ class SettingsUpdateRequest(BaseModel):
     adaptive_silence_cutoff: Optional[bool] = None
     tool_mode: Optional[str] = None
     user_country: Optional[str] = None
+    user_location: Optional[str] = None
+    greeting_weather_enabled: Optional[bool] = None
+    greeting_news_enabled: Optional[bool] = None
+    greeting_news_topics: Optional[str] = None
     send_tools_in_simple: Optional[bool] = None
     endpoint_strategy: Optional[str] = None
     llm_simple_backend: Optional[str] = None
@@ -1402,8 +1609,13 @@ class SettingsUpdateRequest(BaseModel):
     telegram_verbose_tools: Optional[bool] = None
     proactive_nudge_mode: Optional[str] = None
     proactive_nudge_interval_min: Optional[int] = None
+    proactive_nudge_engine: Optional[str] = None
+    proactive_nudge_include_screen: Optional[bool] = None
+    proactive_nudge_quiet_min: Optional[int] = None
+    proactive_nudge_boredom_pct: Optional[int] = None
     desk_sleep_idle_min: Optional[int] = None
     companion_nap_silence_min: Optional[int] = None
+    companion_nap_energy_pct: Optional[int] = None
 
 
 
@@ -1562,10 +1774,26 @@ async def update_settings(req: SettingsUpdateRequest):
             memory_manager.update_setting("tool_mode", mode_val)
             print(f"[Settings] Tool Operating Mode updated to '{mode_val}'")
     if req.user_country is not None:
-        country_val = req.user_country.strip()
-        config.USER_COUNTRY = country_val if country_val else "Auto"
+        country_val = req.user_country
+        config.USER_COUNTRY = country_val if country_val != "" else "Auto"
         memory_manager.update_setting("user_country", config.USER_COUNTRY)
         print(f"[Settings] User Country updated to '{config.USER_COUNTRY}'")
+    if req.user_location is not None:
+        loc_val = req.user_location
+        config.USER_LOCATION = loc_val if loc_val != "" else "Auto"
+        memory_manager.update_setting("user_location", config.USER_LOCATION)
+        print(f"[Settings] User Location updated to '{config.USER_LOCATION}'")
+    if req.greeting_weather_enabled is not None:
+        config.GREETING_WEATHER_ENABLED = bool(req.greeting_weather_enabled)
+        memory_manager.update_setting("greeting_weather_enabled", config.GREETING_WEATHER_ENABLED)
+    if req.greeting_news_enabled is not None:
+        config.GREETING_NEWS_ENABLED = bool(req.greeting_news_enabled)
+        memory_manager.update_setting("greeting_news_enabled", config.GREETING_NEWS_ENABLED)
+    if req.greeting_news_topics is not None:
+        topics_val = req.greeting_news_topics
+        config.GREETING_NEWS_TOPICS = topics_val
+        memory_manager.update_setting("greeting_news_topics", topics_val)
+        print(f"[Settings] Greeting News Topics updated to '{topics_val}'")
     if req.llm_backend is not None:
         old_backend_type = memory_manager.profile["settings"].get("llm_backend")
         new_backend = req.llm_backend.strip()
@@ -1642,6 +1870,9 @@ async def update_settings(req: SettingsUpdateRequest):
             memory_manager.update_setting("tts_device", device_val)
             from app.voice.tts import reset_kokoro
             reset_kokoro()
+    if req.kokoro_ipa_interjections is not None:
+        config.KOKORO_IPA_INTERJECTIONS = bool(req.kokoro_ipa_interjections)
+        memory_manager.update_setting("kokoro_ipa_interjections", bool(req.kokoro_ipa_interjections))
     if req.stt_device is not None:
         device_val = req.stt_device.strip().lower()
         if device_val in ("auto", "gpu", "cpu"):
@@ -2049,6 +2280,31 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("proactive_nudge_interval_min", pinterval)
         print(f"[SETTINGS-UPDATE-BE] proactive_nudge_interval_min = {pinterval}")
 
+    if req.proactive_nudge_engine is not None:
+        pengine = str(req.proactive_nudge_engine).strip().lower()
+        if pengine in ("template", "llm"):
+            config.PROACTIVE_NUDGE_ENGINE = pengine
+            memory_manager.update_setting("proactive_nudge_engine", pengine)
+            print(f"[SETTINGS-UPDATE-BE] proactive_nudge_engine = {pengine}")
+
+    if req.proactive_nudge_include_screen is not None:
+        pinc_screen = bool(req.proactive_nudge_include_screen)
+        config.PROACTIVE_NUDGE_INCLUDE_SCREEN = pinc_screen
+        memory_manager.update_setting("proactive_nudge_include_screen", pinc_screen)
+        print(f"[SETTINGS-UPDATE-BE] proactive_nudge_include_screen = {pinc_screen}")
+
+    if req.proactive_nudge_quiet_min is not None:
+        pquiet = max(5, min(180, int(req.proactive_nudge_quiet_min)))
+        config.PROACTIVE_NUDGE_QUIET_MIN = pquiet
+        memory_manager.update_setting("proactive_nudge_quiet_min", pquiet)
+        print(f"[SETTINGS-UPDATE-BE] proactive_nudge_quiet_min = {pquiet}")
+
+    if req.proactive_nudge_boredom_pct is not None:
+        pboredom = max(20, min(100, int(req.proactive_nudge_boredom_pct)))
+        config.PROACTIVE_NUDGE_BOREDOM_PCT = pboredom
+        memory_manager.update_setting("proactive_nudge_boredom_pct", pboredom)
+        print(f"[SETTINGS-UPDATE-BE] proactive_nudge_boredom_pct = {pboredom}")
+
     if req.desk_sleep_idle_min is not None:
         ds_min = max(1, min(120, int(req.desk_sleep_idle_min)))
         config.DESK_SLEEP_IDLE_MIN = ds_min
@@ -2060,6 +2316,12 @@ async def update_settings(req: SettingsUpdateRequest):
         config.COMPANION_NAP_SILENCE_MIN = cn_min
         memory_manager.update_setting("companion_nap_silence_min", cn_min)
         print(f"[SETTINGS-UPDATE-BE] companion_nap_silence_min = {cn_min}")
+
+    if req.companion_nap_energy_pct is not None:
+        cn_energy = max(10, min(60, int(req.companion_nap_energy_pct)))
+        config.COMPANION_NAP_ENERGY_PCT = cn_energy
+        memory_manager.update_setting("companion_nap_energy_pct", cn_energy)
+        print(f"[SETTINGS-UPDATE-BE] companion_nap_energy_pct = {cn_energy}")
 
     if telegram_changed:
         try:
@@ -2583,7 +2845,12 @@ async def test_telegram_connection(req: TelegramTestRequest = Body(default=Teleg
 
 
 @app.get("/api/tts")
-async def tts_endpoint(text: str, voice: Optional[str] = None, rate: Optional[str] = None):
+async def tts_endpoint(
+    text: str,
+    voice: Optional[str] = None,
+    rate: Optional[str] = None,
+    ipa_enhancement: Optional[bool] = None,
+):
     """
     Generates audio for the given text.
     Routes to cloud/custom TTS when tts_provider != 'local'.
@@ -2644,8 +2911,9 @@ async def tts_endpoint(text: str, voice: Optional[str] = None, rate: Optional[st
     if not tts_online_status:
         return Response(status_code=500, content="TTS service is currently offline.")
 
+    effective_ipa = ipa_enhancement if ipa_enhancement is not None else bool(settings.get("kokoro_ipa_interjections", getattr(config, "KOKORO_IPA_INTERJECTIONS", False)))
     from app.voice.tts import generate_speech_bytes
-    audio_bytes = await generate_speech_bytes(decoded_text, voice=voice, rate=_resolve_tts_rate(rate))
+    audio_bytes = await generate_speech_bytes(decoded_text, voice=voice, rate=_resolve_tts_rate(rate), ipa_enhancement=effective_ipa)
 
     if not audio_bytes:
         return Response(status_code=500, content="Failed to generate speech audio.")
@@ -2664,11 +2932,15 @@ async def tts_test_endpoint(req: SettingsUpdateRequest):
     
     test_voice = req.tts_voice or config.TTS_VOICE
     test_rate = req.tts_rate or config.TTS_RATE
+    test_ipa = req.kokoro_ipa_interjections if req.kokoro_ipa_interjections is not None else getattr(config, "KOKORO_IPA_INTERJECTIONS", False)
     test_text = f"Testing voice {test_voice.replace('_', ' ').replace('af ', '').replace('bf ', '').replace('jf ', '').title()}."
     
     try:
         from app.voice.tts import generate_speech_bytes
-        audio_bytes = await asyncio.wait_for(generate_speech_bytes(test_text, voice=test_voice, rate=test_rate), timeout=15.0)
+        audio_bytes = await asyncio.wait_for(
+            generate_speech_bytes(test_text, voice=test_voice, rate=test_rate, ipa_enhancement=test_ipa),
+            timeout=15.0
+        )
         if not audio_bytes:
             return Response(status_code=500, content="Failed to generate speech audio.")
         return Response(content=audio_bytes, media_type="audio/wav")
@@ -3022,6 +3294,23 @@ def serve_tool_tester():
     if tester_path.exists():
         return FileResponse(str(tester_path))
     return Response(status_code=404, content="tool_tester.html not found in testing/ folder")
+
+
+@app.get("/websearch-tester")
+def serve_websearch_tester():
+    """
+    Serves the yuki home/websearch_tester.html page straight from the repository so it
+    can be opened at http://localhost:58392/websearch-tester without any CORS issues.
+    """
+    from fastapi.responses import FileResponse
+    p1 = config.BASE_DIR.parent / "yuki home" / "websearch_tester.html"
+    if p1.exists():
+        return FileResponse(str(p1))
+    p2 = config.BASE_DIR.parent / "testing" / "websearch_tester.html"
+    if p2.exists():
+        return FileResponse(str(p2))
+    return Response(status_code=404, content="websearch_tester.html not found")
+
 
 
 async def broadcast_due_reminders(due: List[Dict[str, Any]]):
@@ -4259,7 +4548,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 from app.memory.presence_engine import presence_manager
                 new_state = data.get("state", "active")
                 idle_sec = float(data.get("idle_seconds", 0.0))
-                presence_manager.set_sleep_state(new_state, idle_sec)
+                presence_manager.set_sleep_state(new_state, idle_sec, is_nap=(new_state == "napping"))
+                if new_state == "napping":
+                    curr_nrg = memory_manager.get_mood_spectrum().get("energy", 55.0)
+                    nap_thresh = float(getattr(config, "COMPANION_NAP_ENERGY_PCT", 30))
+                    if curr_nrg > nap_thresh:
+                        memory_manager.update_mood_spectrum({"energy": max(15.0, nap_thresh - 5.0)})
                 print(f"[Presence] Sleep state updated to '{new_state}' (idle: {idle_sec}s)")
                 continue
 
@@ -4281,7 +4575,20 @@ async def websocket_endpoint(websocket: WebSocket):
                     with own_process_busy_guard():
                         try:
                             user_msg = payload_data.get("message", "").strip()
-                            is_startup_greeting = bool(payload_data.get("is_startup_greeting") or "[SYSTEM EVENT:" in user_msg)
+                            is_startup_greeting = bool(payload_data.get("is_startup_greeting") or "[SYSTEM EVENT:" in user_msg or user_msg == "[STARTUP_GREETING]")
+                            if is_startup_greeting:
+                                try:
+                                    from app.agent.prompts import generate_startup_greeting_prompt
+                                    from app.memory.presence_engine import presence_manager
+                                    absence_sec = memory_manager.get_absence_duration_seconds()
+                                    user_msg = generate_startup_greeting_prompt(
+                                        profile=memory_manager.profile,
+                                        presence_manager=presence_manager,
+                                        absence_duration_sec=absence_sec
+                                    )
+                                    memory_manager.record_session_active()
+                                except Exception as _greet_err:
+                                    print(f"[Startup] Error generating dynamic startup greeting prompt: {_greet_err}")
                             stt_time_ms = payload_data.get("stt_time_ms")
                             if not user_msg:
                                 return
@@ -4364,6 +4671,56 @@ async def websocket_endpoint(websocket: WebSocket):
 
                             sender_task = asyncio.create_task(tts_sender())
 
+                            # Handle /tts-test or /tts slash command directly: bypass LLM
+                            clean_lower_cmd = user_msg.lower()
+                            if clean_lower_cmd.startswith("/tts-test") or clean_lower_cmd.startswith("/tts ") or clean_lower_cmd == "/tts":
+                                cmd_len = len("/tts-test") if clean_lower_cmd.startswith("/tts-test") else len("/tts")
+                                test_text = user_msg[cmd_len:].strip()
+                                if not test_text:
+                                    test_text = "Please provide text to test. E.g. /tts-test Mm... you were gone for eleven whole minutes. Welcome back, dekki."
+                                
+                                # Send text token so chat UI displays it immediately as Yuki's response
+                                await websocket.send_json({"type": "token", "token": test_text})
+                                
+                                # Split text into sentences for sentence-by-sentence TTS streaming
+                                sentences = []
+                                remaining_text = test_text
+                                
+                                def find_boundary(txt: str) -> int:
+                                    min_idx = -1
+                                    terminators = [('? ', 1), ('! ', 1), ('. ', 1), ('\n', 0), ('? \n', 2), ('! \n', 2), ('. \n', 2)]
+                                    for term, offset in terminators:
+                                        idx = txt.find(term)
+                                        if idx != -1:
+                                            if min_idx == -1 or idx < min_idx:
+                                                min_idx = idx + len(term) - offset - 1
+                                    return min_idx
+
+                                while True:
+                                    boundary = find_boundary(remaining_text)
+                                    if boundary == -1:
+                                        if remaining_text.strip():
+                                            sentences.append(remaining_text.strip())
+                                        break
+                                    sentence = remaining_text[:boundary + 1].strip()
+                                    remaining_text = remaining_text[boundary + 1:]
+                                    if sentence:
+                                        sentences.append(sentence)
+                                
+                                for s_idx, s in enumerate(sentences):
+                                    queue_sentence(s, s_idx)
+                                
+                                stream_done_flag = True
+                                tts_tasks_event.set()
+                                await sender_task
+                                
+                                await websocket.send_json({
+                                    "type": "stream_done",
+                                    "backend_used": "tts_only",
+                                    "response_time": round(time.time() - start_time, 2)
+                                })
+                                return
+
                             try:
                                 # 2. Call the executor's streaming generator
                                 sentence_buffer = ""
@@ -4428,6 +4785,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                             return
                                         overrides = payload_data.get("overrides") or {}
                                         overrides = dict(overrides)
+                                        if is_startup_greeting:
+                                            overrides["no_tools"] = True
+                                            overrides["tool_mode"] = "none"
+                                            overrides["is_startup_greeting"] = True
                                         import uuid
                                         turn_id = uuid.uuid4().hex[:12]
                                         overrides["turn_id"] = turn_id
@@ -4551,10 +4912,20 @@ async def websocket_endpoint(websocket: WebSocket):
                                                             print(f"[Recovery] Checkpoint persist failed: {_cp_err}")
                                                 elif event_type == "final_history":
                                                     if is_startup_greeting:
-                                                        # Filter out system event prompt from persistent history
-                                                        global_chat_history = [m for m in value if not (m.get("role") == "user" and "[SYSTEM EVENT:" in m.get("content", ""))]
+                                                        # Keep ONLY the assistant's greeting in persistent history.
+                                                        # The internal prompt instruction must NEVER be attributed to the user in chat.
+                                                        global_chat_history = [
+                                                            m for m in value 
+                                                            if not (m.get("role") == "user" and (
+                                                                "[SCENARIO:" in m.get("content", "") or 
+                                                                "[STARTUP_GREETING]" in m.get("content", "") or 
+                                                                "[SYSTEM EVENT:" in m.get("content", "") or
+                                                                m.get("content") == user_msg
+                                                            ))
+                                                        ]
                                                     else:
                                                         global_chat_history = value
+                                                    memory_manager.record_session_active()
                                                     await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
                                                     await broadcast_ws_event({
                                                         "type": "chat_update",

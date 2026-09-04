@@ -12,6 +12,7 @@ export default function SettingsApp() {
       llm_model: '',
       tts_voice: 'af_bella',
       tts_rate: 'auto',
+      kokoro_ipa_interjections: false,
       character_name: 'Yuki',
       persona_preset: 'sassy_tech_gf',
       custom_persona_prompts: {},
@@ -20,7 +21,12 @@ export default function SettingsApp() {
       auto_evolving_archetype: true,
       archetype_intensity: 'moderate',
       proactive_nudge_mode: 'visual_only',
-      proactive_nudge_interval_min: 45
+      proactive_nudge_interval_min: 45,
+      proactive_nudge_engine: 'template',
+      proactive_nudge_include_screen: false,
+      proactive_nudge_quiet_min: 30,
+      proactive_nudge_boredom_pct: 80,
+      companion_nap_energy_pct: 30
     }
   });
   const [backendStatus, setBackendStatus] = useState('online');
