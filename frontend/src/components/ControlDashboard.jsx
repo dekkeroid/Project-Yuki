@@ -905,7 +905,7 @@ const ControlDashboard = ({
     whisper_no_speech_threshold: 0.70,
     vad_threshold: 0.03,
     silence_timeout_ms: 800,
-    stt_auto_gain_control: true,
+    stt_auto_gain_control: false,
     allow_voice_barge_in: true,
     barge_in_sensitivity: 1.0,
     stt_echo_cancellation: true,
@@ -914,6 +914,9 @@ const ControlDashboard = ({
     use_neural_browser_vad: true,
     browser_neural_vad_confidence: 0.60,
     adaptive_silence_cutoff: true,
+    aed_enabled: true,
+    aed_confidence_threshold: 0.45,
+    aed_fast_reflex: true,
     continued_session_timeout_sec: 120,
     max_recording_duration_sec: 120,
     // Cloud provider settings
@@ -8594,7 +8597,7 @@ const ControlDashboard = ({
                                 <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
                                   <input
                                     type="checkbox"
-                                    checked={settings.stt_auto_gain_control ?? true}
+                                    checked={settings.stt_auto_gain_control ?? false}
                                     onChange={(e) => handleUpdateSetting('stt_auto_gain_control', e.target.checked)}
                                   />
                                   <span className="slider round"></span>
@@ -8613,7 +8616,7 @@ const ControlDashboard = ({
                                 alignItems: 'flex-start',
                                 gap: '6px'
                               }}>
-                                <span style={{ fontSize: '0.75rem', lineHeight: '1.2' }}>⚠️</span>
+                                <AlertCircle style={{ width: '13px', height: '13px', color: '#fca5a5', flexShrink: 0, marginTop: '1px' }} />
                                 <span style={{ fontSize: '0.64rem', color: '#fca5a5', lineHeight: '1.3' }}>
                                   <strong>CAUTION:</strong> Disabling AGC prevents volume crushing when speaking loudly, but turns off automatic mic volume boosting for quiet voices.
                                 </span>
@@ -8696,6 +8699,74 @@ const ControlDashboard = ({
                               <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
                                 Filters out continuous background noise (fans, air conditioning, hums).
                               </span>
+                            </div>
+
+                            {/* Audio Event Detection (AED) - YAMNet */}
+                            <div className="identity-field">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <Activity style={{ width: '14px', height: '14px', color: '#a78bfa' }} />
+                                  <span className="field-label" style={{ color: '#a78bfa', fontWeight: 600 }}>Audio Event Detection (AED)</span>
+                                </div>
+                                <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.85)' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={settings.aed_enabled ?? true}
+                                    onChange={(e) => handleUpdateSetting('aed_enabled', e.target.checked)}
+                                  />
+                                  <span className="slider round"></span>
+                                </label>
+                              </div>
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                Detects human sound cues (sneeze, cough, laughter, sigh) via Google YAMNet ONNX in parallel with speech.
+                              </span>
+
+                              {(settings.aed_enabled ?? true) && (
+                                <div style={{ marginTop: '8px', paddingLeft: '8px', borderLeft: '2px solid rgba(167, 139, 250, 0.4)' }}>
+                                  {/* AED Confidence Threshold Slider */}
+                                  <div style={{ marginBottom: '10px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      <span className="field-label" style={{ fontSize: '0.72rem' }}>Detection Sensitivity Threshold</span>
+                                      <span style={{ fontSize: '0.72rem', color: '#a78bfa', fontWeight: 600 }}>
+                                        {(settings.aed_confidence_threshold ?? 0.45).toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min="0.20"
+                                      max="0.80"
+                                      step="0.05"
+                                      value={settings.aed_confidence_threshold ?? 0.45}
+                                      onChange={(e) => handleUpdateSetting('aed_confidence_threshold', parseFloat(e.target.value))}
+                                      style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa', marginTop: '4px' }}
+                                    />
+                                    <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                      Lower values detect subtle or quiet sounds; higher values minimize false triggers. (Default: 0.45)
+                                    </span>
+                                  </div>
+
+                                  {/* Fast Reflex Toggle */}
+                                  <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        <Zap style={{ width: '12px', height: '12px', color: '#38bdf8' }} />
+                                        <span className="field-label" style={{ fontSize: '0.72rem' }}>Fast Voice Reflex</span>
+                                      </div>
+                                      <label className="toggle-switch" style={{ margin: 0, transform: 'scale(0.80)' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={settings.aed_fast_reflex ?? true}
+                                          onChange={(e) => handleUpdateSetting('aed_fast_reflex', e.target.checked)}
+                                        />
+                                        <span className="slider round"></span>
+                                      </label>
+                                    </div>
+                                    <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                      Instantly replies with caring, randomized voice reflexes (e.g. &quot;Bless you!&quot;, coughing/throat care) to isolated sound cues without LLM latency. When off, full LLM persona reasoning handles it.
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
                             {/* Continued Listening Session Timeout */}

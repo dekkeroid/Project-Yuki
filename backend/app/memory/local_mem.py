@@ -97,7 +97,7 @@ class MemoryManager:
                 "continued_session_timeout_sec": 120,
                 "max_recording_duration_sec": 120,
                 "whisper_no_speech_threshold": 0.70,
-                "stt_auto_gain_control": True,
+                "stt_auto_gain_control": False,
                 "allow_voice_barge_in": False,
                 "stt_echo_cancellation": True,
                 "stt_noise_suppression": True,
@@ -105,6 +105,9 @@ class MemoryManager:
                 "use_neural_browser_vad": True,
                 "browser_neural_vad_confidence": 0.60,
                 "adaptive_silence_cutoff": True,
+                "aed_enabled": True,
+                "aed_confidence_threshold": 0.45,
+                "aed_fast_reflex": True,
                 "llm_mode": 3,
                 "enable_rotation": True,
                 "auto_reset_rotation": False,
@@ -214,7 +217,7 @@ class MemoryManager:
                 config.CONTINUED_SESSION_TIMEOUT_SEC = int(data["settings"].get("continued_session_timeout_sec", getattr(config, "CONTINUED_SESSION_TIMEOUT_SEC", 120)))
                 config.MAX_RECORDING_DURATION_SEC = int(data["settings"].get("max_recording_duration_sec", getattr(config, "MAX_RECORDING_DURATION_SEC", 120)))
                 config.WHISPER_NO_SPEECH_THRESHOLD = float(data["settings"].get("whisper_no_speech_threshold", getattr(config, "WHISPER_NO_SPEECH_THRESHOLD", 0.70)))
-                config.STT_AUTO_GAIN_CONTROL = bool(data["settings"].get("stt_auto_gain_control", getattr(config, "STT_AUTO_GAIN_CONTROL", True)))
+                config.STT_AUTO_GAIN_CONTROL = bool(data["settings"].get("stt_auto_gain_control", getattr(config, "STT_AUTO_GAIN_CONTROL", False)))
                 config.ALLOW_VOICE_BARGE_IN = bool(data["settings"].get("allow_voice_barge_in", getattr(config, "ALLOW_VOICE_BARGE_IN", True)))
                 config.BARGE_IN_SENSITIVITY = float(data["settings"].get("barge_in_sensitivity", getattr(config, "BARGE_IN_SENSITIVITY", 1.0)))
                 config.STT_ECHO_CANCELLATION = bool(data["settings"].get("stt_echo_cancellation", getattr(config, "STT_ECHO_CANCELLATION", True)))
@@ -223,6 +226,9 @@ class MemoryManager:
                 config.USE_NEURAL_BROWSER_VAD = bool(data["settings"].get("use_neural_browser_vad", getattr(config, "USE_NEURAL_BROWSER_VAD", True)))
                 config.BROWSER_NEURAL_VAD_CONFIDENCE = float(data["settings"].get("browser_neural_vad_confidence", getattr(config, "BROWSER_NEURAL_VAD_CONFIDENCE", 0.60)))
                 config.ADAPTIVE_SILENCE_CUTOFF = bool(data["settings"].get("adaptive_silence_cutoff", getattr(config, "ADAPTIVE_SILENCE_CUTOFF", True)))
+                config.AED_ENABLED = bool(data["settings"].get("aed_enabled", getattr(config, "AED_ENABLED", True)))
+                config.AED_CONFIDENCE_THRESHOLD = float(data["settings"].get("aed_confidence_threshold", getattr(config, "AED_CONFIDENCE_THRESHOLD", 0.45)))
+                config.AED_FAST_REFLEX = bool(data["settings"].get("aed_fast_reflex", getattr(config, "AED_FAST_REFLEX", True)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
                 config.USER_COUNTRY = data["settings"].get("user_country", getattr(config, "USER_COUNTRY", "Auto"))
                 config.USER_LOCATION = data["settings"].get("user_location", getattr(config, "USER_LOCATION", "Auto"))
@@ -508,7 +514,13 @@ class MemoryManager:
         print(f"[DEBUG] update_setting: Saved profile to disk. Value is now {self.profile['settings'][key]}")
         
         # Apply to config dynamically
-        if key == "llm_speech_input_enabled":
+        if key == "aed_enabled":
+            config.AED_ENABLED = bool(value)
+        elif key == "aed_confidence_threshold":
+            config.AED_CONFIDENCE_THRESHOLD = float(value)
+        elif key == "aed_fast_reflex":
+            config.AED_FAST_REFLEX = bool(value)
+        elif key == "llm_speech_input_enabled":
             config.LLM_SPEECH_INPUT_ENABLED = bool(value)
         elif key == "tts_voice":
             config.TTS_VOICE = value

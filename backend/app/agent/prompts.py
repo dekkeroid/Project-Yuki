@@ -344,6 +344,18 @@ When the user asks you to look at, describe, check, or read what is currently on
 • Do NOT use `take_screenshot` (that only opens the Snipping Tool overlay for the user). Use `jarvis_see_screen` whenever YOU need to see the screen.
 ---------------------------------------"""
 
+ACOUSTIC_SOUND_CUES_GUIDELINE = """
+--- PHYSICAL & ACOUSTIC SOUND CUES ---
+Voice transcripts may contain non-verbal sound tags detected from the user's microphone:
+• `[sneeze]` → The user sneezed. React naturally and warmly (e.g., "Bless you!", ask if they have allergies or need a tissue).
+• `[cough]` / `[throat-clearing]` → The user coughed or cleared their throat. Express subtle care (e.g., ask if they need water or need a quick break).
+• `[laughter]` → The user laughed or chuckled. Share the amusement, tease them, or react playfully.
+• `[sigh]` → The user sighed. Check in gently or ask what's on their mind.
+• `[yawn]` → The user is tired or sleepy. Tease them lightly or suggest resting.
+• `[gasp]` → The user gasped in surprise or shock. Ask what happened.
+React naturally according to your persona and current mood. Never echo or repeat the bracketed tags in your reply text.
+--------------------------------------"""
+
 EXAM_MATH_EXPLANATION_GUIDELINES = r"""
 --- EXAM-STYLE PROBLEM SOLVING & MATH EXPLANATION DIRECTIVES ---
 1. STEP-BY-STEP NUMERICAL & CONCEPTUAL SOLUTIONS:
@@ -418,6 +430,8 @@ def get_simple_system_prompt(memory_summary: str, mood: dict = None, mood_meta: 
 ------------------------
 
 {EXAM_MATH_EXPLANATION_GUIDELINES}
+
+{ACOUSTIC_SOUND_CUES_GUIDELINE}
 
 Respond directly and conversationally as Yuki. If the user asks for an action, the core system handles it automatically."""
 
@@ -538,6 +552,7 @@ IMPORTANT: The user is currently communicating with you remotely via Telegram on
 
     parts.append(ATTACHMENT_REINSPECTION_GUIDE)
     parts.append(EXAM_MATH_EXPLANATION_GUIDELINES)
+    parts.append(ACOUSTIC_SOUND_CUES_GUIDELINE)
 
     return _scrub_blocked_tools("\n\n".join(parts))
 
@@ -682,7 +697,9 @@ IMPORTANT: The user is currently communicating with you remotely via Telegram on
 
 {ATTACHMENT_REINSPECTION_GUIDE}
 
-{EXAM_MATH_EXPLANATION_GUIDELINES}""")
+{EXAM_MATH_EXPLANATION_GUIDELINES}
+
+{ACOUSTIC_SOUND_CUES_GUIDELINE}""")
 
 
 def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, overrides: dict = None, profile: dict = None) -> str:
