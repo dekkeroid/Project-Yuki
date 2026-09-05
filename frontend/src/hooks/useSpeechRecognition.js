@@ -20,8 +20,14 @@ export function useSpeechRecognition(options = {}) {
     logToTerminal,
     sendMessageText,
     isSessionActiveRef,
-    speakSystemMessage
+    speakSystemMessage,
+    llmSpeechInputEnabled
   } = options;
+
+  const llmSpeechInputEnabledRef = useRef(!!llmSpeechInputEnabled);
+  useEffect(() => {
+    llmSpeechInputEnabledRef.current = !!llmSpeechInputEnabled;
+  }, [llmSpeechInputEnabled]);
 
   const [isTranscribing, setIsTranscribingState] = useState(false);
   const isTranscribingRef = useRef(false);
@@ -558,6 +564,33 @@ export function useSpeechRecognition(options = {}) {
             logSTTStatus(`[STT] Ignored short clip (${audioBlob.size} bytes, ${totalRecordingDurationMs}ms).`);
             setIsTranscribing(false);
             updateListeningState();
+            return;
+          }
+
+          if (llmSpeechInputEnabledRef.current) {
+            logSTTStatus(`Direct LLM Speech Input active (${audioBlob.size} bytes) — bypassing Whisper...`);
+            if (logToTerminal) logToTerminal(`[STT] Direct LLM Speech active: sending ${audioBlob.size} bytes to AI Brain`);
+            setIsTranscribing(false);
+
+            const isBargeInTarget = wasBargeInRef.current || isPlayingRef?.current || ttsStreamActiveRef?.current;
+            wasBargeInRef.current = false;
+            if ((isPlayingRef?.current || ttsStreamActiveRef?.current) && stopAllPlayback) {
+              stopAllPlayback();
+            }
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64Audio = reader.result;
+              if (sendMessageText) {
+                sendMessageText("", 0, false, [], {
+                  audio_data: base64Audio,
+                  audio_duration_ms: totalRecordingDurationMs,
+                  is_barge_in: isBargeInTarget
+                });
+              }
+              updateListeningState();
+            };
+            reader.readAsDataURL(audioBlob);
             return;
           }
 

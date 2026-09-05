@@ -80,6 +80,7 @@ class MemoryManager:
                 "whisper_model": "small",
                 "whisper_compute_type": "int8_float16",
                 "use_local_whisper": True,
+                "llm_speech_input_enabled": False,
                 "stt_language": "en",
                 "no_llm_mode": False,
                 "dynamic_tool_calling": True,
@@ -200,6 +201,7 @@ class MemoryManager:
                 config.TTS_DEVICE = data["settings"].get("tts_device", config.TTS_DEVICE)
                 config.KOKORO_IPA_INTERJECTIONS = bool(data["settings"].get("kokoro_ipa_interjections", getattr(config, "KOKORO_IPA_INTERJECTIONS", False)))
                 config.STT_DEVICE = data["settings"].get("stt_device", config.STT_DEVICE)
+                config.LLM_SPEECH_INPUT_ENABLED = bool(data["settings"].get("llm_speech_input_enabled", getattr(config, "LLM_SPEECH_INPUT_ENABLED", False)))
                 config.WHISPER_MODEL = data["settings"].get("whisper_model", getattr(config, "WHISPER_MODEL", "small"))
                 config.WHISPER_COMPUTE_TYPE = data["settings"].get("whisper_compute_type", getattr(config, "WHISPER_COMPUTE_TYPE", "int8_float16"))
                 config.SILERO_VAD_THRESHOLD = float(data["settings"].get("silero_vad_threshold", getattr(config, "SILERO_VAD_THRESHOLD", 0.50)))
@@ -506,7 +508,9 @@ class MemoryManager:
         print(f"[DEBUG] update_setting: Saved profile to disk. Value is now {self.profile['settings'][key]}")
         
         # Apply to config dynamically
-        if key == "tts_voice":
+        if key == "llm_speech_input_enabled":
+            config.LLM_SPEECH_INPUT_ENABLED = bool(value)
+        elif key == "tts_voice":
             config.TTS_VOICE = value
         elif key == "tts_rate":
             config.TTS_RATE = value

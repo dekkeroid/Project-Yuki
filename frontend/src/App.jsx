@@ -832,6 +832,7 @@ const App = () => {
     applyHeadsetPreference
   } = useSpeechRecognition({
     API_BASE,
+    llmSpeechInputEnabled: profile?.settings?.llm_speech_input_enabled,
     whisperModel: profile?.settings?.whisper_model || 'base',
     vadThreshold: profile?.settings?.vad_threshold,
     silenceTimeout: profile?.settings?.silence_timeout_ms,
@@ -1113,6 +1114,24 @@ const App = () => {
         }
         return newMessages;
       });
+    } else if (msg.type === 'voice_transcript_resolved') {
+      const resolvedText = msg.transcript;
+      if (resolvedText) {
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          for (let i = newMessages.length - 1; i >= 0; i--) {
+            if (newMessages[i].role === 'user') {
+              newMessages[i] = {
+                ...newMessages[i],
+                content: resolvedText,
+                is_direct_audio: false
+              };
+              break;
+            }
+          }
+          return newMessages;
+        });
+      }
     } else if (msg.type === 'text_stream') {
       // Skip intermediate thinking/narration text so only the final reply
       // appears in the main app conversation log (and native-TTS fallback).
@@ -2309,7 +2328,8 @@ const App = () => {
   }, [isPanelOpen, messages]);
 
   const sendMessageText = (text, sttTimeMs = null, fromSuggestion = false, attachmentsList = [], extraOpts = {}) => {
-    if (!text.trim()) return;
+    const hasAudioData = !!(extraOpts && extraOpts.audio_data);
+    if (!text.trim() && !hasAudioData) return;
 
     let sttMs = sttTimeMs;
     let sttTiming = extraOpts.stt_timing || null;
@@ -2826,10 +2846,22 @@ const App = () => {
     }
     setTtsStreamActive(true);
     setIsThinking(true);
-    setMessages((prev) => [...prev, { role: 'user', content: text, attachments: attachmentsList || [], timestamp: Date.now() / 1000 }]);
+    const displayText = text.trim() || (hasAudioData ? "🎙️ (Spoken audio)" : "");
+    setMessages((prev) => [...prev, {
+      role: 'user',
+      content: displayText,
+      is_direct_audio: hasAudioData,
+      attachments: attachmentsList || [],
+      timestamp: Date.now() / 1000
+    }]);
 
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       const payload = { type: 'chat', message: text };
+      if (hasAudioData) {
+        payload.audio_data = extraOpts.audio_data;
+        payload.audio_duration_ms = extraOpts.audio_duration_ms;
+        payload.from_voice = true;
+      }
       if (sttMs !== null && sttMs !== undefined) {
         payload.stt_time_ms = sttMs;
       }
@@ -4989,6 +5021,44 @@ const App = () => {
                             Wake up hotkey (Alt+S) turns on her listening
                           </span>
                         </label>
+                      </div>
+
+                      {/* Direct LLM Speech Input Toggle */}
+                      <div className="desktop-form-group" style={{ marginTop: '8px', marginBottom: '8px', padding: '8px 10px', background: profile.settings?.llm_speech_input_enabled ? 'rgba(139,92,246,0.12)' : 'rgba(255,255,255,0.03)', borderRadius: '8px', border: `1px solid ${profile.settings?.llm_speech_input_enabled ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.08)'}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <label className="desktop-label" style={{ marginBottom: 0, color: '#c4b5fd' }}>Direct LLM Speech Input</label>
+                            <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                              LLM is speech capable (bypasses Whisper STT)
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSetting('llm_speech_input_enabled', !profile.settings?.llm_speech_input_enabled)}
+                            style={{
+                              background: profile.settings?.llm_speech_input_enabled ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.08)',
+                              border: `1px solid ${profile.settings?.llm_speech_input_enabled ? 'rgba(139,92,246,0.7)' : 'rgba(255,255,255,0.12)'}`,
+                              borderRadius: '12px',
+                              width: '38px',
+                              height: '20px',
+                              cursor: 'pointer',
+                              position: 'relative',
+                              transition: 'all 0.2s ease',
+                              flexShrink: 0
+                            }}
+                          >
+                            <div style={{
+                              width: '14px',
+                              height: '14px',
+                              borderRadius: '50%',
+                              background: profile.settings?.llm_speech_input_enabled ? '#c084fc' : 'rgba(255,255,255,0.4)',
+                              position: 'absolute',
+                              top: '2px',
+                              left: profile.settings?.llm_speech_input_enabled ? '20px' : '2px',
+                              transition: 'all 0.2s ease'
+                            }} />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Speech-to-Text Engine Select */}
