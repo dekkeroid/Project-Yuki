@@ -251,6 +251,7 @@ async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], mode
 
             # Extract exact Silero VAD cleaned audio array for the dual-stage inspector
             silero_audio_array = None
+            pcm_audio = None
             input_for_whisper = whisper_input
             try:
                 import numpy as np
@@ -295,6 +296,21 @@ async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], mode
                 print(f"[STT] Filtered known Whisper hallucination: '{text}'")
                 text = ""
 
+            # Audio Event Detection (AED) for non-speech physical cues (sneeze, cough, etc.)
+            aed_events = []
+            aed_ms = 0.0
+            if getattr(config, "AED_ENABLED", True) and pcm_audio is not None and len(pcm_audio) > 1600:
+                try:
+                    t_aed = time.time()
+                    from app.voice.aed import classify_audio_events, augment_transcript_with_events
+                    aed_thresh = getattr(config, "AED_CONFIDENCE_THRESHOLD", 0.45)
+                    aed_events = classify_audio_events(pcm_audio, sample_rate=16000, base_threshold=aed_thresh)
+                    aed_ms = round((time.time() - t_aed) * 1000, 2)
+                    if aed_events:
+                        text = augment_transcript_with_events(text, aed_events)
+                except Exception as aed_err:
+                    print(f"[STT] AED classification error: {aed_err}")
+
             # Record turn in 5-turn dual audio inspector
             try:
                 from app.voice.debug_inspector import record_debug_turn
@@ -308,7 +324,7 @@ async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], mode
             except Exception as insp_err:
                 print(f"[STT-INSPECTOR] Turn recording warning: {insp_err}")
 
-            return {"text": text, "timing": {"whisper_ms": inference_ms}}
+            return {"text": text, "timing": {"whisper_ms": inference_ms, "aed_ms": aed_ms}, "events": aed_events}
         except Exception as e:
             print(f"[STT] Whisper Transcription Error: {type(e).__name__}: {e}")
             # Record failed turn in inspector

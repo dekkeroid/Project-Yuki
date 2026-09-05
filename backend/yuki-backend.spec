@@ -61,6 +61,9 @@ manual_datas = [
     (os.path.join(BACKEND_DIR, 'app', 'voice', 'voices-v1.0.bin'), os.path.join('app', 'voice')),
     # Whisper STT model (~141MB) — bundled so first use skips download
     (os.path.join(BACKEND_DIR, 'app', 'voice', 'whisper-base'), os.path.join('app', 'voice', 'whisper-base')),
+    # YAMNet AED model (~15MB) & class mapping — bundled for audio event detection
+    (os.path.join(BACKEND_DIR, 'app', 'voice', 'yamnet.onnx'), os.path.join('app', 'voice')),
+    (os.path.join(BACKEND_DIR, 'app', 'voice', 'yamnet_class_map.csv'), os.path.join('app', 'voice')),
     # soundfile: libsndfile DLL (soundfile is a .py file, not a package)
     (os.path.join(SITE, '_soundfile_data'), '_soundfile_data'),
     # av: FFmpeg DLLs for audio decoding (faster-whisper dependency)
@@ -89,10 +92,11 @@ manual_hidden = [
     'fastapi',
     'pydantic',
 
-    # ONNX / TTS
+    # ONNX / TTS / AED
     'onnxruntime',
     'soundfile',
     'espeakng_loader',
+    'app.voice.aed',
 
     # Whisper / STT
     'faster_whisper',

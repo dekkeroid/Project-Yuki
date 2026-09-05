@@ -9,10 +9,12 @@ export function stripAnimationTags(rawText) {
   const animRegex = /[<\[\(](?:yuki_)?anim[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
   const emotionRegex = /[<\[\(](?:yuki_)?emotion[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
   const anyYukiTag = /<yuki_[^>]*>/gi;
+  const transcriptTag = /\[Transcribed:\s*["']?[\s\S]*?["']?\]\s*/gi;
   return rawText
     .replace(animRegex, '')
     .replace(emotionRegex, '')
     .replace(anyYukiTag, '')
+    .replace(transcriptTag, '')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
@@ -39,6 +41,7 @@ export function parseResponseTags(rawText, callbacks = {}) {
   const emotionRegex = /[<\[\(](?:yuki_)?emotion[:\s]+([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])/gi;
   const malformedTagRegex = /[<\[\(](?:yuki_)?(?:anim|emotion)[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
   const anyYukiTag = /<yuki_[^>]*>/gi;
+  const transcriptTag = /\[Transcribed:\s*["']?[\s\S]*?["']?\]\s*/gi;
 
   let cleanText = rawText;
 
@@ -61,7 +64,7 @@ export function parseResponseTags(rawText, callbacks = {}) {
   });
 
   // Strip any remaining malformed tags (e.g. <yuki_anim eer >, <yuki_anim:peer>)
-  cleanText = cleanText.replace(malformedTagRegex, '').replace(anyYukiTag, '');
+  cleanText = cleanText.replace(malformedTagRegex, '').replace(anyYukiTag, '').replace(transcriptTag, '');
 
   // Clean up any double spaces leftover from tag stripping
   cleanText = cleanText.replace(/[ \t]{2,}/g, ' ').trim();

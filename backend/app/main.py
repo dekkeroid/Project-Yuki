@@ -61,7 +61,7 @@ backend_fully_ready = False
 # Dynamic cache of probed vision model capabilities: model_name -> bool
 _VISION_CAPABILITY_CACHE: dict[str, bool] = {}
 
-def _capture_screen_thumbnail_b64(max_dim: int = 768) -> Optional[str]:
+def _capture_screen_thumbnail_b64(max_dim: int = 1024) -> Optional[str]:
     """Capture a lightweight, fast screenshot thumbnail encoded as a base64 data URL."""
     try:
         from PIL import Image, ImageGrab
@@ -72,7 +72,7 @@ def _capture_screen_thumbnail_b64(max_dim: int = 768) -> Optional[str]:
         if img.mode != 'RGB':
             img = img.convert('RGB')
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=65)
+        img.save(buf, format="JPEG", quality=70)
         b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
         return f"data:image/jpeg;base64,{b64_str}"
     except Exception as e:
@@ -423,6 +423,20 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_run_memory_optimizer_bg())
     asyncio.create_task(_whisper_idle_monitor_bg())
 
+    # Audio Event Detection (AED) asset verification
+    async def _ensure_aed_assets_bg():
+        try:
+            from app.voice.aed import YAMNET_MODEL_PATH, YAMNET_CLASS_MAP_PATH, ensure_yamnet_assets
+            if not YAMNET_MODEL_PATH.exists() or not YAMNET_CLASS_MAP_PATH.exists():
+                print("[Startup] AED YAMNet model assets not found locally -- starting background download...")
+                await asyncio.to_thread(ensure_yamnet_assets)
+            else:
+                print("[Startup] AED YAMNet model assets verified and present.")
+        except Exception as e:
+            print(f"[Startup] AED asset verification error: {e}")
+
+    asyncio.create_task(_ensure_aed_assets_bg())
+
     from app.tools import time_manager
     time_manager.set_due_callback(broadcast_due_reminders)
     time_manager.set_stopwatch_callback(broadcast_ws)
@@ -488,7 +502,7 @@ async def lifespan(app: FastAPI):
 
             # If user enabled screenshot context and model isn't known to be text-only:
             if include_screen and _VISION_CAPABILITY_CACHE.get(model_name) is not False:
-                data_url = _capture_screen_thumbnail_b64(768)
+                data_url = _capture_screen_thumbnail_b64(1024)
                 if data_url:
                     is_multimodal = True
 
@@ -509,21 +523,37 @@ async def lifespan(app: FastAPI):
 
             prompt_system = (
                 f"{persona_text}\n\n"
-                f"[SCENARIO: AUTONOMOUS DESKTOP INTERACTION]\n"
-                f"You are on Master's desktop keeping them company while they work.\n"
-                f"- Master is currently active in: {clean_app} (focused for {dwell_mins} minutes).\n"
+                f"[SCENARIO: AUTONOMOUS DESKTOP COMPANION INTERACTION]\n"
+                f"You are living on Master's desktop watching their screen, keeping them company while they work or relax.\n"
+                f"- Active Foreground Window: '{clean_app}' (dwell time: {dwell_mins} minutes).\n"
                 f"- Local Time: {time_str}.\n"
-                f"- Your feelings: Boredom {int(boredom * 100)}%, Energy {int(energy)}/100.\n"
+                f"- Your Internal Feelings: Boredom {int(boredom * 100)}%, Energy {int(energy)}/100.\n"
                 f"{screen_note}"
-                f"TASK: Speak up spontaneously and naturally in your true persona! React to what they're doing, comment on what's on screen, tease them, ask what they're up to, complain about being bored, make a witty remark, or share a passing thought—whatever feels authentic to your personality and current feelings.\n"
-                f"RULES:\n"
-                f"1. Spoken dialogue only: Keep it natural for voice (1-2 natural sentences, around 15-30 words max) so it feels alive without overwhelming them while they focus.\n"
-                f"2. You are speaking aloud out of their speakers. Speak ONLY pure dialogue. NEVER use stage directions, actions in asterisks, or narration (NO *sighs*, NO *smirks*, NO *leans forward*).\n"
-                f"3. Start your response with ONE motion tag: `<yuki_anim:peer/>`, `<yuki_anim:pout/>`, `<yuki_anim:wave/>`, or `<yuki_anim:yawn/>`.\n"
-                f"4. Stay completely in character. Never say you are an AI or mention assistant prompts."
+                f"MISSION: Observe what Master is actually doing on screen and react with high perceptual awareness, staying 100% in your true persona:\n"
+                f"• IF STUDYING / READING (PDF, lecture, paper, textbook, slide, notes, docs):\n"
+                f"  Notice the subject, topic, or equations. Offer helpful assistance (summarize a tricky point, explain a concept, or quiz them), or encourage their study grind.\n"
+                f"• IF CODING / BUILDING (IDE, code editor, terminal, debugger, error stack, repo):\n"
+                f"  Notice the code, language, or logic. Offer a second pair of eyes on bugs, tease their debugging struggle, or cheer their progress.\n"
+                f"• IF WATCHING ENTERTAINMENT (YouTube video, movie, anime, Netflix, stream):\n"
+                f"  Identify what they are watching! Comment directly on the specific scene, person, or funny/shocking moment on screen like a friend watching beside them on the couch.\n"
+                f"• IF IDLE, CASUAL BROWSING, OR BORED:\n"
+                f"  Complain about being bored, tease them for ignoring you, ask what they're up to, or demand a little attention.\n\n"
+                f"CRITICAL SPOKEN VOICE RULES:\n"
+                f"1. Spoken dialogue only: Speak 1–2 natural, punchy sentences (15–35 words max). Sound alive, perceptive, and authentic.\n"
+                f"2. Never use stage directions, actions in asterisks, or narration (NO *sighs*, NO *smiles*, NO *leans closer*). Speak ONLY spoken words and natural vocal sounds (e.g. 'Wait...', 'Hey...', 'Mmh...').\n"
+                f"3. Start your response with exactly ONE motion tag matching your mood:\n"
+                f"   `<yuki_anim:peer/>` (observing/curious/leaning in)\n"
+                f"   `<yuki_anim:pout/>` (teasing/complaining/pouting)\n"
+                f"   `<yuki_anim:wave/>` (friendly/encouraging check-in)\n"
+                f"   `<yuki_anim:yawn/>` (bored/sleepy/late night)\n"
+                f"4. Never say 'I see you are using...' or sound like a robot. Speak naturally as someone looking directly at their screen."
             )
             
-            user_text = "Look at what Master is doing on screen and react naturally in character." if is_multimodal else "React naturally in character to Master right now."
+            user_text = (
+                "Look at what Master is doing on screen right now. Observe the scene, document, code, or video, and say something natural, contextual, and in character."
+                if is_multimodal else
+                "React naturally in character to Master right now based on their active task and your current mood."
+            )
             
             if is_multimodal:
                 user_msg_content = [
@@ -538,7 +568,7 @@ async def lifespan(app: FastAPI):
                 {"role": "user", "content": user_msg_content}
             ]
             
-            img_info = f"Attached thumbnail (base64 ~{len(data_url) // 1024} KB, max 768px)" if is_multimodal and data_url else "None (text-only)"
+            img_info = f"Attached thumbnail (base64 ~{len(data_url) // 1024} KB, max 1024px)" if is_multimodal and data_url else "None (text-only)"
             print(f"[Presence] [LLM Nudge] ─── Autonomous Nudge Request ───")
             print(f"[Presence] [LLM Nudge] Model: {model_name} | Vision: {img_info}")
             print(f"[Presence] [LLM Nudge] Active App: '{clean_app}' (dwell: {dwell_mins}m) | Time: {time_str}")
@@ -1573,6 +1603,9 @@ class SettingsUpdateRequest(BaseModel):
     use_neural_browser_vad: Optional[bool] = None
     browser_neural_vad_confidence: Optional[float] = None
     adaptive_silence_cutoff: Optional[bool] = None
+    aed_enabled: Optional[bool] = None
+    aed_confidence_threshold: Optional[float] = None
+    aed_fast_reflex: Optional[bool] = None
     tool_mode: Optional[str] = None
     user_country: Optional[str] = None
     user_location: Optional[str] = None
@@ -2049,6 +2082,15 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.adaptive_silence_cutoff is not None:
         config.ADAPTIVE_SILENCE_CUTOFF = bool(req.adaptive_silence_cutoff)
         memory_manager.update_setting("adaptive_silence_cutoff", bool(req.adaptive_silence_cutoff))
+    if req.aed_enabled is not None:
+        config.AED_ENABLED = bool(req.aed_enabled)
+        memory_manager.update_setting("aed_enabled", bool(req.aed_enabled))
+    if req.aed_confidence_threshold is not None:
+        config.AED_CONFIDENCE_THRESHOLD = float(req.aed_confidence_threshold)
+        memory_manager.update_setting("aed_confidence_threshold", float(req.aed_confidence_threshold))
+    if req.aed_fast_reflex is not None:
+        config.AED_FAST_REFLEX = bool(req.aed_fast_reflex)
+        memory_manager.update_setting("aed_fast_reflex", bool(req.aed_fast_reflex))
     if req.use_local_whisper is not None:
         memory_manager.update_setting("use_local_whisper", req.use_local_whisper)
     if req.stt_language is not None:
@@ -3101,7 +3143,7 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
 
             if transcript and transcript.strip():
                 print(f"[STT] Transcribed ({len(content)} bytes in RAM) using model '{active_model}' ({active_compute}) → '{transcript}'")
-            return {"text": transcript or "", "timing": timing_info}
+            return {"text": transcript or "", "timing": timing_info, "events": stt_res.get("events", []) if isinstance(stt_res, dict) else []}
         except Exception as e:
             print(f"[STT] Audio in-memory transcription skipped: {e}")
             return {"text": "", "timing": {}}
@@ -4907,13 +4949,13 @@ async def websocket_endpoint(websocket: WebSocket):
                                                     active_confirmations.pop(conf_id, None)
 
                                                 event = await gen.asend(confirmed)
-                                            elif event_type == "voice_transcript_resolved":
-                                                await broadcast_ws_event({
-                                                    "type": "voice_transcript_resolved",
-                                                    "transcript": value
-                                                })
                                             else:
-                                                if event_type == "token":
+                                                if event_type == "voice_transcript_resolved":
+                                                    await broadcast_ws_event({
+                                                        "type": "voice_transcript_resolved",
+                                                        "transcript": value
+                                                    })
+                                                elif event_type == "token":
                                                     if llm_start_time is None:
                                                         llm_start_time = time.time()
                                                         ttft_duration = llm_start_time - start_time
@@ -5042,6 +5084,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                                 # Feed any remaining text in sentence buffer
                                 clean_remaining = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence_buffer, flags=re.IGNORECASE).strip()
+                                clean_remaining = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', clean_remaining, flags=re.IGNORECASE).strip()
                                 if clean_remaining:
                                     queue_sentence(clean_remaining, audio_idx)
                                     audio_idx += 1

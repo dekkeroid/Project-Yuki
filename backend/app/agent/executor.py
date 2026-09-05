@@ -2316,6 +2316,23 @@ class AgentExecutor:
         """
         self.memory.increment_interactions()
 
+        # ── Layer 0: Fast Acoustic Reflex (Sub-second Non-Verbal Voice Reaction) ──
+        if getattr(config, "AED_FAST_REFLEX", True):
+            try:
+                from app.voice.aed import is_pure_acoustic_event, get_reflex_response
+                pure_tag = is_pure_acoustic_event(user_message)
+                if pure_tag:
+                    reflex_text = get_reflex_response(pure_tag)
+                    if reflex_text:
+                        print(f"[Reflex] Fast acoustic reflex triggered for {pure_tag} -- LLM skipped")
+                        final_history = list(chat_history) + [
+                            {"role": "user", "content": user_message},
+                            {"role": "assistant", "content": reflex_text},
+                        ]
+                        return reflex_text, final_history, "reflex"
+            except Exception as _reflex_err:
+                print(f"[Reflex] Fast reflex check error: {_reflex_err}")
+
         if config.LLM_MODE == 1:
             resolved_backend = "simple"
         elif config.LLM_MODE == 2:
@@ -3129,6 +3146,26 @@ class AgentExecutor:
         from app.agent.resolver import resolve_command
         from app.tools.safety import strip_internal_auth_fields, issue_confirmation_grant, describe_tool_target
 
+        # ── Layer 0: Fast Acoustic Reflex (Sub-second Non-Verbal Voice Reaction) ──
+        if getattr(config, "AED_FAST_REFLEX", True):
+            try:
+                from app.voice.aed import is_pure_acoustic_event, get_reflex_response
+                pure_tag = is_pure_acoustic_event(user_message)
+                if pure_tag:
+                    reflex_text = get_reflex_response(pure_tag)
+                    if reflex_text:
+                        print(f"[Reflex] Fast acoustic reflex triggered for {pure_tag} -- LLM skipped")
+                        yield "token", reflex_text, "reflex"
+                        updated_history = list(chat_history) + [
+                            {"role": "user",      "content": user_message, "attachments": _sanitize_attachments_for_history(attachments)},
+                            {"role": "assistant", "content": reflex_text},
+                        ]
+                        yield "final_history", updated_history, "reflex"
+                        yield "done", {"text": reflex_text, "tools_used": []}, "reflex"
+                        return
+            except Exception as _reflex_err:
+                print(f"[Reflex] Fast reflex check error: {_reflex_err}")
+
         # ── Layer 1: Zero-LLM Instant Resolver ───────────────────────────────
         # Skip in advanced/autonomous Jarvis mode or when tools are disabled
         resolved = resolve_command(user_message) if (effective_tool_mode == "basic" and not overrides.get("no_tools") and not overrides.get("is_startup_greeting")) else None
@@ -3418,21 +3455,39 @@ class AgentExecutor:
 
                 # If direct speech input was used, extract [Transcribed: "..."] and clean response
                 if active_input_audio:
-                    m = re.search(r'\[Transcribed:\s*["\']?(.*?)["\']?\]', full_llm_response, flags=re.IGNORECASE)
+                    m = re.search(r'\[Transcribed:\s*["\']?(.*?)["\']?\]\s*', accumulated_response, flags=re.IGNORECASE)
                     if m:
                         resolved_transcript = m.group(1).strip()
                         print(f"[DirectAudio] Resolved speech transcript from LLM: '{resolved_transcript}'")
                         yield "voice_transcript_resolved", resolved_transcript, backend_used
                         if final_history and final_history[-1].get("role") == "user":
                             final_history[-1]["content"] = resolved_transcript
-                    # Clean transcript tag from streamed tokens so assistant message and TTS don't speak it
-                    cleaned_tokens = []
-                    for _val, _label in iteration_tokens:
-                        _clean = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', _val, flags=re.IGNORECASE)
-                        if _clean:
-                            cleaned_tokens.append((_clean, _label))
-                    if cleaned_tokens:
+
+                        # Clean exact character span from streamed tokens
+                        m_start, m_end = m.start(), m.end()
+                        cleaned_tokens = []
+                        curr_idx = 0
+                        for _val, _label in iteration_tokens:
+                            token_len = len(_val)
+                            token_end = curr_idx + token_len
+                            if token_end <= m_start or curr_idx >= m_end:
+                                cleaned_tokens.append((_val, _label))
+                            else:
+                                # Overlap with the tag to strip
+                                keep_parts = []
+                                if curr_idx < m_start:
+                                    keep_parts.append(_val[:m_start - curr_idx])
+                                if token_end > m_end:
+                                    keep_parts.append(_val[m_end - curr_idx:])
+                                keep_str = "".join(keep_parts)
+                                if keep_str:
+                                    cleaned_tokens.append((keep_str, _label))
+                            curr_idx = token_end
                         iteration_tokens = cleaned_tokens
+
+                        # Clean accumulated_response for history saving
+                        accumulated_response = accumulated_response[:m_start] + accumulated_response[m_end:]
+                        full_llm_response = accumulated_response.strip()
 
                 # Emit the buffered narration, tagged so consumers can separate
                 # intermediate thinking text (before tool calls) from the final reply.

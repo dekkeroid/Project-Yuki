@@ -152,7 +152,7 @@ export function useSpeechRecognition(options = {}) {
       const audioTrack = micStreamRef.current.getAudioTracks()[0];
       if (audioTrack && audioTrack.applyConstraints) {
         audioTrack.applyConstraints({
-          autoGainControl: options.sttAutoGainControl ?? true,
+          autoGainControl: options.sttAutoGainControl ?? false,
           echoCancellation: options.sttEchoCancellation ?? true,
           noiseSuppression: options.sttNoiseSuppression ?? true
         }).catch(e => console.warn('[STT] Dynamic mic constraints update skipped:', e));
@@ -223,6 +223,11 @@ export function useSpeechRecognition(options = {}) {
   useEffect(() => {
     allowVoiceBargeInRef.current = options.allowVoiceBargeIn ?? false;
   }, [options.allowVoiceBargeIn]);
+
+  const adaptiveSilenceCutoffRef = useRef(options.adaptiveSilenceCutoff ?? true);
+  useEffect(() => {
+    adaptiveSilenceCutoffRef.current = options.adaptiveSilenceCutoff ?? true;
+  }, [options.adaptiveSilenceCutoff]);
 
   const wasBargeInRef = useRef(false);
 
@@ -434,7 +439,7 @@ export function useSpeechRecognition(options = {}) {
         isRecordingRef.current = true;
 
         const deviceId = selectedMicDeviceIdRef.current;
-        const agcValue = options.sttAutoGainControl ?? true;
+        const agcValue = options.sttAutoGainControl ?? false;
         const ecValue = options.sttEchoCancellation ?? true;
         const nsValue = options.sttNoiseSuppression ?? true;
         const constraints = {
@@ -634,6 +639,12 @@ export function useSpeechRecognition(options = {}) {
             logSTTStatus(`Transcribed: "${data.text}" in ${sttDurationMs}ms`);
             if (logToTerminal) logToTerminal(`[STT] Transcribed: "${data.text}" (${sttDurationMs}ms)`);
 
+            if (data.events && data.events.length > 0) {
+              const eventList = data.events.map(e => `${e.tag} (${Math.round(e.confidence * 100)}%)`).join(', ');
+              logSTTStatus(`Acoustic cues detected: ${eventList}`);
+              if (logToTerminal) logToTerminal(`[AED] Acoustic cues: ${eventList}`);
+            }
+
             setIsTranscribing(false);
             const isBargeInTarget = wasBargeInRef.current || isPlayingRef?.current || ttsStreamActiveRef?.current;
             wasBargeInRef.current = false;
@@ -687,6 +698,9 @@ export function useSpeechRecognition(options = {}) {
         vadActivationTimeRef.current = Date.now();
         vadActiveRef.current = true;
         let vadSustainedStart = null;
+        let vadResumeSpeechStart = null;
+        let speechStartTime = null;
+        let ambientNoiseFloor = 0.005;
 
         const bufferLength = micAnalyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
@@ -728,31 +742,73 @@ export function useSpeechRecognition(options = {}) {
           const isYukiSpeaking = (isPlayingRef?.current || ttsStreamActiveRef?.current);
           
           // Dynamic playback threshold boosting: raise threshold when Yuki is speaking to prevent speaker echo
-          const micThreshold = isYukiSpeaking ? baseThreshold * 1.5 * sensitivityMult : baseThreshold;
+          const rawMicThreshold = isYukiSpeaking ? baseThreshold * 1.5 * sensitivityMult : baseThreshold;
 
-          const silenceTimeoutMs = silenceTimeoutRef.current || 1000;
+          // Adaptive noise floor tracking (updates when idle before speech begins)
+          if (!vadSpeakingRef.current && vadSustainedStart === null) {
+            ambientNoiseFloor = ambientNoiseFloor * 0.92 + normalized * 0.08;
+          }
+
+          // If adaptive cutoff is enabled, ensure threshold stays comfortably above ambient room noise
+          const micThreshold = (adaptiveSilenceCutoffRef.current && ambientNoiseFloor > rawMicThreshold * 0.85)
+            ? Math.max(rawMicThreshold, ambientNoiseFloor * 1.30)
+            : rawMicThreshold;
+
+          const baseSilenceTimeoutMs = silenceTimeoutRef.current || 1000;
           const now = Date.now();
           const elapsedStream = now - vadActivationTimeRef.current;
 
+          // Adaptive silence timeout: short complete phrases (<2s) cutoff faster (550-700ms), while pauses mid-sentence get full timeout
+          const speechDuration = speechStartTime ? (now - speechStartTime) : 3000;
+          const silenceTimeoutMs = (adaptiveSilenceCutoffRef.current && speechDuration < 2000)
+            ? Math.max(500, Math.min(baseSilenceTimeoutMs, 700))
+            : baseSilenceTimeoutMs;
+
           // Periodic sample diagnostics (every ~1s when idle)
           if (sampleCount % 35 === 0) {
-            console.log(`[VAD-DIAG] @${elapsedStream}ms | RMS=${normalized.toFixed(4)} | Thresh=${micThreshold.toFixed(4)} | Min=${minVal} Max=${maxVal} Mean=${mean.toFixed(1)} Zeros=${zeroCount} | Speaking=${vadSpeakingRef.current}`);
+            console.log(`[VAD-DIAG] @${elapsedStream}ms | RMS=${normalized.toFixed(4)} | Thresh=${micThreshold.toFixed(4)} (NoiseFloor=${ambientNoiseFloor.toFixed(4)}) | Speaking=${vadSpeakingRef.current} SilenceTimer=${vadSilenceStartRef.current ? Math.round(now - vadSilenceStartRef.current) + 'ms' : 'off'}`);
           }
 
           if (normalized > micThreshold) {
-            vadSilenceStartRef.current = null;
-            if (vadSustainedStart === null) {
-              vadSustainedStart = now;
-              console.log(`[VAD-DIAG] Volume exceeded threshold (${normalized.toFixed(4)} > ${micThreshold.toFixed(4)}) at ${elapsedStream}ms. Starting 250ms sustain verification.`);
-            }
+            if (vadSpeakingRef.current) {
+              // Speech is already active.
+              if (vadSilenceStartRef.current !== null) {
+                // A silence countdown was already running!
+                // Require >= 150ms of sustained volume above threshold to cancel the silence timer,
+                // preventing transient noise, breaths, lip smacks, or ambient clicks from resetting silence back to 0.
+                if (vadResumeSpeechStart === null) {
+                  vadResumeSpeechStart = now;
+                }
+                if (now - vadResumeSpeechStart >= 150) {
+                  console.log(`[VAD-DIAG] Resumed speech confirmed (>=150ms above threshold). Silence countdown cancelled.`);
+                  vadSilenceStartRef.current = null;
+                  vadResumeSpeechStart = null;
+                } else if (now - vadSilenceStartRef.current > silenceTimeoutMs) {
+                  // Transient blip didn't reach 150ms and silence timeout already expired -> finalize speech
+                  const elapsedSilence = Math.round(now - vadSilenceStartRef.current);
+                  const reasonStr = `Silence Cutoff triggered (${elapsedSilence}ms silence > ${silenceTimeoutMs}ms limit)`;
+                  console.log(`[VAD-DIAG] >>> SILENCE CUTOFF TRIGGERED (overriding transient noise) <<< at ${elapsedStream}ms | Elapsed Silence: ${elapsedSilence}ms`);
+                  logSTTStatus(`[STT] ${reasonStr}`);
+                  stopSpeechRecognition(false, reasonStr);
+                  return;
+                }
+              }
+            } else {
+              // Speech not yet active: Require 250ms of sustained speech energy to reject clicks, coughs, and transient noise
+              if (vadSustainedStart === null) {
+                vadSustainedStart = now;
+                console.log(`[VAD-DIAG] Volume exceeded threshold (${normalized.toFixed(4)} > ${micThreshold.toFixed(4)}) at ${elapsedStream}ms. Starting 250ms sustain verification.`);
+              }
 
-            // Require 250ms of sustained speech energy to reject clicks, coughs, and transient noise
-            if (elapsedStream > 150 && now - vadSustainedStart >= 250) {
-              if (!vadSpeakingRef.current) {
+              if (elapsedStream > 150 && now - vadSustainedStart >= 250) {
                 const sustainedDuration = now - vadSustainedStart;
                 console.log(`[VAD-DIAG] >>> SPEECH ACTIVATED <<< at ${elapsedStream}ms | RMS=${normalized.toFixed(4)} (Threshold=${micThreshold.toFixed(4)}) | Sustained=${sustainedDuration}ms | Waveform: Min=${minVal} Max=${maxVal} Zeros=${zeroCount}`);
                 logSTTStatus("Sustained user speech detected (250ms verified)");
                 vadSpeakingRef.current = true;
+                speechStartTime = now;
+                vadSilenceStartRef.current = null;
+                vadResumeSpeechStart = null;
+
                 if (isPlayingRef?.current || ttsStreamActiveRef?.current) {
                   wasBargeInRef.current = true;
                   logSTTStatus("[STT] User speech started while Yuki was speaking — barge-in flagged");
@@ -779,7 +835,9 @@ export function useSpeechRecognition(options = {}) {
               }
             }
           } else {
+            // Volume is at or below threshold
             vadSustainedStart = null;
+            vadResumeSpeechStart = null;
             if (vadSpeakingRef.current) {
               if (vadSilenceStartRef.current === null) {
                 vadSilenceStartRef.current = now;
