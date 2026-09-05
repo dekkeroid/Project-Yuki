@@ -581,12 +581,13 @@ export function useSpeechRecognition(options = {}) {
             const reader = new FileReader();
             reader.onloadend = () => {
               const base64Audio = reader.result;
+              const audioPayload = {
+                audio_data: base64Audio,
+                audio_duration_ms: totalRecordingDurationMs,
+                is_barge_in: isBargeInTarget
+              };
               if (sendMessageText) {
-                sendMessageText("", 0, false, [], {
-                  audio_data: base64Audio,
-                  audio_duration_ms: totalRecordingDurationMs,
-                  is_barge_in: isBargeInTarget
-                });
+                sendMessageText("", audioPayload, false, [], audioPayload);
               }
               updateListeningState();
             };

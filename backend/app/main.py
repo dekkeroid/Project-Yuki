@@ -2318,7 +2318,7 @@ async def update_settings(req: SettingsUpdateRequest):
         print(f"[SETTINGS-UPDATE-BE] proactive_nudge_mode = {pmode}")
 
     if req.proactive_nudge_interval_min is not None:
-        pinterval = max(15, min(240, int(req.proactive_nudge_interval_min)))
+        pinterval = max(5, min(240, int(req.proactive_nudge_interval_min)))
         config.PROACTIVE_NUDGE_INTERVAL_MIN = pinterval
         memory_manager.update_setting("proactive_nudge_interval_min", pinterval)
         print(f"[SETTINGS-UPDATE-BE] proactive_nudge_interval_min = {pinterval}")
@@ -4648,7 +4648,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             stt_time_ms = payload_data.get("stt_time_ms")
 
                             input_audio = None
-                            if raw_audio_data and getattr(config, "LLM_SPEECH_INPUT_ENABLED", False):
+                            if raw_audio_data:
                                 try:
                                     from app.voice.stt import convert_audio_to_wav
                                     base64_part = raw_audio_data.split(",", 1)[1] if "," in raw_audio_data else raw_audio_data
@@ -4662,13 +4662,16 @@ async def websocket_endpoint(websocket: WebSocket):
                                             "raw_bytes": wav_bytes
                                         }
                                         print(f"[DirectAudio] Prepared voice input: {len(raw_bytes)} bytes WebM -> {len(wav_bytes)} bytes WAV.")
+                                        if not user_msg:
+                                            user_msg = "(Voice audio)"
                                 except Exception as _aud_err:
                                     print(f"[DirectAudio] Failed to convert audio: {_aud_err}")
 
                             if not user_msg and not input_audio:
+                                print("[WebSocket] Discarding empty chat message with no audio payload")
                                 return
                             turn_id = None
-                            print(f"[WebSocket] Received chat message: '{user_msg}' (startup={is_startup_greeting})")
+                            print(f"[WebSocket] Received chat message: '{user_msg}' (startup={is_startup_greeting}, direct_audio={bool(input_audio)})")
                             
                             # 1. Send status indicating Yuki is thinking
                             await websocket.send_json({"type": "status", "status": "thinking"})
