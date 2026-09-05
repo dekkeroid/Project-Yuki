@@ -866,16 +866,21 @@ const App = () => {
         socketRef.current.send(JSON.stringify({ type: 'log', message: msg }));
       }
     },
-    sendMessageText: (text, sttInfo = null) => {
+    sendMessageText: (text, sttInfo = null, fromSuggestion = false, attachmentsList = [], extraOpts = {}) => {
       let sttMs = null;
       let sttTiming = null;
+      let mergedExtraOpts = typeof extraOpts === 'object' && extraOpts !== null ? { ...extraOpts } : {};
       if (sttInfo && typeof sttInfo === 'object') {
         sttMs = sttInfo.stt_time_ms || sttInfo.total_stt_ms || null;
         sttTiming = sttInfo.stt_timing || sttInfo;
+        mergedExtraOpts = { ...sttInfo, ...mergedExtraOpts };
       } else if (typeof sttInfo === 'number') {
         sttMs = sttInfo;
       }
-      sendMessageText(text, sttMs, false, [], { stt_timing: sttTiming });
+      if (sttTiming) {
+        mergedExtraOpts.stt_timing = sttTiming;
+      }
+      sendMessageText(text, sttMs, fromSuggestion, attachmentsList, mergedExtraOpts);
     },
     isSessionActiveRef,
     toggleMute: () => setMuteVoice(prev => !prev),

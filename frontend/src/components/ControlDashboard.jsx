@@ -2848,8 +2848,8 @@ const ControlDashboard = ({
                       </button>
                     </div>
                   </div>
-                  <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.5)', marginBottom: '10px', lineHeight: 1.4 }}>
-                    When quiet for {settings.proactive_nudge_quiet_min ?? 30}m and bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}%), Yuki spontaneously speaks up. Once she checks in, she stays quiet for at least {settings.proactive_nudge_interval_min || 45}m (Repeat Delay) so you aren't interrupted repeatedly.
+                  <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.5)', marginBottom: '10px', lineHeight: 1.45 }}>
+                    When you are quiet for {settings.proactive_nudge_quiet_min ?? 30}m and Yuki reaches &gt;{settings.proactive_nudge_boredom_pct ?? 80}% boredom, she spontaneously speaks up. Her check-in triggers the {settings.proactive_nudge_interval_min || 45}m Repeat Cooldown so she stays quiet until the timer finishes. Your silence timer and her boredom only reset back to 0 when you reply to her.
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                     <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Nudge Mode</span>
@@ -2926,7 +2926,7 @@ const ControlDashboard = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
                     <div style={{ width: '100px', flexShrink: 0 }}>
                       <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Quiet Silence</div>
-                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>Silence before check-in</div>
+                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>Silence before check-in (resets when you reply)</div>
                     </div>
                     <input
                       type="range"
@@ -2961,12 +2961,12 @@ const ControlDashboard = ({
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ width: '100px', flexShrink: 0 }}>
-                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Repeat Delay</div>
-                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>Cooldown between check-ins</div>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Repeat Cooldown</div>
+                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>Cooldown lock after Yuki speaks</div>
                     </div>
                     <input
                       type="range"
-                      min="15"
+                      min="5"
                       max="120"
                       step="5"
                       value={settings.proactive_nudge_interval_min || 45}
@@ -4180,8 +4180,8 @@ const ControlDashboard = ({
                   </button>
                 </div>
                 <div style={{ padding: '4px 0' }}>
-                  <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', marginBottom: '10px', lineHeight: 1.4 }}>
-                    Configure how Yuki spontaneously checks in when bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}% after {settings.proactive_nudge_quiet_min ?? 30}m quiet, waiting at least {settings.proactive_nudge_interval_min || 45}m between check-ins). She observes your active window, dwell time, and screen to react organically in character.
+                  <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', marginBottom: '10px', lineHeight: 1.45 }}>
+                    Configure how Yuki spontaneously checks in when bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}% after {settings.proactive_nudge_quiet_min ?? 30}m silence). Each check-in starts a {settings.proactive_nudge_interval_min || 45}m Repeat Cooldown so she stays quiet; your silence timer and her boredom only reset back to 0 when you reply to her.
                   </div>
 
                   {/* Engine Selection */}
@@ -4307,7 +4307,7 @@ const ControlDashboard = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
                     <div style={{ width: '130px' }}>
                       <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Quiet Silence</div>
-                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Silence before check-in</div>
+                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Silence before check-in (resets when you reply)</div>
                     </div>
                     <input
                       type="range"
@@ -4346,12 +4346,12 @@ const ControlDashboard = ({
                   {/* Cooldown Interval */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
                     <div style={{ width: '130px' }}>
-                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Repeat Delay</div>
-                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Cooldown between check-ins</div>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Repeat Cooldown</div>
+                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Cooldown lock after Yuki speaks</div>
                     </div>
                     <input
                       type="range"
-                      min="15"
+                      min="5"
                       max="120"
                       step="5"
                       value={settings.proactive_nudge_interval_min || 45}
