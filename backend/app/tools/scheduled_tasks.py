@@ -522,7 +522,8 @@ def capture_screenshot(window_title: str = "", save_to: str = "") -> str:
     Pure capture — no vision analysis, so it is safe to run as a scheduled action.
     """
     try:
-        from PIL import Image, ImageGrab
+        from app.utils.screen_capture import grab_screen_clean
+        from PIL import Image
         import datetime
 
         bbox = None
@@ -530,18 +531,7 @@ def capture_screenshot(window_title: str = "", save_to: str = "") -> str:
             from app.tools.jarvis import _find_window_bbox
             bbox = _find_window_bbox(window_title)
 
-        img = None
-        try:
-            img = ImageGrab.grab(bbox=bbox, all_screens=True) if not bbox else ImageGrab.grab(bbox=bbox)
-        except Exception:
-            try:
-                img = ImageGrab.grab(bbox=bbox)
-            except Exception:
-                pass
-
-        if img is None:
-            import pyautogui
-            img = pyautogui.screenshot(region=bbox) if bbox else pyautogui.screenshot()
+        img = grab_screen_clean(bbox=bbox, all_screens=not bool(bbox))
 
         if save_to:
             path = os.path.abspath(os.path.expanduser(save_to))
