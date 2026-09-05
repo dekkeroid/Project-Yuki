@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, RotateCcw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon, Camera, CloudSun, Newspaper, MapPin } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, RotateCcw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon, Camera, CloudSun, Newspaper, MapPin, Info } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -891,6 +891,7 @@ const ControlDashboard = ({
     start_with_last_avatar_size: true,
     whisper_model: 'base',
     use_local_whisper: true,
+    llm_speech_input_enabled: false,
     stt_language: 'en',
     whisper_idle_timeout: 300,
     whisper_vram_threshold: 90,
@@ -2847,8 +2848,8 @@ const ControlDashboard = ({
                       </button>
                     </div>
                   </div>
-                  <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginBottom: '8px' }}>
-                    When bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}% after {settings.proactive_nudge_quiet_min ?? 30}m quiet), Yuki performs gentle desktop check-ins (leaning forward or daydreaming) without interrupting your focus.
+                  <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.5)', marginBottom: '10px', lineHeight: 1.4 }}>
+                    When quiet for {settings.proactive_nudge_quiet_min ?? 30}m and bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}%), Yuki spontaneously speaks up. Once she checks in, she stays quiet for at least {settings.proactive_nudge_interval_min || 45}m (Repeat Delay) so you aren't interrupted repeatedly.
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                     <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Nudge Mode</span>
@@ -2923,7 +2924,10 @@ const ControlDashboard = ({
                     </div>
                   )}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Quiet Silence</span>
+                    <div style={{ width: '100px', flexShrink: 0 }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Quiet Silence</div>
+                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>Silence before check-in</div>
+                    </div>
                     <input
                       type="range"
                       min="10"
@@ -2938,7 +2942,10 @@ const ControlDashboard = ({
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Boredom Trigger</span>
+                    <div style={{ width: '100px', flexShrink: 0 }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Boredom Trigger</div>
+                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>Boredom target to trigger</div>
+                    </div>
                     <input
                       type="range"
                       min="50"
@@ -2953,7 +2960,10 @@ const ControlDashboard = ({
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Repeat Delay</span>
+                    <div style={{ width: '100px', flexShrink: 0 }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Repeat Delay</div>
+                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>Cooldown between check-ins</div>
+                    </div>
                     <input
                       type="range"
                       min="15"
@@ -4171,7 +4181,7 @@ const ControlDashboard = ({
                 </div>
                 <div style={{ padding: '4px 0' }}>
                   <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', marginBottom: '10px', lineHeight: 1.4 }}>
-                    Configure how Yuki spontaneously checks in on you when bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}% after {settings.proactive_nudge_quiet_min ?? 30}m quiet). She observes your active window, dwell time, and time of day to deliver a warm, in-character check-in.
+                    Configure how Yuki spontaneously checks in when bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}% after {settings.proactive_nudge_quiet_min ?? 30}m quiet, waiting at least {settings.proactive_nudge_interval_min || 45}m between check-ins). She observes your active window, dwell time, and screen to react organically in character.
                   </div>
 
                   {/* Engine Selection */}
@@ -4180,7 +4190,7 @@ const ControlDashboard = ({
                       <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f1f5f9' }}>Generation Engine</div>
                       <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.45)' }}>
                         {(settings.proactive_nudge_engine || 'template') === 'llm'
-                          ? 'AI-generated 1-sentence companion check-in using your active persona voice'
+                          ? 'AI-generated spontaneous companion reactions using your active persona voice'
                           : 'Versatile natural spoken dialogues with zero GPU VRAM overhead'}
                       </div>
                     </div>
@@ -4336,8 +4346,8 @@ const ControlDashboard = ({
                   {/* Cooldown Interval */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
                     <div style={{ width: '130px' }}>
-                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Repeat Cooldown</div>
-                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Delay between check-ins</div>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Repeat Delay</div>
+                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Cooldown between check-ins</div>
                     </div>
                     <input
                       type="range"
@@ -7000,6 +7010,51 @@ const ControlDashboard = ({
                       </div>
                     )}
 
+                    {/* Direct LLM Speech Input Toggle */}
+                    <div className="identity-field" style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Mic className="w-3.5 h-3.5 text-violet-400" />
+                          <span className="field-label" style={{ color: '#c4b5fd', fontWeight: 600 }}>Direct LLM Speech Input</span>
+                          {(settings.llm_speech_input_enabled ?? false) && (
+                            <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(168,85,247,0.25)', color: '#d8b4fe', fontWeight: 600, border: '1px solid rgba(168,85,247,0.4)' }}>
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateSetting('llm_speech_input_enabled', !(settings.llm_speech_input_enabled ?? false))}
+                          style={{
+                            background: (settings.llm_speech_input_enabled ?? false) ? 'linear-gradient(135deg, #a855f7, #7c3aed)' : 'rgba(255,255,255,0.08)',
+                            border: `1px solid ${(settings.llm_speech_input_enabled ?? false) ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                            borderRadius: '12px',
+                            width: '38px',
+                            height: '20px',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            flexShrink: 0
+                          }}
+                        >
+                          <div style={{
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: '#fff',
+                            position: 'absolute',
+                            top: '2px',
+                            left: (settings.llm_speech_input_enabled ?? false) ? '20px' : '2px',
+                            transition: 'left 0.2s ease',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                          }} />
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                        My LLM is capable of speech input (e.g. Gemini 2.0 Flash / Pro, GPT-4o Audio). Bypasses local/cloud Whisper STT and transmits speech audio directly to the LLM.
+                      </div>
+                    </div>
+
                     {/* Vision Scan & Analysis Model Selection */}
                     <div className="identity-field" style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
@@ -7765,6 +7820,57 @@ const ControlDashboard = ({
                     <div className="card-group-header">
                       <Mic className="w-4 h-4 text-violet-400" />
                       <span className="card-group-title">Speech Recognition (STT Input)</span>
+                    </div>
+
+                    {/* Direct LLM Speech Input Toggle */}
+                    <div className="identity-field" style={{ marginTop: '8px', marginBottom: '12px', padding: '10px 12px', background: (settings.llm_speech_input_enabled ?? false) ? 'rgba(139,92,246,0.12)' : 'rgba(255,255,255,0.03)', borderRadius: '10px', border: `1px solid ${(settings.llm_speech_input_enabled ?? false) ? 'rgba(139,92,246,0.35)' : 'rgba(255,255,255,0.08)'}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span className="field-label" style={{ color: '#c4b5fd', fontWeight: 600 }}>Direct LLM Speech Input</span>
+                            {(settings.llm_speech_input_enabled ?? false) && (
+                              <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(168,85,247,0.25)', color: '#d8b4fe', fontWeight: 600, border: '1px solid rgba(168,85,247,0.4)' }}>
+                                STT Bypassed
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px', lineHeight: 1.35 }}>
+                            My LLM is capable of speech input. Transmits audio directly to the LLM, skipping Whisper STT on boot and during voice chat.
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateSetting('llm_speech_input_enabled', !(settings.llm_speech_input_enabled ?? false))}
+                          style={{
+                            background: (settings.llm_speech_input_enabled ?? false) ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.08)',
+                            border: `1px solid ${(settings.llm_speech_input_enabled ?? false) ? 'rgba(139,92,246,0.7)' : 'rgba(255,255,255,0.12)'}`,
+                            borderRadius: '12px',
+                            width: '40px',
+                            height: '22px',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            flexShrink: 0
+                          }}
+                        >
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            background: (settings.llm_speech_input_enabled ?? false) ? '#c084fc' : 'rgba(255,255,255,0.4)',
+                            position: 'absolute',
+                            top: '2px',
+                            left: (settings.llm_speech_input_enabled ?? false) ? '20px' : '2px',
+                            transition: 'all 0.2s ease'
+                          }} />
+                        </button>
+                      </div>
+                      {(settings.llm_speech_input_enabled ?? false) && (
+                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(139,92,246,0.2)', fontSize: '0.67rem', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <Info style={{ width: '13px', height: '13px', flexShrink: 0 }} />
+                          Whisper model will not preload at startup (saving VRAM/RAM). If the LLM does not support audio, Yuki will automatically fall back to Whisper.
+                        </div>
+                      )}
                     </div>
 
                     {/* Preload STT (Whisper) */}

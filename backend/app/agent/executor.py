@@ -1376,6 +1376,7 @@ class AgentExecutor:
         overrides: Optional[Dict[str, Any]] = None,
         active_model: str = "",
         attachments: Optional[List[Dict[str, Any]]] = None,
+        input_audio: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, str]]:
         """
         Builds the message list to send to the LLM.
@@ -1727,6 +1728,27 @@ class AgentExecutor:
                 user_msg_obj = {"role": "user", "content": user_content}
         else:
             user_msg_obj = {"role": "user", "content": user_content}
+
+        # Inject direct multimodal voice audio if present for this turn
+        if input_audio and input_audio.get("data"):
+            audio_directive = (
+                "[Direct user voice audio attached. Listen to the user's spoken audio carefully and respond naturally as Yuki. "
+                "CRITICAL: Start your response with a brief bracketed transcript tag of what the user said: "
+                "[Transcribed: \"<exact user words>\"] so the user sees their words in the chat log, then continue your reply.]"
+            )
+            base_text = user_content.strip() if user_content else ""
+            prompt_text = f"{base_text}\n\n{audio_directive}".strip() if base_text else audio_directive
+            content_parts = [{"type": "text", "text": prompt_text}]
+            if attachments and is_native_vision and image_content_parts:
+                content_parts.extend(image_content_parts)
+            content_parts.append({
+                "type": "input_audio",
+                "input_audio": {
+                    "data": input_audio["data"],
+                    "format": input_audio.get("format", "wav")
+                }
+            })
+            user_msg_obj = {"role": "user", "content": content_parts}
 
         final_messages = [system_msg]
         if recap_msg:
@@ -3079,7 +3101,14 @@ class AgentExecutor:
                 compiled_calls.append(call_obj)
             yield "tool_calls", compiled_calls, last_label
 
-    async def execute_chat_turn_stream(self, user_message: str, chat_history: List[Dict[str, str]], overrides: Optional[Dict[str, Any]] = None, attachments: Optional[List[Dict[str, Any]]] = None):
+    async def execute_chat_turn_stream(
+        self,
+        user_message: str,
+        chat_history: List[Dict[str, str]],
+        overrides: Optional[Dict[str, Any]] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
+        input_audio: Optional[Dict[str, Any]] = None
+    ):
         """
         Executes a chat turn in a streaming ReAct loop. Supports per-turn overrides from Chat Window.
         """
@@ -3271,12 +3300,13 @@ class AgentExecutor:
                 self.last_vector_timing = {"duration_ms": _vm_dur, "count": 0, "status": "error"}
                 print(f"[VectorMemory] Search error ({_vm_dur:.1f}ms): {_ve}")
 
+        active_input_audio = input_audio
         try:
             tb, tm = self._get_backend_and_model_for_task(resolved_backend, overrides=overrides)
             # _build_messages may block on the LLM summarizer when condensing history,
             # so run it off the event loop to keep the stream responsive.
             current_messages = await asyncio.to_thread(
-                self._build_messages, user_message, chat_history, resolved_backend, overrides, tm, attachments
+                self._build_messages, user_message, chat_history, resolved_backend, overrides, tm, attachments, active_input_audio
             )
         except Exception as e:
             import traceback
@@ -3359,6 +3389,50 @@ class AgentExecutor:
                     print()
                 full_llm_response = accumulated_response.strip()
                 log_triggered_backend_tags(full_llm_response)
+
+                # Check for audio unsupported error to perform automatic Whisper fallback
+                if active_input_audio and active_input_audio.get("raw_bytes") and iteration == 1:
+                    err_indicator = any("error from brain server:" in str(_v).lower() for _v, _ in iteration_tokens)
+                    err_str = " ".join(str(_v) for _v, _ in iteration_tokens).lower()
+                    if err_indicator and any(k in err_str for k in ("400", "input_audio", "audio", "unsupported", "unknown field", "unrecognized")):
+                        print(f"[DirectAudio] Current model rejected direct audio ({err_str[:120]}). Triggering Whisper fallback...")
+                        yield "thinking", "Current model doesn't support direct speech input. Transcribing with Whisper...", backend_used
+                        try:
+                            from app.voice.stt import transcribe_audio_file
+                            stt_res = await transcribe_audio_file(active_input_audio["raw_bytes"])
+                            fallback_text = (stt_res.get("text") if isinstance(stt_res, dict) else str(stt_res or "")).strip()
+                            print(f"[DirectAudio] Whisper fallback transcript: '{fallback_text}'")
+                            if fallback_text:
+                                user_message = fallback_text
+                                active_input_audio = None
+                                yield "voice_transcript_resolved", fallback_text, backend_used
+                                if final_history and final_history[-1].get("role") == "user":
+                                    final_history[-1]["content"] = fallback_text
+                                current_messages = await asyncio.to_thread(
+                                    self._build_messages, user_message, chat_history, resolved_backend, overrides, tm, attachments, None
+                                )
+                                iteration = 0
+                                continue
+                        except Exception as fallback_err:
+                            print(f"[DirectAudio] Whisper fallback failed: {fallback_err}")
+
+                # If direct speech input was used, extract [Transcribed: "..."] and clean response
+                if active_input_audio:
+                    m = re.search(r'\[Transcribed:\s*["\']?(.*?)["\']?\]', full_llm_response, flags=re.IGNORECASE)
+                    if m:
+                        resolved_transcript = m.group(1).strip()
+                        print(f"[DirectAudio] Resolved speech transcript from LLM: '{resolved_transcript}'")
+                        yield "voice_transcript_resolved", resolved_transcript, backend_used
+                        if final_history and final_history[-1].get("role") == "user":
+                            final_history[-1]["content"] = resolved_transcript
+                    # Clean transcript tag from streamed tokens so assistant message and TTS don't speak it
+                    cleaned_tokens = []
+                    for _val, _label in iteration_tokens:
+                        _clean = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', _val, flags=re.IGNORECASE)
+                        if _clean:
+                            cleaned_tokens.append((_clean, _label))
+                    if cleaned_tokens:
+                        iteration_tokens = cleaned_tokens
 
                 # Emit the buffered narration, tagged so consumers can separate
                 # intermediate thinking text (before tool calls) from the final reply.

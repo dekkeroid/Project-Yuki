@@ -411,9 +411,12 @@ async def lifespan(app: FastAPI):
     else:
         tts_warmed_up_event.set()
         
-    if stt_preload:
+    llm_speech_input = memory_manager.profile.get("settings", {}).get("llm_speech_input_enabled", getattr(config, 'LLM_SPEECH_INPUT_ENABLED', False))
+    if stt_preload and not llm_speech_input:
         asyncio.create_task(_warmup_whisper())
     else:
+        if llm_speech_input:
+            print("[Startup] Direct LLM Speech Input active — skipping Whisper startup preload to save RAM/VRAM.")
         whisper_warmed_up_event.set()
     asyncio.create_task(_coordinate_startup_optimization())
     asyncio.create_task(_start_crawler_bg())
@@ -506,21 +509,21 @@ async def lifespan(app: FastAPI):
 
             prompt_system = (
                 f"{persona_text}\n\n"
-                f"[SCENARIO: AUTONOMOUS DESKTOP NUDGE]\n"
-                f"You are sitting quietly on Master's desktop watching them work.\n"
+                f"[SCENARIO: AUTONOMOUS DESKTOP INTERACTION]\n"
+                f"You are on Master's desktop keeping them company while they work.\n"
                 f"- Master is currently active in: {clean_app} (focused for {dwell_mins} minutes).\n"
                 f"- Local Time: {time_str}.\n"
                 f"- Your feelings: Boredom {int(boredom * 100)}%, Energy {int(energy)}/100.\n"
                 f"{screen_note}"
-                f"TASK: Deliver a spontaneous, warm 1-sentence check-in or playful nudge.\n"
-                f"STRICT RULES:\n"
-                f"1. Exactly ONE short spoken sentence (under 14 words).\n"
-                f"2. You are a REAL human companion speaking aloud. NEVER use asterisks or stage directions (NO *peers*, NO *yawns*, NO *sighs*). Speak ONLY actual words or natural vocal sounds (e.g. 'Psst...', 'Hey...', 'Mmh...').\n"
-                f"3. Start your response with ONE motion tag: `<yuki_anim:peer/>`, `<yuki_anim:pout/>`, or `<yuki_anim:wave/>`.\n"
-                f"4. Never say you are an AI or mention assistant prompts."
+                f"TASK: Speak up spontaneously and naturally in your true persona! React to what they're doing, comment on what's on screen, tease them, ask what they're up to, complain about being bored, make a witty remark, or share a passing thought—whatever feels authentic to your personality and current feelings.\n"
+                f"RULES:\n"
+                f"1. Spoken dialogue only: Keep it natural for voice (1-2 natural sentences, around 15-30 words max) so it feels alive without overwhelming them while they focus.\n"
+                f"2. You are speaking aloud out of their speakers. Speak ONLY pure dialogue. NEVER use stage directions, actions in asterisks, or narration (NO *sighs*, NO *smirks*, NO *leans forward*).\n"
+                f"3. Start your response with ONE motion tag: `<yuki_anim:peer/>`, `<yuki_anim:pout/>`, `<yuki_anim:wave/>`, or `<yuki_anim:yawn/>`.\n"
+                f"4. Stay completely in character. Never say you are an AI or mention assistant prompts."
             )
             
-            user_text = "Look at what Master is doing right now and say a brief, natural check-in." if is_multimodal else "Say a brief, natural check-in to Master right now."
+            user_text = "Look at what Master is doing on screen and react naturally in character." if is_multimodal else "React naturally in character to Master right now."
             
             if is_multimodal:
                 user_msg_content = [
@@ -535,6 +538,14 @@ async def lifespan(app: FastAPI):
                 {"role": "user", "content": user_msg_content}
             ]
             
+            img_info = f"Attached thumbnail (base64 ~{len(data_url) // 1024} KB, max 768px)" if is_multimodal and data_url else "None (text-only)"
+            print(f"[Presence] [LLM Nudge] ─── Autonomous Nudge Request ───")
+            print(f"[Presence] [LLM Nudge] Model: {model_name} | Vision: {img_info}")
+            print(f"[Presence] [LLM Nudge] Active App: '{clean_app}' (dwell: {dwell_mins}m) | Time: {time_str}")
+            print(f"[Presence] [LLM Nudge] Mood Context: Boredom {int(boredom * 100)}%, Energy {int(energy)}/100")
+            print(f"[Presence] [LLM Nudge] System Prompt:\n{prompt_system}")
+            print(f"[Presence] [LLM Nudge] User Prompt: '{user_text}'")
+
             payload = backend.build_payload(
                 model=model_name,
                 messages=messages,
@@ -555,23 +566,24 @@ async def lifespan(app: FastAPI):
                     elif is_multimodal:
                         # Multimodal payload failed (e.g. model doesn't support image inputs)
                         err_text = await resp.text()
-                        print(f"[Presence] Model '{model_name}' rejected image payload (HTTP {resp.status}: {err_text[:120]}). Caching vision=False.")
+                        print(f"[Presence] [LLM Nudge] Model '{model_name}' rejected image payload (HTTP {resp.status}: {err_text[:120]}). Caching vision=False.")
                         _VISION_CAPABILITY_CACHE[model_name] = False
 
                         # Middle fallback: If a vision model is set in settings and not in basic mode, try jarvis_see_screen description
                         fallback_screen_note = ""
                         if getattr(config, "TOOL_MODE", "basic") != "basic" and has_vision_model:
-                            print(f"[Presence] Using jarvis_see_screen middle fallback with configured vision model...")
+                            print(f"[Presence] [LLM Nudge] Using jarvis_see_screen middle fallback with configured vision model...")
                             desc = await _describe_screen_with_jarvis()
                             if desc:
                                 fallback_screen_note = f"- What's on Master's screen right now: {desc}\n"
 
                         # Retry immediately as pure text
+                        print(f"[Presence] [LLM Nudge] Retrying as text-only with screen note: {fallback_screen_note.strip() or 'None'}")
                         text_payload = backend.build_payload(
                             model=model_name,
                             messages=[
                                 {"role": "system", "content": prompt_system.replace(screen_note, fallback_screen_note)},
-                                {"role": "user", "content": "Say a brief, natural check-in to Master right now."}
+                                {"role": "user", "content": "React naturally in character to Master right now."}
                             ],
                             temperature=0.75,
                             stream=False,
@@ -583,6 +595,7 @@ async def lifespan(app: FastAPI):
 
                     if resp_data:
                         raw_text = resp_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                        print(f"[Presence] [LLM Nudge] Raw LLM Response: {raw_text}")
                         
                         anim = "peer"
                         m = re.search(r'<yuki_anim:([a-zA-Z0-9_-]+)/>', raw_text)
@@ -599,7 +612,12 @@ async def lifespan(app: FastAPI):
                         cleaned = cleaned.replace('*', '').replace('"', '').strip()
                         
                         if len(cleaned) >= 4:
+                            print(f"[Presence] [LLM Nudge] Processed: text=\"{cleaned}\" | anim={anim}")
                             return cleaned, anim
+                        else:
+                            print(f"[Presence] [LLM Nudge] Discarded output (too short: \"{cleaned}\")")
+                    else:
+                        print(f"[Presence] [LLM Nudge] No valid response received from LLM.")
         except Exception as _err:
             print(f"[Presence] LLM proactive nudge skipped ({_err}), using versatile template.")
         return "", ""
@@ -1510,6 +1528,7 @@ class SettingsUpdateRequest(BaseModel):
     whisper_model: Optional[str] = None
     whisper_compute_type: Optional[str] = None
     use_local_whisper: Optional[bool] = None
+    llm_speech_input_enabled: Optional[bool] = None
     stt_language: Optional[str] = None
     no_llm_mode: Optional[bool] = None
     dynamic_tool_calling: Optional[bool] = None
@@ -2084,6 +2103,10 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.stt_preload is not None:
         config.STT_PRELOAD = bool(req.stt_preload)
         memory_manager.update_setting("stt_preload", bool(req.stt_preload))
+    if req.llm_speech_input_enabled is not None:
+        config.LLM_SPEECH_INPUT_ENABLED = bool(req.llm_speech_input_enabled)
+        memory_manager.update_setting("llm_speech_input_enabled", bool(req.llm_speech_input_enabled))
+        print(f"[Settings] Direct LLM Speech Input updated to: {config.LLM_SPEECH_INPUT_ENABLED}")
     if req.audio_output_device is not None:
         memory_manager.update_setting("audio_output_device", req.audio_output_device.strip())
     if req.device_volumes is not None:
@@ -4191,7 +4214,8 @@ async def handle_power_state_endpoint(req: PowerStateRequest):
         stt_preload = memory_manager.profile.get("settings", {}).get("stt_preload", getattr(config, 'STT_PRELOAD', True))
         tts_preload = memory_manager.profile.get("settings", {}).get("tts_preload", getattr(config, 'TTS_PRELOAD', True))
 
-        if stt_preload:
+        llm_speech_input = memory_manager.profile.get("settings", {}).get("llm_speech_input_enabled", getattr(config, 'LLM_SPEECH_INPUT_ENABLED', False))
+        if stt_preload and not llm_speech_input:
             asyncio.create_task(_warmup_whisper())
         if tts_preload:
             asyncio.create_task(_warmup_tts())
@@ -4602,6 +4626,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     with own_process_busy_guard():
                         try:
                             raw_msg = payload_data.get("message", "").strip()
+                            raw_audio_data = payload_data.get("audio_data")
                             is_wake_greeting = bool(payload_data.get("is_wake_greeting") or "[SYSTEM EVENT:" in raw_msg)
                             is_startup_greeting = bool(payload_data.get("is_startup_greeting") or raw_msg == "[STARTUP_GREETING]")
                             user_msg = raw_msg
@@ -4621,7 +4646,26 @@ async def websocket_endpoint(websocket: WebSocket):
                                 except Exception as _greet_err:
                                     print(f"[Startup] Error generating dynamic startup greeting prompt: {_greet_err}")
                             stt_time_ms = payload_data.get("stt_time_ms")
-                            if not user_msg:
+
+                            input_audio = None
+                            if raw_audio_data and getattr(config, "LLM_SPEECH_INPUT_ENABLED", False):
+                                try:
+                                    from app.voice.stt import convert_audio_to_wav
+                                    base64_part = raw_audio_data.split(",", 1)[1] if "," in raw_audio_data else raw_audio_data
+                                    raw_bytes = base64.b64decode(base64_part)
+                                    wav_bytes = await asyncio.to_thread(convert_audio_to_wav, raw_bytes, 16000)
+                                    if wav_bytes:
+                                        wav_b64 = base64.b64encode(wav_bytes).decode("utf-8")
+                                        input_audio = {
+                                            "data": wav_b64,
+                                            "format": "wav",
+                                            "raw_bytes": wav_bytes
+                                        }
+                                        print(f"[DirectAudio] Prepared voice input: {len(raw_bytes)} bytes WebM -> {len(wav_bytes)} bytes WAV.")
+                                except Exception as _aud_err:
+                                    print(f"[DirectAudio] Failed to convert audio: {_aud_err}")
+
+                            if not user_msg and not input_audio:
                                 return
                             turn_id = None
                             print(f"[WebSocket] Received chat message: '{user_msg}' (startup={is_startup_greeting})")
@@ -4827,10 +4871,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                             overrides["session_id"] = active_session_id
                                         # Tag voice-originated turns so the executor can require
                                         # confirmation for destructive operations (listening mode safety)
-                                        if stt_time_ms is not None:
+                                        if stt_time_ms is not None or input_audio is not None:
                                             overrides["from_voice"] = True
                                         attachments = payload_data.get("attachments") or []
-                                        gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides, attachments=attachments)
+                                        gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides, attachments=attachments, input_audio=input_audio)
                                         # First crash-recovery checkpoint: prior history + the new user message (unless startup prompt).
                                         if not is_startup_greeting:
                                             try:
@@ -4860,6 +4904,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                                     active_confirmations.pop(conf_id, None)
 
                                                 event = await gen.asend(confirmed)
+                                            elif event_type == "voice_transcript_resolved":
+                                                await broadcast_ws_event({
+                                                    "type": "voice_transcript_resolved",
+                                                    "transcript": value
+                                                })
                                             else:
                                                 if event_type == "token":
                                                     if llm_start_time is None:
@@ -4883,8 +4932,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                                         if boundary == -1:
                                                             break
                                                         sentence = sentence_buffer[:boundary + 1].strip()
-                                                        sentence_buffer = sentence_buffer[boundary + 1:]
+                                                        remaining_text = sentence_buffer[boundary + 1:]
+                                                        sentence_buffer = remaining_text
                                                         clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
+                                                        clean_s = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', clean_s, flags=re.IGNORECASE).strip()
                                                         if clean_s:
                                                             queue_sentence(clean_s, audio_idx)
                                                             audio_idx += 1

@@ -26,7 +26,8 @@ export default function SettingsApp() {
       proactive_nudge_include_screen: false,
       proactive_nudge_quiet_min: 30,
       proactive_nudge_boredom_pct: 80,
-      companion_nap_energy_pct: 30
+      companion_nap_energy_pct: 30,
+      llm_speech_input_enabled: false
     }
   });
   const [backendStatus, setBackendStatus] = useState('online');

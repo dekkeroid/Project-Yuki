@@ -54,6 +54,45 @@ def update_last_stt_time():
 def get_last_stt_time():
     return _last_stt_request_time
 
+def convert_audio_to_wav(audio_bytes: bytes, target_sample_rate: int = 16000) -> bytes:
+    """
+    Decodes any audio byte stream (WebM, Opus, Ogg, MP3, etc.) using PyAV
+    and re-encodes it into standard 16kHz mono 16-bit PCM WAV bytes.
+    Used for sending normalized audio to multimodal speech-capable LLMs.
+    """
+    if not audio_bytes or len(audio_bytes) < 100:
+        return b""
+    try:
+        import io
+        import av
+        import numpy as np
+        import soundfile as sf
+
+        input_io = io.BytesIO(audio_bytes)
+        container = av.open(input_io)
+        audio_streams = [s for s in container.streams if s.type == "audio"]
+        if not audio_streams:
+            container.close()
+            return b""
+
+        resampler = av.AudioResampler(format='s16', layout='mono', rate=target_sample_rate)
+        frames = []
+        for frame in container.decode(audio=0):
+            for resampled_frame in resampler.resample(frame):
+                frames.append(resampled_frame.to_ndarray())
+        container.close()
+
+        if not frames:
+            return b""
+
+        audio_data = np.concatenate(frames, axis=1).squeeze()
+        output_io = io.BytesIO()
+        sf.write(output_io, audio_data, target_sample_rate, format='WAV', subtype='PCM_16')
+        return output_io.getvalue()
+    except Exception as e:
+        print(f"[STT] convert_audio_to_wav failed: {e}")
+        return b""
+
 def unload_whisper_if_idle(force: bool = False):
     global _whisper_instance, _current_model_size, _current_compute_type, _current_device, _whisper_using_gpu
     with _whisper_lock:
