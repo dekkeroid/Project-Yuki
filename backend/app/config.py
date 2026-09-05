@@ -180,6 +180,7 @@ TTS_IDLE_TIMEOUT = int(os.environ.get("TTS_IDLE_TIMEOUT", "300"))  # seconds bef
 TTS_AUTO_UNLOAD = os.environ.get("TTS_AUTO_UNLOAD", "false").strip().lower() in ("1", "true", "yes", "on")
 KOKORO_IPA_INTERJECTIONS = os.environ.get("KOKORO_IPA_INTERJECTIONS", "false").strip().lower() in ("1", "true", "yes", "on")
 STT_PRELOAD = os.environ.get("STT_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload STT Whisper model on startup
+LLM_SPEECH_INPUT_ENABLED = os.environ.get("LLM_SPEECH_INPUT_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")  # Direct multimodal speech input to LLM (bypasses STT)
 STT_DEVICE = os.environ.get("STT_DEVICE", "auto")  # "auto", "gpu", "cpu"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
 WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8_float16")
