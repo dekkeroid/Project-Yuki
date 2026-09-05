@@ -2933,9 +2933,9 @@ const ControlDashboard = ({
                     </div>
                     <input
                       type="range"
-                      min="10"
+                      min="3"
                       max="60"
-                      step="5"
+                      step="1"
                       value={settings.proactive_nudge_quiet_min ?? 30}
                       onChange={(e) => handleUpdateSetting('proactive_nudge_quiet_min', parseInt(e.target.value, 10))}
                       style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
@@ -2951,7 +2951,7 @@ const ControlDashboard = ({
                     </div>
                     <input
                       type="range"
-                      min="50"
+                      min="5"
                       max="95"
                       step="5"
                       value={settings.proactive_nudge_boredom_pct ?? 80}
@@ -2969,9 +2969,9 @@ const ControlDashboard = ({
                     </div>
                     <input
                       type="range"
-                      min="5"
+                      min="2"
                       max="120"
-                      step="5"
+                      step="1"
                       value={settings.proactive_nudge_interval_min || 45}
                       onChange={(e) => handleUpdateSetting('proactive_nudge_interval_min', parseInt(e.target.value, 10))}
                       style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
@@ -4314,9 +4314,9 @@ const ControlDashboard = ({
                     </div>
                     <input
                       type="range"
-                      min="10"
+                      min="3"
                       max="60"
-                      step="5"
+                      step="1"
                       value={settings.proactive_nudge_quiet_min ?? 30}
                       onChange={(e) => handleUpdateSetting('proactive_nudge_quiet_min', parseInt(e.target.value, 10))}
                       style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
@@ -4334,7 +4334,7 @@ const ControlDashboard = ({
                     </div>
                     <input
                       type="range"
-                      min="50"
+                      min="5"
                       max="95"
                       step="5"
                       value={settings.proactive_nudge_boredom_pct ?? 80}
@@ -4354,9 +4354,9 @@ const ControlDashboard = ({
                     </div>
                     <input
                       type="range"
-                      min="5"
+                      min="2"
                       max="120"
-                      step="5"
+                      step="1"
                       value={settings.proactive_nudge_interval_min || 45}
                       onChange={(e) => handleUpdateSetting('proactive_nudge_interval_min', parseInt(e.target.value, 10))}
                       style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}

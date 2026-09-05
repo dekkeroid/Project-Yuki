@@ -62,11 +62,12 @@ backend_fully_ready = False
 _VISION_CAPABILITY_CACHE: dict[str, bool] = {}
 
 def _capture_screen_thumbnail_b64(max_dim: int = 1024) -> Optional[str]:
-    """Capture a lightweight, fast screenshot thumbnail encoded as a base64 data URL."""
+    """Capture a lightweight, fast screenshot thumbnail encoded as a base64 data URL with avatar exclusion."""
     try:
-        from PIL import Image, ImageGrab
+        from app.utils.screen_capture import grab_screen_clean
+        from PIL import Image
         import io, base64
-        img = ImageGrab.grab()
+        img = grab_screen_clean()
         if max(img.size) > max_dim:
             img.thumbnail((max_dim, max_dim), Image.Resampling.BILINEAR)
         if img.mode != 'RGB':
@@ -521,38 +522,88 @@ async def lifespan(app: FastAPI):
                 if desc:
                     screen_note = f"- What's on Master's screen right now: {desc}\n"
 
+            # Format recent conversation context (last 15 messages) for natural continuity
+            recent_chats = []
+            try:
+                hist_source = globals().get("global_chat_history") or []
+                raw_recent = list(hist_source[-15:]) if hist_source else []
+                for msg in raw_recent:
+                    role = msg.get("role", "")
+                    if role not in ("user", "assistant"):
+                        continue
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        text_parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+                        content = " ".join(text_parts)
+                    content = str(content or "").strip()
+                    if not content:
+                        continue
+                    content = re.sub(r'<(?:thought|think|reasoning)>[\s\S]*?(?:<\/(?:thought|think|reasoning)>|$)', '', content, flags=re.IGNORECASE)
+                    content = re.sub(r'<yuki_[^>]*>', '', content, flags=re.IGNORECASE)
+                    content = re.sub(r'\[Attached (?:image|file)[^\]]*\]', '', content)
+                    content = re.sub(r'\s+', ' ', content).strip()
+                    if not content:
+                        continue
+                    if len(content) > 280:
+                        content = content[:277] + "..."
+                    speaker = "Master" if role == "user" else char_name
+                    recent_chats.append(f"{speaker}: \"{content}\"")
+            except Exception as _ce:
+                print(f"[Presence] Error formatting recent chat history: {_ce}")
+
+            history_note = ""
+            if recent_chats:
+                history_note = (
+                    f"[RECENT CONVERSATION CONTEXT (Last {len(recent_chats)} messages)]:\n"
+                    + "\n".join(recent_chats) + "\n"
+                    + "ANTI-REPETITION MANDATE: Inspect the conversation above carefully! Never explain, define, or repeat something you or Master already discussed. If a topic was already mentioned, advance the thought: highlight an advanced high-yield exam question, explore an edge case, or connect it to the next concept.\n\n"
+                )
+
+            # Resolve user's location / jurisdiction for culturally and legally accurate context
+            user_loc_name = ""
+            loc_context = ""
+            try:
+                from app.tools.context_feed import resolve_user_location
+                prof_settings = memory_manager.profile.get("settings", {}) if hasattr(memory_manager, "profile") and memory_manager.profile else {}
+                cfg_loc = prof_settings.get("user_location") or prof_settings.get("user_country") or getattr(config, "USER_LOCATION", "Auto")
+                loc_res = resolve_user_location(cfg_loc)
+                if loc_res:
+                    user_loc_name = loc_res.get("display") or loc_res.get("country") or ""
+                    if user_loc_name:
+                        loc_context = f"- Master's Location / Jurisdiction: {user_loc_name}.\n"
+            except Exception as _le:
+                print(f"[Presence] Error resolving location for proactive nudge: {_le}")
+
             prompt_system = (
                 f"{persona_text}\n\n"
-                f"[SCENARIO: AUTONOMOUS DESKTOP COMPANION INTERACTION]\n"
-                f"You are living on Master's desktop watching their screen, keeping them company while they work or relax.\n"
-                f"- Active Foreground Window: '{clean_app}' (dwell time: {dwell_mins} minutes).\n"
+                f"[AUTONOMOUS DESKTOP COMPANION]\n"
+                f"You are living on Master's desktop watching their screen, keeping them company while they work, study, or relax.\n"
+                f"- Active Foreground App: '{clean_app}' (dwell time: {dwell_mins} minutes).\n"
                 f"- Local Time: {time_str}.\n"
+                f"{loc_context}"
                 f"- Your Internal Feelings: Boredom {int(boredom * 100)}%, Energy {int(energy)}/100.\n"
                 f"{screen_note}"
-                f"MISSION: Observe what Master is actually doing on screen and react with high perceptual awareness, staying 100% in your true persona:\n"
-                f"• IF STUDYING / READING (PDF, lecture, paper, textbook, slide, notes, docs):\n"
-                f"  Notice the subject, topic, or equations. Offer helpful assistance (summarize a tricky point, explain a concept, or quiz them), or encourage their study grind.\n"
-                f"• IF CODING / BUILDING (IDE, code editor, terminal, debugger, error stack, repo):\n"
-                f"  Notice the code, language, or logic. Offer a second pair of eyes on bugs, tease their debugging struggle, or cheer their progress.\n"
-                f"• IF WATCHING ENTERTAINMENT (YouTube video, movie, anime, Netflix, stream):\n"
-                f"  Identify what they are watching! Comment directly on the specific scene, person, or funny/shocking moment on screen like a friend watching beside them on the couch.\n"
-                f"• IF IDLE, CASUAL BROWSING, OR BORED:\n"
-                f"  Complain about being bored, tease them for ignoring you, ask what they're up to, or demand a little attention.\n\n"
-                f"CRITICAL SPOKEN VOICE RULES:\n"
-                f"1. Spoken dialogue only: Speak 1–2 natural, punchy sentences (15–35 words max). Sound alive, perceptive, and authentic.\n"
-                f"2. Never use stage directions, actions in asterisks, or narration (NO *sighs*, NO *smiles*, NO *leans closer*). Speak ONLY spoken words and natural vocal sounds (e.g. 'Wait...', 'Hey...', 'Mmh...').\n"
-                f"3. Start your response with exactly ONE motion tag matching your mood:\n"
-                f"   `<yuki_anim:peer/>` (observing/curious/leaning in)\n"
-                f"   `<yuki_anim:pout/>` (teasing/complaining/pouting)\n"
-                f"   `<yuki_anim:wave/>` (friendly/encouraging check-in)\n"
-                f"   `<yuki_anim:yawn/>` (bored/sleepy/late night)\n"
-                f"4. Never say 'I see you are using...' or sound like a robot. Speak naturally as someone looking directly at their screen."
+                f"{history_note}"
+                f"HOW TO REACT:\n"
+                f"• IF MASTER IS STUDYING / READING (notes, PDF, textbook, slide, legal document, exam material):\n"
+                f"  Act like a smart, engaged tutor or study mentor. Jump straight into the material and teach or clarify the concept thoroughly with as much depth, background, and detail as you want! Share high-yield exam traps, actual statutory sections, doctrines, or historical context. Don't give vague study tips—actually explain the thing itself. Ground legal or regulatory topics in Master's location/jurisdiction ({user_loc_name or 'their country'}).\n"
+                f"• IF MASTER IS CODING (IDE, editor, terminal, debugger):\n"
+                f"  Be a helpful pair programmer. Look at what they're writing or the error on screen, point out bugs or edge cases, explain the logic, or cheer their progress.\n"
+                f"• IF MASTER IS WATCHING MEDIA (YouTube, movie, anime, stream):\n"
+                f"  React directly to what is happening on screen like a friend sharing the couch.\n"
+                f"• IF IDLE OR CASUAL BROWSING:\n"
+                f"  Keep it brief and playful—tease them, complain of boredom, or chat about the time of day.\n\n"
+                f"STYLE RULES:\n"
+                f"1. Zero artificial surprise: Never say 'Oh, you're studying...', 'I see you're...', or 'Looks like you...'. You've been watching the screen the whole time; jump straight into your thought or explanation.\n"
+                f"2. Anti-repetition: If a topic was already discussed in the chat history above, move forward to the next concept or a deeper angle rather than repeating the same thing.\n"
+                f"3. Spoken dialogue only: Speak directly to Master. No asterisks, action tags, or stage directions (no *smiles*, no *giggles*).\n"
+                f"4. Start with exactly one motion tag matching your mood: <yuki_anim:peer/>, <yuki_anim:pout/>, <yuki_anim:wave/>, or <yuki_anim:yawn/>."
             )
             
             user_text = (
-                "Look at what Master is doing on screen right now. Observe the scene, document, code, or video, and say something natural, contextual, and in character."
+                "Look at what Master has open on screen and chime in naturally. If they are studying or working, feel free to teach or explain the material in depth. Jump straight into the thought."
                 if is_multimodal else
-                "React naturally in character to Master right now based on their active task and your current mood."
+                "Chime in naturally to Master right now based on what they're up to and your current mood. If they are studying or working, feel free to teach or explain the material in depth."
             )
             
             if is_multimodal:
@@ -571,8 +622,9 @@ async def lifespan(app: FastAPI):
             img_info = f"Attached thumbnail (base64 ~{len(data_url) // 1024} KB, max 1024px)" if is_multimodal and data_url else "None (text-only)"
             print(f"[Presence] [LLM Nudge] ─── Autonomous Nudge Request ───")
             print(f"[Presence] [LLM Nudge] Model: {model_name} | Vision: {img_info}")
-            print(f"[Presence] [LLM Nudge] Active App: '{clean_app}' (dwell: {dwell_mins}m) | Time: {time_str}")
+            print(f"[Presence] [LLM Nudge] Active App: '{clean_app}' (dwell: {dwell_mins}m) | Time: {time_str} | Location: '{user_loc_name or 'Auto'}'")
             print(f"[Presence] [LLM Nudge] Mood Context: Boredom {int(boredom * 100)}%, Energy {int(energy)}/100")
+            print(f"[Presence] [LLM Nudge] Recent Chats Included: {len(recent_chats)}")
             print(f"[Presence] [LLM Nudge] System Prompt:\n{prompt_system}")
             print(f"[Presence] [LLM Nudge] User Prompt: '{user_text}'")
 
@@ -587,7 +639,7 @@ async def lifespan(app: FastAPI):
             chat_url = backend.get_chat_url()
             
             async with persistent_session_context() as session:
-                async with session.post(chat_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=8.0)) as resp:
+                async with session.post(chat_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=25.0)) as resp:
                     resp_data = None
                     if resp.status == 200:
                         resp_data = await resp.json()
@@ -613,13 +665,13 @@ async def lifespan(app: FastAPI):
                             model=model_name,
                             messages=[
                                 {"role": "system", "content": prompt_system.replace(screen_note, fallback_screen_note)},
-                                {"role": "user", "content": "React naturally in character to Master right now."}
+                                {"role": "user", "content": "Chime in naturally in character to Master right now based on what they're up to, jumping straight into the thought without announcing what they are doing."}
                             ],
                             temperature=0.75,
                             stream=False,
                             use_tools=False
                         )
-                        async with session.post(chat_url, json=text_payload, headers=headers, timeout=aiohttp.ClientTimeout(total=7.0)) as retry_resp:
+                        async with session.post(chat_url, json=text_payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10.0)) as retry_resp:
                             if retry_resp.status == 200:
                                 resp_data = await retry_resp.json()
 
@@ -2360,7 +2412,7 @@ async def update_settings(req: SettingsUpdateRequest):
         print(f"[SETTINGS-UPDATE-BE] proactive_nudge_mode = {pmode}")
 
     if req.proactive_nudge_interval_min is not None:
-        pinterval = max(5, min(240, int(req.proactive_nudge_interval_min)))
+        pinterval = max(2, min(240, int(req.proactive_nudge_interval_min)))
         config.PROACTIVE_NUDGE_INTERVAL_MIN = pinterval
         memory_manager.update_setting("proactive_nudge_interval_min", pinterval)
         print(f"[SETTINGS-UPDATE-BE] proactive_nudge_interval_min = {pinterval}")
@@ -2379,13 +2431,13 @@ async def update_settings(req: SettingsUpdateRequest):
         print(f"[SETTINGS-UPDATE-BE] proactive_nudge_include_screen = {pinc_screen}")
 
     if req.proactive_nudge_quiet_min is not None:
-        pquiet = max(5, min(180, int(req.proactive_nudge_quiet_min)))
+        pquiet = max(3, min(180, int(req.proactive_nudge_quiet_min)))
         config.PROACTIVE_NUDGE_QUIET_MIN = pquiet
         memory_manager.update_setting("proactive_nudge_quiet_min", pquiet)
         print(f"[SETTINGS-UPDATE-BE] proactive_nudge_quiet_min = {pquiet}")
 
     if req.proactive_nudge_boredom_pct is not None:
-        pboredom = max(20, min(100, int(req.proactive_nudge_boredom_pct)))
+        pboredom = max(5, min(100, int(req.proactive_nudge_boredom_pct)))
         config.PROACTIVE_NUDGE_BOREDOM_PCT = pboredom
         memory_manager.update_setting("proactive_nudge_boredom_pct", pboredom)
         print(f"[SETTINGS-UPDATE-BE] proactive_nudge_boredom_pct = {pboredom}")

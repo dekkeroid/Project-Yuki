@@ -632,17 +632,12 @@ def jarvis_see_screen(prompt: str, window_title: str = None) -> str:
     """
     try:
         from app.utils.attachment_manager import get_attachment_directory
-        from PIL import Image, ImageGrab
+        from app.utils.screen_capture import grab_screen_clean
+        from PIL import Image
         import datetime
 
-        if window_title:
-            bbox = _find_window_bbox(window_title)
-            if bbox:
-                img = ImageGrab.grab(bbox=bbox)
-            else:
-                img = ImageGrab.grab()
-        else:
-            img = ImageGrab.grab()
+        bbox = _find_window_bbox(window_title) if window_title else None
+        img = grab_screen_clean(bbox=bbox)
 
         # Downscale very large captures to keep vision payloads token-efficient.
         max_dim = 1280

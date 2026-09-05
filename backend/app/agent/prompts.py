@@ -51,13 +51,23 @@ def _get_day_part(hour: int) -> str:
 def _get_user_country(profile: dict = None) -> str:
     if profile and isinstance(profile, dict):
         settings = profile.get("settings", {})
-        custom = settings.get("user_country")
+        custom = settings.get("user_location") or settings.get("user_country")
         if custom and str(custom).strip() and str(custom).strip().lower() != "auto":
             return str(custom).strip()
     
-    config_country = getattr(app.config, "USER_COUNTRY", "Auto")
+    config_country = getattr(app.config, "USER_LOCATION", getattr(app.config, "USER_COUNTRY", "Auto"))
     if config_country and str(config_country).strip() and str(config_country).strip().lower() != "auto":
         return str(config_country).strip()
+
+    try:
+        from app.tools.context_feed import resolve_user_location
+        loc_res = resolve_user_location("Auto")
+        if loc_res:
+            disp = loc_res.get("display") or loc_res.get("country") or ""
+            if disp:
+                return disp
+    except Exception:
+        pass
 
     try:
         import ctypes

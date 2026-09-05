@@ -123,6 +123,9 @@ manual_hidden = [
     'watchdog.events',
     'pyautogui',
     'PIL',
+    'win32gui',
+    'win32con',
+    'app.utils.screen_capture',
 
     # Windows audio
     'pycaw',
