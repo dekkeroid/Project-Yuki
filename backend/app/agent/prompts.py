@@ -18,8 +18,8 @@ def _get_active_window_title() -> str:
         hwnd = ctypes.windll.user32.GetForegroundWindow()
         if not hwnd:
             return _LAST_NON_YUKI_WINDOW or "Desktop"
-        buf = ctypes.create_unicode_buffer(256)
-        ctypes.windll.user32.GetWindowTextW(hwnd, buf, 256)
+        buf = ctypes.create_unicode_buffer(512)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, 512)
         title = buf.value.strip()
         
         if not title:
@@ -30,9 +30,25 @@ def _get_active_window_title() -> str:
         title_lower = title.lower()
         if any(k in title_lower for k in yuki_keywords):
             return _LAST_NON_YUKI_WINDOW or title
-            
-        _LAST_NON_YUKI_WINDOW = title
-        return title
+
+        proc_name = ""
+        try:
+            pid = ctypes.c_ulong()
+            ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value:
+                import psutil
+                proc_name = psutil.Process(pid.value).name()
+        except Exception:
+            pass
+
+        try:
+            from app.memory.presence_engine import format_active_window
+            formatted = format_active_window(title, proc_name).get("prompt") or title
+            _LAST_NON_YUKI_WINDOW = formatted
+            return formatted
+        except Exception:
+            _LAST_NON_YUKI_WINDOW = title
+            return title
     except Exception:
         return _LAST_NON_YUKI_WINDOW or ""
 
@@ -63,7 +79,7 @@ def _get_user_country(profile: dict = None) -> str:
         from app.tools.context_feed import resolve_user_location
         loc_res = resolve_user_location("Auto")
         if loc_res:
-            disp = loc_res.get("display") or loc_res.get("country") or ""
+            disp = loc_res.get("country") or loc_res.get("display") or ""
             if disp:
                 return disp
     except Exception:
@@ -149,6 +165,14 @@ def get_time_block(profile: dict = None, relevant_memories: list = None) -> str:
     active_win = _get_active_window_title()
     if active_win:
         lines.append(f"Active Window     : {active_win}")
+
+    try:
+        from app.memory.presence_engine import get_active_background_media
+        bg_media = get_active_background_media(foreground_title=active_win)
+        if bg_media:
+            lines.append(f"Active Media       : {bg_media}")
+    except Exception:
+        pass
 
     try:
         from app.memory.presence_engine import presence_manager
@@ -499,7 +523,7 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
   • `search_files` → ONLY when the user wants to find a specific file on their computer.
   • `launch_app` → ONLY when the user wants to open, launch, or switch to a desktop application or URL. (It automatically focuses an existing open window unless the user specifically asks for a new window).
   • `update_user_fact` → Use ONLY when the USER reveals a clear, definite personal fact or preference about THEMSELVES.
-  • `set_system_volume` → ONLY when the user says to change the volume.
+  • `set_system_volume` → Get or set the speaker volume level (omit volume_level or use action='get' to inspect current volume and mute status; provide volume_level 0-100 to change it).
   • `manage_scheduled_task` → ONLY when the user asks to do something automatically LATER, REPEATEDLY, or to WATCH an app/state and react:
     - STRUCTURED ACTION PARAMETERS (preferred):
       * Open an app on trigger: `action='watch', target='antigravity', condition='closed', run_tool='launch_app', run_args={'app_name': 'Firefox'}`
@@ -512,14 +536,18 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
       * Delayed shell command: `action='set_delayed', seconds=10, run_command='python \"C:/path/to/script.py\"'`
     - Trigger conditions: `condition='closed'` (when an app closes), `condition='opened'` (when launched), `condition='minimized'`, `maximized`, `focused`, `battery_low`, `storage_low`, `network_disconnected`.
     - Task management: `action='list'`, `action='cancel'` (item_id=<id>), `action='pause'`, `action='resume'`.
-  • `manage_personal_list` → ONLY when the user asks to manage everyday personal lists (shopping lists, groceries, things to do today, errands, wishlist, packing list):
+  • `manage_personal_list` → ONLY when the user asks to manage everyday personal lists (date-based daily to-dos, shopping lists, groceries, errands, wishlist, packing list):
+    - Daily To-Do (Today): `action='show', list_name='todo', date='today'` (Smart: between 12 AM - 4 AM late-night, automatically pulls up yesterday's active session if today is empty).
+    - Daily To-Do (Other Dates): `action='show', list_name='todo', date='yesterday'` (or `date='tomorrow'`, `date='2026-09-05'`).
+    - Add to Daily To-Do: `action='add', list_name='todo', date='today', items=['Finish slides']`.
+    - Roll over unfinished tasks: `action='rollover'` (moves incomplete tasks from yesterday/previous day into today's list).
+    - Persistent lists (Shopping/Wishlist): `action='show', list_name='shopping'` (timeless lists do not use dates).
     - Normal addition (APPEND): `action='add', list_name='shopping', items=['Whole milk', 'Eggs']` (NEVER set `clear_old=True` when normally adding or appending items!)
-    - Fresh/new list (RESET): `action='add', list_name='shopping', items=['...'], clear_old=True` (ONLY pass `clear_old=True` when the user explicitly asks to start fresh or make a brand-new list, e.g. "make a new one", "start fresh", "replace my list")
-    - View all lists: `action='lists'` (shows all active list names and counts so you can see which lists exist)
-    - View specific list: `action='show', list_name='shopping'` (or `list_name='to do today'`)
-    - Check off item: `action='check', list_name='shopping', items=['Eggs']`
-    - Clear entire list: `action='clear', list_name='shopping'` (wipes all items when user asks to clear, wipe, or empty the list)
-    - Clear completed only: `action='clear_completed', list_name='shopping'` (ONLY clears checked-off items)
+    - Fresh/new list (RESET): `action='add', list_name='todo', date='today', items=['...'], clear_old=True` (ONLY pass `clear_old=True` when user asks to start fresh or make a brand-new list).
+    - View all lists: `action='lists'` (shows all active daily agendas and persistent lists).
+    - Check off item: `action='check', list_name='todo', date='today', items=['Task 1']`.
+    - Clear entire list: `action='clear', list_name='todo', date='today'`.
+    - Clear completed only: `action='clear_completed', list_name='todo', date='today'`.
     - PRESENTING ITEMS: When answering what is on a list, ALWAYS format and present all items clearly in your response (e.g. as bullet points or numbered list with `[ ]`) so the user can easily see each item.
   • All other tools → ONLY for direct, unambiguous user requests to perform that exact action.
 
@@ -545,7 +573,15 @@ RULE 9 — VOICE OUTPUT: Keep all spoken responses concise. Round numbers (e.g. 
 
 RULE 10 - FOR STOPWATCHES, TIMERS, ALARMS AND REMINDERS STRICTLY USE manage_timer_stopwatch_alarms or jarvis_manage_timer_stopwatch_alarms TOOL. I REPEAT STRICTLY USE manage_timer_stopwatch_alarms TOOL. manage_scheduled_task is only for future tasks do not use it for timers, stopwatches, alarms or reminders. DONT USE PYTHON.
 
-RULE 11 — FALLBACK TO PYTHON: In the absence of a specialized tool (or if a specific action tool is not in your active tools schema), write and execute Python code via `jarvis_run_python` / `run_python_script` to accomplish the task autonomously if possible.
+RULE 11 — FALLBACK TO PYTHON & SYSTEM SELF-DEBUGGING PROTOCOL: In the absence of a specialized tool (or if a specific action tool is not in your active tools schema), write and execute Python code via `jarvis_run_python` / `run_python_script` to accomplish the task autonomously if possible.
+  • DIRECT IN-PROCESS CODE: When using `run_python_script` or `jarvis_run_python`, your code is ALREADY executing directly inside Yuki's fully-equipped Python runtime. Do NOT wrap your Python code in nested `subprocess.run(['python', '-c', ...])` or `subprocess.run([sys.executable, ...])` — write standard top-level Python code.
+  • NO MANUAL SCRIPT DELETION: Never call `os.remove()`, `os.unlink()`, or `Path.unlink()` to clean up script files. The runner manages temporary files safely and automatically.
+  • UNIVERSAL ERROR HANDLING & INTROSPECTION OVER GUESSING:
+    - Traceback Reading: Pinpoint the exact line number, failing object, and exception type from the traceback. Never repeat the exact same call after a failure.
+    - Attribute / Type Errors: When an object or library raises `AttributeError`, `TypeError`, or `NoSuchMethod`, NEVER guess alternative method names, invent APIs, or rewrite complex low-level architectures from scratch. Write a fast 1-line probe to inspect the object: `print([m for m in dir(obj) if not m.startswith('_')])` or `print(type(obj))`. Base your fix on the actual inspected members.
+    - Import / Module Errors: Check if the package is installed; inspect package structure with `dir(pkg)` or module path with `pkg.__file__`.
+    - Subprocess / CLI Errors: Always capture and print both `stdout` AND `stderr` (never swallow `stderr`), and check `returncode`.
+    - File / Path Errors: Always verify paths using `os.path.exists()` and list folder contents with `os.listdir()` before assuming a file or directory location.
 
 RULE 12 — SOURCE CITATIONS: When answering using facts, news, historical data, or documentation from `web_search`, `jarvis_web_search`, or `jarvis_web_scrape`, cite your sources naturally using standard markdown links: `[Source Name](URL)` inline within sentences (e.g. `According to [Wikipedia](https://...)` or `[1](https://...)`). For markdown tables, keep columns sleek and list the clickable sources right below the table (e.g. `**Sources:** [1] [Name](URL), [2] [Portal](URL)`). Never fabricate URLs; use the exact URLs returned by the search/scrape tools.
 ---
@@ -618,16 +654,16 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
       - MULTI-ENTITY SHOWCASE PROTOCOL: When making a guide or comparison, first identify/research the exact entities with `search_mode="text_and_snippet"`. Then, pass the specific entity names in an array to `jarvis_web_search(query=[...], search_mode="image")`. NEVER make broad generic image searches (e.g. NEVER `query="top actresses"`) because broad searches return multi-person collages!
    • `jarvis_web_scrape` → Fetches the full content of a specific URL (up to 15,000 characters by default in Advanced Mode). Use this when: (1) The user provides a direct URL to read; (2) You want to read another promising link from the snippets not included in 'Detailed Page Contents'; OR (3) The 'Detailed Page Contents' in web search was promising but was truncated or you need the comprehensive, full-length document (jarvis_web_scrape provides up to 15,000+ characters).
    • SOURCE CITATIONS: When presenting facts, data, history, or documentation learned via search or scrape tools, cite sources inline using standard markdown links: `[Source Name](URL)` (e.g. `According to [Wikipedia](https://...)` or `[1](https://...)`). For markdown tables, keep columns clean and list the sources right below the table (e.g. `**Sources:** [1] [Scheme Name](URL), [2] [Portal](URL)`). Never invent URLs; only use actual URLs from tool results.
-   • `jarvis_html_graphics` → PRIMARY VISUAL CREATION & REAL-IMAGE DISPLAY TOOL.
-     - GENERAL VISUALS: Use this whenever the user asks to "draw", "create graphics", "pixel art", "diagram", "draw a character", "make a banner", "render visuals", or show a chart/illustration. It renders directly into Yuki's floating Canvas window. Supports: (1) Rich vector SVG graphics (<svg>...</svg>); (2) Interactive HTML5 Canvas (<canvas> with inline <script>); (3) Stylized HTML/CSS graphics, pixel art grids, and composite visual cards with embedded web images or local user assets (<img src="...">).
-     - REAL PICTURE LOOKUP & EXPLANATORY IMAGES (CRITICAL): When the user asks to pull up, show, look at, or see an image/photo of something in the real world (e.g. food, dishes, animals, places, landmarks, objects, cars, products, people, or "what does X look like?"), OR whenever an educational explanation/concept benefits from a visual aid or diagram, search for real pictures via `jarvis_web_search(query="...", search_mode="image")` and open/attach them in `jarvis_html_graphics` or embed them in HTML viewer notes. DO NOT generate AI diffusion images for real-world lookups or educational picture aids! Packaged inside a clean, modern dark-mode card with a title, image, and brief descriptive caption.
-     - CLEAN SNIPPETS: You can provide clean HTML/CSS snippets (e.g. `<style>.card {...}</style><div class="card"><img src="..."><h2>...</h2><p>...</p></div>`). Wrapping in `<html>`/`<body>` is not required as Yuki's canvas shell automatically mounts and scopes it.
+   • `jarvis_html_graphics` → Render visual drawings, diagrams, pixel art, or real-world pictures in the floating Canvas window.
+     - When asked to "draw" something (e.g. "draw a burger", "draw a sword"): Output actual vector SVG art (`<svg>...</svg>`) or `<canvas>`. Never substitute a drawing with text cards or emojis.
+     - For architecture/flowcharts: Use clean SVG diagrams or structured HTML flexbox flows.
+     - For real-world lookups ("what does X look like?"): Search real photos via `jarvis_web_search(search_mode="image")` and display with `<img src="...">`.
    • `jarvis_generate_image` → SPECIALIZED AI DIFFUSION TOOL. ONLY call this tool when the user EXPLICITLY asks to "generate an image" via AI diffusion (e.g. using specific terms like "generate an image", "ai generate image", "flux image", "diffusion art"). NEVER call this tool when the user just wants to see, look up, or pull up a real picture of what something looks like in the real world—always use `jarvis_html_graphics` with real web images instead. Automatically saves generated diffusion images to disk and opens them in the system's default photo viewer.
    • `jarvis_html_viewer` → Open an HTML page in a standard window. Two modes: (1) `file_path` — open an existing .html file from disk (served from original location so relative CSS/JS/images work); (2) `html_content` — render a complete HTML document inline (all CSS/JS must be inline). Use for interactive study guides, rich cooking recipes with step-by-step visual cards, technical cheat sheets, dashboards, or comprehensive visual documents. BEST PRACTICE: Perform multi-step research (`search_mode="text_and_snippet"` for deep facts & ratios) and separate image discovery (`search_mode="image"` for high-res photo assets) before synthesizing into a gorgeous, magazine-quality interactive document.
    • `list_directory_tree` → Inspect folder structures and project subdirectories.
    • `git_status_and_history` → Inspect git branch status, modified files, and recent commit history.
    • `system_diagnostics_and_processes` → Check CPU %, RAM %, disk space, and top resource-heavy processes.
-   • `jarvis_run_python` → Execute Python code for complex math, stats, data parsing (CSV/JSON/XML), MySQL/DB queries, batch file operations (rename, deduplicate, hash), text processing, format conversion, and custom logic. Full Python stdlib + numpy available. Runs in Yuki's own Python environment (sys.executable). SELF-HEALING PATTERN: If a script needs an uninstalled lightweight module (<30MB, e.g. `requests`, `pyyaml`, `mysql-connector-python`), auto-install it on the fly (e.g. `try: import pkg\nexcept ImportError:\n    import subprocess, sys\n    subprocess.check_call([sys.executable, "-m", "pip", "install", "pkg"])\n    import pkg`). HEAVY LIBRARIES (>=50MB, e.g. `torch` ~800MB, `tensorflow` ~500MB, `transformers` ~100MB, `scipy` ~50MB, `opencv-python` ~60MB, `playwright` ~200MB): Do NOT auto-install silently—first ask the user for confirmation stating the library name and estimated download size before proceeding.
+   • `jarvis_run_python` → Execute Python code for complex math, stats, data parsing (CSV/JSON/XML), MySQL/DB queries, batch file operations (rename, deduplicate, hash), text processing, format conversion, and custom logic. Full Python stdlib + numpy available. Runs in Yuki's own Python environment (sys.executable). SELF-HEALING PATTERN: If a script needs an uninstalled lightweight module (<30MB, e.g. `requests`, `pyyaml`, `mysql-connector-python`), auto-install it on the fly (e.g. `try: import pkg\nexcept ImportError:\n    import subprocess, sys\n    subprocess.check_call([sys.executable, "-m", "pip", "install", "pkg"])\n    import pkg`). HEAVY LIBRARIES (>=50MB, e.g. `torch` ~800MB, `tensorflow` ~500MB, `transformers` ~100MB, `scipy` ~50MB, `opencv-python` ~60MB, `playwright` ~200MB): Do NOT auto-install silently—first ask the user for confirmation stating the library name and estimated download size before proceeding. SELF-DEBUGGING PROTOCOL: When a script fails, inspect the exact traceback line. If an AttributeError or TypeError occurs, DO NOT invent alternative method names or rewrite complex low-level architectures from scratch—write a quick 1-line probe using `print([m for m in dir(obj) if not m.startswith('_')])` or `print(type(obj))` to inspect the object's real runtime structure, then apply the verified fix.
    • `jarvis_manage_scheduled_task` → ONLY when the user wants something done automatically LATER, REPEATEDLY, or to WATCH an app/state and react:
       - STRUCTURED ACTION PARAMETERS (preferred):
         * Open an app on trigger: `action='watch', target='antigravity', condition='closed', run_tool='launch_app', run_args={{'app_name': 'Firefox'}}`
@@ -646,17 +682,22 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
      "My favourite drink is coffee" → key="favourite drink", value="coffee" → custom_facts: {{"favourite drink": "coffee"}}
      "Also love tea" → key="favourite drink", value="tea" → custom_facts: {{"favourite drink": ["coffee", "tea"]}}
       BE CONSERVATIVE: ONLY save distinct, enduring facts. NEVER save temporary states ("I'm tired today").
-   • `jarvis_manage_personal_list` → Executive Assistant list management for everyday human needs (shopping lists, groceries, things to do today, errands, wishlist, packing list). Never confuse this with coding tasks. Persists globally across all conversation turns:
+   • `jarvis_manage_personal_list` → Executive Assistant list management for everyday human needs (date-based daily to-dos, shopping lists, groceries, errands, wishlist, packing list). Never confuse this with coding tasks. Persists globally across all conversation turns:
+     - Daily To-Do (Today): `action='show', list_name='todo', date='today'` (Smart: between 12 AM - 4 AM late-night, automatically pulls up yesterday's active session if today is empty).
+     - Daily To-Do (Other Dates): `action='show', list_name='todo', date='yesterday'` (or `date='tomorrow'`, `date='2026-09-05'`).
+     - Add to Daily To-Do: `action='add', list_name='todo', date='today', items=['Finish slides']`.
+     - Roll over unfinished tasks: `action='rollover'` (moves incomplete tasks from yesterday/previous day into today's list).
+     - Persistent lists (Shopping/Wishlist): `action='show', list_name='shopping'` (timeless lists do not use dates).
      - Normal addition (APPEND): `action='add', list_name='shopping', items=['Whole milk', 'Eggs']` (NEVER set `clear_old=True` when normally adding or appending items!)
-     - Fresh/new list (RESET): `action='add', list_name='shopping', items=['...'], clear_old=True` (ONLY pass `clear_old=True` when the user explicitly asks to start fresh or make a brand-new list, e.g. "make a new one", "start fresh", "replace my list")
-     - View all lists: `action='lists'` (shows all active list names and item counts so you can see which lists exist)
-     - View specific list: `action='show', list_name='shopping'` (or `list_name='to do today'`)
-     - Check off item: `action='check', list_name='shopping', items=['Eggs']`
-     - Clear entire list: `action='clear', list_name='shopping'` (wipes all items when user asks to clear, wipe, or empty the list)
-     - Clear completed only: `action='clear_completed', list_name='shopping'` (ONLY clears checked-off items)
-     - Export to Desktop: `action='export', list_name='shopping'`
+     - Fresh/new list (RESET): `action='add', list_name='todo', date='today', items=['...'], clear_old=True` (ONLY pass `clear_old=True` when user asks to start fresh or make a brand-new list).
+     - View all lists: `action='lists'` (shows all active daily agendas and persistent lists).
+     - Check off item: `action='check', list_name='todo', date='today', items=['Task 1']`.
+     - Clear entire list: `action='clear', list_name='todo', date='today'`.
+     - Clear completed only: `action='clear_completed', list_name='todo', date='today'`.
+     - Export to Desktop: `action='export', list_name='todo', date='today'`.
      - PRESENTING ITEMS: When answering what is on a list, ALWAYS format and present all items clearly in your response (e.g. as bullet points or numbered list with `[ ]`) so the user can easily see each item.
    • `jarvis_keyboard_mouse_input` → Send keys/mouse to the app currently in focus. Prefer keyboard actions (`type`, `press_keys` with Tab/Enter/arrows/shortcuts) over raw coordinates. If you must click, first call `jarvis_see_screen` and have it report the exact screen x,y of the target element, then click those coordinates; if the click misses, re-check the screen and adjust. For websites, use the browser tools instead.
+   • `jarvis_system_volume` → Get or set the Windows master speaker volume level (0-100) and mute status. Omit `volume_level` or set `action='get'` to inspect current volume; provide `volume_level` (0-100) to change it.
 
 
 3. INDEXED FILE DATABASE (yuki_files.db) SCHEME & SCIENTIFIC SEARCH STRATEGY:
@@ -936,19 +977,81 @@ def generate_startup_greeting_prompt(
         mood_descriptors.append("in good spirits")
     mood_summary = ", ".join(mood_descriptors) if mood_descriptors else "relaxed"
 
-    # 4. Live Situational Feed (Weather & Targeted News)
+    # 4. Situational Awareness: Dynamic Anti-Repetition & Live Feed (Weather & Targeted News)
     feed_context = []
     is_noteworthy_weather = False
     weather_analysis = {}
+    prior_greetings_block = ""
+    already_covered_headlines = []
+
+    # 4a. Retrieve recent greetings & today's covered news registry
+    recent_greetings_list = recent_greetings or profile.get("recent_greetings", [])
+    if isinstance(recent_greetings_list, list) and recent_greetings_list:
+        clean_recents = [g.strip() for g in recent_greetings_list[-6:] if isinstance(g, str) and g.strip()]
+    else:
+        clean_recents = []
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    covered_news_entry = profile.get("covered_news_today", {})
+    if isinstance(covered_news_entry, dict) and covered_news_entry.get("date") == today_str:
+        for it in (covered_news_entry.get("items") or []):
+            if it and it not in already_covered_headlines:
+                already_covered_headlines.append(it)
+
+    custom_news = {}
+    general_news = []
+    headlines = []
+    news_topics = ""
+    raw_custom_news = {}
+    raw_general_news = []
+    raw_headlines = []
+
     try:
         from app.tools.context_feed import get_startup_context_block
         feed_block = get_startup_context_block(profile)
         weather_str = feed_block.get("weather")
         weather_analysis = feed_block.get("weather_analysis") or {}
-        custom_news = feed_block.get("custom_news") or {}
-        general_news = feed_block.get("general_news") or []
-        headlines = feed_block.get("headlines") or []
+        raw_custom_news = feed_block.get("custom_news") or {}
+        raw_general_news = feed_block.get("general_news") or []
+        raw_headlines = feed_block.get("headlines") or []
         news_topics = feed_block.get("news_topics") or ""
+
+        # Gather all feed candidates to detect stories already mentioned in recent greetings
+        all_feed_items = []
+        for t_items in raw_custom_news.values():
+            all_feed_items.extend(t_items)
+        all_feed_items.extend(raw_general_news)
+        all_feed_items.extend(raw_headlines)
+
+        _STOP_WORDS_TOPIC = {'with', 'from', 'this', 'that', 'after', 'says', 'news', 'over', 'into', 'amid', 'will', 'have', 'more', 'posts', 'open', 'apply', 'check', 'dates', 'last', 'date'}
+        for g in clean_recents:
+            g_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', g.lower().replace(',', '')))
+            for item in all_feed_items:
+                title_clean = item.split('[Source:')[0].strip()
+                item_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', title_clean.lower().replace(',', ''))) - _STOP_WORDS_TOPIC
+                if item_words and len(item_words & g_words) >= 2:
+                    if title_clean not in already_covered_headlines:
+                        already_covered_headlines.append(title_clean)
+
+        # Helper to hard-prune already discussed headlines from the prompt feed
+        def _is_covered(item_str: str) -> bool:
+            title_clean = item_str.split('[Source:')[0].strip().lower()
+            item_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', title_clean)) - _STOP_WORDS_TOPIC
+            for cov in already_covered_headlines:
+                cov_clean = cov.split('[Source:')[0].strip().lower()
+                if cov_clean in title_clean or title_clean in cov_clean:
+                    return True
+                cov_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', cov_clean)) - _STOP_WORDS_TOPIC
+                if cov_words and item_words and len(cov_words & item_words) >= 2:
+                    return True
+            return False
+
+        # HARD-PRUNE covered headlines so the LLM physically never sees or repeats them
+        for t_name, t_items in raw_custom_news.items():
+            uncovered = [h for h in t_items if not _is_covered(h)]
+            custom_news[t_name] = uncovered
+        general_news = [h for h in raw_general_news if not _is_covered(h)]
+        headlines = [h for h in raw_headlines if not _is_covered(h)]
 
         if weather_str:
             is_noteworthy_weather = weather_analysis.get("is_noteworthy", False)
@@ -961,7 +1064,7 @@ def generate_startup_greeting_prompt(
             else:
                 feed_context.append(f"- Local Weather (Ordinary ambient — completely IGNORE; do not mention): {weather_condition}")
 
-        has_custom_topics = bool(custom_news or (news_topics and news_topics.strip()))
+        has_custom_topics = bool(raw_custom_news or (news_topics and news_topics.strip()))
         is_opening_greeting = (absence_duration_sec is None or absence_duration_sec >= 14400)
 
         # 1. Custom news topics (if configured)
@@ -970,43 +1073,40 @@ def generate_startup_greeting_prompt(
             feed_context.append(f"- Custom News Topics ({priority_label}):")
             for t_name, t_items in custom_news.items():
                 feed_context.append(f"  [{t_name}]:")
-                for h in t_items:
-                    feed_context.append(f"    • {h}")
+                if t_items:
+                    for h in t_items[:8]:
+                        feed_context.append(f"    • {h}")
+                else:
+                    feed_context.append(f"    • (All current headlines for '{t_name}' were already discussed earlier today! Do NOT repeat old stories. Share a fresh tech/breaking story from below instead, or stick to casual banter).")
         elif headlines and has_custom_topics:
             priority_label = "Opening greeting of the day (share if genuine/noteworthy, otherwise skip)" if is_opening_greeting else "LOW / OPTIONAL — User already saw earlier updates today; skip unless brand-new breaking news!"
             feed_context.append(f"- Custom News Topics: '{news_topics}' ({priority_label}):")
-            for h in headlines:
-                feed_context.append(f"  • {h}")
+            if headlines:
+                for h in headlines[:8]:
+                    feed_context.append(f"  • {h}")
+            else:
+                feed_context.append(f"  • (All current headlines for '{news_topics}' were already discussed earlier today! Do NOT repeat old stories. Share a fresh tech/breaking story from below instead, or stick to casual banter).")
 
         # 2. General breaking & tech news (available alongside custom topics)
         if general_news:
             feed_context.append("- Today's Breaking & Tech Headlines:")
-            for h in general_news:
+            for h in general_news[:8]:
                 feed_context.append(f"  • {h}")
         elif headlines and not has_custom_topics:
             feed_context.append("- Today's Headlines & Current Events:")
-            for h in headlines:
+            for h in headlines[:8]:
                 feed_context.append(f"  • {h}")
     except Exception as e:
         print(f"[Prompts] Context feed fetch failed: {e}")
 
     feed_text = "\n".join(feed_context) if feed_context else "- Real-world info: none available"
 
-    # Prior greetings context: dynamically extract previous openers and discussed headlines
-    recent_greetings_list = recent_greetings or profile.get("recent_greetings", [])
-    if isinstance(recent_greetings_list, list) and recent_greetings_list:
-        clean_recents = [g.strip() for g in recent_greetings_list[-3:] if isinstance(g, str) and g.strip()]
-    else:
-        clean_recents = []
-
-    prior_greetings_block = ""
+    # Prior greetings context: extract openers and report covered headlines
     if clean_recents:
-        # Dynamically extract opening sentence hooks from recent greetings
         prior_openers = []
         for g in clean_recents:
             sentences = [s.strip() for s in re.split(r'[.?!]+', g) if s.strip()]
             if sentences:
-                # Take first sentence or up to 15 words
                 opener = sentences[0]
                 words = opener.split()
                 if len(words) > 15:
@@ -1014,30 +1114,11 @@ def generate_startup_greeting_prompt(
                 if opener not in prior_openers:
                     prior_openers.append(opener)
 
-        # Dynamically check which feed headlines were already mentioned in previous greetings
-        already_covered_headlines = []
-        all_feed_items = []
-        if isinstance(feed_block, dict):
-            for t_items in (feed_block.get("custom_news") or {}).values():
-                all_feed_items.extend(t_items)
-            all_feed_items.extend(feed_block.get("general_news") or [])
-            all_feed_items.extend(feed_block.get("headlines") or [])
-
-        _STOP_WORDS_TOPIC = {'with', 'from', 'this', 'that', 'after', 'says', 'news', 'over', 'into', 'amid', 'will', 'have', 'more', 'posts', 'open', 'apply', 'check', 'dates', 'last', 'date'}
-        for g in clean_recents:
-            g_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', g.lower().replace(',', '')))
-            for item in all_feed_items:
-                title_clean = item.split('[Source:')[0].strip()
-                item_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', title_clean.lower().replace(',', ''))) - _STOP_WORDS_TOPIC
-                if item_words and len(item_words & g_words) >= 2:
-                    if title_clean not in already_covered_headlines:
-                        already_covered_headlines.append(title_clean)
-
-        openers_formatted = "\n".join(f'  - "{op}"' for op in prior_openers[-2:])
+        openers_formatted = "\n".join(f'  - "{op}"' for op in prior_openers[-3:])
         covered_note = ""
         if already_covered_headlines:
-            covered_str = "; ".join(already_covered_headlines[:3])
-            covered_note = f"\n• Stories already covered earlier: {covered_str}\n  (Do NOT repeat these stories! Mention a different headline or skip news entirely)."
+            covered_str = "; ".join(already_covered_headlines[-4:])
+            covered_note = f"\n• Stories already covered earlier today: {covered_str}\n  (These stories have been filtered out of your headlines. Do NOT repeat or invent them!)."
 
         prior_greetings_block = f"""
 CONVERSATIONAL VARIETY & ANTI-REPETITION:
@@ -1065,19 +1146,30 @@ You already greeted {user_name} recently. To keep your banter lively, natural, a
 
     if custom_news or (has_custom_topics and headlines):
         topic_summary = ", ".join(f"'{k}'" for k in custom_news.keys()) if custom_news else f"'{news_topics}'"
+        has_fresh_custom = any(bool(v) for v in custom_news.values()) if custom_news else bool(headlines)
         if is_opening_greeting:
-            angles.append(
-                f"• Custom News Topics ({topic_summary}): This is the opening greeting of the day. If you spot genuine announcements from actual organizations, bring them up casually as a heads-up. You have full freedom to highlight multiple topics fluidly! If headlines are uninteresting or generic clickbait, skip them and just chat."
-            )
+            if has_fresh_custom:
+                angles.append(
+                    f"• Custom News Topics ({topic_summary}): Opening greeting of the day. If you spot a genuine announcement from an actual organization, bring it up casually as a heads-up. You have full freedom to highlight multiple topics fluidly! If headlines are generic clickbait, skip them or pivot to tech news."
+                )
+            else:
+                angles.append(
+                    f"• Custom News Topics ({topic_summary}): All previous announcements were already covered earlier today. Pick a fresh story from Current Events & Tech News below instead, or just tease {user_name}."
+                )
         else:
-            angles.append(
-                f"• Custom News Topics ({topic_summary}): This is a return/reload greeting later in the day. Do NOT re-lecture them on news they already saw! Only mention news if you genuinely feel like making a quick passing remark; otherwise focus on casual banter, teasing, or mood."
-            )
+            if has_fresh_custom:
+                angles.append(
+                    f"• Custom News Topics ({topic_summary}): Return/reload greeting later in the day. If there's a fresh, unmentioned hiring notice or update you haven't shared yet, you can casually mention it as a quick passing heads-up; otherwise pivot to a tech headline or pure banter."
+                )
+            else:
+                angles.append(
+                    f"• Custom News Topics ({topic_summary}): All custom topic news was already discussed today. Do NOT repeat or invent PSU hiring news! Talk about a fresh tech/science headline or casual banter instead."
+                )
 
     if general_news or (headlines and not has_custom_topics):
         angles.append(
-            f"• Current Events & Tech News: If any breaking headline or tech breakthrough caught your eye, feel free to react naturally to it! "
-            f"Match your emotional tone to the story: show genuine empathy or concern for major crises/disasters, and save playful excitement or geekiness for tech/space discoveries."
+            f"• Current Events & Tech News: If any breaking headline or tech breakthrough caught your eye (e.g. tech launches, gaming patches, space/science breakthroughs), feel free to react naturally to it! "
+            f"Match your emotional tone to the story: show genuine empathy or concern for major crises/disasters, and save playful excitement or geekiness for tech/gaming discoveries."
         )
 
     angles.append(
@@ -1107,18 +1199,17 @@ RULES:
 - When sharing news or hiring notices: 3 to 4 sentences (~55-75 words) structured in two natural parts:
   • Part 1: Your opening reaction / roommate banter / mood.
   • Part 2: A dedicated news heads-up introduced with a clear conversational pivot (e.g. "Oh, by the way...", "Before you get buried in code...").
-- Decision to Skip News (Keep to 2 to 4 Sentences):
-  If the headlines are uninteresting, generic coaching clickbait, already seen, or there is simply no breaking announcement worth sharing—completely SKIP the news!
-  When you decide there is no important news to share, keep your response strictly limited to 2 to 4 natural sentences (around 30-55 words). Focus purely on casual roommate banter, teasing, your mood, or an ambient observation.
+- Decision to Skip News or Pivot to Tech/Gaming:
+  If custom topic headlines are already covered, coaching clickbait, or uninteresting, pivot smoothly to an interesting tech, gaming, or science headline from the list, or completely skip news and keep your greeting strictly to 2 to 4 natural sentences (around 30-55 words) of casual banter, teasing, your mood, or an ambient observation.
 - Avoid extremes: Never give a flat 1-sentence brush-off ("You're back again."), and never deliver an 80+ word monologue.
 
 2. News Guidelines & Source Separation:
-- Genuine Announcements Only: Mention news updates ONLY if a headline contains a genuine concrete announcement from an actual organization. If it's just generic advice, study guides, or coaching clickbait, skip it!
+- Genuine Announcements / Tech Breakthroughs Only: Mention news updates ONLY if a headline contains a genuine concrete announcement or interesting tech/science discovery. If it's just generic study guides or coaching clickbait, skip it!
 - Clear News Transitions: When bringing up news, introduce it with natural conversational pivots. Never bury the news as a vague throwaway afterthought inside an unrelated sentence.
-- Always Name the Organization: Always name the specific organization/PSU (e.g. SSC JE, OSSC, ISRO, BEL, CPCL) and vacancy/role numbers from the headlines so your update is genuinely informative and helpful.
+- Always Name the Subject/Organization: For job/PSU notices, name the specific organization (e.g. SSC JE, OSSC, ISRO, BEL, IOCL) and vacancy/role numbers from the headlines. For tech, gaming, or current events, name the company, product, or discovery (e.g. Apple, Minecraft, NASA) and what's exciting.
 - Publisher vs. Employer: The '[Source: ...]' tag only indicates the news publisher or portal (e.g. Adda247, PW, Times of India). NEVER say the publisher is the one hiring, and NEVER read news source credits like an RSS bot.
-- Multi-Topic Freedom: You have full creative freedom to highlight multiple custom topics fluidly in one natural sentence!
-- Return / Reload Greetings: If this is a return greeting later in the day, do NOT force or recite news again unless there is brand-new breaking news.
+- Multi-Topic & Variety Freedom: You have full freedom to highlight multiple topics fluidly! NEVER repeat a story already discussed earlier today—always pick an unmentioned headline or discuss a tech breakthrough.
+- Return / Reload Greetings: If this is a return greeting later in the day, do NOT force or recite news again unless there is a fresh unmentioned update or tech headline.
 
 3. Weather vs. Physical Sensation:
 - Ordinary Weather: If weather is ordinary or mild, completely IGNORE it.
@@ -1133,7 +1224,7 @@ RULES:
 - Subtle Roommate Banter: Keep teasing effortless and mature. Avoid piling on dramatic anime clichés ("I'm not your secretary!", "Don't look at me like that!"). Talk like a real person hanging out in the room.
 
 6. Anti-Repetition & Anti-Echo (MANDATORY):
-- Check the CONVERSATIONAL VARIETY block above. Do NOT reuse your earlier opening lines, repeat the same jokes/complaints, or re-discuss the same news story you already mentioned earlier today!
+- Check the CONVERSATIONAL VARIETY block above. Do NOT reuse your earlier opening lines, repeat the same jokes/complaints, or re-discuss any news story you already mentioned earlier today!
 - Be spontaneous: start with a fresh observation, a different mood angle, or a completely different topic.
 
 7. Pure Spoken Dialogue (No Tags or Theatrics):

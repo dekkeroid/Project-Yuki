@@ -7,6 +7,7 @@ import platform
 import socket
 import psutil
 import time
+from typing import Optional
 
 _DEV_SERVER_ERROR_MESSAGE = "Security / Execution Error: Executing development servers by AI is strictly prohibited by security policy. Project files and builds were updated. Please start dev servers manually in your terminal if needed."
 
@@ -651,16 +652,102 @@ def launch_app(app_name: str, args: str = None, run_as_admin: bool = False, new_
     except Exception as e:
         return f"Failed to launch '{app_name}': {str(e)}"
 
-def set_system_volume(volume_level: int) -> str:
+def set_system_volume(volume_level: Optional[int] = None, action: str = "set") -> str:
     """
-    Sets the Windows master speaker volume (0-100).
+    Sets or gets the Windows master speaker volume (0-100) and mute status.
+    If action == 'get' or volume_level is None (or negative), retrieves the current master volume.
+    Otherwise sets the master volume percentage (0-100).
     Uses pycaw (Windows Core Audio API) as the primary method,
-    falling back to a corrected PowerShell COM script if pycaw is unavailable.
+    falling back to a PowerShell COM script if pycaw is unavailable.
     """
+    is_get = action.lower() == "get" or volume_level is None or (isinstance(volume_level, int) and volume_level < 0)
+
+    # ── 1. GET SYSTEM VOLUME ──────────────────────────────────────────────────
+    if is_get:
+        # Method 1: pycaw (direct Windows Core Audio API)
+        try:
+            import comtypes
+            comtypes.CoInitialize()
+            from pycaw.pycaw import AudioUtilities
+            speakers = AudioUtilities.GetSpeakers()
+            volume = speakers.EndpointVolume
+            scalar = volume.GetMasterVolumeLevelScalar()
+            pct = int(round(scalar * 100))
+            muted = bool(volume.GetMute())
+            mute_status = " (Muted)" if muted else " (Unmuted)"
+            return f"Current system volume is {pct}%{mute_status}."
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"[Volume] pycaw get failed: {e}, trying PowerShell fallback...")
+
+        # Method 2: PowerShell with C# COM interop fallback
+        ps_get_script = """
+Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolume {
+    int _1(); int _2(); int _3(); int _4();
+    int SetMasterVolumeLevelScalar(float fLevel, System.Guid pguidEventContext);
+    int GetMasterVolumeLevelScalar(out float pfLevel);
+    int SetMute(bool bMute, System.Guid pguidEventContext);
+    int GetMute(out bool pbMute);
+}
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice {
+    int Activate(ref System.Guid id, int clsCtx, int activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object aev);
+}
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator {
+    int _f();
+    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint);
+}
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumeratorClass {}
+'@ -ErrorAction SilentlyContinue
+
+try {
+    $enumerator = [MMDeviceEnumeratorClass] -as [IMMDeviceEnumerator]
+    $device = $null
+    [void]$enumerator.GetDefaultAudioEndpoint(0, 1, [ref]$device)
+    $epvGuid = [System.Guid]'5CDF2C82-841E-4546-9722-0CF74078229A'
+    $epvObj = $null
+    [void]$device.Activate([ref]$epvGuid, 23, 0, [ref]$epvObj)
+    $epv = $epvObj -as [IAudioEndpointVolume]
+    $vol = 0.0
+    [void]$epv.GetMasterVolumeLevelScalar([ref]$vol)
+    $mute = $false
+    [void]$epv.GetMute([ref]$mute)
+    $volPct = [int][Math]::Round($vol * 100)
+    Write-Output "$volPct|$mute"
+} catch { Write-Error $_.Exception.Message }
+"""
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_get_script],
+                capture_output=True, text=True, timeout=10
+            )
+            out = result.stdout.strip()
+            if result.returncode == 0 and "|" in out:
+                parts = out.split("|", 1)
+                pct = int(parts[0].strip())
+                muted = parts[1].strip().lower() == "true"
+                mute_status = " (Muted)" if muted else " (Unmuted)"
+                return f"Current system volume is {pct}%{mute_status}."
+            else:
+                return f"Failed to get volume. Error: {result.stderr.strip()[:200]}"
+        except Exception as e:
+            return f"Failed to get volume: {str(e)}"
+
+    # ── 2. SET SYSTEM VOLUME ──────────────────────────────────────────────────
+    try:
+        volume_level = int(volume_level)
+    except (ValueError, TypeError):
+        return "Error: Volume level must be an integer between 0 and 100."
+
     if volume_level < 0 or volume_level > 100:
         return "Error: Volume must be between 0 and 100."
 
-    # ── Method 1: pycaw (most reliable, direct Windows Core Audio API) ────
+    # Method 1: pycaw (most reliable, direct Windows Core Audio API)
     try:
         import comtypes
         comtypes.CoInitialize()
@@ -672,11 +759,10 @@ def set_system_volume(volume_level: int) -> str:
     except ImportError:
         pass
     except Exception as e:
-        print(f"[Volume] pycaw failed: {e}, trying PowerShell fallback...")
+        print(f"[Volume] pycaw set failed: {e}, trying PowerShell fallback...")
 
-    # ── Method 2: PowerShell nircmd (if installed) ────────────────────────
+    # Method 2: PowerShell nircmd (if installed)
     try:
-        # nircmd setsysvolume range is 0-65535
         nircmd_level = int(volume_level / 100 * 65535)
         result = subprocess.run(
             ["nircmd", "setsysvolume", str(nircmd_level)],
@@ -687,9 +773,8 @@ def set_system_volume(volume_level: int) -> str:
     except Exception:
         pass
 
-    # ── Method 3: PowerShell with corrected C# COM interop ────────────────
-    # The key fix vs the old code: 'ref IMMDevice dev = null' and 'ref epvid'
-    ps_script = f"""
+    # Method 3: PowerShell with C# COM interop
+    ps_set_script = f"""
 [void][System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms')
 $wshShell = New-Object -ComObject WScript.Shell
 
@@ -700,6 +785,8 @@ interface IAudioEndpointVolume {{
     int _1(); int _2(); int _3(); int _4();
     int SetMasterVolumeLevelScalar(float fLevel, System.Guid pguidEventContext);
     int GetMasterVolumeLevelScalar(out float pfLevel);
+    int SetMute(bool bMute, System.Guid pguidEventContext);
+    int GetMute(out bool pbMute);
 }}
 [Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 interface IMMDevice {{
@@ -726,7 +813,7 @@ try {{
 """
     try:
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_set_script],
             capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0:
@@ -735,6 +822,7 @@ try {{
             return f"Failed to set volume. PowerShell error: {result.stderr.strip()[:200]}"
     except Exception as e:
         return f"Failed to set volume: {str(e)}"
+
 
 
 def get_current_datetime() -> str:
@@ -1382,8 +1470,8 @@ def run_python_script(code: str, max_timeout: int = 300, heartbeat_interval: int
         temp_file = f.name
 
     saved_cache_path = ""
-    # Only cache substantial scripts (>= 300 chars or >= 5 lines) to avoid cluttering disk with trivial math/one-liners
-    if len(code.strip()) >= 300 or len(code.strip().splitlines()) >= 5:
+    # Only cache scripts exceeding the history argument truncation budget (1,500 chars)
+    if len(code.strip()) > 1500:
         try:
             from app.tools.tool_cache import save_python_artifact
             saved_cache_path = save_python_artifact(code)

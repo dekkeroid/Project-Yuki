@@ -934,6 +934,7 @@ const ControlDashboard = ({
     hotkey_focus_chat: true,
     hotkey_open_logs: false,
     hotkey_turn_on_listening: true,
+    listen_on_startup: false,
     telegram_enabled: false,
     telegram_bot_token: '',
     telegram_allowed_users: '',
@@ -2809,127 +2810,179 @@ const ControlDashboard = ({
                   </div>
                 </div>
 
-                {/* Autonomous Presence & Idle Nudges */}
-                <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Clock className="w-3.5 h-3.5 text-purple-400" />
-                      <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#e9d5ff' }}>Autonomous Presence & Idle Nudges</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      {moodData?.presence?.active_window && (
-                        <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
-                          Active in: {moodData.presence.active_window.slice(0, 20)}...
-                        </span>
+              </div>
+
+              {/* Autonomous Presence & Proactive Check-ins Card */}
+              <div className="card-group" style={{ marginBottom: '12px' }}>
+                <div className="card-group-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sparkles className="w-4 h-4 text-purple-400" />
+                    <span className="card-group-title">Autonomous Presence & Proactive Check-ins</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {moodData?.presence?.active_window && (
+                      <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                        Active in: {moodData.presence.active_window.slice(0, 24)}...
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleResetPresenceNudges}
+                      className="glass-button"
+                      title="Reset Autonomous Presence & Idle Nudges to default settings"
+                      style={{
+                        fontSize: '0.65rem',
+                        fontWeight: 500,
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        color: presenceResetFeedback ? '#34d399' : '#d8b4fe',
+                        background: presenceResetFeedback ? 'rgba(52, 211, 153, 0.15)' : 'rgba(255,255,255,0.05)',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      {presenceResetFeedback ? (
+                        <CheckCircle className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <RotateCcw className="w-3 h-3" />
                       )}
-                      <button
-                        type="button"
-                        onClick={handleResetPresenceNudges}
-                        className="glass-button"
-                        title="Reset Autonomous Presence & Idle Nudges to default settings"
-                        style={{
-                          fontSize: '0.64rem',
-                          fontWeight: 500,
-                          padding: '2px 8px',
-                          borderRadius: '6px',
-                          border: '1px solid rgba(255,255,255,0.12)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          color: presenceResetFeedback ? '#34d399' : '#d8b4fe',
-                          background: presenceResetFeedback ? 'rgba(52, 211, 153, 0.15)' : 'rgba(255,255,255,0.05)',
-                          transition: 'all 0.2s ease'
-                        }}
-                      >
-                        {presenceResetFeedback ? (
-                          <CheckCircle className="w-3 h-3 text-emerald-400" />
-                        ) : (
-                          <RotateCcw className="w-3 h-3" />
-                        )}
-                        <span>{presenceResetFeedback ? 'Defaults Reset!' : 'Reset Defaults'}</span>
-                      </button>
+                      <span>{presenceResetFeedback ? 'Defaults Reset!' : 'Reset Defaults'}</span>
+                    </button>
+                  </div>
+                </div>
+                <div style={{ padding: '4px 0' }}>
+                  <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', marginBottom: '10px', lineHeight: 1.45 }}>
+                    Configure how Yuki spontaneously checks in when bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}% after {settings.proactive_nudge_quiet_min ?? 30}m silence). Each check-in starts a {settings.proactive_nudge_interval_min || 45}m Repeat Cooldown so she stays quiet; your silence timer and her boredom only reset back to 0 when you reply to her.
+                  </div>
+
+                  {/* Engine Selection */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f1f5f9' }}>Generation Engine</div>
+                      <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.45)' }}>
+                        {(settings.proactive_nudge_engine || 'template') === 'llm'
+                          ? 'AI-generated spontaneous companion reactions using your active persona voice'
+                          : 'Versatile natural spoken dialogues with zero GPU VRAM overhead'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {[
+                        { key: 'template', label: 'Scripted (0 VRAM)' },
+                        { key: 'llm', label: 'LLM Dynamic' }
+                      ].map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => handleUpdateSetting('proactive_nudge_engine', opt.key)}
+                          style={{
+                            fontSize: '0.68rem', fontWeight: 600, padding: '5px 11px',
+                            borderRadius: '8px', cursor: 'pointer', transition: 'all 0.18s ease',
+                            background: (settings.proactive_nudge_engine || 'template') === opt.key ? 'rgba(168,85,247,0.35)' : 'rgba(255,255,255,0.06)',
+                            border: (settings.proactive_nudge_engine || 'template') === opt.key ? '1px solid rgba(168,85,247,0.7)' : '1px solid rgba(255,255,255,0.1)',
+                            color: (settings.proactive_nudge_engine || 'template') === opt.key ? '#f3e8ff' : 'rgba(255,255,255,0.5)'
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.5)', marginBottom: '10px', lineHeight: 1.45 }}>
-                    When you are quiet for {settings.proactive_nudge_quiet_min ?? 30}m and Yuki reaches &gt;{settings.proactive_nudge_boredom_pct ?? 80}% boredom, she spontaneously speaks up. Her check-in triggers the {settings.proactive_nudge_interval_min || 45}m Repeat Cooldown so she stays quiet until the timer finishes. Your silence timer and her boredom only reset back to 0 when you reply to her.
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Nudge Mode</span>
-                    {[
-                      { key: 'visual_only', label: 'Visual Subtle' },
-                      { key: 'spoken', label: 'Spoken Voice' },
-                      { key: 'disabled', label: 'Disabled' }
-                    ].map(opt => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => handleUpdateSetting('proactive_nudge_mode', opt.key)}
-                        style={{
-                          fontSize: '0.66rem', fontWeight: 600, padding: '3px 9px',
-                          borderRadius: '6px', cursor: 'pointer', transition: 'all 0.18s ease',
-                          background: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? 'rgba(168,85,247,0.35)' : 'rgba(255,255,255,0.06)',
-                          border: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? '1px solid rgba(168,85,247,0.7)' : '1px solid rgba(255,255,255,0.1)',
-                          color: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? '#f3e8ff' : 'rgba(255,255,255,0.45)'
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>AI Engine</span>
-                    {[
-                      { key: 'template', label: 'Scripted (0 VRAM)' },
-                      { key: 'llm', label: 'LLM Dynamic' }
-                    ].map(opt => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => handleUpdateSetting('proactive_nudge_engine', opt.key)}
-                        style={{
-                          fontSize: '0.66rem', fontWeight: 600, padding: '3px 9px',
-                          borderRadius: '6px', cursor: 'pointer', transition: 'all 0.18s ease',
-                          background: (settings.proactive_nudge_engine || 'template') === opt.key ? 'rgba(45,212,191,0.3)' : 'rgba(255,255,255,0.06)',
-                          border: (settings.proactive_nudge_engine || 'template') === opt.key ? '1px solid rgba(45,212,191,0.7)' : '1px solid rgba(255,255,255,0.1)',
-                          color: (settings.proactive_nudge_engine || 'template') === opt.key ? '#ccfbf1' : 'rgba(255,255,255,0.45)'
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
+
+                  {/* Conditional Screen Context Toggle (LLM Mode Only) */}
                   {(settings.proactive_nudge_engine || 'template') === 'llm' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                      <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', width: '80px' }}>Screen Vision</span>
-                      {[
-                        { val: false, label: 'Off' },
-                        { val: true, label: 'Enabled' }
-                      ].map(opt => {
-                        const active = (settings.proactive_nudge_include_screen ?? false) === opt.val;
-                        return (
-                          <button
-                            key={String(opt.val)}
-                            type="button"
-                            onClick={() => handleUpdateSetting('proactive_nudge_include_screen', opt.val)}
-                            style={{
-                              fontSize: '0.66rem', fontWeight: 600, padding: '3px 9px',
-                              borderRadius: '6px', cursor: 'pointer', transition: 'all 0.18s ease',
-                              background: active ? 'rgba(168,85,247,0.45)' : 'rgba(255,255,255,0.06)',
-                              border: active ? '1px solid rgba(168,85,247,0.8)' : '1px solid rgba(255,255,255,0.1)',
-                              color: active ? '#fff' : 'rgba(255,255,255,0.45)'
-                            }}
-                          >
-                            {opt.label}
-                          </button>
-                        );
-                      })}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      marginBottom: '12px',
+                      flexWrap: 'wrap',
+                      background: 'rgba(168,85,247,0.08)',
+                      border: '1px solid rgba(168,85,247,0.25)',
+                      padding: '8px 12px',
+                      borderRadius: '10px'
+                    }}>
+                      <div style={{ flex: 1, minWidth: '180px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Camera className="w-3.5 h-3.5 text-purple-300" />
+                          <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f3e8ff' }}>Include Screen Snapshot</span>
+                        </div>
+                        <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px', lineHeight: 1.3 }}>
+                          Sends a lightweight desktop screenshot so Yuki can see what you're working on (automatically adapts if your model supports vision).
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {[
+                          { val: false, label: 'Off' },
+                          { val: true, label: 'Enabled' }
+                        ].map(opt => {
+                          const active = (settings.proactive_nudge_include_screen ?? false) === opt.val;
+                          return (
+                            <button
+                              key={String(opt.val)}
+                              type="button"
+                              onClick={() => handleUpdateSetting('proactive_nudge_include_screen', opt.val)}
+                              style={{
+                                fontSize: '0.66rem',
+                                fontWeight: 600,
+                                padding: '4px 10px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                transition: 'all 0.18s ease',
+                                background: active ? 'rgba(168,85,247,0.45)' : 'rgba(255,255,255,0.06)',
+                                border: active ? '1px solid rgba(168,85,247,0.8)' : '1px solid rgba(255,255,255,0.1)',
+                                color: active ? '#fff' : 'rgba(255,255,255,0.45)'
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                    <div style={{ width: '100px', flexShrink: 0 }}>
-                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Quiet Silence</div>
-                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>Silence before check-in (resets when you reply)</div>
+
+                  {/* Nudge Delivery Mode */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f1f5f9' }}>Delivery Mode</div>
+                      <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.45)' }}>
+                        Speech bubble only or voiced through TTS audio
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {[
+                        { key: 'visual_only', label: 'Visual Subtle' },
+                        { key: 'spoken', label: 'Spoken Voice' },
+                        { key: 'disabled', label: 'Disabled' }
+                      ].map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => handleUpdateSetting('proactive_nudge_mode', opt.key)}
+                          style={{
+                            fontSize: '0.68rem', fontWeight: 600, padding: '5px 11px',
+                            borderRadius: '8px', cursor: 'pointer', transition: 'all 0.18s ease',
+                            background: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? 'rgba(45,212,191,0.3)' : 'rgba(255,255,255,0.06)',
+                            border: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? '1px solid rgba(45,212,191,0.7)' : '1px solid rgba(255,255,255,0.1)',
+                            color: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? '#ccfbf1' : 'rgba(255,255,255,0.5)'
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Minimum Silence Threshold */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
+                    <div style={{ width: '130px' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Minimum Silence</div>
+                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Quiet duration before check-in</div>
                     </div>
                     <input
                       type="range"
@@ -2940,14 +2993,16 @@ const ControlDashboard = ({
                       onChange={(e) => handleUpdateSetting('proactive_nudge_quiet_min', parseInt(e.target.value, 10))}
                       style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
                     />
-                    <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '45px', textAlign: 'right' }}>
+                    <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '40px', textAlign: 'right' }}>
                       {settings.proactive_nudge_quiet_min ?? 30}m
                     </span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                    <div style={{ width: '100px', flexShrink: 0 }}>
+
+                  {/* Boredom Trigger Threshold */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
+                    <div style={{ width: '130px' }}>
                       <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Boredom Trigger</div>
-                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>Boredom target to trigger</div>
+                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Companion boredom target</div>
                     </div>
                     <input
                       type="range"
@@ -2958,14 +3013,16 @@ const ControlDashboard = ({
                       onChange={(e) => handleUpdateSetting('proactive_nudge_boredom_pct', parseInt(e.target.value, 10))}
                       style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
                     />
-                    <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '45px', textAlign: 'right' }}>
+                    <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '40px', textAlign: 'right' }}>
                       {settings.proactive_nudge_boredom_pct ?? 80}%
                     </span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ width: '100px', flexShrink: 0 }}>
+
+                  {/* Cooldown Interval */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ width: '130px' }}>
                       <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Repeat Cooldown</div>
-                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>Cooldown lock after Yuki speaks</div>
+                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Cooldown lock after Yuki speaks</div>
                     </div>
                     <input
                       type="range"
@@ -2976,7 +3033,7 @@ const ControlDashboard = ({
                       onChange={(e) => handleUpdateSetting('proactive_nudge_interval_min', parseInt(e.target.value, 10))}
                       style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
                     />
-                    <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '45px', textAlign: 'right' }}>
+                    <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '40px', textAlign: 'right' }}>
                       {settings.proactive_nudge_interval_min || 45}m
                     </span>
                   </div>
@@ -4146,227 +4203,6 @@ const ControlDashboard = ({
                   />
                 </div>
               </div>
-
-              {/* Autonomous Proactive Nudges & Persona Check-ins Card */}
-              <div className="card-group" style={{ marginTop: '12px' }}>
-                <div className="card-group-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Sparkles className="w-4 h-4 text-purple-400" />
-                    <span className="card-group-title">Autonomous Presence & Proactive Check-ins</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleResetPresenceNudges}
-                    className="glass-button"
-                    title="Reset Autonomous Presence & Idle Nudges to default settings"
-                    style={{
-                      fontSize: '0.65rem',
-                      fontWeight: 500,
-                      padding: '3px 8px',
-                      borderRadius: '6px',
-                      border: '1px solid rgba(255,255,255,0.12)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      color: presenceResetFeedback ? '#34d399' : '#d8b4fe',
-                      background: presenceResetFeedback ? 'rgba(52, 211, 153, 0.15)' : 'rgba(255,255,255,0.05)',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    {presenceResetFeedback ? (
-                      <CheckCircle className="w-3 h-3 text-emerald-400" />
-                    ) : (
-                      <RotateCcw className="w-3 h-3" />
-                    )}
-                    <span>{presenceResetFeedback ? 'Defaults Reset!' : 'Reset Defaults'}</span>
-                  </button>
-                </div>
-                <div style={{ padding: '4px 0' }}>
-                  <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', marginBottom: '10px', lineHeight: 1.45 }}>
-                    Configure how Yuki spontaneously checks in when bored (&gt;{settings.proactive_nudge_boredom_pct ?? 80}% after {settings.proactive_nudge_quiet_min ?? 30}m silence). Each check-in starts a {settings.proactive_nudge_interval_min || 45}m Repeat Cooldown so she stays quiet; your silence timer and her boredom only reset back to 0 when you reply to her.
-                  </div>
-
-                  {/* Engine Selection */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f1f5f9' }}>Generation Engine</div>
-                      <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.45)' }}>
-                        {(settings.proactive_nudge_engine || 'template') === 'llm'
-                          ? 'AI-generated spontaneous companion reactions using your active persona voice'
-                          : 'Versatile natural spoken dialogues with zero GPU VRAM overhead'}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      {[
-                        { key: 'template', label: 'Scripted (0 VRAM)' },
-                        { key: 'llm', label: 'LLM Dynamic' }
-                      ].map(opt => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => handleUpdateSetting('proactive_nudge_engine', opt.key)}
-                          style={{
-                            fontSize: '0.68rem', fontWeight: 600, padding: '5px 11px',
-                            borderRadius: '8px', cursor: 'pointer', transition: 'all 0.18s ease',
-                            background: (settings.proactive_nudge_engine || 'template') === opt.key ? 'rgba(168,85,247,0.35)' : 'rgba(255,255,255,0.06)',
-                            border: (settings.proactive_nudge_engine || 'template') === opt.key ? '1px solid rgba(168,85,247,0.7)' : '1px solid rgba(255,255,255,0.1)',
-                            color: (settings.proactive_nudge_engine || 'template') === opt.key ? '#f3e8ff' : 'rgba(255,255,255,0.5)'
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Conditional Screen Context Toggle (LLM Mode Only) */}
-                  {(settings.proactive_nudge_engine || 'template') === 'llm' && (
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '8px',
-                      marginBottom: '12px',
-                      flexWrap: 'wrap',
-                      background: 'rgba(168,85,247,0.08)',
-                      border: '1px solid rgba(168,85,247,0.25)',
-                      padding: '8px 12px',
-                      borderRadius: '10px'
-                    }}>
-                      <div style={{ flex: 1, minWidth: '180px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Camera className="w-3.5 h-3.5 text-purple-300" />
-                          <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f3e8ff' }}>Include Screen Snapshot</span>
-                        </div>
-                        <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px', lineHeight: 1.3 }}>
-                          Sends a lightweight desktop screenshot so Yuki can see what you're working on (automatically adapts if your model supports vision).
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        {[
-                          { val: false, label: 'Off' },
-                          { val: true, label: 'Enabled' }
-                        ].map(opt => {
-                          const active = (settings.proactive_nudge_include_screen ?? false) === opt.val;
-                          return (
-                            <button
-                              key={String(opt.val)}
-                              type="button"
-                              onClick={() => handleUpdateSetting('proactive_nudge_include_screen', opt.val)}
-                              style={{
-                                fontSize: '0.66rem',
-                                fontWeight: 600,
-                                padding: '4px 10px',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                transition: 'all 0.18s ease',
-                                background: active ? 'rgba(168,85,247,0.45)' : 'rgba(255,255,255,0.06)',
-                                border: active ? '1px solid rgba(168,85,247,0.8)' : '1px solid rgba(255,255,255,0.1)',
-                                color: active ? '#fff' : 'rgba(255,255,255,0.45)'
-                              }}
-                            >
-                              {opt.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Nudge Delivery Mode */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#f1f5f9' }}>Delivery Mode</div>
-                      <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.45)' }}>
-                        Speech bubble only or voiced through TTS audio
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      {[
-                        { key: 'visual_only', label: 'Visual Subtle' },
-                        { key: 'spoken', label: 'Spoken Voice' },
-                        { key: 'disabled', label: 'Disabled' }
-                      ].map(opt => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => handleUpdateSetting('proactive_nudge_mode', opt.key)}
-                          style={{
-                            fontSize: '0.68rem', fontWeight: 600, padding: '5px 11px',
-                            borderRadius: '8px', cursor: 'pointer', transition: 'all 0.18s ease',
-                            background: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? 'rgba(45,212,191,0.3)' : 'rgba(255,255,255,0.06)',
-                            border: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? '1px solid rgba(45,212,191,0.7)' : '1px solid rgba(255,255,255,0.1)',
-                            color: (settings.proactive_nudge_mode || 'visual_only') === opt.key ? '#ccfbf1' : 'rgba(255,255,255,0.5)'
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Quiet Silence Threshold */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
-                    <div style={{ width: '130px' }}>
-                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Quiet Silence</div>
-                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Silence before check-in (resets when you reply)</div>
-                    </div>
-                    <input
-                      type="range"
-                      min="3"
-                      max="60"
-                      step="1"
-                      value={settings.proactive_nudge_quiet_min ?? 30}
-                      onChange={(e) => handleUpdateSetting('proactive_nudge_quiet_min', parseInt(e.target.value, 10))}
-                      style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
-                    />
-                    <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '40px', textAlign: 'right' }}>
-                      {settings.proactive_nudge_quiet_min ?? 30}m
-                    </span>
-                  </div>
-
-                  {/* Boredom Trigger Threshold */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '8px' }}>
-                    <div style={{ width: '130px' }}>
-                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Boredom Trigger</div>
-                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Companion boredom target</div>
-                    </div>
-                    <input
-                      type="range"
-                      min="5"
-                      max="95"
-                      step="5"
-                      value={settings.proactive_nudge_boredom_pct ?? 80}
-                      onChange={(e) => handleUpdateSetting('proactive_nudge_boredom_pct', parseInt(e.target.value, 10))}
-                      style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
-                    />
-                    <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '40px', textAlign: 'right' }}>
-                      {settings.proactive_nudge_boredom_pct ?? 80}%
-                    </span>
-                  </div>
-
-                  {/* Cooldown Interval */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                    <div style={{ width: '130px' }}>
-                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Repeat Cooldown</div>
-                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.4)' }}>Cooldown lock after Yuki speaks</div>
-                    </div>
-                    <input
-                      type="range"
-                      min="2"
-                      max="120"
-                      step="1"
-                      value={settings.proactive_nudge_interval_min || 45}
-                      onChange={(e) => handleUpdateSetting('proactive_nudge_interval_min', parseInt(e.target.value, 10))}
-                      style={{ flex: 1, accentColor: '#a855f7', cursor: 'pointer', height: '14px' }}
-                    />
-                    <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#d8b4fe', minWidth: '40px', textAlign: 'right' }}>
-                      {settings.proactive_nudge_interval_min || 45}m
-                    </span>
-                  </div>
-                </div>
-              </div>
             </>
           ) : activeTab === 'tasks' ? (
             <>
@@ -5133,7 +4969,16 @@ const ControlDashboard = ({
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleUpdateSetting('listen_on_startup', !settings.listen_on_startup)}
+                      onClick={() => {
+                        const newVal = !settings.listen_on_startup;
+                        handleUpdateSetting('listen_on_startup', newVal);
+                        if (!newVal) {
+                          try {
+                            localStorage.removeItem('yuki-voice-command-active');
+                            localStorage.removeItem('yuki-talk-mode-active');
+                          } catch { }
+                        }
+                      }}
                       style={{
                         background: settings.listen_on_startup ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255,255,255,0.08)',
                         border: `1px solid ${settings.listen_on_startup ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.12)'}`,

@@ -86,7 +86,8 @@ $backendSources += @(Get-Item "$backendDir\run.py", "$backendDir\requirements.tx
 $backendChanged = Is-AnyNewer (Join-Path $installDir 'resources\backend\backend.exe') $backendSources
 
 $frontendSources = @(Get-ChildItem "$frontendDir\src" -Recurse -File -ErrorAction SilentlyContinue)
-$frontendSources += @(Get-ChildItem "$frontendDir\public" -Recurse -File -ErrorAction SilentlyContinue)
+$frontendSources += @(Get-ChildItem "$frontendDir\public" -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch '[\\/]public[\\/]models([\\/]|$)' -and $_.Extension -ne '.vrm' })
 $frontendSources += @(Get-Item "$frontendDir\index.html", "$frontendDir\vite.config.js" -ErrorAction SilentlyContinue)
 $frontendChanged = Is-AnyNewer (Join-Path $installDir 'resources\frontend\dist\index.html') $frontendSources
 
@@ -321,7 +322,7 @@ if ($selFrontend) {
     Pop-Location
 
     Write-Host "--- Frontend UI: copying dist ---"
-    $rc = robocopy "$root\$frontendDir\dist" (Join-Path $installDir 'resources\frontend\dist') /E /NFL /NDL /NJH /NJS
+    $rc = robocopy "$root\$frontendDir\dist" (Join-Path $installDir 'resources\frontend\dist') /E /NFL /NDL /NJH /NJS /XD models
     if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
 }
 

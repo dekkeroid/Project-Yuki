@@ -1005,6 +1005,7 @@ function createWindow() {
 
     win.once('ready-to-show', () => {
       win.show();
+      win.focus();
       // For graphics mode, measure SVG, canvas, or HTML card content and resize to fit
       if (isGraphics) {
         const resizeToContent = () => {

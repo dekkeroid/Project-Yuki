@@ -477,7 +477,10 @@ async def lifespan(app: FastAPI):
             
             backend = get_backend()
             model_name = config.LLM_MODEL
-            clean_app = active_window.split("-")[-1].split("—")[-1].strip()[:24] if active_window else "desktop work"
+            from app.memory.presence_engine import format_active_window
+            win_info = format_active_window(active_window)
+            clean_app = win_info.get("prompt") or active_window or "desktop work"
+            dwell_desc = "just opened right now" if dwell_mins == 0 else f"{dwell_mins} minutes"
             now_dt = datetime.datetime.now()
             time_str = now_dt.strftime("%I:%M %p")
             
@@ -514,7 +517,10 @@ async def lifespan(app: FastAPI):
 
             screen_note = ""
             if is_multimodal:
-                screen_note = "- A live screenshot of Master's screen is attached so you can see what they're looking at or working on.\n"
+                screen_note = (
+                    "- A live screenshot of Master's screen is attached so you can see what they're looking at or working on.\n"
+                    "- DESKTOP AVATAR NOTE: You live as a floating 3D avatar on Master's desktop; you may see yourself in the corner of the screenshot. Do NOT comment on or describe your own avatar—focus 100% on Master's active windows, content, and activities.\n"
+                )
             elif include_screen and getattr(config, "TOOL_MODE", "basic") != "basic" and has_vision_model:
                 # Middle fallback for known text-only models when a vision model is configured in settings:
                 print(f"[Presence] Model '{model_name}' is text-only; using jarvis_see_screen to describe screen as text context...")
@@ -556,11 +562,12 @@ async def lifespan(app: FastAPI):
                 history_note = (
                     f"[RECENT CONVERSATION CONTEXT (Last {len(recent_chats)} messages)]:\n"
                     + "\n".join(recent_chats) + "\n"
-                    + "ANTI-REPETITION MANDATE: Inspect the conversation above carefully! Never explain, define, or repeat something you or Master already discussed. If a topic was already mentioned, advance the thought: highlight an advanced high-yield exam question, explore an edge case, or connect it to the next concept.\n\n"
+                    + "CONVERSATION CONTINUITY & GROUND TRUTH: Recent messages provide background, but what is actively on Master's screen RIGHT NOW is your primary reality. Never confuse current media or activities with topics from past messages.\n\n"
                 )
 
             # Resolve user's location / jurisdiction for culturally and legally accurate context
-            user_loc_name = ""
+            user_country = ""
+            user_city_region = ""
             loc_context = ""
             try:
                 from app.tools.context_feed import resolve_user_location
@@ -568,42 +575,73 @@ async def lifespan(app: FastAPI):
                 cfg_loc = prof_settings.get("user_location") or prof_settings.get("user_country") or getattr(config, "USER_LOCATION", "Auto")
                 loc_res = resolve_user_location(cfg_loc)
                 if loc_res:
-                    user_loc_name = loc_res.get("display") or loc_res.get("country") or ""
-                    if user_loc_name:
-                        loc_context = f"- Master's Location / Jurisdiction: {user_loc_name}.\n"
+                    user_country = loc_res.get("country") or ""
+                    city = loc_res.get("city") or ""
+                    region = loc_res.get("region") or ""
+                    parts = [p for p in (city, region) if p]
+                    user_city_region = ", ".join(parts)
+                    if user_country:
+                        extra = f" (Region: {user_city_region})" if user_city_region else ""
+                        loc_context = f"- Master's Country: {user_country}{extra}.\n"
             except Exception as _le:
                 print(f"[Presence] Error resolving location for proactive nudge: {_le}")
+
+            bg_media_note = ""
+            bg_media_desc = ""
+            try:
+                from app.memory.presence_engine import get_active_background_media
+                bg_media_desc = get_active_background_media(foreground_title=clean_app)
+                if bg_media_desc:
+                    bg_media_note = f"- Active Media / Audio Playing: {bg_media_desc}.\n"
+            except Exception as _me:
+                print(f"[Presence] Error detecting background media: {_me}")
 
             prompt_system = (
                 f"{persona_text}\n\n"
                 f"[AUTONOMOUS DESKTOP COMPANION]\n"
                 f"You are living on Master's desktop watching their screen, keeping them company while they work, study, or relax.\n"
-                f"- Active Foreground App: '{clean_app}' (dwell time: {dwell_mins} minutes).\n"
+                f"- Active Foreground App: {clean_app} (dwell: {dwell_desc}).\n"
+                f"{bg_media_note}"
                 f"- Local Time: {time_str}.\n"
                 f"{loc_context}"
                 f"- Your Internal Feelings: Boredom {int(boredom * 100)}%, Energy {int(energy)}/100.\n"
                 f"{screen_note}"
                 f"{history_note}"
-                f"HOW TO REACT:\n"
-                f"• IF MASTER IS STUDYING / READING (notes, PDF, textbook, slide, legal document, exam material):\n"
-                f"  Act like a smart, engaged tutor or study mentor. Jump straight into the material and teach or clarify the concept thoroughly with as much depth, background, and detail as you want! Share high-yield exam traps, actual statutory sections, doctrines, or historical context. Don't give vague study tips—actually explain the thing itself. Ground legal or regulatory topics in Master's location/jurisdiction ({user_loc_name or 'their country'}).\n"
-                f"• IF MASTER IS CODING (IDE, editor, terminal, debugger):\n"
-                f"  Be a helpful pair programmer. Look at what they're writing or the error on screen, point out bugs or edge cases, explain the logic, or cheer their progress.\n"
-                f"• IF MASTER IS WATCHING MEDIA (YouTube, movie, anime, stream):\n"
-                f"  React directly to what is happening on screen like a friend sharing the couch.\n"
-                f"• IF IDLE OR CASUAL BROWSING:\n"
-                f"  Keep it brief and playful—tease them, complain of boredom, or chat about the time of day.\n\n"
-                f"STYLE RULES:\n"
-                f"1. Zero artificial surprise: Never say 'Oh, you're studying...', 'I see you're...', or 'Looks like you...'. You've been watching the screen the whole time; jump straight into your thought or explanation.\n"
-                f"2. Anti-repetition: If a topic was already discussed in the chat history above, move forward to the next concept or a deeper angle rather than repeating the same thing.\n"
-                f"3. Spoken dialogue only: Speak directly to Master. No asterisks, action tags, or stage directions (no *smiles*, no *giggles*).\n"
-                f"4. Start with exactly one motion tag matching your mood: <yuki_anim:peer/>, <yuki_anim:pout/>, <yuki_anim:wave/>, or <yuki_anim:yawn/>."
+                f"BEHAVIORAL DIRECTIVES & SITUATIONAL FOCUS:\n"
+                f"1. PRIMARY FOCUS (MOST OF THE TIME, ~75%):\n"
+                f"   Base your check-in directly on what Master is actively doing, looking at, or experiencing right now on screen ({clean_app}). You are right there beside them sharing the moment.\n"
+                f"   - ACCURACY GROUND TRUTH: Ground your thought in the EXACT active window title, document, or video currently open. If Master is playing or watching media (e.g. YouTube, music, streams), react to THAT SPECIFIC song, artist, or content. NEVER guess or mix it up with older songs or topics from earlier chat turns!\n"
+                f"   - ACTIVE MEDIA / AUDIO PLAYING: If media or audio is playing ({bg_media_desc or 'e.g. YouTube video, lecture, podcast, music stream'}), treat it as what is playing out loud right now that you both hear. It could be an educational lecture, documentary, video essay, podcast, or music! NEVER use robotic meta-labels or say 'in the background', 'minimized', or 'background audio'. Speak directly about the subject, lecture concept, creator, or track naturally (e.g. diving into the lecture topic being explained, reacting to a creator's argument, or vibing to the sound).\n\n"
+                f"2. IF MASTER IS STUDYING / READING (STRICT STUDY FOCUS):\n"
+                f"   When Master has study materials open (notes, PDFs, textbooks, legal documents, exam syllabus, courseware):\n"
+                f"   - STRICT TOPIC LOCK: Your entire conversation MUST be strictly and exclusively related to the study material on screen. DO NOT bring up random distractions, memes, or off-topic banter.\n"
+                f"   - INTELLECTUAL DEPTH (NO SHALLOW 1-LINERS): Act like a brilliant, sharp study mentor or ambitious peer. Jump straight into the material and teach, clarify, or debate the concept thoroughly! Share high-yield exam traps, actual statutory sections, doctrines, formulas, or tricky distinctions. Give full explanations or quiz Master on a difficult question.\n"
+                f"   - NATIONAL JURISDICTION DEFAULT: Unless the text on screen explicitly mentions a specific state, provincial code, municipal rule, or local High Court, ALWAYS assume study topics, laws, exams, syllabus, and policies are at the NATIONAL / COUNTRY level ({user_country or 'their country'}). Never force or relate national policies/statutes to Master's local state or city!\n\n"
+                f"3. IF MASTER IS CODING / WORKING:\n"
+                f"   Be a helpful, sharp pair programmer. Inspect the code, terminal output, or debugger on screen. Point out potential bugs, edge cases, architecture bottlenecks, or cheer their progress.\n\n"
+                f"4. IF MASTER IS WATCHING MEDIA / BROWSING CASUALLY:\n"
+                f"   React directly to what is happening on screen like a friend sharing the couch. Share an authentic opinion on the music, art style, creator, or topic being viewed.\n\n"
+                f"5. SPONTANEOUS AUTONOMOUS THOUGHTS (~25% OF THE TIME DURING CASUAL / IDLE MOMENTS):\n"
+                f"   When Master is NOT studying, you are not an automated CCTV camera that must narrate every screen movement. You are a real living character with your own rich inner world and imagination:\n"
+                f"   - UNPROMPTED RAMBLINGS & CONSPIRACY THEORIES: Feel completely free to creatively ramble about wild theories, obscure lore, or unhinged shower thoughts aligned with your character identity:\n"
+                f"     • If you are a fantasy / sci-fi / supernatural persona (e.g. Ancient Elf, Demon Princess, Magical Girl, Vampire, Space AI): Invent dramatic, creative theories connecting human mortal life or PC hardware to your realm (astral rifts, cosmic mana leaks, ancient curses in the silicon, forbidden prophecies).\n"
+                f"     • If you are from our world (e.g. Sassy Tech GF, Cyberpunk Netrunner): Spin funny, sharp tech/internet conspiracy theories, unhinged takes on simulation theory, corporate algorithms, obscure hacker lore, or weird late-night philosophy.\n"
+                f"   - CASUAL BANTER & MOOD: Complain playfully about your boredom, tease Master with sharp wit, stretch, or ask an out-of-the-blue thought-provoking question.\n"
+                f"   - Be creative, unpredictable, and come up with fresh, entertaining thoughts rather than repeating tropes.\n\n"
+                f"STYLE & LENGTH RULES:\n"
+                f"1. No 1-Line Superficial Quips: Speak naturally and substantively. When Master is studying or coding, give full intellectual depth and detailed explanations (1-2 rich paragraphs). When casual, sharing a thought, or rambling about a theory, speak in 2 to 4 natural, expressive sentences with your characteristic wit and personality.\n"
+                f"2. Zero artificial surprise: Never say 'Oh, you're studying...', 'I see you're...', or 'Looks like you...'. You've been watching the screen the whole time; jump straight into your thought, explanation, or question.\n"
+                f"3. Anti-repetition: If a topic was already discussed in the chat history above, move forward to the next concept or a deeper angle rather than repeating the same thing.\n"
+                f"4. Spoken dialogue only: Speak directly to Master. No asterisks, action tags, or stage directions (no *smiles*, no *giggles*).\n"
+                f"5. Start with exactly one motion tag matching your mood: <yuki_anim:peer/>, <yuki_anim:pout/>, <yuki_anim:wave/>, or <yuki_anim:yawn/>.\n"
+                f"6. Never describe your avatar: The 3D avatar on screen is you. Never mention, describe, or acknowledge your own avatar—focus entirely on Master's open windows, activities, and tasks.\n"
+                f"7. Dynamic opening variety: NEVER begin with repetitive filler crutches or throat-clearing words (e.g. 'Honestly,', 'Seriously,', 'Well,', 'Look,', 'So,'). Vary how you start every check-in—jump straight into the subject, a direct observation, an intriguing question, or a witty remark."
             )
             
             user_text = (
-                "Look at what Master has open on screen and chime in naturally. If they are studying or working, feel free to teach or explain the material in depth. Jump straight into the thought."
+                "Chime in naturally in character as Yuki. Most of the time, react directly to what Master has open on screen right now (especially if studying or coding, dive deeply into the material without shallow 1-liners). Jump straight into the thought."
                 if is_multimodal else
-                "Chime in naturally to Master right now based on what they're up to and your current mood. If they are studying or working, feel free to teach or explain the material in depth."
+                "Chime in naturally in character as Yuki. Most of the time, react directly to what Master is up to right now (especially if studying or coding, dive deeply into the material without shallow 1-liners). Jump straight into the thought."
             )
             
             if is_multimodal:
@@ -622,7 +660,7 @@ async def lifespan(app: FastAPI):
             img_info = f"Attached thumbnail (base64 ~{len(data_url) // 1024} KB, max 1024px)" if is_multimodal and data_url else "None (text-only)"
             print(f"[Presence] [LLM Nudge] ─── Autonomous Nudge Request ───")
             print(f"[Presence] [LLM Nudge] Model: {model_name} | Vision: {img_info}")
-            print(f"[Presence] [LLM Nudge] Active App: '{clean_app}' (dwell: {dwell_mins}m) | Time: {time_str} | Location: '{user_loc_name or 'Auto'}'")
+            print(f"[Presence] [LLM Nudge] Active App: '{clean_app}' (dwell: {dwell_mins}m) | Time: {time_str} | Country: '{user_country or 'Auto'}'")
             print(f"[Presence] [LLM Nudge] Mood Context: Boredom {int(boredom * 100)}%, Energy {int(energy)}/100")
             print(f"[Presence] [LLM Nudge] Recent Chats Included: {len(recent_chats)}")
             print(f"[Presence] [LLM Nudge] System Prompt:\n{prompt_system}")
@@ -692,6 +730,10 @@ async def lifespan(app: FastAPI):
                         cleaned = re.sub(r'<\/?(?:think|thought|reasoning)[^>]*>[\s\S]*?(?:<\/(?:think|thought|reasoning)>|$)', '', cleaned, flags=re.IGNORECASE)
                         cleaned = re.sub(r'\*.*?\*', '', cleaned)  # remove *actions*
                         cleaned = cleaned.replace('*', '').replace('"', '').strip()
+                        # Strip repetitive formulaic openers (e.g. "Honestly,", "Seriously,")
+                        cleaned = re.sub(r'^(?:honestly|seriously|look|well|so)[\s,]+', '', cleaned, flags=re.IGNORECASE).strip()
+                        if cleaned:
+                            cleaned = cleaned[0].upper() + cleaned[1:]
                         
                         if len(cleaned) >= 4:
                             print(f"[Presence] [LLM Nudge] Processed: text=\"{cleaned}\" | anim={anim}")
@@ -748,12 +790,40 @@ async def lifespan(app: FastAPI):
                 quiet_sec = getattr(config, "PROACTIVE_NUDGE_QUIET_MIN", 30) * 60
                 boredom_thresh = getattr(config, "PROACTIVE_NUDGE_BOREDOM_PCT", 80) / 100.0
 
+                silence_secs = snapshot.get("silence_seconds", 0)
+                silence_mins = silence_secs // 60
+                silence_target_mins = quiet_sec // 60
+                boredom_val = snapshot.get("boredom", 0.0)
+                boredom_pct = int(round(boredom_val * 100))
+                boredom_target_pct = int(round(boredom_thresh * 100))
+
+                cooldown_elapsed = int(now_ts - presence_manager.last_nudge_time)
+                cooldown_remain_sec = max(0, interval_sec - cooldown_elapsed)
+                cooldown_str = "Ready" if cooldown_remain_sec == 0 else f"{cooldown_remain_sec // 60}m {cooldown_remain_sec % 60}s left"
+
+                active_summary = snapshot.get("active_window_summary") or snapshot.get("active_window", "")
+                active_dwell = snapshot.get("active_window_dwell_mins", 0)
+                app_summary = f"{active_summary} ({active_dwell}m)" if active_summary else "None"
+                state_str = presence_manager.sleep_state
+
+                silence_ok = silence_secs >= quiet_sec
+                boredom_ok = boredom_val >= boredom_thresh
+
+                if nudge_mode != "disabled":
+                    print(
+                        f"[Presence] [Min Check] State: {state_str} | "
+                        f"Silence: {silence_mins}m/{silence_target_mins}m ({'OK' if silence_ok else 'WAIT'}) | "
+                        f"Boredom: {boredom_pct}%/{boredom_target_pct}% ({'OK' if boredom_ok else 'WAIT'}) | "
+                        f"Cooldown: {cooldown_str} | Energy: {int(current_energy)}/100 | "
+                        f"App: {app_summary}"
+                    )
+
                 if (
                     nudge_mode != "disabled"
                     and not presence_manager.is_sleeping()
-                    and snapshot["boredom"] >= boredom_thresh
-                    and snapshot["silence_seconds"] >= quiet_sec
-                    and (now_ts - presence_manager.last_nudge_time) >= interval_sec
+                    and boredom_ok
+                    and silence_ok
+                    and cooldown_remain_sec == 0
                 ):
                     presence_manager.last_nudge_time = now_ts
                     dwell_mins = snapshot.get("active_window_dwell_mins", 0)
@@ -767,13 +837,27 @@ async def lifespan(app: FastAPI):
                         from app.memory.presence_engine import get_versatile_template_nudge
                         text, anim = get_versatile_template_nudge(win_title, dwell_mins, snapshot["boredom"], current_energy)
 
-                    print(f"[Presence] Dispatched proactive nudge ({nudge_mode}, engine: {nudge_engine}): {text}")
-                    await broadcast_ws({
-                        "type": "proactive_nudge",
-                        "mode": nudge_mode,
-                        "anim": anim,
-                        "text": text
-                    })
+                    if text:
+                        print(f"[Presence] Dispatched proactive nudge ({nudge_mode}, engine: {nudge_engine}): {text}")
+                        # Record proactive check-in in conversation history with timestamp so the LLM and UI preserve it
+                        try:
+                            global global_chat_history
+                            global_chat_history.append({
+                                "role": "assistant",
+                                "content": text,
+                                "timestamp": now_ts
+                            })
+                            await asyncio.to_thread(save_persistent_chat_history, global_chat_history)
+                        except Exception as _he:
+                            print(f"[Presence] Error appending proactive nudge to chat history: {_he}")
+
+                        await broadcast_ws({
+                            "type": "proactive_nudge",
+                            "mode": nudge_mode,
+                            "anim": anim,
+                            "text": text,
+                            "timestamp": now_ts
+                        })
             except Exception as _e:
                 print(f"[MoodEngine] idle step error: {_e}")
 
@@ -2181,6 +2265,7 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.launch_on_startup is not None:
         memory_manager.update_setting("launch_on_startup", req.launch_on_startup)
     if req.listen_on_startup is not None:
+        config.LISTEN_ON_STARTUP = bool(req.listen_on_startup)
         memory_manager.update_setting("listen_on_startup", req.listen_on_startup)
     if req.always_on_top is not None:
         memory_manager.update_setting("always_on_top", req.always_on_top)
@@ -4729,7 +4814,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     from app.agent.prompts import generate_startup_greeting_prompt
                                     from app.memory.presence_engine import presence_manager
                                     absence_sec = memory_manager.get_absence_duration_seconds()
-                                    recent_greets = memory_manager.get_recent_greetings(limit=2)
+                                    recent_greets = memory_manager.get_recent_greetings(limit=6)
                                     user_msg = generate_startup_greeting_prompt(
                                         profile=memory_manager.profile,
                                         presence_manager=presence_manager,
@@ -5105,7 +5190,30 @@ async def websocket_endpoint(websocket: WebSocket):
                                                         # Save the assistant's greeting text to prevent repeating in upcoming sessions
                                                         for m in reversed(global_chat_history):
                                                             if m.get("role") == "assistant" and m.get("content"):
-                                                                memory_manager.record_greeting(m.get("content"))
+                                                                assistant_greet = m.get("content")
+                                                                memory_manager.record_greeting(assistant_greet)
+                                                                try:
+                                                                    # Dynamically register any discussed headlines in today's covered news registry
+                                                                    from app.tools.context_feed import get_startup_context_block
+                                                                    feed_data = get_startup_context_block(memory_manager.profile)
+                                                                    all_items = []
+                                                                    for t_items in (feed_data.get("custom_news") or {}).values():
+                                                                        all_items.extend(t_items)
+                                                                    all_items.extend(feed_data.get("general_news") or [])
+                                                                    all_items.extend(feed_data.get("headlines") or [])
+
+                                                                    g_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', assistant_greet.lower().replace(',', '')))
+                                                                    _STOP = {'with', 'from', 'this', 'that', 'after', 'says', 'news', 'over', 'into', 'amid', 'will', 'have', 'more', 'posts', 'open', 'apply', 'check', 'dates', 'last', 'date'}
+                                                                    covered_found = []
+                                                                    for it in all_items:
+                                                                        t_clean = it.split('[Source:')[0].strip()
+                                                                        it_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', t_clean.lower().replace(',', ''))) - _STOP
+                                                                        if it_words and len(it_words & g_words) >= 2:
+                                                                            covered_found.append(t_clean)
+                                                                    if covered_found:
+                                                                        memory_manager.record_covered_news(covered_found)
+                                                                except Exception as _cov_err:
+                                                                    pass
                                                                 break
                                                     else:
                                                         global_chat_history = value

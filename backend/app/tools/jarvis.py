@@ -652,11 +652,16 @@ def jarvis_see_screen(prompt: str, window_title: str = None) -> str:
     except Exception as e:
         return f"Vision Exception: Screen capture failed: {str(e)}"
 
-    effective_prompt = prompt or (
+    avatar_anchor = (
+        "\n\n[DESKTOP CONTEXT: The 3D anime avatar visible floating on this desktop screen is the AI assistant (Yuki). "
+        "Do NOT describe, mention, or focus on the 3D avatar; focus entirely on the open applications, browser windows, code, documents, and desktop content.]"
+    )
+    base_prompt = prompt or (
         "Analyze this screen capture in extreme detail. Describe every visible element: layout, "
         "windows, icons, buttons, menus, colors, and state. Then transcribe ALL visible text verbatim, "
         "including titles, labels, error messages, dialog boxes, status bars, and menu items."
     )
+    effective_prompt = base_prompt + avatar_anchor
     try:
         result = _analyze_image_file(save_path, effective_prompt)
     finally:

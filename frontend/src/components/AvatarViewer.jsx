@@ -250,6 +250,12 @@ const AvatarViewer = ({
     }
   }, [isBackendOnline, hasVrm, activeModel]);
 
+  useEffect(() => {
+    if (vrmRef.current) {
+      sanitizeExpressions(vrmRef.current);
+    }
+  }, [hasVrm, activeModel]);
+
   // Blend shape helper to support both VRM v0 and v1
   const setExpressionValue = (vrm, name, value) => {
     if (!vrm) return;
@@ -290,6 +296,217 @@ const AvatarViewer = ({
     if (manager && typeof manager.update === 'function') {
       manager.update();
     }
+  };
+
+  // Sanitizes expressions on newly loaded VRM models so that 'relaxed' / 'happy' maintains open eyes,
+  // and indexes all eye-closing morph targets to completely prevent double-blinking over closed eyes.
+  const sanitizeExpressions = (vrm) => {
+    if (!vrm) return;
+    const manager = vrm.expressionManager || vrm.blendShapeProxy;
+    if (!manager) return;
+
+    const blinkMorphIndices = new Set();
+    const allEyeClosingIndices = new Set();
+    const blinkPrimitives = new Set();
+
+    const getExpr = (name) => {
+      if (typeof manager.getExpression === 'function') return manager.getExpression(name);
+      if (manager.expressionMap) return manager.expressionMap[name];
+      if (typeof manager.getBlendShapeGroup === 'function') return manager.getBlendShapeGroup(name);
+      return null;
+    };
+
+    // 1. Identify all blink morph targets across blink expressions
+    ['blink', 'blinkLeft', 'blinkRight', 'blink_l', 'blink_r', 'Blink', 'BLINK'].forEach((name) => {
+      const expr = getExpr(name);
+      if (expr && expr._binds) {
+        expr._binds.forEach((bind) => {
+          if (bind.index !== undefined) {
+            blinkMorphIndices.add(bind.index);
+            allEyeClosingIndices.add(bind.index);
+            if (bind.primitives && Array.isArray(bind.primitives)) {
+              bind.primitives.forEach((p) => blinkPrimitives.add(p));
+            }
+          }
+        });
+      } else if (expr && expr.binds) {
+        expr.binds.forEach((bind) => {
+          if (bind.index !== undefined) {
+            blinkMorphIndices.add(bind.index);
+            allEyeClosingIndices.add(bind.index);
+          }
+        });
+      }
+    });
+
+    // 2. Discover ALL eye-closing / squinting morph targets across all meshes in the scene
+    vrm.scene.traverse((obj) => {
+      if (obj.isMesh && obj.morphTargetDictionary) {
+        blinkPrimitives.add(obj);
+        for (const [name, idx] of Object.entries(obj.morphTargetDictionary)) {
+          const lower = name.toLowerCase();
+          if (
+            /eye.*(close|shut|blink|relax|joy|fun|squint|sorrow)/i.test(lower) ||
+            /(close|shut|blink).*eye/i.test(lower) ||
+            lower.includes('fcl_all_fun') ||
+            lower.includes('fcl_all_joy') ||
+            lower.includes('fcl_all_sorrow')
+          ) {
+            allEyeClosingIndices.add(idx);
+          }
+        }
+      }
+    });
+
+    const getMorphName = (mesh, index) => {
+      if (!mesh || !mesh.morphTargetDictionary) return '';
+      for (const [name, idx] of Object.entries(mesh.morphTargetDictionary)) {
+        if (idx === index) return name;
+      }
+      return '';
+    };
+
+    const isEyeClosingMorphName = (name, index) => {
+      if (blinkMorphIndices.has(index)) return true;
+      const lower = (name || '').toLowerCase();
+      return (
+        /eye.*(close|shut|blink|relax|joy|fun|squint|sorrow)/i.test(lower) ||
+        /(close|shut|blink).*eye/i.test(lower) ||
+        lower.includes('fcl_eye_close') ||
+        lower.includes('eye_close') ||
+        lower.includes('eye_blink') ||
+        lower.includes('eye_relax') ||
+        lower.includes('eye_fun') ||
+        lower.includes('eye_joy')
+      );
+    };
+
+    // Helper to decompose compound ALL morphs (e.g. Fcl_ALL_Fun -> Fcl_MTH_Fun + Fcl_BRW_Fun)
+    const decomposeCompoundBind = (bind) => {
+      if (!bind || !bind.primitives || bind.primitives.length === 0) return null;
+      const mesh = bind.primitives[0];
+      const morphName = getMorphName(mesh, bind.index);
+      const lower = morphName.toLowerCase();
+
+      // Check if this is an all-in-one morph target like Fcl_ALL_Fun or Fcl_ALL_Joy
+      if (lower.startsWith('fcl_all_') || lower.includes('_all_') || lower.startsWith('all_')) {
+        const suffix = morphName.replace(/^.*all_/i, ''); // e.g. "Fun", "Joy"
+        const dict = mesh.morphTargetDictionary || {};
+        const newBinds = [];
+
+        // Find matching MOUTH morph (e.g. Fcl_MTH_Fun, Fcl_MTH_Joy, Fcl_MTH_Smile)
+        const mouthName = Object.keys(dict).find((k) =>
+          new RegExp(`^(fcl_)?mth_${suffix}$`, 'i').test(k) ||
+          new RegExp(`^mouth_${suffix}$`, 'i').test(k) ||
+          new RegExp(`^mth_${suffix}$`, 'i').test(k)
+        );
+        if (mouthName && dict[mouthName] !== undefined) {
+          const mthIndex = dict[mouthName];
+          const bindCtor = bind.constructor || Object;
+          const newBind = new bindCtor({
+            primitives: bind.primitives,
+            index: mthIndex,
+            weight: bind.weight
+          });
+          newBinds.push(newBind);
+        }
+
+        // Find matching BROW morph (e.g. Fcl_BRW_Fun, Fcl_BRW_Joy)
+        const browName = Object.keys(dict).find((k) =>
+          new RegExp(`^(fcl_)?brw_${suffix}$`, 'i').test(k) ||
+          new RegExp(`^brow_${suffix}$`, 'i').test(k) ||
+          new RegExp(`^brw_${suffix}$`, 'i').test(k)
+        );
+        if (browName && dict[browName] !== undefined) {
+          const brwIndex = dict[browName];
+          const bindCtor = bind.constructor || Object;
+          const newBind = new bindCtor({
+            primitives: bind.primitives,
+            index: brwIndex,
+            weight: bind.weight
+          });
+          newBinds.push(newBind);
+        }
+
+        // Return the decomposed mouth + brow binds (excluding the eye closing bind!)
+        if (newBinds.length > 0) {
+          console.log(`[AvatarViewer] Decomposed compound morph '${morphName}' into [${mouthName || ''}, ${browName || ''}] with eyes open.`);
+          return newBinds;
+        }
+      }
+      return null;
+    };
+
+    // 3. Sanitize 'relaxed' (and aliases) and 'happy' so eyes stay open
+    ['relaxed', 'Relaxed', 'relax', 'RELAXED', 'happy', 'Joy', 'joy'].forEach((exprName) => {
+      const expr = getExpr(exprName);
+      if (expr) {
+        const bindsList = expr._binds || expr.binds;
+        if (bindsList && bindsList.length > 0) {
+          let updatedBinds = [];
+          let changed = false;
+
+          for (const bind of bindsList) {
+            const mesh = bind.primitives ? bind.primitives[0] : null;
+            const morphName = getMorphName(mesh, bind.index);
+
+            // Check if compound ALL_ morph
+            const decomp = decomposeCompoundBind(bind);
+            if (decomp) {
+              updatedBinds.push(...decomp);
+              changed = true;
+              continue;
+            }
+
+            // Check if individual eye closing morph
+            if (isEyeClosingMorphName(morphName, bind.index)) {
+              console.log(`[AvatarViewer] Removed eye-closing bind '${morphName}' (index ${bind.index}) from '${exprName}'.`);
+              changed = true;
+              continue;
+            }
+
+            // Keep other binds (e.g. mouth, brow, materials)
+            updatedBinds.push(bind);
+          }
+
+          if (changed) {
+            // Fallback: If no mouth morph remained, look for any mouth smile in mesh
+            const hasMouth = updatedBinds.some((b) => {
+              const m = b.primitives ? b.primitives[0] : null;
+              return /mth|mouth|lip/i.test(getMorphName(m, b.index));
+            });
+
+            if (!hasMouth && bindsList[0] && bindsList[0].primitives && bindsList[0].primitives[0]) {
+              const mesh = bindsList[0].primitives[0];
+              const dict = mesh.morphTargetDictionary || {};
+              const smileKey = Object.keys(dict).find((k) =>
+                /^(fcl_)?mth_(smile|fun|joy|neutral)$/i.test(k) ||
+                /^mouth_(smile|fun|joy)$/i.test(k) ||
+                /smile/i.test(k)
+              );
+              if (smileKey && dict[smileKey] !== undefined) {
+                const bindCtor = bindsList[0].constructor || Object;
+                const smileBind = new bindCtor({
+                  primitives: bindsList[0].primitives,
+                  index: dict[smileKey],
+                  weight: 1.0
+                });
+                updatedBinds.push(smileBind);
+                console.log(`[AvatarViewer] Added fallback mouth smile '${smileKey}' to '${exprName}'.`);
+              }
+            }
+
+            if (expr._binds) expr._binds = updatedBinds;
+            else if (expr.binds) expr.binds = updatedBinds;
+          }
+        }
+      }
+    });
+
+    // 4. Cache for per-frame blink checks
+    vrm._blinkMorphIndices = blinkMorphIndices;
+    vrm._allEyeClosingIndices = allEyeClosingIndices;
+    vrm._blinkPrimitives = Array.from(blinkPrimitives);
   };
 
   const getBoneNode = (vrm, name) => {
@@ -511,6 +728,7 @@ const AvatarViewer = ({
           }
         }
 
+        sanitizeExpressions(vrm);
         vrmRef.current = vrm;
         setHasVrm(true);
         setLoading(false);
@@ -2757,13 +2975,43 @@ const AvatarViewer = ({
             }
           }
 
+          // Ensure live active VRM is sanitized immediately even if hot-reloading
+          if (vrm && !vrm._allEyeClosingIndices) {
+            sanitizeExpressions(vrm);
+          }
+
+          // Check if eyes are already closed on the avatar (e.g. from sleep or an eye-closing expression)
+          let activeEyeClosure = sleepProgressRef.current || 0;
+          if (vrm && vrm._allEyeClosingIndices && vrm._blinkPrimitives) {
+            for (let i = 0; i < vrm._blinkPrimitives.length; i++) {
+              const prim = vrm._blinkPrimitives[i];
+              if (prim && prim.morphTargetInfluences) {
+                for (const idx of vrm._allEyeClosingIndices) {
+                  const influence = prim.morphTargetInfluences[idx] || 0;
+                  if (influence > activeEyeClosure) {
+                    activeEyeClosure = influence;
+                  }
+                }
+              }
+            }
+          }
+
           // Blinking calculation
           const enableBlinking = !disabledAnimationsRef.current.includes('blinking') && (window.yukiDebugToggles ? window.yukiDebugToggles.blinking !== false : true);
-          blinkTimer += delta;
-          if (enableBlinking && !isBlinking && blinkTimer >= nextBlinkTime) {
-            isBlinking = true;
+          const eyesAreClosed = activeEyeClosure >= 0.45;
+
+          if (eyesAreClosed) {
+            // Suppress blinking entirely when eyes are already closed (prevents double-blinking, eyelid clipping, and twitching)
+            isBlinking = false;
             blinkTimer = 0;
             blinkProgress = 0;
+          } else {
+            blinkTimer += delta;
+            if (enableBlinking && !isBlinking && blinkTimer >= nextBlinkTime) {
+              isBlinking = true;
+              blinkTimer = 0;
+              blinkProgress = 0;
+            }
           }
 
           const currentExpr = expressionRef.current;
@@ -2893,6 +3141,14 @@ const AvatarViewer = ({
             const emotionDef = EMOTIONS[currentExpr];
             if (currentExpr === 'wink') {
               targetRelaxed = winkVal * 0.5;
+            } else if (currentExpr === 'smug') {
+              targetHappy = 0.0; // Closed mouth, open eyes
+              targetRelaxed = 1.0; // Wide confident smile
+              targetBrowUp = 0.3; // Confident brow raise
+            } else if (currentExpr === 'happy') {
+              targetHappy = 0.0; // Set to 0 to avoid VRM's pre-baked eye closing and jaw-drop morphs on joy
+              targetRelaxed = 1.0; // Use open-eyed relaxed wide smile instead
+              targetBrowUp = 0.35; // raise brows slightly on smile
             } else if (emotionDef && emotionDef.blendShapes) {
               const bs = emotionDef.blendShapes;
               targetHappy = bs.happy || 0.0;
@@ -2902,10 +3158,6 @@ const AvatarViewer = ({
               targetRelaxed = bs.relaxed || 0.0;
               targetBrowUp = bs.browUp || 0.0;
               targetBrowDown = bs.browDown || 0.0;
-            } else if (currentExpr === 'happy') {
-              targetHappy = 0.0; // Set to 0 to avoid VRM's pre-baked eye closing morphs on joy
-              targetRelaxed = 1.0; // Use open-eyed relaxed smile instead
-              targetBrowUp = 0.35; // raise brows slightly on smile
             } else if (currentExpr === 'sad') {
               targetSad = 1.0;
               targetBrowDown = 0.65; // furrow brows on sad
@@ -3014,9 +3266,6 @@ const AvatarViewer = ({
               const t = idleAnimProgress / idleAnimDuration;
               const easeVal = Math.sin(t * Math.PI);
               targetRelaxed = 0.9 * easeVal;
-            } else if (dragStateProgress > 0) {
-              targetSurprised = 0.85 * dragStateProgress; // wide eyes
-              targetBrowUp = 0.75 * dragStateProgress;   // brows raised in surprise
             } else if (cpuLoadRef.current > 80) {
               targetSad = 0.45; // stressed/exhausted look
               targetAngry = 0.2;
@@ -3035,6 +3284,18 @@ const AvatarViewer = ({
             }
             // Blend in sleep target values smoothly based on sleepProgressRef.current
             targetRelaxed = THREE.MathUtils.lerp(targetRelaxed, 0.6, sleepProgressRef.current);
+          }
+
+          // If being dragged/picked up, smoothly override expression with surprise (wide eyes & raised brows)
+          if (dragStateProgress > 0) {
+            const dragSurprise = THREE.MathUtils.clamp(dragStateProgress, 0, 1);
+            targetSurprised = THREE.MathUtils.lerp(targetSurprised, 0.85, dragSurprise);
+            targetBrowUp = THREE.MathUtils.lerp(targetBrowUp, 0.80, dragSurprise);
+            targetRelaxed = THREE.MathUtils.lerp(targetRelaxed, 0.0, dragSurprise);
+            targetHappy = THREE.MathUtils.lerp(targetHappy, 0.0, dragSurprise);
+            targetSad = THREE.MathUtils.lerp(targetSad, 0.0, dragSurprise);
+            targetAngry = THREE.MathUtils.lerp(targetAngry, 0.0, dragSurprise);
+            targetBrowDown = THREE.MathUtils.lerp(targetBrowDown, 0.0, dragSurprise);
           }
 
           // Smoothly interpolate current values towards targets (using delta * speed)
@@ -3086,6 +3347,11 @@ const AvatarViewer = ({
             normalBlinkLeft = squintValue;
             normalBlinkRight = squintValue;
           }
+
+          // Clamp so that total eye closure from expression + blink never exceeds 1.0 (prevents eyelid vertex inversion)
+          const maxAllowedBlink = Math.max(0, 1.0 - activeEyeClosure);
+          normalBlinkLeft = Math.min(normalBlinkLeft, maxAllowedBlink);
+          normalBlinkRight = Math.min(normalBlinkRight, maxAllowedBlink);
 
           finalBlinkLeft = THREE.MathUtils.lerp(normalBlinkLeft, 1.0, sleepProgressRef.current);
           finalBlinkRight = THREE.MathUtils.lerp(normalBlinkRight, 1.0, sleepProgressRef.current);

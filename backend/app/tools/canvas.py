@@ -24,6 +24,66 @@ def _sanitize_and_extract_graphics(content: str) -> str:
     to prevent breaking the Canvas shell and top bar layout.
     """
     text = content.strip()
+
+    # Unescape JSON-escaped strings if quotes and newlines were passed literally
+    if r'\"' in text:
+        text = text.replace(r'\"', '"')
+    if r'\n' in text:
+        text = text.replace(r'\n', '\n').replace(r'\r', '\r').replace(r'\t', '\t')
+
+    # Check if SVG coordinates exceed declared viewBox width/height, and expand viewBox to prevent clipping
+    if '<svg' in text:
+        vb_match = re.search(r'<svg\b([^>]*)\bviewBox=[\"\']\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)[\"\']', text, re.IGNORECASE)
+        if vb_match:
+            min_x, min_y = float(vb_match.group(2)), float(vb_match.group(3))
+            vb_w, vb_h = float(vb_match.group(4)), float(vb_match.group(5))
+
+            # Scan for elements or translates that exceed the declared viewBox width
+            max_reach_x = vb_w
+            for m in re.finditer(r'transform=[\"\']translate\(\s*(\d+(?:\.\d+)?)\b', text):
+                tx = float(m.group(1))
+                snippet = text[m.end():m.end() + 250]
+                w_m = re.search(r'\bwidth=[\"\'](\d+(?:\.\d+)?)[\"\']', snippet)
+                w = float(w_m.group(1)) if w_m else 120.0
+                max_reach_x = max(max_reach_x, tx + w)
+
+            for m in re.finditer(r'<rect\b[^>]*\bx=[\"\'](\d+(?:\.\d+)?)[\"\'][^>]*\bwidth=[\"\'](\d+(?:\.\d+)?)[\"\']', text):
+                rx, rw = float(m.group(1)), float(m.group(2))
+                max_reach_x = max(max_reach_x, rx + rw)
+
+            if max_reach_x > vb_w:
+                # Add safe padding (at least 40px)
+                new_w = float(int((max_reach_x + 40 + 9) // 10 * 10))
+                old_tag = vb_match.group(0)
+                new_tag = re.sub(
+                    r'viewBox=[\"\']\s*(-?\d+(?:\.\d+)?\s+){2}(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)[\"\']',
+                    f'viewBox="{min_x:.0f} {min_y:.0f} {new_w:.0f} {vb_h:.0f}"',
+                    old_tag
+                )
+                text = text[:vb_match.start()] + new_tag + text[vb_match.end():]
+                # Expand full-width background rect from old width to new width
+                text = re.sub(
+                    rf'<rect\b([^>]*)\bwidth=[\"\']{int(vb_w)}[\"\']',
+                    rf'<rect\1width="{int(new_w)}"',
+                    text,
+                    count=1
+                )
+                # Recenter centered titles if they were at vb_w / 2
+                old_center = int(vb_w / 2)
+                new_center = int(new_w / 2)
+                text = re.sub(rf'\bx=[\"\']{old_center}[\"\']', f'x="{new_center}"', text, count=2)
+                vb_w = new_w
+
+            # If SVG is missing explicit width/height, inject them matching viewBox
+            if not re.search(r'<svg\b[^>]*\b(?:width\s*=)', text, re.IGNORECASE):
+                text = re.sub(
+                    r'<svg\b',
+                    f'<svg width="{vb_w:.0f}" height="{vb_h:.0f}"',
+                    text,
+                    count=1,
+                    flags=re.IGNORECASE
+                )
+
     has_html_wrapper = bool(re.search(r'<!DOCTYPE|<html|<body|<head', text, re.IGNORECASE))
     if not has_html_wrapper:
         return text
@@ -248,6 +308,12 @@ def jarvis_html_graphics(svg_or_canvas: str) -> str:
   #zoom-container img {
     max-width:100%;
     height:auto;
+  }
+  #zoom-container svg {
+    max-width:100%;
+    max-height:100%;
+    display:block;
+    margin:auto;
   }
   .drag-hint {
     position:fixed;

@@ -12,6 +12,7 @@ Tracks:
 import time
 import datetime
 import random
+import re
 from typing import Optional, Dict, Any, Tuple
 from app import config
 
@@ -31,22 +32,257 @@ def is_media_or_audio_playing() -> bool:
     return False
 
 
-def _get_current_active_window() -> str:
-    """Read the current foreground window title safely."""
+_MEDIA_CACHE_TIME: float = 0.0
+_MEDIA_CACHE_VAL: str = ""
+
+def get_active_background_media(foreground_title: str = "") -> str:
+    """
+    Detects background or minimized media/music currently playing (e.g. VLC, Spotify, YouTube).
+    Returns a concise string like: 'VLC: "Sidney Gish - Imposter Syndrome"' or empty string if none.
+    """
+    global _MEDIA_CACHE_TIME, _MEDIA_CACHE_VAL
+    now = time.time()
+    if now - _MEDIA_CACHE_TIME < 2.5 and _MEDIA_CACHE_VAL:
+        return _MEDIA_CACHE_VAL
+
+    try:
+        import os
+        import psutil
+        import ctypes
+        from ctypes import wintypes
+        from pycaw.pycaw import AudioUtilities
+
+        active_audio_pids = {}
+        ignored_proc = ('yuki', 'python', 'electron', 'audiodg', 'system', 'systemsettings')
+
+        for s in AudioUtilities.GetAllSessions():
+            if not s.Process or s.State != 1:
+                continue
+            pname = s.Process.name().lower()
+            if any(ig in pname for ig in ignored_proc):
+                continue
+            active_audio_pids[s.Process.pid] = pname
+
+        if not active_audio_pids:
+            _MEDIA_CACHE_TIME = now
+            _MEDIA_CACHE_VAL = ""
+            return ""
+
+        media_exts = ('.mp4', '.mp3', '.mkv', '.webm', '.flac', '.wav', '.ogg', '.m4a', '.avi')
+        found_media = []
+
+        # Strategy A: Command line of local media players (VLC, MPV, MPC-HC)
+        for pid, pname in list(active_audio_pids.items()):
+            try:
+                proc = psutil.Process(pid)
+                cmd = proc.cmdline()
+                for arg in cmd[1:]:
+                    if any(arg.lower().endswith(ext) for ext in media_exts):
+                        base_name = os.path.splitext(os.path.basename(arg))[0]
+                        app_label = "VLC" if "vlc" in pname else pname.replace(".exe", "").capitalize()
+                        found_media.append(f"{app_label}: \"{base_name}\"")
+                        break
+            except Exception:
+                pass
+
+        # Strategy B: Background / Minimized window titles (Spotify, YouTube in browser)
+        user32 = ctypes.windll.user32
+        fg_hwnd = user32.GetForegroundWindow()
+        fg_title_lower = (foreground_title or "").lower()
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+        def enum_cb(hwnd, _):
+            if hwnd == fg_hwnd:
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                buf = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buf, length + 1)
+                title = buf.value.strip()
+                if not title:
+                    return True
+                title_lower = title.lower()
+
+                if fg_title_lower and fg_title_lower in title_lower:
+                    return True
+
+                if "spotify" in title_lower:
+                    if title_lower not in ("spotify", "spotify free", "spotify premium"):
+                        found_media.append(f"Spotify: \"{title}\"")
+                elif "youtube" in title_lower or "soundcloud" in title_lower:
+                    clean_title = re.sub(r'\s*[\u2014\u2013\-]\s*(?:Mozilla\s+)?Firefox.*$', '', title, flags=re.IGNORECASE)
+                    clean_title = re.sub(r'\s*[\u2014\u2013\-]\s*Google\s+Chrome.*$', '', clean_title, flags=re.IGNORECASE)
+                    clean_title = re.sub(r'\s*[\u2014\u2013\-]\s*Microsoft\s+Edge.*$', '', clean_title, flags=re.IGNORECASE)
+                    clean_title = re.sub(r'\s*[\u2014\u2013\-]\s*Brave.*$', '', clean_title, flags=re.IGNORECASE)
+                    found_media.append(f"YouTube: \"{clean_title.strip()}\"")
+                elif "vlc media player" in title_lower and not any("vlc" in m.lower() for m in found_media):
+                    clean_title = re.sub(r'\s*[\u2014\u2013\-]\s*VLC\s+media\s+player.*$', '', title, flags=re.IGNORECASE).strip()
+                    if clean_title:
+                        found_media.append(f"VLC: \"{clean_title}\"")
+            return True
+
+        try:
+            user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+        except Exception:
+            pass
+
+        unique_media = []
+        for item in found_media:
+            if item not in unique_media:
+                unique_media.append(item)
+
+        res = ", ".join(unique_media) if unique_media else ""
+        _MEDIA_CACHE_TIME = now
+        _MEDIA_CACHE_VAL = res
+        return res
+    except Exception:
+        return ""
+
+
+
+EXE_MAP = {
+    'firefox.exe': 'Firefox',
+    'chrome.exe': 'Google Chrome',
+    'msedge.exe': 'Microsoft Edge',
+    'brave.exe': 'Brave',
+    'opera.exe': 'Opera',
+    'vivaldi.exe': 'Vivaldi',
+    'code.exe': 'VS Code',
+    'cursor.exe': 'Cursor',
+    'devenv.exe': 'Visual Studio',
+    'sublime_text.exe': 'Sublime Text',
+    'idea64.exe': 'IntelliJ IDEA',
+    'pycharm64.exe': 'PyCharm',
+    'acrord32.exe': 'Adobe Acrobat',
+    'acrobat.exe': 'Adobe Acrobat',
+    'foxitpdfreader.exe': 'Foxit PDF Reader',
+    'foxitreader.exe': 'Foxit PDF Reader',
+    'winword.exe': 'Microsoft Word',
+    'excel.exe': 'Microsoft Excel',
+    'powerpnt.exe': 'PowerPoint',
+    'vlc.exe': 'VLC Media Player',
+    'spotify.exe': 'Spotify',
+    'discord.exe': 'Discord',
+    'telegram.exe': 'Telegram',
+    'slack.exe': 'Slack',
+    'obsidian.exe': 'Obsidian',
+    'notepad++.exe': 'Notepad++',
+    'notepad.exe': 'Notepad',
+    'cmd.exe': 'Command Prompt',
+    'powershell.exe': 'PowerShell',
+    'windowsterminal.exe': 'Windows Terminal',
+    'explorer.exe': 'File Explorer'
+}
+
+SUFFIX_APPS = [
+    (r'(?:Mozilla\s+)?Firefox', 'Firefox'),
+    (r'Google\s+Chrome', 'Google Chrome'),
+    (r'Microsoft[\s\u200b]+Edge', 'Microsoft Edge'),
+    (r'Brave', 'Brave'),
+    (r'Opera(?:\s+GX)?', 'Opera'),
+    (r'Visual\s+Studio\s+Code', 'VS Code'),
+    (r'Visual\s+Studio', 'Visual Studio'),
+    (r'Adobe\s+Acrobat(?:\s+(?:Reader|Pro))?', 'Adobe Acrobat'),
+    (r'Foxit(?:\s+PDF)?\s+Reader', 'Foxit PDF Reader'),
+    (r'(?:Microsoft\s+)?Word', 'Microsoft Word'),
+    (r'(?:Microsoft\s+)?Excel', 'Microsoft Excel'),
+    (r'(?:Microsoft\s+)?PowerPoint', 'PowerPoint'),
+    (r'VLC(?:\s+media\s+player)?', 'VLC Media Player'),
+    (r'Spotify(?:\s+(?:Free|Premium))?', 'Spotify'),
+    (r'Discord', 'Discord'),
+    (r'Telegram', 'Telegram'),
+    (r'Notepad\+\+', 'Notepad++'),
+    (r'Notepad', 'Notepad'),
+    (r'Obsidian', 'Obsidian'),
+    (r'Command\s+Prompt', 'Command Prompt'),
+    (r'Windows\s+PowerShell', 'PowerShell')
+]
+
+def format_active_window(raw_title: str, proc_name: str = "") -> dict:
+    """
+    Parses a raw Windows foreground window title and process name into clean,
+    structured application and document/tab metadata.
+    """
+    clean = (raw_title or "").strip()
+    clean = re.sub(r'[\s\-\u2014\u2013\u2022\|]+$', '', clean).strip()
+
+    if not clean:
+        app = EXE_MAP.get(proc_name.lower(), proc_name.replace('.exe', '').capitalize() if proc_name else "Desktop")
+        return {"app": app, "doc": "", "summary": app, "prompt": app}
+
+    matched_app = None
+    doc_part = clean
+
+    # 1. Match from title suffixes (e.g. "... - Mozilla Firefox" -> doc="..." and app="Firefox")
+    for pat, app_label in SUFFIX_APPS:
+        m = re.search(r'(?:[\s\-\u2014\u2013\u2022\|]+\s*)?' + pat + r'\s*$', clean, re.IGNORECASE)
+        if m:
+            matched_app = app_label
+            doc_part = clean[:m.start()].strip()
+            doc_part = re.sub(r'[\s\-\u2014\u2013\u2022\|]+$', '', doc_part).strip()
+            break
+
+    # 2. If title suffix didn't match, check process name
+    if not matched_app and proc_name:
+        p_lower = proc_name.lower()
+        if p_lower in EXE_MAP:
+            matched_app = EXE_MAP[p_lower]
+            doc_part = clean
+
+    # 3. Fallback generic split
+    if not matched_app:
+        parts = re.split(r'\s*[\u2014\u2013\-]\s*', clean)
+        if len(parts) > 1 and len(parts[-1].strip()) < 30:
+            matched_app = parts[-1].strip()
+            doc_part = ' - '.join(parts[:-1]).strip()
+        else:
+            matched_app = clean[:24]
+            doc_part = ''
+
+    if doc_part and matched_app and doc_part.lower() == matched_app.lower():
+        doc_part = ""
+
+    if matched_app and doc_part:
+        summary = f'{matched_app}: "{doc_part}"'
+        prompt_desc = f"{matched_app} (active document/tab: '{doc_part}')"
+    else:
+        summary = matched_app or clean
+        prompt_desc = matched_app or clean
+
+    return {
+        "app": matched_app,
+        "doc": doc_part,
+        "summary": summary,
+        "prompt": prompt_desc
+    }
+
+def _get_current_active_window() -> tuple[str, str]:
+    """Read the current foreground window title and process name safely."""
     try:
         import ctypes
         hwnd = ctypes.windll.user32.GetForegroundWindow()
         if not hwnd:
-            return ""
-        buf = ctypes.create_unicode_buffer(256)
-        ctypes.windll.user32.GetWindowTextW(hwnd, buf, 256)
+            return "", ""
+        buf = ctypes.create_unicode_buffer(512)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, 512)
         title = buf.value.strip()
         yuki_keywords = ("yuki", "project yuki", "control dashboard", "vrm viewer", "electron")
         if any(k in title.lower() for k in yuki_keywords):
-            return ""
-        return title
+            return "", ""
+
+        proc_name = ""
+        try:
+            pid = ctypes.c_ulong()
+            ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value:
+                import psutil
+                proc_name = psutil.Process(pid.value).name()
+        except Exception:
+            pass
+
+        return title, proc_name
     except Exception:
-        return ""
+        return "", ""
 
 
 class PresenceEngine:
@@ -61,6 +297,7 @@ class PresenceEngine:
         self.boredom: float = 0.0         # 0.0 (fully engaged) to 1.0 (very bored)
         self.user_idle_seconds: float = 0.0
         self.active_window_title: str = ""
+        self.active_window_proc: str = ""
         self.active_window_dwell_seconds: float = 0.0
         self.last_nudge_time: float = 0.0
 
@@ -69,6 +306,7 @@ class PresenceEngine:
         now = time.time()
         self.last_interaction_time = now
         self.boredom = 0.0
+        self.last_nudge_time = 0.0  # Clear any leftover nudge repeat cooldown so Cooldown resets to Ready
         if self.is_sleeping():
             self.set_sleep_state("waking", is_nap=self.is_nap)
         else:
@@ -120,12 +358,13 @@ class PresenceEngine:
         """
         now = time.time()
 
-        # Update active window and dwell time
-        curr_win = _get_current_active_window()
+        # Update active window, process, and dwell time
+        curr_win, curr_proc = _get_current_active_window()
         if curr_win and curr_win == self.active_window_title:
             self.active_window_dwell_seconds += delta_seconds
         elif curr_win:
             self.active_window_title = curr_win
+            self.active_window_proc = curr_proc
             self.active_window_dwell_seconds = 0.0
 
         elapsed_since_chat = max(0.0, now - self.last_interaction_time)
@@ -157,16 +396,14 @@ class PresenceEngine:
             return None
 
         # Boredom rises smoothly when awake and idle (reaches 1.0 after ~30 minutes of no interaction)
-        if elapsed_since_chat > 300:  # after 5 minutes of silence
-            self.boredom = min(1.0, self.boredom + (delta_seconds / 1800.0))
-        else:
-            self.boredom = max(0.0, self.boredom - (delta_seconds / 600.0))
+        self.boredom = min(1.0, self.boredom + (delta_seconds / 1800.0))
 
         return None
 
     def get_presence_snapshot(self) -> Dict[str, Any]:
         """Returns live presence metrics for WebSocket broadcasts & UI gauges."""
         now = time.time()
+        win_info = format_active_window(self.active_window_title, self.active_window_proc)
         return {
             "boredom": round(self.boredom, 2),
             "boredom_pct": int(round(self.boredom * 100)),
@@ -174,6 +411,10 @@ class PresenceEngine:
             "is_nap": self.is_nap,
             "silence_seconds": int(max(0.0, now - self.last_interaction_time)),
             "active_window": self.active_window_title,
+            "active_window_app": win_info.get("app", ""),
+            "active_window_doc": win_info.get("doc", ""),
+            "active_window_summary": win_info.get("summary", ""),
+            "active_window_prompt": win_info.get("prompt", ""),
             "active_window_dwell_seconds": int(self.active_window_dwell_seconds),
             "active_window_dwell_mins": int(self.active_window_dwell_seconds // 60)
         }
@@ -199,14 +440,6 @@ class PresenceEngine:
                 )
             elif duration_mins <= 30:
                 return (
-                    f"[INTERNAL SENSE: You just woke up from a {duration_mins}-minute power nap because Master returned. "
-                    f"It is {time_str} on {day_str}. You feel a little groggy, blinking and yawning with <yuki_anim:yawn/>. "
-                    f"You know you were asleep for {duration_mins} minute{'s' if duration_mins != 1 else ''}.]"
-                )
-            elif duration_mins <= 180:
-                hours = round(duration_mins / 60.0, 1)
-                return (
-                    f"[INTERNAL SENSE: You just woke up from a {hours}-hour deep sleep ({duration_mins} minutes). "
                     f"It is {time_str} on {day_str}. You are rubbing your eyes and yawning with <yuki_anim:yawn/>.]"
                 )
             else:
@@ -245,7 +478,8 @@ class PresenceEngine:
         dwell_desc = ""
         if self.active_window_title and self.active_window_dwell_seconds >= 900:
             dwell_mins = int(self.active_window_dwell_seconds // 60)
-            dwell_desc = f" Master has been focused in \"{self.active_window_title}\" for {dwell_mins} minutes."
+            win_info = format_active_window(self.active_window_title, self.active_window_proc)
+            dwell_desc = f" Master has been focused in {win_info.get('prompt') or self.active_window_title} for {dwell_mins} minutes."
 
         # Check if recently awakened (within the last 20 minutes) so Yuki retains exact memory of her sleep duration
         recent_wake_mins = (now - self.last_awakened_at) / 60.0 if self.last_awakened_at > 0 else 999.0
@@ -285,8 +519,9 @@ def get_versatile_template_nudge(active_window: str = "", dwell_mins: int = 0, b
     clean_win = ""
     win_lower = ""
     if active_window:
-        clean_win = active_window.split("-")[-1].split("—")[-1].strip()[:24]
-        win_lower = active_window.lower()
+        win_info = format_active_window(active_window)
+        clean_win = win_info.get("app") or active_window[:24]
+        win_lower = f"{win_info.get('app', '')} {win_info.get('doc', '')} {active_window}".lower()
 
     candidates = []
 
