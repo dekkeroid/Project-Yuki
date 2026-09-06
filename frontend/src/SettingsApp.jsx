@@ -295,6 +295,12 @@ export default function SettingsApp() {
           }
         }}
         disabledAnimations={disabledAnimations}
+        onTestAnimation={(animName) => {
+          if (window.electronAPI?.triggerCustomAnimation) {
+            window.electronAPI.triggerCustomAnimation(animName);
+          }
+          window.dispatchEvent(new CustomEvent('yuki:trigger-animation', { detail: animName }));
+        }}
         onToggleAnimation={(animName) => {
           setDisabledAnimations(prev => {
             const next = prev.includes(animName) ? prev.filter(a => a !== animName) : [...prev, animName];

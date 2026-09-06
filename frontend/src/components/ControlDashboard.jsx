@@ -500,6 +500,7 @@ const ControlDashboard = ({
   onCameraTrackingChange,
   disabledAnimations = [],
   onToggleAnimation,
+  onTestAnimation,
   micDevices = [],
   selectedMicDeviceId = '',
   onMicDeviceChange,
@@ -529,6 +530,26 @@ const ControlDashboard = ({
   const [isOpen, setIsOpen] = useState(isStandalone ? true : false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [settingsSubTab, setSettingsSubTab] = useState('general'); // 'general' | 'avatar' | 'voice' | 'brain'
+  const [testingAnimName, setTestingAnimName] = useState(null);
+  const [animSearchQuery, setAnimSearchQuery] = useState('');
+  const [animFilterType, setAnimFilterType] = useState('all'); // 'all' | 'vrma' | 'procedural'
+
+  const handleTestAnimation = (anim) => {
+    setTestingAnimName(anim.name);
+    setTimeout(() => {
+      setTestingAnimName(prev => (prev === anim.name ? null : prev));
+    }, Math.min((anim.duration || 3.0) * 1000, 4000));
+
+    if (onTestAnimation) {
+      onTestAnimation(anim.name);
+    } else if (typeof window !== 'undefined') {
+      if (window.electronAPI?.triggerCustomAnimation) {
+        window.electronAPI.triggerCustomAnimation(anim.name);
+      }
+      window.dispatchEvent(new CustomEvent('yuki:trigger-animation', { detail: anim.name }));
+    }
+  };
+
   const refreshTimerRef = useRef(null);
   const refreshSimpleTimerRef = useRef(null);
   const refreshEmbeddingTimerRef = useRef(null);
@@ -9476,6 +9497,172 @@ const ControlDashboard = ({
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+
+                  {/* Dynamic Animation Tester Section */}
+                  <div className="card-group" style={{ marginTop: '12px' }}>
+                    <div className="card-group-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Play className="w-4 h-4 text-fuchsia-400" />
+                        <span className="card-group-title">Test Animations</span>
+                      </div>
+                      <span style={{
+                        fontSize: '0.65rem',
+                        fontWeight: 600,
+                        color: '#a855f7',
+                        background: 'rgba(168, 85, 247, 0.15)',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(168, 85, 247, 0.25)'
+                      }}>
+                        {ANIMATIONS.filter(a => a.duration > 0 || (a.commands && a.commands.length > 0)).length} Animations
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '0.68rem', color: 'rgba(255, 255, 255, 0.45)', marginTop: '4px', marginBottom: '8px', lineHeight: '1.4' }}>
+                      Click any button to trigger and preview Yuki's 3D motion capture and procedural animations in real-time.
+                    </div>
+
+                    {/* Filter & Search Bar */}
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', alignItems: 'center' }}>
+                      <div style={{ position: 'relative', flex: 1 }}>
+                        <Search className="w-3.5 h-3.5" style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
+                        <input
+                          type="text"
+                          placeholder="Search animations..."
+                          value={animSearchQuery}
+                          onChange={(e) => setAnimSearchQuery(e.target.value)}
+                          style={{
+                            width: '100%',
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: '8px',
+                            padding: '6px 10px 6px 30px',
+                            fontSize: '0.74rem',
+                            color: '#fff',
+                            outline: 'none'
+                          }}
+                        />
+                      </div>
+
+                      {/* Filter Tabs */}
+                      <div style={{ display: 'flex', background: 'rgba(0, 0, 0, 0.25)', borderRadius: '8px', padding: '2px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        {['all', 'vrma', 'procedural'].map(type => (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => setAnimFilterType(type)}
+                            style={{
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              border: 'none',
+                              fontSize: '0.65rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              background: animFilterType === type ? 'rgba(168, 85, 247, 0.3)' : 'transparent',
+                              color: animFilterType === type ? '#f3e8ff' : 'rgba(255,255,255,0.5)',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            {type === 'all' ? 'All' : type === 'vrma' ? 'VRMA' : 'Pose'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Scrollable Dynamic List of Animation Test Buttons */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                      gap: '8px',
+                      maxHeight: '260px',
+                      overflowY: 'auto',
+                      paddingRight: '4px'
+                    }}>
+                      {ANIMATIONS
+                        .filter(anim => anim.duration > 0 || (anim.commands && anim.commands.length > 0))
+                        .filter(anim => {
+                          if (animFilterType === 'vrma') return anim.type === 'vrma';
+                          if (animFilterType === 'procedural') return anim.type !== 'vrma';
+                          return true;
+                        })
+                        .filter(anim => {
+                          if (!animSearchQuery.trim()) return true;
+                          const q = animSearchQuery.toLowerCase();
+                          return anim.name.toLowerCase().includes(q) ||
+                            (anim.alias && anim.alias.toLowerCase().includes(q)) ||
+                            (anim.commands && anim.commands.some(c => c.cmd.toLowerCase().includes(q)));
+                        })
+                        .map((anim) => {
+                          const isTesting = testingAnimName === anim.name;
+                          const isVrma = anim.type === 'vrma';
+                          const displayName = anim.label || anim.name
+                            .split('_')
+                            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                            .join(' ');
+                          const mainCmd = anim.commands?.[0]?.cmd || `/ani-${anim.alias || anim.name}`;
+
+                          return (
+                            <button
+                              key={anim.name}
+                              type="button"
+                              onClick={() => handleTestAnimation(anim)}
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'flex-start',
+                                textAlign: 'left',
+                                gap: '4px',
+                                padding: '8px 10px',
+                                borderRadius: '10px',
+                                border: isTesting
+                                  ? '1px solid #c084fc'
+                                  : '1px solid rgba(255, 255, 255, 0.08)',
+                                background: isTesting
+                                  ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.35) 0%, rgba(217, 70, 239, 0.25) 100%)'
+                                  : 'rgba(0, 0, 0, 0.25)',
+                                boxShadow: isTesting ? '0 0 12px rgba(168, 85, 247, 0.4)' : 'none',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                position: 'relative',
+                                overflow: 'hidden'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                  <Play
+                                    className={`w-3 h-3 ${isTesting ? 'text-fuchsia-300' : 'text-violet-400'}`}
+                                    style={{ fill: isTesting ? 'currentColor' : 'none' }}
+                                  />
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '85px' }}>
+                                    {displayName}
+                                  </span>
+                                </div>
+                                <span style={{
+                                  fontSize: '0.58rem',
+                                  padding: '1px 4px',
+                                  borderRadius: '4px',
+                                  fontWeight: 700,
+                                  background: isVrma ? 'rgba(217, 70, 239, 0.2)' : 'rgba(56, 189, 248, 0.15)',
+                                  color: isVrma ? '#f0abfc' : '#7dd3fc',
+                                  border: `1px solid ${isVrma ? 'rgba(217, 70, 239, 0.35)' : 'rgba(56, 189, 248, 0.3)'}`
+                                }}>
+                                  {isVrma ? 'VRMA' : 'Pose'}
+                                </span>
+                              </div>
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginTop: '2px' }}>
+                                <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>
+                                  {mainCmd}
+                                </span>
+                                <span style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>
+                                  {anim.duration ? `${anim.duration}s` : ''}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
                     </div>
                   </div>
                 </>

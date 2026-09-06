@@ -206,6 +206,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dragWindowBy: (dx, dy) => {
     ipcRenderer.send('drag-canvas-window-by', { dx, dy });
   },
+  triggerCustomAnimation: (animName) => {
+    ipcRenderer.send('yuki-trigger-animation', animName);
+  },
+  onTriggerCustomAnimation: (callback) => {
+    const listener = (event, animName) => callback(animName);
+    ipcRenderer.on('yuki-trigger-animation', listener);
+    return () => ipcRenderer.removeListener('yuki-trigger-animation', listener);
+  },
   platform: process.platform,
   isElectron: true
 });

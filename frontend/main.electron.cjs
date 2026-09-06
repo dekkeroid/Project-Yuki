@@ -1227,6 +1227,12 @@ function createWindow() {
     }
   });
 
+  ipcMain.on('yuki-trigger-animation', (event, animName) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('yuki-trigger-animation', animName);
+    }
+  });
+
   let hoverPollTimer = null;
   let lastHoverState = null;
   let lastCursorX = -1;

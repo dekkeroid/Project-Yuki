@@ -130,10 +130,14 @@ Whenever adding a new AI action tool or system capability to Project Yuki, **ALW
 
 Whenever creating or adding a new 3D avatar animation, bodily gesture, or physical expression trigger to Project Yuki, **ALWAYS** follow this end-to-end 5-step checklist to ensure procedural playback, slash command binding, settings toggle exposure, dynamic prompt propagation, and TTS sanitization:
 
-### 1. Procedural Pose & Animation Logic (`frontend/src/components/AvatarViewer.jsx`)
-- **Render Loop Branch**: Inside `AvatarViewer.jsx`'s Three.js animation loop (`animate()`), handle `idleAnimState === 'my_anim'`.
-- **Bone Rotations & Progress**: Use `idleAnimProgress / idleAnimDuration` to interpolate VRM bone rotations (arms, spine, head, fingers) using `THREE.MathUtils.lerp()` or sinusoidal oscillation curves (`Math.sin(...)`).
-- **Blend Shapes / Expressions**: Adjust facial blend shapes if needed (e.g. `setExpressionValue(vrm, 'happy', 0.5)`).
+### 1. Procedural Pose vs. VRMA Motion Capture
+- **Option A: Procedural Pose & Animation Logic (`frontend/src/components/AvatarViewer.jsx`)**:
+  - Inside `AvatarViewer.jsx`'s Three.js animation loop (`animate()`), handle `idleAnimState === 'my_anim'`.
+  - Use `idleAnimProgress / idleAnimDuration` to interpolate VRM bone rotations using `THREE.MathUtils.lerp()` or sinusoidal curves (`Math.sin(...)`).
+  - Adjust facial blend shapes if needed (e.g. `setExpressionValue(vrm, 'happy', 0.5)`).
+- **Option B: Motion Capture `.vrma` (VRM Animation) File**:
+  - Place `.vrma` file inside `frontend/public/animations/<name>.vrma`.
+  - No procedural bone code needed! `AvatarViewer` automatically loads, retargets, and plays the clip using `@pixiv/three-vrm-animation` and `AnimationMixer` while blending audio lip-sync and eye blinks.
 
 ### 2. Animation Registry Definition & Tag Alias (`frontend/src/animationsRegistry.js`)
 - **Register Animation**: Add an entry into `ANIMATIONS`:
@@ -141,6 +145,8 @@ Whenever creating or adding a new 3D avatar animation, bodily gesture, or physic
   {
     name: 'my_anim',                     // Internal animation ID used in AvatarViewer
     alias: 'my_tag',                     // Tag name without namespace: <yuki_anim:my_tag/>
+    type: 'vrma',                        // Optional: 'vrma' for mocap, or omit/procedural
+    vrmaUrl: '/animations/my_mocap.vrma',// Required if type is 'vrma'
     duration: 3.0,                       // Duration in seconds
     excludeFromRandomIdle: true,         // True = only on demand/tag; False = can play randomly when idle
     llmTag: '<yuki_anim:my_tag/>',
@@ -275,6 +281,23 @@ Whenever adding new dependencies, external binaries, AI models, or C-extensions 
 ### 5. Installer Upgrade Hygiene (`frontend/installer.iss`)
 - Inno Setup must not leave behind stale or conflicting `.dll` / `.pyd` files from older builds when a user updates.
 - Check `[InstallDelete]` in `installer.iss`: ensure `{app}\resources\backend\_internal` is wiped during installation so incompatible binary mixtures never occur.
+
+---
+
+## React Hook Initialization Order & Temporal Dead Zone (TDZ) Rule
+
+JavaScript `const` and `let` variables are not hoisted. In large React components like `App.jsx`, referencing state, refs, or variables before their declaration line inside hook dependencies, hook bodies, or initializers causes a fatal runtime crash:
+`ReferenceError: Cannot access '<variable>' before initialization` (which in production minified bundles renders as `Cannot access 'N' before initialization` or similar single-letter names caught by the React ErrorBoundary).
+
+### 1. The Build Trap
+- Tools like Vite, ESBuild, and Rollup only check syntactic validity during `npm run build` and byte compilation. They **CANNOT** catch runtime Temporal Dead Zone (TDZ) evaluations if code references a variable that is declared lower down in the component function body.
+- The build will exit with code 0, but the packaged or installed app will immediately crash on boot into the ErrorBoundary modal.
+
+### 2. Mandatory Rules for Hook Placement
+- **Strict Declaration Order**: Always declare all foundational state hooks (`useState`, `useRef`) at the very top of the component before any `useEffect`, `useMemo`, `useCallback`, or custom hooks that read them in dependency arrays or initializers.
+- **Dependencies Must Exist**: Before adding any state variable (e.g. `profile`, `settings`, `disabledAnimations`) to a `useEffect` or `useMemo` dependency array `[profile?.settings?.xyz]`, verify that the `const [profile, setProfile] = useState(...)` declaration physically precedes it in the file.
+- **Pre-Commit / Build Verification**: Whenever editing state hooks or effects in `App.jsx` or other core components, verify with a static check that no hook evaluates a variable before its declaration line.
+
 
 
 
