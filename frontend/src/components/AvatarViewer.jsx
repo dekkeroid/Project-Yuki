@@ -69,6 +69,8 @@ const AvatarViewer = ({
   const vrmaExitDurationRef = useRef(0.75);
   const vrmaExitSnapshotsRef = useRef(new Map());
   const vrmaExitScenePosSnapRef = useRef({ x: 0, y: 0, z: 0 });
+  const initialHipsPosRef = useRef(null);
+  const vrmaExitHipsPosSnapRef = useRef({ x: 0, y: 0, z: 0 });
   const ignoreTimeoutRef = useRef(null);
   const isIgnoringMouseRef = useRef(false);
   const cursorOffsetRef = useRef({ x: 0, y: 0 });
@@ -890,6 +892,10 @@ const AvatarViewer = ({
 
         sanitizeExpressions(vrm);
         vrmRef.current = vrm;
+        const initialHips = getBoneNode(vrm, 'hips');
+        if (initialHips) {
+          initialHipsPosRef.current = initialHips.position.clone();
+        }
         mixerRef.current = new THREE.AnimationMixer(vrm.scene);
         setHasVrm(true);
         setLoading(false);
@@ -1406,6 +1412,14 @@ const AvatarViewer = ({
           x: vrm.scene.position.x,
           y: vrm.scene.position.y,
           z: vrm.scene.position.z
+        };
+      }
+      const hipsNode = getBoneNode(vrm, 'hips');
+      if (hipsNode) {
+        vrmaExitHipsPosSnapRef.current = {
+          x: hipsNode.position.x,
+          y: hipsNode.position.y,
+          z: hipsNode.position.z
         };
       }
 
@@ -2698,6 +2712,15 @@ const AvatarViewer = ({
               neck.rotation.z = THREE.MathUtils.lerp(awakeNeckZ, asleepNeckZ, sleepProgressRef.current);
             }
 
+            const headNode = getBoneNode(vrm, 'head');
+            if (headNode) {
+              headNode.rotation.set(0, 0, 0);
+            }
+            const upperChest = getBoneNode(vrm, 'upperChest');
+            if (upperChest) {
+              upperChest.rotation.set(0, 0, 0);
+            }
+
             // Real shoulder (clavicle) bones for breathing shrugs
             const leftClavicle = getBoneNode(vrm, 'leftShoulder');
             const rightClavicle = getBoneNode(vrm, 'rightShoulder');
@@ -2732,6 +2755,9 @@ const AvatarViewer = ({
               // Subtle rotation on X-axis (tilting back on breath)
               leftClavicle.rotation.x = -finalLift * 0.35 * xMult;
               rightClavicle.rotation.x = -finalLift * 0.35 * xMult;
+
+              leftClavicle.rotation.y = 0;
+              rightClavicle.rotation.y = 0;
             }
 
             const leftEye = getBoneNode(vrm, 'leftEye');
@@ -2841,7 +2867,15 @@ const AvatarViewer = ({
 
                 hips.rotation.z = THREE.MathUtils.lerp(awakeHipsZ, asleepHipsZ, sleepProgressRef.current);
                 hips.rotation.x = THREE.MathUtils.lerp(awakeHipsX, asleepHipsX, sleepProgressRef.current);
+                hips.rotation.y = 0;
                 hips.position.x = THREE.MathUtils.lerp(awakeHipsPosX, asleepHipsPosX, sleepProgressRef.current);
+                if (!initialHipsPosRef.current) {
+                  initialHipsPosRef.current = hips.position.clone();
+                }
+                if (initialHipsPosRef.current) {
+                  hips.position.y = initialHipsPosRef.current.y;
+                  hips.position.z = initialHipsPosRef.current.z;
+                }
               }
 
               let awakeSceneY = 0;
@@ -3051,34 +3085,58 @@ const AvatarViewer = ({
 
                 if (leftLeg) {
                   leftLeg.rotation.x = (0.1 + dangleSwingLeft + dragPitchAngle * 0.4) * xMult;
+                  leftLeg.rotation.y = 0;
                   leftLeg.rotation.z = -0.05 * dragStateProgress * zMult;
                 }
                 if (rightLeg) {
                   rightLeg.rotation.x = (0.1 + dangleSwingRight + dragPitchAngle * 0.4) * xMult;
+                  rightLeg.rotation.y = 0;
                   rightLeg.rotation.z = 0.05 * dragStateProgress * zMult;
                 }
-                if (leftLowerLeg) leftLowerLeg.rotation.x = (0.25 + Math.sin(dragDangleTimer * 1.3) * 0.08) * dragStateProgress * xMult;
-                if (rightLowerLeg) rightLowerLeg.rotation.x = (0.25 + Math.cos(dragDangleTimer * 1.3 + 0.3) * 0.08) * dragStateProgress * xMult;
+                if (leftLowerLeg) {
+                  leftLowerLeg.rotation.x = (0.25 + Math.sin(dragDangleTimer * 1.3) * 0.08) * dragStateProgress * xMult;
+                  leftLowerLeg.rotation.y = 0;
+                  leftLowerLeg.rotation.z = 0;
+                }
+                if (rightLowerLeg) {
+                  rightLowerLeg.rotation.x = (0.25 + Math.cos(dragDangleTimer * 1.3 + 0.3) * 0.08) * dragStateProgress * xMult;
+                  rightLowerLeg.rotation.y = 0;
+                  rightLowerLeg.rotation.z = 0;
+                }
               } else {
                 if (leftLeg) {
                   const awakeVal = Math.max(0, shiftCycle) * 0.06;
                   leftLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
+                  leftLeg.rotation.y = 0;
                   leftLeg.rotation.z = floatLegAngle * zMult;
                 }
                 if (rightLeg) {
                   const awakeVal = Math.max(0, -shiftCycle) * 0.06;
                   rightLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
+                  rightLeg.rotation.y = 0;
                   rightLeg.rotation.z = -floatLegAngle * zMult;
                 }
                 if (leftLowerLeg) {
                   const awakeVal = Math.max(0, shiftCycle) * 0.1;
                   leftLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
+                  leftLowerLeg.rotation.y = 0;
+                  leftLowerLeg.rotation.z = 0;
                 }
                 if (rightLowerLeg) {
                   const awakeVal = Math.max(0, -shiftCycle) * 0.1;
                   rightLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
+                  rightLowerLeg.rotation.y = 0;
+                  rightLowerLeg.rotation.z = 0;
                 }
               }
+              const leftFoot = getBoneNode(vrm, 'leftFoot');
+              const rightFoot = getBoneNode(vrm, 'rightFoot');
+              if (leftFoot) leftFoot.rotation.set(0.12 * xMult, 0, 0);
+              if (rightFoot) rightFoot.rotation.set(0.12 * xMult, 0, 0);
+              const leftToes = getBoneNode(vrm, 'leftToes');
+              const rightToes = getBoneNode(vrm, 'rightToes');
+              if (leftToes) leftToes.rotation.set(0, 0, 0);
+              if (rightToes) rightToes.rotation.set(0, 0, 0);
             }
 
             const leftElbow = getBoneNode(vrm, 'leftLowerArm');
@@ -3272,6 +3330,14 @@ const AvatarViewer = ({
                 node.rotation.z = lerpShortestAngle(snap.z, node.rotation.z, alpha);
               });
 
+              // Smoothly interpolate hips local position from mocap final position to procedural idle position
+              const hipsNode = getBoneNode(vrm, 'hips');
+              if (hipsNode && vrmaExitHipsPosSnapRef.current) {
+                hipsNode.position.x = THREE.MathUtils.lerp(vrmaExitHipsPosSnapRef.current.x, hipsNode.position.x, alpha);
+                hipsNode.position.y = THREE.MathUtils.lerp(vrmaExitHipsPosSnapRef.current.y, hipsNode.position.y, alpha);
+                hipsNode.position.z = THREE.MathUtils.lerp(vrmaExitHipsPosSnapRef.current.z, hipsNode.position.z, alpha);
+              }
+
               // Smoothly interpolate scene position from mocap final position to procedural floating position
               vrm.scene.position.x = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.x, vrm.scene.position.x, alpha);
               vrm.scene.position.y = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.y, vrm.scene.position.y, alpha);
@@ -3300,6 +3366,13 @@ const AvatarViewer = ({
             vrm.scene.position.x = floatOffsetX;
             vrm.scene.position.z = 0;
 
+            const hips = getBoneNode(vrm, 'hips');
+            if (hips && initialHipsPosRef.current) {
+              hips.position.y = initialHipsPosRef.current.y;
+              hips.position.z = initialHipsPosRef.current.z;
+              hips.rotation.y = 0;
+            }
+
             const leftLeg = getBoneNode(vrm, 'leftUpperLeg');
             const rightLeg = getBoneNode(vrm, 'rightUpperLeg');
             const leftLowerLeg = getBoneNode(vrm, 'leftLowerLeg');
@@ -3308,21 +3381,35 @@ const AvatarViewer = ({
             if (leftLeg) {
               const awakeVal = Math.max(0, shiftCycle) * 0.06;
               leftLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
+              leftLeg.rotation.y = 0;
               leftLeg.rotation.z = floatLegAngle * zMult;
             }
             if (rightLeg) {
               const awakeVal = Math.max(0, -shiftCycle) * 0.06;
               rightLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
+              rightLeg.rotation.y = 0;
               rightLeg.rotation.z = -floatLegAngle * zMult;
             }
             if (leftLowerLeg) {
               const awakeVal = Math.max(0, shiftCycle) * 0.1;
               leftLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
+              leftLowerLeg.rotation.y = 0;
+              leftLowerLeg.rotation.z = 0;
             }
             if (rightLowerLeg) {
               const awakeVal = Math.max(0, -shiftCycle) * 0.1;
               rightLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
+              rightLowerLeg.rotation.y = 0;
+              rightLowerLeg.rotation.z = 0;
             }
+            const leftFoot = getBoneNode(vrm, 'leftFoot');
+            const rightFoot = getBoneNode(vrm, 'rightFoot');
+            if (leftFoot) leftFoot.rotation.set(0.12 * xMult, 0, 0);
+            if (rightFoot) rightFoot.rotation.set(0.12 * xMult, 0, 0);
+            const leftToes = getBoneNode(vrm, 'leftToes');
+            const rightToes = getBoneNode(vrm, 'rightToes');
+            if (leftToes) leftToes.rotation.set(0, 0, 0);
+            if (rightToes) rightToes.rotation.set(0, 0, 0);
           } else {
             // Full-body motion capture: smoothly transition scene origin towards floor base
             vrm.scene.position.x += (0 - vrm.scene.position.x) * Math.min(1, delta * 5.0);
