@@ -1949,7 +1949,12 @@ class AgentExecutor:
         "timer", "remind", "reminder", "alarm", "stopwatch", "schedule", "countdown",
         "i love", "i like", "i hate", "i dislike", "i dont like", "i don't like", "i enjoy", "my favorite",
         "im a fan of", "i am a fan of", "cant live without", "can't live without", "i cant stand", "i can't stand",
-        "i despise", "not a fan of", "im not a fan of", "i'm not a fan of"
+        "i despise", "not a fan of", "im not a fan of", "i'm not a fan of",
+        "wear", "wearing", "put on", "take off", "outfit", "outfits", "clothes", "dress", "costume",
+        "hat", "avatar", "vrm", "model", "bikini", "swimsuit", "veer", "glasses", "accessory",
+        "accessories", "uniform", "cosplay", "switch outfit", "change outfit", "change clothes",
+        "switch clothes", "change model", "switch model", "change avatar", "switch avatar",
+        "change into", "wear your", "put your", "take off your"
     }
 
     _COMPLEX_PATTERN = re.compile(
@@ -1959,7 +1964,7 @@ class AgentExecutor:
 
     # Phrases that look like tool/action requests even when using simple words like 'open'
     _ACTION_PATTERN = re.compile(
-        r'\b(open|close|minimize|maximize|show|hide)\b.{1,40}\b(app|application|window|program|browser|settings|notepad|calc|explorer|discord|spotify|steam|chrome|firefox|edge|vscode|folder|file|drive)\b',
+        r'\b(open|close|minimize|maximize|show|hide|wear|put on|take off|change|switch)\b.{1,40}\b(app|application|window|program|browser|settings|notepad|calc|explorer|discord|spotify|steam|chrome|firefox|edge|vscode|folder|file|drive|outfit|clothes|hat|dress|avatar|model|costume|bikini|swimsuit)\b',
         re.IGNORECASE
     )
 
@@ -1994,12 +1999,13 @@ class AgentExecutor:
         """
         intent_system = (
             "You are an intent detector for a desktop AI assistant named Yuki. "
-            "Yuki can control the user's computer: open files, search the web, "
-            "adjust volume, launch apps, run commands, save user facts/interests, and more.\n\n"
+            "Yuki can control the user's computer: change her 3D avatar/outfit/clothes, "
+            "open files, search the web, adjust volume, launch apps, run commands, "
+            "save user facts/interests, and more.\n\n"
             "Given the conversation so far, does the user's LATEST message require "
-            "Yuki to perform a computer action, search the web, or save a personal fact/interest/preference?\n\n"
+            "Yuki to perform a computer action, change avatar/clothing, search the web, or save a personal fact/interest/preference?\n\n"
             "'No' means the user is just having a normal conversation and does not want "
-            "any computer operation or memory update performed.\n\n"
+            "any computer operation, avatar change, or memory update performed.\n\n"
             "Reply with ONLY 'Yes' or 'No'. Nothing else."
         )
 
@@ -2009,9 +2015,34 @@ class AgentExecutor:
             "what do you", "what do u", "what u", "what you", "do you", "do u",
             "what is your", "what's your", "who are you", "who r u", "tell me about yourself", "about you"
         ]
-        if any(p in msg_lower for p in yuki_q_patterns) and not any(k in msg_lower for k in ("search", "open", "launch", "run", "play", "find", "file", "folder")):
+        if any(p in msg_lower for p in yuki_q_patterns) and not any(k in msg_lower for k in ("search", "open", "launch", "run", "play", "find", "file", "folder", "wear", "put on", "change", "outfit", "clothes", "dress", "hat", "veer")):
             print(f"[IntentCheck] Short-circuited to CHAT (asking Yuki about herself): '{user_message}'")
             return "chat", "", "python short-circuit"
+
+        # Fast deterministic check: avatar / outfit / clothes / accessories requests
+        avatar_regex = re.compile(
+            r'\b('
+            r'wear|wearing|put on|take off|change into|change outfit|change your outfit|switch outfit|'
+            r'change clothes|switch clothes|change model|switch model|change avatar|switch avatar|'
+            r'outfit|outfits|costume|clothes|dress|bikini|swimsuit|uniform|hat|glasses|accessory|accessories|'
+            r'veer|put your hat|take off your hat|wear your hat'
+            r')\b',
+            re.IGNORECASE
+        )
+        if avatar_regex.search(msg_lower):
+            print(f"[IntentCheck] Deterministically confirmed TOOL (avatar/outfit change request): '{user_message}'")
+            return "tool", "change_avatar_outfit", "python deterministic"
+
+        # Fast deterministic check: referential outfit change commands (e.g. "change it", "try another one", "something new")
+        referential_outfit_regex = re.compile(
+            r'\b(change it|change to something new|change it to something new|wear something else|try another|try another one|switch it|something new|something cute|something else)\b',
+            re.IGNORECASE
+        )
+        if referential_outfit_regex.search(msg_lower):
+            history_text = " ".join(str(m.get("content", "")) for m in (chat_history or [])[-4:]).lower()
+            if any(w in history_text for w in ("outfit", "clothes", "dress", "bikini", "swimsuit", "hat", "wear", "avatar", "costume", "change")):
+                print(f"[IntentCheck] Deterministically confirmed TOOL (referential outfit change): '{user_message}'")
+                return "tool", "change_avatar_outfit", "python deterministic"
 
         # Fast deterministic check: time management requests
         timer_regex = re.compile(
@@ -2552,7 +2583,7 @@ class AgentExecutor:
                 "launch_app", "open_or_play_file", "set_system_volume", "manage_timer_stopwatch_alarms",
                 "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script",
                 "jarvis_query_file_db", "jarvis_open_or_play_file",
-                "jarvis_analyze_image", "jarvis_see_screen", "ask_user", "change_avatar_outfit"
+                "jarvis_analyze_image", "jarvis_see_screen", "ask_user", "change_avatar_outfit", "jarvis_change_avatar_outfit"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in basic_allowed]
 
@@ -2564,7 +2595,10 @@ class AgentExecutor:
             filtered_tools = self._drop_blocked_tools(filtered_tools)
 
         if intent_tool_hint:
-            targeted = [t for t in filtered_tools if t.get("function", {}).get("name") == intent_tool_hint]
+            if intent_tool_hint in ("change_avatar_outfit", "jarvis_change_avatar_outfit"):
+                targeted = [t for t in filtered_tools if t.get("function", {}).get("name") in ("change_avatar_outfit", "jarvis_change_avatar_outfit")]
+            else:
+                targeted = [t for t in filtered_tools if t.get("function", {}).get("name") == intent_tool_hint]
             if targeted:
                 tool_names = [t["function"]["name"] for t in targeted]
                 print(f"[Tools] Intent-targeted filter ({effective_tool_mode}): sending ONLY [{', '.join(tool_names)}] to LLM")
