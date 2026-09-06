@@ -126,6 +126,7 @@ manual_hidden = [
     'win32gui',
     'win32con',
     'app.utils.screen_capture',
+    'app.tools.vrm_catalog',
 
     # Windows audio
     'pycaw',

@@ -79,6 +79,7 @@ const App = () => {
   const [vrmModels, setVrmModels] = useState(['default.vrm']);
   const [vrmCustomModels, setVrmCustomModels] = useState([]);
   const [vrmVersions, setVrmVersions] = useState({});
+  const [vrmCharacters, setVrmCharacters] = useState([]);
   const [vrmUploading, setVrmUploading] = useState(false);
 
   // UI States
@@ -3221,6 +3222,7 @@ const App = () => {
         if (data.models) setVrmModels(data.models);
         if (data.custom) setVrmCustomModels(data.custom);
         if (data.versions) setVrmVersions(data.versions);
+        if (data.characters) setVrmCharacters(data.characters);
       }
     } catch (e) {
       console.warn("Could not load VRM models list from REST API:", e);
@@ -3228,20 +3230,33 @@ const App = () => {
   };
 
   const handleVrmUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.vrm')) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const validFiles = files.filter(f => f.name.toLowerCase().endsWith('.vrm'));
+    if (validFiles.length === 0) {
       alert('Only .vrm files are supported');
+      e.target.value = '';
       return;
     }
+
     setVrmUploading(true);
     try {
       const form = new FormData();
-      form.append('file', file);
+      for (const f of validFiles) {
+        form.append('files', f);
+      }
+      if (validFiles.length === 1) {
+        form.append('file', validFiles[0]);
+      }
       const res = await fetch(`${API_BASE}/api/models/vrm/upload`, { method: 'POST', body: form });
       if (res.ok) {
         await fetchVrmModels();
-        handleUpdateSetting('active_vrm_model', file.name);
+        const primary = validFiles.find(f => {
+          const n = f.name.toLowerCase();
+          return !n.includes('with') && !n.includes('_') && !n.includes('-');
+        }) || validFiles[0];
+        handleUpdateSetting('active_vrm_model', primary.name);
       } else {
         const err = await res.text();
         alert('Upload failed: ' + err);
@@ -4853,8 +4868,8 @@ const App = () => {
                             cursor: 'pointer', userSelect: 'none', fontFamily: 'monospace', fontWeight: 600,
                           }}>
                             <Upload className="w-3 h-3" />
-                            {vrmUploading ? 'Uploading...' : 'Upload VRM'}
-                            <input type="file" accept=".vrm" onChange={handleVrmUpload} style={{ display: 'none' }} />
+                            {vrmUploading ? 'Uploading...' : 'Upload VRM(s)'}
+                            <input type="file" accept=".vrm" multiple onChange={handleVrmUpload} style={{ display: 'none' }} />
                           </label>
                         </div>
                         <SearchableVrmSelect
@@ -4862,6 +4877,7 @@ const App = () => {
                           onChange={(val) => handleUpdateSetting('active_vrm_model', val)}
                           options={vrmModels}
                           versions={vrmVersions}
+                          characters={vrmCharacters}
                         />
                         {vrmCustomModels.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>

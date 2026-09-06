@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, RotateCcw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon, Camera, CloudSun, Newspaper, MapPin, Info } from 'lucide-react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, RotateCcw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon, Camera, CloudSun, Newspaper, MapPin, Info, Shirt, Check } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -256,6 +256,7 @@ export const SearchableVrmSelect = ({
   onChange,
   options = [],
   versions = {},
+  characters = [],
   placeholder = "Select VRM avatar model..."
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -316,14 +317,29 @@ export const SearchableVrmSelect = ({
     );
   };
 
+  // Find active character & outfit
+  const activeChar = (characters || []).find(c =>
+    c.outfits && c.outfits.some(o => o.file === value)
+  );
+  const activeOutfit = activeChar?.outfits?.find(o => o.file === value);
+
+  const selectedVer = versions[value] !== undefined ? versions[value] : 0;
+  const hasCharacters = characters && characters.length > 0;
+
+  const filteredCharacters = hasCharacters ? characters.filter(c => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    const charMatch = c.name.toLowerCase().includes(term);
+    const outfitMatch = c.outfits?.some(o => o.name.toLowerCase().includes(term) || o.file.toLowerCase().includes(term));
+    return charMatch || outfitMatch;
+  }) : [];
+
   const filteredOptions = (options || []).filter(model => {
     if (!searchTerm) return true;
     const name = formatDisplayName(model).toLowerCase();
     const ver = versions[model] !== undefined ? `vrm ${versions[model]}` : '';
     return name.includes(searchTerm.toLowerCase()) || model.toLowerCase().includes(searchTerm.toLowerCase()) || ver.includes(searchTerm.toLowerCase());
   });
-
-  const selectedVer = versions[value] !== undefined ? versions[value] : 0;
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', marginTop: '4px' }}>
@@ -351,7 +367,11 @@ export const SearchableVrmSelect = ({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '88%' }}>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {value ? formatDisplayName(value) : placeholder}
+            {activeChar
+              ? (activeChar.outfits?.length > 1
+                  ? `${activeChar.name} (${activeOutfit?.name || 'Default'})`
+                  : activeChar.name)
+              : (value ? formatDisplayName(value) : placeholder)}
           </span>
           {value && getVersionBadge(selectedVer)}
         </div>
@@ -359,6 +379,55 @@ export const SearchableVrmSelect = ({
           ▼
         </span>
       </div>
+
+      {/* Multi-Outfit Quick Switcher Pills */}
+      {activeChar && activeChar.outfits && activeChar.outfits.length > 1 && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          marginTop: '6px',
+          flexWrap: 'wrap',
+          padding: '5px 8px',
+          borderRadius: '7px',
+          background: 'rgba(15, 23, 42, 0.55)',
+          border: '1px solid rgba(167, 139, 250, 0.2)'
+        }}>
+          <span style={{ fontSize: '0.68rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+            <Shirt style={{ width: '12px', height: '12px', color: '#a78bfa' }} />
+            Outfits:
+          </span>
+          {activeChar.outfits.map((outfit) => {
+            const isCurrent = value === outfit.file;
+            return (
+              <button
+                key={outfit.id}
+                type="button"
+                onClick={() => onChange(outfit.file)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '2px 8px',
+                  borderRadius: '5px',
+                  fontSize: '0.68rem',
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                  background: isCurrent ? 'rgba(167, 139, 250, 0.35)' : 'rgba(255, 255, 255, 0.04)',
+                  border: isCurrent ? '1px solid #a78bfa' : '1px solid rgba(255, 255, 255, 0.1)',
+                  color: isCurrent ? '#ffffff' : '#cbd5e1',
+                  fontWeight: isCurrent ? 600 : 400,
+                  boxShadow: isCurrent ? '0 0 8px rgba(167, 139, 250, 0.25)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {isCurrent && <Check style={{ width: '10px', height: '10px', color: '#a78bfa' }} />}
+                <span>{outfit.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Dropdown Floating Panel */}
       {isOpen && (
@@ -391,7 +460,7 @@ export const SearchableVrmSelect = ({
             <input
               type="text"
               autoFocus
-              placeholder="Search VRM avatar model..."
+              placeholder="Search avatar or outfit..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{
@@ -417,7 +486,7 @@ export const SearchableVrmSelect = ({
 
           {/* Options Scroll Container */}
           <div style={{
-            maxHeight: '220px',
+            maxHeight: '230px',
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
@@ -426,57 +495,172 @@ export const SearchableVrmSelect = ({
             scrollbarWidth: 'thin',
             scrollbarColor: 'rgba(167, 139, 250, 0.4) transparent'
           }}>
-            {filteredOptions.length === 0 ? (
-              <div style={{ padding: '12px 8px', fontSize: '0.74rem', color: '#94a3b8', textAlign: 'center', lineHeight: '1.4' }}>
-                No avatar model matches "{searchTerm}".
-              </div>
+            {hasCharacters ? (
+              filteredCharacters.length === 0 ? (
+                <div style={{ padding: '12px 8px', fontSize: '0.74rem', color: '#94a3b8', textAlign: 'center', lineHeight: '1.4' }}>
+                  No avatar character matches "{searchTerm}".
+                </div>
+              ) : (
+                filteredCharacters.map((char) => {
+                  const hasOutfits = char.outfits && char.outfits.length > 1;
+                  const isCharSelected = char.outfits?.some(o => o.file === value);
+
+                  return (
+                    <div key={char.id} style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '2px' }}>
+                      <div
+                        onClick={() => {
+                          onChange(char.default_file || char.outfits?.[0]?.file || value);
+                          setIsOpen(false);
+                          setSearchTerm('');
+                        }}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '7px',
+                          fontSize: '0.78rem',
+                          lineHeight: '1.4',
+                          minHeight: '30px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                          background: isCharSelected ? 'rgba(167, 139, 250, 0.22)' : 'transparent',
+                          border: isCharSelected ? '1px solid rgba(167, 139, 250, 0.45)' : '1px solid transparent',
+                          color: isCharSelected ? '#ffffff' : '#cbd5e1',
+                          fontWeight: isCharSelected ? '600' : '400',
+                          transition: 'all 0.15s ease',
+                          boxSizing: 'border-box'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isCharSelected) {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                            e.currentTarget.style.color = '#ffffff';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isCharSelected) {
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.color = '#cbd5e1';
+                          }
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>{char.name}</span>
+                          {hasOutfits && (
+                            <span style={{
+                              fontSize: '0.62rem',
+                              fontWeight: 600,
+                              padding: '1px 6px',
+                              borderRadius: '8px',
+                              background: 'rgba(167, 139, 250, 0.2)',
+                              color: '#c4b5fd',
+                              border: '1px solid rgba(167, 139, 250, 0.35)'
+                            }}>
+                              {char.outfits.length} Outfits
+                            </span>
+                          )}
+                        </div>
+                        {!hasOutfits && getVersionBadge(char.outfits?.[0]?.version || 0)}
+                      </div>
+
+                      {/* Sub-outfit options for multi-outfit characters */}
+                      {hasOutfits && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', paddingLeft: '12px', paddingBottom: '3px' }}>
+                          {char.outfits.map((outfit) => {
+                            const isOutfitCurrent = value === outfit.file;
+                            return (
+                              <div
+                                key={outfit.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onChange(outfit.file);
+                                  setIsOpen(false);
+                                  setSearchTerm('');
+                                }}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '2px 7px',
+                                  borderRadius: '5px',
+                                  fontSize: '0.7rem',
+                                  cursor: 'pointer',
+                                  background: isOutfitCurrent ? 'rgba(167, 139, 250, 0.35)' : 'rgba(255, 255, 255, 0.04)',
+                                  border: isOutfitCurrent ? '1px solid #a78bfa' : '1px solid rgba(255, 255, 255, 0.12)',
+                                  color: isOutfitCurrent ? '#ffffff' : '#94a3b8',
+                                  fontWeight: isOutfitCurrent ? 600 : 400,
+                                  transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!isOutfitCurrent) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!isOutfitCurrent) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                                }}
+                              >
+                                {isOutfitCurrent && <Check style={{ width: '9px', height: '9px', color: '#a78bfa' }} />}
+                                <span>{outfit.name}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )
             ) : (
-              filteredOptions.map((model) => {
-                const isSelected = value === model;
-                const ver = versions[model] !== undefined ? versions[model] : 0;
-                return (
-                  <div
-                    key={model}
-                    onClick={() => {
-                      onChange(model);
-                      setIsOpen(false);
-                      setSearchTerm('');
-                    }}
-                    style={{
-                      padding: '7px 10px',
-                      borderRadius: '7px',
-                      fontSize: '0.78rem',
-                      lineHeight: '1.4',
-                      minHeight: '32px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      background: isSelected ? 'rgba(167, 139, 250, 0.28)' : 'transparent',
-                      border: isSelected ? '1px solid rgba(167, 139, 250, 0.5)' : '1px solid transparent',
-                      color: isSelected ? '#ffffff' : '#cbd5e1',
-                      fontWeight: isSelected ? '600' : '400',
-                      transition: 'all 0.15s ease',
-                      boxSizing: 'border-box'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                        e.currentTarget.style.color = '#ffffff';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = '#cbd5e1';
-                      }
-                    }}
-                  >
-                    <span>{formatDisplayName(model)}</span>
-                    {getVersionBadge(ver)}
-                  </div>
-                );
-              })
+              filteredOptions.length === 0 ? (
+                <div style={{ padding: '12px 8px', fontSize: '0.74rem', color: '#94a3b8', textAlign: 'center', lineHeight: '1.4' }}>
+                  No avatar model matches "{searchTerm}".
+                </div>
+              ) : (
+                filteredOptions.map((model) => {
+                  const isSelected = value === model;
+                  const ver = versions[model] !== undefined ? versions[model] : 0;
+                  return (
+                    <div
+                      key={model}
+                      onClick={() => {
+                        onChange(model);
+                        setIsOpen(false);
+                        setSearchTerm('');
+                      }}
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: '7px',
+                        fontSize: '0.78rem',
+                        lineHeight: '1.4',
+                        minHeight: '32px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        background: isSelected ? 'rgba(167, 139, 250, 0.28)' : 'transparent',
+                        border: isSelected ? '1px solid rgba(167, 139, 250, 0.5)' : '1px solid transparent',
+                        color: isSelected ? '#ffffff' : '#cbd5e1',
+                        fontWeight: isSelected ? '600' : '400',
+                        transition: 'all 0.15s ease',
+                        boxSizing: 'border-box'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                          e.currentTarget.style.color = '#ffffff';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.background = 'transparent';
+                          e.currentTarget.style.color = '#cbd5e1';
+                        }
+                      }}
+                    >
+                      <span>{formatDisplayName(model)}</span>
+                      {getVersionBadge(ver)}
+                    </div>
+                  );
+                })
+              )
             )}
           </div>
         </div>
@@ -2515,6 +2699,7 @@ const ControlDashboard = ({
   const [vrmModels, setVrmModels] = useState(['default.vrm']);
   const [vrmCustomModels, setVrmCustomModels] = useState([]);
   const [vrmVersions, setVrmVersions] = useState({});
+  const [vrmCharacters, setVrmCharacters] = useState([]);
   const [vrmUploading, setVrmUploading] = useState(false);
 
   const fetchVrmModels = async () => {
@@ -2531,6 +2716,9 @@ const ControlDashboard = ({
         if (data.versions) {
           setVrmVersions(data.versions);
         }
+        if (data.characters) {
+          setVrmCharacters(data.characters);
+        }
       }
     } catch (e) {
       console.warn('Could not fetch VRM models:', e);
@@ -2538,20 +2726,33 @@ const ControlDashboard = ({
   };
 
   const handleVrmUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.vrm')) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const validFiles = files.filter(f => f.name.toLowerCase().endsWith('.vrm'));
+    if (validFiles.length === 0) {
       alert('Only .vrm files are supported');
+      e.target.value = '';
       return;
     }
+
     setVrmUploading(true);
     try {
       const form = new FormData();
-      form.append('file', file);
+      for (const f of validFiles) {
+        form.append('files', f);
+      }
+      if (validFiles.length === 1) {
+        form.append('file', validFiles[0]);
+      }
       const res = await fetch(`${API_BASE}/api/models/vrm/upload`, { method: 'POST', body: form });
       if (res.ok) {
         await fetchVrmModels();
-        handleUpdateSetting('active_vrm_model', file.name);
+        const primary = validFiles.find(f => {
+          const n = f.name.toLowerCase();
+          return !n.includes('with') && !n.includes('_') && !n.includes('-');
+        }) || validFiles[0];
+        handleUpdateSetting('active_vrm_model', primary.name);
       } else {
         const err = await res.text();
         alert('Upload failed: ' + err);
@@ -9110,8 +9311,8 @@ const ControlDashboard = ({
                           onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
                         >
                           <Upload size={11} />
-                          <span>{vrmUploading ? 'Uploading...' : 'Upload VRM'}</span>
-                          <input type="file" accept=".vrm" onChange={handleVrmUpload} disabled={vrmUploading} style={{ display: 'none' }} />
+                          <span>{vrmUploading ? 'Uploading...' : 'Upload VRM(s)'}</span>
+                          <input type="file" accept=".vrm" multiple onChange={handleVrmUpload} disabled={vrmUploading} style={{ display: 'none' }} />
                         </label>
                       </div>
                       <div style={{ position: 'relative' }}>
@@ -9120,6 +9321,7 @@ const ControlDashboard = ({
                           onChange={(val) => handleUpdateSetting('active_vrm_model', val)}
                           options={vrmModels}
                           versions={vrmVersions}
+                          characters={vrmCharacters}
                         />
                         {vrmCustomModels.length > 0 && (
                           <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>

@@ -457,6 +457,10 @@ async def lifespan(app: FastAPI):
     from app.tools import ask_user
     ask_user.set_ask_callback(broadcast_ask_event)
 
+    from app.tools import vrm_catalog as _vrm_catalog
+    _vrm_catalog.set_profile_broadcast_callback(broadcast_profile_update, asyncio.get_running_loop())
+    _vrm_catalog.set_memory_manager(memory_manager)
+
     # ── Mood Engine v2 wires ─────────────────────────────────────────────
     # 1. Connect the WS broadcast so _notify() pushes live mood_update events.
     memory_manager.set_mood_broadcast(broadcast_ws)
@@ -1308,66 +1312,29 @@ def parse_vrm_version(file_path) -> int:
 def get_vrm_models():
     """
     Scans bundled (resources/models/) and custom (%APPDATA%/Yuki AI/custom_models/) VRM directories.
+    Returns both flat models list and hierarchical character/outfit catalog.
     """
-    import os
-    import json
-    from app.config import BASE_DIR
-    from pathlib import Path
+    from app.tools.vrm_catalog import build_vrm_catalog
+    active_m = memory_manager.profile.get("settings", {}).get("active_vrm_model", "default.vrm")
+    return build_vrm_catalog(active_m)
 
-    bundled_dir = None
-    bundled_models = []
-    custom_models = []
 
-    # Bundled: resources/models/ (PyInstaller extraResources) or frontend/public/models/ (dev)
-    for candidate in [
-        BASE_DIR.parent / "models",
-        BASE_DIR.parent / "frontend" / "public" / "models",
-        BASE_DIR / "models",
-    ]:
-        if candidate.exists():
-            try:
-                bundled_models = sorted(
-                    f for f in os.listdir(candidate) if f.lower().endswith(".vrm")
-                )
-            except Exception:
-                pass
-            if bundled_models:
-                bundled_dir = candidate
-                break
+class VrmOutfitChangeRequest(BaseModel):
+    outfit: str = "default"
+    character: Optional[str] = None
 
-    # Custom: %APPDATA%/Yuki AI/custom_models/ (user uploads)
-    custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
-    if custom_dir.exists():
-        try:
-            custom_models = sorted(
-                f for f in os.listdir(custom_dir) if f.lower().endswith(".vrm")
-            )
-        except Exception:
-            pass
 
-    # Merge: default.vrm first, then bundled, then custom
-    all_models = []
-    for name in bundled_models + custom_models:
-        if name not in all_models:
-            all_models.append(name)
-    if "default.vrm" in all_models:
-        all_models.remove("default.vrm")
-        all_models = ["default.vrm"] + all_models
-
-    versions = {}
-    for name in all_models:
-        file_path = None
-        if custom_dir.exists() and (custom_dir / name).exists():
-            file_path = custom_dir / name
-        elif bundled_dir and (bundled_dir / name).exists():
-            file_path = bundled_dir / name
-
-        if file_path:
-            versions[name] = parse_vrm_version(file_path)
-        else:
-            versions[name] = 0
-
-    return {"models": all_models, "custom": custom_models, "versions": versions}
+@app.post("/api/models/vrm/outfit")
+def api_change_vrm_outfit(req: VrmOutfitChangeRequest):
+    """Change the active VRM model by outfit or character name."""
+    from app.tools.vrm_catalog import change_avatar_outfit
+    result = change_avatar_outfit(outfit=req.outfit, character=req.character, memory_manager=memory_manager)
+    is_err = result.lower().startswith("error:")
+    return {
+        "status": "error" if is_err else "success",
+        "message": result,
+        "active_vrm_model": memory_manager.profile.get("settings", {}).get("active_vrm_model")
+    }
 
 
 @app.get("/api/models/vrm/files/{name}")
@@ -1400,31 +1367,49 @@ def serve_vrm_file(name: str):
 
 
 @app.post("/api/models/vrm/upload")
-async def upload_vrm_model(file: UploadFile = File(...)):
-    """Upload a custom VRM model to %APPDATA%/Yuki AI/custom_models/."""
+async def upload_vrm_model(
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None)
+):
+    """Upload one or more custom VRM models to %APPDATA%/Yuki AI/custom_models/."""
     from pathlib import Path
     import os
 
-    if not file.filename or not file.filename.lower().endswith(".vrm"):
-        return Response(status_code=400, content="Only .vrm files are supported")
+    upload_list = []
+    if files:
+        upload_list.extend(files)
+    if file and file not in upload_list:
+        upload_list.append(file)
+
+    if not upload_list:
+        return Response(status_code=400, content="No files provided")
 
     custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_models"
     custom_dir.mkdir(parents=True, exist_ok=True)
 
-    safe_filename = Path(file.filename).name
-    dest = custom_dir / safe_filename
+    saved = []
+    errors = []
 
-    try:
-        with open(dest, "wb") as buffer:
-            while chunk := await file.read(1024 * 1024):
-                buffer.write(chunk)
-    except Exception as e:
-        if dest.exists():
-            try:
-                dest.unlink()
-            except Exception:
-                pass
-        return Response(status_code=500, content=f"Failed to save VRM model: {e}")
+    for f in upload_list:
+        if not f.filename or not f.filename.lower().endswith(".vrm"):
+            errors.append(f"{f.filename or 'Unnamed'}: Only .vrm files are supported")
+            continue
+
+        safe_filename = Path(f.filename).name
+        dest = custom_dir / safe_filename
+
+        try:
+            with open(dest, "wb") as buffer:
+                while chunk := await f.read(1024 * 1024):
+                    buffer.write(chunk)
+            saved.append(safe_filename)
+        except Exception as e:
+            if dest.exists():
+                try:
+                    dest.unlink()
+                except Exception:
+                    pass
+            errors.append(f"{safe_filename}: {e}")
 
     try:
         from app.memory.optimizer import optimize_all_processes
@@ -1432,7 +1417,16 @@ async def upload_vrm_model(file: UploadFile = File(...)):
     except Exception:
         pass
 
-    return {"status": "ok", "filename": safe_filename}
+    if not saved and errors:
+        return Response(status_code=500, content="; ".join(errors))
+
+    return {
+        "status": "ok",
+        "saved": saved,
+        "count": len(saved),
+        "filename": saved[0] if saved else "",
+        "errors": errors if errors else None
+    }
 
 
 @app.post("/api/settings/alarm-tone/upload")
@@ -3398,7 +3392,7 @@ async def get_tools_list(mode: Optional[str] = None):
             category = "Memory & User Facts"
         elif name in ("web_search", "read_file_content", "search_files", "list_directory", "jarvis_query_file_db", "jarvis_web_search", "jarvis_web_scrape"):
             category = "Information & Search"
-        elif name in ("launch_app", "open_or_play_file", "media_playback_control", "set_system_volume", "jarvis_launch_app", "jarvis_open_or_play_file", "jarvis_system_volume", "jarvis_media_playback_control", "jarvis_take_screenshot", "keyboard_mouse_input"):
+        elif name in ("launch_app", "open_or_play_file", "media_playback_control", "set_system_volume", "jarvis_launch_app", "jarvis_open_or_play_file", "jarvis_system_volume", "jarvis_media_playback_control", "jarvis_take_screenshot", "keyboard_mouse_input", "change_avatar_outfit", "jarvis_change_avatar_outfit"):
             category = "Media & Control"
         elif name in ("jarvis_analyze_image", "jarvis_see_screen", "take_screenshot"):
             category = "Vision & Media"

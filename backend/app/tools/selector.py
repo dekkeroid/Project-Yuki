@@ -48,6 +48,14 @@ _QUERY_EXPANSIONS = {
     "movie": ("video", "media", "play", "file"),
     "music": ("audio", "media", "play", "file"),
     "open": ("launch", "file", "directory", "application"),
+    "outfit": ("costume", "clothes", "dress", "hat", "wear", "change", "avatar", "model", "uniform"),
+    "costume": ("outfit", "clothes", "dress", "wear", "avatar"),
+    "clothes": ("outfit", "costume", "dress", "wear", "change"),
+    "character": ("avatar", "model", "outfit", "costume", "change"),
+    "mita": ("avatar", "model", "character", "outfit", "costume", "change"),
+    "skin": ("outfit", "costume", "avatar", "model", "wear"),
+    "cosplay": ("outfit", "costume", "avatar", "model", "wear"),
+    "hat": ("outfit", "wear", "put", "clothes", "avatar", "costume"),
     "page": ("html", "dashboard", "interactive", "website"),
     "paint": ("draw", "graphics", "canvas", "svg", "artwork", "visual"),
     "photo": ("image", "picture", "photograph", "graphics", "card"),
@@ -133,6 +141,8 @@ _TOOL_HINTS = {
     "ask_user": ("ask", "question", "clarify", "choice", "options", "choose", "pick", "select", "which", "decision", "tradeoff", "prompt", "poll"),
     "telegram_send_screenshot": ("screenshot", "screen", "capture", "send", "snap", "display", "monitor", "telegram", "phone", "mobile", "desktop"),
     "telegram_send_file": ("send", "upload", "file", "folder", "document", "photo", "image", "transfer", "export", "telegram", "share", "drop"),
+    "change_avatar_outfit": ("outfit", "costume", "clothes", "wear", "hat", "dress", "change", "avatar", "model", "uniform", "version", "appearance", "mita", "character", "skin", "cosplay", "switch", "kind"),
+    "jarvis_change_avatar_outfit": ("outfit", "costume", "clothes", "wear", "hat", "dress", "change", "avatar", "model", "uniform", "version", "appearance", "mita", "character", "skin", "cosplay", "switch", "kind"),
 
     # Legacy Basic Mode Tools
     "generate_image": ("generate_image", "generate an image", "ai generate", "diffusion", "flux", "imagen", "dall-e"),

@@ -177,7 +177,7 @@ const AvatarViewer = ({
       return;
     }
     if (activeModel) {
-      loadModel(`${API_BASE}/api/models/vrm/files/${activeModel}?t=${Date.now()}`);
+      loadModel(`${API_BASE}/api/models/vrm/files/${encodeURIComponent(activeModel)}?t=${Date.now()}`);
     }
   }, [activeModel]);
 
@@ -264,7 +264,7 @@ const AvatarViewer = ({
 
   useEffect(() => {
     if (isBackendOnline && !hasVrm && activeModel) {
-      loadModel(`${API_BASE}/api/models/vrm/files/${activeModel}?t=${Date.now()}`);
+      loadModel(`${API_BASE}/api/models/vrm/files/${encodeURIComponent(activeModel)}?t=${Date.now()}`);
     }
   }, [isBackendOnline, hasVrm, activeModel]);
 
@@ -1287,7 +1287,7 @@ const AvatarViewer = ({
     // loadModel('/models/watame.vrm');9
     // loadModel('/models/yuki.vrm');10
     // loadModel('/models/timekeeper_cookie.vrm');11
-    loadModel(`${API_BASE}/api/models/vrm/files/${activeModelRef.current}?t=${Date.now()}`);
+    loadModel(`${API_BASE}/api/models/vrm/files/${encodeURIComponent(activeModelRef.current)}?t=${Date.now()}`);
 
     // 8. Animation Loop variables
     let blinkTimer = 0;
