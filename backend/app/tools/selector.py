@@ -56,6 +56,11 @@ _QUERY_EXPANSIONS = {
     "skin": ("outfit", "costume", "avatar", "model", "wear"),
     "cosplay": ("outfit", "costume", "avatar", "model", "wear"),
     "hat": ("outfit", "wear", "put", "clothes", "avatar", "costume"),
+    "wear": ("outfit", "costume", "clothes", "dress", "hat", "avatar", "model"),
+    "veer": ("wear", "outfit", "clothes", "dress", "hat", "avatar"),
+    "swimsuit": ("outfit", "bikini", "clothes", "costume", "avatar"),
+    "bikini": ("outfit", "swimsuit", "clothes", "costume", "avatar"),
+    "dress": ("outfit", "clothes", "costume", "wear", "avatar"),
     "page": ("html", "dashboard", "interactive", "website"),
     "paint": ("draw", "graphics", "canvas", "svg", "artwork", "visual"),
     "photo": ("image", "picture", "photograph", "graphics", "card"),
@@ -95,6 +100,8 @@ _ALWAYS_INCLUDED_JARVIS_TOOLS = {
     "manage_todo",
     "jarvis_grep_files",
     "jarvis_find_files_by_glob",
+    "jarvis_change_avatar_outfit",
+    "change_avatar_outfit",
 }
 
 _ALWAYS_INCLUDED_BASIC_TOOLS = {
@@ -102,6 +109,7 @@ _ALWAYS_INCLUDED_BASIC_TOOLS = {
     "update_user_fact",
     "web_search",
     "manage_personal_list",
+    "change_avatar_outfit",
 }
 
 _TOOL_HINTS = {
@@ -141,8 +149,8 @@ _TOOL_HINTS = {
     "ask_user": ("ask", "question", "clarify", "choice", "options", "choose", "pick", "select", "which", "decision", "tradeoff", "prompt", "poll"),
     "telegram_send_screenshot": ("screenshot", "screen", "capture", "send", "snap", "display", "monitor", "telegram", "phone", "mobile", "desktop"),
     "telegram_send_file": ("send", "upload", "file", "folder", "document", "photo", "image", "transfer", "export", "telegram", "share", "drop"),
-    "change_avatar_outfit": ("outfit", "costume", "clothes", "wear", "hat", "dress", "change", "avatar", "model", "uniform", "version", "appearance", "mita", "character", "skin", "cosplay", "switch", "kind"),
-    "jarvis_change_avatar_outfit": ("outfit", "costume", "clothes", "wear", "hat", "dress", "change", "avatar", "model", "uniform", "version", "appearance", "mita", "character", "skin", "cosplay", "switch", "kind"),
+    "change_avatar_outfit": ("outfit", "costume", "clothes", "wear", "wearing", "hat", "dress", "change", "avatar", "model", "uniform", "version", "appearance", "mita", "character", "skin", "cosplay", "switch", "kind", "bikini", "swimsuit", "veer", "cute"),
+    "jarvis_change_avatar_outfit": ("outfit", "costume", "clothes", "wear", "wearing", "hat", "dress", "change", "avatar", "model", "uniform", "version", "appearance", "mita", "character", "skin", "cosplay", "switch", "kind", "bikini", "swimsuit", "veer", "cute"),
 
     # Legacy Basic Mode Tools
     "generate_image": ("generate_image", "generate an image", "ai generate", "diffusion", "flux", "imagen", "dall-e"),

@@ -684,6 +684,18 @@ async def change_avatar_outfit(outfit: str = "default", character: str | None = 
     )
 
 
+@mcp.tool()
+async def jarvis_change_avatar_outfit(model_or_outfit: str = "default", outfit: str | None = None, character: str | None = None) -> str:
+    """Switch Yuki's 3D avatar outfit, clothes, costume, hat, or model (e.g. 'with hat', 'hat', 'cute summer dress', 'next', 'default')."""
+    from app.tools.vrm_catalog import change_avatar_outfit as _change_outfit
+    target = outfit or model_or_outfit
+    return await _guarded_tool_call(
+        "jarvis_change_avatar_outfit",
+        _change_outfit,
+        {"outfit": target, "character": character},
+    )
+
+
 def main() -> None:
     """Run the MCP server over stdio."""
     mcp.run(transport="stdio")
