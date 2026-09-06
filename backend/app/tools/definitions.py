@@ -719,31 +719,6 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "change_avatar_outfit",
-                "description": "Alias for jarvis_change_avatar_outfit. Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessory.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "model_or_outfit": {
-                            "type": "string",
-                            "description": "The name or keyword of the avatar model, character, outfit, or variant to switch to (e.g. 'kind', 'mita kind', 'cute summer dress', 'with hat', 'chinese dress', 'next', 'something else', 'default', or 'list'). Pass 'next' if the user says 'change it' or 'wear something else' without naming a specific outfit."
-                        },
-                        "outfit": {
-                            "type": "string",
-                            "description": "Alias for model_or_outfit."
-                        },
-                        "character": {
-                            "type": "string",
-                            "description": "Optional character name if specified separately."
-                        }
-                    },
-                    "required": []
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "jarvis_close_app",
                 "description": "Close or terminate a running desktop application by name.",
                 "parameters": {

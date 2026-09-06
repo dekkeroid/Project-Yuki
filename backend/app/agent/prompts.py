@@ -503,13 +503,15 @@ def build_avatar_outfit_prompt_block(profile: dict = None) -> str:
 
         outfits_str = ", ".join(avail_outfits) if avail_outfits else "`Default`"
 
+        tool_call_name = "jarvis_change_avatar_outfit" if getattr(config, "TOOL_MODE", "basic") == "advanced" else "change_avatar_outfit"
+
         return f"""--- 3D AVATAR & OUTFIT CAPABILITIES ---
 Your current 3D avatar on screen is: **{active_char}** (Active Outfit: **{active_outfit}**).
 • Available Outfits for {active_char}: {outfits_str}
-• You have the ability to change outfits, put on accessories/hats, or switch clothes whenever the user asks or when contextually appropriate by calling `jarvis_change_avatar_outfit` (or `change_avatar_outfit`)!
-• REFERENTIAL COMMANDS (CRITICAL): When the user says "Change it", "Change it to something new", "Wear something else", "Try another one", "Switch it", or "Change clothes", you MUST call `jarvis_change_avatar_outfit(model_or_outfit='next')` or name one of the available outfits!
-• ZERO SIMULATION (MANDATORY): You CANNOT change clothes or switch characters through text dialogue alone. You MUST emit a structured native tool call to `jarvis_change_avatar_outfit` (or `change_avatar_outfit`)! NEVER say you changed clothes, switched models, or ask "how do I look?" unless you actually invoked `jarvis_change_avatar_outfit` or `change_avatar_outfit` in that exact turn.
-• Whenever you successfully change outfits via `jarvis_change_avatar_outfit`, accompany your reply with a fashion pose tag like `<yuki_anim:show_body/>` or `<yuki_anim:model_pose/>`!
+• You have the ability to change outfits, put on accessories/hats, or switch clothes whenever the user asks or when contextually appropriate by calling `{tool_call_name}`!
+• REFERENTIAL COMMANDS (CRITICAL): When the user says "Change it", "Change it to something new", "Wear something else", "Try another one", "Switch it", or "Change clothes", you MUST call `{tool_call_name}(model_or_outfit='next')` or name one of the available outfits!
+• ZERO SIMULATION (MANDATORY): You CANNOT change clothes or switch characters through text dialogue alone. You MUST emit a structured native tool call to `{tool_call_name}`! NEVER say you changed clothes, switched models, or ask "how do I look?" unless you actually invoked `{tool_call_name}` in that exact turn.
+• Whenever you successfully change outfits via `{tool_call_name}`, accompany your reply with a fashion pose tag like `<yuki_anim:show_body/>` or `<yuki_anim:model_pose/>`!
 ---------------------------------------"""
     except Exception:
         return ""
@@ -821,8 +823,7 @@ CRITICAL LAW — ZERO SIMULATION & MANDATORY TOOL EXECUTION:
    • `jarvis_remember_user_fact` → When the USER reveals a clear, definite personal fact or preference about THEMSELVES. Use structured keys when possible: `like`, `dislike`, `interest`, `hobby`, `name`. Multiple entries for the same key accumulate as a list. BE CONSERVATIVE: ONLY save distinct, enduring facts. NEVER save temporary states ("I'm tired today").
    • `jarvis_manage_personal_list` → Executive Assistant management for everyday lists (to-dos, groceries, shopping, wishlists). Actions: `show`, `add` (items=[...]), `check`, `clear`, `clear_completed`, `rollover` (carry over unfinished tasks from yesterday), and `lists` (view all). Always format items clearly. Never confuse with coding tasks.
    • `jarvis_keyboard_mouse_input` → Send keys/mouse to the app currently in focus. Prefer keyboard actions (`type`, `press_keys` with Tab/Enter/arrows/shortcuts) over raw coordinates. If you must click, first call `jarvis_see_screen` and have it report the exact screen x,y of the target element, then click those coordinates; if the click misses, re-check the screen and adjust. For websites, use the browser tools instead.
-   • `jarvis_change_avatar_outfit` → Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessories (e.g. `model_or_outfit='kind'`, `model_or_outfit='with hat'`, `model_or_outfit='cute summer dress'`, `model_or_outfit='next'`, `model_or_outfit='default'`). MANDATORY: When the user asks to change/wear clothes, or says 'Change it' / 'Wear something else' / 'Change to something new', you MUST emit a structured native tool call to `jarvis_change_avatar_outfit` or `change_avatar_outfit` (pass `model_or_outfit='next'` if no specific outfit is named). NEVER pretend or describe changing clothes in conversational text without invoking this tool.
-   • `change_avatar_outfit` → Alias for `jarvis_change_avatar_outfit`. Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessories.
+   • `jarvis_change_avatar_outfit` → Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessories (e.g. `model_or_outfit='kind'`, `model_or_outfit='with hat'`, `model_or_outfit='cute summer dress'`, `model_or_outfit='next'`, `model_or_outfit='default'`). MANDATORY: When the user asks to change/wear clothes, or says 'Change it' / 'Wear something else' / 'Change to something new', you MUST emit a structured native tool call to `jarvis_change_avatar_outfit` (pass `model_or_outfit='next'` if no specific outfit is named). NEVER pretend or describe changing clothes in conversational text without invoking this tool.
    • `jarvis_system_volume` → Get or set the Windows master speaker volume level (0-100) and mute status. Omit `volume_level` or set `action='get'` to inspect current volume; provide `volume_level` (0-100) to change it.
 
 
