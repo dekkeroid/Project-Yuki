@@ -512,87 +512,93 @@ def find_outfit_match(
         elif characters:
             return (characters[0], characters[0]["outfits"][0], None)
 
-    # If the user/LLM passed the target in character_hint and left outfit as "default" (e.g. character='kind', outfit='default')
-    # cross-check if character_hint matches an outfit name in any character!
-    if raw_char and raw_target in ("default", "normal", "original", "base", ""):
+    GENERIC_OUTFIT_WORDS = {
+        "dress", "outfit", "costume", "suit", "clothes", "version", "model",
+        "avatar", "the", "a", "an", "with", "in", "wearing", "style", "look"
+    }
+
+    def _score_outfit_match(query: str, outfit_entry: Dict[str, Any]) -> float:
+        q_clean = query.strip().lower()
+        o_name = outfit_entry.get("name", "").lower()
+        o_id = outfit_entry.get("id", "").lower()
+        o_file = outfit_entry.get("file", "").lower()
+
+        # Tier 1: Exact match on name, id, or filename
+        if q_clean == o_name or q_clean == o_id or q_clean == o_file or f"{q_clean}.vrm" == o_file:
+            return 100.0
+
+        # Tier 2: Exact candidate substring containment
+        if len(q_clean) >= 3 and (q_clean in o_name or q_clean in o_file):
+            return 50.0 + len(q_clean) / max(len(o_name), 1)
+
+        # Tier 3: Distinguishing token overlap
+        q_tokens = [t for t in re.split(r"[\s_\-]+", q_clean) if t and t not in GENERIC_OUTFIT_WORDS]
+        if not q_tokens:
+            q_tokens = [t for t in re.split(r"[\s_\-]+", q_clean) if t]
+        if not q_tokens:
+            return 0.0
+
+        score = 0.0
+        matched_distinguishing = 0
+        total_distinguishing = len([t for t in q_tokens if t not in GENERIC_OUTFIT_WORDS])
+
+        for tok in q_tokens:
+            is_generic = tok in GENERIC_OUTFIT_WORDS
+            synonyms = OUTFIT_SYNONYMS.get(tok, [])
+            all_terms = [tok] + synonyms
+            tok_matched = any(term in o_name or term in o_file or term in o_id for term in all_terms)
+            if tok_matched:
+                if is_generic:
+                    score += 1.0
+                else:
+                    score += 10.0
+                    matched_distinguishing += 1
+
+        if total_distinguishing > 0 and matched_distinguishing == 0:
+            return 0.0
+
+        completeness = matched_distinguishing / max(total_distinguishing, 1) if total_distinguishing > 0 else 0.5
+        return score * (1.0 + completeness)
+
+    # Candidate strings to evaluate
+    candidates = []
+    if raw_target and raw_target not in ("default", "normal", "original", "base", "reset"):
+        candidates.append(raw_target)
+    if raw_char and raw_target and raw_target not in ("default", "normal"):
+        candidates.append(f"{raw_char} {raw_target}")
+    if raw_char and raw_char not in ("default", "normal", "original", "base", "reset"):
+        candidates.append(raw_char)
+
+    best_entry = None
+    best_score = 0.0
+
+    for cand in candidates:
         for c in characters:
+            is_char_hint = raw_char and (c["id"] == raw_char or raw_char in c["name"].lower())
+            is_active = (c == active_char)
+
+            bonus = 0.0
+            if is_char_hint:
+                bonus += 15.0
+            elif is_active:
+                bonus += 5.0
+
             for o in c.get("outfits", []):
-                if o["id"] == raw_char or o["name"].lower() == raw_char or raw_char in o["file"].lower() or raw_char in o["name"].lower():
-                    return (c, o, None)
+                s = _score_outfit_match(cand, o)
+                if s > 0:
+                    total_s = s + bonus
+                    if total_s > best_score:
+                        best_score = total_s
+                        best_entry = (c, o)
 
-    # Combined candidate string (e.g. "mita kind")
-    combined = f"{raw_char} {raw_target}".strip() if (raw_char and raw_target and raw_target != "default") else (raw_target or raw_char)
+    if best_entry and best_score > 0:
+        return (best_entry[0], best_entry[1], None)
 
-    def _match_tokens(query_tokens: List[str], target_str: str) -> bool:
-        t_low = target_str.lower()
-        for tok in query_tokens:
-            if not tok:
-                continue
-            if tok in t_low:
-                return True
-            for syn in OUTFIT_SYNONYMS.get(tok, []):
-                if syn in t_low:
-                    return True
-        return False
-
-    # 1. Exact filename match across all models (e.g. "mita kind.vrm", "mixup with hat.vrm")
-    for clean_cand in (combined, raw_target, raw_char):
-        if not clean_cand or clean_cand in ("default", "normal", "original", "base", "reset"):
-            continue
+    # Fallback to character name if only character matched
+    for cand in candidates:
         for c in characters:
-            for o in c.get("outfits", []):
-                o_file = o["file"].lower()
-                if o_file == clean_cand or o_file == f"{clean_cand}.vrm":
-                    return (c, o, None)
-
-    # 2. Check active character first for outfit matches (e.g. active is Mita, target is "kind")
-    if active_char:
-        for cand in (raw_target, raw_char, combined):
-            if not cand or cand in ("default", "normal", "original", "base", "reset"):
-                continue
-            cand_tokens = [t for t in re.split(r"[\s_\-]+", cand) if t not in ("the", "with", "a", "an", "in", "wearing", "outfit", "costume", "version", "model", "avatar")]
-            for o in active_char.get("outfits", []):
-                if o["id"] == cand or o["name"].lower() == cand or cand in o["name"].lower() or cand in o["file"].lower() or _match_tokens(cand_tokens, o["name"]) or _match_tokens(cand_tokens, o["file"]):
-                    return (active_char, o, None)
-
-    # 3. Check if candidate explicitly names Character + Outfit (e.g. "mita kind", "mixup with hat", "unagi nami in swimsuit")
-    tokens = [t for t in re.split(r"[\s_\-]+", combined) if t not in ("the", "with", "a", "an", "in", "wearing", "outfit", "costume", "version", "model", "avatar", "default", "normal", "original", "base")]
-    if tokens:
-        for c in characters:
-            c_name_lower = c["name"].lower()
-            c_id = c.get("id", "")
-            if any(t in c_name_lower for t in tokens) or (c_id and c_id in combined):
-                for o in c.get("outfits", []):
-                    o_name_lower = o["name"].lower()
-                    o_tokens = [t for t in tokens if t not in c_name_lower and t != c_id]
-                    if o_tokens and (any(t in o_name_lower or t in o["file"].lower() for t in o_tokens) or _match_tokens(o_tokens, o_name_lower) or _match_tokens(o_tokens, o["file"].lower())):
-                        return (c, o, None)
-                if len(tokens) == 1 or all(t in c_name_lower or t == c_id for t in tokens):
-                    return (c, c["outfits"][0], None)
-
-    # 4. Search ALL characters for outfit match (e.g. "kind", "with hat", "maid", "school", "swimsuit")
-    for cand in (raw_target, raw_char, combined):
-        if not cand or cand in ("default", "normal", "original", "base"):
-            continue
-        cand_tokens = [t for t in re.split(r"[\s_\-]+", cand) if t not in ("the", "with", "a", "an", "in", "wearing", "outfit", "costume", "version", "model", "avatar")]
-        for c in characters:
-            for o in c.get("outfits", []):
-                if o["id"] == cand or o["name"].lower() == cand or cand in o["name"].lower() or cand in o["file"].lower() or _match_tokens(cand_tokens, o["name"]) or _match_tokens(cand_tokens, o["file"]):
-                    return (c, o, None)
-
-    # 5. Fallback for "default" / "normal" / "reset" -> active character's default
-    if (raw_target in ("default", "normal", "original", "base", "reset", "") and not raw_char) or (raw_char in ("default", "normal", "original", "base", "reset") and not raw_target):
-        if active_char:
-            return (active_char, active_char["outfits"][0], None)
-        elif characters:
-            return (characters[0], characters[0]["outfits"][0], None)
-
-    # 6. Fallback if candidate matched a character name only (e.g. "mita")
-    for cand in (raw_char, raw_target, combined):
-        if cand:
-            for c in characters:
-                if c["id"] == cand or c["name"].lower() == cand or cand in c["name"].lower():
-                    return (c, c["outfits"][0], None)
+            if c["id"] == cand or c["name"].lower() == cand or cand in c["name"].lower():
+                return (c, c["outfits"][0], None)
 
     # Could not resolve
     avail_outfits = []
