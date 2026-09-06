@@ -104,32 +104,6 @@ def resolve_command(message: str) -> Optional[ResolvedCommand]:
         label = re.sub(r".*\bstopwatch\s*(for|on|about)?\s*", "", msg).strip() or "default"
         return ("manage_timer_stopwatch_alarms", {"action": "start_stopwatch", "label": label})
 
-    # ── Avatar Outfit / Costume / Hat / Model change ────────────────────────
-    # "can u change model to kind", "put on your hat", "wear your hat", "change outfit to school", "wear mixup with hat", "take off your hat"
-    _prefix = r"(?:(?:can|could)\s*(?:you|u)\s*)?(?:please\s+)?(?:hey\s+yuki\s*,\s*)?"
-    m_outfit = re.search(r"^" + _prefix + r"(?:put on|wear|equip)\s+(?:your\s+)?(.+?)(?:\s+outfit|\s+costume|\s+model)?$", msg)
-    if m_outfit:
-        target_outfit = m_outfit.group(1).strip()
-        if not re.search(r"\b(headphone|earphone|headset)\b", target_outfit):
-            return ("change_avatar_outfit", {"model_or_outfit": target_outfit, "outfit": target_outfit})
-
-    m_change = re.search(r"^" + _prefix + r"(?:change|switch)(?:\s+your)?\s+(?:(?:avatar|model|outfit|clothes|costume|character)\s+)?(?:to|into)\s+(.+)$", msg)
-    if m_change:
-        target_val = m_change.group(1).strip()
-        return ("change_avatar_outfit", {"model_or_outfit": target_val, "outfit": target_val})
-
-    m_next = re.search(
-        r"^" + _prefix + r"(?:change\s+(?:your\s+)?(?:outfit|clothes)|switch\s+(?:your\s+)?(?:outfit|clothes)|wear\s+something\s+(?:else|new|different)|try\s+another\s+(?:outfit|costume|dress))\b.*$",
-        msg
-    )
-    if m_next:
-        return ("change_avatar_outfit", {"model_or_outfit": "next", "outfit": "next"})
-
-    m_remove = re.search(r"^" + _prefix + r"(?:take off|remove)\s+(?:your\s+)?(.+?)$", msg)
-    if m_remove:
-        rem_target = m_remove.group(1).strip()
-        if not re.search(r"\b(headphone|earphone|headset)\b", rem_target):
-            return ("change_avatar_outfit", {"model_or_outfit": "default", "outfit": "default"})
 
     # ── Open / Launch / Run ───────────────────────────────────────────────────
     # Matches "open notepad", "launch calculator", "run chrome", etc.
