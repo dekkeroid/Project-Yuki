@@ -335,13 +335,13 @@ def get_basic_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "change_avatar_outfit",
-                "description": "WHEN TO USE: Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessory. Works whether the user asks for a character ('mita', 'mixup', 'laplus'), an outfit/variant ('kind', 'with hat', 'school', 'no coat', 'maid'), or a combined name ('mita kind', 'mixup with hat'). Also supports 'default' or 'normal' to reset clothes, and 'list' to show available outfits.",
+                "description": "WHEN TO USE: Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessory. MANDATORY: When the user asks to change/wear clothes, try another outfit, or says referential commands like 'change it', 'change it to something new', 'wear something else', or 'try another one', you MUST invoke this tool (pass model_or_outfit='next' or the specific outfit name). NEVER pretend or describe changing clothes in conversational text without calling this function! Works for character names ('mita', 'unagi nami'), outfit names ('cute summer dress', 'blue bikini', 'chinese dress', 'with hat'), cycling ('next', 'random'), or resetting ('default', 'normal').",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "model_or_outfit": {
                             "type": "string",
-                            "description": "The name or keyword of the avatar model, character, outfit, or variant to switch to (e.g. 'kind', 'mita kind', 'with hat', 'hat', 'school', 'no coat', 'mixup', 'default', or 'list' to view all available outfits)."
+                            "description": "The name or keyword of the avatar model, character, outfit, or variant to switch to (e.g. 'kind', 'mita kind', 'cute summer dress', 'with hat', 'chinese dress', 'next', 'something else', 'default', or 'list'). Pass 'next' if the user says 'change it' or 'wear something else' without naming a specific outfit."
                         },
                         "outfit": {
                             "type": "string",
@@ -695,13 +695,13 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "change_avatar_outfit",
-                "description": "WHEN TO USE: Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessory. Works whether the user asks for a character ('mita', 'mixup', 'laplus'), an outfit/variant ('kind', 'with hat', 'school', 'no coat', 'maid'), or a combined name ('mita kind', 'mixup with hat'). Also supports 'default' or 'normal' to reset clothes, and 'list' to show available outfits.",
+                "description": "WHEN TO USE: Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessory. MANDATORY: When the user asks to change/wear clothes, try another outfit, or says referential commands like 'change it', 'change it to something new', 'wear something else', or 'try another one', you MUST invoke this tool (pass model_or_outfit='next' or the specific outfit name). NEVER pretend or describe changing clothes in conversational text without calling this function! Works for character names ('mita', 'unagi nami'), outfit names ('cute summer dress', 'blue bikini', 'chinese dress', 'with hat'), cycling ('next', 'random'), or resetting ('default', 'normal').",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "model_or_outfit": {
                             "type": "string",
-                            "description": "The name or keyword of the avatar model, character, outfit, or variant to switch to (e.g. 'kind', 'mita kind', 'with hat', 'hat', 'school', 'no coat', 'mixup', 'default', or 'list' to view all available outfits)."
+                            "description": "The name or keyword of the avatar model, character, outfit, or variant to switch to (e.g. 'kind', 'mita kind', 'cute summer dress', 'with hat', 'chinese dress', 'next', 'something else', 'default', or 'list'). Pass 'next' if the user says 'change it' or 'wear something else' without naming a specific outfit."
                         },
                         "outfit": {
                             "type": "string",

@@ -33,6 +33,7 @@ _SHORT_CIRCUIT_TOOLS = {
     "run_python_script",
     "run_terminal_command",
     "take_screenshot",
+    "change_avatar_outfit",
     "jarvis_close_app",
     "jarvis_take_screenshot",
     "jarvis_keyboard_mouse_input",
@@ -274,6 +275,11 @@ def _format_short_circuit_result(tool_name: str, tool_result: str, tool_args: di
         if clean_res.startswith("Web search failed:"):
             return "Hmph, my web search failed: " + clean_res[len("Web search failed:"):].strip()
         return f"I found this on the web:\n\n{clean_res}"
+
+    elif tool_name == "change_avatar_outfit":
+        if "successfully changed" in clean_res.lower():
+            return f"<yuki_anim:model_pose/>{clean_res}"
+        return clean_res
 
     # Strip "Success: " prefix for cleaner chat/speech
     if clean_res.startswith("Success: "):
@@ -3193,8 +3199,12 @@ class AgentExecutor:
                 print(f"[Reflex] Fast reflex check error: {_reflex_err}")
 
         # ── Layer 1: Zero-LLM Instant Resolver ───────────────────────────────
-        # Skip in advanced/autonomous Jarvis mode or when tools are disabled
-        resolved = resolve_command(user_message) if (effective_tool_mode == "basic" and not overrides.get("no_tools") and not overrides.get("is_startup_greeting")) else None
+        # Instant deterministic resolver: runs all basic commands in basic mode, and instant hardware/avatar controls in any mode
+        resolved_cand = resolve_command(user_message) if (not overrides.get("no_tools") and not overrides.get("is_startup_greeting")) else None
+        resolved = None
+        if resolved_cand:
+            if effective_tool_mode == "basic" or resolved_cand[0] in ("change_avatar_outfit", "set_system_volume", "take_screenshot"):
+                resolved = resolved_cand
         if resolved:
             tool_name, tool_args = resolved
             print(f"[Resolver] '{user_message}' -> {tool_name}({tool_args}) - LLM skipped")

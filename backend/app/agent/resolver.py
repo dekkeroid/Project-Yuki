@@ -118,6 +118,13 @@ def resolve_command(message: str) -> Optional[ResolvedCommand]:
         target_val = m_change.group(1).strip()
         return ("change_avatar_outfit", {"model_or_outfit": target_val, "outfit": target_val})
 
+    m_next = re.search(
+        r"^" + _prefix + r"(?:change\s+(?:your\s+)?(?:outfit|clothes)|switch\s+(?:your\s+)?(?:outfit|clothes)|wear\s+something\s+(?:else|new|different)|try\s+another\s+(?:outfit|costume|dress))\b.*$",
+        msg
+    )
+    if m_next:
+        return ("change_avatar_outfit", {"model_or_outfit": "next", "outfit": "next"})
+
     m_remove = re.search(r"^" + _prefix + r"(?:take off|remove)\s+(?:your\s+)?(.+?)$", msg)
     if m_remove:
         rem_target = m_remove.group(1).strip()
