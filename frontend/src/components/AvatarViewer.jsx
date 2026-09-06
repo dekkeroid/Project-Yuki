@@ -765,7 +765,7 @@ const AvatarViewer = ({
 
       if (!clip) return;
 
-      const fadeDuration = matchingAnim.fadeDuration ?? 0.35;
+      const fadeDuration = matchingAnim.fadeDuration ?? (isUpperBody ? 0.35 : 0.75);
       vrmaFadeDurationRef.current = fadeDuration;
 
       // Cross-fade from previous action if active
@@ -2128,6 +2128,7 @@ const AvatarViewer = ({
         let neckOffsetX = 0;
         let chestOffsetX = 0;
         let extraMouthAa = 0;
+        let extraMouthOh = 0;
         let extraBlink = 0;
 
         if (idleAnimState !== 'none') {
@@ -2171,6 +2172,10 @@ const AvatarViewer = ({
             // Laughing chuckle mouth flutter and cheerful eyelid flutter
             extraMouthAa = (0.28 + Math.sin(time * 16.0) * 0.14) * easeVal;
             extraBlink = 0.28 * easeVal;
+          } else if (idleAnimState === 'pouting') {
+            // Cute pursed / puffed sulking lips
+            extraMouthOh = 0.22 * easeVal;
+            extraMouthAa = 0.04 * easeVal;
           } else if (idleAnimState === 'tsundere_bicker' || idleAnimState === 'baka' || idleAnimState === 'laugh_opt4') {
             // Tsundere indignant bickering: rapid defensive mouth flutter and subtle head tilt
             extraMouthAa = (0.22 + Math.sin(time * 20.0) * 0.12) * easeVal;
@@ -2632,9 +2637,9 @@ const AvatarViewer = ({
                 } else if (idleAnimState === 'pouting') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
-                  neckAnimY = -0.22 * easeVal;
-                  neckAnimX = 0.08 * easeVal;
-                  neckAnimZ = 0.05 * easeVal;
+                  neckAnimY = 0.35 * easeVal; // Turns head away defensively in a "hmph!" sulk
+                  neckAnimX = -0.07 * easeVal; // Tilts chin up proudly/petulantly
+                  neckAnimZ = 0.06 * easeVal; // Cute slight head tilt
                 } else if (idleAnimState === 'disappointed_nod' || idleAnimState === 'look_down') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
@@ -2855,9 +2860,12 @@ const AvatarViewer = ({
               const asleepSceneZ = 0;
               const asleepSceneX = 0;
 
-              vrm.scene.position.y = THREE.MathUtils.lerp(awakeSceneY, asleepSceneY, sleepProgressRef.current);
-              vrm.scene.position.z = THREE.MathUtils.lerp(awakeSceneZ, asleepSceneZ, sleepProgressRef.current);
-              vrm.scene.position.x = THREE.MathUtils.lerp(awakeSceneX, asleepSceneX, sleepProgressRef.current);
+              const targetSceneY = THREE.MathUtils.lerp(awakeSceneY, asleepSceneY, sleepProgressRef.current);
+              const targetSceneZ = THREE.MathUtils.lerp(awakeSceneZ, asleepSceneZ, sleepProgressRef.current);
+              const targetSceneX = THREE.MathUtils.lerp(awakeSceneX, asleepSceneX, sleepProgressRef.current);
+              vrm.scene.position.y += (targetSceneY - vrm.scene.position.y) * Math.min(1, delta * 5.0);
+              vrm.scene.position.z += (targetSceneZ - vrm.scene.position.z) * Math.min(1, delta * 5.0);
+              vrm.scene.position.x += (targetSceneX - vrm.scene.position.x) * Math.min(1, delta * 5.0);
 
               if (leftShoulder) {
                 let awakeShoulderX = 0;
@@ -3268,9 +3276,10 @@ const AvatarViewer = ({
               rightLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
             }
           } else {
-            vrm.scene.position.x = 0;
-            vrm.scene.position.y = 0;
-            vrm.scene.position.z = 0;
+            // Full-body motion capture: smoothly transition scene origin towards floor base
+            vrm.scene.position.x += (0 - vrm.scene.position.x) * Math.min(1, delta * 5.0);
+            vrm.scene.position.y += (0 - vrm.scene.position.y) * Math.min(1, delta * 5.0);
+            vrm.scene.position.z += (0 - vrm.scene.position.z) * Math.min(1, delta * 5.0);
           }
         }
 
@@ -3388,22 +3397,15 @@ const AvatarViewer = ({
           const speechAa = (enableLipsync && audioLevelRef.current > 0) ? Math.min(audioLevelRef.current * 0.9, 0.55) : 0.0;
           const speechOh = (enableLipsync && audioLevelRef.current > 0) ? Math.min(audioLevelRef.current * 0.3, 0.15) : 0.0;
 
-          if (speechAa > 0 && extraMouthAa > 0) {
-            // Both voice speech audio and animation mouth motion (chuckle/flutter) active:
-            // Blend them so the voice drives open phonemes while chuckle flutter modulates:
-            const blendedAa = Math.min(0.68, speechAa + (extraMouthAa * 0.40));
-            setExpressionValue(vrm, 'aa', blendedAa);
-            setExpressionValue(vrm, 'oh', speechOh);
-          } else if (speechAa > 0) {
-            setExpressionValue(vrm, 'aa', speechAa);
-            setExpressionValue(vrm, 'oh', speechOh);
-          } else if (extraMouthAa > 0) {
-            setExpressionValue(vrm, 'aa', extraMouthAa);
-            setExpressionValue(vrm, 'oh', 0.0);
-          } else {
-            setExpressionValue(vrm, 'aa', 0.0);
-            setExpressionValue(vrm, 'oh', 0.0);
-          }
+          const blendedAa = speechAa > 0
+            ? (extraMouthAa > 0 ? Math.min(0.68, speechAa + (extraMouthAa * 0.40)) : speechAa)
+            : extraMouthAa;
+          const blendedOh = speechOh > 0
+            ? (extraMouthOh > 0 ? Math.min(0.45, speechOh + (extraMouthOh * 0.50)) : speechOh)
+            : extraMouthOh;
+
+          setExpressionValue(vrm, 'aa', blendedAa);
+          setExpressionValue(vrm, 'oh', blendedOh);
 
           // Wink animation state machine update
           if (currentExpr === 'wink') {
