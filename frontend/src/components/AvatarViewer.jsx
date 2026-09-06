@@ -2167,10 +2167,14 @@ const AvatarViewer = ({
             neckOffsetX = 0.12 * easeVal;
           } else if (idleAnimState === 'shy_fidget') {
             spineOffsetX = -0.05 * easeVal;
+          } else if (idleAnimState === 'laughing' || idleAnimState === 'laugh_opt2' || idleAnimState === 'laugh2') {
+            // Laughing chuckle mouth flutter and cheerful eyelid flutter
+            extraMouthAa = (0.28 + Math.sin(time * 16.0) * 0.14) * easeVal;
+            extraBlink = 0.28 * easeVal;
+          } else if (idleAnimState === 'tsundere_bicker' || idleAnimState === 'baka' || idleAnimState === 'laugh_opt4') {
+            // Tsundere indignant bickering: rapid defensive mouth flutter and subtle head tilt
+            extraMouthAa = (0.22 + Math.sin(time * 20.0) * 0.12) * easeVal;
             neckOffsetX = 0.08 * easeVal;
-          } else if (idleAnimState === 'laughing' || idleAnimState === 'giggle_cover') {
-            extraMouthAa = (0.24 + Math.sin(time * 18.0) * 0.12) * easeVal;
-            extraBlink = 0.25 * easeVal;
           } else if (idleAnimState === 'napping') {
             if (t < 0.7) {
               const droopT = t / 0.7;
@@ -3379,11 +3383,20 @@ const AvatarViewer = ({
             }
           }
 
-          // Lipsync
+          // Lipsync & Mouth Movement Blending
           const enableLipsync = window.yukiDebugToggles ? window.yukiDebugToggles.lipsync : true;
-          if (enableLipsync && audioLevelRef.current > 0) {
-            setExpressionValue(vrm, 'aa', Math.min(audioLevelRef.current * 0.9, 0.55));
-            setExpressionValue(vrm, 'oh', Math.min(audioLevelRef.current * 0.3, 0.15));
+          const speechAa = (enableLipsync && audioLevelRef.current > 0) ? Math.min(audioLevelRef.current * 0.9, 0.55) : 0.0;
+          const speechOh = (enableLipsync && audioLevelRef.current > 0) ? Math.min(audioLevelRef.current * 0.3, 0.15) : 0.0;
+
+          if (speechAa > 0 && extraMouthAa > 0) {
+            // Both voice speech audio and animation mouth motion (chuckle/flutter) active:
+            // Blend them so the voice drives open phonemes while chuckle flutter modulates:
+            const blendedAa = Math.min(0.68, speechAa + (extraMouthAa * 0.40));
+            setExpressionValue(vrm, 'aa', blendedAa);
+            setExpressionValue(vrm, 'oh', speechOh);
+          } else if (speechAa > 0) {
+            setExpressionValue(vrm, 'aa', speechAa);
+            setExpressionValue(vrm, 'oh', speechOh);
           } else if (extraMouthAa > 0) {
             setExpressionValue(vrm, 'aa', extraMouthAa);
             setExpressionValue(vrm, 'oh', 0.0);
@@ -3428,7 +3441,7 @@ const AvatarViewer = ({
             winkProgress = 0;
           }
 
-          // Set target values for facial expressions
+          // Set base target values for facial expressions (from LLM tags or OS / live Mood Engine)
           let targetHappy = 0.0;
           let targetSad = 0.0;
           let targetAngry = 0.0;
@@ -3472,33 +3485,8 @@ const AvatarViewer = ({
               targetBrowUp = 0.2;
             }
           } else {
-            // Mood expressions / OS states / Idle animation overrides
-            if (idleAnimState !== 'none') {
-              const t = idleAnimDuration > 0 ? (idleAnimProgress / idleAnimDuration) : 0;
-              const easeVal = Math.sin(Math.min(1, Math.max(0, t)) * Math.PI);
-              const animDef = ANIMATIONS.find(a => a.name === idleAnimState || a.alias === idleAnimState);
-              if (animDef && animDef.blendShapes) {
-                const bs = animDef.blendShapes;
-                targetHappy = (bs.happy || 0.0) * easeVal;
-                targetSad = (bs.sad || 0.0) * easeVal;
-                targetAngry = (bs.angry || 0.0) * easeVal;
-                targetSurprised = (bs.surprised || 0.0) * easeVal;
-                targetRelaxed = (bs.relaxed || 0.0) * easeVal;
-                targetBrowUp = (bs.browUp || 0.0) * easeVal;
-                targetBrowDown = (bs.browDown || 0.0) * easeVal;
-              }
-              // Specific custom procedural expression timing (e.g. napping wake-up startle):
-              if (idleAnimState === 'napping') {
-                if (t < 0.7) {
-                  targetRelaxed = 0.4;
-                } else {
-                  const wakeT = (t - 0.7) / 0.3;
-                  const decay = Math.exp(-wakeT * 5.0);
-                  targetSurprised = 0.85 * decay;
-                  targetBrowUp = 0.75 * decay;
-                }
-              }
-            } else if (cpuLoadRef.current > 80) {
+            // Base OS states / live Mood Engine resting facial expressions
+            if (cpuLoadRef.current > 80) {
               targetSad = 0.45; // stressed/exhausted look
               targetAngry = 0.2;
               targetRelaxed = 0.0;
@@ -3539,6 +3527,36 @@ const AvatarViewer = ({
             }
             // Blend in sleep target values smoothly based on sleepProgressRef.current
             targetRelaxed = THREE.MathUtils.lerp(targetRelaxed, 0.6, sleepProgressRef.current);
+          }
+
+          // Layer animation blendshapes smoothly on top while an animation is playing:
+          // Uses lerp with easeVal so the face smoothly transitions from the base mood into the animation,
+          // and smoothly transitions back to her mood/LLM expression at the end without dipping to neutral!
+          if (idleAnimState !== 'none') {
+            const t = idleAnimDuration > 0 ? (idleAnimProgress / idleAnimDuration) : 0;
+            const easeVal = Math.sin(Math.min(1, Math.max(0, t)) * Math.PI);
+            const animDef = ANIMATIONS.find(a => a.name === idleAnimState || a.alias === idleAnimState);
+            if (animDef && animDef.blendShapes) {
+              const bs = animDef.blendShapes;
+              if (bs.happy !== undefined) targetHappy = THREE.MathUtils.lerp(targetHappy, bs.happy, easeVal);
+              if (bs.sad !== undefined) targetSad = THREE.MathUtils.lerp(targetSad, bs.sad, easeVal);
+              if (bs.angry !== undefined) targetAngry = THREE.MathUtils.lerp(targetAngry, bs.angry, easeVal);
+              if (bs.surprised !== undefined) targetSurprised = THREE.MathUtils.lerp(targetSurprised, bs.surprised, easeVal);
+              if (bs.relaxed !== undefined) targetRelaxed = THREE.MathUtils.lerp(targetRelaxed, bs.relaxed, easeVal);
+              if (bs.browUp !== undefined) targetBrowUp = THREE.MathUtils.lerp(targetBrowUp, bs.browUp, easeVal);
+              if (bs.browDown !== undefined) targetBrowDown = THREE.MathUtils.lerp(targetBrowDown, bs.browDown, easeVal);
+            }
+            // Specific custom procedural expression timing (e.g. napping wake-up startle):
+            if (idleAnimState === 'napping') {
+              if (t < 0.7) {
+                targetRelaxed = THREE.MathUtils.lerp(targetRelaxed, 0.4, easeVal);
+              } else {
+                const wakeT = (t - 0.7) / 0.3;
+                const decay = Math.exp(-wakeT * 5.0);
+                targetSurprised = THREE.MathUtils.lerp(targetSurprised, 0.85 * decay, decay);
+                targetBrowUp = THREE.MathUtils.lerp(targetBrowUp, 0.75 * decay, decay);
+              }
+            }
           }
 
           // If being dragged/picked up, smoothly override expression with surprise (wide eyes & raised brows)

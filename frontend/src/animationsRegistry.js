@@ -573,20 +573,23 @@ export const ANIMATIONS = [
     blendShapes: { happy: 0.6, relaxed: 0.9, browUp: 0.4 }
   },
   {
-    name: 'laugh_opt4',
-    alias: 'laugh4',
+    name: 'tsundere_bicker',
+    alias: 'baka',
     type: 'vrma',
-    vrmaUrl: './animations/laugh_opt4.vrma',
+    vrmaUrl: './animations/tsundere_bicker.vrma',
     duration: 3.25,
     upperBodyOnly: true,
     excludeFromRandomIdle: true,
-    llmTag: '<yuki_anim:laugh4/>',
+    llmTag: '<yuki_anim:baka/>',
     commands: [
-      { cmd: '/ani-laugh4', description: 'Teasing giggle reaction and amused chuckle (3.3s mocap)' },
-      { cmd: '/ani-tease_laugh', description: 'Teasing giggle reaction (alias)' }
+      { cmd: '/ani-baka', description: 'Flustered tsundere bickering / "B-Baka!" reaction (3.3s mocap)' },
+      { cmd: '/baka', description: 'B-Baka reaction (alias)' },
+      { cmd: '/ani-bicker', description: 'Flustered bickering reaction (alias)' },
+      { cmd: '/ani-flustered', description: 'Flustered reaction (alias)' },
+      { cmd: '/ani-laugh4', description: 'Baka reaction (legacy alias)' }
     ],
-    responseText: '*giggles playfully at you with an amused chuckle*',
-    blendShapes: { happy: 0.5, relaxed: 0.85, browUp: 0.35 }
+    responseText: '*flustered and blushing, bickering back defensively* B-Baka!',
+    blendShapes: { angry: 0.55, surprised: 0.4, browDown: 0.7, browUp: 0.2, relaxed: 0.0 }
   },
   {
     name: 'breathing',
@@ -829,9 +832,13 @@ export const LLM_ANIMATION_MAP = {
   knee_slap: 'laugh_opt2',
   laugh2: 'laugh_opt2',
   laugh_opt2: 'laugh_opt2',
-  laugh4: 'laugh_opt4',
-  laugh_opt4: 'laugh_opt4',
-  tease_laugh: 'laugh_opt4',
+  baka: 'tsundere_bicker',
+  tsundere: 'tsundere_bicker',
+  tsundere_bicker: 'tsundere_bicker',
+  bicker: 'tsundere_bicker',
+  flustered: 'tsundere_bicker',
+  laugh4: 'tsundere_bicker',
+  laugh_opt4: 'tsundere_bicker',
   // Friendly reflex / AED speech aliases:
   surprise: 'peering',
   tilt_head: 'peering',
