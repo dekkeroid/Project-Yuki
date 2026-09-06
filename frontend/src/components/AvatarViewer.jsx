@@ -64,6 +64,11 @@ const AvatarViewer = ({
   const isVrmaActiveRef = useRef(false);
   const isVrmaUpperBodyRef = useRef(false);
   const vrmaFadeDurationRef = useRef(0.35);
+  const vrmaExitBlendActiveRef = useRef(false);
+  const vrmaExitProgressRef = useRef(0);
+  const vrmaExitDurationRef = useRef(0.75);
+  const vrmaExitSnapshotsRef = useRef(new Map());
+  const vrmaExitScenePosSnapRef = useRef({ x: 0, y: 0, z: 0 });
   const ignoreTimeoutRef = useRef(null);
   const isIgnoringMouseRef = useRef(false);
   const cursorOffsetRef = useRef({ x: 0, y: 0 });
@@ -765,6 +770,10 @@ const AvatarViewer = ({
 
       if (!clip) return;
 
+      // Clear any active exit blend so the new animation takes over cleanly
+      vrmaExitBlendActiveRef.current = false;
+      vrmaExitSnapshotsRef.current.clear();
+
       const fadeDuration = matchingAnim.fadeDuration ?? (isUpperBody ? 0.35 : 0.75);
       vrmaFadeDurationRef.current = fadeDuration;
 
@@ -1370,6 +1379,48 @@ const AvatarViewer = ({
     let idleAnimProgress = 0;
     let idleAnimDuration = 4.0;
 
+    const ALL_HUMANOID_BONES = [
+      'hips', 'spine', 'chest', 'upperChest', 'neck', 'head',
+      'leftShoulder', 'leftUpperArm', 'leftLowerArm', 'leftHand',
+      'rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand',
+      'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'leftToes',
+      'rightUpperLeg', 'rightLowerLeg', 'rightFoot', 'rightToes'
+    ];
+
+    const triggerVrmaExitBlend = (vrm) => {
+      if (!vrm) return;
+      vrmaExitSnapshotsRef.current.clear();
+      ALL_HUMANOID_BONES.forEach(bName => {
+        const node = getBoneNode(vrm, bName);
+        if (node) {
+          vrmaExitSnapshotsRef.current.set(node, {
+            x: node.rotation.x,
+            y: node.rotation.y,
+            z: node.rotation.z
+          });
+        }
+      });
+
+      if (vrm.scene) {
+        vrmaExitScenePosSnapRef.current = {
+          x: vrm.scene.position.x,
+          y: vrm.scene.position.y,
+          z: vrm.scene.position.z
+        };
+      }
+
+      vrmaExitBlendActiveRef.current = true;
+      vrmaExitDurationRef.current = Math.max(0.65, vrmaFadeDurationRef.current || 0.5);
+      vrmaExitProgressRef.current = 0;
+
+      isVrmaActiveRef.current = false;
+      isVrmaUpperBodyRef.current = false;
+      if (currentVrmaActionRef.current) {
+        currentVrmaActionRef.current.stop();
+        currentVrmaActionRef.current = null;
+      }
+    };
+
     // Raycaster for mouse click-through detection
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -1417,6 +1468,8 @@ const AvatarViewer = ({
 
       if (event.button === 0 && isHoveringCharacter && !isDragging) {
         isDragging = true;
+        vrmaExitBlendActiveRef.current = false;
+        vrmaExitSnapshotsRef.current.clear();
         startX = event.screenX;
         startY = event.screenY;
         try {
@@ -1916,11 +1969,8 @@ const AvatarViewer = ({
                   playVrmaClip(matchingAnim, vrmRef.current);
                 }
               } else {
-                if (currentVrmaActionRef.current && isVrmaActiveRef.current) {
-                  currentVrmaActionRef.current.fadeOut(0.3);
-                  currentVrmaActionRef.current = null;
-                  isVrmaActiveRef.current = false;
-                  isVrmaUpperBodyRef.current = false;
+                if (isVrmaActiveRef.current) {
+                  triggerVrmaExitBlend(vrmRef.current);
                 }
               }
             }
@@ -1935,34 +1985,16 @@ const AvatarViewer = ({
             if (isManualAnim && !isDragging) {
               // Let the animation finish naturally
               idleAnimProgress += delta;
-              if (isVrmaActiveRef.current) {
-                const fadeDur = vrmaFadeDurationRef.current || 0.35;
-                const matchingAnim = ANIMATIONS.find(a => a.name === idleAnimState);
-                if (!matchingAnim?.loop && idleAnimProgress >= idleAnimDuration - fadeDur) {
-                  if (currentVrmaActionRef.current && !currentVrmaActionRef.current._fadingOut) {
-                    currentVrmaActionRef.current._fadingOut = true;
-                    currentVrmaActionRef.current.fadeOut(fadeDur);
-                  }
-                }
-              }
               if (idleAnimProgress >= idleAnimDuration) {
                 if (isVrmaActiveRef.current) {
-                  isVrmaActiveRef.current = false;
-                  isVrmaUpperBodyRef.current = false;
-                  if (currentVrmaActionRef.current) {
-                    currentVrmaActionRef.current.stop();
-                    currentVrmaActionRef.current = null;
-                  }
+                  triggerVrmaExitBlend(vrmRef.current);
                 }
                 idleAnimState = 'none';
                 idleAnimProgress = 0;
               }
             } else {
-              if (isVrmaActiveRef.current && currentVrmaActionRef.current) {
-                currentVrmaActionRef.current.fadeOut(0.2);
-                currentVrmaActionRef.current = null;
-                isVrmaActiveRef.current = false;
-                isVrmaUpperBodyRef.current = false;
+              if (isVrmaActiveRef.current) {
+                triggerVrmaExitBlend(vrmRef.current);
               }
               idleAnimState = 'none';
               idleAnimProgress = 0;
