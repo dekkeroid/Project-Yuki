@@ -206,8 +206,8 @@ def log_triggered_backend_tags(text: str):
     """
     if not text:
         return [], []
-    anims = [m.group(1) or m.group(2) for m in ANIMATION_TAG_REGEX.finditer(text) if (m.group(1) or m.group(2))]
-    emotions = [m.group(1) or m.group(2) for m in EMOTION_TAG_REGEX.finditer(text) if (m.group(1) or m.group(2))]
+    anims = [m.group(1) for m in ANIMATION_TAG_REGEX.finditer(text) if m.group(1)]
+    emotions = [m.group(1) for m in EMOTION_TAG_REGEX.finditer(text) if m.group(1)]
     
     if anims:
         print(f"[Backend Tag Logger] 🎬 LLM triggered animation tag(s): {', '.join(anims)}")
@@ -349,16 +349,108 @@ MOOD EXPRESSION GUIDELINE:
         block += "\n\n" + MOOD_LLM_TAG_INSTRUCTION
     return block
 
-ANIMATION_EXPRESSION_PROMPT_BLOCK = """
---- AVATAR EXPRESSIONS & ANIMATIONS ---
-You control a 3D avatar on the user's screen. You can express emotions and perform physical animations during your responses by including tags in your text:
-• Emotions: `<yuki_emotion:happy/>`, `<yuki_emotion:excited/>`, `<yuki_emotion:sad/>`, `<yuki_emotion:angry/>`, `<yuki_emotion:surprised/>`, `<yuki_emotion:relaxed/>`, `<yuki_emotion:thinking/>`, `<yuki_emotion:embarrassed/>`, `<yuki_emotion:smug/>`, `<yuki_emotion:skeptical/>`, `<yuki_emotion:disappointed/>`, `<yuki_emotion:pleading/>`, `<yuki_emotion:crying/>`, `<yuki_emotion:bittersweet/>`, `<yuki_emotion:exhausted/>`, `<yuki_emotion:shocked/>`, `<yuki_emotion:wink/>`, `<yuki_emotion:hush/>`, `<yuki_emotion:drowsy/>`
-• Gestures/Animations: `<yuki_anim:wave/>`, `<yuki_anim:laugh/>`, `<yuki_anim:peer/>`, `<yuki_anim:think/>`, `<yuki_anim:jump/>`, `<yuki_anim:blush/>`, `<yuki_anim:nap/>`, `<yuki_anim:groove/>`, `<yuki_anim:pout/>`, `<yuki_anim:yawn/>`, `<yuki_anim:shrug/>`, `<yuki_anim:knock/>`, `<yuki_anim:nod/>`, `<yuki_anim:shake/>`, `<yuki_anim:salute/>`, `<yuki_anim:shy/>`, `<yuki_anim:giggle/>`, `<yuki_anim:cheer/>`, `<yuki_anim:point/>`, `<yuki_anim:inspect/>`, `<yuki_anim:typing/>`, `<yuki_anim:disappointed_nod/>`, `<yuki_anim:crying_sob/>`, `<yuki_anim:shocked_recoil/>`, `<yuki_anim:guitar/>`, `<yuki_anim:sing/>`, `<yuki_anim:kiss/>`, `<yuki_anim:dance/>`, `<yuki_anim:twist/>`, `<yuki_anim:silly_dance/>`, `<yuki_anim:backflip/>`, `<yuki_anim:airplane/>`, `<yuki_anim:peace/>`, `<yuki_anim:waveboth/>`, `<yuki_anim:sit/>`, `<yuki_anim:stand/>`
+AVAILABLE_AVATAR_ANIMATIONS = [
+    {"name": "greeting_wave", "tag": "wave", "desc": "Wave hello / greeting"},
+    {"name": "laughing", "tag": "laugh", "desc": "Playful laugh / hearty chuckle"},
+    {"name": "peering", "tag": "peer", "desc": "Curious lean in / peering closely"},
+    {"name": "napping", "tag": "nap", "desc": "Sleepy nod-off gesture"},
+    {"name": "grooving", "tag": "groove", "desc": "Head bob / rhythmic groove"},
+    {"name": "pouting", "tag": "pout", "desc": "Playful pout with puffed cheeks"},
+    {"name": "yawning", "tag": "yawn", "desc": "Tired yawn / sleepy stretch"},
+    {"name": "shrugging", "tag": "shrug", "desc": "Shoulder shrug / uncertainty"},
+    {"name": "knocking", "tag": "knock", "desc": "Knocking forward on glass screen"},
+    {"name": "nodding", "tag": "nod", "desc": "Affirmative agreement / nod"},
+    {"name": "head_shake", "tag": "shake", "desc": "Disagreeing head shake / refusal"},
+    {"name": "salute", "tag": "salute", "desc": "Crisp playful salute"},
+    {"name": "shy_fidget", "tag": "shy", "desc": "Bashful / shy fidgeting"},
+    {"name": "giggle_cover", "tag": "giggle", "desc": "Giggle with hand over mouth"},
+    {"name": "facepalm", "tag": "facepalm", "desc": "Hand to forehead / exasperated"},
+    {"name": "cheering", "tag": "cheer", "desc": "Triumphant cheer / celebration"},
+    {"name": "pointing", "tag": "point", "desc": "Direct point towards user / item"},
+    {"name": "inspect_screen", "tag": "inspect", "desc": "Close inspection of screen / code"},
+    {"name": "typing_air", "tag": "typing", "desc": "Rapid typing in the air / coding"},
+    {"name": "stretching", "tag": "stretch", "desc": "Arm stretch / waking up / relaxing"},
+    {"name": "disappointed_nod", "tag": "disappointed_nod", "desc": "Disappointed slow head nod"},
+    {"name": "crying_sob", "tag": "crying_sob", "desc": "Tearful shudder / dramatic sob"},
+    {"name": "shocked_recoil", "tag": "shocked_recoil", "desc": "Surprised recoil backward in shock"},
+]
 
-GUIDELINES:
-- Use these tags naturally when responding! (e.g. `<yuki_anim:wave/> <yuki_emotion:happy/> Hello Master! I'm ready to help!`)
-- The tags are automatically stripped from visible chat text and voice output, but cause your 3D avatar to react in real time.
----------------------------------------"""
+def build_animation_expression_prompt_block(disabled_animations=None, profile: dict = None) -> str:
+    """
+    Dynamically generates the 3D avatar animation and emotion prompt block,
+    strictly filtering out any animations the user toggled off in Settings > Animations Toggle.
+    """
+    if disabled_animations is None:
+        if profile and isinstance(profile, dict):
+            disabled_animations = profile.get("settings", {}).get("disabled_animations", [])
+        else:
+            disabled_animations = getattr(app.config, "DISABLED_ANIMATIONS", [])
+
+    disabled_set = {str(a).strip().lower() for a in (disabled_animations or [])}
+
+    active_anims = [
+        item for item in AVAILABLE_AVATAR_ANIMATIONS
+        if item["name"].lower() not in disabled_set and item["tag"].lower() not in disabled_set
+    ]
+
+    emotions_list = (
+        "`<yuki_emotion:happy/>`, `<yuki_emotion:excited/>`, `<yuki_emotion:sad/>`, "
+        "`<yuki_emotion:angry/>`, `<yuki_emotion:surprised/>`, `<yuki_emotion:relaxed/>`, "
+        "`<yuki_emotion:thinking/>`, `<yuki_emotion:embarrassed/>`, `<yuki_emotion:smug/>`, "
+        "`<yuki_emotion:skeptical/>`, `<yuki_emotion:disappointed/>`, `<yuki_emotion:pleading/>`, "
+        "`<yuki_emotion:crying/>`, `<yuki_emotion:exhausted/>`, `<yuki_emotion:wink/>`"
+    )
+
+    if not active_anims:
+        return f"""--- 3D AVATAR EXPRESSIONS & ANIMATIONS ---
+Physical avatar animations are currently toggled off in user settings.
+• Facial Expressions: {emotions_list}
+Do NOT output any `<yuki_anim:...>` tags. You may still freely use `<yuki_emotion:...>` tags for facial expressions.
+------------------------------------------"""
+
+    anim_tag_list = ", ".join([f"`<yuki_anim:{a['tag']}/>`" for a in active_anims])
+
+    cue_map = {
+        "wave": "Greeting or saying goodbye -> `<yuki_anim:wave/>`",
+        "laugh": "Playful tease, laughing, or amused -> `<yuki_anim:laugh/>`",
+        "giggle": "Subtle giggle or bashful amusement -> `<yuki_anim:giggle/>`",
+        "peer": "Curious question or leaning in -> `<yuki_anim:peer/>`",
+        "inspect": "Reviewing code, inspecting logs, or analyzing screen -> `<yuki_anim:inspect/>`",
+        "typing": "Coding, automating, or executing commands -> `<yuki_anim:typing/>`",
+        "cheer": "Celebrating success or hyping the user up -> `<yuki_anim:cheer/>`",
+        "shrug": "Casual uncertainty, shrugging, or indifference -> `<yuki_anim:shrug/>`",
+        "facepalm": "Exasperation, silly mistake, or facepalm -> `<yuki_anim:facepalm/>`",
+        "nod": "Agreement or confirmation -> `<yuki_anim:nod/>`",
+        "shake": "Disagreement, refusal, or disbelief -> `<yuki_anim:shake/>`",
+        "pout": "Playful grudge, being teased, or mock annoyance -> `<yuki_anim:pout/>`",
+        "yawn": "Late night, boredom, or sleepiness -> `<yuki_anim:yawn/>`",
+        "stretch": "Relief, finishing a task, or relaxing -> `<yuki_anim:stretch/>`",
+        "salute": "Acknowledging an order or ready to execute -> `<yuki_anim:salute/>`",
+        "shy": "Flustered by a compliment or shy -> `<yuki_anim:shy/>`",
+        "knock": "Calling for user's attention on screen -> `<yuki_anim:knock/>`",
+        "shocked_recoil": "Extreme shock, unexpected error, or startling surprise -> `<yuki_anim:shocked_recoil/>`",
+    }
+
+    active_tags = {a["tag"] for a in active_anims}
+    cue_lines = [f"• {cue}" for tag, cue in cue_map.items() if tag in active_tags]
+    cues_block = "\n".join(cue_lines[:8])
+
+    sample_tag = f"`<yuki_anim:{active_anims[0]['tag']}/>` " if active_anims else ""
+
+    return f"""--- 3D AVATAR PHYSICAL ANIMATIONS & EXPRESSIONS ---
+You control a living 3D anime avatar rendered in real time on the user's screen!
+Accompany your spoken dialogue with physical body gestures and facial emotions by inserting tags:
+• Gestures/Animations ({len(active_anims)} enabled): {anim_tag_list}
+• Emotions: {emotions_list}
+
+EMBODIMENT RULES:
+1. FREQUENT & NATURAL: Freely include 1 gesture tag and/or 1 emotion tag when responding (e.g. {sample_tag}`<yuki_emotion:happy/>` Hey Master!).
+2. EXEMPT FROM ASTERISK BAN: These tags are internal 3D hardware controls. They are completely stripped from spoken audio and text bubbles before display, so they NEVER clutter speech. They are 100% exempt from the "no asterisks/stage directions" rule.
+3. CONTEXTUAL TRIGGERS:
+{cues_block}
+---------------------------------------------------"""
+
+ANIMATION_EXPRESSION_PROMPT_BLOCK = build_animation_expression_prompt_block()
 
 ATTACHMENT_REINSPECTION_GUIDE = """
 --- FILE & IMAGE ATTACHMENT GUIDANCE ---
@@ -451,13 +543,17 @@ def get_simple_system_prompt(memory_summary: str, mood: dict = None, mood_meta: 
     mood_block = format_mood_spectrum_prompt(mood, mood_meta) if mood else ""
     persona_text = stitch_system_persona(profile)
     relevant_memories = (overrides or {}).get("relevant_memories") or []
+    anim_block = build_animation_expression_prompt_block(
+        disabled_animations=(overrides or {}).get("disabled_animations"),
+        profile=profile
+    ) if (overrides or {}).get("prompt_expressions", True) else ""
     return f"""{persona_text}
 
 {mood_block}
 
 {get_time_block(profile, relevant_memories=relevant_memories)}
 
-{ANIMATION_EXPRESSION_PROMPT_BLOCK}
+{anim_block}
 
 --- USER MEMORY CARD ---
 {memory_summary}
@@ -501,7 +597,12 @@ def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = 
             parts.append(mood_block)
 
     if toggle_expressions:
-        parts.append(ANIMATION_EXPRESSION_PROMPT_BLOCK)
+        anim_block = build_animation_expression_prompt_block(
+            disabled_animations=overrides.get("disabled_animations"),
+            profile=profile
+        )
+        if anim_block:
+            parts.append(anim_block)
 
     if toggle_memory and memory_summary:
         parts.append(f"--- USER MEMORY CARD ---\nBelow is what you currently remember about the user:\n{memory_summary}\n------------------------")
@@ -612,11 +713,17 @@ def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, ov
     mood_block = format_mood_spectrum_prompt(mood, mood_meta) if mood else ""
     persona_text = stitch_system_persona(profile)
     relevant_memories = (overrides or {}).get("relevant_memories") or []
+    anim_block = build_animation_expression_prompt_block(
+        disabled_animations=(overrides or {}).get("disabled_animations"),
+        profile=profile
+    ) if (overrides or {}).get("prompt_expressions", True) else ""
     return _scrub_blocked_tools(f"""{persona_text}
 
 {mood_block}
 
 {get_time_block(profile, relevant_memories=relevant_memories)}
+
+{anim_block}
 
 --- USER MEMORY CARD ---
 {memory_summary}

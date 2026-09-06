@@ -116,9 +116,21 @@ const App = () => {
         ? prev.filter((name) => name !== animName)
         : [...prev, animName];
       localStorage.setItem('yuki-disabled-animations', JSON.stringify(next));
+      fetch(`${API_BASE}/api/settings/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disabled_animations: next })
+      }).catch((err) => console.warn('[Settings] Failed to sync disabled_animations to backend:', err));
       return next;
     });
   };
+
+  useEffect(() => {
+    if (Array.isArray(profile?.settings?.disabled_animations)) {
+      setDisabledAnimations(profile.settings.disabled_animations);
+      localStorage.setItem('yuki-disabled-animations', JSON.stringify(profile.settings.disabled_animations));
+    }
+  }, [profile?.settings?.disabled_animations]);
 
   const cmdSuggestions = useMemo(() => {
     if (!inputText.startsWith('/')) return [];
@@ -895,6 +907,7 @@ const App = () => {
 
   const currentResponseTextRef = useRef('');
   const toolBadgesAccumulatorRef = useRef('');
+  const firedTurnAnimationsRef = useRef(new Set());
   const handleWebSocketMessageRef = useRef(null);
   const lastFetchTime = useRef(0);
   const FETCH_COOLDOWN_MS = 2000;
@@ -1049,6 +1062,7 @@ const App = () => {
         // Clear speech bubble immediately since a new response generation starts
         setCurrentSpeechText('');
         currentResponseTextRef.current = '';
+        firedTurnAnimationsRef.current.clear();
         toolBadgesAccumulatorRef.current = '';
         hasReceivedAudioRef.current = false;
       } else if (msg.status === 'idle') {
@@ -1160,7 +1174,8 @@ const App = () => {
 
       const { cleanText, animations, emotions } = parseResponseTags(currentResponseTextRef.current, {
         onAnimation: (animName) => {
-          if (!disabledAnimations.includes(animName)) {
+          if (!disabledAnimations.includes(animName) && !firedTurnAnimationsRef.current.has(animName)) {
+            firedTurnAnimationsRef.current.add(animName);
             setCustomAnimation({
               name: animName,
               category: 'llm_tag',
@@ -2870,7 +2885,14 @@ const App = () => {
     }]);
 
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      const payload = { type: 'chat', message: text };
+      firedTurnAnimationsRef.current.clear();
+      const payload = {
+        type: 'chat',
+        message: text,
+        overrides: {
+          disabled_animations: disabledAnimations
+        }
+      };
       if (hasAudioData) {
         payload.audio_data = extraOpts.audio_data;
         payload.audio_duration_ms = extraOpts.audio_duration_ms;

@@ -1435,7 +1435,7 @@ class AgentExecutor:
         if overrides.get("coding_mode"):
             system_content = get_coding_agent_system_prompt(memory_summary, mood, overrides=overrides, profile=profile_obj)
         elif backend == "simple" and not getattr(config, "SEND_TOOLS_IN_SIMPLE", False):
-            system_content = get_simple_system_prompt(memory_summary, mood, mood_meta=mood_meta, profile=profile_obj)
+            system_content = get_simple_system_prompt(memory_summary, mood, mood_meta=mood_meta, profile=profile_obj, overrides=overrides)
         else:
             if effective_tool_mode == "advanced":
                 system_content = get_advanced_jarvis_system_prompt(memory_summary, mood, overrides=overrides, mood_meta=mood_meta, profile=profile_obj)

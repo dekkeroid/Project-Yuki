@@ -172,7 +172,8 @@ class MemoryManager:
                 "proactive_nudge_boredom_pct": 80,
                 "desk_sleep_idle_min": 3,
                 "companion_nap_silence_min": 5,
-                "companion_nap_energy_pct": 30
+                "companion_nap_energy_pct": 30,
+                "disabled_animations": []
             }
         }
         if not os.path.exists(self.profile_path):
@@ -233,6 +234,7 @@ class MemoryManager:
                 config.AED_CONFIDENCE_THRESHOLD = float(data["settings"].get("aed_confidence_threshold", getattr(config, "AED_CONFIDENCE_THRESHOLD", 0.45)))
                 config.AED_FAST_REFLEX = bool(data["settings"].get("aed_fast_reflex", getattr(config, "AED_FAST_REFLEX", True)))
                 config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
+                config.DISABLED_ANIMATIONS = list(data["settings"].get("disabled_animations", []))
                 config.USER_COUNTRY = data["settings"].get("user_country", getattr(config, "USER_COUNTRY", "Auto"))
                 config.USER_LOCATION = data["settings"].get("user_location", getattr(config, "USER_LOCATION", "Auto"))
                 config.GREETING_WEATHER_ENABLED = bool(data["settings"].get("greeting_weather_enabled", getattr(config, "GREETING_WEATHER_ENABLED", True)))
@@ -623,6 +625,11 @@ class MemoryManager:
             from app.agent.personas import get_clean_character_backstory
             config.CHARACTER_PERSONA = get_clean_character_backstory(self.profile)
             self.profile["settings"]["character_persona"] = config.CHARACTER_PERSONA
+            self._save_profile()
+        elif key == "disabled_animations":
+            clean_anims = [str(x).strip() for x in value] if isinstance(value, list) else []
+            config.DISABLED_ANIMATIONS = clean_anims
+            self.profile["settings"]["disabled_animations"] = clean_anims
             self._save_profile()
         elif key == "llm_model":
             config.LLM_MODEL = value

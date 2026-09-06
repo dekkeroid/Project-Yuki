@@ -873,6 +873,7 @@ const ControlDashboard = ({
     stable_horde_model: 'Pony Diffusion V6 XL',
     always_included_tools: [],
     blocked_tools: [],
+    disabled_animations: [],
     tts_voice: 'af_bella',
     tts_rate: 'auto',
     tts_device: 'auto',
