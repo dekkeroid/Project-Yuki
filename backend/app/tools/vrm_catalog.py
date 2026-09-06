@@ -512,6 +512,25 @@ def find_outfit_match(
         elif characters:
             return (characters[0], characters[0]["outfits"][0], None)
 
+    # Referential / cycling commands: "next", "something new", "something else", "another", "surprise me"
+    NEXT_OUTFIT_TERMS = {
+        "next", "another", "another one", "different", "different outfit",
+        "something else", "something new", "something different",
+        "new", "new outfit", "surprise", "surprise me", "random", "change it",
+        "switch it", "anything", "whatever", "other"
+    }
+    if raw_target in NEXT_OUTFIT_TERMS or any(raw_target.startswith(p) for p in ("something ", "another ", "different ", "new ")):
+        target_c = active_char or (characters[0] if characters else None)
+        if target_c and target_c.get("outfits"):
+            c_outfits = target_c["outfits"]
+            current_file = catalog.get("active_vrm_model", "")
+            if len(c_outfits) > 1:
+                cur_idx = next((i for i, o in enumerate(c_outfits) if o["file"] == current_file), -1)
+                next_idx = (cur_idx + 1) % len(c_outfits)
+                return (target_c, c_outfits[next_idx], None)
+            else:
+                return (target_c, c_outfits[0], None)
+
     GENERIC_OUTFIT_WORDS = {
         "dress", "outfit", "costume", "suit", "clothes", "version", "model",
         "avatar", "the", "a", "an", "with", "in", "wearing", "style", "look"
