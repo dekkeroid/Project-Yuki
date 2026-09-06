@@ -573,6 +573,22 @@ export const ANIMATIONS = [
     blendShapes: { happy: 0.6, relaxed: 0.9, browUp: 0.4 }
   },
   {
+    name: 'laugh_opt4',
+    alias: 'laugh4',
+    type: 'vrma',
+    vrmaUrl: './animations/laugh_opt4.vrma',
+    duration: 3.25,
+    upperBodyOnly: true,
+    excludeFromRandomIdle: true,
+    llmTag: '<yuki_anim:laugh4/>',
+    commands: [
+      { cmd: '/ani-laugh4', description: 'Teasing giggle reaction and amused chuckle (3.3s mocap)' },
+      { cmd: '/ani-tease_laugh', description: 'Teasing giggle reaction (alias)' }
+    ],
+    responseText: '*giggles playfully at you with an amused chuckle*',
+    blendShapes: { happy: 0.5, relaxed: 0.85, browUp: 0.35 }
+  },
+  {
     name: 'breathing',
     duration: 0,
     excludeFromRandomIdle: true,
@@ -813,6 +829,9 @@ export const LLM_ANIMATION_MAP = {
   knee_slap: 'laugh_opt2',
   laugh2: 'laugh_opt2',
   laugh_opt2: 'laugh_opt2',
+  laugh4: 'laugh_opt4',
+  laugh_opt4: 'laugh_opt4',
+  tease_laugh: 'laugh_opt4',
   // Friendly reflex / AED speech aliases:
   surprise: 'peering',
   tilt_head: 'peering',
