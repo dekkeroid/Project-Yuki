@@ -166,10 +166,10 @@ export function useAudioPlayback(options = {}) {
 
     setCurrentSpeechText('');
     if (setAudioLevel) setAudioLevel(0);
-    if (setAvatarExpression) setAvatarExpression('neutral');
+    // Preserve active LLM or mood-guided facial expression instead of forcing blank neutral
 
     if (updateListeningStateGlobal) updateListeningStateGlobal();
-  }, [stopSpeechRecognition, setAudioLevel, setAvatarExpression, updateListeningStateGlobal]);
+  }, [stopSpeechRecognition, setAudioLevel, updateListeningStateGlobal]);
 
   const playNextAudioRef = useRef(null);
 

@@ -125,13 +125,6 @@ const App = () => {
     });
   };
 
-  useEffect(() => {
-    if (Array.isArray(profile?.settings?.disabled_animations)) {
-      setDisabledAnimations(profile.settings.disabled_animations);
-      localStorage.setItem('yuki-disabled-animations', JSON.stringify(profile.settings.disabled_animations));
-    }
-  }, [profile?.settings?.disabled_animations]);
-
   const cmdSuggestions = useMemo(() => {
     if (!inputText.startsWith('/')) return [];
     const q = inputText.toLowerCase();
@@ -339,6 +332,14 @@ const App = () => {
     }
   });
 
+  // Sync disabled animations from profile settings
+  useEffect(() => {
+    if (Array.isArray(profile?.settings?.disabled_animations)) {
+      setDisabledAnimations(profile.settings.disabled_animations);
+      localStorage.setItem('yuki-disabled-animations', JSON.stringify(profile.settings.disabled_animations));
+    }
+  }, [profile?.settings?.disabled_animations]);
+
   // Comprehensive Electron Settings Modal States
   const [activeTab, setActiveTab] = useState('settings');
   const [localCharName, setLocalCharName] = useState('Yuki');
@@ -496,6 +497,7 @@ const App = () => {
     let cleanupCam = null;
     let cleanupVoice = null;
     let cleanupScale = null;
+    let cleanupAnim = null;
 
     if (window.electronAPI) {
       if (window.electronAPI.onSkinToneColorChanged) {
@@ -527,14 +529,41 @@ const App = () => {
           }
         });
       }
+      if (window.electronAPI.onTriggerCustomAnimation) {
+        cleanupAnim = window.electronAPI.onTriggerCustomAnimation((animName) => {
+          if (animName) {
+            setCustomAnimation({
+              name: animName,
+              category: 'user_interaction',
+              reason: `Manual test button: ${animName}`
+            });
+            setTimeout(() => setCustomAnimation(''), 100);
+          }
+        });
+      }
     }
+
+    const handleCustomAnimEvent = (e) => {
+      const animName = e.detail;
+      if (animName) {
+        setCustomAnimation({
+          name: animName,
+          category: 'user_interaction',
+          reason: `Manual test button: ${animName}`
+        });
+        setTimeout(() => setCustomAnimation(''), 100);
+      }
+    };
+    window.addEventListener('yuki:trigger-animation', handleCustomAnimEvent);
 
     return () => {
       window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('yuki:trigger-animation', handleCustomAnimEvent);
       if (cleanupSkin) cleanupSkin();
       if (cleanupCam) cleanupCam();
       if (cleanupVoice) cleanupVoice();
       if (cleanupScale) cleanupScale();
+      if (cleanupAnim) cleanupAnim();
     };
   }, []);
 
@@ -952,6 +981,11 @@ const App = () => {
       }
       if (msg.mood) {
         setLiveMood(prev => ({ ...prev, ...msg.mood }));
+        if (msg.mood.expression) {
+          setAvatarExpression(prev =>
+            (prev === 'neutral' || prev === 'relaxed') ? (msg.mood.expression || prev) : prev
+          );
+        }
       }
       if (msg.anim) {
         setCustomAnimation({
@@ -1182,6 +1216,22 @@ const App = () => {
               reason: `Parsed <yuki_anim:${animName}/> from LLM response`
             });
             setTimeout(() => setCustomAnimation(''), 100);
+
+            // If no explicit emotion tag was set, naturally guide facial expression from animation
+            if (!emotions || emotions.length === 0) {
+              const animDef = ANIMATIONS.find(a => a.name === animName || a.alias === animName);
+              if (animDef?.blendShapes) {
+                if (animDef.blendShapes.relaxed && animDef.blendShapes.relaxed >= 0.5) {
+                  setAvatarExpression('relaxed');
+                } else if (animDef.blendShapes.sad && animDef.blendShapes.sad >= 0.4) {
+                  setAvatarExpression('sad');
+                } else if (animDef.blendShapes.angry && animDef.blendShapes.angry >= 0.4) {
+                  setAvatarExpression('angry');
+                } else if (animDef.blendShapes.surprised && animDef.blendShapes.surprised >= 0.4) {
+                  setAvatarExpression('surprised');
+                }
+              }
+            }
           }
         },
         onEmotion: (emotionName) => {
@@ -1880,7 +1930,7 @@ const App = () => {
       let fallbackAnim = 'greeting_wave';
       if (currentHour >= 5 && currentHour < 12) {
         fallbackMsg = `Good morning, ${userName}! Ready for what's ahead today.`;
-        fallbackAnim = 'stretching';
+        fallbackAnim = 'cat_stretch';
       } else if (currentHour >= 12 && currentHour < 17) {
         fallbackMsg = `Good afternoon, ${userName}! Hope your day is going smoothly.`;
         fallbackAnim = 'greeting_wave';
@@ -3294,6 +3344,7 @@ const App = () => {
               boredom={presenceState.boredom}
               energy={liveMood.energy}
               playfulness={liveMood.playfulness}
+              mood={liveMood}
               sleepState={presenceState.sleep_state}
               onWakeCharacter={handleWakeCharacter}
               onAnimationTriggered={handleAnimationTriggered}
@@ -5892,6 +5943,7 @@ const App = () => {
             boredom={presenceState.boredom}
             energy={liveMood.energy}
             playfulness={liveMood.playfulness}
+            mood={liveMood}
             sleepState={presenceState.sleep_state}
             onWakeCharacter={handleWakeCharacter}
             onAnimationTriggered={handleAnimationTriggered}
@@ -5964,6 +6016,14 @@ const App = () => {
           }}
           disabledAnimations={disabledAnimations}
           onToggleAnimation={toggleAnimationEnabled}
+          onTestAnimation={(animName) => {
+            setCustomAnimation({
+              name: animName,
+              category: 'user_interaction',
+              reason: `Manual test button: ${animName}`
+            });
+            setTimeout(() => setCustomAnimation(''), 100);
+          }}
           micDevices={micDevices}
           selectedMicDeviceId={selectedMicDeviceId}
           onMicDeviceChange={(deviceId) => {

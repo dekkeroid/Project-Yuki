@@ -768,6 +768,10 @@ async def lifespan(app: FastAPI):
                 # Live presence snapshot & mood broadcast to frontend
                 snapshot = presence_manager.get_presence_snapshot()
                 mood_data = memory_manager.get_mood_spectrum()
+                try:
+                    mood_data["expression"] = memory_manager._mood_engine.expression()
+                except Exception:
+                    pass
 
                 payload = {
                     "type": "presence_update",
@@ -921,7 +925,7 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.5-beta", lifespan=lifespan)
+app = FastAPI(title="Yuki Desktop Assistant Backend", version="0.3.6-beta", lifespan=lifespan)
 
 # Setup CORS — restrict to localhost and LAN origins
 app.add_middleware(
@@ -5656,6 +5660,14 @@ if _frontend_dir.exists():
     _assets_dir = _frontend_dir / "assets"
     if _assets_dir.exists():
         app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="static-assets")
+
+    _anims_dir = _frontend_dir / "animations"
+    if not _anims_dir.exists():
+        _anims_dev = Path(__file__).resolve().parent.parent.parent / "frontend" / "public" / "animations"
+        if _anims_dev.exists():
+            _anims_dir = _anims_dev
+    if _anims_dir.exists():
+        app.mount("/animations", StaticFiles(directory=str(_anims_dir)), name="static-animations")
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
