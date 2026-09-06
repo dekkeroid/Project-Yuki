@@ -320,6 +320,7 @@ class AgentExecutor:
         )
         from app.tools.telegram_tools import telegram_send_screenshot, telegram_send_file
         from app.tools.ask_user import ask_user as _ask_user_async
+        from app.tools.vrm_catalog import change_avatar_outfit
         from app.tools.safety import authorize_tool_call as _authorize_tool_call_fn
         self._authorize_tool_call = _authorize_tool_call_fn
         self._fallback_call_counter = 0
@@ -328,6 +329,11 @@ class AgentExecutor:
         self.tools = {
             "get_system_stats": get_system_stats,
             "get_current_datetime": get_current_datetime,
+            "change_avatar_outfit": lambda **kwargs: change_avatar_outfit(
+                outfit=kwargs.get("model_or_outfit") or kwargs.get("outfit") or kwargs.get("name") or kwargs.get("target") or "default",
+                character=kwargs.get("character") or kwargs.get("model") or kwargs.get("character_name"),
+                memory_manager=self.memory
+            ),
             "launch_app": lambda **kwargs: launch_app(
                 kwargs.get("app_name") or kwargs.get("name") or kwargs.get("app") or (list(kwargs.values())[0] if kwargs else ""),
                 args=kwargs.get("args"),
@@ -496,6 +502,11 @@ class AgentExecutor:
             "jarvis_manage_scheduled_task": lambda **kwargs: self._execute_manage_scheduled_task(**kwargs),
             "jarvis_remember_user_fact": lambda **kwargs: self._execute_update_user_fact(**kwargs),
             "jarvis_manage_yuki_settings": lambda **kwargs: self._execute_manage_yuki_settings(**kwargs),
+            "jarvis_change_avatar_outfit": lambda **kwargs: change_avatar_outfit(
+                outfit=kwargs.get("model_or_outfit") or kwargs.get("outfit") or kwargs.get("name") or kwargs.get("target") or "default",
+                character=kwargs.get("character") or kwargs.get("model") or kwargs.get("character_name"),
+                memory_manager=self.memory
+            ),
             "jarvis_close_app": lambda **kwargs: manage_process(
                 "kill",
                 name=kwargs.get("app_name") or kwargs.get("name") or "",
@@ -2540,7 +2551,7 @@ class AgentExecutor:
                 "launch_app", "open_or_play_file", "set_system_volume", "manage_timer_stopwatch_alarms",
                 "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script",
                 "jarvis_query_file_db", "jarvis_open_or_play_file",
-                "jarvis_analyze_image", "jarvis_see_screen", "ask_user"
+                "jarvis_analyze_image", "jarvis_see_screen", "ask_user", "change_avatar_outfit"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in basic_allowed]
 

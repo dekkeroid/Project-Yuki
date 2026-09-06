@@ -483,6 +483,37 @@ EMBODIMENT RULES:
 
 ANIMATION_EXPRESSION_PROMPT_BLOCK = build_animation_expression_prompt_block()
 
+
+def build_avatar_outfit_prompt_block(profile: dict = None) -> str:
+    """Dynamically builds the avatar model and outfit status block for system prompts."""
+    try:
+        from app.tools.vrm_catalog import build_vrm_catalog
+        active_model = None
+        if profile and isinstance(profile, dict) and "settings" in profile:
+            active_model = profile["settings"].get("active_vrm_model")
+        catalog = build_vrm_catalog(active_model)
+        active_char = catalog.get("active_character", "Default")
+        active_outfit = catalog.get("active_outfit", "Default")
+
+        avail_outfits = []
+        for c in catalog.get("characters", []):
+            if c.get("is_active"):
+                avail_outfits = [f"`{o['name']}`" for o in c.get("outfits", [])]
+                break
+
+        outfits_str = ", ".join(avail_outfits) if avail_outfits else "`Default`"
+
+        return f"""--- 3D AVATAR & OUTFIT CAPABILITIES ---
+Your current 3D avatar on screen is: **{active_char}** (Active Outfit: **{active_outfit}**).
+• Available Outfits for {active_char}: {outfits_str}
+• You have the ability to change outfits, put on accessories/hats, or switch clothes whenever the user asks or when contextually appropriate by calling `change_avatar_outfit`!
+• ZERO SIMULATION (MANDATORY): You CANNOT change clothes or switch characters through text dialogue alone. You MUST emit a structured native tool call to `change_avatar_outfit`! NEVER say you changed clothes, switched models, or ask "how do I look?" unless you actually invoked `change_avatar_outfit` in that exact turn.
+• Whenever you successfully change outfits via `change_avatar_outfit`, accompany your reply with a fashion pose tag like `<yuki_anim:show_body/>` or `<yuki_anim:model_pose/>`!
+---------------------------------------"""
+    except Exception:
+        return ""
+
+
 ATTACHMENT_REINSPECTION_GUIDE = """
 --- FILE & IMAGE ATTACHMENT GUIDANCE ---
 Messages may carry attachment references like `[Attached image #1: name at 'path']` or `[Attached file #1: name at 'path']`.
@@ -634,6 +665,9 @@ def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = 
         )
         if anim_block:
             parts.append(anim_block)
+        outfit_block = build_avatar_outfit_prompt_block(profile=profile)
+        if outfit_block:
+            parts.append(outfit_block)
 
     if toggle_memory and memory_summary:
         parts.append(f"--- USER MEMORY CARD ---\nBelow is what you currently remember about the user:\n{memory_summary}\n------------------------")
@@ -650,6 +684,7 @@ Read these carefully. They are strict.
 RULE 1 — CONVERSATIONAL INTENT: If the user is chatting, asking your opinion, greeting you, or using action words in a figurative/conversational sense, do NOT call any tool. Respond directly in natural language.
 
 RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
+  • `change_avatar_outfit` → Switch Yuki's 3D avatar model, character, outfit, or variant (e.g. `model_or_outfit='kind'`, `model_or_outfit='with hat'`, `model_or_outfit='mita'`, `model_or_outfit='default'`). MUST be called via native tool call whenever user asks to change/wear clothes or switch characters; NEVER pretend to switch in dialogue without calling this tool. Always pair with visual pose tags like `<yuki_anim:show_body/>` or `<yuki_anim:model_pose/>`.
   • `web_search` → ONLY when the user asks for current news, facts, prices, or information you cannot know without searching the internet. Returns 8 search snippets and automatically reads the top 2 pages.
   • `open_or_play_file` → ONLY when the user wants to open, play, watch, or read a file on their computer.
   • `search_files` → ONLY when the user wants to find a specific file on their computer.
@@ -686,9 +721,13 @@ RULE 2 — TOOL TRIGGER CONDITIONS (ONLY call a tool when):
 RULE 3 — ONE TOOL PER TURN: Call at most one tool per response unless user explicitly asks for multiple actions.
 RULE 4 — SUMMARIZE IMMEDIATELY: After a tool returns a result, your next response MUST be a natural response for the user (keep casual tool confirmations under 3 sentences, BUT whenever solving numericals, exam questions, or explaining concepts, provide the full step-by-step working and reasoning directly).
 RULE 5 — TOOL CALL DISCIPLINE, ZERO SIMULATION & USER CORRECTION OVERRIDE:
+  • ZERO PHANTOM ACTIONS: NEVER claim, announce, or pretend that an action has been performed (e.g. changing clothes/avatar/costume, launching/closing apps, modifying files, setting timers/alarms/stopwatches, adjusting volume, searching the web, or running code) purely in conversational text. If an action changes system, workspace, or avatar state, you MUST emit the structured native API tool call in that exact turn. Describing an action in text without calling the tool is a fatal error.
   • Never write "Searching...", "Playing...", or describe a tool action in text without emitting the native API tool call. Call the tool directly.
-  • USER SEARCH/DOUBT OVERRIDE: When the user asks you to search ("search on internet", "search again", "check the web"), challenges your claim ("you didn't search", "are you sure?"), or disputes an unverified factual claim, you MUST immediately emit a native tool call (e.g. `web_search`, `jarvis_web_search`, `jarvis_web_scrape`, `jarvis_run_python`). NEVER argue, defend an unverified previous answer, or claim you already searched.
-    - EXCEPTION (EXISTING CONTEXT & ALGEBRA): If the user is referring to an equation, formula, code block, or snippet ALREADY present in the immediate conversation (e.g. "rearrange the formula", "solve for A", "what does f mean?"), do NOT trigger a web search. Perform the algebraic manipulation or derivation directly from the existing context.
+  • USER CORRECTION & "USE THE TOOL" OVERRIDE: When Master says "use the tool", "actually do it", "you didn't do it", challenges an action ("did you actually change?", "are you sure?"), or asks you to search/run something again:
+    - Immediately resolve what action was requested from the preceding messages in the chat history.
+    - You MUST immediately emit the corresponding native tool call (e.g. `change_avatar_outfit`, `launch_app`, `web_search`, `manage_timer_stopwatch_alarms`, `run_python_script`).
+    - NEVER argue, defend an unexecuted previous answer, apologize in pure text, or claim you "already did it" — execute the tool call in that exact turn.
+  - EXCEPTION (EXISTING CONTEXT & ALGEBRA): If the user is referring to an equation, formula, code block, or snippet ALREADY present in the immediate conversation (e.g. "rearrange the formula", "solve for A", "what does f mean?"), do NOT trigger a web search. Perform the algebraic manipulation or derivation directly from the existing context.
   • HISTORICAL ATTRIBUTION: If referring to results from earlier turns labeled `[Past Result]`, state "From our earlier search..." rather than claiming a fresh search occurred in the current turn.
 
 RULE 6 — DELETION SAFETY (STRICT):
@@ -748,6 +787,7 @@ def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, ov
         disabled_animations=(overrides or {}).get("disabled_animations"),
         profile=profile
     ) if (overrides or {}).get("prompt_expressions", True) else ""
+    outfit_block = build_avatar_outfit_prompt_block(profile=profile) if (overrides or {}).get("prompt_expressions", True) else ""
     return _scrub_blocked_tools(f"""{persona_text}
 
 {mood_block}
@@ -756,6 +796,8 @@ def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, ov
 
 {anim_block}
 
+{outfit_block}
+
 --- USER MEMORY CARD ---
 {memory_summary}
 ------------------------
@@ -763,6 +805,14 @@ def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, ov
 --- AUTONOMOUS JARVIS OPERATING DIRECTIVES ---
 You are operating in ADVANCED JARVIS PC ASSISTANT MODE powered by a Frontier LLM.
 You have full access to parallel tools, iterative multi-step reasoning, local file databases, system diagnostics, and web scraping.
+
+CRITICAL LAW — ZERO SIMULATION & MANDATORY TOOL EXECUTION:
+• NEVER SIMULATE ACTIONS IN DIALOGUE: Never claim, announce, or pretend that an action has been completed (e.g. switching avatar outfits/models/characters, launching or closing applications, setting timers/alarms/stopwatches, adjusting system volume, searching the web, modifying files, or running code) purely in conversational text.
+• NATIVE API CALLS ARE MANDATORY: If the user requests or implies an action, you MUST emit the structured native `tool_calls` payload in that exact turn. Roleplaying or talking about having done an action without calling the tool is a critical failure.
+• USER CORRECTION & "USE THE TOOL" OVERRIDE: When Master says "use the tool", "actually do it", "you didn't do it", challenges an action ("did you actually change?", "are you sure?"), or tells you to perform a skipped task:
+  - Immediately inspect the preceding 1–3 messages in the active chat history to identify the requested action.
+  - You MUST immediately emit the native tool call (e.g. `change_avatar_outfit`, `jarvis_launch_app`, `jarvis_web_search`, `jarvis_manage_timer_stopwatch_alarms`, etc.).
+  - NEVER argue, never offer purely verbal apologies, and never claim you "already did it" — execute the tool call in that exact turn.
 
 1. PARALLEL & MULTI-STEP REASONING:
    • You can invoke MULTIPLE tools simultaneously in a single turn if needed.
@@ -836,6 +886,7 @@ You have full access to parallel tools, iterative multi-step reasoning, local fi
      - PRESENTING ITEMS: When answering what is on a list, ALWAYS format and present all items clearly in your response (e.g. as bullet points or numbered list with `[ ]`) so the user can easily see each item.
    • `jarvis_keyboard_mouse_input` → Send keys/mouse to the app currently in focus. Prefer keyboard actions (`type`, `press_keys` with Tab/Enter/arrows/shortcuts) over raw coordinates. If you must click, first call `jarvis_see_screen` and have it report the exact screen x,y of the target element, then click those coordinates; if the click misses, re-check the screen and adjust. For websites, use the browser tools instead.
    • `jarvis_system_volume` → Get or set the Windows master speaker volume level (0-100) and mute status. Omit `volume_level` or set `action='get'` to inspect current volume; provide `volume_level` (0-100) to change it.
+   • `change_avatar_outfit` → Switch Yuki's 3D avatar model, character, outfit, or variant (e.g. `model_or_outfit='kind'`, `model_or_outfit='with hat'`, `model_or_outfit='mita'`, `model_or_outfit='default'`). MUST be called via native tool call whenever user asks to change/wear clothes or switch characters; NEVER pretend to switch in dialogue without calling this tool. Always pair with visual pose tags like `<yuki_anim:show_body/>` or `<yuki_anim:model_pose/>`.
 
 
 3. INDEXED FILE DATABASE (yuki_files.db) SCHEME & SCIENTIFIC SEARCH STRATEGY:
@@ -947,7 +998,7 @@ def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, 
    • NON-INTERACTIVE CLI: For scaffolding (e.g. `npx`, `npm create`), always pass the `-y` flag and specify template options to ensure non-blocking execution.
    • INTERACTIVE INPUT: If a terminal process blocks on an interactive prompt, use `jarvis_send_stdin(input_text="...", pid=...)` to submit responses.
    • BANNED DEV SERVERS: NEVER execute long-running dev servers (e.g. `npm run dev`) via AI. Include them in `README.md` as manual instructions for the user.
-   • NATIVE API CALLS: ALWAYS emit structured `tool_calls` for actions. NEVER simulate tool outputs with text.
+   • NATIVE API CALLS & ZERO SIMULATION: ALWAYS emit structured `tool_calls` for actions. NEVER simulate tool outputs or claim actions were completed with text. If Master says "use the tool" or challenges execution, invoke the tool immediately.
    • WEB SEARCH & CORRECTION: If the user explicitly asks to search or disputes your logic, you MUST call `jarvis_web_search` or equivalent tools immediately.
    • TOOL ARTIFACT & CODE RECALL:
      - Python Scripts (`.tool_cache/python_<ts>_<id>.py`): Contains the exact raw Python source code (input) that was executed.

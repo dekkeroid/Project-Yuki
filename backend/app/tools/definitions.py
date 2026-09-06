@@ -330,6 +330,31 @@ def get_basic_tools_definition() -> list:
                     "required": ["action"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "change_avatar_outfit",
+                "description": "WHEN TO USE: Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessory. Works whether the user asks for a character ('mita', 'mixup', 'laplus'), an outfit/variant ('kind', 'with hat', 'school', 'no coat', 'maid'), or a combined name ('mita kind', 'mixup with hat'). Also supports 'default' or 'normal' to reset clothes, and 'list' to show available outfits.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "model_or_outfit": {
+                            "type": "string",
+                            "description": "The name or keyword of the avatar model, character, outfit, or variant to switch to (e.g. 'kind', 'mita kind', 'with hat', 'hat', 'school', 'no coat', 'mixup', 'default', or 'list' to view all available outfits)."
+                        },
+                        "outfit": {
+                            "type": "string",
+                            "description": "Alias for model_or_outfit."
+                        },
+                        "character": {
+                            "type": "string",
+                            "description": "Optional character name if specified separately."
+                        }
+                    },
+                    "required": []
+                }
+            }
         }
     ]
 
@@ -663,6 +688,31 @@ def get_advanced_jarvis_tools_definition() -> list:
                         }
                     },
                     "required": ["action"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "change_avatar_outfit",
+                "description": "WHEN TO USE: Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessory. Works whether the user asks for a character ('mita', 'mixup', 'laplus'), an outfit/variant ('kind', 'with hat', 'school', 'no coat', 'maid'), or a combined name ('mita kind', 'mixup with hat'). Also supports 'default' or 'normal' to reset clothes, and 'list' to show available outfits.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "model_or_outfit": {
+                            "type": "string",
+                            "description": "The name or keyword of the avatar model, character, outfit, or variant to switch to (e.g. 'kind', 'mita kind', 'with hat', 'hat', 'school', 'no coat', 'mixup', 'default', or 'list' to view all available outfits)."
+                        },
+                        "outfit": {
+                            "type": "string",
+                            "description": "Alias for model_or_outfit."
+                        },
+                        "character": {
+                            "type": "string",
+                            "description": "Optional character name if specified separately."
+                        }
+                    },
+                    "required": []
                 }
             }
         },

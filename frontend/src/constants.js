@@ -558,6 +558,77 @@ export const cleanTextForTTS = (text) => {
   // 5. Remove emojis
   clean = clean.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2702}-\u{27B0}\u{24C2}-\u{1F251}\u{2600}-\u{27BF}]/gu, '');
 
+  // 5.5 Expressive Conversational Stutter & Stammer Resolution (Partial Syllables)
+  const STUTTER_SYLLABLE_MAP = {
+    wait: 'wai',
+    "don't": 'duh',
+    dont: 'duh',
+    baka: 'ba',
+    what: 'wha',
+    whaat: 'wha',
+    no: 'nuh',
+    you: 'yuh',
+    your: 'yuh',
+    that: 'tha',
+    "that's": 'tha',
+    thats: 'tha',
+    this: 'thi',
+    it: 'it',
+    "it's": 'it',
+    its: 'it',
+    is: 'is',
+    sorry: 'so',
+    please: 'plee',
+    can: 'ca',
+    "can't": 'ca',
+    cant: 'ca',
+    why: 'wha',
+    where: 'whe',
+    who: 'hoo',
+    how: 'ha',
+    but: 'buh',
+    just: 'juh',
+    really: 'ree',
+    like: 'li',
+    stop: 'stuh',
+    stupid: 'stu',
+    good: 'go',
+    fast: 'fa',
+    fine: 'fi',
+  };
+
+  const getStutterPrefix = (word) => {
+    const lowerWord = (word || '').toLowerCase();
+    const cleanWord = lowerWord.replace(/[^a-z]/g, '');
+    if (STUTTER_SYLLABLE_MAP[lowerWord]) return STUTTER_SYLLABLE_MAP[lowerWord];
+    if (STUTTER_SYLLABLE_MAP[cleanWord]) return STUTTER_SYLLABLE_MAP[cleanWord];
+    if (cleanWord && 'aeiou'.includes(cleanWord[0])) {
+      return cleanWord.length >= 2 ? cleanWord.slice(0, 2) : cleanWord;
+    }
+    const m = cleanWord.match(/^([^aeiouy]*[aeiouy])/);
+    if (m && m[1].length <= 3) return m[1];
+    const mConsonant = cleanWord.match(/^([^aeiouy]+)/);
+    if (mConsonant) return mConsonant[1] + 'uh';
+    return '';
+  };
+
+  clean = clean.replace(/\b((?:(?:[a-zA-Z]|th|sh|ch|wh)-)+)([a-zA-Z']+)\b/gi, (match, rawPrefix, word) => {
+    const isUpper = match[0] === match[0].toUpperCase();
+    const parts = rawPrefix.split('-').filter(Boolean);
+    if (!parts.length) return match;
+    const firstPart = parts[0].toLowerCase();
+    if (!parts.every(p => p.toLowerCase() === firstPart)) return match;
+    if (!word.toLowerCase().startsWith(firstPart)) return match;
+
+    const syl = getStutterPrefix(word);
+    if (!syl) return match;
+
+    const count = parts.length;
+    const repeatedSyl = Array(count).fill(syl).join('-');
+    const res = `${repeatedSyl}-${word}`;
+    return isUpper ? res.charAt(0).toUpperCase() + res.slice(1) : res;
+  });
+
   // 6. Replace multiple spaces with a single space
   return clean.replace(/\s+/g, ' ').trim();
 };

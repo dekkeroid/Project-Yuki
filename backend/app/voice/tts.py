@@ -912,6 +912,104 @@ def apply_pronunciation_lexicon(text: str) -> str:
     return text
 
 
+STUTTER_SYLLABLE_MAP = {
+    # Direct phonetic stammer syllables (e.g. w-wait = wai-wait, d-don't = duh-don't)
+    "wait": "wai",
+    "don't": "duh",
+    "dont": "duh",
+    "baka": "ba",
+    "what": "wha",
+    "whaat": "wha",
+    "no": "nuh",
+    "you": "yuh",
+    "your": "yuh",
+    "that": "tha",
+    "that's": "tha",
+    "thats": "tha",
+    "this": "thi",
+    "it": "it",
+    "it's": "it",
+    "its": "it",
+    "is": "is",
+    "sorry": "so",
+    "please": "plee",
+    "can": "ca",
+    "can't": "ca",
+    "cant": "ca",
+    "why": "wha",
+    "where": "whe",
+    "who": "hoo",
+    "how": "ha",
+    "but": "buh",
+    "just": "juh",
+    "really": "ree",
+    "like": "li",
+    "stop": "stuh",
+    "stupid": "stu",
+    "good": "go",
+    "fast": "fa",
+    "fine": "fi",
+}
+
+def _get_stutter_prefix(word: str) -> str:
+    lower_word = word.lower()
+    clean_word = re.sub(r'[^a-z]', '', lower_word)
+    if lower_word in STUTTER_SYLLABLE_MAP:
+        return STUTTER_SYLLABLE_MAP[lower_word]
+    if clean_word in STUTTER_SYLLABLE_MAP:
+        return STUTTER_SYLLABLE_MAP[clean_word]
+    # Words starting with a vowel (e.g. it, is, in)
+    if clean_word and clean_word[0] in 'aeiou':
+        return clean_word[:2] if len(clean_word) >= 2 else clean_word
+    # Match initial consonant(s) + first vowel (e.g. "ki" from "kidding", "fa" from "fast")
+    m = re.match(r'^([^aeiouy]*[aeiouy])', clean_word)
+    if m and len(m.group(1)) <= 3:
+        return m.group(1)
+    # Fallback to consonant + 'uh'
+    m_consonant = re.match(r'^([^aeiouy]+)', clean_word)
+    if m_consonant:
+        return m_consonant.group(1) + 'uh'
+    return ""
+
+
+def resolve_stutters_for_tts(text: str) -> str:
+    """
+    Transforms conversational and tsundere stutter patterns (e.g. 'b-baka', 'w-wait', 'd-don't')
+    into natural spoken partial-syllable stammers (e.g. 'ba-baka', 'wai-wait', 'duh-don't')
+    so Kokoro never spells out letter names or repeats whole words.
+    """
+    if not text:
+        return ""
+
+    def _repl(m):
+        full = m.group(0)
+        raw_prefix = m.group('prefix')
+        word = m.group('word')
+        is_upper = full[0].isupper()
+
+        parts = [p for p in raw_prefix.split('-') if p]
+        if not parts:
+            return full
+
+        first_part = parts[0].lower()
+        if not all(p.lower() == first_part for p in parts):
+            return full
+        if not word.lower().startswith(first_part):
+            return full
+
+        syl = _get_stutter_prefix(word)
+        if not syl:
+            return full
+
+        count = len(parts)
+        repeated_syl = '-'.join([syl] * count)
+        res = f"{repeated_syl}-{word}"
+        return res.capitalize() if is_upper else res
+
+    # Matches stutter prefixes (single letter or clusters like th-, wh-, sh-, ch-)
+    return re.sub(r'\b(?P<prefix>(?:(?:[a-zA-Z]|th|sh|ch|wh)-)+)(?P<word>[a-zA-Z\']+)\b', _repl, text, flags=re.IGNORECASE)
+
+
 def clean_text_for_tts(text: str) -> str:
     import re
     if not text:
@@ -931,6 +1029,9 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'\b[zZ]{2,}\b', '', text)
     # Normalize 3+ multi-dots into standard ellipsis
     text = re.sub(r'\.{3,}', '...', text)
+
+    # 0.7 Expressive Conversational Stutter & Stammer Resolution
+    text = resolve_stutters_for_tts(text)
 
     # 1. Strip thought / reasoning / think blocks (including unclosed tags)
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', text, flags=re.IGNORECASE)

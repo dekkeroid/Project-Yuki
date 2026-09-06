@@ -673,6 +673,17 @@ def _dispatch_scheduled_task(**kwargs) -> str:
     return f"Unknown action '{action_clean}' for manage_scheduled_task."
 
 
+@mcp.tool()
+async def change_avatar_outfit(outfit: str = "default", character: str | None = None) -> str:
+    """Switch Yuki's 3D avatar outfit, clothes, costume, hat, or model (e.g. 'with hat', 'hat', 'school', 'no coat', 'default')."""
+    from app.tools.vrm_catalog import change_avatar_outfit as _change_outfit
+    return await _guarded_tool_call(
+        "change_avatar_outfit",
+        _change_outfit,
+        {"outfit": outfit, "character": character},
+    )
+
+
 def main() -> None:
     """Run the MCP server over stdio."""
     mcp.run(transport="stdio")
