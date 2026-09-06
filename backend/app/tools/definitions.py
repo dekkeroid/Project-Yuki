@@ -104,6 +104,24 @@ def get_basic_tools_definition() -> list:
         {
             "type": "function",
             "function": {
+                "name": "set_system_volume",
+                "description": "Get or set the Windows master speaker volume level (0-100) and mute status.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["get", "set"],
+                            "description": "Action to perform: 'get' to inspect current volume and mute status, or 'set' to change volume. Defaults to 'get' if volume_level is omitted."
+                        },
+                        "volume_level": {"type": "integer", "description": "Volume percent (0-100) when setting volume."}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "web_search",
                 "description": "Search the internet for real-time information, facts, documentation, or news. Returns 8 search result snippets and automatically deep-scrapes the top 2 pages.",
                 "parameters": {
@@ -274,18 +292,22 @@ def get_basic_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "manage_personal_list",
-                "description": "WHEN TO USE: Manage personal everyday lists and agendas for the user (shopping lists, groceries, things to do today, errands, wishlist, packing list). Supports adding items, viewing lists, checking off completed items, removing items, and clearing finished tasks. Persists globally across all conversation turns. NOT FOR CODE TASKS.",
+                "description": "WHEN TO USE: Manage personal everyday lists and agendas for the user (date-based daily to-dos, shopping lists, groceries, errands, wishlist, packing list). Supports date-stamped daily to-dos ('today', 'yesterday', 'tomorrow', or specific dates), late-night session resolution, rolling over unfinished tasks, adding items, viewing lists, checking off items, and clearing finished tasks. Persists globally across all conversation turns. NOT FOR CODE IMPLEMENTATION TASKS.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "show", "check", "uncheck", "remove", "clear", "clear_completed", "lists", "export"],
-                            "description": "Action to perform: 'add' (add items), 'show' (view list), 'check' (mark item done), 'uncheck' (reopen item), 'remove' (delete item), 'clear' (empty/wipe the entire list), 'clear_completed' (purge only completed items), 'lists' (overview of all active lists), 'export' (save to Desktop Markdown)."
+                            "enum": ["add", "show", "check", "uncheck", "remove", "clear", "clear_completed", "rollover", "lists", "export"],
+                            "description": "Action to perform: 'add' (add items), 'show' (view list), 'check' (mark item done), 'uncheck' (reopen item), 'remove' (delete item), 'clear' (empty/wipe the entire list), 'clear_completed' (purge only completed items), 'rollover' (carry forward unfinished tasks from yesterday to today), 'lists' (overview of all active lists), 'export' (save to Desktop Markdown)."
                         },
                         "list_name": {
                             "type": "string",
-                            "description": "Name of the list: 'shopping', 'to do today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
+                            "description": "Name of the list: 'shopping', 'wishlist', 'errands', or for daily to-dos 'todo' (or 'today'). When date is provided or list is 'todo', tracks a unique date-based daily to-do list. Defaults to 'todo' if date is provided, otherwise 'shopping'."
+                        },
+                        "date": {
+                            "type": "string",
+                            "description": "Target date for daily to-do lists/agendas (e.g. 'today', 'yesterday', 'tomorrow', '2026-09-06', 'friday'). When managing daily to-dos, defaults to 'today' (with smart 12 AM - 4 AM late-night session resolution). Omit for non-date persistent lists like 'shopping'."
                         },
                         "items": {
                             "type": "array",
@@ -527,13 +549,17 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_system_volume",
-                "description": "Set speaker volume level.",
+                "description": "Get or set the Windows master speaker volume level (0-100) and mute status.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "volume_level": {"type": "integer", "description": "Volume percent (0-100)."}
-                    },
-                    "required": ["volume_level"]
+                        "action": {
+                            "type": "string",
+                            "enum": ["get", "set"],
+                            "description": "Action to perform: 'get' to inspect current volume and mute status, or 'set' to change volume. Defaults to 'get' if volume_level is omitted."
+                        },
+                        "volume_level": {"type": "integer", "description": "Volume percent (0-100) when setting volume."}
+                    }
                 }
             }
         },
@@ -977,18 +1003,22 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_manage_personal_list",
-                "description": "WHEN TO USE: Manage personal everyday lists and agendas for the user (shopping lists, groceries, things to do today, errands, wishlist, packing list, memos). Supports adding items, viewing lists, checking off completed items, removing items, clearing finished tasks, and exporting to Desktop Markdown. Persists globally across all conversation turns. NOT FOR CODE IMPLEMENTATION TASKS.",
+                "description": "WHEN TO USE: Manage personal everyday lists and agendas for the user (date-stamped daily to-dos, shopping lists, groceries, errands, wishlist, packing list, memos). Supports date-stamped daily to-dos ('today', 'yesterday', 'tomorrow', or specific dates), late-night session resolution, rolling over unfinished tasks, adding items, viewing lists, checking off items, clearing finished tasks, and exporting to Desktop Markdown. Persists globally across all conversation turns. NOT FOR CODE IMPLEMENTATION TASKS.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "show", "check", "uncheck", "remove", "clear", "clear_completed", "lists", "export"],
-                            "description": "Action to perform: 'add' (add items), 'show' (view list), 'check' (mark item done), 'uncheck' (reopen item), 'remove' (delete item), 'clear' (empty/wipe the entire list), 'clear_completed' (purge only completed items), 'lists' (overview of all active lists), 'export' (save to Desktop Markdown)."
+                            "enum": ["add", "show", "check", "uncheck", "remove", "clear", "clear_completed", "rollover", "lists", "export"],
+                            "description": "Action to perform: 'add' (add items), 'show' (view list), 'check' (mark item done), 'uncheck' (reopen item), 'remove' (delete item), 'clear' (empty/wipe the entire list), 'clear_completed' (purge only completed items), 'rollover' (carry forward unfinished tasks from yesterday to today), 'lists' (overview of all active lists), 'export' (save to Desktop Markdown)."
                         },
                         "list_name": {
                             "type": "string",
-                            "description": "Name of the list: 'shopping', 'to do today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
+                            "description": "Name of the list: 'shopping', 'wishlist', 'errands', or for daily to-dos 'todo' (or 'today'). When date is provided or list is 'todo', tracks a unique date-based daily to-do list. Defaults to 'todo' if date is provided, otherwise 'shopping'."
+                        },
+                        "date": {
+                            "type": "string",
+                            "description": "Target date for daily to-do lists/agendas (e.g. 'today', 'yesterday', 'tomorrow', '2026-09-06', 'friday'). When managing daily to-dos, defaults to 'today' (with smart 12 AM - 4 AM late-night session resolution). Omit for non-date persistent lists like 'shopping'."
                         },
                         "items": {
                             "type": "array",
@@ -1016,18 +1046,22 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "manage_personal_list",
-                "description": "Alias for jarvis_manage_personal_list. Manage everyday personal checklists and agendas (shopping, to do today, errands, wishlist).",
+                "description": "Alias for jarvis_manage_personal_list. Manage everyday personal checklists and date-based daily agendas (daily to-dos, shopping, errands, wishlist).",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "show", "check", "uncheck", "remove", "clear", "clear_completed", "lists", "export"],
-                            "description": "Action to perform: 'add', 'show', 'check', 'uncheck', 'remove', 'clear' (empty entire list), 'clear_completed' (clear only done items), 'lists', 'export'."
+                            "enum": ["add", "show", "check", "uncheck", "remove", "clear", "clear_completed", "rollover", "lists", "export"],
+                            "description": "Action to perform: 'add', 'show', 'check', 'uncheck', 'remove', 'clear' (empty entire list), 'clear_completed' (clear only done items), 'rollover' (roll unfinished tasks to today), 'lists', 'export'."
                         },
                         "list_name": {
                             "type": "string",
-                            "description": "Name of the list: 'shopping', 'to do today', 'errands', 'wishlist', 'ideas', etc. Defaults to 'shopping'."
+                            "description": "Name of the list: 'shopping', 'wishlist', 'errands', or for daily to-dos 'todo' (or 'today'). Defaults to 'todo' if date is provided, otherwise 'shopping'."
+                        },
+                        "date": {
+                            "type": "string",
+                            "description": "Target date for daily to-do lists/agendas (e.g. 'today', 'yesterday', 'tomorrow', 'YYYY-MM-DD'). Defaults to 'today'."
                         },
                         "items": {
                             "type": "array",

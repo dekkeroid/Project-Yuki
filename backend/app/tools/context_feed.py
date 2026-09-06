@@ -406,7 +406,7 @@ def _extract_and_format(raw_title: str) -> Tuple[str, str, set]:
     return formatted, title_part, words
 
 
-def _fetch_single_topic_news(topic: str, country_code: str = "US", max_items: int = 4) -> List[str]:
+def _fetch_single_topic_news(topic: str, country_code: str = "US", max_items: int = 8) -> List[str]:
     """Fetches and deduplicates fresh news headlines for a single custom topic."""
     now = time.time()
     topic_clean = (topic or "").strip()
@@ -431,11 +431,11 @@ def _fetch_single_topic_news(topic: str, country_code: str = "US", max_items: in
         'job', 'vacancy', 'vacancies', 'recruit', 'hiring', 'post', 'internship', 'walk-in', 'psu'
     ))
 
-    raw_items = _fetch_rss_titles(url, limit=25)
+    raw_items = _fetch_rss_titles(url, limit=35)
     # Fallback to broader search if 14-day window had very few items
     if len(raw_items) < 3 and q_fresh != clean_q:
         url_broad = f"https://news.google.com/rss/search?q={urllib.parse.quote(clean_q)}&hl=en&gl={cc}&ceid={cc}:en"
-        raw_items = _fetch_rss_titles(url_broad, limit=25)
+        raw_items = _fetch_rss_titles(url_broad, limit=35)
 
     headlines: List[str] = []
     seen_title_wordsets: List[set] = []
@@ -465,7 +465,7 @@ def _fetch_single_topic_news(topic: str, country_code: str = "US", max_items: in
     return headlines
 
 
-def _fetch_general_news(country_code: str = "US", max_items: int = 4) -> List[str]:
+def _fetch_general_news(country_code: str = "US", max_items: int = 8) -> List[str]:
     """Fetches top regional breaking news and technology breakthroughs."""
     now = time.time()
     cc = (country_code or "US").strip().upper()
@@ -479,23 +479,23 @@ def _fetch_general_news(country_code: str = "US", max_items: int = 4) -> List[st
     main_url = f"https://news.google.com/rss?hl=en&gl={cc}&ceid={cc}:en"
     tech_url = f"https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en&gl={cc}&ceid={cc}:en"
 
-    main_items = _fetch_rss_titles(main_url, limit=15)
-    tech_items = _fetch_rss_titles(tech_url, limit=10)
+    main_items = _fetch_rss_titles(main_url, limit=20)
+    tech_items = _fetch_rss_titles(tech_url, limit=15)
 
     headlines: List[str] = []
     seen_words: set = set()
 
-    # 1. Add top national/world breaking news (up to 2 items)
+    # 1. Add top national/world breaking news (up to 3-4 items)
     for raw in main_items:
         formatted, _, words = _extract_and_format(raw)
         if len(words & seen_words) >= 2:
             continue
         headlines.append(formatted)
         seen_words.update(words)
-        if len(headlines) >= min(2, max_items):
+        if len(headlines) >= min(4, max_items):
             break
 
-    # 2. Add technology / science breakthroughs (up to 2 items)
+    # 2. Add technology / science breakthroughs (up to max_items)
     for raw in tech_items:
         formatted, _, words = _extract_and_format(raw)
         if len(words & seen_words) >= 2:
@@ -540,9 +540,9 @@ def fetch_all_greeting_news(topics: Optional[str] = None, country_code: str = "U
     # Parallel retrieval of all custom topics and general news
     worker_count = max(2, min(6, len(topic_list) + 1))
     with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
-        future_general = executor.submit(_fetch_general_news, country_code, max_items=4)
+        future_general = executor.submit(_fetch_general_news, country_code, max_items=8)
         topic_futures = {
-            executor.submit(_fetch_single_topic_news, t, country_code, max_items=4): t
+            executor.submit(_fetch_single_topic_news, t, country_code, max_items=8): t
             for t in topic_list
         }
 
@@ -580,7 +580,7 @@ def fetch_all_greeting_news(topics: Optional[str] = None, country_code: str = "U
     }
 
 
-def get_targeted_news(topics: Optional[str] = None, country_code: str = "US", max_items: int = 5) -> List[str]:
+def get_targeted_news(topics: Optional[str] = None, country_code: str = "US", max_items: int = 8) -> List[str]:
     """Backward compatibility wrapper returning a flat list of headlines."""
     res = fetch_all_greeting_news(topics=topics, country_code=country_code)
     return res.get("all_headlines", [])[:max_items]

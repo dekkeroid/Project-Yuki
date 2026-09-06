@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime
 from app import config
 from app.memory.mood_engine import MoodEngine, AXES as MOOD_AXES
 
@@ -48,6 +49,7 @@ class MemoryManager:
             "last_active_epoch": None,
             "last_shutdown_epoch": None,
             "recent_greetings": [],
+            "covered_news_today": {"date": "", "items": []},
             "mood_spectrum": dict(DEFAULT_MOOD_SPECTRUM),
             "settings": {
                 # [SEARCH FOR MODEL CHANGE] Old: "llm_model": "ministra-3",
@@ -123,6 +125,7 @@ class MemoryManager:
                 "hotkey_focus_chat": True,
                 "hotkey_open_logs": False,
                 "hotkey_turn_on_listening": True,
+                "listen_on_startup": config.LISTEN_ON_STARTUP,
                 "send_tools_in_simple": False,
                 "endpoint_strategy": "single",
                 "llm_simple_backend": "lmstudio",
@@ -240,6 +243,7 @@ class MemoryManager:
                 config.HOTKEY_FOCUS_CHAT = bool(data["settings"].get("hotkey_focus_chat", getattr(config, "HOTKEY_FOCUS_CHAT", True)))
                 config.HOTKEY_OPEN_LOGS = bool(data["settings"].get("hotkey_open_logs", getattr(config, "HOTKEY_OPEN_LOGS", False)))
                 config.HOTKEY_TURN_ON_LISTENING = bool(data["settings"].get("hotkey_turn_on_listening", getattr(config, "HOTKEY_TURN_ON_LISTENING", True)))
+                config.LISTEN_ON_STARTUP = bool(data["settings"].get("listen_on_startup", getattr(config, "LISTEN_ON_STARTUP", False)))
                 config.CODEGRAPH_CODER_ENABLED = bool(data["settings"].get("codegraph_coder_enabled", getattr(config, "CODEGRAPH_CODER_ENABLED", False)))
                 config.CODEGRAPH_ADVANCED_ENABLED = bool(data["settings"].get("codegraph_advanced_enabled", getattr(config, "CODEGRAPH_ADVANCED_ENABLED", False)))
                 config.ENDPOINT_STRATEGY = data["settings"].get("endpoint_strategy", "single").strip().lower()
@@ -372,7 +376,7 @@ class MemoryManager:
         self.profile["last_active_epoch"] = now
         self._save_profile()
 
-    def record_greeting(self, text: str, max_keep: int = 3):
+    def record_greeting(self, text: str, max_keep: int = 6):
         """Records the text of a completed startup greeting to prevent repeating news/topics."""
         if not text or not text.strip():
             return
@@ -391,12 +395,39 @@ class MemoryManager:
             self.profile["recent_greetings"] = greetings[-max_keep:]
         self._save_profile()
 
-    def get_recent_greetings(self, limit: int = 3) -> list:
+    def get_recent_greetings(self, limit: int = 6) -> list:
         """Returns the last N greetings spoken by Yuki."""
         greetings = self.profile.get("recent_greetings", [])
         if not isinstance(greetings, list):
             return []
         return [g.strip() for g in greetings[-limit:] if isinstance(g, str) and g.strip()]
+
+    def record_covered_news(self, items: list):
+        """Records news headline titles covered today to prevent repetition across restarts/reloads."""
+        if not items:
+            return
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        covered = self.profile.setdefault("covered_news_today", {"date": today_str, "items": []})
+        if not isinstance(covered, dict) or covered.get("date") != today_str:
+            covered = {"date": today_str, "items": []}
+            self.profile["covered_news_today"] = covered
+        cur_items = covered.setdefault("items", [])
+        for it in items:
+            it_clean = it.split("[Source:")[0].strip()
+            if it_clean and it_clean not in cur_items:
+                cur_items.append(it_clean)
+        # Keep up to 30 items for the day
+        covered["items"] = cur_items[-30:]
+        self._save_profile()
+
+    def get_covered_news_today(self) -> list:
+        """Returns list of news headline titles already covered today."""
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        covered = self.profile.get("covered_news_today")
+        if not isinstance(covered, dict) or covered.get("date") != today_str:
+            return []
+        items = covered.get("items", [])
+        return items if isinstance(items, list) else []
 
     def get_absence_duration_seconds(self) -> float:
         """Returns elapsed seconds since last active/shutdown session."""
@@ -520,6 +551,8 @@ class MemoryManager:
             config.AED_CONFIDENCE_THRESHOLD = float(value)
         elif key == "aed_fast_reflex":
             config.AED_FAST_REFLEX = bool(value)
+        elif key == "listen_on_startup":
+            config.LISTEN_ON_STARTUP = bool(value)
         elif key == "llm_speech_input_enabled":
             config.LLM_SPEECH_INPUT_ENABLED = bool(value)
         elif key == "tts_voice":

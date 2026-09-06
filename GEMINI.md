@@ -138,6 +138,21 @@ In Python, unindented code (column 0) terminates the preceding class definition.
 
 ---
 
+## Python Import Hygiene & Undefined Name Validation Rule
+
+Whenever adding, updating, or editing any Python code across the backend (`backend/app/...`):
+
+- **Explicit Imports**: Never assume standard library or common modules (e.g. `re`, `json`, `os`, `sys`, `time`, `datetime`, `asyncio`, `math`, `typing`, `psutil`, `Path`) are already imported in the target file. Always verify imports at the top of the file before using them in functions, helpers, or classes.
+- **The `py_compile` Trap**: `python -m py_compile` ONLY checks Python grammar and byte-compilation. It **CANNOT** catch `NameError` (such as `name 're' is not defined` or `name 'json' is not defined`) because unbound identifiers are only evaluated when bytecode executes.
+- **Mandatory Import & Runtime Verification**:
+  1. **Direct Module Import Check**: After editing any backend module, always test importing it with the virtual environment Python:
+     ```powershell
+     backend\venv\Scripts\python.exe -c "import sys; sys.path.insert(0, 'backend'); import app.<submodule>"
+     ```
+  2. **Execution Test**: If new functions or helpers were added (e.g. parsers, regex cleaners, state transformers), invoke them directly in a one-line test snippet to verify runtime execution paths and ensure all symbols exist in scope.
+
+---
+
 ## SQLite Schema Migrations & DB Init Rule
 
 Whenever making changes to any database structure or table (`vectors.db`, `yuki_files.db`, etc.), **ALWAYS** update the corresponding initialization function (`init_vector_db`, `init_db`, etc.) to automatically migrate older databases:

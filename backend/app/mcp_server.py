@@ -87,9 +87,9 @@ async def launch_app(
 
 
 @mcp.tool()
-async def set_system_volume(volume_level: int) -> str:
-    """Set speaker volume percentage from 0 to 100."""
-    return await _guarded_tool_call("set_system_volume", system_tools.set_system_volume, {"volume_level": volume_level})
+async def set_system_volume(volume_level: int | None = None, action: str = "set") -> str:
+    """Get or set speaker volume percentage (0-100) and mute status."""
+    return await _guarded_tool_call("set_system_volume", system_tools.set_system_volume, {"volume_level": volume_level, "action": action})
 
 
 @mcp.tool()

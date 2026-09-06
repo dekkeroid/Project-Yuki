@@ -52,6 +52,9 @@ SEND_TOOLS_IN_SIMPLE = os.environ.get("SEND_TOOLS_IN_SIMPLE", "false").strip().l
 # Allow voice barge-in
 ALLOW_VOICE_BARGE_IN = os.environ.get("ALLOW_VOICE_BARGE_IN", "false").strip().lower() in ("1", "true", "yes", "on")
 
+# Auto-start listening mode on startup
+LISTEN_ON_STARTUP = os.environ.get("LISTEN_ON_STARTUP", "false").strip().lower() in ("1", "true", "yes", "on")
+
 # Dual Endpoint Strategy Configuration
 ENDPOINT_STRATEGY = os.environ.get("ENDPOINT_STRATEGY", "single").strip().lower()  # "single" or "dual"
 LLM_SIMPLE_BACKEND = os.environ.get("LLM_SIMPLE_BACKEND", "lmstudio")

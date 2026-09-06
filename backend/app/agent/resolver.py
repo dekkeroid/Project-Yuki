@@ -25,6 +25,11 @@ def resolve_command(message: str) -> Optional[ResolvedCommand]:
     """
     msg = message.strip().lower()
 
+    # ── Volume get / query ───────────────────────────────────────────────────
+    # "can u get current system audio volume", "what is the volume", "check volume", "current volume"
+    if re.search(r"\b(what('?s| is)? (?:the )?(?:current )?(?:speaker|system|pc|audio|\s)*(?:volume|vol|sound)|(?:get|check|tell me|show me) (?:the )?(?:current )?(?:speaker|system|pc|audio|\s)*(?:volume|vol|sound)|current (?:speaker|system|pc|audio|\s)*(?:volume|vol|sound)|how loud is (?:it|the (?:pc|audio|sound|volume)))\b", msg) or re.search(r"^(volume|vol|sound|audio)\??$", msg):
+        return ("set_system_volume", {"action": "get"})
+
     # ── Volume set (numeric) ──────────────────────────────────────────────────
     # "volume 50", "set volume to 70", "volume to 80%", "put volume at 60", "vol 50", "sound 50"
     if re.search(r"\b(volume|vol|sound|audio)\b", msg):

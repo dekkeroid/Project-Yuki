@@ -972,11 +972,15 @@ const App = () => {
         setTimeout(() => setCustomAnimation(''), 100);
       }
       if (msg.text) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: msg.text,
+          timestamp: msg.timestamp || (Date.now() / 1000)
+        }]);
         if (msg.mode === 'spoken') {
-          setMessages(prev => [...prev, { role: 'assistant', content: msg.text }]);
           speakSystemMessage(msg.text, 'relaxed');
         } else {
-          // Visual speech bubble only
+          // Visual speech bubble
           setCurrentSpeechText(msg.text);
           setTimeout(() => setCurrentSpeechText(''), 8000);
         }
@@ -993,17 +997,23 @@ const App = () => {
       setProfile(msg.profile);
       if (!hasCheckedListenOnStartupRef.current && msg.profile?.settings) {
         hasCheckedListenOnStartupRef.current = true;
-        const savedTalk = localStorage.getItem('yuki-talk-mode-active') === 'true';
-        const savedVoiceCmd = localStorage.getItem('yuki-voice-command-active') === 'true';
-        
-        if (savedTalk) {
-          if (!getIsTalkModeRef.current()) {
-            toggleTalkMode();
+        const shouldListen = Boolean(msg.profile.settings.listen_on_startup);
+        if (shouldListen) {
+          const savedTalk = localStorage.getItem('yuki-talk-mode-active') === 'true';
+          if (savedTalk) {
+            if (!getIsTalkModeRef.current()) {
+              toggleTalkMode();
+            }
+          } else {
+            if (!getIsVoiceCommandModeRef.current()) {
+              toggleVoiceCommandMode();
+            }
           }
-        } else if (savedVoiceCmd || msg.profile.settings.listen_on_startup) {
-          if (!getIsVoiceCommandModeRef.current()) {
-            toggleVoiceCommandMode();
-          }
+        } else {
+          try {
+            localStorage.removeItem('yuki-voice-command-active');
+            localStorage.removeItem('yuki-talk-mode-active');
+          } catch { }
         }
       }
       if (msg?.profile?.settings?.llm_model) {
@@ -1263,8 +1273,7 @@ const App = () => {
       if (window.electronAPI && window.electronAPI.openCanvasWindow) {
         window.electronAPI.openCanvasWindow({ mode: msg.mode, filename: msg.filename });
       } else {
-        const backendHost = window.location.hostname || '127.0.0.1';
-        const canvasUrl = `http://${backendHost}:8000/api/canvas/${msg.filename}`;
+        const canvasUrl = `${API_BASE}/api/canvas/${msg.filename}`;
         window.open(canvasUrl, '_blank', 'width=1000,height=700');
       }
     } else if (msg.type === 'confirm_request') {
@@ -3038,10 +3047,23 @@ const App = () => {
         setProfile(data);
         if (!hasCheckedListenOnStartupRef.current && data.settings) {
           hasCheckedListenOnStartupRef.current = true;
-          if (data.settings.listen_on_startup) {
-            if (!getIsVoiceCommandModeRef.current()) {
-              toggleVoiceCommandMode();
+          const shouldListen = Boolean(data.settings.listen_on_startup);
+          if (shouldListen) {
+            const savedTalk = localStorage.getItem('yuki-talk-mode-active') === 'true';
+            if (savedTalk) {
+              if (!getIsTalkModeRef.current()) {
+                toggleTalkMode();
+              }
+            } else {
+              if (!getIsVoiceCommandModeRef.current()) {
+                toggleVoiceCommandMode();
+              }
             }
+          } else {
+            try {
+              localStorage.removeItem('yuki-voice-command-active');
+              localStorage.removeItem('yuki-talk-mode-active');
+            } catch { }
           }
         }
         if (data.settings && data.settings.crawler_paused !== undefined) {

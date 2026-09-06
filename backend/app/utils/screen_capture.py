@@ -76,35 +76,16 @@ def find_yuki_avatar_window() -> Optional[int]:
 @contextmanager
 def temporary_avatar_hidden():
     """
-    Context manager that temporarily hides Yuki's floating 3D avatar window for a clean capture snapshot.
-    Restores the window immediately via SW_SHOWNA (Show No-Activate) so it does NOT steal keyboard or mouse focus.
+    Pass-through context manager. Previously hid Yuki's window, which caused visual flickering.
+    Now preserved as a zero-overhead pass-through so Yuki remains smoothly rendered without flicker,
+    while vision prompts instruct the model to ignore the floating avatar.
     """
-    hwnd = find_yuki_avatar_window()
-    hidden = False
-    if hwnd:
-        try:
-            user32 = ctypes.windll.user32
-            user32.ShowWindow(hwnd, _SW_HIDE)
-            hidden = True
-            # Brief pause (15ms) to allow Windows DWM to clear the window from the desktop compositor
-            time.sleep(0.015)
-        except Exception:
-            hidden = False
-
-    try:
-        yield
-    finally:
-        if hwnd and hidden:
-            try:
-                user32 = ctypes.windll.user32
-                user32.ShowWindow(hwnd, _SW_SHOWNA)
-            except Exception:
-                pass
+    yield
 
 
 def grab_screen_clean(bbox: Optional[tuple] = None, all_screens: bool = False) -> Image.Image:
     """
-    Captures the desktop screen cleanly with Yuki's 3D avatar temporarily hidden for ~20ms.
+    Captures the desktop screen cleanly and instantly without hiding windows or causing flicker.
     Falls back to normal grab or PyAutoGUI if ImageGrab fails.
     """
     with temporary_avatar_hidden():

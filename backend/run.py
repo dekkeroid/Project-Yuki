@@ -136,6 +136,20 @@ if __name__ == "__main__":
         runpy.run_path(script, run_name="__main__")
         raise SystemExit(0)
 
+    if len(sys.argv) >= 3 and sys.argv[1] == "-c":
+        os.environ.setdefault("PYTHONUNBUFFERED", "1")
+        cmd_code = sys.argv[2]
+        sys.argv = ["-c"] + sys.argv[3:]
+        try:
+            exec(compile(cmd_code, "<string>", "exec"), {"__name__": "__main__"})
+            raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise SystemExit(1)
+
     if len(sys.argv) >= 2 and sys.argv[1] == "-m":
         import subprocess, shutil, runpy
         mod = sys.argv[2] if len(sys.argv) > 2 else ""

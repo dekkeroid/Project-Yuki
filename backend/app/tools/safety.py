@@ -243,8 +243,16 @@ def canonicalize_tool_args(tool_name: str, arguments: dict[str, Any] | None) -> 
         if _as_bool(args.get("run_as_admin")):
             out["run_as_admin"] = True
         return out
-    if tool == "set_system_volume":
-        return {"volume_level": int(args.get("volume_level") or args.get("volume") or args.get("level") or _first_value(args) or 0)}
+    if tool in ("set_system_volume", "jarvis_system_volume"):
+        action = str(args.get("action") or ("get" if (args.get("volume_level") is None and args.get("volume") is None and args.get("level") is None) else "set"))
+        out = {"action": action}
+        if args.get("volume_level") is not None or args.get("volume") is not None or args.get("level") is not None:
+            val = args.get("volume_level") if args.get("volume_level") is not None else (args.get("volume") if args.get("volume") is not None else args.get("level"))
+            try:
+                out["volume_level"] = int(val)
+            except (ValueError, TypeError):
+                pass
+        return out
     if tool == "update_user_fact":
         return {"key": args.get("key") or "", "value": args.get("value") or ""}
     if tool == "list_directory":

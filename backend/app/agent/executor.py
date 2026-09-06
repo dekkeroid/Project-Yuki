@@ -340,7 +340,14 @@ class AgentExecutor:
                 pid=kwargs.get("pid")
             ),
             "set_system_volume": lambda **kwargs: set_system_volume(
-                int(kwargs.get("volume_level") or kwargs.get("volume") or kwargs.get("level") or (list(kwargs.values())[0] if kwargs else 0))
+                volume_level=(
+                    int(kwargs["volume_level"]) if kwargs.get("volume_level") is not None and str(kwargs.get("volume_level")).strip() != "" and str(kwargs.get("volume_level")).lower() != "none" else (
+                        int(kwargs["volume"]) if kwargs.get("volume") is not None and str(kwargs.get("volume")).strip() != "" and str(kwargs.get("volume")).lower() != "none" else (
+                            int(kwargs["level"]) if kwargs.get("level") is not None and str(kwargs.get("level")).strip() != "" and str(kwargs.get("level")).lower() != "none" else None
+                        )
+                    )
+                ),
+                action=str(kwargs.get("action") or ("get" if (kwargs.get("volume_level") is None and kwargs.get("volume") is None and kwargs.get("level") is None) else "set"))
             ),
             "update_user_fact": lambda **kwargs: self._execute_update_user_fact(**kwargs),
             "manage_yuki_settings": lambda **kwargs: self._execute_manage_yuki_settings(**kwargs),
@@ -472,7 +479,14 @@ class AgentExecutor:
                 kwargs.get("title_query")
             ),
             "jarvis_system_volume": lambda **kwargs: set_system_volume(
-                int(kwargs.get("volume_level") or 0)
+                volume_level=(
+                    int(kwargs["volume_level"]) if kwargs.get("volume_level") is not None and str(kwargs.get("volume_level")).strip() != "" and str(kwargs.get("volume_level")).lower() != "none" else (
+                        int(kwargs["volume"]) if kwargs.get("volume") is not None and str(kwargs.get("volume")).strip() != "" and str(kwargs.get("volume")).lower() != "none" else (
+                            int(kwargs["level"]) if kwargs.get("level") is not None and str(kwargs.get("level")).strip() != "" and str(kwargs.get("level")).lower() != "none" else None
+                        )
+                    )
+                ),
+                action=str(kwargs.get("action") or ("get" if (kwargs.get("volume_level") is None and kwargs.get("volume") is None and kwargs.get("level") is None) else "set"))
             ),
             "jarvis_system_power": lambda **kwargs: system_power_control(
                 kwargs.get("action") or "",
@@ -1283,7 +1297,11 @@ class AgentExecutor:
         from app.tools.personal_lists import manage_personal_list
 
         action = (kwargs.get("action") or "").lower().strip()
-        list_name = kwargs.get("list_name") or kwargs.get("name") or "shopping"
+        date = kwargs.get("date") or kwargs.get("target_date")
+        list_name = kwargs.get("list_name") or kwargs.get("name")
+        if not list_name and not date and action not in ("rollover", "carryover", "lists"):
+            list_name = "shopping"
+
         items = kwargs.get("items") or kwargs.get("item") or kwargs.get("title")
         include_completed = bool(kwargs.get("include_completed", False))
         clear_old = bool(kwargs.get("clear_old", False))
@@ -1304,7 +1322,8 @@ class AgentExecutor:
             include_completed=include_completed,
             quantity=quantity,
             target_path=target_path,
-            clear_old=clear_old
+            clear_old=clear_old,
+            date=date,
         )
 
     async def ensure_model_loaded(self, model_name: str) -> bool:
@@ -1597,9 +1616,9 @@ class AgentExecutor:
                 matches = list(tool_badge_pattern.finditer(content))
                 clean_speech = tool_badge_pattern.sub('', content).strip()
 
-                # Dynamic budget per tool badge: higher in Coder/Jarvis mode, compact in basic chat
-                max_args_chars = 3500 if is_coder_mode else 600
-                max_out_chars = 2000 if is_coder_mode else 400
+                # Dynamic budget per tool badge: generous in Coder/Jarvis mode, solid in basic chat
+                max_args_chars = 3500 if (is_coder_mode or getattr(config, "TOOL_MODE", "basic") == "advanced") else 1500
+                max_out_chars = 2500 if (is_coder_mode or getattr(config, "TOOL_MODE", "basic") == "advanced") else 1000
 
                 preserved_actions = []
                 for b_match in matches:
@@ -1617,13 +1636,9 @@ class AgentExecutor:
                                 title = parsed_args.get("title") or "Canvas"
                                 html_prev = str(parsed_args.get("svg_or_canvas") or parsed_args.get("html_content") or "")[:120]
                                 args_repr = f'{{"title": "{title}", "preview": "{html_prev}...", "source_directory": "yuki_attachment/canvas/"}}'
-                            # For large Python scripts, preserve preview + cache pointer
+                            # For Python scripts, preserve the complete code JSON so the LLM can inspect and debug past executions
                             elif clean_name in ("run_python_script", "jarvis_run_python") and isinstance(parsed_args, dict):
-                                code_str = str(parsed_args.get("code") or "")
-                                if len(code_str) > 300:
-                                    args_repr = f'{{"code_preview": "{code_str[:120]}...", "cached_source": ".tool_cache/python_latest.py"}}'
-                                else:
-                                    args_repr = json.dumps(parsed_args, ensure_ascii=False)
+                                args_repr = json.dumps(parsed_args, ensure_ascii=False)
                             else:
                                 args_repr = json.dumps(parsed_args, ensure_ascii=False)
                         except Exception:
@@ -3796,12 +3811,24 @@ class AgentExecutor:
                     
                     if tool_failed and troubleshoot_attempts < 4:
                         troubleshoot_attempts += 1
-                        system_message_content = (
-                            f"[SYSTEM] Tool '{tool_name}' failed with: {tool_result}. "
-                            f"The user's original request was: \"{user_message.strip()}\". "
-                            "Explain the failure to the user in 1 sentence, then either try a different approach "
-                            "or tell the user what they can do to fix it. Do NOT retry the exact same tool call."
-                        )
+                        if tool_name in ("run_python_script", "jarvis_run_python"):
+                            system_message_content = (
+                                f"[SYSTEM] Tool '{tool_name}' failed with:\n{tool_result}\n\n"
+                                f"DIAGNOSTIC & SELF-CORRECTION PROTOCOL (Follow strictly):\n"
+                                "1. Inspect the traceback and the exact failing line. Do NOT repeat the exact same call.\n"
+                                "2. If an AttributeError, TypeError, or NoSuchMethod occurred: DO NOT guess alternative method names, invent APIs, or rewrite complex low-level architectures from scratch. "
+                                "Instead, write a quick 1-2 line probe to inspect the object's real runtime members: `print([m for m in dir(target_obj) if not m.startswith('_')])` or `print(type(target_obj))`.\n"
+                                "3. If an ImportError occurred: check if the package is installed or can be imported under an alternative module name.\n"
+                                "4. If a subprocess or command failed: inspect stderr and return code rather than ignoring output.\n"
+                                "5. Apply the discovered fix cleanly."
+                            )
+                        else:
+                            system_message_content = (
+                                f"[SYSTEM] Tool '{tool_name}' failed with:\n{tool_result}\n\n"
+                                f"The user's original request was: \"{user_message.strip()}\". "
+                                "Carefully analyze the failure reason above. Adjust the arguments, fulfill prerequisites, or try a valid alternative tool. "
+                                "Do NOT retry the exact same tool call with identical arguments."
+                            )
                         current_messages.append({
                             "role": "user",
                             "content": system_message_content

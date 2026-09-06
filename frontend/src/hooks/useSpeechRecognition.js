@@ -758,10 +758,10 @@ export function useSpeechRecognition(options = {}) {
           const now = Date.now();
           const elapsedStream = now - vadActivationTimeRef.current;
 
-          // Adaptive silence timeout: short complete phrases (<2s) cutoff faster (550-700ms), while pauses mid-sentence get full timeout
+          // Adaptive silence timeout: short complete phrases (<2s) cutoff faster (350ms), while pauses mid-sentence get full timeout
           const speechDuration = speechStartTime ? (now - speechStartTime) : 3000;
           const silenceTimeoutMs = (adaptiveSilenceCutoffRef.current && speechDuration < 2000)
-            ? Math.max(500, Math.min(baseSilenceTimeoutMs, 700))
+            ? Math.max(300, Math.min(baseSilenceTimeoutMs, 350))
             : baseSilenceTimeoutMs;
 
           // Periodic sample diagnostics (every ~1s when idle)
