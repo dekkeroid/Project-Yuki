@@ -46,8 +46,7 @@ export const ANIMATIONS = [
     llmTag: '<yuki_anim:nap/>',
     commands: [
       { cmd: '/nap', description: 'Take an instant companion power nap' },
-      { cmd: '/ani-nap', description: 'Nod off and startle awake' },
-      { cmd: '/ani-sleepy', description: 'Sleepy animation (alias)' }
+      { cmd: '/ani-nap', description: 'Nod off and startle awake' }
     ],
     responseText: '*curls up and takes a power nap*',
     blendShapes: { relaxed: 0.4 }
@@ -89,7 +88,8 @@ export const ANIMATIONS = [
     llmTag: '<yuki_anim:sleepy/>',
     commands: [
       { cmd: '/ani-sleepy', description: 'Feeling sleepy and rubbing eyes (mocap)' },
-      { cmd: '/sleepy', description: 'Feeling sleepy and rubbing eyes (alias)' }
+      { cmd: '/sleepy', description: 'Feeling sleepy and rubbing eyes (alias)' },
+      { cmd: '/ani-rub_eyes', description: 'Feeling sleepy and rubbing eyes (alias)' }
     ],
     responseText: '*feels sleepy and rubs her eyes*',
     blendShapes: { relaxed: 0.75, sad: 0.2, browDown: 0.25 }
