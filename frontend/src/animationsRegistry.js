@@ -68,14 +68,15 @@ export const ANIMATIONS = [
   {
     name: 'pouting',
     alias: 'pout',
-    duration: 2.5,
+    duration: 2.6,
     excludeFromRandomIdle: false,
     llmTag: '<yuki_anim:pout/>',
     commands: [
-      { cmd: '/ani-pout', description: 'Cute anime pout expression' }
+      { cmd: '/ani-pout', description: 'Cute anime sulking pout with puffed cheeks' },
+      { cmd: '/pout', description: 'Cute anime pout (alias)' }
     ],
-    responseText: '*pouts with puffed cheeks*',
-    blendShapes: { sad: 0.35, angry: 0.45, browDown: 0.6 }
+    responseText: '*pouts with puffed cheeks and turns away in a huff*',
+    blendShapes: { sad: 0.18, browDown: 0.22, browUp: 0.10, relaxed: 0.0 }
   },
   {
     name: 'sleepy_rub_eyes',
@@ -404,6 +405,7 @@ export const ANIMATIONS = [
     type: 'vrma',
     vrmaUrl: './animations/show_body.vrma',
     duration: 11.8,
+    fadeDuration: 0.65,
     excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:show_body/>',
     commands: [
@@ -420,6 +422,7 @@ export const ANIMATIONS = [
     type: 'vrma',
     vrmaUrl: './animations/model_pose.vrma',
     duration: 7.52,
+    fadeDuration: 0.65,
     excludeFromRandomIdle: false,
     llmTag: '<yuki_anim:model_pose/>',
     commands: [
@@ -435,6 +438,7 @@ export const ANIMATIONS = [
     type: 'vrma',
     vrmaUrl: './animations/squat_stretch.vrma',
     duration: 11.52,
+    fadeDuration: 0.85,
     excludeFromRandomIdle: false,
     llmTag: '<yuki_anim:squat/>',
     commands: [
@@ -483,6 +487,7 @@ export const ANIMATIONS = [
     type: 'vrma',
     vrmaUrl: './animations/disappointed_apology_opt1.vrma',
     duration: 7.3,
+    fadeDuration: 1.15,
     upperBodyOnly: false,
     excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:dogeza/>',
@@ -561,6 +566,7 @@ export const ANIMATIONS = [
     type: 'vrma',
     vrmaUrl: './animations/laugh_opt2.vrma',
     duration: 7.54,
+    fadeDuration: 0.85,
     upperBodyOnly: false,
     excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:knee_slap/>',
