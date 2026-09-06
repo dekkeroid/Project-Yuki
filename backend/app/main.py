@@ -1654,6 +1654,8 @@ def get_settings():
     if "included_coder_tools" not in settings_dict:
         from app.tools.selector import _DEFAULT_CODING_TOOLS
         settings_dict["included_coder_tools"] = sorted(_DEFAULT_CODING_TOOLS)
+    if "disabled_animations" not in settings_dict:
+        settings_dict["disabled_animations"] = list(getattr(config, "DISABLED_ANIMATIONS", []))
     print(f"[SETTINGS-GET-BE] GET /api/settings → llm_base_url='{settings_dict.get('llm_base_url', '')}' llm_backend='{settings_dict.get('llm_backend', '')}'")
     return settings_dict
 
@@ -1743,6 +1745,7 @@ class SettingsUpdateRequest(BaseModel):
     aed_confidence_threshold: Optional[float] = None
     aed_fast_reflex: Optional[bool] = None
     tool_mode: Optional[str] = None
+    disabled_animations: Optional[List[str]] = None
     user_country: Optional[str] = None
     user_location: Optional[str] = None
     greeting_weather_enabled: Optional[bool] = None
@@ -1981,6 +1984,11 @@ async def update_settings(req: SettingsUpdateRequest):
             config.TOOL_MODE = mode_val
             memory_manager.update_setting("tool_mode", mode_val)
             print(f"[Settings] Tool Operating Mode updated to '{mode_val}'")
+    if req.disabled_animations is not None:
+        clean_anims = [str(x).strip() for x in req.disabled_animations if str(x).strip()]
+        config.DISABLED_ANIMATIONS = clean_anims
+        memory_manager.update_setting("disabled_animations", clean_anims)
+        print(f"[Settings] Disabled Animations updated: {len(clean_anims)} disabled")
     if req.user_country is not None:
         country_val = req.user_country
         config.USER_COUNTRY = country_val if country_val != "" else "Auto"

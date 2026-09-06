@@ -126,6 +126,62 @@ Whenever adding a new AI action tool or system capability to Project Yuki, **ALW
 
 ---
 
+## New 3D Avatar Animation Integration Protocol (End-to-End Checklist)
+
+Whenever creating or adding a new 3D avatar animation, bodily gesture, or physical expression trigger to Project Yuki, **ALWAYS** follow this end-to-end 5-step checklist to ensure procedural playback, slash command binding, settings toggle exposure, dynamic prompt propagation, and TTS sanitization:
+
+### 1. Procedural Pose & Animation Logic (`frontend/src/components/AvatarViewer.jsx`)
+- **Render Loop Branch**: Inside `AvatarViewer.jsx`'s Three.js animation loop (`animate()`), handle `idleAnimState === 'my_anim'`.
+- **Bone Rotations & Progress**: Use `idleAnimProgress / idleAnimDuration` to interpolate VRM bone rotations (arms, spine, head, fingers) using `THREE.MathUtils.lerp()` or sinusoidal oscillation curves (`Math.sin(...)`).
+- **Blend Shapes / Expressions**: Adjust facial blend shapes if needed (e.g. `setExpressionValue(vrm, 'happy', 0.5)`).
+
+### 2. Animation Registry Definition & Tag Alias (`frontend/src/animationsRegistry.js`)
+- **Register Animation**: Add an entry into `ANIMATIONS`:
+  ```javascript
+  {
+    name: 'my_anim',                     // Internal animation ID used in AvatarViewer
+    alias: 'my_tag',                     // Tag name without namespace: <yuki_anim:my_tag/>
+    duration: 3.0,                       // Duration in seconds
+    excludeFromRandomIdle: true,         // True = only on demand/tag; False = can play randomly when idle
+    llmTag: '<yuki_anim:my_tag/>',
+    commands: [
+      { cmd: '/ani-my_tag', description: 'Perform my_tag animation' }
+    ],
+    responseText: '*performs action*',
+    blendShapes: { happy: 0.4, relaxed: 0.5 }
+  }
+  ```
+- **Tag Mapping**: Add alias mapping in `LLM_ANIMATION_MAP`:
+  ```javascript
+  my_tag: 'my_anim',
+  my_anim: 'my_anim',
+  ```
+- **Automatic Settings Toggle**: Adding to `ANIMATIONS` automatically renders a toggle under **Settings > Avatar > Animations Toggle**!
+
+### 3. Backend Canonical Registry & Situational Cues (`backend/app/agent/prompts.py`)
+- **Add to `AVAILABLE_AVATAR_ANIMATIONS`**:
+  ```python
+  {"name": "my_anim", "tag": "my_tag", "desc": "Action summary"},
+  ```
+- **Add Situational Prompt Trigger**: Inside `build_animation_expression_prompt_block()`, add an entry to `cue_map`:
+  ```python
+  "my_tag": "When situation occurs -> `<yuki_anim:my_tag/>`",
+  ```
+  *(The dynamic builder will automatically omit `<yuki_anim:my_tag/>` from system prompts whenever the user toggles it off in Settings).*
+
+### 4. Spoken TTS & Response Stripping Verification (`responseParser.js` & `tts.py`)
+- Generic regex handles `<yuki_anim:my_tag/>` and `[yuki_anim:my_tag]` automatically.
+- Verify `stripAnimationTags()` in `frontend/src/utils/responseParser.js` and `clean_text_for_tts()` in `backend/app/voice/tts.py` to ensure the tag never leaks into voice output or visible chat bubbles.
+
+### 5. Validation & Verification
+- **Frontend Build**: Run `npm run build` inside `frontend/` to ensure bundle compilation succeeds.
+- **Backend Import & Prompt Verification**: Run:
+  ```powershell
+  backend\venv\Scripts\python.exe -c "import app.agent.prompts as p; assert 'my_tag' in p.build_animation_expression_prompt_block(); assert 'my_tag' not in p.build_animation_expression_prompt_block(['my_anim']); print('Animation verification passed!')"
+  ```
+
+---
+
 ## Python Class Indentation & Module-Level Helper Rule
 
 In Python, unindented code (column 0) terminates the preceding class definition. Whenever adding utility functions, connection pools, or module variables to large classes like `AgentExecutor` (`backend/app/agent/executor.py`):

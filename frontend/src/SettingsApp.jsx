@@ -39,6 +39,13 @@ export default function SettingsApp() {
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
+
+  useEffect(() => {
+    if (Array.isArray(profile?.settings?.disabled_animations)) {
+      setDisabledAnimations(profile.settings.disabled_animations);
+      localStorage.setItem('yuki-disabled-animations', JSON.stringify(profile.settings.disabled_animations));
+    }
+  }, [profile?.settings?.disabled_animations]);
   const [micDevices, setMicDevices] = useState([]);
   const [selectedMicDeviceId, setSelectedMicDeviceId] = useState(() => {
     return localStorage.getItem('yuki-mic-device-id') || '';
@@ -292,6 +299,11 @@ export default function SettingsApp() {
           setDisabledAnimations(prev => {
             const next = prev.includes(animName) ? prev.filter(a => a !== animName) : [...prev, animName];
             localStorage.setItem('yuki-disabled-animations', JSON.stringify(next));
+            fetch(`${API_BASE}/api/settings/update`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ disabled_animations: next })
+            }).catch(err => console.warn('[Settings] Failed to sync disabled_animations from SettingsApp:', err));
             return next;
           });
         }}

@@ -102,6 +102,10 @@ TOOL_BLACKLIST: set = set(
 # "included_coder_tools".
 INCLUDED_CODER_TOOLS: Optional[list] = None
 
+# User-configurable list of animations disabled from UI/Settings.
+# Animations in this list are stripped from LLM prompts and prevented from executing.
+DISABLED_ANIMATIONS: list = []
+
 # Tool transport configuration
 # mcp-stdio routes Yuki tool execution through backend/app/mcp_server.py over MCP stdio.
 # local keeps the legacy in-process Python dispatcher.
