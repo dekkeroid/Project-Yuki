@@ -2076,11 +2076,8 @@ const AvatarViewer = ({
                     playVrmaClip(selectedAnim, vrmRef.current);
                   }
                 } else {
-                  if (currentVrmaActionRef.current && isVrmaActiveRef.current) {
-                    currentVrmaActionRef.current.fadeOut(0.3);
-                    currentVrmaActionRef.current = null;
-                    isVrmaActiveRef.current = false;
-                    isVrmaUpperBodyRef.current = false;
+                  if (isVrmaActiveRef.current) {
+                    triggerVrmaExitBlend(vrmRef.current);
                   }
                 }
               } else {
@@ -2091,24 +2088,9 @@ const AvatarViewer = ({
             }
           } else {
             idleAnimProgress += delta;
-            if (isVrmaActiveRef.current) {
-              const fadeDur = vrmaFadeDurationRef.current || 0.35;
-              const matchingAnim = ANIMATIONS.find(a => a.name === idleAnimState);
-              if (!matchingAnim?.loop && idleAnimProgress >= idleAnimDuration - fadeDur) {
-                if (currentVrmaActionRef.current && !currentVrmaActionRef.current._fadingOut) {
-                  currentVrmaActionRef.current._fadingOut = true;
-                  currentVrmaActionRef.current.fadeOut(fadeDur);
-                }
-              }
-            }
             if (idleAnimProgress >= idleAnimDuration) {
               if (isVrmaActiveRef.current) {
-                isVrmaActiveRef.current = false;
-                isVrmaUpperBodyRef.current = false;
-                if (currentVrmaActionRef.current) {
-                  currentVrmaActionRef.current.stop();
-                  currentVrmaActionRef.current = null;
-                }
+                triggerVrmaExitBlend(vrmRef.current);
               }
               idleAnimState = 'none';
               idleAnimProgress = 0;
@@ -3268,6 +3250,38 @@ const AvatarViewer = ({
                 });
               });
             }
+
+            // If exiting from a VRMA motion capture animation, smoothly interpolate ALL bones
+            // and scene origin from the exact final mocap pose into the live procedural idle pose!
+            if (vrmaExitBlendActiveRef.current) {
+              vrmaExitProgressRef.current += delta;
+              const exitT = Math.min(1.0, vrmaExitProgressRef.current / vrmaExitDurationRef.current);
+              // Cubic smoothstep curve for liquid-smooth deceleration
+              const alpha = exitT * exitT * (3 - 2 * exitT);
+
+              const lerpShortestAngle = (a, b, t) => {
+                let diff = (b - a) % (Math.PI * 2);
+                if (diff > Math.PI) diff -= Math.PI * 2;
+                if (diff < -Math.PI) diff += Math.PI * 2;
+                return a + diff * t;
+              };
+
+              vrmaExitSnapshotsRef.current.forEach((snap, node) => {
+                node.rotation.x = lerpShortestAngle(snap.x, node.rotation.x, alpha);
+                node.rotation.y = lerpShortestAngle(snap.y, node.rotation.y, alpha);
+                node.rotation.z = lerpShortestAngle(snap.z, node.rotation.z, alpha);
+              });
+
+              // Smoothly interpolate scene position from mocap final position to procedural floating position
+              vrm.scene.position.x = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.x, vrm.scene.position.x, alpha);
+              vrm.scene.position.y = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.y, vrm.scene.position.y, alpha);
+              vrm.scene.position.z = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.z, vrm.scene.position.z, alpha);
+
+              if (exitT >= 1.0) {
+                vrmaExitBlendActiveRef.current = false;
+                vrmaExitSnapshotsRef.current.clear();
+              }
+            }
           }
         } else {
           // VRMA motion capture active: let Three.js AnimationMixer drive skeleton smoothly
@@ -3277,6 +3291,8 @@ const AvatarViewer = ({
               currentVrmaActionRef.current = null;
               isVrmaActiveRef.current = false;
               isVrmaUpperBodyRef.current = false;
+              vrmaExitBlendActiveRef.current = false;
+              vrmaExitSnapshotsRef.current.clear();
             }
           } else if (isVrmaUpperBodyRef.current) {
             // Floating upper-body animation: preserve Yuki's graceful floating hover and leg dangle!
