@@ -1037,6 +1037,10 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<(thought|think|reasoning)>[\s\S]*$', '', text, flags=re.IGNORECASE)
 
+    # 1.1 Strip simulated tool call blocks
+    text = re.sub(r'<(?:tool_call|function_call)>[\s\S]*?(?:<\/(?:tool_call|function_call)>|$)', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\[TOOL_CALL\][\s\S]*?(?:\[\/TOOL_CALL\]|$)', '', text, flags=re.IGNORECASE)
+
     # 2. Strip unique animation and emotion tags (<yuki_anim:.../>, <yuki_anim eer >, [yuki_anim:...], [anim:...], etc.)
     text = re.sub(r'[<\[\(](?:yuki_)?(?:anim|emotion)[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<yuki_[^>]*>', '', text, flags=re.IGNORECASE)

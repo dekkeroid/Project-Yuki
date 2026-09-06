@@ -10,7 +10,9 @@ export function stripAnimationTags(rawText) {
   const emotionRegex = /[<\[\(](?:yuki_)?emotion[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
   const anyYukiTag = /<yuki_[^>]*>/gi;
   const transcriptTag = /\[Transcribed:\s*["']?[\s\S]*?["']?\]\s*/gi;
+  const toolCallTag = /(?:<tool_call>|<function_call>|\[TOOL_CALL\])[\s\S]*?(?:<\/tool_call>|<\/function_call>|\[\/TOOL_CALL\])/gi;
   return rawText
+    .replace(toolCallTag, '')
     .replace(animRegex, '')
     .replace(emotionRegex, '')
     .replace(anyYukiTag, '')
@@ -42,8 +44,9 @@ export function parseResponseTags(rawText, callbacks = {}) {
   const malformedTagRegex = /[<\[\(](?:yuki_)?(?:anim|emotion)[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
   const anyYukiTag = /<yuki_[^>]*>/gi;
   const transcriptTag = /\[Transcribed:\s*["']?[\s\S]*?["']?\]\s*/gi;
+  const toolCallTag = /(?:<tool_call>|<function_call>|\[TOOL_CALL\])[\s\S]*?(?:<\/tool_call>|<\/function_call>|\[\/TOOL_CALL\])/gi;
 
-  let cleanText = rawText;
+  let cleanText = rawText.replace(toolCallTag, '');
 
   // Extract animation tags
   cleanText = cleanText.replace(animRegex, (match, tag) => {
