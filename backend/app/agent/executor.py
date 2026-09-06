@@ -2029,9 +2029,10 @@ class AgentExecutor:
             r')\b',
             re.IGNORECASE
         )
+        avatar_tool_name = "jarvis_change_avatar_outfit" if getattr(config, "TOOL_MODE", "basic") == "advanced" else "change_avatar_outfit"
         if avatar_regex.search(msg_lower):
             print(f"[IntentCheck] Deterministically confirmed TOOL (avatar/outfit change request): '{user_message}'")
-            return "tool", "change_avatar_outfit", "python deterministic"
+            return "tool", avatar_tool_name, "python deterministic"
 
         # Fast deterministic check: referential outfit change commands (e.g. "change it", "try another one", "something new")
         referential_outfit_regex = re.compile(
@@ -2042,7 +2043,7 @@ class AgentExecutor:
             history_text = " ".join(str(m.get("content", "")) for m in (chat_history or [])[-4:]).lower()
             if any(w in history_text for w in ("outfit", "clothes", "dress", "bikini", "swimsuit", "hat", "wear", "avatar", "costume", "change")):
                 print(f"[IntentCheck] Deterministically confirmed TOOL (referential outfit change): '{user_message}'")
-                return "tool", "change_avatar_outfit", "python deterministic"
+                return "tool", avatar_tool_name, "python deterministic"
 
         # Fast deterministic check: time management requests
         timer_regex = re.compile(
@@ -2583,7 +2584,7 @@ class AgentExecutor:
                 "launch_app", "open_or_play_file", "set_system_volume", "manage_timer_stopwatch_alarms",
                 "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script",
                 "jarvis_query_file_db", "jarvis_open_or_play_file",
-                "jarvis_analyze_image", "jarvis_see_screen", "ask_user", "change_avatar_outfit", "jarvis_change_avatar_outfit"
+                "jarvis_analyze_image", "jarvis_see_screen", "ask_user", "change_avatar_outfit"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in basic_allowed]
 
@@ -2596,7 +2597,10 @@ class AgentExecutor:
 
         if intent_tool_hint:
             if intent_tool_hint in ("change_avatar_outfit", "jarvis_change_avatar_outfit"):
-                targeted = [t for t in filtered_tools if t.get("function", {}).get("name") in ("change_avatar_outfit", "jarvis_change_avatar_outfit")]
+                target_name = "jarvis_change_avatar_outfit" if effective_tool_mode == "advanced" else "change_avatar_outfit"
+                targeted = [t for t in filtered_tools if t.get("function", {}).get("name") == target_name]
+                if not targeted:
+                    targeted = [t for t in filtered_tools if t.get("function", {}).get("name") in ("change_avatar_outfit", "jarvis_change_avatar_outfit")]
             else:
                 targeted = [t for t in filtered_tools if t.get("function", {}).get("name") == intent_tool_hint]
             if targeted:

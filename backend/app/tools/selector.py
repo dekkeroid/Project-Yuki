@@ -101,7 +101,6 @@ _ALWAYS_INCLUDED_JARVIS_TOOLS = {
     "jarvis_grep_files",
     "jarvis_find_files_by_glob",
     "jarvis_change_avatar_outfit",
-    "change_avatar_outfit",
 }
 
 _ALWAYS_INCLUDED_BASIC_TOOLS = {
