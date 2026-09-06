@@ -2765,8 +2765,76 @@ class AgentExecutor:
                 err_msg = {"content": tb_e.get_error_message(e)}
                 yield err_msg, self._get_model_label(tm_e)
 
+    def _extract_inline_tool_calls(self, text: str) -> Tuple[List[Dict[str, Any]], str]:
+        """
+        Extracts tool calls embedded directly in LLM text (e.g. <tool_call>...</tool_call>,
+        <function_call>...</function_call>, [TOOL_CALL]...[/TOOL_CALL], or markdown code blocks)
+        and returns (extracted_tool_calls, cleaned_narration_before_tool).
+        """
+        if not text:
+            return [], ""
+
+        extracted = []
+        first_match_start = None
+
+        # Pattern 1: XML/tag-based tool calls: <tool_call>...</tool_call>, <function_call>...</function_call>, [TOOL_CALL]...[/TOOL_CALL]
+        tag_pattern = re.compile(
+            r'(?:<tool_call>|<function_call>|\[TOOL_CALL\])\s*([\s\S]*?)\s*(?:</tool_call>|</function_call>|\[/TOOL_CALL\])',
+            re.IGNORECASE
+        )
+        for m in tag_pattern.finditer(text):
+            if first_match_start is None or m.start() < first_match_start:
+                first_match_start = m.start()
+            raw_payload = m.group(1).strip()
+            parsed_calls = self._try_parse_json_tool_call(raw_payload)
+            if parsed_calls:
+                extracted.extend(parsed_calls)
+            else:
+                try:
+                    data = json.loads(raw_payload)
+                    parsed = self._parse_single_tool_json(data)
+                    if parsed:
+                        extracted.append(parsed)
+                except Exception:
+                    pass
+
+        # Pattern 2: Markdown blocks ```tool_args or ```json if no tag calls found
+        if not extracted:
+            md_pattern = re.compile(
+                r'```(?:tool_args|json)?\s*(\{\s*"name"[\s\S]*?\})\s*```',
+                re.IGNORECASE
+            )
+            for m in md_pattern.finditer(text):
+                if first_match_start is None or m.start() < first_match_start:
+                    first_match_start = m.start()
+                raw_payload = m.group(1).strip()
+                try:
+                    data = json.loads(raw_payload)
+                    parsed = self._parse_single_tool_json(data)
+                    if parsed:
+                        extracted.append(parsed)
+                except Exception:
+                    pass
+
+        # Pattern 3: Standalone unified JSON or tool_calls block
+        if not extracted and ("\"name\"" in text and "\"arguments\"" in text):
+            parsed_calls = self._try_parse_json_tool_call(text)
+            if parsed_calls:
+                return parsed_calls, ""
+
+        if extracted:
+            cleaned_narration = text[:first_match_start].strip() if first_match_start is not None else ""
+            return extracted, cleaned_narration
+
+        return [], text
+
     def _try_parse_json_tool_call(self, text: str) -> list:
         cleaned = text.strip()
+
+        # Handle XML/tag-based tool calls if wrapped
+        tag_match = re.search(r'(?:<tool_call>|<function_call>|\[TOOL_CALL\])\s*([\s\S]*?)\s*(?:</tool_call>|</function_call>|\[/TOOL_CALL\])', cleaned, re.IGNORECASE)
+        if tag_match:
+            cleaned = tag_match.group(1).strip()
         
         # Handle markdown code blocks
         if cleaned.startswith("```"):
@@ -2982,8 +3050,9 @@ class AgentExecutor:
 
     def _unique_tool_call_id(self, prefix: str) -> str:
         """Generate a turn-unique tool_call id for text-fallback parsed calls."""
-        self._fallback_call_counter += 1
-        return f"call_{prefix}_{self._fallback_call_counter}"
+        cnt = getattr(self, "_fallback_call_counter", 0) + 1
+        self._fallback_call_counter = cnt
+        return f"call_{prefix}_{cnt}"
 
     def _repair_transcript(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Self-heal an invalid assistant/tool transcript before sending it to the API.
@@ -3485,6 +3554,16 @@ class AgentExecutor:
                 
                 if not first_token:
                     print()
+
+                # Fallback: Extract inline simulated tool calls (e.g. <tool_call>...</tool_call>, ```tool_args, etc.)
+                if not tool_calls_to_execute and accumulated_response:
+                    extracted_calls, cleaned_narration = self._extract_inline_tool_calls(accumulated_response)
+                    if extracted_calls:
+                        print(f"[InlineToolParser] Successfully extracted {len(extracted_calls)} inline tool call(s) from text: {[c['function']['name'] for c in extracted_calls]}")
+                        tool_calls_to_execute = extracted_calls
+                        accumulated_response = cleaned_narration
+                        iteration_tokens = [(cleaned_narration, backend_used)] if cleaned_narration else []
+
                 full_llm_response = accumulated_response.strip()
                 log_triggered_backend_tags(full_llm_response)
 
