@@ -55,6 +55,7 @@ export function useAudioPlayback(options = {}) {
   const bubbleTimeoutRef = useRef(null);
   const playbackTimeoutRef = useRef(null);
   const micActivationTimeoutRef = useRef(null);
+  const currentVisemesRef = useRef(null);
 
   const [voiceVolume, setVoiceVolumeState] = useState(() => {
     try { return parseFloat(localStorage.getItem('yuki-voice-volume') || '1.0'); } catch { return 1.0; }
@@ -130,48 +131,88 @@ export function useAudioPlayback(options = {}) {
           const normalized = Math.min(average / 85.0, 1.0);
           if (setAudioLevel) setAudioLevel(Math.min(normalized, 0.8));
 
-          // 2. 4-Band Acoustic Formant Analysis (bin width ~172Hz-188Hz)
-          const bF1 = getBandEnergy(2, 5);       // ~340Hz - 900Hz (Jaw opening / open vowels)
-          const bF2Low = getBandEnergy(6, 9);    // ~1000Hz - 1600Hz (Back rounded vowels /u/, /o/)
-          const bF2High = getBandEnergy(10, 16); // ~1700Hz - 2900Hz (Front spread vowels /i/, /e/)
-          const bSib = getBandEnergy(21, 46);    // ~3600Hz - 8000Hz (Sibilance / consonants /s/, /t/, /f/)
-
           let targetAa = 0;
           let targetIh = 0;
           let targetOu = 0;
           let targetEe = 0;
           let targetOh = 0;
 
-          if (normalized > 0.02) {
-            // Consonant / Sibilance check: high frequency hiss dominates over open vowel formants
-            const isConsonant = (bSib > 0.07) && (bSib > bF1 * 0.82);
+          // DUAL-ENGINE: 1. Kokoro Phonetic Timeline Mode (Frame-accurate articulatory alignment)
+          const currentVisemes = currentVisemesRef.current;
+          if (currentVisemes && currentVisemes.length > 0) {
+            const curTime = audioRef.current.currentTime || 0;
+            let activeCue = null;
+            let nextCue = null;
+            for (let i = 0; i < currentVisemes.length; i++) {
+              const cue = currentVisemes[i];
+              if (curTime >= cue.start && curTime <= cue.end) {
+                activeCue = cue;
+                nextCue = (i + 1 < currentVisemes.length) ? currentVisemes[i + 1] : null;
+                break;
+              }
+            }
 
-            if (isConsonant) {
-              // Clamp jaw drop shut to keep teeth together on 's', 't', 'sh', 'f'
-              targetAa = Math.min(0.04, bF1 * 0.12);
-              targetIh = Math.min(0.18, bSib * 1.2);
-              targetEe = 0.03;
-              targetOu = 0.0;
-              targetOh = 0.0;
-            } else {
-              // Natural conversational mouth opening scales (softer, human-proportional):
-              // Open Vowel (aa): Jaw opening calibrated to max ~0.36
-              const f1Net = Math.max(0, bF1 - 0.035);
-              targetAa = Math.min(0.36, f1Net * 1.4);
+            if (activeCue) {
+              const v = activeCue.viseme;
+              const w = activeCue.weight;
+              if (v === 'aa') targetAa = w;
+              else if (v === 'ih') targetIh = w;
+              else if (v === 'ou') targetOu = w;
+              else if (v === 'ee') targetEe = w;
+              else if (v === 'oh') targetOh = w;
+              // 'silence' keeps all targets at 0 (firm lip closure on bilabials /p/, /b/, /m/)
 
-              // Front Spread Vowel (ih): Wide spread, calibrated to max ~0.30
-              const f2Spread = Math.max(0, bF2High - (bF2Low * 0.65));
-              targetIh = Math.min(0.30, f2Spread * 1.5);
+              // Smooth 25ms cross-fade into next cue near phonetic boundary
+              if (nextCue && (activeCue.end - curTime < 0.025)) {
+                const blend = Math.max(0, Math.min(1, (0.025 - (activeCue.end - curTime)) / 0.025));
+                const lerp = (a, b, t) => a + (b - a) * t;
+                const nv = nextCue.viseme;
+                const nw = nextCue.weight;
+                if (nv === 'aa') targetAa = lerp(targetAa, nw, blend);
+                else if (nv === 'ih') targetIh = lerp(targetIh, nw, blend);
+                else if (nv === 'ou') targetOu = lerp(targetOu, nw, blend);
+                else if (nv === 'ee') targetEe = lerp(targetEe, nw, blend);
+                else if (nv === 'oh') targetOh = lerp(targetOh, nw, blend);
+              }
+            }
+          } else {
+            // DUAL-ENGINE: 2. Fallback: 4-Band Acoustic Formant Analysis (when phoneme cues are unavailable)
+            const bF1 = getBandEnergy(2, 5);       // ~340Hz - 900Hz (Jaw opening / open vowels)
+            const bF2Low = getBandEnergy(6, 9);    // ~1000Hz - 1600Hz (Back rounded vowels /u/, /o/)
+            const bF2High = getBandEnergy(10, 16); // ~1700Hz - 2900Hz (Front spread vowels /i/, /e/)
+            const bSib = getBandEnergy(21, 46);    // ~3600Hz - 8000Hz (Sibilance / consonants /s/, /t/, /f/)
 
-              // Back Rounded Vowel (oh): Rounded lips, calibrated to max ~0.26
-              const f2Round = Math.max(0, bF2Low - 0.03);
-              targetOh = Math.min(0.26, f2Round * 1.3);
+            if (normalized > 0.02) {
+              // Consonant / Sibilance check: high frequency hiss dominates over open vowel formants
+              const isConsonant = (bSib > 0.07) && (bSib > bF1 * 0.82);
 
-              // High Rounded Vowel (ou): Narrow pursed lips, calibrated to max ~0.22
-              targetOu = Math.min(0.22, Math.max(0, bF2Low - bF2High) * 1.3);
+              if (isConsonant) {
+                // Clamp jaw drop shut to keep teeth together on 's', 't', 'sh', 'f'
+                targetAa = Math.min(0.04, bF1 * 0.12);
+                targetIh = Math.min(0.18, bSib * 1.2);
+                targetEe = 0.03;
+                targetOu = 0.0;
+                targetOh = 0.0;
+              } else {
+                // Natural conversational mouth opening scales (softer, human-proportional):
+                // Open Vowel (aa): Jaw opening calibrated to max ~0.36
+                const f1Net = Math.max(0, bF1 - 0.035);
+                targetAa = Math.min(0.36, f1Net * 1.4);
 
-              // Mid Spread Vowel (ee): Relaxed mid-spread, calibrated to max ~0.24
-              targetEe = Math.min(0.24, (targetAa * 0.35) + (targetIh * 0.65));
+                // Front Spread Vowel (ih): Wide spread, calibrated to max ~0.30
+                const f2Spread = Math.max(0, bF2High - (bF2Low * 0.65));
+                targetIh = Math.min(0.30, f2Spread * 1.5);
+
+                // Back Rounded Vowel (oh): Rounded lips, calibrated to max ~0.26
+                const f2Round = Math.max(0, bF2Low - 0.03);
+                targetOh = Math.min(0.26, f2Round * 1.3);
+
+                // High Rounded Vowel (ou): Narrow pursed lips, calibrated to max ~0.22
+                targetOu = Math.min(0.22, Math.max(0, bF2Low - bF2High) * 1.3);
+
+                // Mid Spread Vowel (ee): Relaxed mid-spread, calibrated to max ~0.24
+                targetEe = Math.min(0.24, (targetAa * 0.35) + (targetIh * 0.65));
+              }
             }
           }
 
@@ -229,6 +270,7 @@ export function useAudioPlayback(options = {}) {
     }
 
     audioQueueRef.current = [];
+    currentVisemesRef.current = null;
     isPlayingRef.current = false;
     isNativeSpeakingRef.current = false;
     hasReceivedAudioRef.current = false;
@@ -274,8 +316,9 @@ export function useAudioPlayback(options = {}) {
 
   const playNextAudioRef = useRef(null);
 
-  const playVoiceResponse = useCallback((audioUrl, speechText, forcedExpression = null) => {
+  const playVoiceResponse = useCallback((audioUrl, speechText, forcedExpression = null, visemes = null) => {
     initAudioAnalyser();
+    currentVisemesRef.current = (visemes && visemes.length > 0) ? visemes : null;
 
     if (bubbleTimeoutRef.current) {
       clearTimeout(bubbleTimeoutRef.current);
@@ -372,6 +415,7 @@ export function useAudioPlayback(options = {}) {
         console.log("[Playback] Playback completed. Returning to idle state.");
         isPlayingRef.current = false;
         hasReceivedAudioRef.current = false;
+        currentVisemesRef.current = null;
         if (setAudioLevel) setAudioLevel(0);
         if (setVisemeLevels) setVisemeLevels(null);
 
@@ -398,12 +442,12 @@ export function useAudioPlayback(options = {}) {
 
     isPlayingRef.current = true;
     const nextChunk = audioQueueRef.current.shift();
-    playVoiceResponse(nextChunk.url, nextChunk.text);
+    playVoiceResponse(nextChunk.url, nextChunk.text, null, nextChunk.visemes);
   }, [setAudioLevel, setVisemeLevels, updateListeningStateGlobal, isVoiceCommandModeRef, startSessionTimeout, playVoiceResponse]);
 
   playNextAudioRef.current = playNextAudio;
 
-  const queueAudioChunk = useCallback((audioUrl, speechText, index) => {
+  const queueAudioChunk = useCallback((audioUrl, speechText, index, visemes = null) => {
     // Pre-flight: check for 202 X-TTS-Fallback:web sentinel (cloud TTS failure → browser fallback)
     fetch(audioUrl)
       .then(resp => {
@@ -414,10 +458,24 @@ export function useAudioPlayback(options = {}) {
           if (speakTextNativelyRef.current) speakTextNativelyRef.current(speechText);
           return;
         }
+
+        // If visemes not provided explicitly, attempt to read from X-Visemes response header
+        let chunkVisemes = visemes;
+        if (!chunkVisemes && resp.headers && resp.headers.get('X-Visemes')) {
+          try {
+            chunkVisemes = JSON.parse(resp.headers.get('X-Visemes'));
+          } catch (_) {}
+        }
+
         // Normal audio — create blob URL so we don't re-fetch
         return resp.blob().then(blob => {
           const blobUrl = URL.createObjectURL(blob);
-          audioQueueRef.current.push({ url: blobUrl, text: speechText, index: index });
+          audioQueueRef.current.push({
+            url: blobUrl,
+            text: speechText,
+            index: index,
+            visemes: chunkVisemes || null
+          });
           audioQueueRef.current.sort((a, b) => a.index - b.index);
           if (!isPlayingRef.current) {
             isPlayingRef.current = true;
