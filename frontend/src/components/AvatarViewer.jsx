@@ -3620,13 +3620,25 @@ const AvatarViewer = ({
           let speechEe = 0.0;
           let speechOh = 0.0;
 
+          const isKokoro = vLevels && vLevels.engine === 'kokoro';
+
           if (isSpeaking) {
             if (vLevels) {
-              speechAa = THREE.MathUtils.clamp(vLevels.aa || 0, 0, 0.38);
-              speechIh = THREE.MathUtils.clamp(vLevels.ih || 0, 0, 0.32);
-              speechOu = THREE.MathUtils.clamp(vLevels.ou || 0, 0, 0.24);
-              speechEe = THREE.MathUtils.clamp(vLevels.ee || 0, 0, 0.26);
-              speechOh = THREE.MathUtils.clamp(vLevels.oh || 0, 0, 0.28);
+              if (isKokoro) {
+                // Dedicated expressive articulatory range for Kokoro phonetic lip-sync
+                speechAa = THREE.MathUtils.clamp(vLevels.aa || 0, 0, 0.78);
+                speechIh = THREE.MathUtils.clamp(vLevels.ih || 0, 0, 0.65);
+                speechOu = THREE.MathUtils.clamp(vLevels.ou || 0, 0, 0.58);
+                speechEe = THREE.MathUtils.clamp(vLevels.ee || 0, 0, 0.60);
+                speechOh = THREE.MathUtils.clamp(vLevels.oh || 0, 0, 0.72);
+              } else {
+                // Exact previous clamps & restrictions preserved for non-Kokoro / formant lip-sync
+                speechAa = THREE.MathUtils.clamp(vLevels.aa || 0, 0, 0.38);
+                speechIh = THREE.MathUtils.clamp(vLevels.ih || 0, 0, 0.32);
+                speechOu = THREE.MathUtils.clamp(vLevels.ou || 0, 0, 0.24);
+                speechEe = THREE.MathUtils.clamp(vLevels.ee || 0, 0, 0.26);
+                speechOh = THREE.MathUtils.clamp(vLevels.oh || 0, 0, 0.28);
+              }
             } else {
               // Legacy fallback if only audioLevel is available
               speechAa = Math.min(audioVol * 0.45, 0.35);
@@ -3635,12 +3647,16 @@ const AvatarViewer = ({
           }
 
           // Blend procedural mouth offsets (e.g. yawning, laughing, being dragged)
-          const blendedAa = speechAa > 0
-            ? (extraMouthAa > 0 ? Math.min(0.48, speechAa + (extraMouthAa * 0.20)) : speechAa)
-            : extraMouthAa;
-          const blendedOh = speechOh > 0
-            ? (extraMouthOh > 0 ? Math.min(0.35, speechOh + (extraMouthOh * 0.25)) : speechOh)
-            : extraMouthOh;
+          const blendedAa = isSpeaking && isKokoro
+            ? Math.min(0.85, Math.max(speechAa, extraMouthAa))
+            : (speechAa > 0
+                ? (extraMouthAa > 0 ? Math.min(0.48, speechAa + (extraMouthAa * 0.20)) : speechAa)
+                : extraMouthAa);
+          const blendedOh = isSpeaking && isKokoro
+            ? Math.min(0.75, Math.max(speechOh, extraMouthOh))
+            : (speechOh > 0
+                ? (extraMouthOh > 0 ? Math.min(0.35, speechOh + (extraMouthOh * 0.25)) : speechOh)
+                : extraMouthOh);
 
           setExpressionValue(vrm, 'aa', blendedAa);
           setExpressionValue(vrm, 'ih', speechIh);

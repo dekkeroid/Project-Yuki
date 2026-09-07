@@ -117,6 +117,7 @@ class MemoryManager:
                 "mood_source": "script",
                 "tts_preload": True,
                 "kokoro_ipa_interjections": False,
+                "lipsync_engine": "kokoro",
                 "vrm_dpr": 1.5,
                 "vrm_fps": 40,
                 "chat_mode": False,
@@ -209,6 +210,7 @@ class MemoryManager:
                 config.TTS_RATE = data["settings"].get("tts_rate", config.TTS_RATE)
                 config.TTS_DEVICE = data["settings"].get("tts_device", config.TTS_DEVICE)
                 config.KOKORO_IPA_INTERJECTIONS = bool(data["settings"].get("kokoro_ipa_interjections", getattr(config, "KOKORO_IPA_INTERJECTIONS", False)))
+                config.LIPSYNC_ENGINE = str(data["settings"].get("lipsync_engine", getattr(config, "LIPSYNC_ENGINE", "kokoro")))
                 config.STT_DEVICE = data["settings"].get("stt_device", config.STT_DEVICE)
                 config.LLM_SPEECH_INPUT_ENABLED = bool(data["settings"].get("llm_speech_input_enabled", getattr(config, "LLM_SPEECH_INPUT_ENABLED", False)))
                 config.WHISPER_MODEL = data["settings"].get("whisper_model", getattr(config, "WHISPER_MODEL", "small"))
@@ -775,6 +777,8 @@ class MemoryManager:
             config.COMPANION_NAP_ENERGY_PCT = int(value)
         elif key == "kokoro_ipa_interjections":
             config.KOKORO_IPA_INTERJECTIONS = bool(value)
+        elif key == "lipsync_engine":
+            config.LIPSYNC_ENGINE = str(value)
             
         return f"Successfully updated setting '{key}' to '{value}'."
 
