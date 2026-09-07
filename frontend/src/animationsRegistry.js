@@ -367,19 +367,21 @@ export const ANIMATIONS = [
     blendShapes: { surprised: 1.0, browUp: 0.8, angry: 0.3 }
   },
   {
-    name: 'princess_bow',
-    alias: 'princess_bow',
+    name: 'formal_bow',
+    alias: 'bow',
     type: 'vrma',
     vrmaUrl: './animations/formal_bow.vrma',
     duration: 2.46,
     upperBodyOnly: true,
     excludeFromRandomIdle: true,
-    llmTag: '<yuki_anim:princess_bow/>',
+    llmTag: '<yuki_anim:bow/>',
     commands: [
-      { cmd: '/ani-bow', description: 'Courteous formal bow (mocap)' },
-      { cmd: '/ani-curtsy', description: 'Formal curtsy (alias)' }
+      { cmd: '/ani-bow', description: 'Polite Japanese bow / formal greeting bow (mocap)' },
+      { cmd: '/bow', description: 'Polite formal bow (alias)' },
+      { cmd: '/ani-formal_bow', description: 'Formal bow (alias)' },
+      { cmd: '/ani-princess_bow', description: 'Formal bow (legacy alias)' }
     ],
-    responseText: '*gives a graceful formal bow*',
+    responseText: '*bows politely in formal greeting*',
     blendShapes: { relaxed: 0.7, happy: 0.3 }
   },
   {
@@ -799,9 +801,10 @@ export const LLM_ANIMATION_MAP = {
   disgusted: 'disgusted_recoil',
   eww: 'disgusted_recoil',
   gross: 'disgusted_recoil',
-  princess_bow: 'princess_bow',
-  bow: 'princess_bow',
-  curtsy: 'princess_bow',
+  formal_bow: 'formal_bow',
+  princess_bow: 'formal_bow',
+  bow: 'formal_bow',
+  curtsy: 'formal_bow',
   think: 'thinking',
   thinking: 'thinking',
   ponder: 'thinking',
@@ -856,7 +859,7 @@ export const LLM_ANIMATION_MAP = {
   worried: 'shy_fidget',
   fret: 'shy_fidget',
   pat: 'nodding',
-  hug: 'princess_bow',
+  hug: 'formal_bow',
   sigh: 'dogeza_bow',
   rub_eyes: 'sleepy_rub_eyes'
 };
