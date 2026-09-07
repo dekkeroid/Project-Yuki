@@ -335,13 +335,13 @@ def get_basic_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "change_avatar_outfit",
-                "description": "WHEN TO USE: Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessory. MANDATORY: When the user asks to change/wear clothes, try another outfit, or says referential commands like 'change it', 'change it to something new', 'wear something else', or 'try another one', you MUST invoke this tool (pass model_or_outfit='next' or the specific outfit name). NEVER pretend or describe changing clothes in conversational text without calling this function! Works for character names ('mita', 'unagi nami'), outfit names ('cute summer dress', 'blue bikini', 'chinese dress', 'with hat'), cycling ('next', 'random'), or resetting ('default', 'normal').",
+                "description": "CRITICAL 3D AVATAR HARDWARE TOOL: Instantly changes Yuki's 3D VRM avatar clothes, outfit, costume, or character model rendered live on the user's screen. MANDATORY: You MUST invoke this tool immediately whenever the user asks to change clothes, wear an outfit (e.g. 'chinese dress', 'bikini', 'summer dress', 'maid', 'sweater', 'bunny'), wear something with a specific vibe ('something sexy', 'cute', 'casual', 'spicy'), switch/reset models ('change ur model to default', 'switch model'), or says referential commands ('change it', 'wear something else', 'try another one'). NEVER reply with text promises like 'let me go change' or 'I will slip into that' without calling this tool in the same turn — visual changes on screen only happen when this function is called!",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "model_or_outfit": {
                             "type": "string",
-                            "description": "The name or keyword of the avatar model, character, outfit, or variant to switch to (e.g. 'kind', 'mita kind', 'cute summer dress', 'with hat', 'chinese dress', 'next', 'something else', 'default', or 'list'). Pass 'next' if the user says 'change it' or 'wear something else' without naming a specific outfit."
+                            "description": "The exact or partial name of the outfit, costume, style, or VRM model to switch to. Examples: 'Chinese Dress', 'Sexy Bunny Girl Dress', 'Cute Summer Dress', 'Blue Bikini', 'School Dress', 'Virgin Killer Turtleneck Sweater', 'default', 'next', 'random'. Pass 'default' for default look/model, 'next' for referential commands like 'change it' or 'something else', or the closest outfit name matching the user's request (e.g. 'chinese dress' -> 'Chinese Dress', 'something sexy' -> 'Sexy Bunny Girl Dress')."
                         },
                         "outfit": {
                             "type": "string",
@@ -352,7 +352,7 @@ def get_basic_tools_definition() -> list:
                             "description": "Optional character name if specified separately."
                         }
                     },
-                    "required": []
+                    "required": ["model_or_outfit"]
                 }
             }
         }
@@ -695,13 +695,13 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_change_avatar_outfit",
-                "description": "WHEN TO USE: Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessory. MANDATORY: When the user asks to change/wear clothes, try another outfit, or says referential commands like 'change it', 'change it to something new', 'wear something else', or 'try another one', you MUST invoke this tool (pass model_or_outfit='next' or the specific outfit name). NEVER pretend or describe changing clothes in conversational text without calling this function! Works for character names ('mita', 'unagi nami'), outfit names ('cute summer dress', 'blue bikini', 'chinese dress', 'with hat'), cycling ('next', 'random'), or resetting ('default', 'normal').",
+                "description": "CRITICAL 3D AVATAR HARDWARE TOOL: Instantly changes Yuki's 3D VRM avatar clothes, outfit, costume, or character model rendered live on the user's screen. MANDATORY: You MUST invoke this tool immediately whenever the user asks to change clothes, wear an outfit (e.g. 'chinese dress', 'bikini', 'summer dress', 'maid', 'sweater', 'bunny'), wear something with a specific vibe ('something sexy', 'cute', 'casual', 'spicy'), switch/reset models ('change ur model to default', 'switch model'), or says referential commands ('change it', 'wear something else', 'try another one'). NEVER reply with text promises like 'let me go change' or 'I will slip into that' without calling this tool in the same turn — visual changes on screen only happen when this function is called!",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "model_or_outfit": {
                             "type": "string",
-                            "description": "The name or keyword of the avatar model, character, outfit, or variant to switch to (e.g. 'kind', 'mita kind', 'cute summer dress', 'with hat', 'chinese dress', 'next', 'something else', 'default', or 'list'). Pass 'next' if the user says 'change it' or 'wear something else' without naming a specific outfit."
+                            "description": "The exact or partial name of the outfit, costume, style, or VRM model to switch to. Examples: 'Chinese Dress', 'Sexy Bunny Girl Dress', 'Cute Summer Dress', 'Blue Bikini', 'School Dress', 'Virgin Killer Turtleneck Sweater', 'default', 'next', 'random'. Pass 'default' for default look/model, 'next' for referential commands like 'change it' or 'something else', or the closest outfit name matching the user's request (e.g. 'chinese dress' -> 'Chinese Dress', 'something sexy' -> 'Sexy Bunny Girl Dress')."
                         },
                         "outfit": {
                             "type": "string",
@@ -712,7 +712,7 @@ def get_advanced_jarvis_tools_definition() -> list:
                             "description": "Optional character name if specified separately."
                         }
                     },
-                    "required": []
+                    "required": ["model_or_outfit"]
                 }
             }
         },

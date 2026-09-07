@@ -596,10 +596,21 @@ def _extract_image_candidate(img_tag, page_url: str = "") -> Optional[tuple[str,
         r"\b(icon|logo|avatar|gravatar|user|author|pixel|spacer|tracker|tracking|spinner|badge|banner|emoji|button|social|share|advert|ad-|placeholder|1x1|thumb-tiny)\b",
         re.I
     )
+    tracking_domains = (
+        "rlcdn.com", "scorecardresearch.com", "quantserve.com", "doubleclick.net",
+        "adnxs.com", "bluekai.com", "rubiconproject.com", "criteo.com", "taboola.com", "outbrain.com"
+    )
+    if any(td in url_lower for td in tracking_domains):
+        return None
+
     if junk_img_pattern.search(url_lower) or junk_img_pattern.search(img_class) or junk_img_pattern.search(img_id):
         # Allow if alt specifically describes real content (>15 chars) and URL is from a known good CDN
         if not (len(img_alt) > 15 and any(cdn in url_lower for cdn in ("unsplash.com", "wikimedia.org", "wikipedia.org", "wp-content/uploads", "media", "images", "cdn"))):
             return None
+
+    # Filter out empty caption .gif files (almost always tracking beacons or 1x1 gifs)
+    if (not img_alt and not img_title) and (url_lower.endswith(".gif") or "/pixel" in url_lower or "/id." in url_lower):
+        return None
 
     # 6. Extract Caption
     caption = ""
@@ -623,6 +634,122 @@ def _extract_image_candidate(img_tag, page_url: str = "") -> Optional[tuple[str,
     return (caption, full_url)
 
 
+def extract_reddit_markdown(raw_html: str, max_chars: int = 5000, query: str = "", page_url: str = "") -> str:
+    """
+    Specialized, resilient extractor for Reddit discussions.
+    Supports modern Reddit (Shreddit custom elements) and classic/old Reddit.
+    Extracts post title, author, subreddit, score, body, and hierarchical top comments.
+    """
+    if not raw_html or not isinstance(raw_html, str):
+        return ""
+
+    # 1. Unpack <template> tags so SSR/Shadow-DOM comments parse as standard DOM elements
+    processed_html = raw_html.replace("<template", "<div").replace("</template>", "</div>")
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(processed_html, "html.parser")
+    except Exception:
+        return ""
+
+    output = []
+
+    # 2. Modern Reddit (Shreddit architecture)
+    post = soup.find("shreddit-post")
+    if post:
+        title = post.get("post-title", "").strip()
+        sub = post.get("subreddit-prefixed-name", "").strip()
+        author = post.get("author", "").strip()
+        score = post.get("score", "").strip()
+        content_href = post.get("content-href", "").strip()
+
+        if title:
+            output.append(f"# {title}")
+        meta = []
+        if sub:
+            meta.append(sub)
+        if author:
+            meta.append(f"Posted by u/{author}")
+        if score:
+            meta.append(f"{score} upvotes")
+        if meta:
+            output.append(f"*{' | '.join(meta)}*")
+
+        body_el = post.find(attrs={"slot": "text-body"}) or post.find("div", id=lambda i: i and "post-rtjson-content" in i)
+        body_text = ""
+        if body_el:
+            for junk in body_el.find_all(["search-telemetry-tracker", "faceplate-tracker"]):
+                junk.unwrap()
+            body_text = body_el.get_text(separator="\n\n", strip=True)
+            body_text = re.sub(r"\bRead more\b", "", body_text).strip()
+
+        if body_text:
+            output.append(body_text)
+        elif content_href and ("i.redd.it" in content_href or any(content_href.lower().endswith(x) for x in (".jpg", ".png", ".jpeg", ".webp"))):
+            output.append(f"![Post Image]({content_href})")
+        elif content_href and "reddit.com" not in content_href:
+            output.append(f"[Shared Link: {content_href}]")
+
+        # Extract top comments
+        comments = soup.find_all("shreddit-comment")
+        comment_lines = []
+        for c in comments:
+            c_author = c.get("author", "Anonymous").strip()
+            if c_author.lower() in ("automoderator",):
+                continue
+            c_score = c.get("score", "").strip()
+            score_str = f" ({c_score} upvotes)" if c_score else ""
+            depth = int(c.get("depth", "0") or "0")
+            indent = "  " * min(depth, 4)
+
+            slot = c.find(attrs={"slot": "comment"}) or c.find("div", id=lambda i: i and "comment-rtjson-content" in i)
+            if slot:
+                for junk in slot.find_all(["search-telemetry-tracker", "faceplate-tracker"]):
+                    junk.unwrap()
+                c_text = slot.get_text(separator=" ", strip=True)
+                if c_text and len(c_text) > 3:
+                    comment_lines.append(f"{indent}- **u/{c_author}**{score_str}:\n{indent}  {c_text}")
+
+        if comment_lines:
+            output.append("## Top Comments:\n" + "\n".join(comment_lines[:15]))
+
+    # 3. Classic / Old Reddit fallback
+    if not output:
+        old_post = soup.find(class_=lambda c: c and "entry" in c)
+        if old_post:
+            title_el = old_post.find(class_=lambda c: c and "title" in c)
+            title = title_el.get_text(strip=True) if title_el else ""
+            author_el = old_post.find(class_=lambda c: c and "author" in c)
+            author = author_el.get_text(strip=True) if author_el else ""
+            body_el = old_post.find(class_=lambda c: c and "usertext-body" in c)
+            body = body_el.get_text(separator="\n\n", strip=True) if body_el else ""
+            if title:
+                output.append(f"# {title}")
+            if author:
+                output.append(f"*Posted by u/{author}*")
+            if body:
+                output.append(body)
+
+            comment_els = soup.find_all(class_=lambda c: c and "comment" in c and "entry" in c)
+            c_lines = []
+            for ce in comment_els[:12]:
+                ca = ce.find(class_=lambda c: c and "author" in c)
+                cb = ce.find(class_=lambda c: c and "usertext-body" in c)
+                if ca and cb:
+                    c_lines.append(f"- **u/{ca.get_text(strip=True)}**:\n  {cb.get_text(separator=' ', strip=True)}")
+            if c_lines:
+                output.append("## Top Comments:\n" + "\n".join(c_lines))
+
+    doc = "\n\n".join(output).strip()
+    if len(doc) > max_chars:
+        cutoff = max_chars
+        last_para = doc.rfind("\n\n", 0, max_chars)
+        if last_para > max_chars * 0.7:
+            cutoff = last_para
+        doc = doc[:cutoff].strip() + f"\n\n... [Content truncated at {cutoff} characters. Call 'jarvis_web_scrape' on this URL to read up to 15,000+ characters if this page looks promising]"
+
+    return doc
+
+
 def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "", query: str = "", page_url: str = "") -> str:
     """
     Extracts clean, lossless Markdown from HTML content.
@@ -638,9 +765,20 @@ def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "
     if not raw_html or not isinstance(raw_html, str):
         return ""
 
+    d_lower = domain.lower() if domain else ""
+    u_lower = page_url.lower() if page_url else ""
+
+    # Check for Reddit pages first (both Shreddit and old reddit)
+    if "reddit.com" in d_lower or "reddit.com" in u_lower or "<shreddit-post" in raw_html or "shreddit-comment" in raw_html:
+        reddit_md = extract_reddit_markdown(raw_html, max_chars=max_chars, query=query, page_url=page_url)
+        if reddit_md and len(reddit_md.strip()) >= 50:
+            return reddit_md
+
+    # Pre-process <template> tags so declarative shadow DOM / SSR content is preserved
+    processed_html = raw_html.replace("<template", "<div").replace("</template>", "</div>")
     try:
         from bs4 import BeautifulSoup, NavigableString, Tag
-        soup = BeautifulSoup(raw_html, "html.parser")
+        soup = BeautifulSoup(processed_html, "html.parser")
     except Exception:
         return raw_html[:max_chars]
 
@@ -649,19 +787,13 @@ def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "
         "script", "style", "header", "footer", "nav", "aside", "noscript", 
         "svg", "form", "button", "select", "option", "input", "textarea", "label",
         "fieldset", "legend", "datalist", "optgroup", "iframe", "canvas", "meta", 
-        "link", "dialog", "template", "source", "audio", "video"
+        "link", "dialog", "source", "audio", "video"
     ]
     for tag in soup(junk_tags):
         tag.decompose()
 
     # 2. Domain-Specific Custom Pre-Cleaning
-    d_lower = domain.lower() if domain else ""
-    
-    if "reddit.com" in d_lower:
-        for el in soup.find_all(class_=re.compile(r"\b(promoted|promotedlink|subreddit-header|award|karma|shreddit-async-loader)\b", re.I)):
-            el.decompose()
-            
-    elif "quora.com" in d_lower:
+    if "quora.com" in d_lower:
         for el in soup.find_all(class_=re.compile(r"\b(modal|signup|open_in_app|related_questions|promoted)\b", re.I)):
             el.decompose()
             
@@ -669,21 +801,27 @@ def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "
         for el in soup.find_all(["sup", "span", "div"], class_=re.compile(r"\b(reference|hatnote|mw-editsection|reflist|ambox|navbox|catlinks|metadata)\b", re.I)):
             el.decompose()
 
-    # 3. Strip general web boilerplate elements
-    for el in soup.find_all(class_=re.compile(r"\b(ambox|navbox|mw-jump-link|mw-editsection|reflist|catlinks|metadata|infobox|sistersitebox|toc|sidebar|sidebar-wrapper|borderClass|leftside|anime-detail-header-stats|cookie-banner|cookie-consent|advertisement|newsletter|social-share|menu|top-menu|navbar|site-nav)\b", re.I)):
+    # 3. Strip general web boilerplate elements (protecting elements that contain core content)
+    for el in soup.find_all(class_=re.compile(r"\b(ambox|navbox|mw-jump-link|mw-editsection|reflist|catlinks|metadata|infobox|sistersitebox|toc|sidebar-wrapper|borderClass|leftside|anime-detail-header-stats|cookie-banner|cookie-consent|advertisement|newsletter|social-share|menu|top-menu|navbar|site-nav)\b", re.I)):
         if el.name not in ("body", "html", "main", "article"):
+            if el.find(["main", "article", "shreddit-post", "shreddit-comment"]):
+                continue
             el.decompose()
 
     boilerplate_pattern = re.compile(
-        r"\b(cookie|consent|banner|modal|popup|sidebar|sidebar-wrapper|leftside|newsletter|subscribe|author-bio|ad-|advertisement|social-share|share-buttons|disclaimer|breadcrumbs|nav-menu|menu-wrapper|menu|navbar|site-nav|related-posts|related-articles|related-content|recommendations?|recommended|promo-box|latest-news|comments?|reviews?|user-ratings?|poll|voting|footer-widget|site-footer|trending|copyright|privacy-policy|copy-btn|copy-box|copy-button|btn|button-wrapper|action-bar|toolbar|interactive-box|drafter)\b",
+        r"\b(cookie|consent|banner|modal|popup|sidebar-wrapper|leftside|newsletter|subscribe|author-bio|ad-|advertisement|social-share|share-buttons|disclaimer|breadcrumbs|nav-menu|menu-wrapper|menu|navbar|site-nav|related-posts|related-articles|related-content|recommendations?|recommended|promo-box|latest-news|comments?|reviews?|user-ratings?|poll|voting|footer-widget|site-footer|trending|copyright|privacy-policy|copy-btn|copy-box|copy-button|btn|button-wrapper|action-bar|toolbar|interactive-box|drafter)\b",
         re.I
     )
     for el in soup.find_all(attrs={"class": boilerplate_pattern}):
         if el.name not in ("body", "html", "main", "article"):
+            if el.find(["main", "article", "shreddit-post", "shreddit-comment"]):
+                continue
             el.decompose()
 
     for el in soup.find_all(attrs={"id": boilerplate_pattern}):
         if el.name not in ("body", "html", "main", "article"):
+            if el.find(["main", "article", "shreddit-post", "shreddit-comment"]):
+                continue
             el.decompose()
 
     # 4. Decompose off-topic trailing sections safely
@@ -844,11 +982,29 @@ def extract_clean_markdown(raw_html: str, max_chars: int = 5000, domain: str = "
     return markdown_doc
 
 
-def clean_html(html_content: str, page_url: str = "") -> str:
+def is_bot_blocked(text: str) -> bool:
     """
-    Backwards-compatible wrapper that converts raw HTML to clean text/markdown.
+    Detects if fetched webpage content is an anti-bot check, Cloudflare challenge,
+    CAPTCHA, rate-limit error, or empty routing shell.
     """
-    return extract_clean_markdown(html_content, max_chars=5000, page_url=page_url)
+    if not text:
+        return True
+    t_lower = text.lower()
+    blocked_phrases = (
+        "security verification", "verify you are human", "just a moment...",
+        "enable javascript", "access denied", "ddos protection", "checking your browser",
+        "error 403", "403: forbidden", "403 forbidden", "error 404", "404 not found",
+        "error 429", "too many requests", "you've been blocked", "blocked by network security",
+        "log in to your reddit account", "target url returned error", "use your developer token",
+        "rate limit exceeded", "unusual traffic from your computer", "pardon our interruption",
+        "please complete the security check", "cf-browser-verification", "ray id:", "attention required! | cloudflare",
+        "routable page start", "routable page end", "js_challenge", "whoa there, pardner!"
+    )
+    if any(p in t_lower for p in blocked_phrases) and len(text) < 1500:
+        return True
+    if "routable page" in t_lower and len(text) < 400:
+        return True
+    return False
 
 
 async def web_search(
@@ -1155,21 +1311,6 @@ async def web_search(
     base_budget = 5000 if is_advanced else 1000
 
     async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
-        def is_bot_blocked(text: str) -> bool:
-            if not text:
-                return True
-            t_lower = text.lower()
-            blocked_phrases = (
-                "security verification", "verify you are human", "just a moment...",
-                "enable javascript", "access denied", "ddos protection", "checking your browser",
-                "error 403", "403: forbidden", "403 forbidden", "error 404", "404 not found",
-                "error 429", "too many requests", "you've been blocked", "blocked by network security",
-                "log in to your reddit account", "target url returned error", "use your developer token",
-                "rate limit exceeded", "unusual traffic from your computer", "pardon our interruption",
-                "please complete the security check", "cf-browser-verification", "ray id:", "attention required! | cloudflare"
-            )
-            return any(p in t_lower for p in blocked_phrases) and len(text) < 1500
-
         async def fetch_page(url: str, custom_budget: Optional[int] = None):
             budget = custom_budget or base_budget
             if is_youtube_url(url):
@@ -1701,6 +1842,19 @@ async def web_search(
                 if "(2017)" in u_lower or "tt1241317" in u_lower or "2017_film" in u_lower:
                     if any("tt0877057" in x.lower() or "character" in x.lower() for x in all_urls):
                         score -= 40
+
+                # Reddit URL quality scoring.
+                # Post pages (/r/<sub>/comments/<id>/) contain the full OP + discussion.
+                # Subreddit/user listing pages (/r/<sub>/, /r/<sub>/?flair=..., /u/<name>/)
+                # only contain shallow preview cards — waste of the deep-fetch budget.
+                if "reddit.com" in u_lower:
+                    if "/comments/" in u_lower:
+                        score += 40   # real post — prefer it
+                    elif (re.search(r"/r/[^/]+/?$", parsed_u.path)
+                          or re.search(r"/r/[^/]+/\?", u)
+                          or re.search(r"/u(?:ser)?/[^/]+/?$", parsed_u.path)
+                          or re.search(r"/r/[^/]+/(top|hot|new|rising|controversial|search)/?", parsed_u.path)):
+                        score -= 70   # subreddit / user listing — skip
 
                 scored_urls.append((score, u))
 
