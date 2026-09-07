@@ -1525,6 +1525,7 @@ def extract_viseme_timeline(
     intrinsic phonetic duration priors.
     """
     if not phonemes or audio_duration <= 0:
+        print("[TTS] Visemes unavailable (no phonemes or audio duration <= 0); client will use 4-band spectral formant fallback.")
         return []
 
     import numpy as np
@@ -1548,26 +1549,26 @@ def extract_viseme_timeline(
 
     speech_dur = max(0.1, t_offset - t_onset)
 
-    # Phonetic token mapping
+    # Expressive phonetic token mapping calibrated for VRM 3D avatars
     DIPHTHONGS = {
-        'oʊ': (('oh', 0.26), ('ou', 0.20), 1.9),
-        'aɪ': (('aa', 0.34), ('ih', 0.24), 1.9),
-        'aʊ': (('aa', 0.32), ('ou', 0.22), 1.9),
-        'eɪ': (('ee', 0.24), ('ih', 0.22), 1.9),
-        'ɔɪ': (('oh', 0.26), ('ih', 0.22), 1.9),
+        'oʊ': (('oh', 0.68), ('ou', 0.52), 1.9),
+        'aɪ': (('aa', 0.72), ('ih', 0.58), 1.9),
+        'aʊ': (('aa', 0.70), ('ou', 0.55), 1.9),
+        'eɪ': (('ee', 0.62), ('ih', 0.55), 1.9),
+        'ɔɪ': (('oh', 0.68), ('ih', 0.55), 1.9),
     }
     VOWELS = {
-        'ɑː': ('aa', 0.34, 1.8), 'ɑ': ('aa', 0.32, 1.4), 'æ': ('aa', 0.34, 1.5),
-        'ʌ': ('aa', 0.30, 1.2), 'a': ('aa', 0.32, 1.3), 'ɐ': ('aa', 0.26, 1.1),
-        'iː': ('ih', 0.28, 1.7), 'i': ('ih', 0.26, 1.3), 'ɪ': ('ih', 0.24, 1.1), 'j': ('ih', 0.20, 0.8),
-        'uː': ('ou', 0.22, 1.7), 'u': ('ou', 0.20, 1.3), 'ʊ': ('ou', 0.20, 1.1), 'w': ('ou', 0.18, 0.8),
-        'ɛ': ('ee', 0.24, 1.3), 'e': ('ee', 0.22, 1.2),
-        'ɔː': ('oh', 0.26, 1.8), 'ɔ': ('oh', 0.24, 1.3), 'o': ('oh', 0.24, 1.3), 'ɒ': ('oh', 0.24, 1.3),
-        'ə': ('ee', 0.15, 0.9), 'ɚ': ('ee', 0.16, 1.0), 'ɜː': ('ee', 0.18, 1.4),
+        'ɑː': ('aa', 0.72, 1.8), 'ɑ': ('aa', 0.68, 1.4), 'æ': ('aa', 0.70, 1.5),
+        'ʌ': ('aa', 0.60, 1.2), 'a': ('aa', 0.68, 1.3), 'ɐ': ('aa', 0.56, 1.1),
+        'iː': ('ih', 0.62, 1.7), 'i': ('ih', 0.58, 1.3), 'ɪ': ('ih', 0.54, 1.1), 'j': ('ih', 0.46, 0.8),
+        'uː': ('ou', 0.56, 1.7), 'u': ('ou', 0.52, 1.3), 'ʊ': ('ou', 0.48, 1.1), 'w': ('ou', 0.45, 0.8),
+        'ɛ': ('ee', 0.58, 1.3), 'e': ('ee', 0.54, 1.2),
+        'ɔː': ('oh', 0.68, 1.8), 'ɔ': ('oh', 0.64, 1.3), 'o': ('oh', 0.64, 1.3), 'ɒ': ('oh', 0.62, 1.3),
+        'ə': ('ee', 0.40, 0.9), 'ɚ': ('ee', 0.42, 1.0), 'ɜː': ('ee', 0.48, 1.4),
     }
     # Bilabials press lips firmly closed (silence, weight 0.0)
     BILABIALS = {'p': 0.7, 'b': 0.7, 'm': 0.8}
-    # Sibilants/dentals keep teeth together (subtle ih, clamped aa)
+    # Sibilants/dentals keep teeth together (subtle spread ih, closed aa)
     DENTALS = {'s': 1.0, 'z': 0.9, 'ʃ': 1.0, 'ʒ': 0.9, 't': 0.6, 'd': 0.6, 'n': 0.7, 'θ': 0.9, 'ð': 0.8, 'k': 0.6, 'ɡ': 0.6}
     LABIODENTALS = {'f': 0.8, 'v': 0.8}
     OTHERS = {'l': 0.8, 'ɹ': 0.8, 'r': 0.8, 'h': 0.6}
@@ -1578,7 +1579,7 @@ def extract_viseme_timeline(
     while i < len(phonemes):
         ch = phonemes[i]
         if ch in ('ˈ', 'ˌ'):
-            stress = 1.25
+            stress = 1.20
             i += 1
             continue
         pair = phonemes[i:i+2]
@@ -1605,27 +1606,30 @@ def extract_viseme_timeline(
             i += 1
             continue
         if ch in DENTALS:
-            tokens.append(('dental', 'ih', 0.15, DENTALS[ch]))
+            tokens.append(('dental', 'ih', 0.20, DENTALS[ch]))
             i += 1
             continue
         if ch in LABIODENTALS:
-            tokens.append(('labiodental', 'ih', 0.10, LABIODENTALS[ch]))
+            tokens.append(('labiodental', 'ih', 0.16, LABIODENTALS[ch]))
             i += 1
             continue
         if ch in OTHERS:
-            tokens.append(('liquid', 'aa', 0.08, OTHERS[ch]))
+            tokens.append(('liquid', 'aa', 0.14, OTHERS[ch]))
             i += 1
             continue
+
+        is_trailing = (i >= len(phonemes) - 1) or all(c in ' .,!?;:\r\n' for c in phonemes[i+1:])
         if ch in (',', ';', ':'):
-            tokens.append(('pause', 'silence', 0.0, 2.0))
+            tokens.append(('pause', 'silence', 0.0, 0.6))
             i += 1
             continue
         if ch in ('.', '!', '?'):
-            tokens.append(('pause', 'silence', 0.0, 3.0))
+            if not is_trailing:
+                tokens.append(('pause', 'silence', 0.0, 1.0))
             i += 1
             continue
         if ch == ' ':
-            tokens.append(('space', 'silence', 0.0, 0.6))
+            tokens.append(('space', 'silence', 0.0, 0.12))
             i += 1
             continue
         i += 1
@@ -1648,6 +1652,9 @@ def extract_viseme_timeline(
             wgt = item[2]
             cues.append({'start': float(round(curr_t, 3)), 'end': float(round(curr_t + dur, 3)), 'viseme': str(v), 'weight': float(wgt)})
         curr_t += dur
+
+    if curr_t < audio_duration:
+        cues.append({'start': float(round(curr_t, 3)), 'end': float(round(audio_duration, 3)), 'viseme': 'silence', 'weight': 0.0})
 
     return cues
 

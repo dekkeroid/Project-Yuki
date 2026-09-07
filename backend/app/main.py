@@ -1704,6 +1704,7 @@ class SettingsUpdateRequest(BaseModel):
     tts_rate: Optional[str] = None
     tts_device: Optional[str] = None
     kokoro_ipa_interjections: Optional[bool] = None
+    lipsync_engine: Optional[str] = None
     stt_device: Optional[str] = None
     character_name: Optional[str] = None
     character_persona: Optional[str] = None
@@ -2119,6 +2120,11 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.kokoro_ipa_interjections is not None:
         config.KOKORO_IPA_INTERJECTIONS = bool(req.kokoro_ipa_interjections)
         memory_manager.update_setting("kokoro_ipa_interjections", bool(req.kokoro_ipa_interjections))
+    if req.lipsync_engine is not None:
+        engine_val = req.lipsync_engine.strip().lower()
+        if engine_val in ("kokoro", "formant"):
+            config.LIPSYNC_ENGINE = engine_val
+            memory_manager.update_setting("lipsync_engine", engine_val)
     if req.stt_device is not None:
         device_val = req.stt_device.strip().lower()
         if device_val in ("auto", "gpu", "cpu"):
@@ -3185,6 +3191,11 @@ async def tts_endpoint(
 
     if not audio_bytes:
         return Response(status_code=500, content="Failed to generate speech audio.")
+
+    if visemes:
+        print(f"[TTS] /api/tts generated {len(visemes)} visemes -> Kokoro Phonetic Lip-Sync for '{decoded_text[:40]}'")
+    else:
+        print(f"[TTS] /api/tts 0 visemes -> Client fallback to 4-Band Spectral Formant Analyser for '{decoded_text[:40]}'")
 
     import json as _json
     headers = {"X-Visemes": _json.dumps(visemes)} if visemes else {}
@@ -4948,7 +4959,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                             if audio_bytes:
                                                 audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                                                 audio_url = f"data:audio/wav;base64,{audio_base64}"
-                                                print(f"[TTS] Chunk {idx} ready ({int(t_elapsed*1000)}ms, {len(visemes)} visemes): '{speech_text[:50]}'")
+                                                if visemes:
+                                                    print(f"[TTS] Chunk {idx} ready ({int(t_elapsed*1000)}ms, {len(visemes)} visemes -> Kokoro Phonetic Lip-Sync): '{speech_text[:50]}'")
+                                                else:
+                                                    print(f"[TTS] Chunk {idx} ready ({int(t_elapsed*1000)}ms, 0 visemes -> Client fallback to 4-Band Spectral Formant Analyser): '{speech_text[:50]}'")
                                                 return {
                                                     "type": "audio_chunk",
                                                     "audio_url": audio_url,
@@ -5442,6 +5456,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                     if audio_bytes:
                                         audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                                         audio_url = f"data:audio/wav;base64,{audio_base64}"
+                                        if visemes:
+                                            print(f"[TTS-Only] Chunk {audio_idx} ready ({len(visemes)} visemes -> Kokoro Phonetic Lip-Sync): '{speech_text[:50]}'")
+                                        else:
+                                            print(f"[TTS-Only] Chunk {audio_idx} ready (0 visemes -> Client fallback to 4-Band Spectral Formant Analyser): '{speech_text[:50]}'")
                                         await websocket.send_json({
                                             "type": "audio_chunk",
                                             "audio_url": audio_url,

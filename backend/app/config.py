@@ -187,6 +187,7 @@ TTS_GPU_MEM_LIMIT_MB = int(os.environ.get("TTS_GPU_MEM_LIMIT_MB", "0"))  # 0 = D
 TTS_IDLE_TIMEOUT = int(os.environ.get("TTS_IDLE_TIMEOUT", "300"))  # seconds before auto-unload when idle
 TTS_AUTO_UNLOAD = os.environ.get("TTS_AUTO_UNLOAD", "false").strip().lower() in ("1", "true", "yes", "on")
 KOKORO_IPA_INTERJECTIONS = os.environ.get("KOKORO_IPA_INTERJECTIONS", "false").strip().lower() in ("1", "true", "yes", "on")
+LIPSYNC_ENGINE = os.environ.get("LIPSYNC_ENGINE", "kokoro")  # "kokoro" (articulatory timeline) or "formant" (4-band spectral analyser)
 STT_PRELOAD = os.environ.get("STT_PRELOAD", "true").strip().lower() in ("1", "true", "yes", "on")  # Preload STT Whisper model on startup
 LLM_SPEECH_INPUT_ENABLED = os.environ.get("LLM_SPEECH_INPUT_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")  # Direct multimodal speech input to LLM (bypasses STT)
 STT_DEVICE = os.environ.get("STT_DEVICE", "auto")  # "auto", "gpu", "cpu"

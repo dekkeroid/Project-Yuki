@@ -1225,6 +1225,7 @@ const ControlDashboard = ({
     tts_rate: 'auto',
     tts_device: 'auto',
     kokoro_ipa_interjections: false,
+    lipsync_engine: 'kokoro',
     stt_device: 'auto',
     character_name: 'Yuki',
     persona_preset: 'sassy_tech_gf',
@@ -7960,6 +7961,38 @@ const ControlDashboard = ({
                         <option value="gpu" style={{ background: '#0b0813', color: 'white' }}>GPU (CUDA)</option>
                         <option value="cpu" style={{ background: '#0b0813', color: 'white' }}>CPU (Force CPU)</option>
                       </select>
+                    </div>
+
+                    {/* Lip-Sync Engine Selection */}
+                    <div className="identity-field" style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="field-label">Avatar Lip-Sync Engine</span>
+                        <span style={{ fontSize: '0.65rem', color: '#a78bfa', fontWeight: '500' }}>
+                          {settings.lipsync_engine === 'formant' ? 'Formant Analyser' : 'Kokoro Phonetic (Default)'}
+                        </span>
+                      </div>
+                      <select
+                        value={settings.lipsync_engine || 'kokoro'}
+                        onChange={(e) => handleUpdateSetting('lipsync_engine', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: 'white',
+                          fontSize: '0.78rem',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          marginTop: '2px'
+                        }}
+                      >
+                        <option value="kokoro" style={{ background: '#0b0813', color: 'white' }}>Kokoro Phonetic (Articulatory Timeline - Recommended)</option>
+                        <option value="formant" style={{ background: '#0b0813', color: 'white' }}>4-Band Spectral Formant (Acoustic Analyser)</option>
+                      </select>
+                      <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: '2px' }}>
+                        Kokoro tracks exact phonetic IPA timing with teeth/lip closures; Formant analyzes live audio frequencies.
+                      </div>
                     </div>
 
                     {/* Audio Output Device Select (Headphones vs Speakers) */}

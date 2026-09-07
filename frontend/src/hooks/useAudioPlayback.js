@@ -56,6 +56,10 @@ export function useAudioPlayback(options = {}) {
   const playbackTimeoutRef = useRef(null);
   const micActivationTimeoutRef = useRef(null);
   const currentVisemesRef = useRef(null);
+  const profileRef = useRef(profile);
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   const [voiceVolume, setVoiceVolumeState] = useState(() => {
     try { return parseFloat(localStorage.getItem('yuki-voice-volume') || '1.0'); } catch { return 1.0; }
@@ -137,9 +141,14 @@ export function useAudioPlayback(options = {}) {
           let targetEe = 0;
           let targetOh = 0;
 
-          // DUAL-ENGINE: 1. Kokoro Phonetic Timeline Mode (Frame-accurate articulatory alignment)
+          // DUAL-ENGINE: Determine active engine based on user settings and phonetic cue availability
+          const configuredEngine = profileRef.current?.settings?.lipsync_engine || 'kokoro';
           const currentVisemes = currentVisemesRef.current;
-          if (currentVisemes && currentVisemes.length > 0) {
+          const usePhonetics = (configuredEngine !== 'formant') && (currentVisemes && currentVisemes.length > 0);
+          const activeEngine = usePhonetics ? 'kokoro' : 'formant';
+
+          if (usePhonetics) {
+            // ENGINE 1: Kokoro Phonetic Timeline Mode (IPA articulatory alignment with real-time acoustic modulation)
             const curTime = audioRef.current.currentTime || 0;
             let activeCue = null;
             let nextCue = null;
@@ -155,19 +164,23 @@ export function useAudioPlayback(options = {}) {
             if (activeCue) {
               const v = activeCue.viseme;
               const w = activeCue.weight;
-              if (v === 'aa') targetAa = w;
-              else if (v === 'ih') targetIh = w;
-              else if (v === 'ou') targetOu = w;
-              else if (v === 'ee') targetEe = w;
-              else if (v === 'oh') targetOh = w;
+              // Scale articulatory target by real-time acoustic volume envelope so aperture mirrors volume
+              const energyFactor = w > 0 ? Math.min(1.20, Math.max(0.40, normalized * 1.85)) : 0.0;
+              const effectiveW = w * energyFactor;
+
+              if (v === 'aa') targetAa = effectiveW;
+              else if (v === 'ih') targetIh = effectiveW;
+              else if (v === 'ou') targetOu = effectiveW;
+              else if (v === 'ee') targetEe = effectiveW;
+              else if (v === 'oh') targetOh = effectiveW;
               // 'silence' keeps all targets at 0 (firm lip closure on bilabials /p/, /b/, /m/)
 
-              // Smooth 25ms cross-fade into next cue near phonetic boundary
-              if (nextCue && (activeCue.end - curTime < 0.025)) {
-                const blend = Math.max(0, Math.min(1, (0.025 - (activeCue.end - curTime)) / 0.025));
+              // Smooth 30ms cross-fade into next cue near phonetic boundary
+              if (nextCue && (activeCue.end - curTime < 0.030)) {
+                const blend = Math.max(0, Math.min(1, (0.030 - (activeCue.end - curTime)) / 0.030));
                 const lerp = (a, b, t) => a + (b - a) * t;
                 const nv = nextCue.viseme;
-                const nw = nextCue.weight;
+                const nw = nextCue.weight * (nextCue.weight > 0 ? energyFactor : 0.0);
                 if (nv === 'aa') targetAa = lerp(targetAa, nw, blend);
                 else if (nv === 'ih') targetIh = lerp(targetIh, nw, blend);
                 else if (nv === 'ou') targetOu = lerp(targetOu, nw, blend);
@@ -176,7 +189,7 @@ export function useAudioPlayback(options = {}) {
               }
             }
           } else {
-            // DUAL-ENGINE: 2. Fallback: 4-Band Acoustic Formant Analysis (when phoneme cues are unavailable)
+            // ENGINE 2: Fallback / User-Selected: 4-Band Acoustic Formant Analysis
             const bF1 = getBandEnergy(2, 5);       // ~340Hz - 900Hz (Jaw opening / open vowels)
             const bF2Low = getBandEnergy(6, 9);    // ~1000Hz - 1600Hz (Back rounded vowels /u/, /o/)
             const bF2High = getBandEnergy(10, 16); // ~1700Hz - 2900Hz (Front spread vowels /i/, /e/)
@@ -216,9 +229,9 @@ export function useAudioPlayback(options = {}) {
             }
           }
 
-          // Asymmetric smoothing: fast attack (opens quickly ~32/s), smooth decay (closes gently ~16/s)
-          const attackRate = 34.0;
-          const decayRate = 16.0;
+          // Asymmetric smoothing: fast attack (opens quickly ~38/s), smooth decay (closes gently ~18/s)
+          const attackRate = usePhonetics ? 38.0 : 34.0;
+          const decayRate = usePhonetics ? 18.0 : 16.0;
           const smoothViseme = (curr, target) => {
             const rate = target > curr ? attackRate : decayRate;
             return curr + (target - curr) * Math.min(1.0, dt * rate);
@@ -237,7 +250,8 @@ export function useAudioPlayback(options = {}) {
               ou: smoothedOu,
               ee: smoothedEe,
               oh: smoothedOh,
-              intensity: normalized
+              intensity: normalized,
+              engine: activeEngine
             });
           }
         } else {
@@ -319,6 +333,14 @@ export function useAudioPlayback(options = {}) {
   const playVoiceResponse = useCallback((audioUrl, speechText, forcedExpression = null, visemes = null) => {
     initAudioAnalyser();
     currentVisemesRef.current = (visemes && visemes.length > 0) ? visemes : null;
+    const configuredEngine = profileRef.current?.settings?.lipsync_engine || 'kokoro';
+    const willUsePhonetics = (configuredEngine !== 'formant') && (visemes && visemes.length > 0);
+    if (willUsePhonetics) {
+      console.log(`[LipSync] Active Engine: Kokoro Phonetic Lip-Sync (${visemes.length} viseme cues) for "${speechText?.slice(0, 40)}"`);
+    } else {
+      const reason = configuredEngine === 'formant' ? 'Setting is forced to Formant Analyser' : 'No phonetic cues provided';
+      console.log(`[LipSync] Active Engine: 4-Band Spectral Formant Analyser (${reason}) for "${speechText?.slice(0, 40)}"`);
+    }
 
     if (bubbleTimeoutRef.current) {
       clearTimeout(bubbleTimeoutRef.current);
@@ -541,6 +563,7 @@ export function useAudioPlayback(options = {}) {
     utterance.pitch = 1.1;
 
     utterance.onstart = () => {
+      console.log(`[LipSync] Active Engine: Browser Native SpeechSynthesis (Fallback) for "${text?.slice(0, 40)}"`);
       isNativeSpeakingRef.current = true;
       setCurrentSpeechText(stripAnimationTags(text));
       if (setIsThinking) setIsThinking(false);
