@@ -2190,7 +2190,7 @@ const AvatarViewer = ({
           } else if (idleAnimState === 'finger_guns') {
             chestOffsetX = -0.05 * easeVal;
             neckOffsetX = 0.03 * easeVal;
-          } else if (idleAnimState === 'formal_bow' || idleAnimState === 'princess_bow' || idleAnimState === 'bow') {
+          } else if (idleAnimState === 'formal_bow' || idleAnimState === 'bow') {
             spineOffsetX = -0.22 * easeVal;
             chestOffsetX = -0.15 * easeVal;
             neckOffsetX = 0.12 * easeVal;
@@ -2952,7 +2952,7 @@ const AvatarViewer = ({
                   awakeShoulderY = (0.15 * easeVal + 0.08 * (1 - easeVal)) * yMult;
                   awakeShoulderZ = (0.7 * easeVal + 1.25 * (1 - easeVal)) * zMult;
                   leftElbowOffsetY = -0.8 * easeVal;
-                } else if (idleAnimState === 'formal_bow' || idleAnimState === 'princess_bow' || idleAnimState === 'bow') {
+                } else if (idleAnimState === 'formal_bow' || idleAnimState === 'bow') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
                   awakeShoulderX = (0.15 * (1 - easeVal)) * xMult;
@@ -3054,7 +3054,7 @@ const AvatarViewer = ({
                   awakeShoulderY = (-0.15 * easeVal - 0.08 * (1 - easeVal)) * yMult;
                   awakeShoulderZ = (-0.7 * easeVal - 1.25 * (1 - easeVal)) * zMult;
                   rightElbowOffsetY = 0.8 * easeVal;
-                } else if (idleAnimState === 'formal_bow' || idleAnimState === 'princess_bow' || idleAnimState === 'bow') {
+                } else if (idleAnimState === 'formal_bow' || idleAnimState === 'bow') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
                   awakeShoulderX = (0.15 * (1 - easeVal)) * xMult;
