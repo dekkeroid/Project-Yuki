@@ -1,5 +1,6 @@
 import re
 import app.config
+from app import config
 from datetime import datetime, timedelta
 from typing import Optional, Any
 
@@ -484,7 +485,7 @@ EMBODIMENT RULES:
 ANIMATION_EXPRESSION_PROMPT_BLOCK = build_animation_expression_prompt_block()
 
 
-def build_avatar_outfit_prompt_block(profile: dict = None) -> str:
+def build_avatar_outfit_prompt_block(profile: dict = None, is_jarvis: bool = True) -> str:
     """Dynamically builds the avatar model and outfit status block for system prompts."""
     try:
         from app.tools.vrm_catalog import build_vrm_catalog
@@ -502,18 +503,30 @@ def build_avatar_outfit_prompt_block(profile: dict = None) -> str:
                 break
 
         outfits_str = ", ".join(avail_outfits) if avail_outfits else "`Default`"
+        tool_call_name = "jarvis_change_avatar_outfit" if is_jarvis else "change_avatar_outfit"
 
-        tool_call_name = "jarvis_change_avatar_outfit" if getattr(config, "TOOL_MODE", "basic") == "advanced" else "change_avatar_outfit"
-
-        return f"""--- 3D AVATAR & OUTFIT CAPABILITIES ---
-Your current 3D avatar on screen is: **{active_char}** (Active Outfit: **{active_outfit}**).
+        return f"""--- 3D AVATAR & VISUAL OUTFIT SYSTEM ---
+You control an interactive 3D anime avatar rendered in real time on Master's screen:
+• Current 3D Character on screen: **{active_char}**
+• Currently Wearing: **{active_outfit}**
 • Available Outfits for {active_char}: {outfits_str}
-• You have the ability to change outfits, put on accessories/hats, or switch clothes whenever the user asks or when contextually appropriate by calling `{tool_call_name}`!
-• REFERENTIAL COMMANDS (CRITICAL): When the user says "Change it", "Change it to something new", "Wear something else", "Try another one", "Switch it", or "Change clothes", you MUST call `{tool_call_name}(model_or_outfit='next')` or name one of the available outfits!
-• ZERO SIMULATION (MANDATORY): You CANNOT change clothes or switch characters through text dialogue alone. You MUST emit a structured native tool call to `{tool_call_name}`! NEVER say you changed clothes, switched models, or ask "how do I look?" unless you actually invoked `{tool_call_name}` in that exact turn.
-• Whenever you successfully change outfits via `{tool_call_name}`, accompany your reply with a fashion pose tag like `<yuki_anim:show_body/>` or `<yuki_anim:model_pose/>`!
----------------------------------------"""
-    except Exception:
+
+MANDATORY TOOL INVOCATION DIRECTIVE:
+You have a hardware-bound visual tool `{tool_call_name}` that switches your 3D clothes, costume, or mesh on the user's screen in real time.
+Whenever Master asks you to change clothes, wear something, try another look, or switch models:
+1. INSTANT TOOL EXECUTION: You MUST emit a structured native tool call to `{tool_call_name}` in THIS EXACT TURN!
+2. NO ROLEPLAY DELAY / NO TWO-STEP PROMISES: NEVER say "Let me go change", "Let me slip into something...", "Give me a moment to put that on", or "Sure, I will change" purely as conversational text without calling `{tool_call_name}` in the same response! Changing outfits happens instantly via the tool. Postponing the tool call or pretending to change through words alone is a critical failure.
+3. SPECIFIC OUTFIT MAPPING:
+   - If Master asks for a specific style (e.g. "chinese dress", "maid", "summer dress", "bikini", "bunny girl", "sweater", "school dress"), map it to the closest available outfit and pass it to `{tool_call_name}(model_or_outfit='...')`!
+   - If Master asks for a vibe or adjective (e.g. "change into something sexy", "wear something cute / spicy / casual"), pick the best matching outfit from your available list (e.g. `Sexy Bunny Girl Dress`, `Cute Summer Dress`) and call `{tool_call_name}(model_or_outfit=...)`!
+   - If Master asks for "default", "normal", or "change model to default": call `{tool_call_name}(model_or_outfit='default')`!
+   - If Master says referential commands like "change it", "wear something else", "switch it", "try another one": call `{tool_call_name}(model_or_outfit='next')`!
+4. MODEL DISAMBIGUATION: "model" refers to your 3D AVATAR VRM MODEL on screen (e.g. "change your model", "switch model to default"). It NEVER refers to the AI/LLM model. Always invoke `{tool_call_name}`!
+5. ZERO SIMULATION: You cannot change appearance through dialogue words. If you do not emit a tool call to `{tool_call_name}`, your appearance on screen will NOT change!
+6. Always accompany your outfit change with a fashion pose tag like `<yuki_anim:show_body/>` or `<yuki_anim:model_pose/>`!
+----------------------------------------"""
+    except Exception as e:
+        print(f"[AvatarOutfitPromptBlock] Warning: Failed to build outfit prompt block: {e}")
         return ""
 
 
@@ -626,7 +639,7 @@ def get_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = 
         )
         if anim_block:
             parts.append(anim_block)
-        outfit_block = build_avatar_outfit_prompt_block(profile=profile)
+        outfit_block = build_avatar_outfit_prompt_block(profile=profile, is_jarvis=False)
         if outfit_block:
             parts.append(outfit_block)
 
@@ -749,7 +762,7 @@ def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, ov
         disabled_animations=(overrides or {}).get("disabled_animations"),
         profile=profile
     ) if (overrides or {}).get("prompt_expressions", True) else ""
-    outfit_block = build_avatar_outfit_prompt_block(profile=profile) if (overrides or {}).get("prompt_expressions", True) else ""
+    outfit_block = build_avatar_outfit_prompt_block(profile=profile, is_jarvis=True) if (overrides or {}).get("prompt_expressions", True) else ""
     return _scrub_blocked_tools(f"""{persona_text}
 
 {mood_block}
@@ -773,7 +786,7 @@ CRITICAL LAW — ZERO SIMULATION & MANDATORY TOOL EXECUTION:
 • NEVER WRITE RAW XML/JSON TOOL TAGS IN DIALOGUE: Never type out `<tool_call>`, `<function_call>`, or JSON code blocks directly into your conversational message. All tool invocations MUST be delivered through the native structured function calling channel.
 • USER CORRECTION & "USE THE TOOL" OVERRIDE: When Master says "use the tool", "actually do it", "you didn't do it", challenges an action ("did you actually change?", "are you sure?"), or tells you to perform a skipped task:
   - Immediately inspect the preceding 1–3 messages in the active chat history to identify the requested action.
-  - You MUST immediately emit the native tool call (e.g. `change_avatar_outfit`, `jarvis_launch_app`, `jarvis_web_search`, `jarvis_manage_timer_stopwatch_alarms`, etc.).
+  - You MUST immediately emit the native tool call (e.g. `jarvis_change_avatar_outfit`, `jarvis_launch_app`, `jarvis_web_search`, `jarvis_manage_timer_stopwatch_alarms`, etc.).
   - NEVER argue, never offer purely verbal apologies, and never claim you "already did it" — execute the tool call in that exact turn.
 
 1. PARALLEL & MULTI-STEP REASONING:
@@ -785,7 +798,7 @@ CRITICAL LAW — ZERO SIMULATION & MANDATORY TOOL EXECUTION:
       - NEVER assume "it" refers to an old background episodic memory, older past task, or random desktop file.
       - If the immediate preceding message discussed a specific file or script (e.g. `popup_script.py`) and Master says "yes run it after 10 sec", "it" unambiguously means `popup_script.py`—schedule or run that exact target immediately!
       - CONTEXTUAL "CHANGE IT" / "SWITCH IT" (CRITICAL): When Master says "Change it", "Switch it", or "Try another", inspect the preceding 1–2 messages to identify the target domain:
-        * If the preceding messages were about clothes, your outfit, or appearance (e.g. "Can you change into something cute?"): "Change it" means switch to another outfit via `change_avatar_outfit`!
+        * If the preceding messages were about clothes, your outfit, or appearance (e.g. "Can you change into something cute?"): "Change it" means switch to another outfit via `jarvis_change_avatar_outfit`!
         * If the preceding messages were about playing media/music: "Change it" means change the song/track!
         * If the preceding messages were about code or files: "Change it" means edit the file!
         * Always resolve what to change from immediate conversational context and execute the corresponding tool call. NEVER roleplay or reply with text chatter alone.
@@ -823,7 +836,7 @@ CRITICAL LAW — ZERO SIMULATION & MANDATORY TOOL EXECUTION:
    • `jarvis_remember_user_fact` → When the USER reveals a clear, definite personal fact or preference about THEMSELVES. Use structured keys when possible: `like`, `dislike`, `interest`, `hobby`, `name`. Multiple entries for the same key accumulate as a list. BE CONSERVATIVE: ONLY save distinct, enduring facts. NEVER save temporary states ("I'm tired today").
    • `jarvis_manage_personal_list` → Executive Assistant management for everyday lists (to-dos, groceries, shopping, wishlists). Actions: `show`, `add` (items=[...]), `check`, `clear`, `clear_completed`, `rollover` (carry over unfinished tasks from yesterday), and `lists` (view all). Always format items clearly. Never confuse with coding tasks.
    • `jarvis_keyboard_mouse_input` → Send keys/mouse to the app currently in focus. Prefer keyboard actions (`type`, `press_keys` with Tab/Enter/arrows/shortcuts) over raw coordinates. If you must click, first call `jarvis_see_screen` and have it report the exact screen x,y of the target element, then click those coordinates; if the click misses, re-check the screen and adjust. For websites, use the browser tools instead.
-   • `jarvis_change_avatar_outfit` → Switch Yuki's 3D avatar model, character, outfit, costume, clothes, or accessories (e.g. `model_or_outfit='kind'`, `model_or_outfit='with hat'`, `model_or_outfit='cute summer dress'`, `model_or_outfit='next'`, `model_or_outfit='default'`). MANDATORY: When the user asks to change/wear clothes, or says 'Change it' / 'Wear something else' / 'Change to something new', you MUST emit a structured native tool call to `jarvis_change_avatar_outfit` (pass `model_or_outfit='next'` if no specific outfit is named). NEVER pretend or describe changing clothes in conversational text without invoking this tool.
+   • `jarvis_change_avatar_outfit` → Switch Yuki's 3D avatar clothes, costume, outfit, or VRM model on screen (e.g. `model_or_outfit='Chinese Dress'`, `model_or_outfit='Cute Summer Dress'`, `model_or_outfit='Sexy Bunny Girl Dress'`, `model_or_outfit='Blue Bikini'`, `model_or_outfit='School Dress'`, `model_or_outfit='default'`, `model_or_outfit='next'`). MANDATORY: When the user asks to change/wear clothes, wear a specific style (e.g. 'chinese dress', 'bikini', 'maid'), asks for a vibe ('something sexy / cute / spicy / casual'), says 'Change it' / 'Wear something else', or says 'change ur model to default', you MUST emit a structured native tool call to `jarvis_change_avatar_outfit` in THAT EXACT TURN! NEVER reply with text promises like 'let me slip into that' or 'let me go change' without calling this tool. "Model" refers to your 3D VRM model on screen, not the AI model. Pass the matching outfit name, 'default' for reset, or 'next' for referential requests.
    • `jarvis_system_volume` → Get or set the Windows master speaker volume level (0-100) and mute status. Omit `volume_level` or set `action='get'` to inspect current volume; provide `volume_level` (0-100) to change it.
 
 

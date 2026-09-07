@@ -148,8 +148,8 @@ _TOOL_HINTS = {
     "ask_user": ("ask", "question", "clarify", "choice", "options", "choose", "pick", "select", "which", "decision", "tradeoff", "prompt", "poll"),
     "telegram_send_screenshot": ("screenshot", "screen", "capture", "send", "snap", "display", "monitor", "telegram", "phone", "mobile", "desktop"),
     "telegram_send_file": ("send", "upload", "file", "folder", "document", "photo", "image", "transfer", "export", "telegram", "share", "drop"),
-    "change_avatar_outfit": ("outfit", "costume", "clothes", "wear", "wearing", "hat", "dress", "change", "avatar", "model", "uniform", "version", "appearance", "mita", "character", "skin", "cosplay", "switch", "kind", "bikini", "swimsuit", "veer", "cute"),
-    "jarvis_change_avatar_outfit": ("outfit", "costume", "clothes", "wear", "wearing", "hat", "dress", "change", "avatar", "model", "uniform", "version", "appearance", "mita", "character", "skin", "cosplay", "switch", "kind", "bikini", "swimsuit", "veer", "cute"),
+    "change_avatar_outfit": ("outfit", "costume", "clothes", "wear", "wearing", "hat", "dress", "change", "avatar", "model", "uniform", "version", "appearance", "mita", "character", "skin", "cosplay", "switch", "kind", "bikini", "swimsuit", "veer", "cute", "sexy", "spicy", "casual", "cool", "something", "look", "into"),
+    "jarvis_change_avatar_outfit": ("outfit", "costume", "clothes", "wear", "wearing", "hat", "dress", "change", "avatar", "model", "uniform", "version", "appearance", "mita", "character", "skin", "cosplay", "switch", "kind", "bikini", "swimsuit", "veer", "cute", "sexy", "spicy", "casual", "cool", "something", "look", "into"),
 
     # Legacy Basic Mode Tools
     "generate_image": ("generate_image", "generate an image", "ai generate", "diffusion", "flux", "imagen", "dall-e"),
