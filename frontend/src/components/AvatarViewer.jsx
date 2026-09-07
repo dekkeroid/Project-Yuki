@@ -1007,28 +1007,42 @@ const AvatarViewer = ({
         });
         fingerBonesRef.current = cachedBones;
 
-        // Auto-position camera to look at the face/body dynamically adapting to model height
+        // Auto-position camera to look at the face/body dynamically adapting to full model height & bounding box
+        let unscaledTotalHeight = 1.65;
+        let unscaledCenterY = 0.85;
         let unscaledHeadY = 1.45;
+
         const headNode = getBoneNode(vrm, 'head');
         if (headNode) {
           const headPos = new THREE.Vector3();
           headNode.getWorldPosition(headPos);
           unscaledHeadY = Math.max(0.7, headPos.y / (scaleRef.current || 1.0));
-        } else if (vrm.scene) {
+        }
+
+        if (vrm.scene) {
           const box = new THREE.Box3().setFromObject(vrm.scene);
-          const size = new THREE.Vector3();
-          box.getSize(size);
-          unscaledHeadY = Math.max(0.7, (size.y * 0.9) / (scaleRef.current || 1.0));
+          const currentScale = scaleRef.current || 1.0;
+          const unscaledMinY = box.min.y / currentScale;
+          const unscaledMaxY = box.max.y / currentScale;
+          const measuredHeight = unscaledMaxY - unscaledMinY;
+          if (measuredHeight > 0.5) {
+            unscaledTotalHeight = measuredHeight;
+            unscaledCenterY = (unscaledMinY + unscaledMaxY) / 2;
+          }
         }
         vrm._unscaledHeadY = unscaledHeadY;
+        vrm._unscaledTotalHeight = unscaledTotalHeight;
+        vrm._unscaledCenterY = unscaledCenterY;
 
         if (window.vrmControls && window.vrmCamera) {
           const isElectron = window.electronAPI && window.electronAPI.isElectron;
           const currentScale = scaleRef.current || 1.0;
-          const heightFactor = Math.max(1.0, unscaledHeadY / 1.45);
-          const baseCameraZ = (2.2 / YUKI_SCALE_REDUCER) * heightFactor;
-          const targetY = (unscaledHeadY * 0.62) * currentScale;
-          const cameraY = (unscaledHeadY * 0.72) * currentScale;
+          // Calculate camera distance to guarantee full head-to-toe visibility in 55-deg FOV with 18% breathing margin
+          const fovRad = THREE.MathUtils.degToRad(isElectron ? 55 : 45);
+          const requiredHeight = unscaledTotalHeight * 1.18;
+          const baseCameraZ = (requiredHeight / (2 * Math.tan(fovRad / 2))) / YUKI_SCALE_REDUCER;
+          const targetY = unscaledCenterY * currentScale;
+          const cameraY = (unscaledCenterY + unscaledTotalHeight * 0.08) * currentScale;
 
           if (isElectron) {
             window.vrmControls.target.set(0, targetY, 0);
@@ -1226,7 +1240,7 @@ const AvatarViewer = ({
         ? window.innerWidth / window.innerHeight
         : containerRef.current.clientWidth / containerRef.current.clientHeight,
       0.1,
-      20.0
+      200.0
     );
     // In Electron: position camera low and far back to see full body including legs
     camera.position.set(0, (isElectron ? 1.55 : 1.35) * scale, (isElectron ? 2.2 : 1.2) * scale);
@@ -1268,8 +1282,8 @@ const AvatarViewer = ({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.maxDistance = 5.0;
-    controls.minDistance = 0.3;
+    controls.maxDistance = 100.0;
+    controls.minDistance = 0.1;
     // In Electron: target mid-body so full character is visible
     controls.target.set(0, (isElectron ? 0.75 : 1.2) * scale, 0);
 
@@ -1936,13 +1950,15 @@ const AvatarViewer = ({
 
         // Update camera target, Y, and Z positions dynamically based on scale (Electron mode only)
         if (isElectron && controls && camera) {
-          const headY = vrmRef.current?._unscaledHeadY || 1.45;
+          const totalHeight = vrmRef.current?._unscaledTotalHeight || 1.65;
+          const centerY = vrmRef.current?._unscaledCenterY || (totalHeight * 0.52);
           const currentScale = scaleRef.current || 1.0;
-          const heightFactor = Math.max(1.0, headY / 1.45);
-          const baseCameraZ = (2.2 / YUKI_SCALE_REDUCER) * heightFactor;
+          const fovRad = THREE.MathUtils.degToRad(55);
+          const requiredHeight = totalHeight * 1.18;
+          const baseCameraZ = (requiredHeight / (2 * Math.tan(fovRad / 2))) / YUKI_SCALE_REDUCER;
 
-          const targetY = (headY * 0.62) * currentScale;
-          const cameraY = (headY * 0.72) * currentScale;
+          const targetY = centerY * currentScale;
+          const cameraY = (centerY + totalHeight * 0.08) * currentScale;
 
           if (!enableRotationRef.current) {
             controls.target.set(0, targetY, 0);
@@ -1971,7 +1987,7 @@ const AvatarViewer = ({
               // Normalize camera distance to match current scale while preserving angles
               const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
               if (offset.lengthSq() === 0) {
-                offset.set(0, 0, baseCameraZ * currentScale);
+                offset.set(0, cameraY - targetY, baseCameraZ * currentScale);
               } else {
                 offset.normalize().multiplyScalar(baseCameraZ * currentScale);
               }

@@ -3180,13 +3180,15 @@ async def tts_endpoint(
         return Response(status_code=500, content="TTS service is currently offline.")
 
     effective_ipa = ipa_enhancement if ipa_enhancement is not None else bool(settings.get("kokoro_ipa_interjections", getattr(config, "KOKORO_IPA_INTERJECTIONS", False)))
-    from app.voice.tts import generate_speech_bytes
-    audio_bytes = await generate_speech_bytes(decoded_text, voice=voice, rate=_resolve_tts_rate(rate), ipa_enhancement=effective_ipa)
+    from app.voice.tts import generate_speech_with_visemes
+    audio_bytes, visemes = await generate_speech_with_visemes(decoded_text, voice=voice, rate=_resolve_tts_rate(rate), ipa_enhancement=effective_ipa)
 
     if not audio_bytes:
         return Response(status_code=500, content="Failed to generate speech audio.")
 
-    return Response(content=audio_bytes, media_type="audio/wav")
+    import json as _json
+    headers = {"X-Visemes": _json.dumps(visemes)} if visemes else {}
+    return Response(content=audio_bytes, media_type="audio/wav", headers=headers)
 
 
 @app.post("/api/tts/test")
@@ -4933,7 +4935,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                         return None
                                     async with tts_semaphore:
                                         try:
-                                            from app.voice.tts import generate_speech_bytes
+                                            from app.voice.tts import generate_speech_with_visemes
                                             speech_text = make_speech_friendly(sentence_text)
                                             if not speech_text or not speech_text.strip():
                                                 return None
@@ -4941,18 +4943,19 @@ async def websocket_endpoint(websocket: WebSocket):
                                             t_start = time.time()
                                             # Mark which backend we expect to use at the time of synthesis
                                             expected_backend = 'kokoro' if tts_online_status else 'backend-disabled'
-                                            audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text, rate=_resolve_tts_rate()), timeout=30.0)
+                                            audio_bytes, visemes = await asyncio.wait_for(generate_speech_with_visemes(speech_text, rate=_resolve_tts_rate()), timeout=30.0)
                                             t_elapsed = time.time() - t_start
                                             if audio_bytes:
                                                 audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                                                 audio_url = f"data:audio/wav;base64,{audio_base64}"
-                                                print(f"[TTS] Chunk {idx} ready ({int(t_elapsed*1000)}ms): '{speech_text[:50]}'")
+                                                print(f"[TTS] Chunk {idx} ready ({int(t_elapsed*1000)}ms, {len(visemes)} visemes): '{speech_text[:50]}'")
                                                 return {
                                                     "type": "audio_chunk",
                                                     "audio_url": audio_url,
                                                     "index": idx,
                                                     "text": sentence_text,
                                                     "speech_text": speech_text,
+                                                    "visemes": visemes,
                                                     "tts_backend": expected_backend,
                                                     "tts_time_ms": int(t_elapsed*1000),
                                                     "requested_text": sentence_text
@@ -5428,14 +5431,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         # the Kokoro model pages stay resident across all sentences.
                         with own_process_busy_guard():
                             # Now synthesize and send each sentence sequentially
-                            from app.voice.tts import generate_speech_bytes
+                            from app.voice.tts import generate_speech_with_visemes
                             audio_idx = 0
                             for sentence in sentences:
                                 speech_text = make_speech_friendly(sentence)
                                 if not re.sub(r'[^\w\s]', '', speech_text).strip():
                                     continue
                                 try:
-                                    audio_bytes = await asyncio.wait_for(generate_speech_bytes(speech_text, rate=_resolve_tts_rate()), timeout=40.0)
+                                    audio_bytes, visemes = await asyncio.wait_for(generate_speech_with_visemes(speech_text, rate=_resolve_tts_rate()), timeout=40.0)
                                     if audio_bytes:
                                         audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                                         audio_url = f"data:audio/wav;base64,{audio_base64}"
@@ -5445,6 +5448,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                             "index": audio_idx,
                                             "text": sentence,
                                             "speech_text": speech_text,
+                                            "visemes": visemes,
                                             "tts_backend": "kokoro",
                                             "tts_time_ms": 0,
                                             "expression": expression

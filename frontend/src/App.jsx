@@ -1270,7 +1270,7 @@ const App = () => {
       try {
         console.log(`[TTS] audio_chunk received idx=${msg.index} backend=${msg.tts_backend || 'unknown'} time_ms=${msg.tts_time_ms || 0} text="${(msg.text || '').slice(0, 80)}"`);
       } catch (e) { /* ignore logging errors */ }
-      queueAudioChunk(msg.audio_url, stripAnimationTags(msg.text), msg.index);
+      queueAudioChunk(msg.audio_url, stripAnimationTags(msg.text), msg.index, msg.visemes);
     } else if (msg.type === 'stream_done') {
       setIsThinking(false);
       setTtsStreamActive(false);
