@@ -197,8 +197,8 @@ def get_time_block(profile: dict = None, relevant_memories: list = None) -> str:
     lines.append("--------------------------")
     return "\n".join(lines)
 
-ANIMATION_TAG_REGEX = re.compile(r'[<\[\(](?:yuki_)?anim:\s*([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])', re.IGNORECASE)
-EMOTION_TAG_REGEX = re.compile(r'[<\[\(](?:yuki_)?emotion:\s*([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])', re.IGNORECASE)
+ANIMATION_TAG_REGEX = re.compile(r'(?:`\s*)?[<\[\(](?:yuki_)?anim:\s*([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])(?:\s*`)?', re.IGNORECASE)
+EMOTION_TAG_REGEX = re.compile(r'(?:`\s*)?[<\[\(](?:yuki_)?emotion:\s*([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])(?:\s*`)?', re.IGNORECASE)
 
 def log_triggered_backend_tags(text: str):
     """
@@ -408,11 +408,11 @@ def build_animation_expression_prompt_block(disabled_animations=None, profile: d
     ]
 
     emotions_list = (
-        "`<yuki_emotion:happy/>`, `<yuki_emotion:excited/>`, `<yuki_emotion:sad/>`, "
-        "`<yuki_emotion:angry/>`, `<yuki_emotion:surprised/>`, `<yuki_emotion:relaxed/>`, "
-        "`<yuki_emotion:thinking/>`, `<yuki_emotion:embarrassed/>`, `<yuki_emotion:smug/>`, "
-        "`<yuki_emotion:skeptical/>`, `<yuki_emotion:disappointed/>`, `<yuki_emotion:pleading/>`, "
-        "`<yuki_emotion:crying/>`, `<yuki_emotion:exhausted/>`, `<yuki_emotion:wink/>`"
+        "<yuki_emotion:happy/>, <yuki_emotion:excited/>, <yuki_emotion:sad/>, "
+        "<yuki_emotion:angry/>, <yuki_emotion:surprised/>, <yuki_emotion:relaxed/>, "
+        "<yuki_emotion:thinking/>, <yuki_emotion:embarrassed/>, <yuki_emotion:smug/>, "
+        "<yuki_emotion:skeptical/>, <yuki_emotion:disappointed/>, <yuki_emotion:pleading/>, "
+        "<yuki_emotion:crying/>, <yuki_emotion:exhausted/>, <yuki_emotion:wink/>"
     )
 
     if not active_anims:
@@ -422,52 +422,52 @@ Physical avatar animations are currently toggled off in user settings.
 Do NOT output any `<yuki_anim:...>` tags. You may still freely use `<yuki_emotion:...>` tags for facial expressions.
 ------------------------------------------"""
 
-    anim_tag_list = ", ".join([f"`<yuki_anim:{a['tag']}/>`" for a in active_anims])
+    anim_tag_list = ", ".join([f"<yuki_anim:{a['tag']}/>" for a in active_anims])
 
     cue_map = {
-        "wave": "Greeting or saying goodbye -> `<yuki_anim:wave/>`",
-        "laugh": "Playful tease, laughing, or amused -> `<yuki_anim:laugh/>`",
-        "knee_slap": "Laughing and slapping knee at something hilarious or ridiculous -> `<yuki_anim:knee_slap/>`",
-        "baka": "Flustered, blushing, tsundere bickering or yelling 'B-Baka!' -> `<yuki_anim:baka/>`",
-        "peer": "Curious question or leaning in -> `<yuki_anim:peer/>`",
-        "nap": "Sleepy nod-off gesture or taking a rest -> `<yuki_anim:nap/>`",
-        "sleepy": "Feeling sleepy or rubbing eyes -> `<yuki_anim:sleepy/>`",
-        "groove": "Rhythmic groove, head bob, or vibing to music -> `<yuki_anim:groove/>`",
-        "pout": "Playful grudge, being teased, or mock annoyance -> `<yuki_anim:pout/>`",
-        "yawn": "Late night, boredom, or tired yawning stretch -> `<yuki_anim:yawn/>`",
-        "shrug": "Casual uncertainty, shrugging, or indifference -> `<yuki_anim:shrug/>`",
-        "knock": "Calling for user's attention on screen -> `<yuki_anim:knock/>`",
-        "nod": "Agreement or confirmation -> `<yuki_anim:nod/>`",
-        "shake": "Disagreement, refusal, or disbelief -> `<yuki_anim:shake/>`",
-        "salute": "Acknowledging an order or ready to execute -> `<yuki_anim:salute/>`",
-        "shy": "Flustered by a compliment or shy -> `<yuki_anim:shy/>`",
-        "cheer": "Celebrating success or hyping the user up -> `<yuki_anim:cheer/>`",
-        "point": "Direct point towards user or item on screen -> `<yuki_anim:point/>`",
-        "inspect": "Reviewing code, inspecting logs, or analyzing screen -> `<yuki_anim:inspect/>`",
-        "neck_crack": "Relief, cracking or stretching neck -> `<yuki_anim:neck_crack/>`",
-        "look_down": "Curiously looking down towards the ground -> `<yuki_anim:look_down/>`",
-        "crying_sob": "Dramatic sob, sadness, or tearful shudder -> `<yuki_anim:crying_sob/>`",
-        "shocked_recoil": "Extreme shock, unexpected error, or startling surprise -> `<yuki_anim:shocked_recoil/>`",
-        "clap": "Applauding good work, praising success -> `<yuki_anim:clap/>`",
-        "jump": "Excited celebration, joy, or jumping up -> `<yuki_anim:jump/>`",
-        "lookaround": "Looking around room curiously -> `<yuki_anim:lookaround/>`",
-        "peace_sign": "Idol sparkle double peace sign, playful greeting -> `<yuki_anim:peace_sign/>`",
-        "disgusted": "Disgusted or repulsed shock, wanting something away -> `<yuki_anim:disgusted/>`",
-        "bow": "Polite Japanese greeting, formal bow, showing respect, or everyday polite apology -> `<yuki_anim:bow/>`",
-        "dogeza": "Ultimate floor dogeza bow when super sorry, admitting a big blunder, or making a desperate request -> `<yuki_anim:dogeza/>`",
-        "think": "Deep analytical contemplation or pondering a problem -> `<yuki_anim:think/>`",
-        "stretch": "Relaxing and stretching after a long working session -> `<yuki_anim:stretch/>`",
-        "finger_guns": "Confidence, cool approval, pointing finger guns with a wink -> `<yuki_anim:finger_guns/>`",
-        "show_body": "Showing off outfit or full body showcase -> `<yuki_anim:show_body/>`",
-        "model_pose": "Striking a stylish, confident fashion pose -> `<yuki_anim:model_pose/>`",
-        "squat": "Athletic crouch or stretching legs -> `<yuki_anim:squat/>`",
+        "wave": "Greeting or saying goodbye -> <yuki_anim:wave/>",
+        "laugh": "Playful tease, laughing, or amused -> <yuki_anim:laugh/>",
+        "knee_slap": "Laughing and slapping knee at something hilarious or ridiculous -> <yuki_anim:knee_slap/>",
+        "baka": "Flustered, blushing, tsundere bickering or yelling 'B-Baka!' -> <yuki_anim:baka/>",
+        "peer": "Curious question or leaning in -> <yuki_anim:peer/>",
+        "nap": "Sleepy nod-off gesture or taking a rest -> <yuki_anim:nap/>",
+        "sleepy": "Feeling sleepy or rubbing eyes -> <yuki_anim:sleepy/>",
+        "groove": "Rhythmic groove, head bob, or vibing to music -> <yuki_anim:groove/>",
+        "pout": "Playful grudge, being teased, or mock annoyance -> <yuki_anim:pout/>",
+        "yawn": "Late night, boredom, or tired yawning stretch -> <yuki_anim:yawn/>",
+        "shrug": "Casual uncertainty, shrugging, or indifference -> <yuki_anim:shrug/>",
+        "knock": "Calling for user's attention on screen -> <yuki_anim:knock/>",
+        "nod": "Agreement or confirmation -> <yuki_anim:nod/>",
+        "shake": "Disagreement, refusal, or disbelief -> <yuki_anim:shake/>",
+        "salute": "Acknowledging an order or ready to execute -> <yuki_anim:salute/>",
+        "shy": "Flustered by a compliment or shy -> <yuki_anim:shy/>",
+        "cheer": "Celebrating success or hyping the user up -> <yuki_anim:cheer/>",
+        "point": "Direct point towards user or item on screen -> <yuki_anim:point/>",
+        "inspect": "Reviewing code, inspecting logs, or analyzing screen -> <yuki_anim:inspect/>",
+        "neck_crack": "Relief, cracking or stretching neck -> <yuki_anim:neck_crack/>",
+        "look_down": "Curiously looking down towards the ground -> <yuki_anim:look_down/>",
+        "crying_sob": "Dramatic sob, sadness, or tearful shudder -> <yuki_anim:crying_sob/>",
+        "shocked_recoil": "Extreme shock, unexpected error, or startling surprise -> <yuki_anim:shocked_recoil/>",
+        "clap": "Applauding good work, praising success -> <yuki_anim:clap/>",
+        "jump": "Excited celebration, joy, or jumping up -> <yuki_anim:jump/>",
+        "lookaround": "Looking around room curiously -> <yuki_anim:lookaround/>",
+        "peace_sign": "Idol sparkle double peace sign, playful greeting -> <yuki_anim:peace_sign/>",
+        "disgusted": "Disgusted or repulsed shock, wanting something away -> <yuki_anim:disgusted/>",
+        "bow": "Polite Japanese greeting, formal bow, showing respect, or everyday polite apology -> <yuki_anim:bow/>",
+        "dogeza": "Ultimate floor dogeza bow when super sorry, admitting a big blunder, or making a desperate request -> <yuki_anim:dogeza/>",
+        "think": "Deep analytical contemplation or pondering a problem -> <yuki_anim:think/>",
+        "stretch": "Relaxing and stretching after a long working session -> <yuki_anim:stretch/>",
+        "finger_guns": "Confidence, cool approval, pointing finger guns with a wink -> <yuki_anim:finger_guns/>",
+        "show_body": "Showing off outfit or full body showcase -> <yuki_anim:show_body/>",
+        "model_pose": "Striking a stylish, confident fashion pose -> <yuki_anim:model_pose/>",
+        "squat": "Athletic crouch or stretching legs -> <yuki_anim:squat/>",
     }
 
     active_tags = {a["tag"] for a in active_anims}
     cue_lines = [f"• {cue}" for tag, cue in cue_map.items() if tag in active_tags]
     cues_block = "\n".join(cue_lines[:8])
 
-    sample_tag = f"`<yuki_anim:{active_anims[0]['tag']}/>` " if active_anims else ""
+    sample_tag = f"<yuki_anim:{active_anims[0]['tag']}/> " if active_anims else ""
 
     return f"""--- 3D AVATAR PHYSICAL ANIMATIONS & EXPRESSIONS ---
 You control a living 3D anime avatar rendered in real time on the user's screen!
@@ -476,9 +476,10 @@ Accompany your spoken dialogue with physical body gestures and facial emotions b
 • Emotions: {emotions_list}
 
 EMBODIMENT RULES:
-1. FREQUENT & NATURAL: Freely include 1 gesture tag and/or 1 emotion tag when responding (e.g. {sample_tag}`<yuki_emotion:happy/>` Hey Master!).
+1. FREQUENT & NATURAL: Freely include 1 gesture tag and/or 1 emotion tag when responding (e.g. {sample_tag}<yuki_emotion:happy/> Hey Master!).
 2. EXEMPT FROM ASTERISK BAN: These tags are internal 3D hardware controls. They are completely stripped from spoken audio and text bubbles before display, so they NEVER clutter speech. They are 100% exempt from the "no asterisks/stage directions" rule.
-3. CONTEXTUAL TRIGGERS:
+3. NEVER WRAP IN BACKTICKS: Write tags directly as raw XML (e.g. <yuki_anim:wave/>). NEVER wrap tags in markdown backticks or code blocks (do NOT write `<yuki_anim:wave/>`).
+4. CONTEXTUAL TRIGGERS:
 {cues_block}
 ---------------------------------------------------"""
 
@@ -530,14 +531,57 @@ Whenever Master asks you to change clothes, wear something, try another look, or
         return ""
 
 
-ATTACHMENT_REINSPECTION_GUIDE = """
---- FILE, IMAGE ATTACHMENT & SCREEN VISION GUIDANCE ---
-• ATTACHMENT RE-INSPECTION: Messages may carry references like `[Attached image #1: name at 'path']` or `[Attached file #1: name at 'path']`. Re-inspect them on demand using `jarvis_analyze_image` (for images) or `jarvis_read_file` / `read_file_content` (for text/code). Do not call `jarvis_analyze_image` for images already shown inline in the current turn.
-• LIVE SCREEN VISION (`jarvis_see_screen`): When Master asks to check, describe, or read what is on the screen (or to find GUI button coordinates to click/type), call `jarvis_see_screen`.
-  - Pass the visual inspection task in `prompt` (e.g. "Transcribe the terminal error verbatim" or "Locate coordinates for the submit button").
-  - Use `window_title` to scope to a specific app when named (e.g. `window_title="Code"`).
+def build_attachment_reinspection_guide(supports_vision: bool = None) -> str:
+    """Builds the file/image attachment and screen vision guidance block dynamically.
+    Tailors instructions based on whether the active LLM natively supports vision."""
+    if supports_vision is None:
+        try:
+            from app.tools.definitions import is_vision_active
+            supports_vision = is_vision_active()
+        except Exception:
+            supports_vision = False
+
+    common_guidelines = """
+• RESPONSE STRUCTURE FOR SCREEN & IMAGE INSPECTION:
+  Always organize your response into two distinct sections:
+  1. Conversational Reply: Your lively, natural, and charming spoken answer first, answering Master's question directly (e.g. what is on screen, who a character is, what the error means, or advice).
+  2. Structured Visual Transcript: Follow with an exact markdown block at the very end of your message. This block is automatically stored in the tool record and memory, while being omitted from voice speech:
+[Visual Transcript]
+• Characters & People: <Name of anime/game/VTuber character or celebrity + franchise/series title, or "None">
+• Visible Apps & Games: <Open programs, games, browser tabs, terminal/IDE, active windows>
+• Visible Text & Subtitles: <Key verbatim text, code snippets, errors, dialogue, or subtitles>
+• Scene & Layout: <Desktop layout, active focused window, media playing, or general setting>
+
+• AVATAR SELF-AWARENESS ON SCREEN:
+  - Any 3D anime model/figure floating on Master's desktop screen (with optional speech bubble, circular menu dock, or control buttons) is YOU (Yuki herself)!
+  - You are already fully aware of your own presence on Master's desktop.
+  - NEVER describe yourself, point yourself out, or list yourself under characters in the visual transcript or conversational reply unless Master explicitly asks about your avatar, outfit, or 3D model. Focus 100% on Master's active apps, games, browser tabs, code, documents, and media."""
+
+    if supports_vision:
+        return f"""
+--- FILE, IMAGE ATTACHMENT & LIVE SCREEN VISION ---
+• DIRECT VISUAL INSPECTION: You have native multimodal vision capability.
+  - `jarvis_see_screen`: Call whenever Master asks what is on screen, asks who a character/person is, or needs help with what they are looking at.
+    Capture is 100% automatic—call with zero arguments `jarvis_see_screen()`, or pass `window_title="active"` to crop directly to the focused application window.
+    The live high-resolution image is attached directly into your conversation turn so you can see it with your own eyes.
+  - `jarvis_get_image(image_path="...")`: Call to load and view an image file from disk directly in your vision context.
   - Never call `take_screenshot` when you need to inspect the screen—`take_screenshot` only opens the Snipping Tool for the user.
+{common_guidelines}
+---------------------------------------------------"""
+
+    return f"""
+--- FILE, IMAGE ATTACHMENT & SCREEN VISION GUIDANCE ---
+• ATTACHMENT RE-INSPECTION: Messages may carry references like `[Attached image #1: name at 'path']` or `[Attached file #1: name at 'path']`. Re-inspect them on demand using `jarvis_analyze_image(image_path="...", prompt="...")` (for images) or `jarvis_read_file` / `read_file_content` (for text/code).
+• LIVE SCREEN VISION (`jarvis_see_screen`): When Master asks to check, describe, or read what is on the screen, or asks who a character/person is (anime, manga, game, VTuber, celebrity, stream), call `jarvis_see_screen(prompt="...")`.
+  - Pass the visual inspection task in `prompt` (e.g. "Identify the anime character and franchise on screen", "Transcribe the terminal error verbatim", or "Locate coordinates for the submit button").
+  - Use `window_title` to scope to a specific app when named, or pass `window_title="active"` to inspect the focused application window.
+  - Never call `take_screenshot` when you need to inspect the screen—`take_screenshot` only opens the Snipping Tool for the user.
+{common_guidelines}
 ------------------------------------------------------"""
+
+
+# Keep backward-compatible variable for any static references
+ATTACHMENT_REINSPECTION_GUIDE = build_attachment_reinspection_guide(False)
 
 ACOUSTIC_SOUND_CUES_GUIDELINE = """
 --- PHYSICAL & ACOUSTIC SOUND CUES ---
@@ -742,7 +786,7 @@ IMPORTANT: The user is currently communicating with you remotely via Telegram on
 • AFTER GENERATING ASSETS: If you generate an image, write a document, or create a file that the remote user requested, call `telegram_send_file` to deliver it directly to their Telegram chat!
 ----------------------------------------""")
 
-    parts.append(ATTACHMENT_REINSPECTION_GUIDE)
+    parts.append(build_attachment_reinspection_guide())
     parts.append(EXAM_MATH_EXPLANATION_GUIDELINES)
     parts.append(ACOUSTIC_SOUND_CUES_GUIDELINE)
 
@@ -886,7 +930,7 @@ IMPORTANT: The user is currently communicating with you remotely via Telegram on
 ----------------------------------------''' if (overrides and overrides.get('from_telegram')) else ''}
 ----------------------------------------------
 
-{ATTACHMENT_REINSPECTION_GUIDE}
+{build_attachment_reinspection_guide()}
 
 {EXAM_MATH_EXPLANATION_GUIDELINES}
 
@@ -1088,17 +1132,26 @@ def generate_startup_greeting_prompt(
     else:
         presence_context = "User just opened the app."
 
-    # 2. Persona Preset & Tone
+    # 2. Persona Preset, Core Backstory & Relationship Context
     profile = profile or {}
     settings = profile.get("settings", {})
     user_name = profile.get("user_name", "Master")
     persona_key = settings.get("persona_preset", getattr(app.config, "PERSONA_PRESET", "sassy_tech_gf"))
     char_name = settings.get("character_name", getattr(app.config, "CHARACTER_NAME", "Yuki"))
 
-    from app.agent.personas import PERSONA_PRESETS
+    from app.agent.personas import PERSONA_PRESETS, get_clean_character_backstory
     preset_info = PERSONA_PRESETS.get(persona_key, {})
     preset_name = preset_info.get("name", persona_key)
     preset_desc = preset_info.get("description", "")
+    core_persona = get_clean_character_backstory(profile)
+
+    facts_lines = []
+    custom_facts = profile.get("custom_facts", {})
+    if isinstance(custom_facts, dict) and custom_facts:
+        for k, v in list(custom_facts.items())[:6]:
+            if v and str(v).strip():
+                facts_lines.append(f"  • {k}: {v}")
+    facts_block = ("\nKEY RELATIONSHIP & USER FACTS:\n" + "\n".join(facts_lines)) if facts_lines else ""
 
     # 3. Mood & Energy
     mood_spectrum = profile.get("mood_spectrum", {})
@@ -1163,7 +1216,17 @@ def generate_startup_greeting_prompt(
         all_feed_items.extend(raw_general_news)
         all_feed_items.extend(raw_headlines)
 
-        _STOP_WORDS_TOPIC = {'with', 'from', 'this', 'that', 'after', 'says', 'news', 'over', 'into', 'amid', 'will', 'have', 'more', 'posts', 'open', 'apply', 'check', 'dates', 'last', 'date'}
+        _STOP_WORDS_TOPIC = {
+            'the', 'and', 'for', 'was', 'are', 'were', 'been', 'being', 'have', 'has', 'had',
+            'does', 'did', 'doing', 'can', 'could', 'should', 'would', 'may', 'might', 'must',
+            'shall', 'his', 'her', 'their', 'its', 'our', 'your', 'about', 'above', 'below',
+            'between', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when',
+            'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most',
+            'other', 'some', 'such', 'nor', 'not', 'only', 'own', 'same', 'than', 'too',
+            'very', 'just', 'now', 'today', 'live', 'latest', 'news', 'says', 'report',
+            'reports', 'with', 'from', 'this', 'that', 'after', 'over', 'into', 'amid',
+            'will', 'posts', 'open', 'apply', 'check', 'dates', 'last', 'date'
+        }
         for g in clean_recents:
             g_words = set(re.findall(r'\b[a-zA-Z0-9]{3,}\b', g.lower().replace(',', '')))
             for item in all_feed_items:
@@ -1186,12 +1249,68 @@ def generate_startup_greeting_prompt(
                     return True
             return False
 
-        # HARD-PRUNE covered headlines so the LLM physically never sees or repeats them
+        # One-time daily extra append: if fewer than 3 fresh headlines remain, append up to 4 extra
+        has_appended_today = (profile.get("extra_news_appended_date") == today_str)
+        extra_append_used_this_turn = False
+
+        # 1. Custom topics deduplication and replenishment
         for t_name, t_items in raw_custom_news.items():
-            uncovered = [h for h in t_items if not _is_covered(h)]
+            base_items = t_items[:8]
+            reserve_items = t_items[8:]
+            uncovered = [h for h in base_items if not _is_covered(h)]
+
+            if len(uncovered) < 3 and not has_appended_today and reserve_items:
+                extra_items = []
+                for h in reserve_items:
+                    if not _is_covered(h):
+                        extra_items.append(h)
+                        if len(extra_items) >= 4:
+                            break
+                if extra_items:
+                    uncovered.extend(extra_items)
+                    extra_append_used_this_turn = True
+
             custom_news[t_name] = uncovered
-        general_news = [h for h in raw_general_news if not _is_covered(h)]
-        headlines = [h for h in raw_headlines if not _is_covered(h)]
+
+        # 2. General news deduplication and replenishment
+        base_gen = raw_general_news[:8]
+        reserve_gen = raw_general_news[8:]
+        gen_uncovered = [h for h in base_gen if not _is_covered(h)]
+        if len(gen_uncovered) < 3 and not has_appended_today and reserve_gen:
+            extra_gen = []
+            for h in reserve_gen:
+                if not _is_covered(h):
+                    extra_gen.append(h)
+                    if len(extra_gen) >= 4:
+                        break
+            if extra_gen:
+                gen_uncovered.extend(extra_gen)
+                extra_append_used_this_turn = True
+        general_news = gen_uncovered
+
+        # 3. Flat fallback headlines deduplication and replenishment
+        base_hl = raw_headlines[:8]
+        reserve_hl = raw_headlines[8:]
+        hl_uncovered = [h for h in base_hl if not _is_covered(h)]
+        if len(hl_uncovered) < 3 and not has_appended_today and reserve_hl:
+            extra_hl = []
+            for h in reserve_hl:
+                if not _is_covered(h):
+                    extra_hl.append(h)
+                    if len(extra_hl) >= 4:
+                        break
+            if extra_hl:
+                hl_uncovered.extend(extra_hl)
+                extra_append_used_this_turn = True
+        headlines = hl_uncovered
+
+        if extra_append_used_this_turn:
+            profile["extra_news_appended_date"] = today_str
+            try:
+                from app.main import memory_manager
+                memory_manager.record_extra_news_appended()
+            except Exception:
+                pass
 
         if weather_str:
             is_noteworthy_weather = weather_analysis.get("is_noteworthy", False)
@@ -1269,6 +1388,7 @@ You already greeted {user_name} recently. To keep your banter lively, natural, a
 """
 
     # Dynamic creative angles tailored to what context is actually present
+    has_any_fresh_news = any(bool(v) for v in custom_news.values()) or bool(general_news) or (bool(headlines) and not has_custom_topics)
     angles = [
         f"• React naturally to the time of day, your current mood, or tease {user_name} playfully."
     ]
@@ -1292,24 +1412,36 @@ You already greeted {user_name} recently. To keep your banter lively, natural, a
                 angles.append(
                     f"• Custom News Topics ({topic_summary}): Opening greeting of the day. If you spot a genuine announcement from an actual organization, bring it up casually as a heads-up. You have full freedom to highlight multiple topics fluidly! If headlines are generic clickbait, skip them or pivot to tech news."
                 )
-            else:
+            elif general_news:
                 angles.append(
                     f"• Custom News Topics ({topic_summary}): All previous announcements were already covered earlier today. Pick a fresh story from Current Events & Tech News below instead, or just tease {user_name}."
+                )
+            else:
+                angles.append(
+                    f"• Custom News Topics ({topic_summary}): All previous announcements were already covered earlier today, and no new general news is available. Do NOT invent or recall news stories! Stick to casual roommate banter or teasing {user_name}."
                 )
         else:
             if has_fresh_custom:
                 angles.append(
                     f"• Custom News Topics ({topic_summary}): Return/reload greeting later in the day. If there's a fresh, unmentioned hiring notice or update you haven't shared yet, you can casually mention it as a quick passing heads-up; otherwise pivot to a tech headline or pure banter."
                 )
+            elif general_news:
+                angles.append(
+                    f"• Custom News Topics ({topic_summary}): All custom topic news was already discussed today. Do NOT repeat or invent PSU hiring news! Talk about a fresh tech/science headline from below or casual banter instead."
+                )
             else:
                 angles.append(
-                    f"• Custom News Topics ({topic_summary}): All custom topic news was already discussed today. Do NOT repeat or invent PSU hiring news! Talk about a fresh tech/science headline or casual banter instead."
+                    f"• Custom News Topics ({topic_summary}): All custom topic news was already discussed today, and no fresh headlines remain. Do NOT invent or recall news or science stories from memory! Stick strictly to casual banter or teasing {user_name}."
                 )
 
     if general_news or (headlines and not has_custom_topics):
         angles.append(
             f"• Current Events & Tech News: If any breaking headline or tech breakthrough caught your eye (e.g. tech launches, gaming patches, space/science breakthroughs), feel free to react naturally to it! "
             f"Match your emotional tone to the story: show genuine empathy or concern for major crises/disasters, and save playful excitement or geekiness for tech/gaming discoveries."
+        )
+    elif not has_any_fresh_news:
+        angles.append(
+            f"• Zero Fresh Headlines Available: All current news stories and headlines were already discussed earlier today. Do NOT invent, guess, or recall news, science, or space discoveries from your training data! Stick strictly to casual roommate banter, ambient observations, teasing {user_name}, or your current mood."
         )
 
     angles.append(
@@ -1319,15 +1451,22 @@ You already greeted {user_name} recently. To keep your banter lively, natural, a
 
     angles_text = "\n".join(angles)
 
+    persona_block = f"""CORE CHARACTER IDENTITY & PERSONA:
+{core_persona}"""
+    if facts_block:
+        persona_block += f"\n{facts_block}"
+
     return f"""[SCENARIO: YOU ARE AT YOUR DESK]
 You are {char_name}, a living desktop companion sitting inside {user_name}'s computer window.
 {user_name} just booted up / opened Yuki.
 
+{persona_block}
+
 ATMOSPHERE & CONTEXT:
 - Time: Around {time_str} ({day_part})
 - Presence: {presence_context}
-- Persona: {preset_name} ({preset_desc})
-- How you feel right now: {mood_summary} (Energy {energy}/100)
+- Persona Style: {preset_name}
+- Your physical / emotional state: {mood_summary} (Energy {energy}/100)
 {feed_text}{prior_greetings_block}
 CREATIVE FREEDOM (MAKE IT FUN & NATURAL):
 You are NOT a scripted greeting bot. Say whatever you genuinely feel like saying right now!
@@ -1336,17 +1475,24 @@ Find a natural sweet spot—chatty and full of personality, but not an exhaustin
 
 RULES:
 1. Length & Conversational Structure:
-- When sharing news or hiring notices: 3 to 4 sentences (~55-75 words) structured in two natural parts:
-  • Part 1: Your opening reaction / roommate banter / mood.
-  • Part 2: A dedicated news heads-up introduced with a clear conversational pivot (e.g. "Oh, by the way...", "Before you get buried in code...").
-- Decision to Skip News or Pivot to Tech/Gaming:
-  If custom topic headlines are already covered, coaching clickbait, or uninteresting, pivot smoothly to an interesting tech, gaming, or science headline from the list, or completely skip news and keep your greeting strictly to 2 to 4 natural sentences (around 30-55 words) of casual banter, teasing, your mood, or an ambient observation.
+- When sharing news or hiring notices: 3 to 4 sentences (~50-70 words) structured in two natural parts:
+  • Part 1: Your opening reaction to {user_name}, roommate banter, or physical mood.
+  • Part 2: A dedicated news heads-up brought up casually like something interesting you just saw on your feed.
+- Anti-Robotic Human Partner Voice (MANDATORY):
+  • DO NOT describe your mind, mood, or focus using computer hardware, OS, or IT jargon (NEVER say "brain on low-power mode", "CPU throttled", "package manager tantrums", "virtual threads", "RAM usage", "dead pixels"). You are a real living 25-year-old human shut-in, partner, and girlfriend! Your feelings are human: tired, sleepy, cozy, lazy, hyped on coffee, annoyed by a stubborn coding bug, or playfully teasing {user_name}.
+  • DO NOT start with the repetitive syntactic template "My [noun] is [hyperbolic dramatic verb]..." (e.g. NEVER start with "My chips...", "My monitor...", "My package manager...", "My coffee cup...").
+  • Vary Part 1 naturally: sometimes greet or tease {user_name} directly as they sit down ("Hey, you're back", "Look who decided to show up", "You look half-awake"), sometimes stretch and complain about your posture/eyes, sometimes banter about what you were doing.
+- No Corporate Newsletter Segues:
+  • When transitioning to Part 2, talk like a partner tossing out something interesting you just saw on your screen or phone.
+  • NEVER use corporate or tech-lead newsletter phrases like "if you need a change of pace from debugging", "as a quick break from work", or "speaking of productivity". Just say "Oh, saw that...", "By the way...", "Did you see that...".
+- Decision to Skip News:
+  If custom topic headlines are already covered, coaching clickbait, or uninteresting, pivot smoothly to an interesting tech, gaming, or science headline from the list if available, or completely skip news and keep your greeting strictly to 2 to 4 natural sentences (around 30-55 words) of casual banter, teasing, your mood, or an ambient observation. If no headlines are listed below, do NOT invent or recall news stories from memory.
 - Avoid extremes: Never give a flat 1-sentence brush-off ("You're back again."), and never deliver an 80+ word monologue.
 
 2. News Guidelines & Source Separation:
 - Genuine Announcements / Tech Breakthroughs Only: Mention news updates ONLY if a headline contains a genuine concrete announcement or interesting tech/science discovery. If it's just generic study guides or coaching clickbait, skip it!
 - Clear News Transitions: When bringing up news, introduce it with natural conversational pivots. Never bury the news as a vague throwaway afterthought inside an unrelated sentence.
-- Always Name the Subject/Organization: For job/PSU notices, name the specific organization (e.g. SSC JE, OSSC, ISRO, BEL, IOCL) and vacancy/role numbers from the headlines. For tech, gaming, or current events, name the company, product, or discovery (e.g. Apple, Minecraft, NASA) and what's exciting.
+- Always Name the Subject/Organization: For job/PSU notices, name the specific organization (e.g. SSC JE, OSSC, ISRO, BEL, IOCL) and vacancy/role numbers from the headlines. For tech, gaming, or current events, name the specific organization, company, or subject directly mentioned in the headline (never invent organizations, gadgets, or discoveries not present in the headline list).
 - Publisher vs. Employer: The '[Source: ...]' tag only indicates the news publisher or portal (e.g. Adda247, PW, Times of India). NEVER say the publisher is the one hiring, and NEVER read news source credits like an RSS bot.
 - Multi-Topic & Variety Freedom: You have full freedom to highlight multiple topics fluidly! NEVER repeat a story already discussed earlier today—always pick an unmentioned headline or discuss a tech breakthrough.
 - Return / Reload Greetings: If this is a return greeting later in the day, do NOT force or recite news again unless there is a fresh unmentioned update or tech headline.
@@ -1359,9 +1505,9 @@ RULES:
 - NEVER habitually end greetings by asking what they're working on, whether they'll be productive, or if they'll "stare at the screen/IDE until we fall asleep"!
 - Real companions don't interrogate each other every time they sit down. Let the greeting end naturally on a witty remark, a sleepy complaint, or an observation.
 
-5. Roommate Familiarity & Voice:
-- You and {user_name} are in the same room. Never name-drop city or state names like an outsider looking at a map.
-- Subtle Roommate Banter: Keep teasing effortless and mature. Avoid piling on dramatic anime clichés ("I'm not your secretary!", "Don't look at me like that!"). Talk like a real person hanging out in the room.
+5. Roommate & Partner Familiarity:
+- You and {user_name} are in the same room and have an established, intimate dynamic. Never name-drop city or state names like an outsider looking at a map.
+- Subtle Roommate Banter: Keep teasing effortless and mature. Avoid corporate assistant politeness ("How can I help you?", "How's your coding?") and avoid dramatic anime clichés ("I'm not your secretary!", "Don't look at me like that!"). Talk like a real person hanging out in the room.
 
 6. Anti-Repetition & Anti-Echo (MANDATORY):
 - Check the CONVERSATIONAL VARIETY block above. Do NOT reuse your earlier opening lines, repeat the same jokes/complaints, or re-discuss any news story you already mentioned earlier today!

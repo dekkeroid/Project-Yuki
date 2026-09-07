@@ -6,10 +6,11 @@ import { LLM_ANIMATION_MAP, LLM_EMOTION_MAP } from '../animationsRegistry';
  */
 export function stripAnimationTags(rawText) {
   if (!rawText || typeof rawText !== 'string') return rawText || '';
-  const animRegex = /[<\[\(](?:yuki_)?anim[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
-  const emotionRegex = /[<\[\(](?:yuki_)?emotion[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
-  const anyYukiTag = /<yuki_[^>]*>/gi;
+  const animRegex = /(?:`\s*)?[<\[\(](?:yuki_)?anim[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])(?:\s*`)?/gi;
+  const emotionRegex = /(?:`\s*)?[<\[\(](?:yuki_)?emotion[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])(?:\s*`)?/gi;
+  const anyYukiTag = /(?:`\s*)?<yuki_[^>]*>(?:\s*`)?/gi;
   const transcriptTag = /\[Transcribed:\s*["']?[\s\S]*?["']?\]\s*/gi;
+  const visualTranscriptTag = /\[(?:Visual\s+Transcript|Screen\s+Transcript|Visual\s+Breakdown)\][\s\S]*$/gi;
   const toolCallTag = /(?:<tool_call>|<function_call>|\[TOOL_CALL\])[\s\S]*?(?:<\/tool_call>|<\/function_call>|\[\/TOOL_CALL\])/gi;
   return rawText
     .replace(toolCallTag, '')
@@ -17,7 +18,9 @@ export function stripAnimationTags(rawText) {
     .replace(emotionRegex, '')
     .replace(anyYukiTag, '')
     .replace(transcriptTag, '')
+    .replace(visualTranscriptTag, '')
     .replace(/^#{1,6}\s+/gm, '')
+    .replace(/`[\s\r\n]*`/g, '')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
@@ -38,15 +41,16 @@ export function parseResponseTags(rawText, callbacks = {}) {
   const animations = [];
   const emotions = [];
 
-  // Match any variation of opening bracket (<, [, () and closing bracket (/>, >, ], ))
-  const animRegex = /[<\[\(](?:yuki_)?anim[:\s]+([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])/gi;
-  const emotionRegex = /[<\[\(](?:yuki_)?emotion[:\s]+([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])/gi;
-  const malformedTagRegex = /[<\[\(](?:yuki_)?(?:anim|emotion)[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
-  const anyYukiTag = /<yuki_[^>]*>/gi;
+  // Match any variation of opening bracket (<, [, () and closing bracket (/>, >, ], )), with optional enclosing backticks
+  const animRegex = /(?:`\s*)?[<\[\(](?:yuki_)?anim[:\s]+([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])(?:\s*`)?/gi;
+  const emotionRegex = /(?:`\s*)?[<\[\(](?:yuki_)?emotion[:\s]+([a-zA-Z0-9_\-]+)\s*(?:\/?>|[\]\)])(?:\s*`)?/gi;
+  const malformedTagRegex = /(?:`\s*)?[<\[\(](?:yuki_)?(?:anim|emotion)[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])(?:\s*`)?/gi;
+  const anyYukiTag = /(?:`\s*)?<yuki_[^>]*>(?:\s*`)?/gi;
   const transcriptTag = /\[Transcribed:\s*["']?[\s\S]*?["']?\]\s*/gi;
+  const visualTranscriptTag = /\[(?:Visual\s+Transcript|Screen\s+Transcript|Visual\s+Breakdown)\][\s\S]*$/gi;
   const toolCallTag = /(?:<tool_call>|<function_call>|\[TOOL_CALL\])[\s\S]*?(?:<\/tool_call>|<\/function_call>|\[\/TOOL_CALL\])/gi;
 
-  let cleanText = rawText.replace(toolCallTag, '');
+  let cleanText = rawText.replace(toolCallTag, '').replace(visualTranscriptTag, '');
 
   // Extract animation tags
   cleanText = cleanText.replace(animRegex, (match, tag) => {
@@ -54,7 +58,7 @@ export function parseResponseTags(rawText, callbacks = {}) {
     const mappedAnim = LLM_ANIMATION_MAP[animKey] || animKey;
     animations.push(mappedAnim);
     if (onAnimation) onAnimation(mappedAnim);
-    return ''; // strip tag from visible text & TTS
+    return ''; // strip tag and any enclosing backticks from visible text & TTS
   });
 
   // Extract emotion tags
@@ -63,11 +67,14 @@ export function parseResponseTags(rawText, callbacks = {}) {
     const mappedEmotion = LLM_EMOTION_MAP[emotionKey] || emotionKey;
     emotions.push(mappedEmotion);
     if (onEmotion) onEmotion(mappedEmotion);
-    return ''; // strip tag from visible text & TTS
+    return ''; // strip tag and any enclosing backticks from visible text & TTS
   });
 
   // Strip any remaining malformed tags (e.g. <yuki_anim eer >, <yuki_anim:peer>)
   cleanText = cleanText.replace(malformedTagRegex, '').replace(anyYukiTag, '').replace(transcriptTag, '');
+
+  // Clean up any empty backtick pairs leftover from tag stripping (e.g. `` or ` `)
+  cleanText = cleanText.replace(/`[\s\r\n]*`/g, '');
 
   // Clean up any double spaces leftover from tag stripping
   cleanText = cleanText.replace(/[ \t]{2,}/g, ' ').trim();

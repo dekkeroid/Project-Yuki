@@ -138,6 +138,7 @@ _TOOL_HINTS = {
     "jarvis_send_stdin": ("stdin", "input", "press", "enter", "key", "interactive"),
     "jarvis_keyboard_mouse_input": ("keyboard", "mouse", "type", "press", "key", "shortcut", "click", "scroll", "move"),
     "jarvis_media_playback_control": ("pause", "next", "previous", "media", "music", "playback", "stop"),
+    "jarvis_get_image": ("image", "picture", "photo", "inspect", "view", "vision", "load", "attach", "get"),
     "jarvis_analyze_image": ("screenshot", "image", "vision", "picture", "photo", "scan", "analyze"),
     "jarvis_generate_image": ("generate_image", "generate an image", "generate image", "ai generate", "diffusion", "flux", "imagen", "dall-e", "midjourney", "text-to-image", "ai photo", "ai image"),
     "jarvis_see_screen": ("screen", "look", "see", "watch", "display", "view", "monitor", "desktop", "window", "current"),
@@ -189,7 +190,7 @@ _DEFAULT_CODING_TOOLS = {
     "jarvis_web_search", "jarvis_web_scrape", "jarvis_system_diagnostics",
     "jarvis_send_stdin", "read_and_review_file", "search_files",
     "read_file_content", "run_terminal_command", "run_python_script",
-    "jarvis_analyze_image", "jarvis_see_screen", "manage_todo", "ask_user"
+    "jarvis_get_image", "jarvis_analyze_image", "jarvis_see_screen", "manage_todo", "ask_user"
 }
 
 _TOKEN_RE = re.compile(r"[a-z0-9_]+")

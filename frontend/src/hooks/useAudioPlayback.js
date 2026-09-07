@@ -6,6 +6,7 @@ export function useAudioPlayback(options = {}) {
   const {
     profile,
     setAudioLevel,
+    setVisemeLevels,
     setAvatarExpression,
     updateListeningStateGlobal,
     isVoiceCommandModeRef,
@@ -76,7 +77,8 @@ export function useAudioPlayback(options = {}) {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
       const audioCtx = new AudioContext();
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 64;
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.25;
 
       const audio = new Audio();
       audio.crossOrigin = "anonymous";
@@ -90,23 +92,121 @@ export function useAudioPlayback(options = {}) {
       audioContextRef.current = audioCtx;
       analyserRef.current = analyser;
 
-      console.log("Web Audio Analyser successfully established.");
+      console.log("[AudioPlayback] Web Audio 256-FFT Spectral Formant Analyser established.");
 
       const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 
+      let smoothedAa = 0;
+      let smoothedIh = 0;
+      let smoothedOu = 0;
+      let smoothedEe = 0;
+      let smoothedOh = 0;
+      let lastTime = performance.now();
+
+      const getBandEnergy = (startBin, endBin) => {
+        let sum = 0;
+        const count = endBin - startBin + 1;
+        for (let i = startBin; i <= endBin; i++) {
+          sum += dataArray[i] || 0;
+        }
+        return sum / count / 255.0; // Normalized 0.0 - 1.0
+      };
+
       const checkVolume = () => {
+        const now = performance.now();
+        const dt = Math.min(0.1, (now - lastTime) / 1000.0);
+        lastTime = now;
+
         if (analyserRef.current && audioRef.current && !audioRef.current.paused) {
           analyserRef.current.getByteFrequencyData(dataArray);
+
+          // 1. Calculate overall amplitude
           let sum = 0;
           for (let i = 0; i < bufferLength; i++) {
             sum += dataArray[i];
           }
           const average = sum / bufferLength;
-          const normalized = Math.min(average / 90.0, 0.8);
-          if (setAudioLevel) setAudioLevel(normalized);
+          const normalized = Math.min(average / 85.0, 1.0);
+          if (setAudioLevel) setAudioLevel(Math.min(normalized, 0.8));
+
+          // 2. 4-Band Acoustic Formant Analysis (bin width ~172Hz-188Hz)
+          const bF1 = getBandEnergy(2, 5);       // ~340Hz - 900Hz (Jaw opening / open vowels)
+          const bF2Low = getBandEnergy(6, 9);    // ~1000Hz - 1600Hz (Back rounded vowels /u/, /o/)
+          const bF2High = getBandEnergy(10, 16); // ~1700Hz - 2900Hz (Front spread vowels /i/, /e/)
+          const bSib = getBandEnergy(21, 46);    // ~3600Hz - 8000Hz (Sibilance / consonants /s/, /t/, /f/)
+
+          let targetAa = 0;
+          let targetIh = 0;
+          let targetOu = 0;
+          let targetEe = 0;
+          let targetOh = 0;
+
+          if (normalized > 0.02) {
+            // Consonant / Sibilance check: high frequency hiss dominates over open vowel formants
+            const isConsonant = (bSib > 0.07) && (bSib > bF1 * 0.82);
+
+            if (isConsonant) {
+              // Clamp jaw drop shut to keep teeth together on 's', 't', 'sh', 'f'
+              targetAa = Math.min(0.04, bF1 * 0.12);
+              targetIh = Math.min(0.18, bSib * 1.2);
+              targetEe = 0.03;
+              targetOu = 0.0;
+              targetOh = 0.0;
+            } else {
+              // Natural conversational mouth opening scales (softer, human-proportional):
+              // Open Vowel (aa): Jaw opening calibrated to max ~0.36
+              const f1Net = Math.max(0, bF1 - 0.035);
+              targetAa = Math.min(0.36, f1Net * 1.4);
+
+              // Front Spread Vowel (ih): Wide spread, calibrated to max ~0.30
+              const f2Spread = Math.max(0, bF2High - (bF2Low * 0.65));
+              targetIh = Math.min(0.30, f2Spread * 1.5);
+
+              // Back Rounded Vowel (oh): Rounded lips, calibrated to max ~0.26
+              const f2Round = Math.max(0, bF2Low - 0.03);
+              targetOh = Math.min(0.26, f2Round * 1.3);
+
+              // High Rounded Vowel (ou): Narrow pursed lips, calibrated to max ~0.22
+              targetOu = Math.min(0.22, Math.max(0, bF2Low - bF2High) * 1.3);
+
+              // Mid Spread Vowel (ee): Relaxed mid-spread, calibrated to max ~0.24
+              targetEe = Math.min(0.24, (targetAa * 0.35) + (targetIh * 0.65));
+            }
+          }
+
+          // Asymmetric smoothing: fast attack (opens quickly ~32/s), smooth decay (closes gently ~16/s)
+          const attackRate = 34.0;
+          const decayRate = 16.0;
+          const smoothViseme = (curr, target) => {
+            const rate = target > curr ? attackRate : decayRate;
+            return curr + (target - curr) * Math.min(1.0, dt * rate);
+          };
+
+          smoothedAa = smoothViseme(smoothedAa, targetAa);
+          smoothedIh = smoothViseme(smoothedIh, targetIh);
+          smoothedOu = smoothViseme(smoothedOu, targetOu);
+          smoothedEe = smoothViseme(smoothedEe, targetEe);
+          smoothedOh = smoothViseme(smoothedOh, targetOh);
+
+          if (setVisemeLevels) {
+            setVisemeLevels({
+              aa: smoothedAa,
+              ih: smoothedIh,
+              ou: smoothedOu,
+              ee: smoothedEe,
+              oh: smoothedOh,
+              intensity: normalized
+            });
+          }
         } else {
+          smoothedAa = 0;
+          smoothedIh = 0;
+          smoothedOu = 0;
+          smoothedEe = 0;
+          smoothedOh = 0;
           if (setAudioLevel) setAudioLevel(0);
+          if (setVisemeLevels) setVisemeLevels(null);
         }
         animationFrameRef.current = requestAnimationFrame(checkVolume);
       };
@@ -114,7 +214,7 @@ export function useAudioPlayback(options = {}) {
     } catch (e) {
       console.warn("Failed to initialize Web Audio API:", e);
     }
-  }, [setAudioLevel]);
+  }, [setAudioLevel, setVisemeLevels]);
 
   const stopAllPlayback = useCallback(() => {
     console.log("[Playback] stopAllPlayback triggered.");
@@ -166,10 +266,11 @@ export function useAudioPlayback(options = {}) {
 
     setCurrentSpeechText('');
     if (setAudioLevel) setAudioLevel(0);
+    if (setVisemeLevels) setVisemeLevels(null);
     // Preserve active LLM or mood-guided facial expression instead of forcing blank neutral
 
     if (updateListeningStateGlobal) updateListeningStateGlobal();
-  }, [stopSpeechRecognition, setAudioLevel, updateListeningStateGlobal]);
+  }, [stopSpeechRecognition, setAudioLevel, setVisemeLevels, updateListeningStateGlobal]);
 
   const playNextAudioRef = useRef(null);
 
@@ -272,6 +373,7 @@ export function useAudioPlayback(options = {}) {
         isPlayingRef.current = false;
         hasReceivedAudioRef.current = false;
         if (setAudioLevel) setAudioLevel(0);
+        if (setVisemeLevels) setVisemeLevels(null);
 
         bubbleTimeoutRef.current = setTimeout(() => {
           setCurrentSpeechText('');
@@ -297,7 +399,7 @@ export function useAudioPlayback(options = {}) {
     isPlayingRef.current = true;
     const nextChunk = audioQueueRef.current.shift();
     playVoiceResponse(nextChunk.url, nextChunk.text);
-  }, [setAudioLevel, updateListeningStateGlobal, isVoiceCommandModeRef, startSessionTimeout, playVoiceResponse]);
+  }, [setAudioLevel, setVisemeLevels, updateListeningStateGlobal, isVoiceCommandModeRef, startSessionTimeout, playVoiceResponse]);
 
   playNextAudioRef.current = playNextAudio;
 
@@ -347,6 +449,7 @@ export function useAudioPlayback(options = {}) {
     const cleanText = cleanTextForTTS(stripAnimationTags(getSpeechFriendlyText(text)));
     if (!cleanText) {
       if (setAudioLevel) setAudioLevel(0);
+      if (setVisemeLevels) setVisemeLevels(null);
       isNativeSpeakingRef.current = false;
       if (setIsThinking) setIsThinking(false);
       setTtsStreamActive(false);
@@ -389,8 +492,22 @@ export function useAudioPlayback(options = {}) {
       if (nativeSpeechIntervalRef.current) clearInterval(nativeSpeechIntervalRef.current);
 
       nativeSpeechIntervalRef.current = setInterval(() => {
-        if (setAudioLevel) {
-          setAudioLevel(Math.random() > 0.35 ? 0.2 + Math.random() * 0.4 : 0);
+        const isSpk = Math.random() > 0.35;
+        const vol = isSpk ? 0.2 + Math.random() * 0.4 : 0;
+        if (setAudioLevel) setAudioLevel(vol);
+        if (setVisemeLevels) {
+          if (isSpk) {
+            const vowels = [
+              { aa: 0.38, ih: 0.05, ou: 0.0, ee: 0.1, oh: 0.1 },
+              { aa: 0.1, ih: 0.35, ou: 0.0, ee: 0.25, oh: 0.0 },
+              { aa: 0.1, ih: 0.0, ou: 0.28, ee: 0.0, oh: 0.32 },
+              { aa: 0.05, ih: 0.18, ou: 0.0, ee: 0.05, oh: 0.0 }
+            ];
+            const pick = vowels[Math.floor(Math.random() * vowels.length)];
+            setVisemeLevels({ ...pick, intensity: vol });
+          } else {
+            setVisemeLevels(null);
+          }
         }
       }, 120);
     };
@@ -399,6 +516,7 @@ export function useAudioPlayback(options = {}) {
       isNativeSpeakingRef.current = false;
       if (systemMessageActiveRef.current) systemMessageActiveRef.current = false;
       if (setAudioLevel) setAudioLevel(0);
+      if (setVisemeLevels) setVisemeLevels(null);
       if (setIsThinking) setIsThinking(false);
       setTtsStreamActive(false);
       if (nativeSpeechIntervalRef.current) {
@@ -418,6 +536,7 @@ export function useAudioPlayback(options = {}) {
       isNativeSpeakingRef.current = false;
       if (systemMessageActiveRef.current) systemMessageActiveRef.current = false;
       if (setAudioLevel) setAudioLevel(0);
+      if (setVisemeLevels) setVisemeLevels(null);
       if (setIsThinking) setIsThinking(false);
       setTtsStreamActive(false);
       setCurrentSpeechText('');
@@ -429,7 +548,7 @@ export function useAudioPlayback(options = {}) {
     };
 
     window.speechSynthesis.speak(utterance);
-  }, [profile, setAudioLevel, setAvatarExpression, setIsThinking, updateListeningStateGlobal]);
+  }, [profile, setAudioLevel, setVisemeLevels, setAvatarExpression, setIsThinking, updateListeningStateGlobal]);
 
   // Wire forward ref so queueAudioChunk can call speakTextNatively without circular dep
   speakTextNativelyRef.current = speakTextNatively;

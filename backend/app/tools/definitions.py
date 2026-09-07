@@ -2,6 +2,18 @@ import app.config as config
 from app.tools.selector import select_relevant_tools
 
 
+def is_vision_active(model_name: str = "") -> bool:
+    """Returns True if the active model or toggle has native vision support."""
+    if getattr(config, "ACTIVE_LLM_SUPPORTS_VISION", False):
+        return True
+    try:
+        from app.agent.executor import is_vision_model
+        target = model_name or getattr(config, "LLM_SIMPLE_MODEL", "") or getattr(config, "LLM_CODER_MODEL", "")
+        return is_vision_model(target)
+    except Exception:
+        return False
+
+
 def get_scheduled_task_schema(name: str = "manage_scheduled_task") -> dict:
     """Shared JSON schema for the scheduled-task tool (basic and advanced modes)."""
     return {
@@ -839,13 +851,25 @@ def get_advanced_jarvis_tools_definition() -> list:
         {
             "type": "function",
             "function": {
-                "name": "jarvis_analyze_image",
-                "description": "Scans and analyzes an image file on disk using a vision API or vision engine. Reads screenshots, UI mockups, diagrams, and image files.",
+                "name": "jarvis_get_image" if is_vision_active() else "jarvis_analyze_image",
+                "description": (
+                    "Loads an image file from disk and attaches it directly into your multimodal vision context so you can see and inspect it with your own eyes. "
+                    "Provide a detailed visual breakdown in your response."
+                ) if is_vision_active() else (
+                    "Scans and analyzes an image file on disk using a vision model. "
+                    "Identifies anime/manga/game/VTuber characters (with franchise title), celebrities and public figures, art styles, UI mockups, diagrams, charts, and verbatim text."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
+                        "image_path": {"type": "string", "description": "Absolute file path to the target image file on disk to load and inspect."}
+                    },
+                    "required": ["image_path"]
+                } if is_vision_active() else {
+                    "type": "object",
+                    "properties": {
                         "image_path": {"type": "string", "description": "Absolute file path to the target image file on disk."},
-                        "prompt": {"type": "string", "description": "Specific question or analysis prompt for the vision model."}
+                        "prompt": {"type": "string", "description": "Specific question or analysis prompt for the vision model (e.g. identify characters, explain diagram, transcribe text)."}
                     },
                     "required": ["image_path"]
                 }
@@ -855,12 +879,24 @@ def get_advanced_jarvis_tools_definition() -> list:
             "type": "function",
             "function": {
                 "name": "jarvis_see_screen",
-                "description": "Automatically captures the current screen (or a specific app window via window_title) and sends the screenshot directly to a Vision Multimodal LLM. Returns a detailed visual breakdown and verbatim transcription of visible text, code, or UI elements. Use this whenever you need to SEE what is on the user's screen.",
+                "description": (
+                    "Captures the active desktop monitor (or focused window) and attaches the live screenshot directly into your vision context so you can see it with your own eyes. "
+                    "Call with zero arguments jarvis_see_screen() or pass window_title='active'. Provide a detailed visual breakdown in your response."
+                ) if is_vision_active() else (
+                    "Captures the active monitor screen (or specific window via window_title) and inspects it with high-resolution vision. "
+                    "Identifies anime/game characters, video streams, celebrities, open applications, and transcribes visible text, code, or UI elements."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "prompt": {"type": "string", "description": "Visual analysis instructions/questions sent directly to the Vision LLM analyzing the captured screen. DO NOT write 'take a screenshot' (capture is 100% automatic). Instead, specify what to inspect, transcribe, locate, or explain in the image."},
-                        "window_title": {"type": "string", "description": "Optional window title substring. If provided, only that app window is captured instead of the full screen."}
+                        "window_title": {"type": "string", "description": "Optional window title substring, or 'active' / 'current' to crop directly to the focused application window. Omit to capture the full active monitor."}
+                    },
+                    "required": []
+                } if is_vision_active() else {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Visual analysis instructions sent to the vision model (e.g. 'Identify who this anime character is', 'Transcribe the terminal error')."},
+                        "window_title": {"type": "string", "description": "Optional window title substring, or 'active' / 'current' to crop directly to the focused application window."}
                     },
                     "required": ["prompt"]
                 }

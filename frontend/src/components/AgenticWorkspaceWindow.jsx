@@ -5105,18 +5105,36 @@ ${profileData?.settings?.endpoint_strategy === 'separate' ? `• Complex Agentic
 
                           {/* Role 4: Vision Scan & Analysis Model */}
                           <div style={{ background: 'rgba(9, 13, 22, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
-                            <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#38bdf8', display: 'block', marginBottom: '2px' }}>
-                              4. Vision Scan & Analysis Model (Tool Model)
-                            </label>
-                            <div style={{ fontSize: '0.66rem', color: '#94a3b8', marginBottom: '6px' }}>
-                              Target model used by <code style={{ color: '#38bdf8' }}>jarvis_analyze_image</code> tool when non-vision models analyze screenshots & image files.
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap', gap: '6px' }}>
+                              <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#38bdf8', display: 'block', marginBottom: '2px' }}>
+                                4. Vision Scan & Analysis Model (Tool Model)
+                              </label>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.68rem', color: (activeSettings.active_llm_supports_vision ?? false) ? '#38bdf8' : '#cbd5e1', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={activeSettings.active_llm_supports_vision ?? false}
+                                  onChange={(e) => handleUpdateSetting({ active_llm_supports_vision: e.target.checked })}
+                                />
+                                My ACTIVE LLM MODEL supports vision
+                              </label>
                             </div>
-                            <SearchableModelSelect
-                              value={activeSettings.llm_vision_model || ''}
-                              onChange={(val) => handleUpdateSetting({ llm_vision_model: val })}
-                              options={allNames}
-                              placeholder="Search or select Vision Scan model..."
-                            />
+                            <div style={{ fontSize: '0.66rem', color: '#94a3b8', marginBottom: '6px' }}>
+                              {(activeSettings.active_llm_supports_vision ?? false) ? (
+                                <span style={{ color: '#38bdf8' }}>
+                                  Active chat model natively inspects screenshots & images directly in-stream with zero latency (no separate vision model required).
+                                </span>
+                              ) : (
+                                <span>Target model used by <code style={{ color: '#38bdf8' }}>jarvis_get_image</code> and <code style={{ color: '#38bdf8' }}>jarvis_see_screen</code> when non-vision models analyze screenshots & image files.</span>
+                              )}
+                            </div>
+                            {!(activeSettings.active_llm_supports_vision ?? false) && (
+                              <SearchableModelSelect
+                                value={activeSettings.llm_vision_model || ''}
+                                onChange={(val) => handleUpdateSetting({ llm_vision_model: val })}
+                                options={allNames}
+                                placeholder="Search or select Vision Scan model..."
+                              />
+                            )}
                           </div>
 
                           {/* Role 5: Image Generation Model */}

@@ -18,6 +18,7 @@ const windowWidthExtra = 0;
 // Yuki was here - feeling sassy and ready for snacks
 const AvatarViewer = ({
   audioLevel,
+  visemeLevels = null,
   isThinking,
   isListening,
   isWalking = false,
@@ -87,6 +88,7 @@ const AvatarViewer = ({
   const particleSystemRef = useRef(null);
 
   const audioLevelRef = useRef(audioLevel);
+  const visemeLevelsRef = useRef(visemeLevels);
   const isThinkingRef = useRef(isThinking);
   const isListeningRef = useRef(isListening);
   const isWalkingRef = useRef(isWalking);
@@ -205,6 +207,10 @@ const AvatarViewer = ({
   }, [audioLevel]);
 
   useEffect(() => {
+    visemeLevelsRef.current = visemeLevels;
+  }, [visemeLevels]);
+
+  useEffect(() => {
     isThinkingRef.current = isThinking;
   }, [isThinking]);
 
@@ -277,38 +283,71 @@ const AvatarViewer = ({
     }
   }, [hasVrm, activeModel]);
 
-  // Blend shape helper to support both VRM v0 and v1
+  // Canonical VRM 1.0 & VRM 0.x alias maps (First-match wins — never multi-cast conflicting shapes!)
+  const EXPR_FALLBACKS = {
+    aa: ['aa', 'A', 'a', 'AA'],
+    ih: ['ih', 'I', 'i', 'IH'],
+    ou: ['ou', 'u', 'U', 'OU'],
+    ee: ['ee', 'e', 'E', 'EE'],
+    oh: ['oh', 'o', 'O', 'OH'],
+    blink: ['blink', 'Blink', 'BLINK'],
+    blinkLeft: ['blinkLeft', 'blink_l', 'Blink_L', 'BLINK_L'],
+    blinkRight: ['blinkRight', 'blink_r', 'Blink_R', 'BLINK_R'],
+    happy: ['happy', 'joy', 'Joy', 'JOY'],
+    sad: ['sad', 'sorrow', 'Sorrow', 'SORROW'],
+    angry: ['angry', 'anger', 'Anger', 'ANGRY'],
+    surprised: ['surprised', 'surprise', 'Surprise', 'SURPRISED'],
+    relaxed: ['relaxed', 'Relaxed', 'relax', 'RELAXED'],
+    browUp: ['browUp', 'brow_up', 'BrowUp', 'eyebrow_up', 'EyebrowUp', 'brow_raise', 'BrowRaise', 'BRW_Up'],
+    browDown: ['browDown', 'brow_down', 'BrowDown', 'eyebrow_down', 'EyebrowDown', 'brow_furrow', 'BrowFurrow', 'brow_low', 'BrowLow', 'BRW_Down'],
+  };
+
+  // Blend shape helper to support both VRM v0 and v1 with first-match exclusive resolution
   const setExpressionValue = (vrm, name, value) => {
     if (!vrm) return;
 
     const manager = vrm.expressionManager || vrm.blendShapeProxy;
-    if (manager) {
-      // Try name as-is first
-      try {
-        manager.setValue(name, value);
-      } catch (_) { }
+    if (!manager) return;
 
-      // Fallback mappings for both VRM 0.x (uppercase / presets) and VRM 1.0 conventions
-      const fallbacks = [];
-      if (name === 'aa') fallbacks.push('ih', 'A', 'a', 'AA');
-      else if (name === 'oh') fallbacks.push('O', 'o', 'OH');
-      else if (name === 'blink') fallbacks.push('Blink', 'BLINK');
-      else if (name === 'blinkLeft') fallbacks.push('blink_l', 'Blink_L', 'BLINK_L');
-      else if (name === 'blinkRight') fallbacks.push('blink_r', 'Blink_R', 'BLINK_R');
-      else if (name === 'happy') fallbacks.push('joy', 'Joy', 'JOY');
-      else if (name === 'sad') fallbacks.push('sorrow', 'Sorrow', 'SORROW');
-      else if (name === 'angry') fallbacks.push('anger', 'Anger', 'ANGRY');
-      else if (name === 'surprised') fallbacks.push('surprise', 'Surprise', 'SURPRISED');
-      else if (name === 'relaxed') fallbacks.push('Relaxed', 'relax', 'RELAXED');
-      else if (name === 'browUp') fallbacks.push('brow_up', 'BrowUp', 'eyebrow_up', 'EyebrowUp', 'brow_raise', 'BrowRaise', 'BRW_Up');
-      else if (name === 'browDown') fallbacks.push('brow_down', 'BrowDown', 'eyebrow_down', 'EyebrowDown', 'brow_furrow', 'BrowFurrow', 'brow_low', 'BrowLow', 'BRW_Down');
+    if (!vrm._exprNameCache) vrm._exprNameCache = new Map();
+    let resolved = vrm._exprNameCache.get(name);
 
-      for (const f of fallbacks) {
+    if (resolved === undefined) {
+      const candidates = EXPR_FALLBACKS[name] || [name];
+      for (const cand of candidates) {
         try {
-          manager.setValue(f, value);
+          if (typeof manager.getExpression === 'function' && manager.getExpression(cand)) {
+            resolved = cand;
+            break;
+          }
+          if (manager.expressionMap && manager.expressionMap[cand]) {
+            resolved = cand;
+            break;
+          }
+          if (typeof manager.getBlendShapeGroup === 'function' && manager.getBlendShapeGroup(cand)) {
+            resolved = cand;
+            break;
+          }
         } catch (_) { }
       }
+
+      // If introspection did not match, try setting the candidate with 0 to see if manager accepts it
+      if (!resolved) {
+        resolved = name;
+        for (const cand of candidates) {
+          try {
+            manager.setValue(cand, 0);
+            resolved = cand;
+            break;
+          } catch (_) { }
+        }
+      }
+      vrm._exprNameCache.set(name, resolved);
     }
+
+    try {
+      manager.setValue(resolved, value);
+    } catch (_) { }
   };
 
   const updateExpressions = (vrm) => {
@@ -968,20 +1007,36 @@ const AvatarViewer = ({
         });
         fingerBonesRef.current = cachedBones;
 
-        // Auto-position camera to look at the face/body
+        // Auto-position camera to look at the face/body dynamically adapting to model height
+        let unscaledHeadY = 1.45;
         const headNode = getBoneNode(vrm, 'head');
-        if (headNode && window.vrmControls && window.vrmCamera) {
-          const isElectron = window.electronAPI && window.electronAPI.isElectron;
+        if (headNode) {
           const headPos = new THREE.Vector3();
           headNode.getWorldPosition(headPos);
+          unscaledHeadY = Math.max(0.7, headPos.y / (scaleRef.current || 1.0));
+        } else if (vrm.scene) {
+          const box = new THREE.Box3().setFromObject(vrm.scene);
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          unscaledHeadY = Math.max(0.7, (size.y * 0.9) / (scaleRef.current || 1.0));
+        }
+        vrm._unscaledHeadY = unscaledHeadY;
+
+        if (window.vrmControls && window.vrmCamera) {
+          const isElectron = window.electronAPI && window.electronAPI.isElectron;
+          const currentScale = scaleRef.current || 1.0;
+          const heightFactor = Math.max(1.0, unscaledHeadY / 1.45);
+          const baseCameraZ = (2.2 / YUKI_SCALE_REDUCER) * heightFactor;
+          const targetY = (unscaledHeadY * 0.62) * currentScale;
+          const cameraY = (unscaledHeadY * 0.72) * currentScale;
+
           if (isElectron) {
-            // Look at mid-torso, shifted down slightly to maximize headroom above head
-            window.vrmControls.target.set(headPos.x, headPos.y - 0.55 * scaleRef.current, headPos.z);
-            window.vrmCamera.position.set(headPos.x, headPos.y - 0.45 * scaleRef.current, headPos.z + 2.2 * scaleRef.current);
+            window.vrmControls.target.set(0, targetY, 0);
+            window.vrmCamera.position.set(0, cameraY, baseCameraZ * currentScale);
           } else {
             // Web browser mode: look close-up at her face, scaled proportionally
-            window.vrmControls.target.set(headPos.x, headPos.y - 0.1 * scaleRef.current, headPos.z);
-            window.vrmCamera.position.set(headPos.x, headPos.y, headPos.z + 0.85 * scaleRef.current);
+            window.vrmControls.target.set(0, (unscaledHeadY - 0.1) * currentScale, 0);
+            window.vrmCamera.position.set(0, unscaledHeadY * currentScale, 0.85 * currentScale);
           }
           window.vrmControls.update();
         }
@@ -1881,29 +1936,19 @@ const AvatarViewer = ({
 
         // Update camera target, Y, and Z positions dynamically based on scale (Electron mode only)
         if (isElectron && controls && camera) {
-          const baseTargetOffset = 0.55;
-          const baseCameraOffset = -0.10;
-          // const baseCameraZ = 2.2;
+          const headY = vrmRef.current?._unscaledHeadY || 1.45;
+          const currentScale = scaleRef.current || 1.0;
+          const heightFactor = Math.max(1.0, headY / 1.45);
+          const baseCameraZ = (2.2 / YUKI_SCALE_REDUCER) * heightFactor;
 
-          // Divide distance by reducer. If reducer is 0.8, camera moves back, making her smaller.
-          const baseCameraZ = 2.2 / YUKI_SCALE_REDUCER;
-
-          let headY = 1.45; // default unscaled head height
-          // if (vrmRef.current) {
-          //   const headNode = getBoneNode(vrmRef.current, 'head');
-          //   if (headNode) {
-          //     const tempV = new THREE.Vector3();
-          //     headNode.getWorldPosition(tempV);
-          //     headY = tempV.y / scaleRef.current; // get unscaled head height
-          //   }
-          // }
+          const targetY = (headY * 0.62) * currentScale;
+          const cameraY = (headY * 0.72) * currentScale;
 
           if (!enableRotationRef.current) {
-            controls.target.set(0, (headY - baseTargetOffset) * scaleRef.current, 0);
-            camera.position.set(0, (headY - baseCameraOffset) * scaleRef.current, baseCameraZ * scaleRef.current);
+            controls.target.set(0, targetY, 0);
+            camera.position.set(0, cameraY, baseCameraZ * currentScale);
             camera.lookAt(controls.target);
           } else {
-            const targetY = (headY - baseTargetOffset) * scaleRef.current;
             controls.target.set(0, targetY, 0);
 
             if (isRotating) {
@@ -1913,7 +1958,7 @@ const AvatarViewer = ({
             const now = Date.now();
             if (!isRotating && autoResetRotationRef.current && (now - lastRotationTime > 10000)) {
               // Smooth return to front-facing position
-              const defaultOffset = new THREE.Vector3(0, (baseTargetOffset - baseCameraOffset) * scaleRef.current, baseCameraZ * scaleRef.current);
+              const defaultOffset = new THREE.Vector3(0, cameraY - targetY, baseCameraZ * currentScale);
               const targetCamPos = new THREE.Vector3().copy(controls.target).add(defaultOffset);
               const dist = camera.position.distanceTo(targetCamPos);
               if (dist > 0.001) {
@@ -1926,9 +1971,9 @@ const AvatarViewer = ({
               // Normalize camera distance to match current scale while preserving angles
               const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
               if (offset.lengthSq() === 0) {
-                offset.set(0, 0, baseCameraZ * scaleRef.current);
+                offset.set(0, 0, baseCameraZ * currentScale);
               } else {
-                offset.normalize().multiplyScalar(baseCameraZ * scaleRef.current);
+                offset.normalize().multiplyScalar(baseCameraZ * currentScale);
               }
               camera.position.copy(controls.target).add(offset);
             }
@@ -3547,19 +3592,44 @@ const AvatarViewer = ({
             }
           }
 
-          // Lipsync & Mouth Movement Blending
+          // Lipsync & Multi-Viseme Movement Blending
           const enableLipsync = window.yukiDebugToggles ? window.yukiDebugToggles.lipsync : true;
-          const speechAa = (enableLipsync && audioLevelRef.current > 0) ? Math.min(audioLevelRef.current * 0.9, 0.55) : 0.0;
-          const speechOh = (enableLipsync && audioLevelRef.current > 0) ? Math.min(audioLevelRef.current * 0.3, 0.15) : 0.0;
+          const vLevels = visemeLevelsRef.current;
+          const audioVol = audioLevelRef.current || 0;
+          const isSpeaking = enableLipsync && ((audioVol > 0.015) || (vLevels && vLevels.intensity > 0.015));
 
+          let speechAa = 0.0;
+          let speechIh = 0.0;
+          let speechOu = 0.0;
+          let speechEe = 0.0;
+          let speechOh = 0.0;
+
+          if (isSpeaking) {
+            if (vLevels) {
+              speechAa = THREE.MathUtils.clamp(vLevels.aa || 0, 0, 0.38);
+              speechIh = THREE.MathUtils.clamp(vLevels.ih || 0, 0, 0.32);
+              speechOu = THREE.MathUtils.clamp(vLevels.ou || 0, 0, 0.24);
+              speechEe = THREE.MathUtils.clamp(vLevels.ee || 0, 0, 0.26);
+              speechOh = THREE.MathUtils.clamp(vLevels.oh || 0, 0, 0.28);
+            } else {
+              // Legacy fallback if only audioLevel is available
+              speechAa = Math.min(audioVol * 0.45, 0.35);
+              speechOh = Math.min(audioVol * 0.18, 0.12);
+            }
+          }
+
+          // Blend procedural mouth offsets (e.g. yawning, laughing, being dragged)
           const blendedAa = speechAa > 0
-            ? (extraMouthAa > 0 ? Math.min(0.68, speechAa + (extraMouthAa * 0.40)) : speechAa)
+            ? (extraMouthAa > 0 ? Math.min(0.48, speechAa + (extraMouthAa * 0.20)) : speechAa)
             : extraMouthAa;
           const blendedOh = speechOh > 0
-            ? (extraMouthOh > 0 ? Math.min(0.45, speechOh + (extraMouthOh * 0.50)) : speechOh)
+            ? (extraMouthOh > 0 ? Math.min(0.35, speechOh + (extraMouthOh * 0.25)) : speechOh)
             : extraMouthOh;
 
           setExpressionValue(vrm, 'aa', blendedAa);
+          setExpressionValue(vrm, 'ih', speechIh);
+          setExpressionValue(vrm, 'ou', speechOu);
+          setExpressionValue(vrm, 'ee', speechEe);
           setExpressionValue(vrm, 'oh', blendedOh);
 
           // Wink animation state machine update
@@ -3747,12 +3817,20 @@ const AvatarViewer = ({
           const microSurprised = currentSurprised > 0.05 ? Math.sin(time * 4.7) * microScale : 0;
           const microRelaxed = currentRelaxed > 0.05 ? Math.sin(time * 3.1) * microScale : 0;
 
+          // Speech Ducking: Attenuate resting mood smile / relaxed mouth morphs while speech is active
+          // This keeps smiling eyes (browUp) intact while preventing the jaw from stretching open into a giant mouth
+          const activeSpeechIntensity = (vLevels && vLevels.intensity > 0) ? vLevels.intensity : Math.min(1.0, audioVol * 1.5);
+          const speechDampen = isSpeaking ? Math.max(0.08, 1.0 - (activeSpeechIntensity * 0.90)) : 1.0;
+
+          const finalHappy = Math.max(0, Math.min(1, (currentHappy + microHappy) * speechDampen));
+          const finalRelaxed = Math.max(0, Math.min(1, (currentRelaxed + microRelaxed) * speechDampen));
+
           // Apply smooth expression values to VRM with micro-fluctuations
-          setExpressionValue(vrm, 'happy', Math.max(0, Math.min(1, currentHappy + microHappy)));
+          setExpressionValue(vrm, 'happy', finalHappy);
           setExpressionValue(vrm, 'sad', Math.max(0, Math.min(1, currentSad + microSad)));
           setExpressionValue(vrm, 'angry', Math.max(0, Math.min(1, currentAngry + microAngry)));
           setExpressionValue(vrm, 'surprised', Math.max(0, Math.min(1, currentSurprised + microSurprised)));
-          setExpressionValue(vrm, 'relaxed', Math.max(0, Math.min(1, currentRelaxed + microRelaxed)));
+          setExpressionValue(vrm, 'relaxed', finalRelaxed);
           setExpressionValue(vrm, 'browUp', Math.max(0, Math.min(1, currentBrowUp)));
           setExpressionValue(vrm, 'browDown', Math.max(0, Math.min(1, currentBrowDown)));
 

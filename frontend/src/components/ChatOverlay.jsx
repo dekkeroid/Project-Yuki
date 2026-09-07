@@ -67,11 +67,17 @@ export const parseMessageThought = (rawContent) => {
   // Strip raw tool badge lines, args blocks, & output blocks from clean text content
   cleanContent = cleanContent.replace(/🛠️\s*\*{0,2}\[[^\]]+\]\*{0,2}(?:\s*```tool_args\n[\s\S]*?\n```)?(?:\s*```(?:tool_output|terminal_stream)\n[\s\S]*?\n```)?\n?/g, '').trim();
 
-  // 3. Strip animation and emotion tags (<yuki_anim:.../>, <yuki_anim eer >, [yuki_anim:.../>, etc.)
-  const animTagRegex = /[<\[\(](?:yuki_)?anim[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
-  const emotionTagRegex = /[<\[\(](?:yuki_)?emotion[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])/gi;
-  const anyYukiTag = /<yuki_[^>]*>/gi;
-  cleanContent = cleanContent.replace(animTagRegex, '').replace(emotionTagRegex, '').replace(anyYukiTag, '').replace(/[ \t]{2,}/g, ' ').trim();
+  // 3. Strip animation and emotion tags (<yuki_anim:.../>, <yuki_anim eer >, [yuki_anim:.../>, etc.), including any enclosing backticks
+  const animTagRegex = /(?:`\s*)?[<\[\(](?:yuki_)?anim[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])(?:\s*`)?/gi;
+  const emotionTagRegex = /(?:`\s*)?[<\[\(](?:yuki_)?emotion[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])(?:\s*`)?/gi;
+  const anyYukiTag = /(?:`\s*)?<yuki_[^>]*>(?:\s*`)?/gi;
+  cleanContent = cleanContent
+    .replace(animTagRegex, '')
+    .replace(emotionTagRegex, '')
+    .replace(anyYukiTag, '')
+    .replace(/`[\s\r\n]*`/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 
   return { thoughts, toolBadges, cleanContent };
 };
@@ -240,11 +246,14 @@ export const formatMessageText = (text, disableFileLinks = false) => {
         parts.push(text.substring(lastIndex, match.index));
       }
       if (match[1]) {
-        parts.push(
-          <code key={match.index} style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.85em', background: 'rgba(255, 255, 255, 0.12)', padding: '2px 6px', borderRadius: '4px', color: '#2dd4bf' }}>
-            {match[1]}
-          </code>
-        );
+        const codeText = match[1].trim();
+        if (codeText) {
+          parts.push(
+            <code key={match.index} style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.85em', background: 'rgba(255, 255, 255, 0.12)', padding: '2px 6px', borderRadius: '4px', color: '#2dd4bf' }}>
+              {codeText}
+            </code>
+          );
+        }
       } else if (match[2]) {
         parts.push(
           <strong key={match.index} style={{ fontWeight: '700', color: '#e2e8f0' }}>
@@ -539,6 +548,9 @@ export const formatMessageText = (text, disableFileLinks = false) => {
     } else if (match[7]) {
       // Code block `code`
       const codeContent = match[7].trim();
+      if (!codeContent) {
+        continue;
+      }
       const fileMatch = codeContent.match(/^((?:file:\/\/\/(?:[A-Za-z]:)?[\\\/]|[A-Za-z]:[\\\/]).*?\.[a-zA-Z0-9]{1,8})$/i);
       const folderMatch = !fileMatch && codeContent.match(/^((?:file:\/\/\/(?:[A-Za-z]:)?[\\\/]|[A-Za-z]:[\\\/]).*?)$/i);
       const urlMatch = codeContent.match(/^(https?:\/\/[^\s\(\)<>"'\n]+|www\.[^\s\(\)<>"'\n]+)$/i);

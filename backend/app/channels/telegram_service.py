@@ -357,12 +357,24 @@ class TelegramClient:
 
 
 def _clean_markdown_for_telegram(text: str) -> str:
-    """Formats standard text safely for Telegram."""
+    """Strips animation/emotion tags and internal markup before sending to Telegram."""
     if not text:
         return ""
-    clean = re.sub(r'\[ANIM:[^\]]+\]', '', text)
+    # Strip modern XML-style tags: <yuki_anim:laugh/>, <yuki_emotion:smug/>, etc.
+    clean = re.sub(r'<yuki_anim:[^/>]*/>', '', text)
+    clean = re.sub(r'<yuki_emotion:[^/>]*/>', '', clean)
+    # Strip any other <yuki_...> tags generically
+    clean = re.sub(r'<yuki_[^>]*/>', '', clean)
+    clean = re.sub(r'<yuki_[^>]*>[^<]*</yuki_[^>]*>', '', clean)
+    # Strip old bracket-style tags
+    clean = re.sub(r'\[ANIM:[^\]]+\]', '', clean)
     clean = re.sub(r'\[FACIAL:[^\]]+\]', '', clean)
     clean = re.sub(r'\[ACTION:[^\]]+\]', '', clean)
+    # Strip thinking/reasoning blocks
+    clean = re.sub(r'<think>[\s\S]*?</think>', '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'<thought>[\s\S]*?</thought>', '', clean, flags=re.IGNORECASE)
+    # Collapse extra whitespace left by removed tags
+    clean = re.sub(r'\n{3,}', '\n\n', clean)
     return clean.strip()
 
 
@@ -889,7 +901,7 @@ async def _process_agent_turn(
     print(f"  - Time to First Token (TTFT): {ttft_str}")
     print(f"  - LLM Token Generation:       {llm_gen_str}")
     print(f"  - Tool Executions:            {tool_str}")
-    vm_timing = getattr(agent_executor, "last_vector_timing", None)
+    vm_timing = getattr(_get_executor(), "last_vector_timing", None)
     if vm_timing and vm_timing.get("status") != "disabled":
         vm_ms = vm_timing.get("duration_ms", 0.0)
         vm_cnt = vm_timing.get("count", 0)
@@ -1399,8 +1411,24 @@ async def _polling_loop(token: str):
     
     try:
         async with httpx.AsyncClient(timeout=40.0) as client:
-            # Check bot identity
-            me_data = await tg.get_me(client)
+            # Check bot identity with retry loop so offline boot or transient network blips don't crash
+            me_data = None
+            while not _stop_event.is_set():
+                try:
+                    me_data = await tg.get_me(client)
+                    break
+                except (httpx.ConnectError, httpx.NetworkError, httpx.TimeoutException) as conn_err:
+                    _bot_status_cache["status"] = "connecting"
+                    _bot_status_cache["error"] = f"Waiting for network connection ({type(conn_err).__name__})"
+                    print(f"[Telegram] Connection pending ({type(conn_err).__name__}). Reconnecting in 10s...")
+                    try:
+                        await asyncio.sleep(10.0)
+                    except asyncio.CancelledError:
+                        return
+
+            if _stop_event.is_set() or not me_data:
+                return
+
             if not me_data.get("ok"):
                 err = me_data.get("description", "Failed to connect")
                 _bot_status_cache["status"] = "error"
@@ -1417,23 +1445,26 @@ async def _polling_loop(token: str):
             print(f"[Telegram] Bot service online: @{me.get('username')} ({me.get('first_name')})")
             
             # Register native Telegram Slash Commands menu with Telegram
-            bot_cmds = [
-                {"command": "status", "description": "Check PC CPU, RAM & AI Model stats"},
-                {"command": "boost", "description": "Deep RAM boost (trim system background apps)"},
-                {"command": "selfoptimize", "description": "Yuki memory cleanup & garbage collection"},
-                {"command": "screenshot", "description": "Capture & send desktop screenshot"},
-                {"command": "lock", "description": "Lock Windows PC workstation"},
-                {"command": "volume", "description": "Set PC volume (/volume 50 or /volume mute)"},
-                {"command": "open", "description": "Search and open file or app on PC"},
-                {"command": "play", "description": "Search and play video/music on PC"},
-                {"command": "todo", "description": "Show active TODO task list"},
-                {"command": "alarms", "description": "View active alarms and timers"},
-                {"command": "textonly", "description": "Toggle voice notes vs fast text replies"},
-                {"command": "textonlyoff", "description": "Re-enable voice note replies"},
-                {"command": "clear", "description": "Reset conversation memory context"},
-                {"command": "help", "description": "Show commands and features guide"}
-            ]
-            await tg.set_my_commands(client, bot_cmds)
+            try:
+                bot_cmds = [
+                    {"command": "status", "description": "Check PC CPU, RAM & AI Model stats"},
+                    {"command": "boost", "description": "Deep RAM boost (trim system background apps)"},
+                    {"command": "selfoptimize", "description": "Yuki memory cleanup & garbage collection"},
+                    {"command": "screenshot", "description": "Capture & send desktop screenshot"},
+                    {"command": "lock", "description": "Lock Windows PC workstation"},
+                    {"command": "volume", "description": "Set PC volume (/volume 50 or /volume mute)"},
+                    {"command": "open", "description": "Search and open file or app on PC"},
+                    {"command": "play", "description": "Search and play video/music on PC"},
+                    {"command": "todo", "description": "Show active TODO task list"},
+                    {"command": "alarms", "description": "View active alarms and timers"},
+                    {"command": "textonly", "description": "Toggle voice notes vs fast text replies"},
+                    {"command": "textonlyoff", "description": "Re-enable voice note replies"},
+                    {"command": "clear", "description": "Reset conversation memory context"},
+                    {"command": "help", "description": "Show commands and features guide"}
+                ]
+                await tg.set_my_commands(client, bot_cmds)
+            except Exception as cmd_err:
+                print(f"[Telegram] Warning: failed to register bot commands: {cmd_err}")
             
             while not _stop_event.is_set():
                 try:
@@ -1451,18 +1482,63 @@ async def _polling_loop(token: str):
                     break
                 except httpx.TimeoutException:
                     continue
+                except (httpx.ConnectError, httpx.NetworkError) as poll_net_err:
+                    _bot_status_cache["status"] = "connecting"
+                    _bot_status_cache["error"] = f"Network reconnecting ({type(poll_net_err).__name__})"
+                    print(f"[Telegram] Network dropped during polling ({type(poll_net_err).__name__}). Reconnecting in 5s...")
+                    await asyncio.sleep(5.0)
                 except Exception as poll_err:
                     print(f"[Telegram] Polling error: {poll_err}")
                     await asyncio.sleep(3.0)
                     
     except asyncio.CancelledError:
         pass
-    except Exception as e:
-        print(f"[Telegram] Service stopped due to error: {e}")
+    except (httpx.ConnectError, httpx.NetworkError, httpx.TimeoutException) as net_err:
+        print(f"[Telegram] Network connection error ({type(net_err).__name__}): {net_err}. Will retry...")
         _bot_status_cache["status"] = "error"
-        _bot_status_cache["error"] = str(e)
+        _bot_status_cache["error"] = f"Network error: {type(net_err).__name__}"
+    except Exception as e:
+        import traceback
+        print(f"[Telegram] Service stopped due to unexpected error ({type(e).__name__}): {e}")
+        if str(e):
+            print(f"[Telegram] Error detail: {repr(e)}")
+        traceback.print_exc()
+        _bot_status_cache["status"] = "error"
+        _bot_status_cache["error"] = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
     finally:
-        _bot_status_cache["status"] = "offline"
+        if _stop_event.is_set():
+            _bot_status_cache["status"] = "offline"
+
+
+async def _resilient_polling_loop(token: str):
+    """Wraps _polling_loop with automatic retry/backoff so transient errors don't kill the bot permanently."""
+    global _bot_status_cache, _stop_event
+    retry_delay = 8.0
+    max_delay = 120.0
+    attempt = 0
+
+    while not _stop_event.is_set():
+        attempt += 1
+        if attempt > 1:
+            print(f"[Telegram] Reconnect attempt {attempt} starting...")
+        try:
+            await _polling_loop(token)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            import traceback
+            print(f"[Telegram] Resilient loop: unexpected error ({type(e).__name__}): {e}")
+            traceback.print_exc()
+
+        if _stop_event.is_set():
+            break
+
+        print(f"[Telegram] Auto-restarting in {retry_delay:.0f}s (attempt {attempt})...")
+        try:
+            await asyncio.sleep(retry_delay)
+        except asyncio.CancelledError:
+            break
+        retry_delay = min(retry_delay * 2, max_delay)
 
 
 async def start_telegram_bot(token: Optional[str] = None) -> Tuple[bool, str]:
@@ -1478,7 +1554,7 @@ async def start_telegram_bot(token: Optional[str] = None) -> Tuple[bool, str]:
     await stop_telegram_bot()
     _stop_event.clear()
     
-    _running_polling_task = asyncio.create_task(_polling_loop(active_token))
+    _running_polling_task = asyncio.create_task(_resilient_polling_loop(active_token))
     return True, "Telegram service starting..."
 
 

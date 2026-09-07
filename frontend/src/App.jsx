@@ -376,6 +376,7 @@ const App = () => {
   }, [profile?.settings]);
 
   const [audioLevel, setAudioLevel] = useState(0);
+  const [visemeLevels, setVisemeLevels] = useState(null);
   const [isThinking, setIsThinkingState] = useState(false);
   const isThinkingRef = useRef(false);
   const setIsThinking = (val) => {
@@ -819,6 +820,7 @@ const App = () => {
   } = useAudioPlayback({
     profile,
     setAudioLevel,
+    setVisemeLevels,
     setAvatarExpression,
     updateListeningStateGlobal: () => updateListeningStateRef.current?.(),
     isVoiceCommandModeRef: { get current() { return getIsVoiceCommandModeRef.current(); } },
@@ -3355,6 +3357,7 @@ const App = () => {
           <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '20px', fontFamily: 'monospace' }}>Initializing 3D Engine...</div>}>
             <AvatarViewer
               audioLevel={audioLevel}
+              visemeLevels={visemeLevels}
               isThinking={isThinking || ttsStreamActive}
               isListening={isListening}
               isWalking={isWalking}
@@ -6008,6 +6011,7 @@ const App = () => {
         <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '20px', fontFamily: 'monospace' }}>Initializing 3D Engine...</div>}>
           <AvatarViewer
             audioLevel={audioLevel}
+            visemeLevels={visemeLevels}
             isThinking={isThinking || ttsStreamActive}
             isListening={isListening}
             expression={avatarExpression}
