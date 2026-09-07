@@ -1042,8 +1042,9 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'\[TOOL_CALL\][\s\S]*?(?:\[\/TOOL_CALL\]|$)', '', text, flags=re.IGNORECASE)
 
     # 2. Strip unique animation and emotion tags (<yuki_anim:.../>, <yuki_anim eer >, [yuki_anim:...], [anim:...], etc.)
-    text = re.sub(r'[<\[\(](?:yuki_)?(?:anim|emotion)[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'<yuki_[^>]*>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?:`\s*)?[<\[\(](?:yuki_)?(?:anim|emotion)[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])(?:\s*`)?', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?:`\s*)?<yuki_[^>]*>(?:\s*`)?', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'`[\s\r\n]*`', '', text)
 
     # 3. Selective Tag Stripping (only structural elements)
     # Replaces actual HTML tags (e.g. <div>, <br/>, <span ...>) but preserves <Enter>, <Ctrl>, etc.
@@ -1065,7 +1066,11 @@ def clean_text_for_tts(text: str) -> str:
     # 4.5 Strip standalone Sources / References / Footnotes sections at the bottom from voice
     text = re.sub(r'(?i)\n+\s*(?:\*\*)?(?:sources?|references?|citations?)(?:\*\*)?:?\s*[\s\S]*$', '', text)
 
-    # 4.6 Convert inline markdown links [Label](URL) to just Label before stripping raw URLs
+    # 4.7 Strip standalone [Visual Transcript] metadata sections from voice synthesis
+    text = re.sub(r'(?i)\n*\s*\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\][\s\S]*?(?=\n\n[A-Z]|\Z)', '', text)
+    text = re.sub(r'(?i)\n*\s*\*{0,2}\[?(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\]?\*{0,2}:?[\s\S]*$', '', text)
+
+    # 4.8 Convert inline markdown links [Label](URL) to just Label before stripping raw URLs
     text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
 
     # 5. Strip URLs, File Paths, and IP addresses BEFORE numeric ITN runs

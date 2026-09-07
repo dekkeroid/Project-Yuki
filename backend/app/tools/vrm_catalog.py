@@ -162,6 +162,10 @@ def build_vrm_catalog(active_model: Optional[str] = None) -> Dict[str, Any]:
     if not active_model:
         active_model = mem.profile.get("settings", {}).get("active_vrm_model", "default.vrm")
 
+    favorite_models: List[str] = mem.profile.get("settings", {}).get("favorite_vrm_models", [])
+    if not isinstance(favorite_models, list):
+        favorite_models = []
+
     bundled_models: List[str] = []
     custom_models: List[str] = []
     file_map: Dict[str, Path] = {}
@@ -202,9 +206,17 @@ def build_vrm_catalog(active_model: Optional[str] = None) -> Dict[str, Any]:
     for name in bundled_models + custom_models:
         if name not in all_models:
             all_models.append(name)
-    if "default.vrm" in all_models:
-        all_models.remove("default.vrm")
-        all_models = ["default.vrm"] + all_models
+
+    # Sort all_models: default.vrm strictly first, then favorites, then remaining alphabetical
+    def model_sort_key(m):
+        m_lower = m.lower()
+        if m_lower == "default.vrm" or m_lower.startswith("default"):
+            return (0, m_lower)
+        if m in favorite_models:
+            return (1, m_lower)
+        return (2, m_lower)
+
+    all_models.sort(key=model_sort_key)
 
     # VRM versions
     versions: Dict[str, int] = {}
@@ -246,7 +258,8 @@ def build_vrm_catalog(active_model: Optional[str] = None) -> Dict[str, Any]:
                         "name": o_name,
                         "file": fname,
                         "version": versions.get(fname, 0),
-                        "is_active": (fname == active_model)
+                        "is_active": (fname == active_model),
+                        "is_favorite": (fname in favorite_models)
                     })
         elif isinstance(mapping, dict):
             for o_label, fname in mapping.items():
@@ -257,14 +270,17 @@ def build_vrm_catalog(active_model: Optional[str] = None) -> Dict[str, Any]:
                         "name": _format_outfit_name(o_label),
                         "file": fname,
                         "version": versions.get(fname, 0),
-                        "is_active": (fname == active_model)
+                        "is_active": (fname == active_model),
+                        "is_favorite": (fname in favorite_models)
                     })
         if outfit_list:
             is_char_active = any(o["is_active"] for o in outfit_list)
+            is_char_fav = any(o.get("is_favorite") for o in outfit_list) or (char_name in favorite_models) or (char_id in favorite_models)
             characters.append({
                 "id": char_id,
                 "name": char_name,
                 "is_active": is_char_active,
+                "is_favorite": is_char_fav,
                 "default_file": outfit_list[0]["file"],
                 "outfits": outfit_list
             })
@@ -304,14 +320,17 @@ def build_vrm_catalog(active_model: Optional[str] = None) -> Dict[str, Any]:
                     "name": oname,
                     "file": fname,
                     "version": versions.get(fname, 0),
-                    "is_active": (fname == active_model)
+                    "is_active": (fname == active_model),
+                    "is_favorite": (fname in favorite_models)
                 })
 
             is_char_active = any(o["is_active"] for o in outfit_entries)
+            is_char_fav = any(o.get("is_favorite") for o in outfit_entries) or (char_name in favorite_models) or (char_id in favorite_models)
             characters.append({
                 "id": char_id,
                 "name": char_name,
                 "is_active": is_char_active,
+                "is_favorite": is_char_fav,
                 "default_file": outfit_entries[0]["file"],
                 "outfits": outfit_entries
             })
@@ -410,14 +429,17 @@ def build_vrm_catalog(active_model: Optional[str] = None) -> Dict[str, Any]:
                     "name": oname,
                     "file": fname,
                     "version": versions.get(fname, 0),
-                    "is_active": (fname == active_model)
+                    "is_active": (fname == active_model),
+                    "is_favorite": (fname in favorite_models)
                 })
 
             is_char_active = any(o["is_active"] for o in outfit_entries)
+            is_char_fav = any(o.get("is_favorite") for o in outfit_entries) or (char_name in favorite_models) or (char_id in favorite_models)
             characters.append({
                 "id": char_id,
                 "name": char_name,
                 "is_active": is_char_active,
+                "is_favorite": is_char_fav,
                 "default_file": default_file,
                 "outfits": outfit_entries
             })
@@ -430,10 +452,12 @@ def build_vrm_catalog(active_model: Optional[str] = None) -> Dict[str, Any]:
         char_id = re.sub(r"[^a-zA-Z0-9]+", "_", stem).strip("_").lower()
         char_name = _format_display_name(stem)
         is_active = (name == active_model)
+        is_fav = (name in favorite_models) or (char_name in favorite_models) or (char_id in favorite_models)
         characters.append({
             "id": char_id,
             "name": char_name,
             "is_active": is_active,
+            "is_favorite": is_fav,
             "default_file": name,
             "outfits": [
                 {
@@ -441,20 +465,23 @@ def build_vrm_catalog(active_model: Optional[str] = None) -> Dict[str, Any]:
                     "name": "Default",
                     "file": name,
                     "version": versions.get(name, 0),
-                    "is_active": is_active
+                    "is_active": is_active,
+                    "is_favorite": (name in favorite_models)
                 }
             ]
         })
 
-    # Sort characters: Default/Active first, then multi-outfit characters, then alphabetical
+    # Sort characters: Default/Yuki strictly first, then favorites, then active, then multi-outfit, then alphabetical
     def sort_key(c):
-        if c["id"] in ("default", "yuki"):
+        if c["id"] in ("default", "yuki") or any(o["file"] == "default.vrm" for o in c.get("outfits", [])):
             return (0, c["name"].lower())
-        if c.get("is_active"):
+        if c.get("is_favorite"):
             return (1, c["name"].lower())
-        if len(c.get("outfits", [])) > 1:
+        if c.get("is_active"):
             return (2, c["name"].lower())
-        return (3, c["name"].lower())
+        if len(c.get("outfits", [])) > 1:
+            return (3, c["name"].lower())
+        return (4, c["name"].lower())
 
     characters.sort(key=sort_key)
 
@@ -477,6 +504,7 @@ def build_vrm_catalog(active_model: Optional[str] = None) -> Dict[str, Any]:
         "custom": custom_models,
         "versions": versions,
         "characters": characters,
+        "favorites": favorite_models,
         "active_character": active_char["name"] if active_char else "Default",
         "active_character_id": active_char["id"] if active_char else "default",
         "active_outfit": active_outfit["name"] if active_outfit else "Default",

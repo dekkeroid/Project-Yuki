@@ -531,9 +531,25 @@ def _mask_key(key: str) -> str:
     return "*" * (len(key) - 4) + key[-4:]
 
 
+VISION_ENTITY_ANALYSIS_INSTRUCTIONS = (
+    "\n\n[VISUAL & ENTITY IDENTIFICATION INSTRUCTIONS]:\n"
+    "1. Characters & Franchises (Anime, Manga, Games, VTubers):\n"
+    "   - If any fictional or animated characters are visible, explicitly identify their character name and the exact series/franchise/game title (e.g. Frieren from 'Frieren: Beyond Journey's End', Hu Tao from 'Genshin Impact', 2B from 'NieR:Automata').\n"
+    "   - Describe distinctive visual features (hair style/color, eyes, signature costume/uniform, accessories, weapons) to justify the identification.\n"
+    "   - If an exact match is ambiguous or fan art/OC, name the most probable character(s) and franchise along with your visual reasoning.\n"
+    "2. Celebrities & Public Figures:\n"
+    "   - If real-world people are visible (actors, musicians, streamers, athletes, tech figures, creators), identify them by name and notable profession/role.\n"
+    "   - Identify the context (movie/show scene, interview, podcast, gaming stream, broadcast).\n"
+    "3. Media, Games & Software:\n"
+    "   - Identify active games (HUD, gameplay vs menu, game title), video streams (YouTube/Twitch title, channel, video progress), active website, or application.\n"
+    "4. Text & Transcription:\n"
+    "   - Transcribe key visible titles, subtitles, chat messages, error codes/stack traces, and UI labels accurately."
+)
+
+
 def _analyze_image_file(image_path: str, prompt: str) -> str:
     """
-    Shared vision-analysis pipeline used by jarvis_analyze_image and jarvis_see_screen.
+    Shared vision-analysis pipeline used by jarvis_get_image and jarvis_see_screen.
     Sends a local image file to the configured vision model and returns its text response.
     """
     clean_path = os.path.abspath(image_path.strip('"\''))
@@ -566,13 +582,15 @@ def _analyze_image_file(image_path: str, prompt: str) -> str:
 
         url = f"{base_url}/chat/completions"
 
+        full_prompt = prompt if "[VISUAL & ENTITY IDENTIFICATION INSTRUCTIONS]" in prompt else (prompt + VISION_ENTITY_ANALYSIS_INSTRUCTIONS)
+
         payload = {
             "model": vision_model,
             "messages": [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": prompt},
+                        {"type": "text", "text": full_prompt},
                         {"type": "image_url", "image_url": {"url": data_url}}
                     ]
                 }
@@ -598,7 +616,7 @@ def _analyze_image_file(image_path: str, prompt: str) -> str:
             g_payload = {
                 "contents": [{
                     "parts": [
-                        {"text": prompt},
+                        {"text": full_prompt},
                         {"inline_data": {"mime_type": mime, "data": b64_data}}
                     ]
                 }]
@@ -618,33 +636,121 @@ def _analyze_image_file(image_path: str, prompt: str) -> str:
         return f"Vision Exception: {str(e)}"
 
 
-def jarvis_analyze_image(image_path: str, prompt: str = "Analyze and describe this image in detail.") -> str:
-    """
-    Scans and analyzes an image file on disk using a vision API or vision model.
-    Allows text-only LLMs to understand visual diagrams, screenshots, and UI mockups.
-    """
-    return _analyze_image_file(image_path, prompt)
+def _is_vision_active() -> bool:
+    from app import config
+    if getattr(config, "ACTIVE_LLM_SUPPORTS_VISION", False):
+        return True
+    try:
+        from app.agent.executor import is_vision_model
+        return is_vision_model(getattr(config, "LLM_SIMPLE_MODEL", ""))
+    except Exception:
+        return False
 
 
-def jarvis_see_screen(prompt: str, window_title: str = None) -> str:
+def jarvis_get_image(image_path: str, prompt: str = "") -> str:
+    """
+    Loads an image file from disk and attaches it directly into multimodal vision context
+    so native vision models can inspect it with their own eyes.
+    """
+    clean_path = os.path.abspath(image_path.strip('"\''))
+    if not os.path.exists(clean_path):
+        return f"Vision Error: Image path '{clean_path}' does not exist."
+
+    effective_prompt = (prompt or "Analyze and describe this image in detail.")
+    if "[VISUAL & ENTITY IDENTIFICATION INSTRUCTIONS]" not in effective_prompt:
+        effective_prompt += VISION_ENTITY_ANALYSIS_INSTRUCTIONS
+
+    from app.utils.attachment_manager import encode_image_to_base64_url
+    data_url = encode_image_to_base64_url(clean_path)
+    if not data_url:
+        return f"Vision Error: Failed to read image bytes from '{clean_path}'."
+    fname = os.path.basename(clean_path)
+    payload = {
+        "__multimodal_tool_result__": True,
+        "status": "success",
+        "tool": "jarvis_get_image",
+        "target": fname,
+        "prompt": effective_prompt,
+        "data_url": data_url,
+        "summary": f"Image '{fname}' loaded successfully. Direct in-stream vision payload attached."
+    }
+    return json.dumps(payload)
+
+
+def jarvis_analyze_image(image_path: str, prompt: str = "") -> str:
+    """
+    Scans and analyzes an image file on disk using the configured vision model
+    when running in text-only mode.
+    """
+    clean_path = os.path.abspath(image_path.strip('"\''))
+    if not os.path.exists(clean_path):
+        return f"Vision Error: Image path '{clean_path}' does not exist."
+
+    effective_prompt = (prompt or "Analyze and describe this image in detail.")
+    if "[VISUAL & ENTITY IDENTIFICATION INSTRUCTIONS]" not in effective_prompt:
+        effective_prompt += VISION_ENTITY_ANALYSIS_INSTRUCTIONS
+
+    return _analyze_image_file(clean_path, effective_prompt)
+
+
+def jarvis_see_screen(prompt: str = "", window_title: str = None) -> str:
     """
     Captures the current screen (or a specific app window via window_title) and analyzes it
-    with a vision model, returning a detailed description of what is visible including any text.
+    with a vision model, returning a detailed description of what is visible including characters,
+    celebrities, media, and text.
     """
     try:
-        from app.utils.attachment_manager import get_attachment_directory
-        from app.utils.screen_capture import grab_screen_clean
+        from app import config
+        from app.utils.screen_capture import grab_screen_clean, get_foreground_window_info
         from PIL import Image
-        import datetime
+        import io, base64
+
+        fw_info = get_foreground_window_info()
+        active_title = fw_info.get("title", "")
 
         bbox = _find_window_bbox(window_title) if window_title else None
         img = grab_screen_clean(bbox=bbox)
 
-        # Downscale very large captures to keep vision payloads token-efficient.
-        max_dim = 1280
+        # Downscale very large captures to keep vision payloads fast and token-efficient.
+        # Max dimension 1920 ensures native 1:1 pixel fidelity for standard 1080p monitors.
+        max_dim = 1920
         if max(img.size) > max_dim:
             img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
 
+        avatar_anchor = (
+            "\n\n[DESKTOP CONTEXT: Any 3D anime character/model floating on this desktop screen (with optional speech bubble, circular dock, or floating buttons) "
+            "is the AI assistant (Yuki herself). Do NOT describe, mention, identify, or list the 3D avatar under characters; focus entirely on the open applications, "
+            "games, browser windows, code, documents, and desktop content.]"
+        )
+        win_context = f"\n[ACTIVE FOREGROUND WINDOW: \"{active_title}\"]" if active_title else ""
+        base_prompt = prompt or (
+            "Analyze this screen capture in extreme detail. Describe every visible element: layout, "
+            "windows, active content, characters, and state. Then transcribe visible text verbatim, "
+            "including titles, labels, error messages, dialog boxes, and subtitles."
+        )
+        effective_prompt = base_prompt + win_context + avatar_anchor + VISION_ENTITY_ANALYSIS_INSTRUCTIONS
+
+        if _is_vision_active():
+            # In-stream native vision mode: encode in-memory with zero disk footprint and zero external HTTP round-trips!
+            buf = io.BytesIO()
+            img_to_save = img.convert("RGB") if img.mode != "RGB" else img
+            img_to_save.save(buf, format="JPEG", quality=85)
+            b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
+            data_url = f"data:image/jpeg;base64,{b64_str}"
+            payload = {
+                "__multimodal_tool_result__": True,
+                "status": "success",
+                "tool": "jarvis_see_screen",
+                "window_title": active_title,
+                "prompt": effective_prompt,
+                "data_url": data_url,
+                "summary": f"Screen capture acquired ({img.size[0]}x{img.size[1]}) for active window '{active_title or 'Desktop'}'. Direct in-stream vision payload attached."
+            }
+            return json.dumps(payload)
+
+        # Fallback for text-only LLMs using configured vision model:
+        from app.utils.attachment_manager import get_attachment_directory
+        import datetime
         target_dir = get_attachment_directory()
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         save_path = os.path.join(target_dir, f"screen_{stamp}.png")
@@ -653,16 +759,6 @@ def jarvis_see_screen(prompt: str, window_title: str = None) -> str:
     except Exception as e:
         return f"Vision Exception: Screen capture failed: {str(e)}"
 
-    avatar_anchor = (
-        "\n\n[DESKTOP CONTEXT: The 3D anime avatar visible floating on this desktop screen is the AI assistant (Yuki). "
-        "Do NOT describe, mention, or focus on the 3D avatar; focus entirely on the open applications, browser windows, code, documents, and desktop content.]"
-    )
-    base_prompt = prompt or (
-        "Analyze this screen capture in extreme detail. Describe every visible element: layout, "
-        "windows, icons, buttons, menus, colors, and state. Then transcribe ALL visible text verbatim, "
-        "including titles, labels, error messages, dialog boxes, status bars, and menu items."
-    )
-    effective_prompt = base_prompt + avatar_anchor
     try:
         result = _analyze_image_file(save_path, effective_prompt)
     finally:
@@ -677,6 +773,18 @@ def jarvis_see_screen(prompt: str, window_title: str = None) -> str:
 
 def _find_window_bbox(window_title: str):
     """Returns (left, top, right, bottom) for the first window matching window_title, or None."""
+    if not window_title:
+        return None
+
+    if str(window_title).strip().lower() in ("active", "current", "focused"):
+        try:
+            from app.utils.screen_capture import get_foreground_window_info
+            fw = get_foreground_window_info()
+            if fw.get("bbox"):
+                return fw["bbox"]
+        except Exception:
+            pass
+
     try:
         import win32gui
     except Exception:

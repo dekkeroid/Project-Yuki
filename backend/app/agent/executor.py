@@ -1,5 +1,6 @@
 import json
 import re
+import traceback
 import requests
 import aiohttp
 import asyncio
@@ -182,10 +183,16 @@ def _extract_confirmation_target(result: str) -> str:
 
 def is_vision_model(model_name: str) -> bool:
     """Helper function to dynamically detect if a resolved model supports native vision API payloads."""
+    from app import config
+    if getattr(config, "ACTIVE_LLM_SUPPORTS_VISION", False):
+        return True
     if not model_name:
         return False
     name_low = str(model_name).lower().strip()
-    vision_keywords = ("gemini", "gpt-4o", "gpt-4-turbo", "claude-3", "qwen-vl", "llava", "vision")
+    vision_keywords = (
+        "gemini", "gpt-4o", "gpt-4-turbo", "claude", "qwen", "pixtral",
+        "grok-vision", "deepseek-vl", "internvl", "minicpm", "llava", "vision"
+    )
     return any(kw in name_low for kw in vision_keywords)
 
 
@@ -310,8 +317,8 @@ class AgentExecutor:
             jarvis_query_file_db, jarvis_read_file, jarvis_create_or_edit_file,
             jarvis_replace_file_content, jarvis_list_dir_tree, jarvis_git_status,
             jarvis_system_diagnostics, jarvis_network_status, jarvis_web_scrape,
-            jarvis_window_control, jarvis_run_terminal, jarvis_analyze_image,
-            jarvis_generate_image, jarvis_see_screen
+            jarvis_window_control, jarvis_run_terminal, jarvis_get_image,
+            jarvis_analyze_image, jarvis_generate_image, jarvis_see_screen
         )
         from app.tools.canvas import jarvis_html_graphics, jarvis_html_viewer
         from app.tools.system import send_process_stdin, find_files_by_glob, jarvis_grep_files
@@ -523,9 +530,13 @@ class AgentExecutor:
                 input_text=kwargs.get("input_text") or "",
                 pid=kwargs.get("pid")
             ),
+            "jarvis_get_image": lambda **kwargs: jarvis_get_image(
+                kwargs.get("image_path") or kwargs.get("path") or "",
+                prompt=kwargs.get("prompt") or ""
+            ),
             "jarvis_analyze_image": lambda **kwargs: jarvis_analyze_image(
-                kwargs.get("image_path") or "",
-                prompt=kwargs.get("prompt") or "Analyze and describe this image in detail."
+                kwargs.get("image_path") or kwargs.get("path") or "",
+                prompt=kwargs.get("prompt") or ""
             ),
             "jarvis_generate_image": lambda **kwargs: jarvis_generate_image(
                 prompt=kwargs.get("prompt") or "",
@@ -744,7 +755,6 @@ class AgentExecutor:
     def _codegraph_set_workspace_directory(self, **kwargs) -> str:
         """Register a directory as the active coder workspace (persists to
         settings.session_directories + sets the in-process active dir)."""
-        import os
         raw = kwargs.get("path") or kwargs.get("dir") or kwargs.get("directory") or kwargs.get("cwd")
         if not raw or str(raw).strip() in ("", "None"):
             return "Error: Missing 'path' — pass the absolute directory to register as the active workspace."
@@ -814,7 +824,6 @@ class AgentExecutor:
                     v = "********" if v else ""
                 return f"Setting '{key}': {v}"
             else:
-                import json
                 safe_settings = {}
                 for k, v in settings.items():
                     if any(sec in k.lower() for sec in ("key", "token", "secret", "password")):
@@ -940,7 +949,6 @@ class AgentExecutor:
         action_args = kwargs.get("action_args") or {}
         if isinstance(action_args, str):
             try:
-                import json
                 action_args = json.loads(action_args)
             except Exception:
                 action_args = {}
@@ -957,7 +965,6 @@ class AgentExecutor:
             raw_args = kwargs.get("run_args") or action_args or {}
             if isinstance(raw_args, str):
                 try:
-                    import json
                     raw_args = json.loads(raw_args)
                 except Exception:
                     raw_args = {}
@@ -1736,10 +1743,10 @@ class AgentExecutor:
                         text_attach_snippets.append(
                             f"\n[Attached image #{len(image_content_parts)}: {fname} saved at '{spath}'. "
                             f"This image is shown inline. If the user asks about it in a future turn, re-inspect it "
-                            f"on demand via tool 'jarvis_analyze_image' with image_path='{spath}' instead of relying on memory.]"
+                            f"on demand via tool 'jarvis_get_image' with image_path='{spath}' instead of relying on memory.]"
                         )
                     else:
-                        image_attach_snippets.append(f"\n[Attached Image File: {fname} ({spath}). Call tool 'jarvis_analyze_image' with image_path='{spath}' to inspect visual content if needed.]")
+                        image_attach_snippets.append(f"\n[Attached Image File: {fname} ({spath}). Call tool 'jarvis_get_image' with image_path='{spath}' to inspect visual content if needed.]")
 
             if text_attach_snippets:
                 user_content += "\n".join(text_attach_snippets)
@@ -2552,7 +2559,7 @@ class AgentExecutor:
 
         filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic)
 
-        # Note: jarvis_analyze_image stays available for native vision models so the agent can
+        # Note: jarvis_get_image stays available for native vision models so the agent can
         # re-inspect previously attached images on demand by path in later turns.
 
         # Filter tool definition list based on per-turn coding_mode or effective_tool_mode override
@@ -2584,7 +2591,7 @@ class AgentExecutor:
                 "launch_app", "open_or_play_file", "set_system_volume", "manage_timer_stopwatch_alarms",
                 "get_system_stats", "update_user_fact", "take_screenshot", "run_terminal_command", "run_python_script",
                 "jarvis_query_file_db", "jarvis_open_or_play_file",
-                "jarvis_analyze_image", "jarvis_see_screen", "ask_user", "change_avatar_outfit"
+                "jarvis_get_image", "jarvis_analyze_image", "jarvis_see_screen", "ask_user", "change_avatar_outfit"
             }
             filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in basic_allowed]
 
@@ -3480,7 +3487,6 @@ class AgentExecutor:
                 self._build_messages, user_message, chat_history, resolved_backend, overrides, tm, attachments, active_input_audio
             )
         except Exception as e:
-            import traceback
             traceback.print_exc()
             # Preserve history even on fallback so the LLM doesn't lose conversation context!
             fallback_msgs = []
@@ -3511,6 +3517,8 @@ class AgentExecutor:
             consecutive_signature = None
             consecutive_count = 0
             last_tool_result = ""
+            pending_visual_tool_indices = []
+            pending_visual_badge_indices = []
             
             while iteration < max_iterations:
                 iteration += 1
@@ -3804,6 +3812,23 @@ class AgentExecutor:
                         except Exception:
                             pass
 
+                        is_multimodal_payload = False
+                        multimodal_data_url = None
+                        multimodal_prompt = ""
+                        multimodal_summary = ""
+
+                        if isinstance(tool_result, str) and '"__multimodal_tool_result__": true' in tool_result.lower():
+                            try:
+                                parsed_payload = json.loads(tool_result)
+                                if parsed_payload.get("__multimodal_tool_result__"):
+                                    is_multimodal_payload = True
+                                    multimodal_data_url = parsed_payload.get("data_url")
+                                    multimodal_prompt = parsed_payload.get("prompt", "")
+                                    multimodal_summary = parsed_payload.get("summary", "Image acquired for direct inspection.")
+                                    tool_result = multimodal_summary
+                            except Exception:
+                                pass
+
                         output_snippet = str(tool_result).strip()
                         if len(output_snippet) > 15000:
                             output_snippet = output_snippet[:15000] + "\n... [truncated for display]"
@@ -3819,7 +3844,7 @@ class AgentExecutor:
                         if tool_target and len(str(tool_target)) > 60:
                             tool_target = "..." + str(tool_target)[-57:]
                         target_info = f" (`{tool_target}`)" if tool_target else ""
-                        status_symbol = "❌ Error" if tool_failed else "✓ Done"
+                        status_symbol = "❌ Error" if tool_failed else ("✓ Done (Native Vision)" if is_multimodal_payload else "✓ Done")
 
                         safe_output_snippet = output_snippet.replace("```", "'''")
                         tool_badge = f"🛠️ **[{tool_name}{target_info} — {status_symbol}]**{args_block}\n```tool_output\n{safe_output_snippet}\n```"
@@ -3832,6 +3857,38 @@ class AgentExecutor:
                             "name": tool_name,
                             "content": str(tool_result)
                         })
+
+                        if is_multimodal_payload:
+                            pending_visual_tool_indices.append(len(current_messages) - 1)
+                            pending_visual_badge_indices.append(len(accumulated_response_total) - 1)
+
+                        if is_multimodal_payload and multimodal_data_url:
+                            current_messages.append({
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": (
+                                            f"[Visual Inspection Context for {tool_name}]\n"
+                                            f"{multimodal_prompt}\n\n"
+                                            "Please inspect the attached image directly using your native vision capabilities.\n"
+                                            "IMPORTANT SELF-AWARENESS: Any 3D anime character/figure floating on Master's desktop screen is YOU (Yuki herself). Do NOT describe, identify, or mention yourself in your response or visual breakdown unless Master explicitly asked about your avatar.\n"
+                                            "Structure your response in two parts:\n"
+                                            "1. Conversational Reply: Your lively, natural, spoken answer first, answering Master's request directly.\n"
+                                            "2. Visual Transcript (at the end of your response, separated by a blank line):\n"
+                                            "[Visual Transcript]\n"
+                                            "• Characters & People: <Identified anime, game, VTuber, or real persons with franchise title, or 'None'>\n"
+                                            "• Visible Apps & Games: <Open applications, game titles, active browser windows, IDE, terminal>\n"
+                                            "• Visible Text & Subtitles: <Key titles, code snippets, error traces, dialogue, or subtitles verbatim>\n"
+                                            "• Scene & Layout: <Desktop layout, active focused area, media playing, or setting>"
+                                        )
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": multimodal_data_url}
+                                    }
+                                ]
+                            })
                         yield "tool_result", tool_result, backend_used
 
                     # Emit a crash-recovery checkpoint: the running display transcript
@@ -3971,6 +4028,26 @@ class AgentExecutor:
                         llm_handled_energy = bool(self._finalize_llm_mood(mood_scrubber, user_message))
                     # React to Yuki's own words — her speech also affects her mood
                     assistant_speech = accumulated_response.strip()
+                    if pending_visual_tool_indices and assistant_speech:
+                        transcript_match = re.search(r'(?i)\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\][\s\S]*', assistant_speech)
+                        extracted_transcript = transcript_match.group(0).strip() if transcript_match else assistant_speech.strip()
+                        for _v_idx in pending_visual_tool_indices:
+                            if 0 <= _v_idx < len(current_messages):
+                                _curr_c = str(current_messages[_v_idx].get("content", ""))
+                                if "[Visual Transcript]" not in _curr_c and "[visual transcript]" not in _curr_c.lower():
+                                    current_messages[_v_idx]["content"] = f"{_curr_c}\n\n{extracted_transcript}"
+                        if pending_visual_badge_indices:
+                            for _b_idx in pending_visual_badge_indices:
+                                if 0 <= _b_idx < len(accumulated_response_total):
+                                    orig_badge = accumulated_response_total[_b_idx]
+                                    accumulated_response_total[_b_idx] = re.sub(
+                                        r'```tool_output\n[\s\S]*?```',
+                                        f'```tool_output\n{extracted_transcript}\n```',
+                                        orig_badge
+                                    )
+                            pending_visual_badge_indices.clear()
+                        pending_visual_tool_indices.clear()
+
                     if assistant_speech:
                         try:
                             react_scope = "physical" if mood_llm_mode else "full"
@@ -4034,6 +4111,26 @@ class AgentExecutor:
             if wrap_response.strip():
                 accumulated_response_total.append(wrap_response.strip())
             wrap_speech = wrap_response.strip()
+            if pending_visual_tool_indices and wrap_speech:
+                transcript_match = re.search(r'(?i)\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\][\s\S]*', wrap_speech)
+                extracted_transcript = transcript_match.group(0).strip() if transcript_match else wrap_speech.strip()
+                for _v_idx in pending_visual_tool_indices:
+                    if 0 <= _v_idx < len(current_messages):
+                        _curr_c = str(current_messages[_v_idx].get("content", ""))
+                        if "[Visual Transcript]" not in _curr_c and "[visual transcript]" not in _curr_c.lower():
+                            current_messages[_v_idx]["content"] = f"{_curr_c}\n\n{extracted_transcript}"
+                if pending_visual_badge_indices:
+                    for _b_idx in pending_visual_badge_indices:
+                        if 0 <= _b_idx < len(accumulated_response_total):
+                            orig_badge = accumulated_response_total[_b_idx]
+                            accumulated_response_total[_b_idx] = re.sub(
+                                r'```tool_output\n[\s\S]*?```',
+                                f'```tool_output\n{extracted_transcript}\n```',
+                                orig_badge
+                            )
+                    pending_visual_badge_indices.clear()
+                pending_visual_tool_indices.clear()
+
             if wrap_speech:
                 try:
                     react_scope = "physical" if mood_llm_mode else "full"
