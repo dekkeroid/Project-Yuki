@@ -350,6 +350,14 @@ class PresenceEngine:
         else:
             self.sleep_state = new_state
 
+    def get_system_idle_seconds(self) -> float:
+        """Returns the OS user idle time in seconds using Windows LastInputInfo API."""
+        try:
+            from app.memory.crawler import get_system_idle_time
+            return float(get_system_idle_time())
+        except Exception:
+            return 0.0
+
     def step_idle(self, delta_seconds: float = 60.0, current_energy: float = 55.0) -> Optional[str]:
         """
         Accumulates or pauses subconscious state drifts during idle periods.
@@ -357,6 +365,7 @@ class PresenceEngine:
         Evaluates natural recovery waking when energy reaches healthy level (>= 65).
         """
         now = time.time()
+        self.user_idle_seconds = self.get_system_idle_seconds()
 
         # Update active window, process, and dwell time
         curr_win, curr_proc = _get_current_active_window()
@@ -375,7 +384,7 @@ class PresenceEngine:
         energy_threshold = float(getattr(config, "COMPANION_NAP_ENERGY_PCT", 30))
         if self.sleep_state in ("active", "idle") and current_energy <= energy_threshold and elapsed_since_chat >= silence_threshold:
             print(f"[Presence] Energy is low ({current_energy}/100 <= {energy_threshold}) after {int(elapsed_since_chat)}s silence. Yuki is nodding off for a nap.")
-            self.set_sleep_state("napping", idle_seconds=silence_threshold, is_nap=True)
+            self.set_sleep_state("napping", idle_seconds=0.0, is_nap=True)
             self.boredom = 0.0
             return "started_nap"
 
@@ -383,9 +392,11 @@ class PresenceEngine:
         # If napping and energy has recharged to healthy level (>= 65) after at least 3 minutes of nap:
         nap_duration = max(0.0, now - (self.sleep_started_at or now))
         if self.sleep_state == "napping" and current_energy >= 65.0 and nap_duration >= 180.0:
-            if self.user_idle_seconds >= 180.0:
-                print(f"[Presence] Yuki recharged energy ({current_energy}/100), but Master is away from PC. Seamlessly transitioning from nap to full sleep.")
-                self.set_sleep_state("sleeping", idle_seconds=self.user_idle_seconds, is_nap=False)
+            os_idle = self.get_system_idle_seconds()
+            desk_sleep_sec = getattr(config, "DESK_SLEEP_IDLE_MIN", 10) * 60.0
+            if os_idle >= desk_sleep_sec and not is_media_or_audio_playing():
+                print(f"[Presence] Yuki recharged energy ({current_energy}/100), but Master is away from PC ({int(os_idle)}s idle). Seamlessly transitioning from nap to full sleep.")
+                self.set_sleep_state("sleeping", idle_seconds=os_idle, is_nap=False)
                 return None
             print(f"[Presence] Yuki has recharged energy to {current_energy}/100! Waking up naturally refreshed from nap.")
             self.set_sleep_state("waking", is_nap=True)
@@ -404,12 +415,17 @@ class PresenceEngine:
         """Returns live presence metrics for WebSocket broadcasts & UI gauges."""
         now = time.time()
         win_info = format_active_window(self.active_window_title, self.active_window_proc)
+        media_playing = is_media_or_audio_playing()
+        active_media = get_active_background_media(self.active_window_title) if media_playing else ""
         return {
             "boredom": round(self.boredom, 2),
             "boredom_pct": int(round(self.boredom * 100)),
             "sleep_state": self.sleep_state,
             "is_nap": self.is_nap,
             "silence_seconds": int(max(0.0, now - self.last_interaction_time)),
+            "user_idle_seconds": int(self.get_system_idle_seconds()),
+            "is_media_playing": media_playing,
+            "active_media": active_media,
             "active_window": self.active_window_title,
             "active_window_app": win_info.get("app", ""),
             "active_window_doc": win_info.get("doc", ""),
@@ -506,7 +522,7 @@ class PresenceEngine:
 presence_manager = PresenceEngine()
 
 
-def get_versatile_template_nudge(active_window: str = "", dwell_mins: int = 0, boredom: float = 0.8, energy: float = 50.0) -> Tuple[str, str]:
+def get_versatile_template_nudge(active_window: str = "", dwell_mins: int = 0, boredom: float = 0.8, energy: float = 50.0, user_name: str = "") -> Tuple[str, str]:
     """
     Generates a natural, spoken-only nudge without asterisks or roleplay stage directions.
     Selects from versatile candidates based on foreground application, dwell duration, time of day, and boredom.
@@ -523,65 +539,68 @@ def get_versatile_template_nudge(active_window: str = "", dwell_mins: int = 0, b
         clean_win = win_info.get("app") or active_window[:24]
         win_lower = f"{win_info.get('app', '')} {win_info.get('doc', '')} {active_window}".lower()
 
+    name_clean = user_name.strip() if user_name and user_name.strip().lower() != "master" else ""
+    tag = f" {name_clean}" if name_clean else ""
+
     candidates = []
 
     # 1. Late Night Awareness (00:00 - 05:00)
     if is_late_night:
         candidates.extend([
-            ("Psst, Master... it's getting really late. Aren't you sleepy yet?", "peer"),
+            (f"Psst{',' + tag if tag else ''}... it's getting really late. Aren't you sleepy yet?", "peer"),
             ("Mmh... it's the middle of the night. Make sure you don't overwork yourself.", "peer"),
-            ("Still awake? Your sleep schedule is completely upside down, Master.", "pout"),
+            (f"Still awake? Your sleep schedule is completely upside down{tag}.", "pout"),
             ("Hey... don't stay up all night, okay? Even you need some sleep.", "wave")
         ])
 
     # 2. Application Category Awareness
     if any(k in win_lower for k in ("visual studio", "code", "cursor", "pycharm", "sublime", "intellij", "nvim", "vim", "dev")):
         candidates.extend([
-            ("Still wrestling with that code, Master? Remember to blink sometimes!", "peer"),
+            (f"Still wrestling with that code{tag}? Remember to blink sometimes!", "peer"),
             ("Psst... don't forget to take a sip of water while you're programming.", "peer"),
             ("You've been staring at that syntax for ages now. Take a quick breather!", "pout"),
-            ("Hey, Master... don't let the compiler errors drive you crazy.", "wave")
+            (f"Hey{tag}... don't let the compiler errors drive you crazy.", "wave")
         ])
     elif any(k in win_lower for k in ("chrome", "firefox", "edge", "brave", "safari", "opera", "browser")):
         candidates.extend([
-            ("Down another internet rabbit hole, Master?", "peer"),
+            (f"Down another internet rabbit hole{tag}?", "peer"),
             ("Find anything interesting to read over there?", "peer"),
             ("Psst... how many tabs do you have open right now?", "pout"),
-            ("Don't get too lost in reading, Master. Remember to stretch your neck!", "peer")
+            (f"Don't get too lost in reading{tag}. Remember to stretch your neck!", "peer")
         ])
     elif any(k in win_lower for k in ("blender", "figma", "photoshop", "premiere", "after effects", "unity", "unreal", "illustrator")):
         candidates.extend([
             ("Working on something creative? Don't forget to shake out your hands.", "peer"),
-            ("That looks super detailed, Master. Take a second to rest your eyes.", "peer"),
+            (f"That looks super detailed{tag}. Take a second to rest your eyes.", "peer"),
             ("Uwah... you've been focused on that design for a long time.", "pout")
         ])
     elif any(k in win_lower for k in ("powershell", "cmd", "terminal", "bash", "zsh", "command prompt")):
         candidates.extend([
-            ("Lots of commands flying by... everything compiling alright, Master?", "peer"),
+            (f"Lots of commands flying by... everything compiling alright{tag}?", "peer"),
             ("Psst... don't let the terminal logs drive you crazy.", "pout")
         ])
     elif clean_win and dwell_mins >= 30:
         candidates.extend([
             (f"Still busy with {clean_win}? Don't forget to take a stretch break!", "peer"),
             (f"Psst... you've been working on {clean_win} for a while. Everything going smoothly?", "peer"),
-            (f"Hey, Master... make sure you pause and stretch your legs soon.", "wave")
+            (f"Hey{tag}... make sure you pause and stretch your legs soon.", "wave")
         ])
 
     # 3. High Boredom Candidates (> 88%)
     if boredom >= 0.88:
         candidates.extend([
-            ("Mmh... it's so quiet. Did you get lost in your work, Master?", "pout"),
-            ("Psst... Master. Say something to me whenever you get a break.", "pout"),
+            (f"Mmh... it's so quiet. Did you get lost in your work{tag}?", "pout"),
+            ("Psst... say something to me whenever you get a break.", "pout"),
             ("Uwah... I'm so bored sitting here. How much longer are you working?", "pout"),
-            ("Hey, Master... I'm still right here beside you, you know.", "wave")
+            (f"Hey{tag}... I'm still right here beside you, you know.", "wave")
         ])
 
     # 4. General Caring Companion Fallbacks
     candidates.extend([
-        ("Psst, Master... taking a break anytime soon?", "peer"),
-        ("Mmh... don't forget to drink some water, Master.", "wave"),
+        (f"Psst{',' + tag if tag else ''}... taking a break anytime soon?", "peer"),
+        (f"Mmh... don't forget to drink some water{tag}.", "wave"),
         ("Hey... just checking in on you. Don't push yourself too hard.", "wave"),
-        ("You've been super focused today, Master. Remember to take care of yourself.", "peer")
+        (f"You've been super focused today{tag}. Remember to take care of yourself.", "peer")
     ])
 
     return random.choice(candidates)

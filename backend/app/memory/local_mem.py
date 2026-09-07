@@ -72,6 +72,7 @@ class MemoryManager:
                 "crawler_paused": False,
                 "tagger_paused": True,
                 "active_vrm_model": "default.vrm",
+                "favorite_vrm_models": [],
                 "start_with_last_avatar_size": True,
                 "enable_vector_memory": False,
                 "embedding_model": "",
@@ -145,6 +146,7 @@ class MemoryManager:
                 "history_summary_position": "oldest",
                 "llm_summary_model": "",
                 "llm_vision_model": "",
+                "active_llm_supports_vision": False,
                 "llm_image_gen_model": "",
                 "use_free_image_gen": False,
                 "image_gen_provider": "pollinations",
@@ -170,7 +172,7 @@ class MemoryManager:
                 "proactive_nudge_include_screen": False,
                 "proactive_nudge_quiet_min": 30,
                 "proactive_nudge_boredom_pct": 80,
-                "desk_sleep_idle_min": 3,
+                "desk_sleep_idle_min": 10,
                 "companion_nap_silence_min": 5,
                 "companion_nap_energy_pct": 30,
                 "disabled_animations": []
@@ -256,6 +258,7 @@ class MemoryManager:
                 config.LLM_CODER_BASE_URL = data["settings"].get("llm_coder_base_url", getattr(config, "LLM_CODER_BASE_URL", ""))
                 config.LLM_CODER_MODEL = data["settings"].get("llm_coder_model", getattr(config, "LLM_CODER_MODEL", ""))
                 config.LLM_VISION_MODEL = data["settings"].get("llm_vision_model", getattr(config, "LLM_VISION_MODEL", ""))
+                config.ACTIVE_LLM_SUPPORTS_VISION = bool(data["settings"].get("active_llm_supports_vision", getattr(config, "ACTIVE_LLM_SUPPORTS_VISION", False)))
                 config.LLM_IMAGE_GEN_MODEL = data["settings"].get("llm_image_gen_model", getattr(config, "LLM_IMAGE_GEN_MODEL", ""))
                 config.USE_FREE_IMAGE_GEN = bool(data["settings"].get("use_free_image_gen", getattr(config, "USE_FREE_IMAGE_GEN", False)))
                 config.IMAGE_GEN_PROVIDER = str(data["settings"].get("image_gen_provider", getattr(config, "IMAGE_GEN_PROVIDER", "pollinations"))).strip().lower()
@@ -282,11 +285,13 @@ class MemoryManager:
                 config.PROACTIVE_NUDGE_INCLUDE_SCREEN = bool(data["settings"].get("proactive_nudge_include_screen", getattr(config, "PROACTIVE_NUDGE_INCLUDE_SCREEN", False)))
                 config.PROACTIVE_NUDGE_QUIET_MIN = int(data["settings"].get("proactive_nudge_quiet_min", getattr(config, "PROACTIVE_NUDGE_QUIET_MIN", 30)))
                 config.PROACTIVE_NUDGE_BOREDOM_PCT = int(data["settings"].get("proactive_nudge_boredom_pct", getattr(config, "PROACTIVE_NUDGE_BOREDOM_PCT", 80)))
-                config.DESK_SLEEP_IDLE_MIN = int(data["settings"].get("desk_sleep_idle_min", getattr(config, "DESK_SLEEP_IDLE_MIN", 3)))
+                config.DESK_SLEEP_IDLE_MIN = int(data["settings"].get("desk_sleep_idle_min", getattr(config, "DESK_SLEEP_IDLE_MIN", 10)))
                 config.COMPANION_NAP_SILENCE_MIN = int(data["settings"].get("companion_nap_silence_min", getattr(config, "COMPANION_NAP_SILENCE_MIN", 5)))
                 config.COMPANION_NAP_ENERGY_PCT = int(data["settings"].get("companion_nap_energy_pct", getattr(config, "COMPANION_NAP_ENERGY_PCT", 30)))
                 config.LLM_MODEL = data["settings"].get("llm_model", config.LLM_MODEL)
                 config.START_WITH_LAST_AVATAR_SIZE = bool(data["settings"].get("start_with_last_avatar_size", getattr(config, "START_WITH_LAST_AVATAR_SIZE", True)))
+                config.ACTIVE_VRM_MODEL = str(data["settings"].get("active_vrm_model", getattr(config, "ACTIVE_VRM_MODEL", "default.vrm"))).strip()
+                config.FAVORITE_VRM_MODELS = list(data["settings"].get("favorite_vrm_models", getattr(config, "FAVORITE_VRM_MODELS", [])))
                 config.ENABLE_VECTOR_MEMORY = bool(data["settings"].get("enable_vector_memory", getattr(config, "ENABLE_VECTOR_MEMORY", False)))
                 config.EMBEDDING_MODEL = str(data["settings"].get("embedding_model", getattr(config, "EMBEDDING_MODEL", ""))).strip()
                 config.EMBEDDING_USE_LOCAL = bool(data["settings"].get("embedding_use_local", getattr(config, "EMBEDDING_USE_LOCAL", False)))
@@ -431,6 +436,17 @@ class MemoryManager:
         items = covered.get("items", [])
         return items if isinstance(items, list) else []
 
+    def has_appended_extra_news_today(self) -> bool:
+        """Returns True if the one-time extra news batch has already been appended today."""
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        return self.profile.get("extra_news_appended_date") == today_str
+
+    def record_extra_news_appended(self):
+        """Records that the one-time extra news batch was appended today."""
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        self.profile["extra_news_appended_date"] = today_str
+        self._save_profile()
+
     def get_absence_duration_seconds(self) -> float:
         """Returns elapsed seconds since last active/shutdown session."""
         now = time.time()
@@ -555,6 +571,10 @@ class MemoryManager:
             config.AED_FAST_REFLEX = bool(value)
         elif key == "listen_on_startup":
             config.LISTEN_ON_STARTUP = bool(value)
+        elif key == "active_vrm_model":
+            config.ACTIVE_VRM_MODEL = str(value).strip()
+        elif key == "favorite_vrm_models":
+            config.FAVORITE_VRM_MODELS = list(value) if isinstance(value, list) else []
         elif key == "llm_speech_input_enabled":
             config.LLM_SPEECH_INPUT_ENABLED = bool(value)
         elif key == "tts_voice":
@@ -706,6 +726,8 @@ class MemoryManager:
             config.ADAPTIVE_SILENCE_CUTOFF = bool(value)
         elif key == "llm_vision_model":
             config.LLM_VISION_MODEL = str(value).strip()
+        elif key == "active_llm_supports_vision":
+            config.ACTIVE_LLM_SUPPORTS_VISION = bool(value)
         elif key == "llm_image_gen_model":
             config.LLM_IMAGE_GEN_MODEL = str(value).strip()
         elif key == "use_free_image_gen":

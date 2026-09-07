@@ -150,12 +150,8 @@ const AvatarViewer = ({
   }, [sleepState]);
 
   useEffect(() => {
-    if (isThinking) {
-      if (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping') {
-        sleepStateRef.current = 'active';
-        sleepProgressRef.current = 0.0;
-      }
-    }
+    // If sleepState is sleeping or napping, background thoughts or processing must not
+    // snap the avatar awake. Waking is handled explicitly by user interaction or waking state.
   }, [isThinking]);
 
   useEffect(() => {
@@ -1468,13 +1464,26 @@ const AvatarViewer = ({
         return;
       }
 
-      if (event.button === 0 && isHoveringCharacter) {
+      const clientX = event.clientX;
+      const clientY = event.clientY;
+      const currentWidth = isElectron ? window.innerWidth : (containerRef.current ? containerRef.current.clientWidth : ELECTRON_WINDOW_WIDTH);
+      const currentHeight = isElectron ? window.innerHeight : (containerRef.current ? containerRef.current.clientHeight : ELECTRON_WINDOW_HEIGHT);
+      const bodyWidthLimit = 110 * scaleRef.current;
+      const isDirectHit = (
+        clientX >= (currentWidth / 2 - bodyWidthLimit) &&
+        clientX <= (currentWidth / 2 + bodyWidthLimit) &&
+        clientY >= (40 * scaleRef.current) &&
+        clientY <= currentHeight
+      );
+
+      if (event.button === 0 && (isHoveringCharacter || isDirectHit)) {
         const sleeping = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping');
         if (sleeping && typeof onWakeCharacterRef.current === 'function') {
           console.log("[Presence] User clicked/touched sleeping avatar. Triggering immediate wake up.");
           sleepStateRef.current = 'active';
           sleepProgressRef.current = 0.0;
           onWakeCharacterRef.current();
+          return;
         }
       }
 
@@ -1943,7 +1952,7 @@ const AvatarViewer = ({
         }
 
         // Check for inactivity to trigger procedural idle animations
-        const isActive = (audioLevelRef.current > 0.015) || isThinkingRef.current || isListeningRef.current || isWalkingRef.current || expressionRef.current !== 'neutral' || isDragging || (dragStateProgress > 0);
+        const isActive = (audioLevelRef.current > 0.015) || isThinkingRef.current || isListeningRef.current || isWalkingRef.current || isDragging || (dragStateProgress > 0);
 
         if (startGreetingRef.current) {
           startGreetingRef.current = false;
@@ -1962,9 +1971,11 @@ const AvatarViewer = ({
           startCustomAnimationRef.current = null;
 
           if (!disabledAnimationsRef.current.includes(customName)) {
-            // Guard: If sleeping/napping, do not run the temporary 5s nod-off gesture that startles awake
-            if (customName === 'napping' && (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping')) {
-              // Procedural sleeping already maintains sleeping pose
+            const isCurrentlyAsleep = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping');
+            // Guard: If sleeping/napping, do not interrupt sleep with arbitrary gestures (like peer, wave, grooving, etc.)
+            // Only allow explicit wake-up gestures (like 'yawning' or 'waking')
+            if (isCurrentlyAsleep && customName !== 'yawning' && customName !== 'waking') {
+              // Procedural sleeping already maintains peaceful resting pose; ignore non-waking animations
             } else {
               idleAnimState = customName;
               const matchingAnim = ANIMATIONS.find(a => a.name === customName);
@@ -2209,17 +2220,26 @@ const AvatarViewer = ({
             extraMouthAa = (0.22 + Math.sin(time * 20.0) * 0.12) * easeVal;
             neckOffsetX = 0.08 * easeVal;
           } else if (idleAnimState === 'napping') {
-            if (t < 0.7) {
-              const droopT = t / 0.7;
-              const droopEase = droopT * droopT;
-              extraBlink = 0.85 * droopEase;
-              neckOffsetX = -0.25 * droopEase;
-              spineOffsetX = 0.04 * droopEase;
+            const isCurrentlyAsleep = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping');
+            if (isCurrentlyAsleep) {
+              // During continuous companion nap, stay in peaceful resting pose without bounce
+              neckOffsetX = -0.22 * easeVal;
+              spineOffsetX = 0.04 * easeVal;
+              extraBlink = 0.95 * easeVal;
             } else {
-              const wakeT = (t - 0.7) / 0.3;
-              const bounce = Math.exp(-wakeT * 5.0) * Math.sin(wakeT * Math.PI * 2.0);
-              neckOffsetX = 0.15 * bounce;
-              extraBlink = 0;
+              // One-off casual animation (/ani-nap): nod off and startle awake
+              if (t < 0.7) {
+                const droopT = t / 0.7;
+                const droopEase = droopT * droopT;
+                extraBlink = 0.85 * droopEase;
+                neckOffsetX = -0.25 * droopEase;
+                spineOffsetX = 0.04 * droopEase;
+              } else {
+                const wakeT = (t - 0.7) / 0.3;
+                const bounce = Math.exp(-wakeT * 5.0) * Math.sin(wakeT * Math.PI * 2.0);
+                neckOffsetX = 0.15 * bounce;
+                extraBlink = 0;
+              }
             }
           }
         }
