@@ -68,6 +68,7 @@ LLM_CODER_BASE_URL = os.environ.get("LLM_CODER_BASE_URL", "")
 LLM_CODER_API_KEY = os.environ.get("LLM_CODER_API_KEY", "")
 LLM_CODER_MODEL = os.environ.get("LLM_CODER_MODEL", "")
 LLM_VISION_MODEL = os.environ.get("LLM_VISION_MODEL", "")
+ACTIVE_LLM_SUPPORTS_VISION = os.environ.get("ACTIVE_LLM_SUPPORTS_VISION", "false").lower() in ("true", "1")
 LLM_IMAGE_GEN_MODEL = os.environ.get("LLM_IMAGE_GEN_MODEL", "")
 USE_FREE_IMAGE_GEN = os.environ.get("USE_FREE_IMAGE_GEN", "false").lower() in ("true", "1")
 IMAGE_GEN_PROVIDER = os.environ.get("IMAGE_GEN_PROVIDER", "pollinations").strip().lower()
@@ -279,9 +280,14 @@ PROACTIVE_NUDGE_QUIET_MIN = int(os.environ.get("PROACTIVE_NUDGE_QUIET_MIN", "30"
 PROACTIVE_NUDGE_BOREDOM_PCT = int(os.environ.get("PROACTIVE_NUDGE_BOREDOM_PCT", "80"))
 
 # Desk Sleep & Companion Nap Timers
-DESK_SLEEP_IDLE_MIN = int(os.environ.get("DESK_SLEEP_IDLE_MIN", "3"))
+DESK_SLEEP_IDLE_MIN = int(os.environ.get("DESK_SLEEP_IDLE_MIN", "10"))
 COMPANION_NAP_SILENCE_MIN = int(os.environ.get("COMPANION_NAP_SILENCE_MIN", "5"))
 COMPANION_NAP_ENERGY_PCT = int(os.environ.get("COMPANION_NAP_ENERGY_PCT", "30"))
+
+# Avatar & VRM Models
+ACTIVE_VRM_MODEL = os.environ.get("ACTIVE_VRM_MODEL", "default.vrm")
+FAVORITE_VRM_MODELS: list = []
+
 
 
 

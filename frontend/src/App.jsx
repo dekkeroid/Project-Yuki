@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Suspense, lazy } from 'react';
-import { Heart, ShoppingBag, Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText } from 'lucide-react';
+import { Heart, ShoppingBag, Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText, Star } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 import { useBackendSocket } from './hooks/useBackendSocket';
@@ -969,11 +969,11 @@ const App = () => {
     if (msg.type === 'presence_update') {
       if (msg.presence) {
         setPresenceState(msg.presence);
-        if (msg.presence.sleep_state === 'napping') {
+        if (msg.presence.sleep_state === 'napping' || msg.presence.sleep_state === 'sleeping') {
           if (!isSleepingRef.current) {
             isSleepingRef.current = true;
-            sleepTypeRef.current = 'napping';
-            sleepStartedAtRef.current = Date.now() - (300 * 1000);
+            sleepTypeRef.current = msg.presence.sleep_state === 'napping' ? 'napping' : 'inactivity';
+            sleepStartedAtRef.current = Date.now() - ((msg.presence.idle_seconds || 300) * 1000);
           }
         } else if (msg.presence.sleep_state === 'active' || msg.presence.sleep_state === 'idle') {
           isSleepingRef.current = false;
@@ -1973,8 +1973,9 @@ const App = () => {
   }, []);
 
   const handleWakeCharacter = useCallback(() => {
-    if (!isSleepingRef.current) return;
-    const isNap = sleepTypeRef.current === 'napping';
+    const isSleeping = isSleepingRef.current || presenceState.sleep_state === 'sleeping' || presenceState.sleep_state === 'napping';
+    if (!isSleeping) return;
+    const isNap = sleepTypeRef.current === 'napping' || presenceState.sleep_state === 'napping';
     isSleepingRef.current = false;
     sleepTypeRef.current = null;
     setPresenceState(prev => ({ ...prev, sleep_state: 'waking' }));
@@ -2013,16 +2014,22 @@ const App = () => {
       setMessages((prev) => [...prev, { role: 'assistant', content: `*wakes up* ${fallbackMsg}` }]);
       speakSystemMessage(fallbackMsg, 'relaxed');
     }
-  }, [muteVoice, profile?.settings?.no_llm_mode]);
+  }, [muteVoice, profile?.settings?.no_llm_mode, presenceState.sleep_state]);
 
   useEffect(() => {
-    const deskSleepSeconds = (profile?.settings?.desk_sleep_idle_min ?? 3) * 60;
-    // Continuous inactivity initiates sleep state
+    const deskSleepSeconds = (profile?.settings?.desk_sleep_idle_min ?? 10) * 60;
+    // Continuous inactivity initiates sleep state, UNLESS media is actively playing
     if (systemIdleTime >= deskSleepSeconds) {
+      // Guard: If media/audio is actively playing (e.g. YouTube, Spotify, VLC),
+      // the user is watching or listening, so do NOT enter inactivity sleep!
+      if (presenceState.is_media_playing) {
+        return;
+      }
+
       if (!isSleepingRef.current) {
         isSleepingRef.current = true;
         sleepTypeRef.current = 'inactivity';
-        // Back-date sleep start by systemIdleTime so the initial 3m threshold is included in nap duration
+        // Back-date sleep start by systemIdleTime so the initial threshold is included in nap duration
         sleepStartedAtRef.current = Date.now() - (systemIdleTime * 1000);
         if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
           socketRef.current.send(JSON.stringify({
@@ -2031,9 +2038,9 @@ const App = () => {
             idle_seconds: systemIdleTime
           }));
         }
-      } else if (sleepTypeRef.current === 'napping') {
-        // She was already taking a companion nap, and now user has also stepped away from desk for 3+ mins!
-        // Seamlessly upgrade napping to full inactivity sleep so user return will wake her up:
+      } else if (sleepTypeRef.current === 'napping' && !presenceState.is_media_playing) {
+        // Only if NO media is playing and Master has stepped away for 10+ mins,
+        // seamlessly transition companion nap to inactivity sleep
         sleepTypeRef.current = 'inactivity';
         if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
           socketRef.current.send(JSON.stringify({
@@ -2046,7 +2053,7 @@ const App = () => {
     } else if (systemIdleTime === 0 && isSleepingRef.current) {
       // If she is in a companion nap while the user is actively working,
       // moving mouse or typing in other apps should NOT trigger 'Master returned' wake greeting!
-      if (sleepTypeRef.current === 'napping') {
+      if (sleepTypeRef.current === 'napping' || presenceState.sleep_state === 'napping') {
         return;
       }
 
@@ -2092,7 +2099,7 @@ const App = () => {
         speakSystemMessage(fallbackWakeMsg, 'relaxed');
       }
     }
-  }, [systemIdleTime, muteVoice, profile?.settings?.no_llm_mode, profile?.settings?.desk_sleep_idle_min]);
+  }, [systemIdleTime, muteVoice, profile?.settings?.no_llm_mode, profile?.settings?.desk_sleep_idle_min, presenceState.is_media_playing, presenceState.sleep_state]);
 
   // Internet connectivity polling — detects drops/recovery within 1-2 seconds
   useEffect(() => {
@@ -2867,7 +2874,7 @@ const App = () => {
             return;
           }
           responseText = matchingAnim.responseText;
-          const isNapCmd = matchingAnim.name === 'napping' || cmd === '/nap' || cmd === '/ani-nap';
+          const isNapCmd = cmd === '/nap';
           if (!isNapCmd) {
             setCustomAnimation({
               name: matchingAnim.name,
@@ -3281,6 +3288,18 @@ const App = () => {
     } catch (e) {
       console.warn('Could not delete VRM model:', e);
     }
+  };
+
+  const handleToggleFavoriteVrm = (modelName) => {
+    if (!modelName) return;
+    const currentFavs = Array.isArray(profile.settings?.favorite_vrm_models) ? profile.settings.favorite_vrm_models : [];
+    let updatedFavs;
+    if (currentFavs.includes(modelName)) {
+      updatedFavs = currentFavs.filter(m => m !== modelName);
+    } else {
+      updatedFavs = [...currentFavs, modelName];
+    }
+    handleUpdateSetting('favorite_vrm_models', updatedFavs);
   };
 
   // Initial mounts
@@ -4878,18 +4897,63 @@ const App = () => {
                           options={vrmModels}
                           versions={vrmVersions}
                           characters={vrmCharacters}
+                          favorites={profile.settings?.favorite_vrm_models || []}
+                          onToggleFavorite={handleToggleFavoriteVrm}
                         />
                         {vrmCustomModels.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
                             {vrmCustomModels.map((name) => {
                               const ver = vrmVersions[name] !== undefined ? vrmVersions[name] : 0;
+                              const isSelected = (profile.settings?.active_vrm_model || 'default.vrm') === name;
+                              const isFav = (profile.settings?.favorite_vrm_models || []).includes(name);
                               return (
-                                <span key={name} style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: '6px',
-                                  padding: '3px 8px', borderRadius: '6px', fontSize: '0.68rem',
-                                  background: 'rgba(15, 23, 42, 0.75)', border: '1px solid rgba(167, 139, 250, 0.25)',
-                                  color: '#e2e8f0', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
-                                }}>
+                                <span
+                                  key={name}
+                                  onClick={() => handleUpdateSetting('active_vrm_model', name)}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.68rem',
+                                    background: isSelected ? 'rgba(167, 139, 250, 0.28)' : 'rgba(15, 23, 42, 0.75)',
+                                    border: isSelected ? '1.5px solid #a78bfa' : '1px solid rgba(167, 139, 250, 0.25)',
+                                    color: isSelected ? '#ffffff' : '#e2e8f0',
+                                    boxShadow: isSelected ? '0 0 10px rgba(167, 139, 250, 0.35)' : '0 2px 8px rgba(0, 0, 0, 0.3)',
+                                    cursor: 'pointer',
+                                    userSelect: 'none',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  title={`Click to load ${name.replace('.vrm', '')}`}
+                                >
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleFavoriteVrm(name);
+                                    }}
+                                    title={isFav ? "Remove from favorites" : "Add to favorites"}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      cursor: 'pointer',
+                                      color: isFav ? '#fbbf24' : 'rgba(255, 255, 255, 0.25)',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (!isFav) e.currentTarget.style.color = '#fbbf24';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (!isFav) e.currentTarget.style.color = 'rgba(255, 255, 255, 0.25)';
+                                    }}
+                                  >
+                                    <Star
+                                      size={11}
+                                      style={{
+                                        fill: isFav ? '#fbbf24' : 'none'
+                                      }}
+                                    />
+                                  </span>
                                   <span>{name.replace('.vrm', '')}</span>
                                   {ver === 1 ? (
                                     <span style={{ fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', background: 'rgba(34, 197, 94, 0.22)', color: '#6ee7b7', border: '1px solid rgba(52, 211, 153, 0.45)' }}>
@@ -4900,13 +4964,19 @@ const App = () => {
                                       VRM 0.x
                                     </span>
                                   )}
-                                  <button onClick={() => handleVrmDelete(name)} style={{
-                                    background: 'none', border: 'none', color: '#f87171', cursor: 'pointer',
-                                    padding: 0, fontSize: '0.65rem', display: 'flex', alignItems: 'center', opacity: 0.7,
-                                    transition: 'opacity 0.2s'
-                                  }}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleVrmDelete(name);
+                                    }}
+                                    style={{
+                                      background: 'none', border: 'none', color: '#f87171', cursor: 'pointer',
+                                      padding: 0, fontSize: '0.65rem', display: 'flex', alignItems: 'center', opacity: 0.7,
+                                      transition: 'opacity 0.2s'
+                                    }}
                                     onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
                                     onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+                                    title="Delete custom model"
                                   >×</button>
                                 </span>
                               );

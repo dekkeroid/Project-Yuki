@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, RotateCcw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon, Camera, CloudSun, Newspaper, MapPin, Info, Shirt, Check } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Settings, Cpu, HardDrive, User, Database, Trash2, RefreshCw, RotateCcw, ChevronDown, CheckCircle, Zap, Volume2, VolumeX, UserCheck, Plus, Trash, Mic, MicOff, Upload, Download, Monitor, Sparkles, Brain, Palette, MessageSquare, Clock, Power, Sliders, BellOff, Layout, Play, Pause, Square, Music, Eye, EyeOff, Wrench, History, Search, Globe, Command, Keyboard, Send, ShieldAlert, ExternalLink, AlertCircle, Smile, Heart, Utensils, Gamepad2, Flame, Activity, Moon, Camera, CloudSun, Newspaper, MapPin, Info, Shirt, Check, Star } from 'lucide-react';
 import { API_BASE } from '../api';
 import { ANIMATIONS } from '../animationsRegistry';
 import { ALARM_TONE_PRESETS, playPresetChime } from '../utils/toneSynthesizer';
@@ -257,6 +257,8 @@ export const SearchableVrmSelect = ({
   options = [],
   versions = {},
   characters = [],
+  favorites = [],
+  onToggleFavorite,
   placeholder = "Select VRM avatar model..."
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -326,6 +328,9 @@ export const SearchableVrmSelect = ({
   const selectedVer = versions[value] !== undefined ? versions[value] : 0;
   const hasCharacters = characters && characters.length > 0;
 
+  const isDefaultChar = (c) => c.id === 'default' || c.name?.toLowerCase() === 'default' || c.outfits?.some(o => o.file === 'default.vrm');
+  const isFavChar = (c) => c.is_favorite || (favorites && (favorites.includes(c.default_file) || c.outfits?.some(o => favorites.includes(o.file)) || favorites.includes(c.name) || favorites.includes(c.id)));
+
   const filteredCharacters = hasCharacters ? characters.filter(c => {
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
@@ -334,12 +339,47 @@ export const SearchableVrmSelect = ({
     return charMatch || outfitMatch;
   }) : [];
 
+  const sortedCharacters = useMemo(() => {
+    return [...filteredCharacters].sort((a, b) => {
+      // 1. Default strictly on top
+      const aDef = isDefaultChar(a);
+      const bDef = isDefaultChar(b);
+      if (aDef && !bDef) return -1;
+      if (!aDef && bDef) return 1;
+
+      // 2. Favorites immediately below Default
+      const aFav = isFavChar(a);
+      const bFav = isFavChar(b);
+      if (aFav && !bFav) return -1;
+      if (!aFav && bFav) return 1;
+
+      // 3. Alphabetical
+      return a.name.localeCompare(b.name);
+    });
+  }, [filteredCharacters, favorites]);
+
   const filteredOptions = (options || []).filter(model => {
     if (!searchTerm) return true;
     const name = formatDisplayName(model).toLowerCase();
     const ver = versions[model] !== undefined ? `vrm ${versions[model]}` : '';
     return name.includes(searchTerm.toLowerCase()) || model.toLowerCase().includes(searchTerm.toLowerCase()) || ver.includes(searchTerm.toLowerCase());
   });
+
+  const sortedOptions = useMemo(() => {
+    return [...filteredOptions].sort((a, b) => {
+      const aDef = a === 'default.vrm' || a.toLowerCase().startsWith('default');
+      const bDef = b === 'default.vrm' || b.toLowerCase().startsWith('default');
+      if (aDef && !bDef) return -1;
+      if (!aDef && bDef) return 1;
+
+      const aFav = favorites && favorites.includes(a);
+      const bFav = favorites && favorites.includes(b);
+      if (aFav && !bFav) return -1;
+      if (!aFav && bFav) return 1;
+
+      return a.localeCompare(b);
+    });
+  }, [filteredOptions, favorites]);
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', marginTop: '4px' }}>
@@ -496,14 +536,16 @@ export const SearchableVrmSelect = ({
             scrollbarColor: 'rgba(167, 139, 250, 0.4) transparent'
           }}>
             {hasCharacters ? (
-              filteredCharacters.length === 0 ? (
+              sortedCharacters.length === 0 ? (
                 <div style={{ padding: '12px 8px', fontSize: '0.74rem', color: '#94a3b8', textAlign: 'center', lineHeight: '1.4' }}>
                   No avatar character matches "{searchTerm}".
                 </div>
               ) : (
-                filteredCharacters.map((char) => {
+                sortedCharacters.map((char) => {
                   const hasOutfits = char.outfits && char.outfits.length > 1;
                   const isCharSelected = char.outfits?.some(o => o.file === value);
+                  const isCharFav = isFavChar(char);
+                  const isDef = isDefaultChar(char);
 
                   return (
                     <div key={char.id} style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '2px' }}>
@@ -544,6 +586,38 @@ export const SearchableVrmSelect = ({
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {onToggleFavorite && !isDef && (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleFavorite(char.default_file || char.outfits?.[0]?.file);
+                              }}
+                              title={isCharFav ? "Remove from favorites" : "Add to favorites"}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '2px',
+                                cursor: 'pointer',
+                                color: isCharFav ? '#fbbf24' : 'rgba(255, 255, 255, 0.25)',
+                                transition: 'all 0.15s ease'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isCharFav) e.currentTarget.style.color = '#fbbf24';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isCharFav) e.currentTarget.style.color = 'rgba(255, 255, 255, 0.25)';
+                              }}
+                            >
+                              <Star
+                                style={{
+                                  width: '12px',
+                                  height: '12px',
+                                  fill: isCharFav ? '#fbbf24' : 'none'
+                                }}
+                              />
+                            </span>
+                          )}
                           <span>{char.name}</span>
                           {hasOutfits && (
                             <span style={{
@@ -567,6 +641,7 @@ export const SearchableVrmSelect = ({
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', paddingLeft: '12px', paddingBottom: '3px' }}>
                           {char.outfits.map((outfit) => {
                             const isOutfitCurrent = value === outfit.file;
+                            const isOutfitFav = favorites && favorites.includes(outfit.file);
                             return (
                               <div
                                 key={outfit.id}
@@ -597,6 +672,36 @@ export const SearchableVrmSelect = ({
                                   if (!isOutfitCurrent) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
                                 }}
                               >
+                                {onToggleFavorite && (
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onToggleFavorite(outfit.file);
+                                    }}
+                                    title={isOutfitFav ? "Remove from favorites" : "Add to favorites"}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      cursor: 'pointer',
+                                      color: isOutfitFav ? '#fbbf24' : 'rgba(255, 255, 255, 0.25)',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (!isOutfitFav) e.currentTarget.style.color = '#fbbf24';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (!isOutfitFav) e.currentTarget.style.color = 'rgba(255, 255, 255, 0.25)';
+                                    }}
+                                  >
+                                    <Star
+                                      style={{
+                                        width: '9px',
+                                        height: '9px',
+                                        fill: isOutfitFav ? '#fbbf24' : 'none'
+                                      }}
+                                    />
+                                  </span>
+                                )}
                                 {isOutfitCurrent && <Check style={{ width: '9px', height: '9px', color: '#a78bfa' }} />}
                                 <span>{outfit.name}</span>
                               </div>
@@ -609,14 +714,16 @@ export const SearchableVrmSelect = ({
                 })
               )
             ) : (
-              filteredOptions.length === 0 ? (
+              sortedOptions.length === 0 ? (
                 <div style={{ padding: '12px 8px', fontSize: '0.74rem', color: '#94a3b8', textAlign: 'center', lineHeight: '1.4' }}>
                   No avatar model matches "{searchTerm}".
                 </div>
               ) : (
-                filteredOptions.map((model) => {
+                sortedOptions.map((model) => {
                   const isSelected = value === model;
                   const ver = versions[model] !== undefined ? versions[model] : 0;
+                  const isFav = favorites && favorites.includes(model);
+                  const isDef = model === 'default.vrm' || model.toLowerCase().startsWith('default');
                   return (
                     <div
                       key={model}
@@ -655,7 +762,41 @@ export const SearchableVrmSelect = ({
                         }
                       }}
                     >
-                      <span>{formatDisplayName(model)}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {onToggleFavorite && !isDef && (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleFavorite(model);
+                            }}
+                            title={isFav ? "Remove from favorites" : "Add to favorites"}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: '2px',
+                              cursor: 'pointer',
+                              color: isFav ? '#fbbf24' : 'rgba(255, 255, 255, 0.25)',
+                              transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isFav) e.currentTarget.style.color = '#fbbf24';
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isFav) e.currentTarget.style.color = 'rgba(255, 255, 255, 0.25)';
+                            }}
+                          >
+                            <Star
+                              style={{
+                                width: '12px',
+                                height: '12px',
+                                fill: isFav ? '#fbbf24' : 'none'
+                              }}
+                            />
+                          </span>
+                        )}
+                        <span>{formatDisplayName(model)}</span>
+                      </div>
                       {getVersionBadge(ver)}
                     </div>
                   );
@@ -1070,6 +1211,7 @@ const ControlDashboard = ({
     llm_simple_api_key: '',
     llm_simple_model: '',
     llm_vision_model: '',
+    active_llm_supports_vision: false,
     llm_image_gen_model: '',
     use_free_image_gen: false,
     image_gen_provider: 'pollinations',
@@ -1094,6 +1236,7 @@ const ControlDashboard = ({
     crawler_paused: false,
     tagger_paused: false,
     active_vrm_model: 'default.vrm',
+    favorite_vrm_models: [],
     start_with_last_avatar_size: true,
     whisper_model: 'base',
     use_local_whisper: true,
@@ -1153,7 +1296,7 @@ const ControlDashboard = ({
     proactive_nudge_include_screen: false,
     proactive_nudge_quiet_min: 30,
     proactive_nudge_boredom_pct: 80,
-    desk_sleep_idle_min: 3,
+    desk_sleep_idle_min: 10,
     companion_nap_silence_min: 5,
     companion_nap_energy_pct: 30,
     ...(profile?.settings || {})
@@ -2777,6 +2920,18 @@ const ControlDashboard = ({
     } catch (e) {
       console.warn('Could not delete VRM model:', e);
     }
+  };
+
+  const handleToggleFavoriteVrm = (modelName) => {
+    if (!modelName) return;
+    const currentFavs = Array.isArray(settings.favorite_vrm_models) ? settings.favorite_vrm_models : [];
+    let updatedFavs;
+    if (currentFavs.includes(modelName)) {
+      updatedFavs = currentFavs.filter(m => m !== modelName);
+    } else {
+      updatedFavs = [...currentFavs, modelName];
+    }
+    handleUpdateSetting('favorite_vrm_models', updatedFavs);
   };
 
   // Fetch settings / crawler status on open & handle crawler polling
@@ -7128,13 +7283,52 @@ const ControlDashboard = ({
 
                     {/* Vision Scan & Analysis Model Selection */}
                     <div className="identity-field" style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap', gap: '6px' }}>
                         <span className="field-label" style={{ color: '#38bdf8' }}>Vision Scan & Analysis Model (Tool Model)</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '0.68rem', color: (settings.active_llm_supports_vision ?? false) ? '#38bdf8' : '#64748b', fontWeight: 500 }}>
+                            My ACTIVE LLM MODEL supports vision
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSetting('active_llm_supports_vision', !(settings.active_llm_supports_vision ?? false))}
+                            style={{
+                              background: (settings.active_llm_supports_vision ?? false) ? 'linear-gradient(135deg, #0284c7, #0369a1)' : 'rgba(255,255,255,0.08)',
+                              border: `1px solid ${(settings.active_llm_supports_vision ?? false) ? 'rgba(56,189,248,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                              borderRadius: '12px',
+                              width: '38px',
+                              height: '20px',
+                              cursor: 'pointer',
+                              position: 'relative',
+                              transition: 'all 0.2s ease',
+                              flexShrink: 0
+                            }}
+                            title="Toggle whether your active LLM natively handles vision"
+                          >
+                            <div style={{
+                              width: '14px',
+                              height: '14px',
+                              borderRadius: '50%',
+                              background: '#fff',
+                              position: 'absolute',
+                              top: '2px',
+                              left: (settings.active_llm_supports_vision ?? false) ? '20px' : '2px',
+                              transition: 'left 0.2s ease',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                            }} />
+                          </button>
+                        </div>
                       </div>
                       <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '6px' }}>
-                        Model used by <code style={{ color: '#38bdf8' }}>jarvis_analyze_image</code> tool when non-vision models analyze screenshots & image files.
+                        {(settings.active_llm_supports_vision ?? false) ? (
+                          <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)', color: '#bae6fd', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>Active chat model natively inspects screenshots & images directly in-stream with zero latency (no separate vision model required).</span>
+                          </div>
+                        ) : (
+                          <span>Model used by <code style={{ color: '#38bdf8' }}>jarvis_get_image</code> and <code style={{ color: '#38bdf8' }}>jarvis_see_screen</code> when non-vision models analyze screenshots & image files.</span>
+                        )}
                       </div>
-                      {(() => {
+                      {!(settings.active_llm_supports_vision ?? false) && (() => {
                         const fetchedNames = (availableLlmModels || []).map(m => typeof m === 'string' ? m : (m.name || m.id || '')).filter(Boolean);
                         const allNames = Array.from(new Set([
                           ...(settings.llm_vision_model ? [settings.llm_vision_model] : []),
@@ -9322,19 +9516,63 @@ const ControlDashboard = ({
                           options={vrmModels}
                           versions={vrmVersions}
                           characters={vrmCharacters}
+                          favorites={settings.favorite_vrm_models || []}
+                          onToggleFavorite={handleToggleFavoriteVrm}
                         />
                         {vrmCustomModels.length > 0 && (
                           <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                             {vrmCustomModels.map((model) => {
                               const ver = vrmVersions[model] !== undefined ? vrmVersions[model] : 0;
+                              const isSelected = (settings.active_vrm_model || 'default.vrm') === model;
+                              const isFav = (settings.favorite_vrm_models || []).includes(model);
                               return (
-                                <span key={model} style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: '6px',
-                                  fontSize: '0.68rem', padding: '3px 8px', borderRadius: '6px',
-                                  background: 'rgba(15, 23, 42, 0.75)', color: '#e2e8f0',
-                                  border: '1px solid rgba(167, 139, 250, 0.25)',
-                                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)'
-                                }}>
+                                <span
+                                  key={model}
+                                  onClick={() => handleUpdateSetting('active_vrm_model', model)}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    fontSize: '0.68rem',
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                    background: isSelected ? 'rgba(167, 139, 250, 0.28)' : 'rgba(15, 23, 42, 0.75)',
+                                    color: isSelected ? '#ffffff' : '#e2e8f0',
+                                    border: isSelected ? '1.5px solid #a78bfa' : '1px solid rgba(167, 139, 250, 0.25)',
+                                    boxShadow: isSelected ? '0 0 10px rgba(167, 139, 250, 0.35)' : '0 2px 8px rgba(0, 0, 0, 0.3)',
+                                    cursor: 'pointer',
+                                    userSelect: 'none',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  title={`Click to load ${model.replace('.vrm', '')}`}
+                                >
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleFavoriteVrm(model);
+                                    }}
+                                    title={isFav ? "Remove from favorites" : "Add to favorites"}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      cursor: 'pointer',
+                                      color: isFav ? '#fbbf24' : 'rgba(255, 255, 255, 0.25)',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (!isFav) e.currentTarget.style.color = '#fbbf24';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (!isFav) e.currentTarget.style.color = 'rgba(255, 255, 255, 0.25)';
+                                    }}
+                                  >
+                                    <Star
+                                      size={11}
+                                      style={{
+                                        fill: isFav ? '#fbbf24' : 'none'
+                                      }}
+                                    />
+                                  </span>
                                   <span>{model.replace('.vrm', '')}</span>
                                   {ver === 1 ? (
                                     <span style={{ fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', background: 'rgba(34, 197, 94, 0.22)', color: '#6ee7b7', border: '1px solid rgba(52, 211, 153, 0.45)' }}>
@@ -9350,7 +9588,11 @@ const ControlDashboard = ({
                                     style={{ cursor: 'pointer', opacity: 0.7, color: '#f87171', transition: 'opacity 0.2s' }}
                                     onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
                                     onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
-                                    onClick={() => handleVrmDelete(model)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleVrmDelete(model);
+                                    }}
+                                    title="Delete custom model"
                                   />
                                 </span>
                               );
@@ -9596,7 +9838,7 @@ const ControlDashboard = ({
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                           <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#e2e8f0' }}>Desk Inactivity Sleep</span>
                           <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#a78bfa', background: 'rgba(167,139,250,0.15)', padding: '2px 7px', borderRadius: '6px' }}>
-                            {settings.desk_sleep_idle_min ?? 3}m
+                            {settings.desk_sleep_idle_min ?? 10}m
                           </span>
                         </div>
                         <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginBottom: '8px', lineHeight: '1.3' }}>
@@ -9607,7 +9849,7 @@ const ControlDashboard = ({
                           min="1"
                           max="30"
                           step="1"
-                          value={settings.desk_sleep_idle_min ?? 3}
+                          value={settings.desk_sleep_idle_min ?? 10}
                           onChange={(e) => handleUpdateSetting('desk_sleep_idle_min', parseInt(e.target.value, 10))}
                           style={{ width: '100%', accentColor: '#8b5cf6', cursor: 'pointer' }}
                         />
