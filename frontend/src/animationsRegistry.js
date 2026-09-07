@@ -376,12 +376,11 @@ export const ANIMATIONS = [
     excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:bow/>',
     commands: [
-      { cmd: '/ani-bow', description: 'Polite Japanese bow / formal greeting bow (mocap)' },
-      { cmd: '/bow', description: 'Polite formal bow (alias)' },
-      { cmd: '/ani-formal_bow', description: 'Formal bow (alias)' },
-      { cmd: '/ani-princess_bow', description: 'Formal bow (legacy alias)' }
+      { cmd: '/ani-bow', description: 'Polite Japanese bow for formal greetings, respect, or polite apologies (mocap)' },
+      { cmd: '/bow', description: 'Polite Japanese bow (alias)' },
+      { cmd: '/ani-formal_bow', description: 'Formal Japanese bow (alias)' }
     ],
-    responseText: '*bows politely in formal greeting*',
+    responseText: '*bows politely in formal greeting or apology*',
     blendShapes: { relaxed: 0.7, happy: 0.3 }
   },
   {
@@ -802,7 +801,6 @@ export const LLM_ANIMATION_MAP = {
   eww: 'disgusted_recoil',
   gross: 'disgusted_recoil',
   formal_bow: 'formal_bow',
-  princess_bow: 'formal_bow',
   bow: 'formal_bow',
   curtsy: 'formal_bow',
   think: 'thinking',
