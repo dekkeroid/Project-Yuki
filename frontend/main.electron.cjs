@@ -31,10 +31,27 @@ const BACKEND_PORT = 58392;
 // ---------- File Logging ----------
 const LOG_DIR = path.join(app.getPath('userData'), 'logs');
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
-const LOG_FILE = path.join(LOG_DIR, `yuki-${new Date().toISOString().slice(0, 10)}.log`);
+
+/** Returns a local-time string safe for filenames: 2026-09-08_12-04-42 */
+function localTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+}
+
+/** Returns a local-time string for log line prefixes: 2026-09-08 12:04:42.123 */
+function localTimestampFull() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${ms}`;
+}
+
+const _sessionTs = localTimestamp();
+const LOG_FILE = path.join(LOG_DIR, `yuki-${_sessionTs}.log`);
 
 function logToFile(level, msg) {
-  const line = `[${new Date().toISOString()}] [${level}] ${msg}\n`;
+  const line = `[${localTimestampFull()}] [${level}] ${msg}\n`;
   try { fs.appendFileSync(LOG_FILE, line); } catch (_) {}
 }
 
@@ -62,9 +79,13 @@ if (!app.isPackaged) {
 // 2. Prevent fallback to CPU software rasterization (SwiftShader) by ignoring GPU blocklists
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
-// 3. Limit GPU process memory: cap tile/raster memory and total GPU memory budget
-app.commandLine.appendSwitch('force-gpu-mem-available-mb', '256');
-app.commandLine.appendSwitch('max-decoded-image-size-mb', '128');
+// 3. Set GPU process memory budget for high-performance 3D scenes (Date Mode)
+app.commandLine.appendSwitch('force-gpu-mem-available-mb', '1024');
+app.commandLine.appendSwitch('max-decoded-image-size-mb', '256');
+app.commandLine.appendSwitch('force_high_performance_gpu');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('enable-direct-composition-layers');
 
 // 4. Reduce Chromium renderer tile memory (helps GPU process RAM usage)
 app.commandLine.appendSwitch('num-raster-threads', '2');
@@ -351,6 +372,62 @@ function createChatWorkspaceWindow(payload = null) {
 
   chatWorkspaceWindow.on('closed', () => {
     chatWorkspaceWindow = null;
+  });
+}
+
+let dateModeWindow = null;
+
+function createDateModeWindow() {
+  if (dateModeWindow && !dateModeWindow.isDestroyed()) {
+    if (dateModeWindow.isMinimized()) dateModeWindow.restore();
+    dateModeWindow.show();
+    dateModeWindow.focus();
+    return;
+  }
+
+  // Notify main window to unload AvatarViewer to completely release WebGL context & VRAM
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('yuki:date-mode-change', { active: true });
+    hideYuki();
+  }
+
+  const iconPath = path.join(__dirname, 'public', 'icon.png');
+  dateModeWindow = new BrowserWindow({
+    width: 1280,
+    height: 760,
+    minWidth: 960,
+    minHeight: 600,
+    title: 'Yuki AI - Date Mode',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    autoHideMenuBar: true,
+    backgroundColor: '#090d16',
+    transparent: false, // 100% OPAQUE -> Direct DXGI hardware overlay swapchain
+    frame: true,
+    resizable: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+  });
+
+  dateModeWindow.once('ready-to-show', () => {
+    if (dateModeWindow && !dateModeWindow.isDestroyed()) {
+      dateModeWindow.show();
+      dateModeWindow.focus();
+    }
+  });
+
+  loadWithRetry(dateModeWindow, [5178, 5179], 60, 500, 'date');
+
+  dateModeWindow.on('closed', () => {
+    dateModeWindow = null;
+    // Restore main window and reload avatar
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('yuki:date-mode-change', { active: false });
+      showYuki();
+    }
   });
 }
 
@@ -933,6 +1010,25 @@ function createWindow() {
   // Dedicated Chat Workspace Window
   ipcMain.on('open-chat-window', () => {
     createChatWorkspaceWindow();
+  });
+
+  // Dedicated Date Mode 3D Window
+  ipcMain.on('open-date-window', () => {
+    createDateModeWindow();
+  });
+
+  ipcMain.on('close-date-window', () => {
+    if (dateModeWindow && !dateModeWindow.isDestroyed()) {
+      dateModeWindow.close();
+    }
+  });
+
+  ipcMain.handle('get-gpu-info', async () => {
+    try {
+      return await app.getGPUInfo('complete');
+    } catch (e) {
+      return { error: e.message };
+    }
   });
 
   // Dedicated Alarm Window

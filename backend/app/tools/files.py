@@ -527,17 +527,23 @@ def ask_llm_to_resolve_match(query: str, candidates: List[Dict], is_generic: boo
         from app.agent.llm_backend import get_backend
         llm_backend = get_backend()
         url = llm_backend.get_chat_url()
+        payload = llm_backend.build_payload(
+            model=config.LLM_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_msg}
+            ],
+            temperature=0.0,
+        )
+        try:
+            from app.utils.prompt_logger import log_llm_prompt
+            log_llm_prompt(payload, model=config.LLM_MODEL, tag="file_rank", endpoint=url)
+        except Exception:
+            pass
         resp = requests.post(
             url,
             headers=llm_backend.build_headers(),
-            json=llm_backend.build_payload(
-                model=config.LLM_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user",   "content": user_msg}
-                ],
-                temperature=0.0,
-            ),
+            json=payload,
             timeout=10
         )
         if resp.status_code == 200:

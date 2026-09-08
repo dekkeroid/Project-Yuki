@@ -1,7 +1,9 @@
 import base64
 import datetime
 import json
+import os
 import time
+import traceback
 import urllib.parse
 import asyncio
 import re
@@ -699,6 +701,8 @@ async def lifespan(app: FastAPI):
             )
             headers = backend.build_headers()
             chat_url = backend.get_chat_url()
+            from app.utils.prompt_logger import log_llm_prompt
+            log_llm_prompt(payload, model=model_name, tag="presence_nudge", endpoint=chat_url)
             
             async with persistent_session_context() as session:
                 async with session.post(chat_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=25.0)) as resp:
@@ -733,6 +737,7 @@ async def lifespan(app: FastAPI):
                             stream=False,
                             use_tools=False
                         )
+                        log_llm_prompt(text_payload, model=model_name, tag="presence_nudge_retry", endpoint=chat_url)
                         async with session.post(chat_url, json=text_payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10.0)) as retry_resp:
                             if retry_resp.status == 200:
                                 resp_data = await retry_resp.json()
@@ -4934,10 +4939,11 @@ async def websocket_endpoint(websocket: WebSocket):
                             tts_semaphore = asyncio.Semaphore(1)
 
                             is_coding_mode = bool(payload_data.get("overrides", {}).get("coding_mode", False))
+                            is_in_visual_transcript = False
 
                             def queue_sentence(sentence_text, idx):
-                                nonlocal tts_tasks_event, stream_done_flag
-                                if not tts_online_status or is_coding_mode:
+                                nonlocal tts_tasks_event, stream_done_flag, is_in_visual_transcript
+                                if not tts_online_status or is_coding_mode or is_in_visual_transcript:
                                     return
 
                                 async def synth():
@@ -5113,6 +5119,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                             return
                                         overrides = payload_data.get("overrides") or {}
                                         overrides = dict(overrides)
+                                        if payload_data.get("is_date_mode") or payload_data.get("context_mode") == "date_mode":
+                                            overrides["is_date_mode"] = True
+                                            if payload_data.get("date_setting"):
+                                                overrides["date_setting"] = payload_data.get("date_setting")
                                         if is_startup_greeting:
                                             overrides["no_tools"] = True
                                             overrides["tool_mode"] = "none"
@@ -5164,37 +5174,57 @@ async def websocket_endpoint(websocket: WebSocket):
                                                         "transcript": value
                                                     })
                                                 elif event_type == "token":
-                                                    if llm_start_time is None:
-                                                        llm_start_time = time.time()
-                                                        ttft_duration = llm_start_time - start_time
-                                                    # Send token to frontend
-                                                    await broadcast_ws_event({
-                                                        "type": "text_stream",
-                                                        "text": value,
-                                                        "backend_used": backend_used,
-                                                        "final": True
-                                                    })
+                                                    if not is_in_visual_transcript:
+                                                        _check_buf = sentence_buffer + value
+                                                        _m_vt = re.search(r'(?i)\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\]', _check_buf)
+                                                        if _m_vt:
+                                                            is_in_visual_transcript = True
+                                                            sentence_buffer = _check_buf[:_m_vt.start()]
+                                                            # Flush any completed sentences from prior conversational dialogue
+                                                            while True:
+                                                                sentence_buffer = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', sentence_buffer, flags=re.IGNORECASE)
+                                                                if re.search(r'<(thought|think|reasoning)>(?![\s\S]*?</\1>)', sentence_buffer, flags=re.IGNORECASE):
+                                                                    break
+                                                                boundary = find_sentence_boundary(sentence_buffer)
+                                                                if boundary == -1:
+                                                                    break
+                                                                sentence = sentence_buffer[:boundary + 1].strip()
+                                                                sentence_buffer = sentence_buffer[boundary + 1:]
+                                                                clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
+                                                                clean_s = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', clean_s, flags=re.IGNORECASE).strip()
+                                                                if clean_s:
+                                                                    queue_sentence(clean_s, audio_idx)
+                                                                    audio_idx += 1
+                                                        else:
+                                                            sentence_buffer = _check_buf
 
-                                                    # Batch into sentences for TTS (skipping <thought>/<think>/<reasoning> blocks)
-                                                    sentence_buffer += value
-                                                    _m_vt = re.search(r'(?i)\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\]', sentence_buffer)
-                                                    if _m_vt:
-                                                        sentence_buffer = sentence_buffer[:_m_vt.start()]
-                                                    while True:
-                                                        sentence_buffer = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', sentence_buffer, flags=re.IGNORECASE)
-                                                        if re.search(r'<(thought|think|reasoning)>(?![\s\S]*?</\1>)', sentence_buffer, flags=re.IGNORECASE):
-                                                            break
-                                                        boundary = find_sentence_boundary(sentence_buffer)
-                                                        if boundary == -1:
-                                                            break
-                                                        sentence = sentence_buffer[:boundary + 1].strip()
-                                                        remaining_text = sentence_buffer[boundary + 1:]
-                                                        sentence_buffer = remaining_text
-                                                        clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
-                                                        clean_s = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', clean_s, flags=re.IGNORECASE).strip()
-                                                        if clean_s:
-                                                            queue_sentence(clean_s, audio_idx)
-                                                            audio_idx += 1
+                                                    if not is_in_visual_transcript:
+                                                        if llm_start_time is None:
+                                                            llm_start_time = time.time()
+                                                            ttft_duration = llm_start_time - start_time
+                                                        # Send token to frontend (pure conversational dialogue)
+                                                        await broadcast_ws_event({
+                                                            "type": "text_stream",
+                                                            "text": value,
+                                                            "backend_used": backend_used,
+                                                            "final": True
+                                                        })
+
+                                                        while True:
+                                                            sentence_buffer = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', sentence_buffer, flags=re.IGNORECASE)
+                                                            if re.search(r'<(thought|think|reasoning)>(?![\s\S]*?</\1>)', sentence_buffer, flags=re.IGNORECASE):
+                                                                break
+                                                            boundary = find_sentence_boundary(sentence_buffer)
+                                                            if boundary == -1:
+                                                                break
+                                                            sentence = sentence_buffer[:boundary + 1].strip()
+                                                            remaining_text = sentence_buffer[boundary + 1:]
+                                                            sentence_buffer = remaining_text
+                                                            clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
+                                                            clean_s = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', clean_s, flags=re.IGNORECASE).strip()
+                                                            if clean_s:
+                                                                queue_sentence(clean_s, audio_idx)
+                                                                audio_idx += 1
 
                                                 elif event_type == "thinking":
                                                     # Intermediate thinking/narration text (e.g. before a tool call).
@@ -5320,7 +5350,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                     except StopAsyncIteration:
                                         pass
                                 except Exception as e:
-                                    import traceback
                                     print(f"Error during stream generation: {e}")
                                     traceback.print_exc()
                                     friendly_error = await agent_executor.get_friendly_error_explanation(str(e))
@@ -5333,6 +5362,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 if clean_remaining:
                                     queue_sentence(clean_remaining, audio_idx)
                                     audio_idx += 1
+                                sentence_buffer = ""
 
                                 # Signal the worker to finish and wait for it
                                 stream_done_flag = True
@@ -5494,7 +5524,12 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         print("Frontend disconnected.")
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        # Keepalive ping timeout (browser sleep/tab suspension) — treat as a clean disconnect
+        err_str = str(e)
+        if "keepalive ping timeout" in err_str or "ConnectionClosed" in type(e).__name__:
+            print("Frontend disconnected (keepalive ping timeout — browser may have slept or suspended tab).")
+        else:
+            print(f"WebSocket error: {e}")
     finally:
         from app.voice.stt import set_listening_mode
         set_listening_mode(False)

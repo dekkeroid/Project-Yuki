@@ -837,10 +837,10 @@ PRONUNCIATION_LEXICON: dict[str, str] = {
 
     # ── Initialisms & Short Forms (Spelled letter-by-letter) ────────────────
     # Prevent eSpeak from reading abbreviations with vowels as phonetic words (e.g. 'upsk')
-    "upsc": "U.P.S.C.",
-    "iocl": "I.O.C.L.",
-    "obc": "O.B.C.",
-    "vad": "V.A.D.",
+    "upsc": "U-P-S-C",
+    "iocl": "I-O-C-L",
+    "obc": "O-B-C",
+    "vad": "V-A-D",
 
     # ── Conversational & Chat Shorthand (Expanded to spoken words) ───────────
     "btw": "by the way",
@@ -865,11 +865,11 @@ PRONUNCIATION_LEXICON: dict[str, str] = {
     "wip": "work in progress",
     "tbd": "to be determined",
     "tba": "to be announced",
-    "eta": "E.T.A.",
+    "eta": "E-T-A",
     "fyi": "for your information",
     "poc": "proof of concept",
-    "dm": "D.M.",
-    "dms": "D.M.s",
+    "dm": "D-M",
+    "dms": "D-M-s",
 
     # ── Tech Terms, Libraries & Acronyms ─────────────────────────────────────
     "sqlite": "sequel lite",
@@ -879,12 +879,141 @@ PRONUNCIATION_LEXICON: dict[str, str] = {
     "pytorch": "pie torch",
     "github": "git hub",
     "gitlab": "git lab",
-    "npm": "N P M",
+    "ide": "I-D-E",
+    "npm": "N-P-M",
     "stdout": "standard out",
     "stdin": "standard in",
     "stderr": "standard error",
     "wifi": "why fye",
     "wi-fi": "why fye",
+    "iit": "I-I-T",
+    "nit": "N-I-T",
+
+    # ── Anime & Japanese Expressive Lexicon ─────────────────────────────────
+    # Character archetypes
+    "baka": "bah-kah",
+    "tsundere": "tsoon-deh-reh",
+    "yandere": "yahn-deh-reh",
+    "kuudere": "koo-deh-reh",
+    "dandere": "dahn-deh-reh",
+    "deredere": "deh-reh-deh-reh",
+    "himedere": "hee-meh-deh-reh",
+    "chuunibyou": "choo-nee-byoh",
+    "chuuni": "choo-nee",
+
+    # Social terms & titles
+    "senpai": "sen-pie",
+    "sensei": "sen-say",
+    "kouhai": "ko-high",
+    "kohai": "ko-high",
+    "onii-chan": "oh-nee-chahn",
+    "oniichan": "oh-nee-chahn",
+    "oniisan": "oh-nee-sahn",
+    "onee-chan": "oh-neh-chahn",
+    "oneechan": "oh-neh-chahn",
+    "imouto": "ee-moh-toh",
+    "otouto": "oh-toh-toh",
+    "ojou": "oh-joh",
+    "ojou-sama": "oh-joh-sah-mah",
+
+    # Greetings & common phrases
+    "konnichiwa": "kohn-nee-chee-wah",
+    "konnichiha": "kohn-nee-chee-wah",
+    "ohayo": "oh-hah-yoh",
+    "ohayou": "oh-hah-yoh",
+    "oyasumi": "oh-yah-soo-mee",
+    "sayonara": "sah-yoh-nah-rah",
+    "gomen": "goh-men",
+    "gomenasai": "goh-men-nah-sigh",
+    "sumimasen": "soo-mee-mah-sen",
+    "kudasai": "koo-dah-sigh",
+    "daijoubu": "dye-joe-boo",
+    "urusai": "oo-roo-sigh",
+    "yamete": "yah-meh-teh",
+    "yamete kudasai": "yah-meh-teh koo-dah-sigh",
+    "yatta": "yaht-tah",
+    "yoshi": "yoh-shee",
+    "nakama": "nah-kah-mah",
+    "chotto": "choh-toh",
+    "chotto matte": "choh-toh mah-teh",
+    "matte kudasai": "mah-teh koo-dah-sigh",
+    "wakatta": "wah-kaht-tah",
+    "wakarimashita": "wah-kah-ree-mah-shee-tah",
+    "ryoukai": "ryoh-kigh",
+    "nandayo": "nahn-dah-yoh",
+    "nande": "nahn-deh",
+    "nandeyanen": "nahn-deh-yah-nen",
+    "itadakimasu": "ee-tah-dah-kee-muss",
+    "gochisousama": "goh-chee-soh-sah-mah",
+    "ittekimasu": "ee-teh-kee-muss",
+    "tadaima": "tah-dye-mah",
+    "okaeri": "oh-kah-eh-ree",
+
+    # Anime culture & fandom terms
+    "waifu": "why-foo",
+    "husbando": "huz-bahn-doh",
+    "otaku": "oh-tah-koo",
+    "weeaboo": "wee-ah-boo",
+    "isekai": "ee-seh-kye",
+    "ecchi": "et-chee",
+    "harem": "har-em",
+    "moe": "moaay",
+    "mecha": "meh-kah",
+    "shonen": "shoh-nen",
+    "shounen": "shoh-nen",
+    "shojo": "shoh-joh",
+    "shoujo": "shoh-joh",
+    "seinen": "say-nen",
+    "josei": "joh-say",
+    "doujin": "doh-jin",
+    "doujinshi": "doh-jin-shee",
+    "gacha": "gaa-cha",
+    "neet": "neet",
+    "eroge": "ero-gay",
+
+    # Expressive & emotional words
+    "kawaii": "kah-why-ee",
+    "chibi": "chee-bee",
+    "sugoi": "soo-goy",
+    "sugoii": "soo-goy",
+    "nani": "nah-nee",
+    "kimochi": "kee-moh-chee",
+    "ureshii": "oo-reh-shee",
+    "daisuki": "dye-skee",
+    "kakkoii": "kah-koh-ee",
+    "kirei": "kee-ray",
+    "yabai": "yah-bye",
+    "sasuga": "sah-soo-gah",
+    "maji": "mah-jee",
+    "majide": "mah-jee-deh",
+    "hontou": "hon-toh",
+    "honto": "hon-toh",
+    "uso": "oo-soh",
+    "masaka": "mah-sah-kah",
+    "ikemen": "ee-keh-men",
+    "hayai": "hah-yah-ee",
+    "kami": "kah-mee",
+    "kami-sama": "kah-mee-sah-mah",
+
+    # Onomatopoeia & internet slang
+    "doki doki": "doh-kee doh-kee",
+    "waku waku": "wah-koo wah-koo",
+    "kyaa": "kee-yah",
+    "kyaaa": "kee-yah",
+    "nyan": "nyahn",
+    "uwu": "oo-woo",
+    "owo": "oh-woh",
+    "ara ara": "ah-rah ah-rah",
+    "ara-ara": "ah-rah ah-rah",
+
+    # Politeness / other
+    "arigato": "ah-ree-gah-toh",
+    "arigatou": "ah-ree-gah-toh",
+    "arigatou gozaimasu": "ah-ree-gah-toh goh-zigh-muss",
+    "manga": "mahn-gah",
+    "anime": "ah-nee-may",
+    "soshite": "soh-shee-teh",
+    "dakedo": "dah-keh-doh",
 }
 
 
@@ -892,12 +1021,17 @@ def apply_pronunciation_lexicon(text: str) -> str:
     """
     Applies the declarative PRONUNCIATION_LEXICON to text with case-preserving replacements.
     Uses regex word boundaries so substrings inside other words are never accidentally altered.
+    Multi-word entries (e.g. 'chotto matte') are sorted to match before their component words
+    so partial substitutions never break compound phrases.
     """
     import re
     if not text:
         return text
 
-    for word, replacement in PRONUNCIATION_LEXICON.items():
+    # Sort longest-first so multi-word phrases match before their component single words
+    sorted_entries = sorted(PRONUNCIATION_LEXICON.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+    for word, replacement in sorted_entries:
         pattern = rf'\b{re.escape(word)}\b'
         def _match_case(m):
             matched = m.group(0)
@@ -1040,6 +1174,16 @@ def clean_text_for_tts(text: str) -> str:
     # 1.1 Strip simulated tool call blocks
     text = re.sub(r'<(?:tool_call|function_call)>[\s\S]*?(?:<\/(?:tool_call|function_call)>|$)', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\[TOOL_CALL\][\s\S]*?(?:\[\/TOOL_CALL\]|$)', '', text, flags=re.IGNORECASE)
+
+    # 1.2 Strip pythonic function calls and tool invocations from spoken text
+    # e.g. jarvis_see_screen(), jarvis_web_search(...), or standalone tool_name(...)
+    text = re.sub(r'(?m)^\s*(?:await\s+)?(?:jarvis_)?[a-zA-Z0-9_]+\s*\([^)\n]*\)\s*$', '', text)
+    text = re.sub(r'\b(?:jarvis_)[a-zA-Z0-9_]+\s*\([^)]*\)', '', text)
+
+    # 1.3 Strip namespaced or brace-style tool calls from spoken text
+    # e.g. default_api:jarvis_see_screen{window_title:active}, jarvis_see_screen{...}
+    text = re.sub(r'\b(?:default_api|api|functions|tools)[:.][a-zA-Z0-9_]+(?:\s*\{[^}]*\})?', '', text)
+    text = re.sub(r'(?m)^\s*(?:jarvis_)?[a-zA-Z0-9_]+\s*\{[^}\n]*\}\s*$', '', text)
 
     # 2. Strip unique animation and emotion tags (<yuki_anim:.../>, <yuki_anim eer >, [yuki_anim:...], [anim:...], etc.)
     text = re.sub(r'(?:`\s*)?[<\[\(](?:yuki_)?(?:anim|emotion)[:\s]+[a-zA-Z0-9_\-\s]*?(?:\/?>|[\]\)])(?:\s*`)?', '', text, flags=re.IGNORECASE)
@@ -1347,9 +1491,9 @@ KOKORO_IPA_INTERJECTIONS = [
     # Sleepy sounds, groans & vocal murmurs
     (r'\b[Mm]+r+g+h*\b', 'mɚːɡ'),                 # Mmrgh, mrgh -> "mrrg" (sleepy groan)
     (r'\b[Mm]+g+h+\b', 'mː'),                      # Mgh, mmgh -> "mmm" (closed mouth mutter)
-    (r'\b[Hh]+m+p+h+!*\b', 'hˈəmf!'),              # Hmph, hmph! -> "humph!" (sassy scoff)
+    (r'\b[Hh]+m+p+h+\b', 'hˈəmf!'),                # Hmph, hmph! -> "humph!" (sassy scoff)
     (r'\b[Uu]+g+h+\b', 'ˈʌɡ'),                     # Ugh -> "ugh" (exasperated sigh)
-    (r'\b[Gg]+u+h+\b|\b[Gg]+a+h+\b', 'ɡˈʌ'),       # Guh, gah -> "guh" (flustered choke)
+    (r'\b(?:[Gg]+u+h+|[Gg]+a+h+)\b', 'ɡˈʌ'),       # Guh, gah -> "guh" (flustered choke)
     (r'\b[Bb]+l+e+h+\b', 'blˈɛ'),                  # Bleh -> "bleh" (playful tongue-out)
     (r'\b[Ee]+w+\b', 'ˈiːjuː'),                    # Eww, ew -> "ee-yoo" (disgusted cringe)
     (r'\b[Oo]{2,}f+\b', 'ˈuːf'),                   # Oof, ooff -> "oof" (requires >=2 o's, never matches "off")
@@ -1363,7 +1507,7 @@ KOKORO_IPA_INTERJECTIONS = [
     (r'\b[Mm]+h+\b', 'mː'),                        # Mmh, mmh -> soft hum
     (r'\b[Nn]{2,}\b', 'nː'),                       # Nn, Nnn -> soft nasal hum
     (r'\b[Uu]+h+-[Hh]+u+h+\b', 'ˈʌhˈʌ'),          # Uh-huh -> casual affirmative
-    (r'\b[Uu]+h+-[Oo]+h+!*\b|\b[Uu]+h+o+h+!*\b', 'ˈʌˈoʊ!'), # Uh-oh -> playful melodic alarm
+    (r'\b(?:[Uu]+h+-[Oo]+h+|[Uu]+h+o+h+)\b', 'ˈʌˈoʊ!'), # Uh-oh -> playful melodic alarm
     (r'\b[Uu]+m+\b', 'ˈʌmː'),                      # Ummm, um -> thinking hesitation filler
     
     # Whispers, scoffs & non-verbal sounds
@@ -1373,10 +1517,18 @@ KOKORO_IPA_INTERJECTIONS = [
     (r'\b[Aa]+r+g+h*\b', 'ˈɑːɹɡ'),                # Argh, arghhh -> dramatic frustrated outburst
     (r'\b[Aa]+w+\b', 'ˈɔːː'),                      # Aww, awww -> soft coo
     
-    # Anime persona expressive sounds
-    (r'\b[Ff]+u+f+u+f+u+\b', 'həhəhə'),           # Fufufu -> aristocratic anime chuckles
+    # Anime persona expressive sounds & vocalizations
+    (r'\b[Tt]+c+h+e*\b', 'tʃˈə'),                 # Tch, tche -> dismissive tongue-click / scoff
+    (r'\b[Ff]+w+a+h*\b', 'fwˈɑː'),                # Fwah, fwaah -> sleepy yawn / murmur
+    (r'\b[Hh]+a{2,}h*\b', 'hˈɑːː'),               # Haah, haaah -> prolonged relieved sigh
+    (r'\b[Ee]+h+e+(?:h+e+)*h*\b', 'ɛhˈɛhɛ'),      # Ehe, ehehe -> cute giggling tease
+    (r'\b[Ee]{2,}k+\b', 'ˈiːk!'),                 # Eek, eeek -> startled high-pitched squeak
+    (r'\b[Mm]+w+a+h*\b', 'mwˈɑː'),                # Mwah, mwa -> affectionate kiss sound
+    (r'\b(?:[Ff]+u+){2,}\b', 'həhəhə'),           # Fufu, fufufu -> aristocratic / smug anime chuckles
+    (r'\b[Aa]+h+a+\b', 'ɑːhˈɑː!'),                # Aha, aha! -> realizing eureka / triumphant laugh
+    (r'\b[Yy]+a+y+\b', 'jˈeɪ!'),                  # Yay, yaay, yaaay -> excited celebration
     (r'\b[Ff]+u+e{2,}\b', 'fjˈuːː'),              # Fueee -> flustered anime whine
-    (r'\b[Ee]+-[Ee]+h+\b\??', 'ˈeːːʔ?!'),          # E-Ehh?! -> surprised high-pitched gasp
+    (r'\b[Ee]+-[Ee]+h+\b', 'ˈeːːʔ?!'),            # E-Ehh?! -> surprised high-pitched gasp
     (r'\b[Nn]+y+a+h*\b', 'njˈɑː'),                # Nya, nyah -> crisp anime cat sound
     (r'\b[Hh]+e+h+e+\b', 'hˈɛhɛ'),                # Hehe -> chuckle
     (r'\b[Hh]+e+h+\b', 'hˈɛ'),                     # Heh -> quiet smirk
@@ -1391,9 +1543,9 @@ KOKORO_CLEAN_TEXT_FALLBACKS = [
     # Sleepy sounds, groans & vocal murmurs
     (r'\b[Mm]+r+g+h*\b', 'Ugh'),                  # Mmrgh, mrgh -> Ugh
     (r'\b[Mm]+g+h+\b', 'Mmh'),                    # Mgh, mmgh -> Mmh
-    (r'\b[Hh]+m+p+h+!*\b', 'Humph!'),              # Hmph, hmph! -> Humph!
+    (r'\b[Hh]+m+p+h+\b', 'Humph!'),                # Hmph, hmph! -> Humph!
     (r'\b[Uu]+g+h+\b', 'Ugh'),                    # Ugh -> Ugh
-    (r'\b[Gg]+u+h+\b|\b[Gg]+a+h+\b', 'Gah'),      # Guh, gah -> Gah
+    (r'\b(?:[Gg]+u+h+|[Gg]+a+h+)\b', 'Gah'),      # Guh, gah -> Gah
     (r'\b[Bb]+l+e+h+\b', 'Bleh'),                 # Bleh -> Bleh
     (r'\b[Ee]+w+\b', 'Ew'),                       # Eww, ewww -> Ew
     (r'\b[Oo]{2,}f+\b', 'Oof'),                   # Oof, ooff -> Oof (requires >=2 o's, never matches "off")
@@ -1407,7 +1559,7 @@ KOKORO_CLEAN_TEXT_FALLBACKS = [
     (r'\b[Mm]+h+\b', 'Hmm'),                      # Mmh -> Hmm
     (r'\b[Nn]{2,}\b', 'Hmm'),                     # Nn, Nnn -> Hmm
     (r'\b[Uu]+h+-[Hh]+u+h+\b', 'Uh-huh'),         # Uh-huh -> Uh-huh
-    (r'\b[Uu]+h+-[Oo]+h+!*\b|\b[Uu]+h+o+h+!*\b', 'Uh-oh!'), # Uh-oh -> Uh-oh!
+    (r'\b(?:[Uu]+h+-[Oo]+h+|[Uu]+h+o+h+)\b', 'Uh-oh!'), # Uh-oh -> Uh-oh!
     (r'\b[Uu]+m+\b', 'Um'),                       # Ummm, um -> Um
     
     # Whispers, scoffs & non-verbal sounds
@@ -1418,9 +1570,17 @@ KOKORO_CLEAN_TEXT_FALLBACKS = [
     (r'\b[Aa]+w+\b', 'Aw'),                       # Aww, awww -> Aw
     
     # Anime persona expressive sounds
-    (r'\b[Ff]+u+f+u+f+u+\b', 'Hehehe'),           # Fufufu -> Hehehe
+    (r'\b[Tt]+c+h+e*\b', 'Tsk'),                  # Tch, tche -> Tsk
+    (r'\b[Ff]+w+a+h*\b', 'Whaa'),                 # Fwah, fwaah -> Whaa
+    (r'\b[Hh]+a{2,}h*\b', 'Ah'),                  # Haah, haaah -> Ah
+    (r'\b[Ee]+h+e+(?:h+e+)*h*\b', 'Hehe'),        # Ehe, ehehe -> Hehe
+    (r'\b[Ee]{2,}k+\b', 'Eek!'),                  # Eek, eeek -> Eek!
+    (r'\b[Mm]+w+a+h*\b', 'Mwah'),                 # Mwah -> Mwah
+    (r'\b(?:[Ff]+u+){2,}\b', 'Hehehe'),           # Fufu, fufufu -> Hehehe
+    (r'\b[Aa]+h+a+\b', 'Aha!'),                   # Aha -> Aha!
+    (r'\b[Yy]+a+y+\b', 'Yay!'),                   # Yay, yaay, yaaay -> Yay!
     (r'\b[Ff]+u+e{2,}\b', 'Whaa'),                # Fueee -> Whaa
-    (r'\b[Ee]+-[Ee]+h+\b\??', 'Eh?!'),            # E-Ehh?! -> Eh?!
+    (r'\b[Ee]+-[Ee]+h+\b', 'Eh?!'),               # E-Ehh?! -> Eh?!
     (r'\b[Nn]+y+a+h*\b', 'Nya'),                  # Nya, nyah -> Nya
     (r'\b[Hh]+e+h+e+\b', 'Hehe'),                 # Hehe -> Hehe
     (r'\b[Hh]+e+h+\b', 'Heh'),                    # Heh -> Heh
@@ -1439,10 +1599,9 @@ def clean_text_fallback_interjections(text: str) -> str:
     for pattern, fallback_word in KOKORO_CLEAN_TEXT_FALLBACKS:
         def _repl(match):
             raw_punc = match.group('trailing_punc') or ''
-            if fallback_word.endswith(('!', '?')) and raw_punc.startswith(('!', '?')):
-                raw_punc = ''
-            return f" {fallback_word}{raw_punc} "
-        full_pattern = pattern + r'(?P<trailing_punc>\.{3,}|…|[.,!?;])?'
+            fb = fallback_word.rstrip('!?') if raw_punc else fallback_word
+            return f" {fb}{raw_punc} "
+        full_pattern = pattern + r'(?P<trailing_punc>\.{3,}|…|[.,!?;]+)?'
         modified = re.sub(full_pattern, _repl, modified, flags=re.IGNORECASE)
     return re.sub(r'\s+', ' ', modified).strip()
 
@@ -1490,7 +1649,7 @@ def phonemize_with_ipa_interjections(text: str, tokenizer, lang: str = "en-us") 
             counter += 1
             return f" {tag} "
         # Capture optional trailing punctuation (. , ! ? ... etc.)
-        full_pattern = pattern + r'(?P<trailing_punc>\.{3,}|…|[.,!?;])?'
+        full_pattern = pattern + r'(?P<trailing_punc>\.{3,}|…|[.,!?;]+)?'
         modified_text = re.sub(full_pattern, _repl, modified_text, flags=re.IGNORECASE)
 
     if not placeholders:
@@ -1549,26 +1708,28 @@ def extract_viseme_timeline(
 
     speech_dur = max(0.1, t_offset - t_onset)
 
-    # Expressive phonetic token mapping calibrated for VRM 3D avatars
+    # Expressive phonetic token mapping calibrated for VRM 3D avatars (vertical jaw depression + horizontal balance)
     DIPHTHONGS = {
         'oʊ': (('oh', 0.68), ('ou', 0.52), 1.9),
-        'aɪ': (('aa', 0.72), ('ih', 0.58), 1.9),
-        'aʊ': (('aa', 0.70), ('ou', 0.55), 1.9),
-        'eɪ': (('ee', 0.62), ('ih', 0.55), 1.9),
-        'ɔɪ': (('oh', 0.68), ('ih', 0.55), 1.9),
+        'aɪ': (('aa', 0.72), ('ih', 0.38), 1.9),
+        'aʊ': (('aa', 0.70), ('ou', 0.52), 1.9),
+        'eɪ': (('ee', 0.52), ('ih', 0.36), 1.9),
+        'ɔɪ': (('oh', 0.66), ('ih', 0.34), 1.9),
     }
     VOWELS = {
-        'ɑː': ('aa', 0.72, 1.8), 'ɑ': ('aa', 0.68, 1.4), 'æ': ('aa', 0.70, 1.5),
-        'ʌ': ('aa', 0.60, 1.2), 'a': ('aa', 0.68, 1.3), 'ɐ': ('aa', 0.56, 1.1),
-        'iː': ('ih', 0.62, 1.7), 'i': ('ih', 0.58, 1.3), 'ɪ': ('ih', 0.54, 1.1), 'j': ('ih', 0.46, 0.8),
-        'uː': ('ou', 0.56, 1.7), 'u': ('ou', 0.52, 1.3), 'ʊ': ('ou', 0.48, 1.1), 'w': ('ou', 0.45, 0.8),
-        'ɛ': ('ee', 0.58, 1.3), 'e': ('ee', 0.54, 1.2),
-        'ɔː': ('oh', 0.68, 1.8), 'ɔ': ('oh', 0.64, 1.3), 'o': ('oh', 0.64, 1.3), 'ɒ': ('oh', 0.62, 1.3),
-        'ə': ('ee', 0.40, 0.9), 'ɚ': ('ee', 0.42, 1.0), 'ɜː': ('ee', 0.48, 1.4),
+        'ɑː': ('aa', 0.76, 1.8), 'ɑ': ('aa', 0.72, 1.4), 'æ': ('aa', 0.72, 1.5),
+        'ʌ': ('aa', 0.62, 1.2), 'a': ('aa', 0.70, 1.3), 'ɐ': ('aa', 0.58, 1.1),
+        'iː': ('ih', 0.42, 1.7), 'i': ('ih', 0.38, 1.3), 'ɪ': ('ih', 0.36, 1.1), 'j': ('ih', 0.28, 0.8),
+        'uː': ('ou', 0.56, 1.7), 'u': ('ou', 0.52, 1.3), 'ʊ': ('ou', 0.48, 1.1), 'w': ('ou', 0.44, 0.8),
+        'ɛ': ('ee', 0.52, 1.3), 'e': ('ee', 0.46, 1.2),
+        'ɔː': ('oh', 0.70, 1.8), 'ɔ': ('oh', 0.66, 1.3), 'o': ('oh', 0.66, 1.3), 'ɒ': ('oh', 0.64, 1.3),
+        # Central neutral vowels (schwa): In natural speech, schwa drops the jaw neutrally ('aa')
+        # rather than stretching horizontally ('ee').
+        'ə': ('aa', 0.44, 1.0), 'ɚ': ('aa', 0.42, 1.1), 'ɜː': ('aa', 0.48, 1.4),
     }
     # Bilabials press lips firmly closed (silence, weight 0.0)
     BILABIALS = {'p': 0.7, 'b': 0.7, 'm': 0.8}
-    # Sibilants/dentals keep teeth together (subtle spread ih, closed aa)
+    # Sibilants/dentals keep teeth together with gentle spread (no wide horizontal distortion)
     DENTALS = {'s': 1.0, 'z': 0.9, 'ʃ': 1.0, 'ʒ': 0.9, 't': 0.6, 'd': 0.6, 'n': 0.7, 'θ': 0.9, 'ð': 0.8, 'k': 0.6, 'ɡ': 0.6}
     LABIODENTALS = {'f': 0.8, 'v': 0.8}
     OTHERS = {'l': 0.8, 'ɹ': 0.8, 'r': 0.8, 'h': 0.6}
@@ -1606,15 +1767,15 @@ def extract_viseme_timeline(
             i += 1
             continue
         if ch in DENTALS:
-            tokens.append(('dental', 'ih', 0.20, DENTALS[ch]))
+            tokens.append(('dental', 'ih', 0.12, DENTALS[ch]))
             i += 1
             continue
         if ch in LABIODENTALS:
-            tokens.append(('labiodental', 'ih', 0.16, LABIODENTALS[ch]))
+            tokens.append(('labiodental', 'ih', 0.10, LABIODENTALS[ch]))
             i += 1
             continue
         if ch in OTHERS:
-            tokens.append(('liquid', 'aa', 0.14, OTHERS[ch]))
+            tokens.append(('liquid', 'aa', 0.18, OTHERS[ch]))
             i += 1
             continue
 
@@ -1629,13 +1790,12 @@ def extract_viseme_timeline(
             i += 1
             continue
         if ch == ' ':
-            tokens.append(('space', 'silence', 0.0, 0.12))
             i += 1
             continue
         i += 1
 
     total_w = float(sum(t[-1] for t in tokens)) if tokens else 1.0
-    cues = []
+    raw_cues = []
     curr_t = float(t_onset)
     for item in tokens:
         item_type = item[0]
@@ -1645,16 +1805,25 @@ def extract_viseme_timeline(
             sub1, sub2 = item[1]
             dur1 = dur * 0.58
             dur2 = dur * 0.42
-            cues.append({'start': float(round(curr_t, 3)), 'end': float(round(curr_t + dur1, 3)), 'viseme': str(sub1[0]), 'weight': float(sub1[1])})
-            cues.append({'start': float(round(curr_t + dur1, 3)), 'end': float(round(curr_t + dur, 3)), 'viseme': str(sub2[0]), 'weight': float(sub2[1])})
+            raw_cues.append({'start': float(round(curr_t, 3)), 'end': float(round(curr_t + dur1, 3)), 'viseme': str(sub1[0]), 'weight': float(sub1[1])})
+            raw_cues.append({'start': float(round(curr_t + dur1, 3)), 'end': float(round(curr_t + dur, 3)), 'viseme': str(sub2[0]), 'weight': float(sub2[1])})
         else:
             v = item[1]
             wgt = item[2]
-            cues.append({'start': float(round(curr_t, 3)), 'end': float(round(curr_t + dur, 3)), 'viseme': str(v), 'weight': float(wgt)})
+            raw_cues.append({'start': float(round(curr_t, 3)), 'end': float(round(curr_t + dur, 3)), 'viseme': str(v), 'weight': float(wgt)})
         curr_t += dur
 
     if curr_t < audio_duration:
-        cues.append({'start': float(round(curr_t, 3)), 'end': float(round(audio_duration, 3)), 'viseme': 'silence', 'weight': 0.0})
+        raw_cues.append({'start': float(round(curr_t, 3)), 'end': float(round(audio_duration, 3)), 'viseme': 'silence', 'weight': 0.0})
+
+    # Merge consecutive identical visemes into continuous, fluid syllable arcs (eliminates machine-gun twitching)
+    cues = []
+    for c in raw_cues:
+        if cues and cues[-1]['viseme'] == c['viseme'] and (c['viseme'] == 'silence' or abs(cues[-1]['weight'] - c['weight']) < 0.25):
+            cues[-1]['end'] = c['end']
+            cues[-1]['weight'] = max(cues[-1]['weight'], c['weight'])
+        else:
+            cues.append(c)
 
     return cues
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Suspense, lazy } from 'react';
-import { Heart, ShoppingBag, Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText, Star } from 'lucide-react';
+import { Heart, ShoppingBag, Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, RotateCcw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText, Star } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 import { useBackendSocket } from './hooks/useBackendSocket';
@@ -81,6 +81,9 @@ const App = () => {
   const [vrmVersions, setVrmVersions] = useState({});
   const [vrmCharacters, setVrmCharacters] = useState([]);
   const [vrmUploading, setVrmUploading] = useState(false);
+  const [isDateModeActive, setIsDateModeActive] = useState(false);
+  const isDateModeActiveRef = useRef(false);
+  isDateModeActiveRef.current = isDateModeActive;
 
   // UI States
   const [inputText, setInputText] = useState('');
@@ -90,6 +93,7 @@ const App = () => {
   // Slash-command autocomplete for desktop input
   const desktopInputRef = useRef(null);
   const mainAppFileInputRef = useRef(null);
+  const avatarRef = useRef(null);    // imperative handle into AvatarViewer (mesh visibility API)
   const desktopDropdownRef = useRef(null);
   const settingsOverlayRef = useRef(null);
   const settingsCardRef = useRef(null);
@@ -275,11 +279,69 @@ const App = () => {
       }
     });
 
+    // Subscribe to Date Mode status from main process
+    const unsubDateMode = window.electronAPI?.onDateModeChange?.((data) => {
+      console.log('[DateMode Status]', data);
+      const active = Boolean(data?.active);
+      setIsDateModeActive(active);
+      isDateModeActiveRef.current = active;
+      if (active && stopAllPlaybackRef.current) {
+        stopAllPlaybackRef.current();
+      }
+    });
+
+    // Also sync via BroadcastChannel and localStorage for multi-window / browser parity
+    let dateChannel = null;
+    try {
+      dateChannel = new BroadcastChannel('yuki_date_mode_channel');
+      dateChannel.onmessage = (evt) => {
+        const active = Boolean(evt.data?.active);
+        console.log('[DateMode BroadcastChannel]', evt.data);
+        setIsDateModeActive(active);
+        isDateModeActiveRef.current = active;
+        if (active && stopAllPlaybackRef.current) {
+          stopAllPlaybackRef.current();
+        }
+      };
+    } catch (_) {}
+
+    const handleDateStorage = (e) => {
+      if (e.key === 'yuki_date_mode_active') {
+        const active = e.newValue === 'true';
+        setIsDateModeActive(active);
+        isDateModeActiveRef.current = active;
+        if (active && stopAllPlaybackRef.current) {
+          stopAllPlaybackRef.current();
+        }
+      }
+    };
+    window.addEventListener('storage', handleDateStorage);
+
+    if (localStorage.getItem('yuki_date_mode_active') === 'true') {
+      setIsDateModeActive(true);
+      isDateModeActiveRef.current = true;
+      if (stopAllPlaybackRef.current) {
+        stopAllPlaybackRef.current();
+      }
+    }
+
     return () => {
       window.removeEventListener('error', handleError);
       window.removeEventListener('unhandledrejection', handleRejection);
       unsub?.();
+      unsubDateMode?.();
+      try { dateChannel?.close(); } catch (_) {}
+      window.removeEventListener('storage', handleDateStorage);
     };
+  }, []);
+
+  const handleLaunchDateMode = useCallback(() => {
+    if (window.electronAPI?.openDateWindow) {
+      window.electronAPI.openDateWindow();
+    } else {
+      const targetUrl = window.location.origin + window.location.pathname + '?mode=date';
+      window.open(targetUrl, 'YukiDateMode', 'width=1280,height=760,resizable=yes');
+    }
   }, []);
 
   useEffect(() => {
@@ -774,6 +836,7 @@ const App = () => {
   const stopSpeechRecognitionRef = useRef(null);
   const startSessionTimeoutRef = useRef(null);
   const updateListeningStateRef = useRef(null);
+  const resyncListeningStateRef = useRef(null);
   const getIsVoiceCommandModeRef = useRef(() => false);
   const getIsTalkModeRef = useRef(() => false);
   const sessionTimeoutRef = useRef(null);
@@ -792,6 +855,9 @@ const App = () => {
       fetchProfileDetails();
       fetchHealthDetails();
       fetchVrmModels();
+      // Re-sync mic listening state to backend after reconnect — prevents Whisper staying
+      // unloaded when the connection dropped while the mic was still active.
+      resyncListeningStateRef.current?.();
     },
     onMessage: (event) => handleWebSocketMessageRef.current?.(event)
   });
@@ -827,7 +893,8 @@ const App = () => {
     startSessionTimeout: () => startSessionTimeoutRef.current?.(),
     socketRef,
     stopSpeechRecognition: (force) => stopSpeechRecognitionRef.current?.(force),
-    setIsThinking
+    setIsThinking,
+    isDateModeActiveRef
   });
   stopAllPlaybackRef.current = stopAllPlayback;
 
@@ -873,7 +940,8 @@ const App = () => {
     stopSpeechRecognition,
     startSessionTimeout,
     clearContinuedConversationSession,
-    applyHeadsetPreference
+    applyHeadsetPreference,
+    resyncListeningState
   } = useSpeechRecognition({
     API_BASE,
     llmSpeechInputEnabled: profile?.settings?.llm_speech_input_enabled,
@@ -936,6 +1004,7 @@ const App = () => {
   stopSpeechRecognitionRef.current = stopSpeechRecognition;
   startSessionTimeoutRef.current = startSessionTimeout;
   updateListeningStateRef.current = updateListeningState;
+  resyncListeningStateRef.current = resyncListeningState;
 
   const currentResponseTextRef = useRef('');
   const toolBadgesAccumulatorRef = useRef('');
@@ -1265,6 +1334,10 @@ const App = () => {
         return newMessages;
       });
     } else if (msg.type === 'audio_chunk') {
+      if (isDateModeActiveRef.current) {
+        console.log('[TTS] audio_chunk suppressed in main app (Date Mode is active)');
+        return;
+      }
       setTtsStreamActive(true);
       hasReceivedAudioRef.current = true;
       try {
@@ -1286,6 +1359,11 @@ const App = () => {
         return newMessages;
       });
 
+      if (isDateModeActiveRef.current) {
+        currentResponseTextRef.current = '';
+        return;
+      }
+
       const isTtsOnly = msg.backend_used === 'tts_only';
       if (!isTtsOnly && !hasReceivedAudioRef.current && currentResponseTextRef.current && !muteVoice && !msg.is_coding_mode) {
         console.log(`[TTS] native fallback triggered for text="${currentResponseTextRef.current.slice(0, 80)}"`);
@@ -1306,6 +1384,10 @@ const App = () => {
         setMessages(cleanMsgs);
       }
     } else if (msg.type === 'speech') {
+      if (isDateModeActiveRef.current) {
+        console.log('[TTS] speech event suppressed in main app (Date Mode is active)');
+        return;
+      }
       setTtsStreamActive(true);
       setIsThinking(false);
       if (msg.audio_url) {
@@ -2460,6 +2542,72 @@ const App = () => {
         return;
       }
 
+      if (cmd === '/date' || cmd === '/date-mode') {
+        handleLaunchDateMode();
+        return;
+      }
+
+      if (cmd === '/model-objects') {
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        setIsThinking(false);
+        setTtsStreamActive(false);
+        const meshNames = avatarRef.current?.getMeshNames?.() ?? [];
+        let reply;
+        if (meshNames.length === 0) {
+          reply = 'No non-body mesh objects found on the current model. The model may not be loaded yet, or all meshes are part of the body.';
+        } else {
+          reply = `**Model mesh objects** (${meshNames.length} found):\n${meshNames.map((n) => `• \`${n}\``).join('\n')}\n\nUse \`/takeoff <name>\` to hide one, \`/puton <name>\` to show it again.`;
+        }
+        setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+        return;
+      }
+
+      if (cmd === '/takeoff' || cmd === '/puton') {
+        const meshName = parts.slice(1).join(' ').trim();
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        setIsThinking(false);
+        setTtsStreamActive(false);
+        if (!meshName) {
+          const helpMsg = `Please provide a mesh name. E.g. \`${cmd} Jacket\`. Use \`/model-objects\` to see available names.`;
+          setMessages((prev) => [...prev, { role: 'assistant', content: helpMsg }]);
+          return;
+        }
+        const isHide = cmd === '/takeoff';
+        const found = isHide
+          ? avatarRef.current?.hideMesh?.(meshName)
+          : avatarRef.current?.showMesh?.(meshName);
+        let reply;
+        if (!avatarRef.current) {
+          reply = 'Avatar is not loaded yet. Please wait for the 3D model to finish loading.';
+        } else if (found) {
+          reply = isHide
+            ? `Removed **${meshName}** from the model.`
+            : `Put **${meshName}** back on the model.`;
+        } else {
+          reply = `Could not find a mesh named **"${meshName}"** on the current model. Use \`/model-objects\` to see exact mesh names.`;
+        }
+        setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+        return;
+      }
+
+      if (cmd === '/takeoff-reset') {
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        setIsThinking(false);
+        setTtsStreamActive(false);
+        const restored = avatarRef.current?.resetMeshVisibility?.();
+        let reply;
+        if (!avatarRef.current) {
+          reply = 'Avatar is not loaded yet.';
+        } else if (restored === 0) {
+          reply = 'Nothing to restore — no meshes were hidden.';
+        } else {
+          reply = `Restored **${restored}** hidden mesh${restored === 1 ? '' : 'es'} back to original.`;
+        }
+        setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+        return;
+      }
+
+
       if (cmd === '/tts-test' || cmd === '/tts') {
         const rawWords = text.slice(parts[0].length).trim();
         if (!rawWords) {
@@ -3354,43 +3502,58 @@ const App = () => {
         '--button-tray-right': avatarScale > 1.6 ? '80px' : avatarScale > 1.3 ? '60px' : '48px'
       }}>
         <main className="canvas-container">
-          <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '20px', fontFamily: 'monospace' }}>Initializing 3D Engine...</div>}>
-            <AvatarViewer
-              audioLevel={audioLevel}
-              visemeLevels={visemeLevels}
-              isThinking={isThinking || ttsStreamActive}
-              isListening={isListening}
-              isWalking={isWalking}
-              walkDirection={walkDirection}
-              expression={avatarExpression}
-              cpuLoad={cpuLoad}
-              systemIdleTime={systemIdleTime}
-              onFileDropped={handleFileDropped}
-              scale={avatarScale}
-              skinToneColor={avatarSkinToneColor}
-              cameraTracking={cameraTracking}
-              customAnimation={customAnimation}
-              disabledAnimations={disabledAnimations}
-              activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
-              enableRotation={profile?.settings?.enable_rotation ?? true}
-              autoResetRotation={profile.settings?.auto_reset_rotation || false}
-              visible={isVisible}
-              isBackendOnline={backendStatus === 'online'}
-              vrmDpr={profile.settings?.vrm_dpr || 1.5}
-              vrmFps={profile.settings?.vrm_fps || 40}
-              boredom={presenceState.boredom}
-              energy={liveMood.energy}
-              playfulness={liveMood.playfulness}
-              mood={liveMood}
-              sleepState={presenceState.sleep_state}
-              onWakeCharacter={handleWakeCharacter}
-              onAnimationTriggered={handleAnimationTriggered}
-            />
-          </Suspense>
+          {!isDateModeActive ? (
+            <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '20px', fontFamily: 'monospace' }}>Initializing 3D Engine...</div>}>
+              <AvatarViewer
+                ref={avatarRef}
+                audioLevel={audioLevel}
+                visemeLevels={visemeLevels}
+                isThinking={isThinking || ttsStreamActive}
+                isListening={isListening}
+                isWalking={isWalking}
+                walkDirection={walkDirection}
+                expression={avatarExpression}
+                cpuLoad={cpuLoad}
+                systemIdleTime={systemIdleTime}
+                onFileDropped={handleFileDropped}
+                scale={avatarScale}
+                skinToneColor={avatarSkinToneColor}
+                cameraTracking={cameraTracking}
+                customAnimation={customAnimation}
+                disabledAnimations={disabledAnimations}
+                activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
+                enableRotation={profile?.settings?.enable_rotation ?? true}
+                autoResetRotation={profile.settings?.auto_reset_rotation || false}
+                visible={isVisible}
+                isBackendOnline={backendStatus === 'online'}
+                vrmDpr={profile.settings?.vrm_dpr || 1.5}
+                vrmFps={profile.settings?.vrm_fps || 40}
+                boredom={presenceState.boredom}
+                energy={liveMood.energy}
+                playfulness={liveMood.playfulness}
+                mood={liveMood}
+                sleepState={presenceState.sleep_state}
+                onWakeCharacter={handleWakeCharacter}
+                onAnimationTriggered={handleAnimationTriggered}
+              />
+            </Suspense>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-violet-400/80 font-mono text-xs p-4 text-center select-none pointer-events-none">
+              <span className="font-semibold text-sm mb-1">In Date Mode</span>
+              <span className="text-zinc-500">3D engine running in Date Window</span>
+            </div>
+          )}
         </main>
 
         {/* Floating Vertical Menu near Yuki's body */}
         <div className={`desktop-overlay-menu interactive-element ${isHovered || isChatOpen || isSettingsOpen ? 'visible' : ''}`}>
+          <button
+            className="desktop-menu-btn"
+            onClick={handleLaunchDateMode}
+            title="Date Mode (Going Out)"
+          >
+            <Heart className="w-5 h-5 text-pink-400" />
+          </button>
           <button
             className={`desktop-menu-btn ${isChatOpen ? 'active' : ''}`}
             onClick={() => setIsChatOpen(!isChatOpen)}
@@ -4827,6 +4990,44 @@ const App = () => {
                             style={{ accentColor: '#a855f7', cursor: 'pointer' }}
                           />
                         </div>
+
+                        {/* Reset Window Position button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.electronAPI && window.electronAPI.centerWindow) {
+                              window.electronAPI.centerWindow();
+                            }
+                          }}
+                          style={{
+                            marginTop: '8px',
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            padding: '5px 10px',
+                            borderRadius: '6px',
+                            background: 'rgba(168,85,247,0.12)',
+                            border: '1px solid rgba(168,85,247,0.3)',
+                            color: '#d8b4fe',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(168,85,247,0.22)';
+                            e.currentTarget.style.borderColor = 'rgba(168,85,247,0.5)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(168,85,247,0.12)';
+                            e.currentTarget.style.borderColor = 'rgba(168,85,247,0.3)';
+                          }}
+                        >
+                          <RotateCcw style={{ width: '12px', height: '12px' }} />
+                          Reset Position (Center Screen)
+                        </button>
                       </div>
 
                       <div className="desktop-form-group" style={{ flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
@@ -6005,40 +6206,70 @@ const App = () => {
           <ExternalLink className="w-3.5 h-3.5" />
           Pop-out Workspace
         </button>
+        <button
+          type="button"
+          onClick={handleLaunchDateMode}
+          title="Launch Date Mode"
+          style={{
+            background: 'rgba(244, 114, 182, 0.15)',
+            border: '1px solid rgba(244, 114, 182, 0.4)',
+            borderRadius: '6px',
+            padding: '4px 8px',
+            color: '#f472b6',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            fontSize: '0.72rem',
+            fontWeight: 600,
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <Heart className="w-3.5 h-3.5" />
+          Date Mode
+        </button>
       </header>
 
       <main className="canvas-container">
-        <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '20px', fontFamily: 'monospace' }}>Initializing 3D Engine...</div>}>
-          <AvatarViewer
-            audioLevel={audioLevel}
-            visemeLevels={visemeLevels}
-            isThinking={isThinking || ttsStreamActive}
-            isListening={isListening}
-            expression={avatarExpression}
-            cpuLoad={cpuLoad}
-            systemIdleTime={systemIdleTime}
-            onFileDropped={handleFileDropped}
-            scale={avatarScale}
-            skinToneColor={avatarSkinToneColor}
-            cameraTracking={cameraTracking}
-            customAnimation={customAnimation}
-            disabledAnimations={disabledAnimations}
-            activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
-            enableRotation={profile?.settings?.enable_rotation ?? true}
-            autoResetRotation={profile.settings?.auto_reset_rotation || false}
-            visible={isVisible}
-            isBackendOnline={backendStatus === 'online'}
-            vrmDpr={profile.settings?.vrm_dpr || 1.5}
-            vrmFps={profile.settings?.vrm_fps || 40}
-            boredom={presenceState.boredom}
-            energy={liveMood.energy}
-            playfulness={liveMood.playfulness}
-            mood={liveMood}
-            sleepState={presenceState.sleep_state}
-            onWakeCharacter={handleWakeCharacter}
-            onAnimationTriggered={handleAnimationTriggered}
-          />
-        </Suspense>
+        {!isDateModeActive ? (
+          <Suspense fallback={<div style={{ color: '#8b5cf6', padding: '20px', fontFamily: 'monospace' }}>Initializing 3D Engine...</div>}>
+            <AvatarViewer
+              ref={avatarRef}
+              audioLevel={audioLevel}
+              visemeLevels={visemeLevels}
+              isThinking={isThinking || ttsStreamActive}
+              isListening={isListening}
+              expression={avatarExpression}
+              cpuLoad={cpuLoad}
+              systemIdleTime={systemIdleTime}
+              onFileDropped={handleFileDropped}
+              scale={avatarScale}
+              skinToneColor={avatarSkinToneColor}
+              cameraTracking={cameraTracking}
+              customAnimation={customAnimation}
+              disabledAnimations={disabledAnimations}
+              activeModel={profile.settings?.active_vrm_model || 'default.vrm'}
+              enableRotation={profile?.settings?.enable_rotation ?? true}
+              autoResetRotation={profile.settings?.auto_reset_rotation || false}
+              visible={isVisible}
+              isBackendOnline={backendStatus === 'online'}
+              vrmDpr={profile.settings?.vrm_dpr || 1.5}
+              vrmFps={profile.settings?.vrm_fps || 40}
+              boredom={presenceState.boredom}
+              energy={liveMood.energy}
+              playfulness={liveMood.playfulness}
+              mood={liveMood}
+              sleepState={presenceState.sleep_state}
+              onWakeCharacter={handleWakeCharacter}
+              onAnimationTriggered={handleAnimationTriggered}
+            />
+          </Suspense>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-violet-400/80 font-mono text-xs p-4 text-center select-none pointer-events-none">
+            <span className="font-semibold text-sm mb-1">In Date Mode</span>
+            <span className="text-zinc-500">3D engine running in Date Window</span>
+          </div>
+        )}
       </main>
 
       {/* Floating Symmetrical Control UI overlay */}

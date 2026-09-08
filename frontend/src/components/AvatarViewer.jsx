@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useImperativeHandle } from 'react';
 import * as THREE from 'three';
 import { computeDesktopBubblePosition } from '../utils/desktopBubblePosition';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -16,7 +16,7 @@ const YUKI_SCALE_REDUCER = 0.9; // Reduce avatar size relative to window
 const windowWidthExtra = 0;
 
 // Yuki was here - feeling sassy and ready for snacks
-const AvatarViewer = ({
+const AvatarViewer = React.forwardRef(({
   audioLevel,
   visemeLevels = null,
   isThinking,
@@ -46,16 +46,76 @@ const AvatarViewer = ({
   sleepState = 'active',
   onWakeCharacter = null,
   onAnimationTriggered = null
-}) => {
+}, ref) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const vrmRef = useRef(null);
   const requestRef = useRef(null);
+
+  // Body-like mesh name substrings to exclude from /model-objects listing
+  const BODY_MESH_KEYWORDS = ['body', 'face', 'head', 'skin', 'base', 'eye', 'teeth', 'tongue', 'hair'];
+
+  // Imperative mesh API exposed to parent via ref
+  useImperativeHandle(ref, () => ({
+    /** Returns sorted list of non-body mesh names on the loaded VRM */
+    getMeshNames() {
+      if (!vrmRef.current?.scene) return [];
+      const names = new Set();
+      vrmRef.current.scene.traverse((obj) => {
+        if (obj.isMesh && obj.name) {
+          const lower = obj.name.toLowerCase();
+          const isBody = BODY_MESH_KEYWORDS.some((kw) => lower.includes(kw));
+          if (!isBody) names.add(obj.name);
+        }
+      });
+      return [...names].sort();
+    },
+    /** Hides a mesh by exact name. Returns true if found, false otherwise. */
+    hideMesh(name) {
+      if (!vrmRef.current?.scene) return false;
+      let found = false;
+      vrmRef.current.scene.traverse((obj) => {
+        if (obj.isMesh && obj.name === name) { obj.visible = false; found = true; }
+      });
+      return found;
+    },
+    /** Shows a previously hidden mesh by exact name. Returns true if found. */
+    showMesh(name) {
+      if (!vrmRef.current?.scene) return false;
+      let found = false;
+      vrmRef.current.scene.traverse((obj) => {
+        if (obj.isMesh && obj.name === name) { obj.visible = true; found = true; }
+      });
+      return found;
+    },
+    /** Restores all meshes to visible (undoes all /takeoff commands). */
+    resetMeshVisibility() {
+      if (!vrmRef.current?.scene) return 0;
+      let count = 0;
+      vrmRef.current.scene.traverse((obj) => {
+        if (obj.isMesh && !obj.visible) { obj.visible = true; count++; }
+      });
+      return count;
+    },
+  }), []);
+
+
   const clockRef = useRef(new THREE.Clock());
   const currentLoadIdRef = useRef(0);
   const fingerBonesRef = useRef({ left: {}, right: {} });
+  const animalBonesRef = useRef({ hasEars: false, hasTail: false, ears: { left: [], right: [] }, tail: [] });
+  const earTwitchStateRef = useRef({
+    leftTimer: 4.0 + Math.random() * 5.0,
+    leftDuration: 0.28,
+    leftProgress: 1.0,
+    leftAngle: 0.22,
+    rightTimer: 7.0 + Math.random() * 5.0,
+    rightDuration: 0.28,
+    rightProgress: 1.0,
+    rightAngle: 0.22,
+  });
   const startGreetingRef = useRef(false);
   const startCustomAnimationRef = useRef(null);
   const mixerRef = useRef(null);
@@ -873,6 +933,17 @@ const AvatarViewer = ({
       vrmaClipsCacheRef.current.clear();
       currentVrmaActionRef.current = null;
       isVrmaActiveRef.current = false;
+      animalBonesRef.current = { hasEars: false, hasTail: false, ears: { left: [], right: [] }, tail: [] };
+      earTwitchStateRef.current = {
+        leftTimer: 4.0 + Math.random() * 5.0,
+        leftDuration: 0.28,
+        leftProgress: 1.0,
+        leftAngle: 0.22,
+        rightTimer: 7.0 + Math.random() * 5.0,
+        rightDuration: 0.28,
+        rightProgress: 1.0,
+        rightAngle: 0.22,
+      };
 
       // Clear Three.js texture/file caches
       THREE.Cache.clear();
@@ -935,30 +1006,39 @@ const AvatarViewer = ({
         setHasVrm(true);
         setLoading(false);
 
-        // --- FIX A START: Force Advanced Mipmap Filtering ---
-        if (vrm.scene && isElectron) {
+        // --- FIX A START: Material Optimization & Anti-Aliasing ---
+        if (vrm.scene) {
           vrm.scene.traverse((child) => {
             if (child.isMesh && child.material) {
               const materials = Array.isArray(child.material) ? child.material : [child.material];
 
               materials.forEach((mat) => {
-                // Target core rendering maps along with custom Pixiv MToon shader extensions
-                const textureKeys = [
-                  'map',
-                  'shadeTexture',
-                  'rimTexture',
-                  'outlineWidthMultiplyTexture',
-                  'shadeMultiplierTexture'
-                ];
+                // Enable alphaToCoverage on materials with transparency or alpha cutouts (hair, bangs, eyelashes)
+                // This routes cutout edges directly through hardware MSAA with zero extra GPU cost
+                if (mat.transparent || (mat.alphaTest !== undefined && mat.alphaTest > 0)) {
+                  mat.alphaToCoverage = true;
+                  mat.needsUpdate = true;
+                }
 
-                textureKeys.forEach((key) => {
-                  if (mat[key] && mat[key].isTexture) {
-                    mat[key].generateMipmaps = false;               // Disable mipmaps to save VRAM and System RAM (prevents 33% expansion)
-                    mat[key].minFilter = THREE.LinearFilter;        // Use basic LinearFilter instead of Mipmap filters
-                    mat[key].magFilter = THREE.LinearFilter;
-                    mat[key].needsUpdate = true;
-                  }
-                });
+                // Target core rendering maps along with custom Pixiv MToon shader extensions
+                if (isElectron) {
+                  const textureKeys = [
+                    'map',
+                    'shadeTexture',
+                    'rimTexture',
+                    'outlineWidthMultiplyTexture',
+                    'shadeMultiplierTexture'
+                  ];
+
+                  textureKeys.forEach((key) => {
+                    if (mat[key] && mat[key].isTexture) {
+                      mat[key].generateMipmaps = false;               // Disable mipmaps to save VRAM and System RAM (prevents 33% expansion)
+                      mat[key].minFilter = THREE.LinearFilter;        // Use basic LinearFilter instead of Mipmap filters
+                      mat[key].magFilter = THREE.LinearFilter;
+                      mat[key].needsUpdate = true;
+                    }
+                  });
+                }
               });
             }
           });
@@ -1006,6 +1086,118 @@ const AvatarViewer = ({
           });
         });
         fingerBonesRef.current = cachedBones;
+
+        // Discover animal ear and tail bones (non-humanoid secondary bones)
+        const discoveredAnimalBones = {
+          hasEars: false,
+          hasTail: false,
+          ears: { left: [], right: [] },
+          tail: []
+        };
+
+        if (vrm.scene) {
+          const headNode = getBoneNode(vrm, 'head');
+
+          // Collect all bones belonging to standard humanoid skeleton to avoid false positives
+          const humanoidBonesSet = new Set();
+          if (vrm.humanoid && vrm.humanoid.humanBones) {
+            Object.values(vrm.humanoid.humanBones).forEach((hb) => {
+              if (hb && hb.node) humanoidBonesSet.add(hb.node);
+            });
+          }
+
+          // Exclude terms: human ear accessories, jewelry, glasses, hair styles
+          const earExcludeRegex = /earring|pierc|accessory|acc|ribbon|bow|glass|cloth|human|mesh/i;
+          const earMatchRegex = /(?:cat|dog|wolf|fox|animal|kemono|neko|inu|kitsune|ookami)?_?ear|mimi/i;
+          const leftRegex = /(?:^|[_.-])(?:l|left)(?:[_.-]|\d|$)|左/i;
+          const rightRegex = /(?:^|[_.-])(?:r|right)(?:[_.-]|\d|$)|右/i;
+
+          // Tail terms: tail, shippo, bita, 尾. Strictly exclude ponytail and twintail hair styles!
+          const tailExcludeRegex = /ponytail|twintail|twin_tail|pony_tail|front|side|hair|ribbon|bow|cloth|dress/i;
+          const tailMatchRegex = /(?:^|[_.-])(?:tail|shippo|bita)(?:[_.-]|\d|$)|尾/i;
+
+          const isDescendantOf = (child, ancestor) => {
+            if (!ancestor || !child) return false;
+            let curr = child.parent;
+            while (curr) {
+              if (curr === ancestor) return true;
+              curr = curr.parent;
+            }
+            return false;
+          };
+
+          const candidateTailBones = [];
+
+          vrm.scene.traverse((obj) => {
+            if (!obj.isBone && obj.type !== 'Bone') return;
+            if (humanoidBonesSet.has(obj)) return;
+
+            const name = obj.name || '';
+
+            // Check for ear bones (must be attached under Head)
+            if (earMatchRegex.test(name) && !earExcludeRegex.test(name)) {
+              if (headNode && isDescendantOf(obj, headNode)) {
+                if (!obj._initialRotation) {
+                  obj._initialRotation = obj.rotation.clone();
+                  obj._initialQuaternion = obj.quaternion.clone();
+                }
+                if (leftRegex.test(name)) {
+                  discoveredAnimalBones.ears.left.push(obj);
+                } else if (rightRegex.test(name)) {
+                  discoveredAnimalBones.ears.right.push(obj);
+                } else {
+                  const localX = obj.position.x;
+                  if (localX > 0.005) {
+                    discoveredAnimalBones.ears.left.push(obj);
+                  } else if (localX < -0.005) {
+                    discoveredAnimalBones.ears.right.push(obj);
+                  } else {
+                    discoveredAnimalBones.ears.left.push(obj);
+                  }
+                }
+              }
+            }
+
+            // Check for tail bones (must NOT be attached to head/neck; must be under hips/spine or pelvis)
+            if (tailMatchRegex.test(name) && !tailExcludeRegex.test(name)) {
+              const underHead = headNode && isDescendantOf(obj, headNode);
+              if (!underHead) {
+                if (!obj._initialRotation) {
+                  obj._initialRotation = obj.rotation.clone();
+                  obj._initialQuaternion = obj.quaternion.clone();
+                }
+                candidateTailBones.push(obj);
+              }
+            }
+          });
+
+          // Sort bones by hierarchy depth (root first, tip last)
+          const sortByDepth = (arr) => {
+            arr.sort((a, b) => {
+              let depthA = 0; let currA = a.parent;
+              while (currA) { depthA++; currA = currA.parent; }
+              let depthB = 0; let currB = b.parent;
+              while (currB) { depthB++; currB = currB.parent; }
+              return depthA - depthB;
+            });
+          };
+
+          sortByDepth(discoveredAnimalBones.ears.left);
+          sortByDepth(discoveredAnimalBones.ears.right);
+
+          if (candidateTailBones.length > 0) {
+            sortByDepth(candidateTailBones);
+            discoveredAnimalBones.tail = candidateTailBones;
+          }
+
+          discoveredAnimalBones.hasEars = (discoveredAnimalBones.ears.left.length > 0 || discoveredAnimalBones.ears.right.length > 0);
+          discoveredAnimalBones.hasTail = discoveredAnimalBones.tail.length > 0;
+        }
+
+        animalBonesRef.current = discoveredAnimalBones;
+        if (discoveredAnimalBones.hasEars || discoveredAnimalBones.hasTail) {
+          console.log(`[AvatarViewer] Animal features detected: ${discoveredAnimalBones.ears.left.length} left ear bones, ${discoveredAnimalBones.ears.right.length} right ear bones, ${discoveredAnimalBones.tail.length} tail bones.`);
+        }
 
         // Auto-position camera to look at the face/body dynamically adapting to full model height & bounding box
         let unscaledTotalHeight = 1.65;
@@ -1251,7 +1443,7 @@ const AvatarViewer = ({
       canvas: canvasRef.current,
       antialias: true,
       alpha: true,
-      premultipliedAlpha: false,
+      premultipliedAlpha: true,
       powerPreference: "high-performance",
     });
     rendererRef.current = renderer;
@@ -3625,12 +3817,12 @@ const AvatarViewer = ({
           if (isSpeaking) {
             if (vLevels) {
               if (isKokoro) {
-                // Dedicated expressive articulatory range for Kokoro phonetic lip-sync
-                speechAa = THREE.MathUtils.clamp(vLevels.aa || 0, 0, 0.78);
-                speechIh = THREE.MathUtils.clamp(vLevels.ih || 0, 0, 0.65);
-                speechOu = THREE.MathUtils.clamp(vLevels.ou || 0, 0, 0.58);
-                speechEe = THREE.MathUtils.clamp(vLevels.ee || 0, 0, 0.60);
-                speechOh = THREE.MathUtils.clamp(vLevels.oh || 0, 0, 0.72);
+                // Dedicated expressive articulatory range for Kokoro phonetic lip-sync (balanced horizontal spread)
+                speechAa = THREE.MathUtils.clamp(vLevels.aa || 0, 0, 0.82);
+                speechIh = THREE.MathUtils.clamp(vLevels.ih || 0, 0, 0.38);
+                speechOu = THREE.MathUtils.clamp(vLevels.ou || 0, 0, 0.56);
+                speechEe = THREE.MathUtils.clamp(vLevels.ee || 0, 0, 0.36);
+                speechOh = THREE.MathUtils.clamp(vLevels.oh || 0, 0, 0.70);
               } else {
                 // Exact previous clamps & restrictions preserved for non-Kokoro / formant lip-sync
                 speechAa = THREE.MathUtils.clamp(vLevels.aa || 0, 0, 0.38);
@@ -3716,11 +3908,11 @@ const AvatarViewer = ({
             } else if (currentExpr === 'smug') {
               targetHappy = 0.0; // Closed mouth, open eyes
               targetRelaxed = 1.0; // Wide confident smile
-              targetBrowUp = 0.3; // Confident brow raise
+              targetBrowUp = 0.16; // Confident subtle brow raise
             } else if (currentExpr === 'happy') {
               targetHappy = 0.0; // Set to 0 to avoid VRM's pre-baked eye closing and jaw-drop morphs on joy
               targetRelaxed = 1.0; // Use open-eyed relaxed wide smile instead
-              targetBrowUp = 0.35; // raise brows slightly on smile
+              targetBrowUp = 0.12; // Gentle resting smile brow lift
             } else if (emotionDef && emotionDef.blendShapes) {
               const bs = emotionDef.blendShapes;
               targetHappy = bs.happy || 0.0;
@@ -3728,20 +3920,21 @@ const AvatarViewer = ({
               targetAngry = bs.angry || 0.0;
               targetSurprised = bs.surprised || 0.0;
               targetRelaxed = bs.relaxed || 0.0;
-              targetBrowUp = bs.browUp || 0.0;
-              targetBrowDown = bs.browDown || 0.0;
+              // Scale incoming emotion brow targets to maintain grounded, anatomical realism
+              targetBrowUp = (bs.browUp || 0.0) * 0.50;
+              targetBrowDown = (bs.browDown || 0.0) * 0.50;
             } else if (currentExpr === 'sad') {
               targetSad = 1.0;
-              targetBrowDown = 0.65; // furrow brows on sad
+              targetBrowDown = 0.30; // gentle brow furrow on sad
             } else if (currentExpr === 'angry') {
               targetAngry = 1.0;
-              targetBrowDown = 0.85; // furrow brows on angry
+              targetBrowDown = 0.45; // furrow brows on angry
             } else if (currentExpr === 'surprised') {
               targetSurprised = 1.0;
-              targetBrowUp = 0.9;   // lift brows high on surprise
+              targetBrowUp = 0.45;   // natural lift on surprise
             } else if (currentExpr === 'relaxed') {
               targetRelaxed = 1.0;
-              targetBrowUp = 0.2;
+              targetBrowUp = 0.08;
             }
           } else {
             // Base OS states / live Mood Engine resting facial expressions
@@ -3752,11 +3945,11 @@ const AvatarViewer = ({
             } else if (isThinkingRef.current) {
               targetRelaxed = 0.5;
               targetSurprised = 0.0;
-              targetBrowDown = 0.55; // furrow brows while concentrating
+              targetBrowDown = 0.18; // subtle brow furrow while concentrating (was 0.55)
             } else if (isListeningRef.current) {
               targetRelaxed = 0.3;
               targetHappy = 0;
-              targetBrowUp = 0.45;   // raise brows on listening interest
+              targetBrowUp = 0.14;   // gentle attentiveness brow raise (was 0.45)
             } else {
               // Dynamic resting facial expression computed from live Mood Engine:
               const m = moodRef.current || {};
@@ -3767,18 +3960,18 @@ const AvatarViewer = ({
 
               if (anger >= 60) {
                 targetAngry = Math.min(0.5, (anger - 50) / 50 * 0.4);
-                targetBrowDown = 0.35;
+                targetBrowDown = 0.18;
               } else if (stress >= 65 || happiness <= 30) {
                 targetSad = 0.35;
-                targetBrowDown = 0.25;
+                targetBrowDown = 0.14;
               } else if (playfulness >= 65) {
                 targetRelaxed = 0.45;
-                targetBrowUp = 0.25;
+                targetBrowUp = 0.12;
               } else if (happiness >= 45) {
-                // Gentle, warm resting anime smile proportional to happiness
+                // Gentle, warm resting anime smile proportional to happiness (subtle, non-twitchy)
                 const smile = Math.min(0.65, Math.max(0.15, (happiness - 35) / 90));
                 targetRelaxed = smile;
-                targetBrowUp = smile * 0.35;
+                targetBrowUp = smile * 0.14;
               } else {
                 targetHappy = 0.0;
                 targetRelaxed = 0.0;
@@ -3802,8 +3995,8 @@ const AvatarViewer = ({
               if (bs.angry !== undefined) targetAngry = THREE.MathUtils.lerp(targetAngry, bs.angry, easeVal);
               if (bs.surprised !== undefined) targetSurprised = THREE.MathUtils.lerp(targetSurprised, bs.surprised, easeVal);
               if (bs.relaxed !== undefined) targetRelaxed = THREE.MathUtils.lerp(targetRelaxed, bs.relaxed, easeVal);
-              if (bs.browUp !== undefined) targetBrowUp = THREE.MathUtils.lerp(targetBrowUp, bs.browUp, easeVal);
-              if (bs.browDown !== undefined) targetBrowDown = THREE.MathUtils.lerp(targetBrowDown, bs.browDown, easeVal);
+              if (bs.browUp !== undefined) targetBrowUp = THREE.MathUtils.lerp(targetBrowUp, bs.browUp * 0.45, easeVal);
+              if (bs.browDown !== undefined) targetBrowDown = THREE.MathUtils.lerp(targetBrowDown, bs.browDown * 0.45, easeVal);
             }
             // Specific custom procedural expression timing (e.g. napping wake-up startle):
             if (idleAnimState === 'napping') {
@@ -3813,7 +4006,7 @@ const AvatarViewer = ({
                 const wakeT = (t - 0.7) / 0.3;
                 const decay = Math.exp(-wakeT * 5.0);
                 targetSurprised = THREE.MathUtils.lerp(targetSurprised, 0.85 * decay, decay);
-                targetBrowUp = THREE.MathUtils.lerp(targetBrowUp, 0.75 * decay, decay);
+                targetBrowUp = THREE.MathUtils.lerp(targetBrowUp, 0.35 * decay, decay);
               }
             }
           }
@@ -3822,7 +4015,7 @@ const AvatarViewer = ({
           if (dragStateProgress > 0) {
             const dragSurprise = THREE.MathUtils.clamp(dragStateProgress, 0, 1);
             targetSurprised = THREE.MathUtils.lerp(targetSurprised, 0.85, dragSurprise);
-            targetBrowUp = THREE.MathUtils.lerp(targetBrowUp, 0.80, dragSurprise);
+            targetBrowUp = THREE.MathUtils.lerp(targetBrowUp, 0.45, dragSurprise);
             targetRelaxed = THREE.MathUtils.lerp(targetRelaxed, 0.0, dragSurprise);
             targetHappy = THREE.MathUtils.lerp(targetHappy, 0.0, dragSurprise);
             targetSad = THREE.MathUtils.lerp(targetSad, 0.0, dragSurprise);
@@ -3831,15 +4024,17 @@ const AvatarViewer = ({
           }
 
           // Smoothly interpolate current values towards targets (using delta * speed)
-          // A speed of 5.5s is fast enough to feel responsive, but slow enough to be beautifully smooth.
+          // Mouth/eyes use exprSpeed = 5.5 for responsiveness,
+          // while eyebrows use a damped browSpeed = 2.2 for organic, anatomical weight and to eliminate jitter.
           const exprSpeed = 5.5;
+          const browSpeed = 2.2;
           currentHappy += (targetHappy - currentHappy) * delta * exprSpeed;
           currentSad += (targetSad - currentSad) * delta * exprSpeed;
           currentAngry += (targetAngry - currentAngry) * delta * exprSpeed;
           currentSurprised += (targetSurprised - currentSurprised) * delta * exprSpeed;
           currentRelaxed += (targetRelaxed - currentRelaxed) * delta * exprSpeed;
-          currentBrowUp += (targetBrowUp - currentBrowUp) * delta * exprSpeed;
-          currentBrowDown += (targetBrowDown - currentBrowDown) * delta * exprSpeed;
+          currentBrowUp += (targetBrowUp - currentBrowUp) * delta * browSpeed;
+          currentBrowDown += (targetBrowDown - currentBrowDown) * delta * browSpeed;
 
           // Calculate micro-expression fluctuations (small organic twitches)
           const microScale = 0.025; // max 2.5% deviation
@@ -3857,14 +4052,14 @@ const AvatarViewer = ({
           const finalHappy = Math.max(0, Math.min(1, (currentHappy + microHappy) * speechDampen));
           const finalRelaxed = Math.max(0, Math.min(1, (currentRelaxed + microRelaxed) * speechDampen));
 
-          // Apply smooth expression values to VRM with micro-fluctuations
+          // Apply smooth expression values to VRM with micro-fluctuations and safe brow clamping
           setExpressionValue(vrm, 'happy', finalHappy);
           setExpressionValue(vrm, 'sad', Math.max(0, Math.min(1, currentSad + microSad)));
           setExpressionValue(vrm, 'angry', Math.max(0, Math.min(1, currentAngry + microAngry)));
           setExpressionValue(vrm, 'surprised', Math.max(0, Math.min(1, currentSurprised + microSurprised)));
           setExpressionValue(vrm, 'relaxed', finalRelaxed);
-          setExpressionValue(vrm, 'browUp', Math.max(0, Math.min(1, currentBrowUp)));
-          setExpressionValue(vrm, 'browDown', Math.max(0, Math.min(1, currentBrowDown)));
+          setExpressionValue(vrm, 'browUp', Math.max(0, Math.min(0.55, currentBrowUp)));
+          setExpressionValue(vrm, 'browDown', Math.max(0, Math.min(0.55, currentBrowDown)));
 
           // Blinking and winking output blend (squinting disabled per user request)
           const squintValue = 0.0;
@@ -3898,6 +4093,153 @@ const AvatarViewer = ({
 
           setExpressionValue(vrm, 'blinkLeft', finalBlinkLeft);
           setExpressionValue(vrm, 'blinkRight', finalBlinkRight);
+
+          // Procedural Animal Features (Ears & Tail) Layer
+          const enableAnimalFeatures = !disabledAnimationsRef.current.includes('animal_features') && (window.yukiDebugToggles ? window.yukiDebugToggles.animalFeatures !== false : true);
+          if (enableAnimalFeatures && animalBonesRef.current && (animalBonesRef.current.hasEars || animalBonesRef.current.hasTail)) {
+            const animalBones = animalBonesRef.current;
+            const twitchState = earTwitchStateRef.current;
+            const isSleeping = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping');
+
+            // --- 1. Procedural Ear Twitches & Posture ---
+            if (animalBones.hasEars) {
+              const sleepEarFold = sleepProgressRef.current * 0.18;
+
+              // Left ear twitch timer & progress
+              if (twitchState.leftProgress < 1.0) {
+                twitchState.leftProgress += delta / twitchState.leftDuration;
+                if (twitchState.leftProgress >= 1.0) {
+                  twitchState.leftProgress = 1.0;
+                  // Schedule next left twitch (7-18s awake, 25-45s sleeping)
+                  const baseWait = isSleeping ? (25 + Math.random() * 20) : (7 + Math.random() * 11);
+                  twitchState.leftTimer = baseWait;
+                }
+              } else {
+                twitchState.leftTimer -= delta;
+                if (twitchState.leftTimer <= 0) {
+                  twitchState.leftProgress = 0.0;
+                  twitchState.leftDuration = 0.22 + Math.random() * 0.08;
+                  twitchState.leftAngle = 0.18 + Math.random() * 0.08;
+                }
+              }
+
+              // Right ear twitch timer & progress
+              if (twitchState.rightProgress < 1.0) {
+                twitchState.rightProgress += delta / twitchState.rightDuration;
+                if (twitchState.rightProgress >= 1.0) {
+                  twitchState.rightProgress = 1.0;
+                  const baseWait = isSleeping ? (25 + Math.random() * 20) : (7 + Math.random() * 11);
+                  twitchState.rightTimer = baseWait;
+                }
+              } else {
+                twitchState.rightTimer -= delta;
+                if (twitchState.rightTimer <= 0) {
+                  twitchState.rightProgress = 0.0;
+                  twitchState.rightDuration = 0.22 + Math.random() * 0.08;
+                  twitchState.rightAngle = 0.18 + Math.random() * 0.08;
+                }
+              }
+
+              // Damped spring oscillation curve for ear flick
+              const calcTwitchVal = (p) => {
+                if (p >= 1.0) return 0;
+                if (p < 0.25) {
+                  return Math.sin((p / 0.25) * (Math.PI / 2));
+                }
+                const settleP = (p - 0.25) / 0.75;
+                return Math.cos(settleP * Math.PI * 2.5) * Math.exp(-settleP * 3.5);
+              };
+
+              const twitchLeftVal = calcTwitchVal(twitchState.leftProgress) * (twitchState.leftAngle || 0.22);
+              const twitchRightVal = calcTwitchVal(twitchState.rightProgress) * (twitchState.rightAngle || 0.22);
+
+              // Gentle ambient organic breathing drift (subtle micro-tremor so ears don't look frozen)
+              const ambientMultiplier = 1.0 - sleepProgressRef.current * 0.6;
+              const ambientL = (Math.sin(time * 1.5) * 0.008 + Math.cos(time * 0.9) * 0.005) * ambientMultiplier;
+              const ambientR = (Math.sin(time * 1.4 + 1.2) * 0.008 + Math.cos(time * 0.85) * 0.005) * ambientMultiplier;
+
+              // Apply to Left Ear Bones
+              animalBones.ears.left.forEach((bone, idx) => {
+                if (!bone || !bone._initialRotation) return;
+                const factor = 1.0 + idx * 0.35;
+                bone.rotation.z = bone._initialRotation.z - (twitchLeftVal * factor + ambientL) - sleepEarFold;
+                bone.rotation.x = bone._initialRotation.x + (twitchLeftVal * factor * 0.35);
+              });
+
+              // Apply to Right Ear Bones
+              animalBones.ears.right.forEach((bone, idx) => {
+                if (!bone || !bone._initialRotation) return;
+                const factor = 1.0 + idx * 0.35;
+                bone.rotation.z = bone._initialRotation.z + (twitchRightVal * factor + ambientR) + sleepEarFold;
+                bone.rotation.x = bone._initialRotation.x + (twitchRightVal * factor * 0.35);
+              });
+            }
+
+            // --- 2. Procedural Multi-Segment Tail Swish & Mood Wagging ---
+            if (animalBones.hasTail && animalBones.tail.length > 0) {
+              const numSegs = animalBones.tail.length;
+
+              // Baseline idle: calm, relaxed slow swish
+              let wagSpeed = 1.8;
+              let wagAmp = 0.16;
+              let tailDroop = 0.0;
+
+              // Emotion / Mood Modulation (Strictly NO listening or thinking reactions!)
+              if (currentHappy > 0.05) {
+                // Cheerful, fast wagging
+                wagSpeed += currentHappy * 3.4;
+                wagAmp += currentHappy * 0.18;
+              }
+              if (currentAngry > 0.05) {
+                // Tense base with tight amplitude
+                wagAmp *= (1.0 - currentAngry * 0.45);
+              }
+              if (currentRelaxed > 0.05) {
+                // Slower, fluid wide swish
+                wagSpeed *= (1.0 - currentRelaxed * 0.3);
+                wagAmp += currentRelaxed * 0.05;
+              }
+              if (currentSad > 0.05) {
+                // Drooping, subdued tail
+                tailDroop += currentSad * 0.22;
+                wagSpeed *= (1.0 - currentSad * 0.4);
+                wagAmp *= (1.0 - currentSad * 0.5);
+              }
+
+              // Sleep modulation: calm to rest pose and curl down gently
+              if (sleepProgressRef.current > 0.01) {
+                tailDroop += sleepProgressRef.current * 0.32;
+                const sleepDampen = Math.max(0.08, 1.0 - sleepProgressRef.current * 0.85);
+                wagSpeed *= sleepDampen;
+                wagAmp *= sleepDampen;
+              }
+
+              // Walking sway counter-balance
+              const walkSway = isWalkingRef.current ? Math.sin(time * 3.8) * 0.10 : 0;
+
+              // Wave propagation along contiguous tail bones
+              animalBones.tail.forEach((bone, i) => {
+                if (!bone || !bone._initialRotation) return;
+                const segRatio = (i + 1) / numSegs;
+                const phase = time * wagSpeed - i * 0.52;
+
+                // Horizontal sway (Y axis)
+                let swayY = Math.sin(phase) * wagAmp * segRatio + walkSway * segRatio;
+
+                // Sharp tip irritability if angry
+                if (currentAngry > 0.1 && i >= Math.max(0, numSegs - 2)) {
+                  swayY += Math.sin(time * 9.5) * 0.12 * currentAngry;
+                }
+
+                // Vertical 3D wave harmonic (X axis curl/undulation)
+                const waveX = Math.cos(phase * 0.9) * (wagAmp * 0.22) * segRatio;
+                const curlX = tailDroop * segRatio;
+
+                bone.rotation.y = bone._initialRotation.y + swayY;
+                bone.rotation.x = bone._initialRotation.x + curlX + waveX;
+              });
+            }
+          }
 
           // Dynamic wind force and spring bones physics solving
           const enableSpringBones = window.yukiDebugToggles ? window.yukiDebugToggles.springBones : true;
@@ -4187,6 +4529,8 @@ const AvatarViewer = ({
       )}
     </div>
   );
-};
+});
+
+AvatarViewer.displayName = 'AvatarViewer';
 
 export default AvatarViewer;

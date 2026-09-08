@@ -494,8 +494,7 @@ export const ANIMATIONS = [
     llmTag: '<yuki_anim:dogeza/>',
     commands: [
       { cmd: '/ani-dogeza', description: 'Deep regret bow / dogeza apology (mocap)' },
-      { cmd: '/ani-regret_bow', description: 'Deep regret bow (alias)' },
-      { cmd: '/ani-disappointed2', description: 'Disappointed Option 2 (legacy alias)' }
+      { cmd: '/ani-regret_bow', description: 'Deep regret bow (alias)' }
     ],
     responseText: '*apologizes with a deep, regretful dogeza bow*',
     blendShapes: { sad: 0.85, browDown: 0.6 }
@@ -637,82 +636,82 @@ export const EMOTIONS = {
   happy: {
     name: 'happy',
     llmTag: '<yuki_emotion:happy/>',
-    blendShapes: { happy: 0.0, relaxed: 1.0, browUp: 0.35, sad: 0.0, angry: 0.0, surprised: 0.0, browDown: 0.0 }
+    blendShapes: { happy: 0.0, relaxed: 1.0, browUp: 0.20, sad: 0.0, angry: 0.0, surprised: 0.0, browDown: 0.0 }
   },
   excited: {
     name: 'excited',
     llmTag: '<yuki_emotion:excited/>',
-    blendShapes: { happy: 0.95, surprised: 0.4, browUp: 0.5, relaxed: 0.2, sad: 0.0, angry: 0.0, browDown: 0.0 }
+    blendShapes: { happy: 0.95, surprised: 0.4, browUp: 0.30, relaxed: 0.2, sad: 0.0, angry: 0.0, browDown: 0.0 }
   },
   sad: {
     name: 'sad',
     llmTag: '<yuki_emotion:sad/>',
-    blendShapes: { sad: 0.75, browDown: 0.3, happy: 0.0, angry: 0.0, surprised: 0.0, relaxed: 0.0, browUp: 0.0 }
+    blendShapes: { sad: 0.75, browDown: 0.25, happy: 0.0, angry: 0.0, surprised: 0.0, relaxed: 0.0, browUp: 0.0 }
   },
   angry: {
     name: 'angry',
     llmTag: '<yuki_emotion:angry/>',
-    blendShapes: { angry: 0.8, browDown: 0.8, happy: 0.0, sad: 0.0, surprised: 0.0, relaxed: 0.0, browUp: 0.0 }
+    blendShapes: { angry: 0.8, browDown: 0.50, happy: 0.0, sad: 0.0, surprised: 0.0, relaxed: 0.0, browUp: 0.0 }
   },
   surprised: {
     name: 'surprised',
     llmTag: '<yuki_emotion:surprised/>',
-    blendShapes: { surprised: 0.85, browUp: 0.7, happy: 0.1, sad: 0.0, angry: 0.0, relaxed: 0.0, browDown: 0.0 }
+    blendShapes: { surprised: 0.85, browUp: 0.45, happy: 0.1, sad: 0.0, angry: 0.0, relaxed: 0.0, browDown: 0.0 }
   },
   relaxed: {
     name: 'relaxed',
     llmTag: '<yuki_emotion:relaxed/>',
-    blendShapes: { relaxed: 1.0, happy: 0.0, browUp: 0.1, sad: 0.0, angry: 0.0, surprised: 0.0, browDown: 0.0 }
+    blendShapes: { relaxed: 1.0, happy: 0.0, browUp: 0.10, sad: 0.0, angry: 0.0, surprised: 0.0, browDown: 0.0 }
   },
   thinking: {
     name: 'thinking',
     llmTag: '<yuki_emotion:thinking/>',
-    blendShapes: { relaxed: 0.4, browDown: 0.55, happy: 0.0, sad: 0.0, angry: 0.0, surprised: 0.0, browUp: 0.0 }
+    blendShapes: { relaxed: 0.4, browDown: 0.25, happy: 0.0, sad: 0.0, angry: 0.0, surprised: 0.0, browUp: 0.0 }
   },
   embarrassed: {
     name: 'embarrassed',
     llmTag: '<yuki_emotion:embarrassed/>',
-    blendShapes: { happy: 0.3, sad: 0.3, browUp: 0.4, surprised: 0.3 }
+    blendShapes: { happy: 0.3, sad: 0.3, browUp: 0.22, surprised: 0.3 }
   },
   smug: {
     name: 'smug',
     llmTag: '<yuki_emotion:smug/>',
-    blendShapes: { happy: 0.0, relaxed: 1.0, browUp: 0.3 }
+    blendShapes: { happy: 0.0, relaxed: 1.0, browUp: 0.20 }
   },
   skeptical: {
     name: 'skeptical',
     llmTag: '<yuki_emotion:skeptical/>',
-    blendShapes: { browUp: 0.8, browDown: 0.5, relaxed: 0.3 }
+    blendShapes: { browUp: 0.35, browDown: 0.25, relaxed: 0.3 }
   },
   disappointed: {
     name: 'disappointed',
     llmTag: '<yuki_emotion:disappointed/>',
-    blendShapes: { sad: 0.6, browDown: 0.4 }
+    blendShapes: { sad: 0.6, browDown: 0.25 }
   },
   pleading: {
     name: 'pleading',
     llmTag: '<yuki_emotion:pleading/>',
-    blendShapes: { surprised: 0.4, happy: 0.2, browUp: 0.85 }
+    blendShapes: { surprised: 0.4, happy: 0.2, browUp: 0.35 }
   },
   crying: {
     name: 'crying',
     llmTag: '<yuki_emotion:crying/>',
-    blendShapes: { sad: 0.95, browDown: 0.5 }
+    blendShapes: { sad: 0.95, browDown: 0.35 }
   },
   bittersweet: {
     name: 'bittersweet',
     llmTag: '<yuki_emotion:bittersweet/>',
-    blendShapes: { sad: 0.5, happy: 0.65, browUp: 0.3 }
+    blendShapes: { sad: 0.5, happy: 0.65, browUp: 0.20 }
   },
   exhausted: {
     name: 'exhausted',
     llmTag: '<yuki_emotion:exhausted/>',
-    blendShapes: { sad: 0.5, angry: 0.3, browDown: 0.7 }
+    blendShapes: { sad: 0.5, angry: 0.3, browDown: 0.35 }
   },
   shocked: {
     name: 'shocked',
     llmTag: '<yuki_emotion:shocked/>',
-    blendShapes: { surprised: 1.0, browUp: 0.9 }
+    blendShapes: { surprised: 1.0, browUp: 0.50 }
   },
   wink: {
     name: 'wink',
@@ -826,8 +825,6 @@ export const LLM_ANIMATION_MAP = {
   dogeza: 'dogeza_bow',
   dogeza_bow: 'dogeza_bow',
   regret_bow: 'dogeza_bow',
-  disappointed2: 'dogeza_bow',
-  disappointed_opt2: 'dogeza_bow',
   speaking: 'speaking_gesture',
   speaking_gesture: 'speaking_gesture',
   utsuwa1: 'idle_utsuwa_1',
@@ -858,7 +855,7 @@ export const LLM_ANIMATION_MAP = {
   fret: 'shy_fidget',
   pat: 'nodding',
   hug: 'formal_bow',
-  sigh: 'dogeza_bow',
+  sigh: 'head_shake',
   rub_eyes: 'sleepy_rub_eyes'
 };
 

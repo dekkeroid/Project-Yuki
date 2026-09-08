@@ -28,6 +28,8 @@ vectors.db-wal
 vectors.db-shm
 backend/app/memory/vectors.db*
 backend/.tool_cache/
+backend/prompt_logs/
+prompt_logs/
 *.srt
 yuki_crawler.log
 metadata_tagger.log
@@ -113,3 +115,6 @@ frontendUnityV2/Assets/TextMesh Pro.meta
 *.VC.db
 sysinfo
 CrashReports/
+
+# Ignore 3d assets
+frontend/public/3d_assets/

@@ -1,3 +1,4 @@
+import ast
 import json
 import re
 import traceback
@@ -18,6 +19,38 @@ from app.memory.local_mem import MemoryManager
 from app.memory.mood_engine import MoodTagScrubber
 from app.tools.definitions import get_tools_definition, get_filtered_tools
 
+
+_TOOL_PRIMARY_ARG: Dict[str, List[str]] = {
+    "jarvis_see_screen": ["prompt", "window_title"],
+    "see_screen": ["prompt", "window_title"],
+    "jarvis_get_image": ["image_path"],
+    "jarvis_analyze_image": ["image_path", "prompt"],
+    "jarvis_web_search": ["query"],
+    "web_search": ["query"],
+    "jarvis_web_scrape": ["url"],
+    "web_scrape": ["url"],
+    "jarvis_read_file": ["file_path"],
+    "read_file": ["file_path"],
+    "read_file_content": ["file_path"],
+    "jarvis_grep_files": ["pattern"],
+    "jarvis_find_files_by_glob": ["pattern"],
+    "search_files": ["query"],
+    "jarvis_query_file_db": ["query"],
+    "jarvis_change_avatar_outfit": ["model_or_outfit"],
+    "change_avatar_outfit": ["model_or_outfit"],
+    "launch_app": ["app_name"],
+    "jarvis_launch_app": ["app_name"],
+    "close_app": ["app_name"],
+    "jarvis_close_app": ["app_name"],
+    "jarvis_run_python": ["code"],
+    "run_python_script": ["code"],
+    "jarvis_run_terminal": ["command"],
+    "run_terminal_command": ["command"],
+    "set_system_volume": ["volume_level"],
+    "jarvis_system_volume": ["volume_level"],
+    "update_user_fact": ["fact_text"],
+    "jarvis_remember_user_fact": ["fact_text"],
+}
 
 _SHORT_CIRCUIT_TOOLS = {
     "open_or_play_file",
@@ -104,10 +137,11 @@ def _format_msg_timestamp(ts: Any) -> str:
         return ""
 
 
-def _log_payload_stats(payload: dict, model: str, tag: str = ""):
+def _log_payload_stats(payload: dict, model: str, tag: str = "", endpoint: str = ""):
     """
     Prints the total character count and estimated token count of the exact
-    JSON payload about to be sent to the LLM ("the whole stuff we send").
+    JSON payload about to be sent to the LLM ("the whole stuff we send"),
+    and writes the complete prompt as the LLM sees it into a timestamped log file.
     Token count is an estimate at ~3.5 chars/token, matching the codebase's
     existing approximation (no local tokenizer is installed).
     """
@@ -126,6 +160,12 @@ def _log_payload_stats(payload: dict, model: str, tag: str = ""):
         f"{total_chars:,} total chars | ~{est_tokens:,} est tokens "
         f"(payload JSON, chars/3.5) | {msg_chars:,} chars in message contents"
     )
+
+    try:
+        from app.utils.prompt_logger import log_llm_prompt
+        log_llm_prompt(payload, model=model, tag=tag, endpoint=endpoint)
+    except Exception as log_err:
+        print(f"[LLM Prompt Log] Error logging prompt to file: {log_err}")
 
 
 _TIKTOKEN_ENCODING = None
@@ -642,13 +682,25 @@ class AgentExecutor:
         """
         Normalizes and auto-heals corrupted, doubled, or hallucinated tool names.
         e.g., 'jarvis_web_searchjarvis_web_search' -> 'jarvis_web_search'
+        Also strips API namespace prefixes like 'default_api:tool_name' -> 'tool_name'.
         """
         if not tool_name or not isinstance(tool_name, str):
             return ""
 
         cleaned = tool_name.strip()
-        if hasattr(self, "tools") and cleaned in self.tools:
-            return cleaned
+        # Strip provider namespace prefixes (e.g. 'default_api:', 'api:', 'functions.', 'tools.')
+        if ":" in cleaned:
+            cleaned = cleaned.split(":")[-1].strip()
+        elif "." in cleaned:
+            cleaned = cleaned.split(".")[-1].strip()
+
+        if hasattr(self, "tools"):
+            if cleaned in self.tools:
+                return cleaned
+            if f"jarvis_{cleaned}" in self.tools:
+                return f"jarvis_{cleaned}"
+            if cleaned.startswith("jarvis_") and cleaned[7:] in self.tools:
+                return cleaned[7:]
 
         # 1. Check for exact repeated string concatenations (e.g. "tooltool", "tooltooltool")
         if hasattr(self, "tools"):
@@ -1369,6 +1421,7 @@ class AgentExecutor:
                 messages=messages,
                 temperature=0.5,
             )
+            _log_payload_stats(payload, config.LLM_MODEL, tag="exception_explain", endpoint=url)
             async with persistent_session_context() as session:
                 async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                     resp.raise_for_status()
@@ -1450,10 +1503,12 @@ class AgentExecutor:
 
         effective_tool_mode = overrides.get("tool_mode") or getattr(config, "TOOL_MODE", "basic")
 
+        effective_send_tools = overrides.get("send_tools_in_simple") if (overrides and overrides.get("send_tools_in_simple") is not None) else getattr(config, "SEND_TOOLS_IN_SIMPLE", False)
+
         profile_obj = getattr(self.memory, "profile", None) if hasattr(self, "memory") else None
         if overrides.get("coding_mode"):
             system_content = get_coding_agent_system_prompt(memory_summary, mood, overrides=overrides, profile=profile_obj)
-        elif backend == "simple" and not getattr(config, "SEND_TOOLS_IN_SIMPLE", False):
+        elif backend == "simple" and not effective_send_tools:
             system_content = get_simple_system_prompt(memory_summary, mood, mood_meta=mood_meta, profile=profile_obj, overrides=overrides)
         else:
             if effective_tool_mode == "advanced":
@@ -1490,7 +1545,7 @@ class AgentExecutor:
 
         # Whole-prompt overhead: system prompt + tool schemas + current query.
         overhead = _count_tokens(system_content) + _count_tokens(user_message)
-        sends_tools = backend != "simple" or getattr(config, "SEND_TOOLS_IN_SIMPLE", False)
+        sends_tools = backend != "simple" or effective_send_tools
         if sends_tools:
             try:
                 if settings.get("dynamic_tool_calling", True):
@@ -2114,6 +2169,7 @@ class AgentExecutor:
             use_tools=False,   # No tool schemas — pure text output
         )
         payload["max_tokens"] = 5  # "Yes" or "No" — single token
+        _log_payload_stats(payload, config.LLM_MODEL, tag="intent_check", endpoint=backend.get_chat_url())
 
         try:
             async with persistent_session_context() as check_session:
@@ -2297,7 +2353,7 @@ class AgentExecutor:
         )
         if max_tokens:
             payload["max_tokens"] = int(max_tokens)
-        _log_payload_stats(payload, model_name, tag="query")
+        _log_payload_stats(payload, model_name, tag="query", endpoint=url)
         headers = backend.build_headers()
         if "Authorization" not in headers and not _is_local_url(url):
             return f"Missing API key for {url}. Add a valid API key for this endpoint, then try again.", None, self._get_model_label(model_name)
@@ -2427,6 +2483,13 @@ class AgentExecutor:
             print(f"\n[LLM Response (Iteration {iteration}, Backend: {backend_used})]:\n{llm_response}\n")
             log_triggered_backend_tags(llm_response)
             
+            if not tool_calls and llm_response:
+                extracted_calls, cleaned_narration = self._extract_inline_tool_calls(llm_response)
+                if extracted_calls:
+                    print(f"[InlineToolParser] Successfully extracted {len(extracted_calls)} inline tool call(s) from non-streaming text: {[c['function']['name'] for c in extracted_calls]}")
+                    tool_calls = extracted_calls
+                    llm_response = cleaned_narration
+
             if tool_calls:
                 # Normalize missing tool_call ids BEFORE appending the assistant message
                 # so every assistant tool_call matches its subsequent tool response.
@@ -2635,7 +2698,7 @@ class AgentExecutor:
             stream=True,
         )
 
-        _log_payload_stats(payload, model, tag="stream")
+        _log_payload_stats(payload, model, tag="stream", endpoint=url)
         max_attempts = len(llm_backend.get_api_key_pool()) if allow_key_rotation and hasattr(llm_backend, "get_api_key_pool") and llm_backend.get_api_key_pool() else 1
         for attempt in range(max(1, max_attempts)):
             headers = llm_backend.build_headers()
@@ -2776,6 +2839,91 @@ class AgentExecutor:
                 err_msg = {"content": tb_e.get_error_message(e)}
                 yield err_msg, self._get_model_label(tm_e)
 
+    def _parse_tag_tool_payload(self, raw_payload: str) -> List[Dict[str, Any]]:
+        """
+        Parses tool call payload from inside XML tags (<tool_call>...</tool_call>),
+        supporting JSON dictionaries, Gemini format (default_api:tool_name{key:val}),
+        Python call format (tool_name(key='val')), and unquoted key-value parameters.
+        """
+        cleaned = raw_payload.strip()
+        if not cleaned:
+            return []
+
+        # 1. Direct JSON structure (e.g. {"name": "...", "arguments": {...}} or {"tool": "..."})
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, dict):
+                parsed = self._parse_single_tool_json(data)
+                if parsed:
+                    return [parsed]
+            elif isinstance(data, list):
+                res = []
+                for it in data:
+                    p = self._parse_single_tool_json(it)
+                    if p:
+                        res.append(p)
+                if res:
+                    return res
+        except Exception:
+            pass
+
+        # 2. Match patterns: default_api:tool_name{...}, tool_name(...), api:tool_name{...}, tool_name
+        m = re.match(
+            r'^(?:call:)?(?:[a-zA-Z0-9_]+[:.])?([a-zA-Z0-9_]+)\s*(?:[{(\[]\s*([\s\S]*?)\s*[})\]]|\s*$)',
+            cleaned
+        )
+        if m:
+            fn_name = m.group(1).strip()
+            body = (m.group(2) or "").strip()
+            norm_name = self._normalize_tool_name(fn_name)
+
+            # Ensure the extracted tool is a registered tool or known tool pattern
+            if hasattr(self, "tools") and self.tools:
+                if not (norm_name in self.tools or fn_name in self.tools or norm_name.startswith("jarvis_") or fn_name.startswith("jarvis_")):
+                    return []
+
+            args_dict = {}
+            if body:
+                try:
+                    if body.startswith("{") and body.endswith("}"):
+                        args_dict = json.loads(body)
+                    else:
+                        args_dict = json.loads("{" + body + "}")
+                except Exception:
+                    args_dict = self._parse_python_args(norm_name, body)
+                    if not args_dict:
+                        # Loose key-value parser for unquoted values (e.g. window_title:active, query:who is this)
+                        pattern = re.compile(r'([a-zA-Z0-9_]+)\s*[:=]\s*(?:"([^"]*)"|\'([^\']*)\'|([^,{}()]+))')
+                        for km in pattern.finditer(body):
+                            k = km.group(1).strip()
+                            val = km.group(2) if km.group(2) is not None else (km.group(3) if km.group(3) is not None else km.group(4).strip())
+                            val_lower = val.lower()
+                            if val_lower == 'true':
+                                args_dict[k] = True
+                            elif val_lower == 'false':
+                                args_dict[k] = False
+                            elif val_lower in ('null', 'none'):
+                                args_dict[k] = None
+                            else:
+                                try:
+                                    args_dict[k] = int(val)
+                                except ValueError:
+                                    try:
+                                        args_dict[k] = float(val)
+                                    except ValueError:
+                                        args_dict[k] = val
+
+            return [{
+                "id": self._unique_tool_call_id(f"tag_{norm_name}"),
+                "type": "function",
+                "function": {
+                    "name": norm_name,
+                    "arguments": json.dumps(args_dict)
+                }
+            }]
+
+        return []
+
     def _extract_inline_tool_calls(self, text: str) -> Tuple[List[Dict[str, Any]], str]:
         """
         Extracts tool calls embedded directly in LLM text (e.g. <tool_call>...</tool_call>,
@@ -2801,13 +2949,9 @@ class AgentExecutor:
             if parsed_calls:
                 extracted.extend(parsed_calls)
             else:
-                try:
-                    data = json.loads(raw_payload)
-                    parsed = self._parse_single_tool_json(data)
-                    if parsed:
-                        extracted.append(parsed)
-                except Exception:
-                    pass
+                tag_calls = self._parse_tag_tool_payload(raw_payload)
+                if tag_calls:
+                    extracted.extend(tag_calls)
 
         # Pattern 2: Markdown blocks ```tool_args or ```json if no tag calls found
         if not extracted:
@@ -2833,11 +2977,97 @@ class AgentExecutor:
             if parsed_calls:
                 return parsed_calls, ""
 
+        # Pattern 4: Python-style function calls (e.g. jarvis_see_screen(), tool_name(...))
+        # Matches standalone lines or code-fenced lines where the function name matches a registered tool
+        if not extracted:
+            py_call_pattern = re.compile(
+                r'(?:```(?:python|py)?\s*\n)?(?:^|\n)\s*`?\s*(?:await\s+)?([a-zA-Z0-9_]+)\s*\(([\s\S]*?)\)\s*`?(?:\s*\n```)?(?=\n|$)',
+                re.IGNORECASE
+            )
+            for m in py_call_pattern.finditer(text):
+                fn_name = m.group(1).strip()
+                raw_args = m.group(2).strip()
+                norm_name = self._normalize_tool_name(fn_name)
+                # Ensure the matched function name is a valid registered tool or known tool alias
+                if not (norm_name in self.tools or fn_name in self.tools or fn_name.startswith("jarvis_")):
+                    continue
+
+                parsed_args = self._parse_python_args(norm_name, raw_args)
+                call_dict = {
+                    "id": f"call_inline_{uuid.uuid4().hex[:8]}",
+                    "type": "function",
+                    "function": {
+                        "name": norm_name,
+                        "arguments": json.dumps(parsed_args)
+                    }
+                }
+                extracted.append(call_dict)
+                if first_match_start is None or m.start() < first_match_start:
+                    first_match_start = m.start()
+
         if extracted:
             cleaned_narration = text[:first_match_start].strip() if first_match_start is not None else ""
             return extracted, cleaned_narration
 
-        return [], text
+        # Even if extraction didn't match a valid tool, strip any raw <tool_call>...</tool_call> tags from output text
+        # so raw markup never leaks into conversational chat UI or TTS
+        cleaned_text = tag_pattern.sub("", text).strip()
+        return [], cleaned_text
+
+    def _parse_python_args(self, tool_name: str, args_str: str) -> dict:
+        """Parses Pythonic keyword or positional function arguments into a JSON-compatible dict."""
+        if not args_str:
+            return {}
+        cleaned = args_str.strip()
+        if not cleaned:
+            return {}
+        if cleaned.startswith("{") and cleaned.endswith("}"):
+            try:
+                return json.loads(cleaned)
+            except Exception:
+                pass
+
+        try:
+            tree = ast.parse(f"call({cleaned})", mode="eval")
+            call_node = tree.body
+            parsed = {}
+            for kw in getattr(call_node, "keywords", []):
+                try:
+                    parsed[kw.arg] = ast.literal_eval(kw.value)
+                except Exception:
+                    parsed[kw.arg] = getattr(ast, "unparse", str)(kw.value).strip("'\"")
+            
+            if getattr(call_node, "args", []):
+                pos_vals = []
+                for a in call_node.args:
+                    try:
+                        pos_vals.append(ast.literal_eval(a))
+                    except Exception:
+                        pos_vals.append(getattr(ast, "unparse", str)(a).strip("'\""))
+                
+                param_names = _TOOL_PRIMARY_ARG.get(tool_name, ["prompt", "query", "file_path", "target"])
+                for idx, val in enumerate(pos_vals):
+                    if idx < len(param_names):
+                        parsed.setdefault(param_names[idx], val)
+            return parsed
+        except Exception:
+            pass
+
+        # Fallback regex for key="value" or key='value'
+        kv_pairs = re.findall(r'([a-zA-Z0-9_]+)\s*=\s*(?:["\'](.*?)["\']|(\S+))', cleaned)
+        if kv_pairs:
+            res = {}
+            for k, v1, v2 in kv_pairs:
+                res[k] = v1 if v1 else v2
+            return res
+
+        # Single string literal without key (e.g. jarvis_see_screen("check this"))
+        str_match = re.match(r'^\s*["\'](.*?)["\']\s*$', cleaned, re.DOTALL)
+        if str_match:
+            primary_param = _TOOL_PRIMARY_ARG.get(tool_name, ["prompt"])[0]
+            return {primary_param: str_match.group(1)}
+
+        return {}
 
     def _try_parse_json_tool_call(self, text: str) -> list:
         cleaned = text.strip()
@@ -4020,17 +4250,17 @@ class AgentExecutor:
                             "content": system_message_content
                         })
                 else:
-                    if accumulated_response.strip():
-                        accumulated_response_total.append(accumulated_response.strip())
-                    
                     llm_handled_energy = False
                     if mood_scrubber is not None and mood_llm_mode:
                         llm_handled_energy = bool(self._finalize_llm_mood(mood_scrubber, user_message))
                     # React to Yuki's own words — her speech also affects her mood
                     assistant_speech = accumulated_response.strip()
+                    clean_speech = assistant_speech
                     if pending_visual_tool_indices and assistant_speech:
                         transcript_match = re.search(r'(?i)\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\][\s\S]*', assistant_speech)
                         extracted_transcript = transcript_match.group(0).strip() if transcript_match else assistant_speech.strip()
+                        if transcript_match:
+                            clean_speech = assistant_speech[:transcript_match.start()].strip()
                         for _v_idx in pending_visual_tool_indices:
                             if 0 <= _v_idx < len(current_messages):
                                 _curr_c = str(current_messages[_v_idx].get("content", ""))
@@ -4048,10 +4278,13 @@ class AgentExecutor:
                             pending_visual_badge_indices.clear()
                         pending_visual_tool_indices.clear()
 
-                    if assistant_speech:
+                    if clean_speech:
+                        accumulated_response_total.append(clean_speech)
+
+                    if clean_speech:
                         try:
                             react_scope = "physical" if mood_llm_mode else "full"
-                            self.memory.react_mood_self(assistant_speech, scope=react_scope)
+                            self.memory.react_mood_self(clean_speech, scope=react_scope)
                         except Exception:
                             pass
                     # mood_effecter — per-turn couplings of her own state
@@ -4108,12 +4341,13 @@ class AgentExecutor:
             llm_handled_energy = False
             if mood_scrubber is not None and mood_llm_mode:
                 llm_handled_energy = bool(self._finalize_llm_mood(mood_scrubber, user_message))
-            if wrap_response.strip():
-                accumulated_response_total.append(wrap_response.strip())
             wrap_speech = wrap_response.strip()
+            clean_wrap_speech = wrap_speech
             if pending_visual_tool_indices and wrap_speech:
                 transcript_match = re.search(r'(?i)\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\][\s\S]*', wrap_speech)
                 extracted_transcript = transcript_match.group(0).strip() if transcript_match else wrap_speech.strip()
+                if transcript_match:
+                    clean_wrap_speech = wrap_speech[:transcript_match.start()].strip()
                 for _v_idx in pending_visual_tool_indices:
                     if 0 <= _v_idx < len(current_messages):
                         _curr_c = str(current_messages[_v_idx].get("content", ""))
@@ -4131,10 +4365,13 @@ class AgentExecutor:
                     pending_visual_badge_indices.clear()
                 pending_visual_tool_indices.clear()
 
-            if wrap_speech:
+            if clean_wrap_speech:
+                accumulated_response_total.append(clean_wrap_speech)
+
+            if clean_wrap_speech:
                 try:
                     react_scope = "physical" if mood_llm_mode else "full"
-                    self.memory.react_mood_self(wrap_speech, scope=react_scope)
+                    self.memory.react_mood_self(clean_wrap_speech, scope=react_scope)
                 except Exception:
                     pass
             # mood_effecter — per-turn couplings of her own state

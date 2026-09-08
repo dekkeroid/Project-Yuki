@@ -185,6 +185,8 @@ export const BATTERY_PLUG_RESPONSES = {
 import { ANIMATIONS } from './animationsRegistry';
 
 export const STATIC_COMMANDS = [
+  { cmd: '/date',          description: 'Launch Date Mode 3D dinner scene with Yuki' },
+  { cmd: '/date-mode',     description: 'Launch Date Mode 3D dinner scene with Yuki (alias)' },
   { cmd: '/tts-test',      description: 'Test TTS speech directly on custom text without querying the LLM' },
   { cmd: '/tts',           description: 'Test TTS speech directly (Alias for /tts-test)' },
   { cmd: '/pcstat',        description: 'Show live PC stats (CPU, RAM, GPU...)' },
@@ -210,6 +212,10 @@ export const STATIC_COMMANDS = [
   { cmd: '/ani-neutral',   description: 'Reset expression to neutral (alias)' },
   { cmd: '/stretch',       description: 'Stretch arms overhead' },
   { cmd: '/ani-stretch',   description: 'Stretch arms overhead (alias)' },
+  { cmd: '/model-objects', description: 'List all non-body mesh objects on the loaded VRM model' },
+  { cmd: '/takeoff',       description: 'Hide a named mesh on the VRM model. Usage: /takeoff <name>' },
+  { cmd: '/puton',         description: 'Show a hidden mesh on the VRM model. Usage: /puton <name>' },
+  { cmd: '/takeoff-reset', description: 'Restore all hidden meshes back to original visibility' },
 ];
 
 export const SLASH_COMMANDS = [

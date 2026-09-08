@@ -9522,6 +9522,44 @@ const ControlDashboard = ({
                           }} />
                         </button>
                       </div>
+
+                      {/* Reset Window Position button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.electronAPI && window.electronAPI.centerWindow) {
+                            window.electronAPI.centerWindow();
+                          }
+                        }}
+                        style={{
+                          marginTop: '8px',
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '7px 12px',
+                          borderRadius: '8px',
+                          background: 'rgba(168,85,247,0.12)',
+                          border: '1px solid rgba(168,85,247,0.3)',
+                          color: '#d8b4fe',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(168,85,247,0.22)';
+                          e.currentTarget.style.borderColor = 'rgba(168,85,247,0.5)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(168,85,247,0.12)';
+                          e.currentTarget.style.borderColor = 'rgba(168,85,247,0.3)';
+                        }}
+                      >
+                        <RotateCcw style={{ width: '13px', height: '13px' }} />
+                        Reset Position (Center Screen)
+                      </button>
                     </div>
 
                     {/* VRM Avatar Model */}

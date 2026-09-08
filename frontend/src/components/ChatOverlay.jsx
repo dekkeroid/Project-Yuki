@@ -79,6 +79,9 @@ export const parseMessageThought = (rawContent) => {
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 
+  // 4. Strip visual transcript metadata block from clean text content so it only lives in the tool accordion
+  cleanContent = cleanContent.replace(/\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\][\s\S]*$/i, '').trim();
+
   return { thoughts, toolBadges, cleanContent };
 };
 

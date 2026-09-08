@@ -93,6 +93,24 @@ function createWindow() {
     }
   });
 
+  // Center window on primary display
+  ipcMain.on('center-window', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    if (win) {
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const { width, height, x, y } = primaryDisplay.workArea;
+      const bounds = win.getBounds();
+      const centerX = Math.round(x + (width - bounds.width) / 2);
+      const centerY = Math.round(y + (height - bounds.height) / 2);
+      win.setBounds({
+        x: centerX,
+        y: centerY,
+        width: bounds.width,
+        height: bounds.height
+      });
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });

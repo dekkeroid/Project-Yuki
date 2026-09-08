@@ -20,6 +20,8 @@ load_dotenv(_APP_DIR / ".env")
 BASE_DIR = _APP_DIR
 PROFILE_PATH = BASE_DIR / "profile.json"
 YUKI_READY_MARKER = BASE_DIR / ".yuki-ready"
+PROMPT_LOGS_DIR = BASE_DIR / "prompt_logs"
+LOG_LLM_PROMPTS = os.environ.get("LOG_LLM_PROMPTS", "true").strip().lower() not in ("0", "false", "no", "off")
 
 # Network
 YUKI_HOST = os.environ.get("YUKI_HOST", "127.0.0.1")
