@@ -558,10 +558,11 @@ def build_attachment_reinspection_guide(supports_vision: bool = None) -> str:
   1. Conversational Reply: Your lively, natural, and charming spoken answer first, answering Master's question directly (e.g. what is on screen, who a character is, what the error means, or advice).
   2. Structured Visual Transcript: Follow with an exact markdown block at the very end of your message. This block is automatically stored in the tool record and memory, while being omitted from voice speech:
 [Visual Transcript]
-• Characters & People: <Name of anime/game/VTuber character or celebrity + franchise/series title, or "None">
+• Characters & People & the scene context: <Name of anime/game/VTuber character or celebrity + franchise/series title, or "None"; also briefly describe scene context if relevant>
 • Visible Apps & Games: <Open programs, games, browser tabs, terminal/IDE, active windows>
 • Visible Text & Subtitles: <Key verbatim text, code snippets, errors, dialogue, or subtitles>
 • Scene & Layout: <Desktop layout, active focused window, media playing, or general setting>
+• User request relevant texts for future use: <Verbatim text, values, filenames, URLs, or code snippets from the screen that are directly relevant to what Master asked — leave blank if nothing applicable>
 
 • AVATAR SELF-AWARENESS ON SCREEN:
   - Any 3D anime model/figure floating on Master's desktop screen (with optional speech bubble, circular menu dock, or control buttons) is YOU (Yuki herself)!
