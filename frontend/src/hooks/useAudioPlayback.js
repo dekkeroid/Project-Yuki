@@ -13,7 +13,8 @@ export function useAudioPlayback(options = {}) {
     startSessionTimeout,
     socketRef,
     stopSpeechRecognition,
-    setIsThinking
+    setIsThinking,
+    isDateModeActiveRef
   } = options;
 
   const [muteVoice, setMuteVoiceState] = useState(() => {
@@ -149,7 +150,11 @@ export function useAudioPlayback(options = {}) {
 
           if (usePhonetics) {
             // ENGINE 1: Kokoro Phonetic Timeline Mode (IPA articulatory alignment with real-time acoustic modulation)
-            const curTime = audioRef.current.currentTime || 0;
+            // Anticipatory Lookahead (+42ms): Compensates for browser audio buffer latency (~15-25ms)
+            // and the biological pre-phonemic motion where human lips shape slightly before acoustic onset.
+            // This gives the mouth filter time to glide smoothly without visually lagging behind the sound.
+            const LOOKAHEAD_SEC = 0.042;
+            const curTime = (audioRef.current.currentTime || 0) + LOOKAHEAD_SEC;
             let activeCue = null;
             let nextCue = null;
             for (let i = 0; i < currentVisemes.length; i++) {
@@ -168,24 +173,78 @@ export function useAudioPlayback(options = {}) {
               const energyFactor = w > 0 ? Math.min(1.20, Math.max(0.40, normalized * 1.85)) : 0.0;
               const effectiveW = w * energyFactor;
 
-              if (v === 'aa') targetAa = effectiveW;
-              else if (v === 'ih') targetIh = effectiveW;
-              else if (v === 'ou') targetOu = effectiveW;
-              else if (v === 'ee') targetEe = effectiveW;
-              else if (v === 'oh') targetOh = effectiveW;
+              // Composite articulatory mapping: In human speech anatomy, voiced phonemes require vertical
+              // mandible depression ('aa') to produce acoustic resonance. In 3D VRM blend shapes, 'ee' and 'ih'
+              // only retract the mouth corners sideways along the X-axis. Supplying composite vertical jaw opening
+              // prevents her lips from behaving like a horizontal slit.
+              if (v === 'aa') {
+                targetAa = effectiveW;
+              } else if (v === 'ee') {
+                targetEe = effectiveW;
+                targetAa = effectiveW * 0.48; // Open-mid front vowels (/e/, /ɛ/) drop jaw ~48%
+              } else if (v === 'ih') {
+                targetIh = effectiveW;
+                targetAa = effectiveW * 0.26; // High front vowels (/i/, /ɪ/) part teeth ~26%
+              } else if (v === 'oh') {
+                targetOh = effectiveW;
+                targetAa = effectiveW * 0.40; // Rounded back vowels (/o/, /ɔ/) drop jaw ~40%
+              } else if (v === 'ou') {
+                targetOu = effectiveW;
+                targetAa = effectiveW * 0.18; // Close rounded vowels (/u/) part lips ~18%
+              }
               // 'silence' keeps all targets at 0 (firm lip closure on bilabials /p/, /b/, /m/)
 
-              // Smooth 30ms cross-fade into next cue near phonetic boundary
-              if (nextCue && (activeCue.end - curTime < 0.030)) {
-                const blend = Math.max(0, Math.min(1, (0.030 - (activeCue.end - curTime)) / 0.030));
+              // Fluid Syllable Envelope: During connected phonation, humans do not slam their jaw shut
+              // on fleeting non-bilabial consonants (like 's', 't', 'd', 'k'). Maintain a relaxed jaw parting floor
+              // so the mouth glides continuously through words rather than chattering like a puppet.
+              if (v !== 'silence' && normalized > 0.03) {
+                const jawFloor = Math.min(0.18, normalized * 0.35);
+                targetAa = Math.max(targetAa, jawFloor);
+              }
+
+              // Smooth coarticulation cross-fade with organic S-curve across cues
+              const cueDur = Math.max(0.04, activeCue.end - activeCue.start);
+              const fadeWindow = Math.min(0.080, cueDur * 0.55);
+              const remaining = activeCue.end - curTime;
+              if (nextCue && remaining < fadeWindow) {
+                const rawBlend = Math.max(0, Math.min(1, (fadeWindow - remaining) / fadeWindow));
+                const blend = rawBlend * rawBlend * (3 - 2 * rawBlend); // Smoothstep S-curve
                 const lerp = (a, b, t) => a + (b - a) * t;
                 const nv = nextCue.viseme;
                 const nw = nextCue.weight * (nextCue.weight > 0 ? energyFactor : 0.0);
-                if (nv === 'aa') targetAa = lerp(targetAa, nw, blend);
-                else if (nv === 'ih') targetIh = lerp(targetIh, nw, blend);
-                else if (nv === 'ou') targetOu = lerp(targetOu, nw, blend);
-                else if (nv === 'ee') targetEe = lerp(targetEe, nw, blend);
-                else if (nv === 'oh') targetOh = lerp(targetOh, nw, blend);
+
+                let nextAa = 0;
+                let nextIh = 0;
+                let nextOu = 0;
+                let nextEe = 0;
+                let nextOh = 0;
+
+                if (nv === 'aa') {
+                  nextAa = nw;
+                } else if (nv === 'ee') {
+                  nextEe = nw;
+                  nextAa = nw * 0.48;
+                } else if (nv === 'ih') {
+                  nextIh = nw;
+                  nextAa = nw * 0.26;
+                } else if (nv === 'oh') {
+                  nextOh = nw;
+                  nextAa = nw * 0.40;
+                } else if (nv === 'ou') {
+                  nextOu = nw;
+                  nextAa = nw * 0.18;
+                }
+
+                if (nv !== 'silence' && normalized > 0.03) {
+                  const jawFloor = Math.min(0.18, normalized * 0.35);
+                  nextAa = Math.max(nextAa, jawFloor);
+                }
+
+                targetAa = lerp(targetAa, nextAa, blend);
+                targetIh = lerp(targetIh, nextIh, blend);
+                targetOu = lerp(targetOu, nextOu, blend);
+                targetEe = lerp(targetEe, nextEe, blend);
+                targetOh = lerp(targetOh, nextOh, blend);
               }
             }
           } else {
@@ -229,9 +288,10 @@ export function useAudioPlayback(options = {}) {
             }
           }
 
-          // Asymmetric smoothing: fast attack (opens quickly ~38/s), smooth decay (closes gently ~18/s)
-          const attackRate = usePhonetics ? 38.0 : 34.0;
-          const decayRate = usePhonetics ? 18.0 : 16.0;
+          // Asymmetric smoothing: balanced, organic attack (~18.0/s) with anticipatory lead,
+          // and gentle release decay (~11.0/s) for human-like fluidity without rapid snapping.
+          const attackRate = usePhonetics ? 18.0 : 34.0;
+          const decayRate = usePhonetics ? 11.0 : 16.0;
           const smoothViseme = (curr, target) => {
             const rate = target > curr ? attackRate : decayRate;
             return curr + (target - curr) * Math.min(1.0, dt * rate);
@@ -331,6 +391,10 @@ export function useAudioPlayback(options = {}) {
   const playNextAudioRef = useRef(null);
 
   const playVoiceResponse = useCallback((audioUrl, speechText, forcedExpression = null, visemes = null) => {
+    if (isDateModeActiveRef?.current) {
+      console.log("[Playback] playVoiceResponse suppressed because Date Mode is active.");
+      return;
+    }
     initAudioAnalyser();
     currentVisemesRef.current = (visemes && visemes.length > 0) ? visemes : null;
     const configuredEngine = profileRef.current?.settings?.lipsync_engine || 'kokoro';
@@ -470,6 +534,9 @@ export function useAudioPlayback(options = {}) {
   playNextAudioRef.current = playNextAudio;
 
   const queueAudioChunk = useCallback((audioUrl, speechText, index, visemes = null) => {
+    if (isDateModeActiveRef?.current) {
+      return;
+    }
     // Pre-flight: check for 202 X-TTS-Fallback:web sentinel (cloud TTS failure → browser fallback)
     fetch(audioUrl)
       .then(resp => {
@@ -515,6 +582,9 @@ export function useAudioPlayback(options = {}) {
 
 
   const speakTextNatively = useCallback((text, forcedExpression = null) => {
+    if (isDateModeActiveRef?.current) {
+      return;
+    }
     window.speechSynthesis.cancel();
     if (nativeSpeechIntervalRef.current) {
       clearInterval(nativeSpeechIntervalRef.current);
@@ -635,6 +705,9 @@ export function useAudioPlayback(options = {}) {
   speakTextNativelyRef.current = speakTextNatively;
 
   const speakSystemMessage = useCallback((text, expression = null) => {
+    if (isDateModeActiveRef?.current) {
+      return;
+    }
     systemMessageActiveRef.current = true;
     if (expression && setAvatarExpression) setAvatarExpression(expression);
 

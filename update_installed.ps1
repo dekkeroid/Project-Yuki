@@ -91,6 +91,22 @@ $frontendSources += @(Get-ChildItem "$frontendDir\public" -Recurse -File -ErrorA
 $frontendSources += @(Get-Item "$frontendDir\index.html", "$frontendDir\vite.config.js" -ErrorAction SilentlyContinue)
 $frontendChanged = Is-AnyNewer (Join-Path $installDir 'resources\frontend\dist\index.html') $frontendSources
 
+# Track 3D non-VRM game assets in public\3d_assets
+$installed3DAssets = Join-Path $installDir 'resources\frontend\dist\3d_assets'
+if ((-not (Test-Path $installed3DAssets)) -and (Test-Path "$frontendDir\public\3d_assets")) {
+    $frontendChanged = $true
+} elseif (Test-Path "$frontendDir\public\3d_assets") {
+    $assetsSources = @(Get-ChildItem "$frontendDir\public\3d_assets" -Recurse -File -ErrorAction SilentlyContinue)
+    foreach ($a in $assetsSources) {
+        $rel = $a.FullName.Substring((Join-Path $root "$frontendDir\public\").Length)
+        $destFile = Join-Path $installDir "resources\frontend\dist\$rel"
+        if ((-not (Test-Path $destFile)) -or ($a.LastWriteTime -gt (Get-Item $destFile).LastWriteTime)) {
+            $frontendChanged = $true
+            break
+        }
+    }
+}
+
 $electronSources = @(Get-Item `
     "$frontendDir\main.electron.cjs", `
     "$frontendDir\preload.cjs", `
@@ -324,6 +340,11 @@ if ($selFrontend) {
     Write-Host "--- Frontend UI: copying dist ---"
     $rc = robocopy "$root\$frontendDir\dist" (Join-Path $installDir 'resources\frontend\dist') /E /NFL /NDL /NJH /NJS /XD models
     if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
+
+    # Explicitly ensure 3D non-VRM assets are synced to installed app
+    if (Test-Path "$root\$frontendDir\public\3d_assets") {
+        robocopy "$root\$frontendDir\public\3d_assets" (Join-Path $installDir 'resources\frontend\dist\3d_assets') /E /NFL /NDL /NJH /NJS | Out-Null
+    }
 }
 
 if ($selBackend) {
@@ -460,6 +481,9 @@ if ($selElectron) {
         }
         if (Test-Path "$root\$frontendDir\dist") {
             robocopy "$root\$frontendDir\dist" (Join-Path $tempDir "dist") /E /NFL /NDL /NJH /NJS /XD models
+        }
+        if (Test-Path "$root\$frontendDir\public\3d_assets") {
+            robocopy "$root\$frontendDir\public\3d_assets" (Join-Path $tempDir "dist\3d_assets") /E /NFL /NDL /NJH /NJS | Out-Null
         }
         
         Push-Location "$root\$frontendDir"

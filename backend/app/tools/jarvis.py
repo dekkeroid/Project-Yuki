@@ -598,6 +598,11 @@ def _analyze_image_file(image_path: str, prompt: str) -> str:
             "temperature": 0.2
         }
 
+        try:
+            from app.utils.prompt_logger import log_llm_prompt
+            log_llm_prompt(payload, model=vision_model, tag="vision_analyze", endpoint=url)
+        except Exception:
+            pass
         resp = requests.post(url, headers=headers, json=payload, timeout=60)
         if resp.status_code == 200:
             data = resp.json()
@@ -621,6 +626,11 @@ def _analyze_image_file(image_path: str, prompt: str) -> str:
                     ]
                 }]
             }
+            try:
+                from app.utils.prompt_logger import log_llm_prompt
+                log_llm_prompt(g_payload, model=vision_model, tag="vision_gemini_fallback", endpoint=g_url)
+            except Exception:
+                pass
             g_resp = requests.post(g_url, json=g_payload, timeout=60)
             if g_resp.status_code == 200:
                 g_data = g_resp.json()
@@ -1168,6 +1178,11 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
                 "model": image_model or getattr(config, "LLM_MODEL", ""),
                 "messages": [{"role": "user", "content": f"Generate an image of: {prompt}"}]
             }
+            try:
+                from app.utils.prompt_logger import log_llm_prompt
+                log_llm_prompt(chat_payload, model=chat_payload["model"], tag="image_gen_chat", endpoint=chat_url)
+            except Exception:
+                pass
             c_resp = requests.post(chat_url, headers=headers, json=chat_payload, timeout=60)
             if c_resp.status_code == 200:
                 c_data = c_resp.json()

@@ -210,9 +210,9 @@ if __name__ == "__main__":
         else:
             from app.main_setup import app
         uvicorn.run(app, host=host, port=port, reload=False,
-                    ws_ping_interval=30, ws_ping_timeout=10)
+                    ws_ping_interval=30, ws_ping_timeout=60)
     else:
         uvicorn.run(f"{module}:app", host=host, port=port, reload=reload,
                     reload_dirs=["app"] if reload else None,
                     reload_includes=["*.py"] if reload else None,
-                    ws_ping_interval=30, ws_ping_timeout=10)
+                    ws_ping_interval=30, ws_ping_timeout=60)

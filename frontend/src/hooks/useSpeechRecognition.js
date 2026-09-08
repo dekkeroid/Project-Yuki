@@ -1063,10 +1063,23 @@ export function useSpeechRecognition(options = {}) {
     localStorage.setItem('yuki-vad-threshold', vadThreshold.toString());
   }, [vadThreshold]);
 
+
   // Init SpeechRecognition natively
   useEffect(() => {
     initSpeechRecognition();
   }, []);
+
+  // Re-signal the backend with the current listening state — call this after a WebSocket reconnect
+  // so the backend re-syncs Whisper's loaded/unloaded state without needing isListening to change.
+  const resyncListeningState = useCallback(() => {
+    if (!API_BASE) return;
+    const msg = isListening ? 'listening_mode_on' : 'listening_mode_off';
+    fetch(`${API_BASE}/api/speech/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg })
+    }).catch(() => {});
+  }, [API_BASE, isListening]);
 
   return {
     isTranscribing,
@@ -1110,6 +1123,7 @@ export function useSpeechRecognition(options = {}) {
     stopSpeechRecognition,
     startSessionTimeout,
     clearContinuedConversationSession,
-    applyHeadsetPreference
+    applyHeadsetPreference,
+    resyncListeningState
   };
 }

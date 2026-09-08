@@ -214,6 +214,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('yuki-trigger-animation', listener);
     return () => ipcRenderer.removeListener('yuki-trigger-animation', listener);
   },
+  // Dedicated Date Mode Window
+  openDateWindow: () => {
+    ipcRenderer.send('open-date-window');
+  },
+  closeDateWindow: () => {
+    ipcRenderer.send('close-date-window');
+  },
+  onDateModeChange: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('yuki:date-mode-change', handler);
+    return () => ipcRenderer.removeListener('yuki:date-mode-change', handler);
+  },
+  getGPUInfo: () => {
+    return ipcRenderer.invoke('get-gpu-info');
+  },
   platform: process.platform,
   isElectron: true
 });

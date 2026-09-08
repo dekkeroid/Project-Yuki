@@ -16,5 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setWindowPosition: (x, y) => {
     ipcRenderer.send('set-window-position', { x, y });
   },
+  centerWindow: () => {
+    ipcRenderer.send('center-window');
+  },
   isElectron: true
 });

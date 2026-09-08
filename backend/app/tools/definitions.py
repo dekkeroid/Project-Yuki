@@ -880,23 +880,23 @@ def get_advanced_jarvis_tools_definition() -> list:
             "function": {
                 "name": "jarvis_see_screen",
                 "description": (
-                    "Captures the active desktop monitor (or focused window) and attaches the live screenshot directly into your vision context so you can see it with your own eyes. "
-                    "Call with zero arguments jarvis_see_screen() or pass window_title='active'. Provide a detailed visual breakdown in your response."
+                    "Captures the active desktop monitor and attaches the live screenshot directly into your vision context so you can see it with your own eyes. "
+                    "Invoke with no parameters to capture the screen. Provide a detailed visual breakdown in your response."
                 ) if is_vision_active() else (
-                    "Captures the active monitor screen (or specific window via window_title) and inspects it with high-resolution vision. "
+                    "Captures the active monitor screen and inspects it with high-resolution vision. "
                     "Identifies anime/game characters, video streams, celebrities, open applications, and transcribes visible text, code, or UI elements."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "window_title": {"type": "string", "description": "Optional window title substring, or 'active' / 'current' to crop directly to the focused application window. Omit to capture the full active monitor."}
+                        "window_title": {"type": "string", "description": "Optional specific application window title substring if the user explicitly named an app. Omit to capture the full monitor."}
                     },
                     "required": []
                 } if is_vision_active() else {
                     "type": "object",
                     "properties": {
                         "prompt": {"type": "string", "description": "Visual analysis instructions sent to the vision model (e.g. 'Identify who this anime character is', 'Transcribe the terminal error')."},
-                        "window_title": {"type": "string", "description": "Optional window title substring, or 'active' / 'current' to crop directly to the focused application window."}
+                        "window_title": {"type": "string", "description": "Optional specific application window title substring if the user explicitly named an app. Omit to capture the full monitor."}
                     },
                     "required": ["prompt"]
                 }
