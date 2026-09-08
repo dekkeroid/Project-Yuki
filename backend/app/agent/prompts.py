@@ -562,7 +562,7 @@ def build_attachment_reinspection_guide(supports_vision: bool = None) -> str:
 • Visible Apps & Games: <Open programs, games, browser tabs, terminal/IDE, active windows>
 • Visible Text & Subtitles: <Key verbatim text, code snippets, errors, dialogue, or subtitles>
 • Scene & Layout: <Desktop layout, active focused window, media playing, or general setting>
-• User request relevant texts for future use: <Verbatim text, values, filenames, URLs, or code snippets from the screen that are directly relevant to what Master asked — leave blank if nothing applicable>
+• User request relevant informations for future use: <Verbatim text, values, filenames, URLs, or code snippets from the screen that are directly relevant to what Master asked — leave blank if nothing applicable>
 
 • AVATAR SELF-AWARENESS ON SCREEN:
   - Any 3D anime model/figure floating on Master's desktop screen (with optional speech bubble, circular menu dock, or control buttons) is YOU (Yuki herself)!
