@@ -1724,7 +1724,7 @@ class AgentExecutor:
                     if len(raw_out) > max_out_chars:
                         raw_out = raw_out[:max_out_chars] + "... [truncated]"
 
-                    action_line = f"[Past Tool Action ({clean_name})]: args={args_repr} -> result={raw_out}"
+                    action_line = f"[HISTORY LOG — Tool '{clean_name}' was executed]: args={args_repr} → outcome={raw_out}"
                     preserved_actions.append(action_line)
 
                 # Keep up to the last 6 tool actions per assistant message to stay well within token bounds

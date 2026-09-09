@@ -3528,6 +3528,7 @@ const App = () => {
                 isBackendOnline={backendStatus === 'online'}
                 vrmDpr={profile.settings?.vrm_dpr || 1.5}
                 vrmFps={profile.settings?.vrm_fps || 40}
+                powerPreference={profile.settings?.avatar_power_preference || 'default'}
                 boredom={presenceState.boredom}
                 energy={liveMood.energy}
                 playfulness={liveMood.playfulness}
@@ -6255,6 +6256,7 @@ const App = () => {
               isBackendOnline={backendStatus === 'online'}
               vrmDpr={profile.settings?.vrm_dpr || 1.5}
               vrmFps={profile.settings?.vrm_fps || 40}
+              powerPreference={profile.settings?.avatar_power_preference || 'default'}
               boredom={presenceState.boredom}
               energy={liveMood.energy}
               playfulness={liveMood.playfulness}

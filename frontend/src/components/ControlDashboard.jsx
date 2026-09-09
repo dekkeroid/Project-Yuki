@@ -1239,6 +1239,7 @@ const ControlDashboard = ({
     active_vrm_model: 'default.vrm',
     favorite_vrm_models: [],
     start_with_last_avatar_size: true,
+    avatar_power_preference: 'default',
     whisper_model: 'base',
     use_local_whisper: true,
     llm_speech_input_enabled: false,
@@ -9695,8 +9696,8 @@ const ControlDashboard = ({
                           </div>
                         </details>
                         
-                        {/* Rendering Resolution (DPR) & FPS Limit */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+                        {/* Rendering Resolution (DPR), FPS Limit & Render GPU */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '10px' }}>
                           <div>
                             <span className="field-label" style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '3px' }}>
                               Resolution (DPR)
@@ -9749,6 +9750,33 @@ const ControlDashboard = ({
                                 </option>
                               ))}
                             </select>
+                          </div>
+
+                          <div>
+                            <span className="field-label" style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '3px' }}>
+                              Render GPU
+                            </span>
+                            <select
+                              value={settings.avatar_power_preference ?? 'default'}
+                              onChange={(e) => handleUpdateSetting('avatar_power_preference', e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '7px 10px',
+                                background: 'rgba(0,0,0,0.3)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                color: 'white',
+                                fontSize: '0.78rem',
+                                outline: 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value="default" style={{ background: '#0b0813', color: 'white' }}>Integrated (Save Power)</option>
+                              <option value="high-performance" style={{ background: '#0b0813', color: 'white' }}>Dedicated (High Perf)</option>
+                            </select>
+                            <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', display: 'block', marginTop: '3px' }}>
+                              Restart Yuki to apply
+                            </span>
                           </div>
                         </div>
                       </div>
