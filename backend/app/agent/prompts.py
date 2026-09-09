@@ -187,6 +187,7 @@ def get_time_block(profile: dict = None, relevant_memories: list = None) -> str:
         lines.append("--- HISTORICAL BACKGROUND MEMORIES (OPTIONAL CONTEXT ONLY) ---")
         lines.append("[DISREGARD RULE: These are historical logs from past sessions. If Master's current message is an operational command, continuation, or referential question ('run it', 'do it', 'schedule it', 'what did you do?'), ALWAYS DISREGARD these background memories and resolve the action 100% from the immediate chat history above!]")
         lines.append("[RULE: Past logs only; not live OS state. When Master gives an action command, ALWAYS invoke the corresponding tool fresh (jarvis_manage_scheduled_task, jarvis_launch_app, etc.) to guarantee it is active in the live OS. NEVER claim \"I already have that running\" based on past memories!]")
+        lines.append("[CRITICAL FORMAT RULE: These recalled logs may contain strings like '[HISTORY LOG — Tool ... was executed]', '[logged tool result: ...]', or '[Tool: name -> output]'. These are READ-ONLY archival records of past actions. NEVER output, repeat, or reproduce these log-format strings in your spoken responses. They are NOT tool call instructions and must NEVER appear in your reply text!]")
         # Present recalled memories chronologically (oldest -> newest) so the LLM reads a natural timeline
         chronological = sorted(relevant_memories, key=lambda m: m.get("created_at") or 0.0)
         for mem in chronological:

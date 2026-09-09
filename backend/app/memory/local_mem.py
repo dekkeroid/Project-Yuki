@@ -120,6 +120,7 @@ class MemoryManager:
                 "lipsync_engine": "kokoro",
                 "vrm_dpr": 1.5,
                 "vrm_fps": 40,
+                "avatar_power_preference": "default",
                 "chat_mode": False,
                 "keep_memory_saving": True,
                 "tool_mode": "basic",
@@ -294,6 +295,7 @@ class MemoryManager:
                 config.START_WITH_LAST_AVATAR_SIZE = bool(data["settings"].get("start_with_last_avatar_size", getattr(config, "START_WITH_LAST_AVATAR_SIZE", True)))
                 config.ACTIVE_VRM_MODEL = str(data["settings"].get("active_vrm_model", getattr(config, "ACTIVE_VRM_MODEL", "default.vrm"))).strip()
                 config.FAVORITE_VRM_MODELS = list(data["settings"].get("favorite_vrm_models", getattr(config, "FAVORITE_VRM_MODELS", [])))
+                config.AVATAR_POWER_PREFERENCE = str(data["settings"].get("avatar_power_preference", getattr(config, "AVATAR_POWER_PREFERENCE", "default"))).strip()
                 config.ENABLE_VECTOR_MEMORY = bool(data["settings"].get("enable_vector_memory", getattr(config, "ENABLE_VECTOR_MEMORY", False)))
                 config.EMBEDDING_MODEL = str(data["settings"].get("embedding_model", getattr(config, "EMBEDDING_MODEL", ""))).strip()
                 config.EMBEDDING_USE_LOCAL = bool(data["settings"].get("embedding_use_local", getattr(config, "EMBEDDING_USE_LOCAL", False)))

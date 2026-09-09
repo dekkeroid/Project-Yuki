@@ -745,8 +745,8 @@ async def extract_and_index_turn(user_msg: str, assistant_msg: str, session_id: 
         tool_output = match.group(2).strip()
         clean_output = _extract_relevant_tool_output(tool_output, user_trimmed, assistant_msg, max_chars=250)
         if clean_output:
-            return f"[Tool: {tool_name} -> {clean_output}] "
-        return f"[Tool: {tool_name}] "
+            return f"[logged tool result: {tool_name} — {clean_output}] "
+        return f"[logged tool result: {tool_name}] "
 
     cleaned = pattern.sub(_replace_tool_block, cleaned)
     # Strip any leftover raw tool_args blocks

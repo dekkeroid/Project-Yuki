@@ -1743,6 +1743,7 @@ class SettingsUpdateRequest(BaseModel):
     device_volumes: Optional[dict] = None
     vrm_dpr: Optional[float] = None
     vrm_fps: Optional[int] = None
+    avatar_power_preference: Optional[str] = None
     chat_mode: Optional[bool] = None
     keep_memory_saving: Optional[bool] = None
     os_native_alarms: Optional[bool] = None
@@ -2309,6 +2310,12 @@ async def update_settings(req: SettingsUpdateRequest):
         memory_manager.update_setting("vrm_dpr", req.vrm_dpr)
     if req.vrm_fps is not None:
         memory_manager.update_setting("vrm_fps", req.vrm_fps)
+    if req.avatar_power_preference is not None:
+        valid_prefs = {"default", "low-power", "high-performance"}
+        pref = str(req.avatar_power_preference).strip().lower()
+        if pref in valid_prefs:
+            config.AVATAR_POWER_PREFERENCE = pref
+            memory_manager.update_setting("avatar_power_preference", pref)
     if req.chat_mode is not None:
         memory_manager.update_setting("chat_mode", req.chat_mode)
     if req.keep_memory_saving is not None:

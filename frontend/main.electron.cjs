@@ -964,6 +964,20 @@ function createWindow() {
     console.log(`[Render] ${msg}`);
   });
 
+  // Center the main window on the primary display work area.
+  // Uses setPosition() with current tracked dimensions (not getBounds()) to avoid
+  // DPI-scaled values corrupting the math, and to prevent setBounds() from firing
+  // move+resize events that re-trigger the enforceSize size-lock listener.
+  ipcMain.on('center-window', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const { width, height, x, y } = screen.getPrimaryDisplay().workArea;
+    const winW = currentWidth + windowWidthExtra;
+    const winH = currentHeight;
+    const centerX = Math.round(x + (width - winW) / 2);
+    const centerY = Math.round(y + (height - winH) / 2);
+    mainWindow.setPosition(centerX, centerY);
+  });
+
   ipcMain.on('set-always-on-top', (event, enabled) => {
     alwaysOnTopEnabled = Boolean(enabled);
     if (mainWindow && !mainWindow.isDestroyed()) {

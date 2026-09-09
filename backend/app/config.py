@@ -290,6 +290,7 @@ COMPANION_NAP_ENERGY_PCT = int(os.environ.get("COMPANION_NAP_ENERGY_PCT", "30"))
 # Avatar & VRM Models
 ACTIVE_VRM_MODEL = os.environ.get("ACTIVE_VRM_MODEL", "default.vrm")
 FAVORITE_VRM_MODELS: list = []
+AVATAR_POWER_PREFERENCE = os.environ.get("AVATAR_POWER_PREFERENCE", "default")
 
 
 

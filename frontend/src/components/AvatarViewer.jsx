@@ -45,7 +45,8 @@ const AvatarViewer = React.forwardRef(({
   mood = null,
   sleepState = 'active',
   onWakeCharacter = null,
-  onAnimationTriggered = null
+  onAnimationTriggered = null,
+  powerPreference = 'default',
 }, ref) => {
   const isElectron = (window.electronAPI && window.electronAPI.isElectron) || (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
@@ -1444,7 +1445,7 @@ const AvatarViewer = React.forwardRef(({
       antialias: true,
       alpha: true,
       premultipliedAlpha: true,
-      powerPreference: "high-performance",
+      powerPreference: powerPreference,
     });
     rendererRef.current = renderer;
     // CRITICAL: set clear color to fully transparent so the desktop shows through
@@ -1652,6 +1653,16 @@ const AvatarViewer = React.forwardRef(({
 
     const triggerVrmaExitBlend = (vrm) => {
       if (!vrm) return;
+
+      // Flush the mixer with zero delta BEFORE snapshotting so bones reflect
+      // the fully-written final clamped mocap pose (not stale pre-update values).
+      // Without this, the snapshot may capture an intermediate state and the
+      // subsequent mixer.update(delta) would write a reset/T-pose for one frame,
+      // causing a visible flicker right at the end of the VRMA animation.
+      if (mixerRef.current) {
+        mixerRef.current.update(0);
+      }
+
       vrmaExitSnapshotsRef.current.clear();
       ALL_HUMANOID_BONES.forEach(bName => {
         const node = getBoneNode(vrm, bName);
@@ -1910,7 +1921,7 @@ const AvatarViewer = React.forwardRef(({
         } else {
           // Off character and off UI: ignore mouse clicks on window, but forward them to desktop instantly.
           const enableClickthrough = window.yukiDebugToggles ? window.yukiDebugToggles.clickthrough : true;
-        const suspendClickthrough = window.yukiConfirmJustClosed === true || window.yukiAskUserOpen === true || !!document.querySelector('.ask-user-dialog-overlay') || !!document.querySelector('.yuki-confirm-overlay');
+          const suspendClickthrough = window.yukiConfirmJustClosed === true || window.yukiAskUserOpen === true || !!document.querySelector('.ask-user-dialog-overlay') || !!document.querySelector('.yuki-confirm-overlay');
           if (enableClickthrough && !suspendClickthrough) {
             if (!isIgnoringMouseRef.current) {
               window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
@@ -2855,552 +2866,825 @@ const AvatarViewer = React.forwardRef(({
             if (!isVrmaActiveRef.current) {
               // 4. Natural breathing & gentle swaying
               const chest = getBoneNode(vrm, 'chest');
-            if (chest) {
-              if (dragStateProgress > 0) {
-                chest.rotation.x = dragPitchAngle * 0.3 * xMult;
-                chest.rotation.y = 0;
-                chest.rotation.z = dragSwayAngle * 0.3 * zMult;
-              } else {
-                chest.rotation.x = (chestOffsetX + 0.015 + Math.sin(time * breathingSpeed) * breathingDepth + Math.sin(time * breathingSpeed * 2) * (breathingDepth * 0.25)) * xMult;
-                chest.rotation.y = (Math.sin(time * 0.3) * 0.01 + orbitSwayAngle * 0.3) * yMult;       // slow sway + orbit inertia
+              if (chest) {
+                if (dragStateProgress > 0) {
+                  chest.rotation.x = dragPitchAngle * 0.3 * xMult;
+                  chest.rotation.y = 0;
+                  chest.rotation.z = dragSwayAngle * 0.3 * zMult;
+                } else {
+                  chest.rotation.x = (chestOffsetX + 0.015 + Math.sin(time * breathingSpeed) * breathingDepth + Math.sin(time * breathingSpeed * 2) * (breathingDepth * 0.25)) * xMult;
+                  chest.rotation.y = (Math.sin(time * 0.3) * 0.01 + orbitSwayAngle * 0.3) * yMult;       // slow sway + orbit inertia
+                }
               }
-            }
 
-            const spine = getBoneNode(vrm, 'spine');
-            if (spine) {
-              if (dragStateProgress > 0) {
-                spine.rotation.x = dragPitchAngle * 0.45 * xMult;
-                spine.rotation.y = 0;
-                spine.rotation.z = dragSwayAngle * 0.45 * zMult;
-              } else {
-                spine.rotation.x = spineOffsetX * xMult;                      // stretch bend back
-                spine.rotation.y = (Math.sin(time * 0.25) * 0.012 + orbitSwayAngle * 0.2) * yMult;     // spine sway + orbit inertia
-                spine.rotation.z = Math.cos(time * 0.2) * 0.006 * zMult;
+              const spine = getBoneNode(vrm, 'spine');
+              if (spine) {
+                if (dragStateProgress > 0) {
+                  spine.rotation.x = dragPitchAngle * 0.45 * xMult;
+                  spine.rotation.y = 0;
+                  spine.rotation.z = dragSwayAngle * 0.45 * zMult;
+                } else {
+                  spine.rotation.x = spineOffsetX * xMult;                      // stretch bend back
+                  spine.rotation.y = (Math.sin(time * 0.25) * 0.012 + orbitSwayAngle * 0.2) * yMult;     // spine sway + orbit inertia
+                  spine.rotation.z = Math.cos(time * 0.2) * 0.006 * zMult;
+                }
               }
-            }
 
-            const neck = getBoneNode(vrm, 'neck');
-            if (neck) {
-              let awakeNeckX = 0;
-              let awakeNeckY = 0;
-              let awakeNeckZ = 0;
+              const neck = getBoneNode(vrm, 'neck');
+              if (neck) {
+                let awakeNeckX = 0;
+                let awakeNeckY = 0;
+                let awakeNeckZ = 0;
 
-              if (dragStateProgress > 0) {
-                // Head sway leans with movement but stabilizes looking forward
-                awakeNeckX = (dragPitchAngle * 0.5 - 0.04) * xMult;
-                awakeNeckZ = (dragSwayAngle * 0.5) * zMult;
-                awakeNeckY = 0;
-              } else {
-                let neckAnimX = 0;
-                let neckAnimY = 0;
-                let neckAnimZ = 0;
+                if (dragStateProgress > 0) {
+                  // Head sway leans with movement but stabilizes looking forward
+                  awakeNeckX = (dragPitchAngle * 0.5 - 0.04) * xMult;
+                  awakeNeckZ = (dragSwayAngle * 0.5) * zMult;
+                  awakeNeckY = 0;
+                } else {
+                  let neckAnimX = 0;
+                  let neckAnimY = 0;
+                  let neckAnimZ = 0;
 
-                if (idleAnimState === 'grooving') {
+                  if (idleAnimState === 'grooving') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimY = Math.sin(time * 5.5) * 0.12 * easeVal;
+                    neckAnimZ = Math.cos(time * 5.5) * 0.08 * easeVal;
+                  } else if (idleAnimState === 'peering') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimZ = 0.08 * easeVal;
+                  } else if (idleAnimState === 'laughing') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimY = Math.sin(time * 16.0) * 0.04 * easeVal;
+                    neckAnimX = -0.06 * easeVal + Math.sin(time * 22.0) * 0.03 * easeVal;
+                  } else if (idleAnimState === 'giggle_cover') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimY = Math.sin(time * 16.0) * 0.04 * easeVal;
+                    neckAnimX = -0.05 * easeVal + Math.sin(time * 20.0) * 0.02 * easeVal;
+                    neckAnimZ = 0.08 * easeVal;
+                  } else if (idleAnimState === 'nodding') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimX = (Math.sin(time * 12.0) * 0.12) * easeVal;
+                  } else if (idleAnimState === 'head_shake') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimY = (Math.sin(time * 14.0) * 0.18) * easeVal;
+                  } else if (idleAnimState === 'salute') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimZ = 0.05 * easeVal;
+                  } else if (idleAnimState === 'cheering') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimX = (Math.sin(time * 15.0) * 0.06) * easeVal;
+                  } else if (idleAnimState === 'shy_fidget') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimZ = Math.sin(time * 4.0) * 0.06 * easeVal;
+                  } else if (idleAnimState === 'pouting') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimY = 0.35 * easeVal; // Turns head away defensively in a "hmph!" sulk
+                    neckAnimX = -0.07 * easeVal; // Tilts chin up proudly/petulantly
+                    neckAnimZ = 0.06 * easeVal; // Cute slight head tilt
+                  } else if (idleAnimState === 'disappointed_nod' || idleAnimState === 'look_down') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimX = (-0.15 * easeVal + Math.sin(time * 5.0) * 0.04) * easeVal;
+                  } else if (idleAnimState === 'crying_sob') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimX = (-0.1 * easeVal + Math.sin(time * 18.0) * 0.03) * easeVal;
+                  } else if (idleAnimState === 'shocked_recoil') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    neckAnimX = 0.18 * easeVal;
+                    neckAnimZ = -0.08 * easeVal;
+                  }
+
+                  awakeNeckY = (currentLookY + Math.sin(time * 0.5) * 0.012 + microFidgetNeckY + neckAnimY) * yMult;
+
+                  // Baseline chest-nudge neck compensation (head nods down slightly when chest expands)
+                  const breathingNod = Math.sin(time * breathingSpeed) * (breathingDepth * 0.3);
+                  awakeNeckX = (-0.12 + neckOffsetX + currentLookX + Math.sin(time * 0.35) * 0.012 - breathingNod + microFidgetNeckX + neckAnimX) * xMult;
+
+                  // Head Tilts for Empathy (Z-roll) & Curious Thinking
+                  let tiltZ = microFidgetNeckZ + neckAnimZ + currentLookZ;
+                  let tiltX = 0;
+
+                  if (isThinkingRef.current) {
+                    tiltZ += -0.035; // thoughtful tilt to the right
+                    tiltX = -0.07; // look up slightly to think
+                  }
+
+                  awakeNeckZ = tiltZ * zMult;
+                  awakeNeckX += tiltX * xMult;
+                }
+
+                // Slump forward and slightly sideways when sleeping
+                const asleepNeckX = -0.25 * xMult;
+                const asleepNeckZ = 0.03 * zMult;
+                const asleepNeckY = (Math.sin(time * 0.15) * 0.04) * yMult;
+
+                neck.rotation.x = THREE.MathUtils.lerp(awakeNeckX, asleepNeckX, sleepProgressRef.current);
+                neck.rotation.y = THREE.MathUtils.lerp(awakeNeckY, asleepNeckY, sleepProgressRef.current);
+                neck.rotation.z = THREE.MathUtils.lerp(awakeNeckZ, asleepNeckZ, sleepProgressRef.current);
+              }
+
+              const headNode = getBoneNode(vrm, 'head');
+              if (headNode) {
+                headNode.rotation.set(0, 0, 0);
+              }
+              const upperChest = getBoneNode(vrm, 'upperChest');
+              if (upperChest) {
+                upperChest.rotation.set(0, 0, 0);
+              }
+
+              // Real shoulder (clavicle) bones for breathing shrugs
+              const leftClavicle = getBoneNode(vrm, 'leftShoulder');
+              const rightClavicle = getBoneNode(vrm, 'rightShoulder');
+              if (leftClavicle && rightClavicle) {
+                // Clavicles raise slightly during inspiration
+                const inspirationPhase = Math.sin(time * breathingSpeed);
+                const shoulderLift = Math.max(0, inspirationPhase) * (breathingDepth * 0.4);
+
+                let stretchShrug = 0;
+                if (idleAnimState === 'yawning') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
-                  neckAnimY = Math.sin(time * 5.5) * 0.12 * easeVal;
-                  neckAnimZ = Math.cos(time * 5.5) * 0.08 * easeVal;
-                } else if (idleAnimState === 'peering') {
+                  stretchShrug = 0.08 * easeVal;
+                } else if (idleAnimState === 'shrugging') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
-                  neckAnimZ = 0.08 * easeVal;
-                } else if (idleAnimState === 'laughing') {
+                  stretchShrug = 0.14 * easeVal;
+                } else if (idleAnimState === 'laughing' || idleAnimState === 'giggle_cover') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
-                  neckAnimY = Math.sin(time * 16.0) * 0.04 * easeVal;
-                  neckAnimX = -0.06 * easeVal + Math.sin(time * 22.0) * 0.03 * easeVal;
-                } else if (idleAnimState === 'giggle_cover') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  neckAnimY = Math.sin(time * 16.0) * 0.04 * easeVal;
-                  neckAnimX = -0.05 * easeVal + Math.sin(time * 20.0) * 0.02 * easeVal;
-                  neckAnimZ = 0.08 * easeVal;
-                } else if (idleAnimState === 'nodding') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  neckAnimX = (Math.sin(time * 12.0) * 0.12) * easeVal;
-                } else if (idleAnimState === 'head_shake') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  neckAnimY = (Math.sin(time * 14.0) * 0.18) * easeVal;
-                } else if (idleAnimState === 'salute') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  neckAnimZ = 0.05 * easeVal;
-                } else if (idleAnimState === 'cheering') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  neckAnimX = (Math.sin(time * 15.0) * 0.06) * easeVal;
-                } else if (idleAnimState === 'shy_fidget') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  neckAnimZ = Math.sin(time * 4.0) * 0.06 * easeVal;
-                } else if (idleAnimState === 'pouting') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  neckAnimY = 0.35 * easeVal; // Turns head away defensively in a "hmph!" sulk
-                  neckAnimX = -0.07 * easeVal; // Tilts chin up proudly/petulantly
-                  neckAnimZ = 0.06 * easeVal; // Cute slight head tilt
-                } else if (idleAnimState === 'disappointed_nod' || idleAnimState === 'look_down') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  neckAnimX = (-0.15 * easeVal + Math.sin(time * 5.0) * 0.04) * easeVal;
+                  stretchShrug = (0.03 + Math.sin(time * 24.0) * 0.02) * easeVal;
                 } else if (idleAnimState === 'crying_sob') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
-                  neckAnimX = (-0.1 * easeVal + Math.sin(time * 18.0) * 0.03) * easeVal;
-                } else if (idleAnimState === 'shocked_recoil') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  neckAnimX = 0.18 * easeVal;
-                  neckAnimZ = -0.08 * easeVal;
+                  stretchShrug = (0.04 + Math.sin(time * 20.0) * 0.03) * easeVal;
                 }
 
-                awakeNeckY = (currentLookY + Math.sin(time * 0.5) * 0.012 + microFidgetNeckY + neckAnimY) * yMult;
+                const finalLift = shoulderLift + stretchShrug;
+                leftClavicle.rotation.z = finalLift * zMult;
+                rightClavicle.rotation.z = -finalLift * zMult;
 
-                // Baseline chest-nudge neck compensation (head nods down slightly when chest expands)
-                const breathingNod = Math.sin(time * breathingSpeed) * (breathingDepth * 0.3);
-                awakeNeckX = (-0.12 + neckOffsetX + currentLookX + Math.sin(time * 0.35) * 0.012 - breathingNod + microFidgetNeckX + neckAnimX) * xMult;
+                // Subtle rotation on X-axis (tilting back on breath)
+                leftClavicle.rotation.x = -finalLift * 0.35 * xMult;
+                rightClavicle.rotation.x = -finalLift * 0.35 * xMult;
 
-                // Head Tilts for Empathy (Z-roll) & Curious Thinking
-                let tiltZ = microFidgetNeckZ + neckAnimZ + currentLookZ;
-                let tiltX = 0;
+                leftClavicle.rotation.y = 0;
+                rightClavicle.rotation.y = 0;
+              }
 
-                if (isThinkingRef.current) {
-                  tiltZ += -0.035; // thoughtful tilt to the right
-                  tiltX = -0.07; // look up slightly to think
+              const leftEye = getBoneNode(vrm, 'leftEye');
+              const rightEye = getBoneNode(vrm, 'rightEye');
+              if (leftEye && rightEye) {
+                // Rotates the eyes subtler than the neck, preventing eyeballs from rolling too high when head tilts up
+                const rawEyeYaw = currentGazeY * 0.08 + saccadeY;
+                const rawEyePitch = currentGazeX * 0.08 - 0.015 + saccadeX;
+
+                // Clamp eye rotation to human anatomical limits so eyes stay centered within eyelids
+                const eyeYaw = Math.max(-0.12, Math.min(0.12, rawEyeYaw));
+                const eyePitch = Math.max(-0.06, Math.min(0.06, rawEyePitch));
+
+                leftEye.rotation.y = eyeYaw * yMult;
+                leftEye.rotation.x = eyePitch * xMult;
+                rightEye.rotation.y = eyeYaw * yMult;
+                rightEye.rotation.x = eyePitch * xMult;
+              }
+
+              // Arm and Leg bones for walking/standing animation
+              const leftShoulder = getBoneNode(vrm, 'leftUpperArm');
+              const rightShoulder = getBoneNode(vrm, 'rightUpperArm');
+              const leftLeg = getBoneNode(vrm, 'leftUpperLeg');
+              const rightLeg = getBoneNode(vrm, 'rightUpperLeg');
+              const leftLowerLeg = getBoneNode(vrm, 'leftLowerLeg');
+              const rightLowerLeg = getBoneNode(vrm, 'rightLowerLeg');
+
+              if (isWalkingRef.current) {
+                if (isVrmaActiveRef.current && currentVrmaActionRef.current) {
+                  currentVrmaActionRef.current.fadeOut(0.2);
+                  currentVrmaActionRef.current = null;
+                  isVrmaActiveRef.current = false;
+                  idleAnimState = 'none';
+                }
+                // Procedural walk cycle speed and time
+                const walkSpeed = 6.8; // slightly slower step frequency for smoother glide
+                const walkTime = time * walkSpeed;
+
+                // Opposing leg swings (contralateral)
+                if (leftLeg) leftLeg.rotation.x = Math.sin(walkTime) * 0.35;
+                if (rightLeg) rightLeg.rotation.x = -Math.sin(walkTime) * 0.35;
+
+                // Bend knees backward during recovery swing phase
+                if (leftLowerLeg) leftLowerLeg.rotation.x = Math.max(0, -Math.sin(walkTime)) * 0.45;
+                if (rightLowerLeg) rightLowerLeg.rotation.x = Math.max(0, Math.sin(walkTime)) * 0.45;
+
+                // Contralateral arm swings (opposite to legs)
+                if (leftShoulder) {
+                  leftShoulder.rotation.x = (0.15 - Math.sin(walkTime) * 0.25) * xMult; // opposite to left leg swing
+                  leftShoulder.rotation.y = 0.08 * yMult;
+                  leftShoulder.rotation.z = (1.22 + Math.cos(walkTime) * 0.05) * zMult; // slight arm drift
+                }
+                if (rightShoulder) {
+                  rightShoulder.rotation.x = (0.15 + Math.sin(walkTime) * 0.25) * xMult; // opposite to right leg swing
+                  rightShoulder.rotation.y = -0.08 * yMult;
+                  rightShoulder.rotation.z = (-1.22 + Math.cos(walkTime) * 0.05) * zMult;
                 }
 
-                awakeNeckZ = tiltZ * zMult;
-                awakeNeckX += tiltX * xMult;
-              }
-
-              // Slump forward and slightly sideways when sleeping
-              const asleepNeckX = -0.25 * xMult;
-              const asleepNeckZ = 0.03 * zMult;
-              const asleepNeckY = (Math.sin(time * 0.15) * 0.04) * yMult;
-
-              neck.rotation.x = THREE.MathUtils.lerp(awakeNeckX, asleepNeckX, sleepProgressRef.current);
-              neck.rotation.y = THREE.MathUtils.lerp(awakeNeckY, asleepNeckY, sleepProgressRef.current);
-              neck.rotation.z = THREE.MathUtils.lerp(awakeNeckZ, asleepNeckZ, sleepProgressRef.current);
-            }
-
-            const headNode = getBoneNode(vrm, 'head');
-            if (headNode) {
-              headNode.rotation.set(0, 0, 0);
-            }
-            const upperChest = getBoneNode(vrm, 'upperChest');
-            if (upperChest) {
-              upperChest.rotation.set(0, 0, 0);
-            }
-
-            // Real shoulder (clavicle) bones for breathing shrugs
-            const leftClavicle = getBoneNode(vrm, 'leftShoulder');
-            const rightClavicle = getBoneNode(vrm, 'rightShoulder');
-            if (leftClavicle && rightClavicle) {
-              // Clavicles raise slightly during inspiration
-              const inspirationPhase = Math.sin(time * breathingSpeed);
-              const shoulderLift = Math.max(0, inspirationPhase) * (breathingDepth * 0.4);
-
-              let stretchShrug = 0;
-              if (idleAnimState === 'yawning') {
-                const t = idleAnimProgress / idleAnimDuration;
-                const easeVal = Math.sin(t * Math.PI);
-                stretchShrug = 0.08 * easeVal;
-              } else if (idleAnimState === 'shrugging') {
-                const t = idleAnimProgress / idleAnimDuration;
-                const easeVal = Math.sin(t * Math.PI);
-                stretchShrug = 0.14 * easeVal;
-              } else if (idleAnimState === 'laughing' || idleAnimState === 'giggle_cover') {
-                const t = idleAnimProgress / idleAnimDuration;
-                const easeVal = Math.sin(t * Math.PI);
-                stretchShrug = (0.03 + Math.sin(time * 24.0) * 0.02) * easeVal;
-              } else if (idleAnimState === 'crying_sob') {
-                const t = idleAnimProgress / idleAnimDuration;
-                const easeVal = Math.sin(t * Math.PI);
-                stretchShrug = (0.04 + Math.sin(time * 20.0) * 0.03) * easeVal;
-              }
-
-              const finalLift = shoulderLift + stretchShrug;
-              leftClavicle.rotation.z = finalLift * zMult;
-              rightClavicle.rotation.z = -finalLift * zMult;
-
-              // Subtle rotation on X-axis (tilting back on breath)
-              leftClavicle.rotation.x = -finalLift * 0.35 * xMult;
-              rightClavicle.rotation.x = -finalLift * 0.35 * xMult;
-
-              leftClavicle.rotation.y = 0;
-              rightClavicle.rotation.y = 0;
-            }
-
-            const leftEye = getBoneNode(vrm, 'leftEye');
-            const rightEye = getBoneNode(vrm, 'rightEye');
-            if (leftEye && rightEye) {
-              // Rotates the eyes subtler than the neck, preventing eyeballs from rolling too high when head tilts up
-              const rawEyeYaw = currentGazeY * 0.08 + saccadeY;
-              const rawEyePitch = currentGazeX * 0.08 - 0.015 + saccadeX;
-
-              // Clamp eye rotation to human anatomical limits so eyes stay centered within eyelids
-              const eyeYaw = Math.max(-0.12, Math.min(0.12, rawEyeYaw));
-              const eyePitch = Math.max(-0.06, Math.min(0.06, rawEyePitch));
-
-              leftEye.rotation.y = eyeYaw * yMult;
-              leftEye.rotation.x = eyePitch * xMult;
-              rightEye.rotation.y = eyeYaw * yMult;
-              rightEye.rotation.x = eyePitch * xMult;
-            }
-
-            // Arm and Leg bones for walking/standing animation
-            const leftShoulder = getBoneNode(vrm, 'leftUpperArm');
-            const rightShoulder = getBoneNode(vrm, 'rightUpperArm');
-            const leftLeg = getBoneNode(vrm, 'leftUpperLeg');
-            const rightLeg = getBoneNode(vrm, 'rightUpperLeg');
-            const leftLowerLeg = getBoneNode(vrm, 'leftLowerLeg');
-            const rightLowerLeg = getBoneNode(vrm, 'rightLowerLeg');
-
-            if (isWalkingRef.current) {
-              if (isVrmaActiveRef.current && currentVrmaActionRef.current) {
-                currentVrmaActionRef.current.fadeOut(0.2);
-                currentVrmaActionRef.current = null;
-                isVrmaActiveRef.current = false;
-                idleAnimState = 'none';
-              }
-              // Procedural walk cycle speed and time
-              const walkSpeed = 6.8; // slightly slower step frequency for smoother glide
-              const walkTime = time * walkSpeed;
-
-              // Opposing leg swings (contralateral)
-              if (leftLeg) leftLeg.rotation.x = Math.sin(walkTime) * 0.35;
-              if (rightLeg) rightLeg.rotation.x = -Math.sin(walkTime) * 0.35;
-
-              // Bend knees backward during recovery swing phase
-              if (leftLowerLeg) leftLowerLeg.rotation.x = Math.max(0, -Math.sin(walkTime)) * 0.45;
-              if (rightLowerLeg) rightLowerLeg.rotation.x = Math.max(0, Math.sin(walkTime)) * 0.45;
-
-              // Contralateral arm swings (opposite to legs)
-              if (leftShoulder) {
-                leftShoulder.rotation.x = (0.15 - Math.sin(walkTime) * 0.25) * xMult; // opposite to left leg swing
-                leftShoulder.rotation.y = 0.08 * yMult;
-                leftShoulder.rotation.z = (1.22 + Math.cos(walkTime) * 0.05) * zMult; // slight arm drift
-              }
-              if (rightShoulder) {
-                rightShoulder.rotation.x = (0.15 + Math.sin(walkTime) * 0.25) * xMult; // opposite to right leg swing
-                rightShoulder.rotation.y = -0.08 * yMult;
-                rightShoulder.rotation.z = (-1.22 + Math.cos(walkTime) * 0.05) * zMult;
-              }
-
-              // Hips rotation and sway
-              const hips = getBoneNode(vrm, 'hips');
-              if (hips) {
-                hips.rotation.y = Math.sin(walkTime) * 0.06 * yMult; // horizontal twist
-                hips.rotation.z = Math.cos(walkTime) * 0.03 * zMult; // side sway matching weight shift
-                hips.position.x = Math.cos(walkTime) * 0.015 * zMult; // local X slide flip
-              }
-
-              // Smooth body bobbing (twice per step cycle)
-              vrm.scene.position.y = Math.abs(Math.sin(walkTime)) * 0.025;
-              vrm.scene.position.x = 0; // ensure character stays dead center in canvas
-              vrm.scene.position.z = 0; // reset Z-position
-            } else {
-              const enableWeightShift = window.yukiDebugToggles ? window.yukiDebugToggles.weightShift : true;
-              const shiftCycle = enableWeightShift ? Math.sin(time * 0.1) : 0;
-
-              // Gentle zero-g drift overlay (ONLY IN ELECTRON)
-              const isElectronMode = window.electronAPI && window.electronAPI.isElectron;
-              let floatOffsetY = 0;
-              let floatOffsetX = 0;
-              let floatLegAngle = 0;
-              const enableFloatingIdle = !disabledAnimationsRef.current.includes('floating') && (window.yukiDebugToggles ? window.yukiDebugToggles.floatingIdle !== false : true);
-              if (enableFloatingIdle && isElectronMode && !isWalkingRef.current && dragStateProgress === 0 && !knockActive) {
-                const floatMultiplier = 1.0 - sleepProgressRef.current;
-                floatOffsetY = Math.sin(time * 1.1) * 0.015 * floatMultiplier; // gently hover 1.8cm up/down (more subtle)
-                floatOffsetX = Math.cos(time * 0.6) * 0.01 * floatMultiplier;  // gently drift 1cm side-to-side (more subtle)
-                floatLegAngle = Math.sin(time * 1.2 - 0.5) * 0.02 * floatMultiplier; // leg drag lag (more subtle)
-              }
-
-              const hips = getBoneNode(vrm, 'hips');
-              if (hips) {
-                let awakeHipsZ = 0;
-                let awakeHipsX = 0;
-                let awakeHipsPosX = 0;
-
-                if (dragStateProgress > 0) {
-                  // Apply inertial side sway and forward/backward tilt
-                  awakeHipsZ = dragSwayAngle * 0.6 * zMult;
-                  awakeHipsX = dragPitchAngle * 0.5 * xMult;
-                  awakeHipsPosX = dragSwayAngle * 0.1 * zMult; // local X slide flip
-                } else {
-                  awakeHipsZ = shiftCycle * 0.025 * zMult; // hips tilt
-                  awakeHipsPosX = shiftCycle * 0.015 * zMult; // hips slide flip
+                // Hips rotation and sway
+                const hips = getBoneNode(vrm, 'hips');
+                if (hips) {
+                  hips.rotation.y = Math.sin(walkTime) * 0.06 * yMult; // horizontal twist
+                  hips.rotation.z = Math.cos(walkTime) * 0.03 * zMult; // side sway matching weight shift
+                  hips.position.x = Math.cos(walkTime) * 0.015 * zMult; // local X slide flip
                 }
 
-                const asleepHipsZ = 0.005 * zMult;
-                const asleepHipsX = 0.0;
-                const asleepHipsPosX = 0.0;
-
-                hips.rotation.z = THREE.MathUtils.lerp(awakeHipsZ, asleepHipsZ, sleepProgressRef.current);
-                hips.rotation.x = THREE.MathUtils.lerp(awakeHipsX, asleepHipsX, sleepProgressRef.current);
-                hips.rotation.y = 0;
-                hips.position.x = THREE.MathUtils.lerp(awakeHipsPosX, asleepHipsPosX, sleepProgressRef.current);
-                if (!initialHipsPosRef.current) {
-                  initialHipsPosRef.current = hips.position.clone();
-                }
-                if (initialHipsPosRef.current) {
-                  hips.position.y = initialHipsPosRef.current.y;
-                  hips.position.z = initialHipsPosRef.current.z;
-                }
-              }
-
-              let awakeSceneY = 0;
-              let awakeSceneZ = 0;
-              let awakeSceneX = 0;
-
-              if (dragStateProgress > 0) {
-                awakeSceneY = -0.09 * dragStateProgress; // hang down
-                awakeSceneZ = -dragPitchAngle * 0.3; // slide back slightly under forward drag
-                awakeSceneX = 0;
-              } else if (knockActive) {
-                const easeVal = Math.sin((knockTimer / knockDuration) * Math.PI);
-                awakeSceneY = 0;
-                awakeSceneZ = easeVal * 0.18; // step forward to knock screen
-                awakeSceneX = 0;
+                // Smooth body bobbing (twice per step cycle)
+                vrm.scene.position.y = Math.abs(Math.sin(walkTime)) * 0.025;
+                vrm.scene.position.x = 0; // ensure character stays dead center in canvas
+                vrm.scene.position.z = 0; // reset Z-position
               } else {
-                awakeSceneY = floatOffsetY;
-                awakeSceneZ = 0;
-                awakeSceneX = floatOffsetX;
+                const enableWeightShift = window.yukiDebugToggles ? window.yukiDebugToggles.weightShift : true;
+                const shiftCycle = enableWeightShift ? Math.sin(time * 0.1) : 0;
 
-                // Apply peering Z displacement
-                if (idleAnimState === 'peering') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeSceneZ = 0.22 * easeVal;
+                // Gentle zero-g drift overlay (ONLY IN ELECTRON)
+                const isElectronMode = window.electronAPI && window.electronAPI.isElectron;
+                let floatOffsetY = 0;
+                let floatOffsetX = 0;
+                let floatLegAngle = 0;
+                const enableFloatingIdle = !disabledAnimationsRef.current.includes('floating') && (window.yukiDebugToggles ? window.yukiDebugToggles.floatingIdle !== false : true);
+                if (enableFloatingIdle && isElectronMode && !isWalkingRef.current && dragStateProgress === 0 && !knockActive) {
+                  const floatMultiplier = 1.0 - sleepProgressRef.current;
+                  floatOffsetY = Math.sin(time * 1.1) * 0.015 * floatMultiplier; // gently hover 1.8cm up/down (more subtle)
+                  floatOffsetX = Math.cos(time * 0.6) * 0.01 * floatMultiplier;  // gently drift 1cm side-to-side (more subtle)
+                  floatLegAngle = Math.sin(time * 1.2 - 0.5) * 0.02 * floatMultiplier; // leg drag lag (more subtle)
                 }
-              }
 
-              const asleepSceneY = -0.02; // sink down slightly
-              const asleepSceneZ = 0;
-              const asleepSceneX = 0;
+                const hips = getBoneNode(vrm, 'hips');
+                if (hips) {
+                  let awakeHipsZ = 0;
+                  let awakeHipsX = 0;
+                  let awakeHipsPosX = 0;
 
-              const targetSceneY = THREE.MathUtils.lerp(awakeSceneY, asleepSceneY, sleepProgressRef.current);
-              const targetSceneZ = THREE.MathUtils.lerp(awakeSceneZ, asleepSceneZ, sleepProgressRef.current);
-              const targetSceneX = THREE.MathUtils.lerp(awakeSceneX, asleepSceneX, sleepProgressRef.current);
-              vrm.scene.position.y += (targetSceneY - vrm.scene.position.y) * Math.min(1, delta * 5.0);
-              vrm.scene.position.z += (targetSceneZ - vrm.scene.position.z) * Math.min(1, delta * 5.0);
-              vrm.scene.position.x += (targetSceneX - vrm.scene.position.x) * Math.min(1, delta * 5.0);
+                  if (dragStateProgress > 0) {
+                    // Apply inertial side sway and forward/backward tilt
+                    awakeHipsZ = dragSwayAngle * 0.6 * zMult;
+                    awakeHipsX = dragPitchAngle * 0.5 * xMult;
+                    awakeHipsPosX = dragSwayAngle * 0.1 * zMult; // local X slide flip
+                  } else {
+                    awakeHipsZ = shiftCycle * 0.025 * zMult; // hips tilt
+                    awakeHipsPosX = shiftCycle * 0.015 * zMult; // hips slide flip
+                  }
 
-              if (leftShoulder) {
-                let awakeShoulderX = 0;
-                let awakeShoulderY = 0;
-                let awakeShoulderZ = 0;
+                  const asleepHipsZ = 0.005 * zMult;
+                  const asleepHipsX = 0.0;
+                  const asleepHipsPosX = 0.0;
+
+                  hips.rotation.z = THREE.MathUtils.lerp(awakeHipsZ, asleepHipsZ, sleepProgressRef.current);
+                  hips.rotation.x = THREE.MathUtils.lerp(awakeHipsX, asleepHipsX, sleepProgressRef.current);
+                  hips.rotation.y = 0;
+                  hips.position.x = THREE.MathUtils.lerp(awakeHipsPosX, asleepHipsPosX, sleepProgressRef.current);
+                  if (!initialHipsPosRef.current) {
+                    initialHipsPosRef.current = hips.position.clone();
+                  }
+                  if (initialHipsPosRef.current) {
+                    hips.position.y = initialHipsPosRef.current.y;
+                    hips.position.z = initialHipsPosRef.current.z;
+                  }
+                }
+
+                let awakeSceneY = 0;
+                let awakeSceneZ = 0;
+                let awakeSceneX = 0;
 
                 if (dragStateProgress > 0) {
-                  // Left arm raises up sideways and sways
-                  awakeShoulderX = (0.15 + dragPitchAngle * 0.5) * xMult;
-                  awakeShoulderY = 0.08 * yMult;
-                  awakeShoulderZ = ((1.25 - 0.45 * dragStateProgress) + Math.sin(dragDangleTimer * 0.8) * 0.08 * dragStateProgress) * zMult;
-                } else if (idleAnimState === 'cheering') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.6 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = 0.08 * yMult;
-                  awakeShoulderZ = (0.2 * easeVal + 1.25 * (1 - easeVal)) * zMult;
-                } else if (idleAnimState === 'shy_fidget') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.4 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.2 * easeVal + 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (1.05 * easeVal + 1.25 * (1 - easeVal)) * zMult;
-                  leftElbowOffsetY = -0.5 * easeVal;
-                } else if (idleAnimState === 'cat_stretch' || idleAnimState === 'neck_crack') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.9 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.2 * easeVal + 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (0.1 * easeVal + 1.25 * (1 - easeVal)) * zMult;
-                  leftElbowOffsetY = -0.8 * easeVal;
-                } else if (idleAnimState === 'finger_guns') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.7 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.15 * easeVal + 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (0.7 * easeVal + 1.25 * (1 - easeVal)) * zMult;
-                  leftElbowOffsetY = -0.8 * easeVal;
-                } else if (idleAnimState === 'formal_bow' || idleAnimState === 'bow') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (-0.25 * easeVal + 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (0.85 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                  awakeSceneY = -0.09 * dragStateProgress; // hang down
+                  awakeSceneZ = -dragPitchAngle * 0.3; // slide back slightly under forward drag
+                  awakeSceneX = 0;
+                } else if (knockActive) {
+                  const easeVal = Math.sin((knockTimer / knockDuration) * Math.PI);
+                  awakeSceneY = 0;
+                  awakeSceneZ = easeVal * 0.18; // step forward to knock screen
+                  awakeSceneX = 0;
                 } else {
-                  const upperArmTime = time * 1.2;
-                  const multiSwayX = (Math.sin(upperArmTime) * 0.012 + Math.cos(upperArmTime * 2.3 + 0.4) * 0.006);
-                  const multiSwayZ = (Math.sin(upperArmTime * 0.9 + 0.5) * 0.016 + Math.cos(upperArmTime * 2.1) * 0.008);
-                  awakeShoulderX = (0.15 + multiSwayX) * xMult;
-                  awakeShoulderY = (0.08 + Math.sin(upperArmTime * 0.7) * 0.008 + orbitSwayAngle * 0.3) * yMult;
-                  awakeShoulderZ = (leftArmOffsetZ + 1.25 + multiSwayZ - shiftCycle * 0.01) * zMult;
+                  awakeSceneY = floatOffsetY;
+                  awakeSceneZ = 0;
+                  awakeSceneX = floatOffsetX;
+
+                  // Apply peering Z displacement
+                  if (idleAnimState === 'peering') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeSceneZ = 0.22 * easeVal;
+                  }
                 }
 
-                const asleepShoulderX = 0.06 * xMult;
-                const asleepShoulderY = 0.04 * yMult;
-                const asleepShoulderZ = 1.15 * zMult;
+                const asleepSceneY = -0.02; // sink down slightly
+                const asleepSceneZ = 0;
+                const asleepSceneX = 0;
 
-                leftShoulder.rotation.x = THREE.MathUtils.lerp(awakeShoulderX, asleepShoulderX, sleepProgressRef.current);
-                leftShoulder.rotation.y = THREE.MathUtils.lerp(awakeShoulderY, asleepShoulderY, sleepProgressRef.current);
-                leftShoulder.rotation.z = THREE.MathUtils.lerp(awakeShoulderZ, asleepShoulderZ, sleepProgressRef.current);
+                const targetSceneY = THREE.MathUtils.lerp(awakeSceneY, asleepSceneY, sleepProgressRef.current);
+                const targetSceneZ = THREE.MathUtils.lerp(awakeSceneZ, asleepSceneZ, sleepProgressRef.current);
+                const targetSceneX = THREE.MathUtils.lerp(awakeSceneX, asleepSceneX, sleepProgressRef.current);
+                vrm.scene.position.y += (targetSceneY - vrm.scene.position.y) * Math.min(1, delta * 5.0);
+                vrm.scene.position.z += (targetSceneZ - vrm.scene.position.z) * Math.min(1, delta * 5.0);
+                vrm.scene.position.x += (targetSceneX - vrm.scene.position.x) * Math.min(1, delta * 5.0);
+
+                if (leftShoulder) {
+                  let awakeShoulderX = 0;
+                  let awakeShoulderY = 0;
+                  let awakeShoulderZ = 0;
+
+                  if (dragStateProgress > 0) {
+                    // Left arm raises up sideways and sways
+                    awakeShoulderX = (0.15 + dragPitchAngle * 0.5) * xMult;
+                    awakeShoulderY = 0.08 * yMult;
+                    awakeShoulderZ = ((1.25 - 0.45 * dragStateProgress) + Math.sin(dragDangleTimer * 0.8) * 0.08 * dragStateProgress) * zMult;
+                  } else if (idleAnimState === 'cheering') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.6 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = 0.08 * yMult;
+                    awakeShoulderZ = (0.2 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                  } else if (idleAnimState === 'shy_fidget') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.4 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (0.2 * easeVal + 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (1.05 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                    leftElbowOffsetY = -0.5 * easeVal;
+                  } else if (idleAnimState === 'cat_stretch' || idleAnimState === 'neck_crack') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.9 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (0.2 * easeVal + 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (0.1 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                    leftElbowOffsetY = -0.8 * easeVal;
+                  } else if (idleAnimState === 'finger_guns') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.7 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (0.15 * easeVal + 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (0.7 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                    leftElbowOffsetY = -0.8 * easeVal;
+                  } else if (idleAnimState === 'formal_bow' || idleAnimState === 'bow') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (-0.25 * easeVal + 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (0.85 * easeVal + 1.25 * (1 - easeVal)) * zMult;
+                  } else {
+                    const upperArmTime = time * 1.2;
+                    const multiSwayX = (Math.sin(upperArmTime) * 0.012 + Math.cos(upperArmTime * 2.3 + 0.4) * 0.006);
+                    const multiSwayZ = (Math.sin(upperArmTime * 0.9 + 0.5) * 0.016 + Math.cos(upperArmTime * 2.1) * 0.008);
+                    awakeShoulderX = (0.15 + multiSwayX) * xMult;
+                    awakeShoulderY = (0.08 + Math.sin(upperArmTime * 0.7) * 0.008 + orbitSwayAngle * 0.3) * yMult;
+                    awakeShoulderZ = (leftArmOffsetZ + 1.25 + multiSwayZ - shiftCycle * 0.01) * zMult;
+                  }
+
+                  const asleepShoulderX = 0.06 * xMult;
+                  const asleepShoulderY = 0.04 * yMult;
+                  const asleepShoulderZ = 1.15 * zMult;
+
+                  leftShoulder.rotation.x = THREE.MathUtils.lerp(awakeShoulderX, asleepShoulderX, sleepProgressRef.current);
+                  leftShoulder.rotation.y = THREE.MathUtils.lerp(awakeShoulderY, asleepShoulderY, sleepProgressRef.current);
+                  leftShoulder.rotation.z = THREE.MathUtils.lerp(awakeShoulderZ, asleepShoulderZ, sleepProgressRef.current);
+                }
+
+                if (rightShoulder) {
+                  let awakeShoulderX = 0;
+                  let awakeShoulderY = 0;
+                  let awakeShoulderZ = 0;
+
+                  if (knockActive) {
+                    // Perform screen knocking pose and animation (raise arm forward and tap)
+                    const easeVal = Math.sin((knockTimer / knockDuration) * Math.PI);
+                    awakeShoulderX = (0.8 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (0.4 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (-1.0 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  } else if (dragStateProgress > 0) {
+                    // Right arm raises up sideways and sways (out of phase)
+                    awakeShoulderX = (0.15 + dragPitchAngle * 0.5) * xMult;
+                    awakeShoulderY = -0.08 * yMult;
+                    awakeShoulderZ = ((-1.25 + 0.45 * dragStateProgress) + Math.cos(dragDangleTimer * 0.8) * 0.08 * dragStateProgress) * zMult;
+                  } else if (idleAnimState === 'greeting_wave') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    // Lift arm up and outwards naturally (Z = -0.4) and twist palm forward (Y = 0.7)
+                    awakeShoulderX = (0.3 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (0.7 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (-0.4 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  } else if (idleAnimState === 'salute') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    // Crisp military salute: raise right arm to temple
+                    awakeShoulderX = (0.85 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (0.5 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (-0.55 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                    rightElbowOffsetY = 1.6 * easeVal;
+                  } else if (idleAnimState === 'cheering') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.6 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = -0.08 * yMult;
+                    awakeShoulderZ = (-0.2 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  } else if (idleAnimState === 'pointing') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.65 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (0.1 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (-0.85 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  } else if (idleAnimState === 'shy_fidget') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.4 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (-0.2 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (-1.05 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                    rightElbowOffsetY = -0.5 * easeVal;
+                  } else if (idleAnimState === 'giggle_cover') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.75 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (0.45 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (-0.6 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                    rightElbowOffsetY = -0.9 * easeVal;
+                  } else if (idleAnimState === 'cat_stretch' || idleAnimState === 'neck_crack') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.9 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (-0.2 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (-0.1 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                    rightElbowOffsetY = 0.8 * easeVal;
+                  } else if (idleAnimState === 'peace_sign') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.75 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (0.35 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (-0.65 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                    rightElbowOffsetY = 1.3 * easeVal;
+                  } else if (idleAnimState === 'finger_guns') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.7 * easeVal + 0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (-0.15 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (-0.7 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                    rightElbowOffsetY = 0.8 * easeVal;
+                  } else if (idleAnimState === 'formal_bow' || idleAnimState === 'bow') {
+                    const t = idleAnimProgress / idleAnimDuration;
+                    const easeVal = Math.sin(t * Math.PI);
+                    awakeShoulderX = (0.15 * (1 - easeVal)) * xMult;
+                    awakeShoulderY = (0.25 * easeVal - 0.08 * (1 - easeVal)) * yMult;
+                    awakeShoulderZ = (-0.85 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  } else {
+                    const upperArmTime = time * 1.2 + 0.5;
+                    const multiSwayX = (Math.sin(upperArmTime) * 0.012 + Math.cos(upperArmTime * 2.3 + 0.8) * 0.006);
+                    const multiSwayZ = (Math.sin(upperArmTime * 0.9 + 0.2) * 0.016 + Math.cos(upperArmTime * 2.1) * 0.008);
+                    awakeShoulderX = (0.15 + multiSwayX) * xMult;
+                    awakeShoulderY = (-0.08 - Math.sin(upperArmTime * 0.7) * 0.008 + orbitSwayAngle * 0.3) * yMult;
+                    awakeShoulderZ = (rightArmOffsetZ - 1.25 - multiSwayZ + shiftCycle * 0.01) * zMult;
+                  }
+
+                  const asleepShoulderX = 0.06 * xMult;
+                  const asleepShoulderY = -0.04 * yMult;
+                  const asleepShoulderZ = -1.15 * zMult;
+
+                  rightShoulder.rotation.x = THREE.MathUtils.lerp(awakeShoulderX, asleepShoulderX, sleepProgressRef.current);
+                  rightShoulder.rotation.y = THREE.MathUtils.lerp(awakeShoulderY, asleepShoulderY, sleepProgressRef.current);
+                  rightShoulder.rotation.z = THREE.MathUtils.lerp(awakeShoulderZ, asleepShoulderZ, sleepProgressRef.current);
+                }
+
+                // Bend knee of non-weight-bearing leg (procedural weight shifting / dangling)
+                if (dragStateProgress > 0) {
+                  const dangleSwingLeft = Math.sin(dragDangleTimer) * 0.08 * dragStateProgress;
+                  const dangleSwingRight = Math.cos(dragDangleTimer + 0.5) * 0.08 * dragStateProgress;
+
+                  if (leftLeg) {
+                    leftLeg.rotation.x = (0.1 + dangleSwingLeft + dragPitchAngle * 0.4) * xMult;
+                    leftLeg.rotation.y = 0;
+                    leftLeg.rotation.z = -0.05 * dragStateProgress * zMult;
+                  }
+                  if (rightLeg) {
+                    rightLeg.rotation.x = (0.1 + dangleSwingRight + dragPitchAngle * 0.4) * xMult;
+                    rightLeg.rotation.y = 0;
+                    rightLeg.rotation.z = 0.05 * dragStateProgress * zMult;
+                  }
+                  if (leftLowerLeg) {
+                    leftLowerLeg.rotation.x = (0.25 + Math.sin(dragDangleTimer * 1.3) * 0.08) * dragStateProgress * xMult;
+                    leftLowerLeg.rotation.y = 0;
+                    leftLowerLeg.rotation.z = 0;
+                  }
+                  if (rightLowerLeg) {
+                    rightLowerLeg.rotation.x = (0.25 + Math.cos(dragDangleTimer * 1.3 + 0.3) * 0.08) * dragStateProgress * xMult;
+                    rightLowerLeg.rotation.y = 0;
+                    rightLowerLeg.rotation.z = 0;
+                  }
+                } else {
+                  if (leftLeg) {
+                    const awakeVal = Math.max(0, shiftCycle) * 0.06;
+                    leftLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
+                    leftLeg.rotation.y = 0;
+                    leftLeg.rotation.z = floatLegAngle * zMult;
+                  }
+                  if (rightLeg) {
+                    const awakeVal = Math.max(0, -shiftCycle) * 0.06;
+                    rightLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
+                    rightLeg.rotation.y = 0;
+                    rightLeg.rotation.z = -floatLegAngle * zMult;
+                  }
+                  if (leftLowerLeg) {
+                    const awakeVal = Math.max(0, shiftCycle) * 0.1;
+                    leftLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
+                    leftLowerLeg.rotation.y = 0;
+                    leftLowerLeg.rotation.z = 0;
+                  }
+                  if (rightLowerLeg) {
+                    const awakeVal = Math.max(0, -shiftCycle) * 0.1;
+                    rightLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
+                    rightLowerLeg.rotation.y = 0;
+                    rightLowerLeg.rotation.z = 0;
+                  }
+                }
+                const leftFoot = getBoneNode(vrm, 'leftFoot');
+                const rightFoot = getBoneNode(vrm, 'rightFoot');
+                if (leftFoot) leftFoot.rotation.set(0.12 * xMult, 0, 0);
+                if (rightFoot) rightFoot.rotation.set(0.12 * xMult, 0, 0);
+                const leftToes = getBoneNode(vrm, 'leftToes');
+                const rightToes = getBoneNode(vrm, 'rightToes');
+                if (leftToes) leftToes.rotation.set(0, 0, 0);
+                if (rightToes) rightToes.rotation.set(0, 0, 0);
               }
 
-              if (rightShoulder) {
-                let awakeShoulderX = 0;
-                let awakeShoulderY = 0;
-                let awakeShoulderZ = 0;
+              const leftElbow = getBoneNode(vrm, 'leftLowerArm');
+              const rightElbow = getBoneNode(vrm, 'rightLowerArm');
+              if (leftElbow) {
+                let awakeElbowX = 0;
+                let awakeElbowY = 0;
+                let awakeElbowZ = 0;
+
+                const lowerArmTime = (time - 0.18) * 1.2; // 180ms kinetic phase lag behind upper arm
+                const elbowSwayY = (Math.sin(lowerArmTime * 1.1) * 0.015 + Math.cos(lowerArmTime * 2.4 + 0.3) * 0.008);
+                const elbowFlexX = (0.22 + Math.sin(lowerArmTime * 0.85) * 0.015); // natural relaxed X elbow bend forward
+                const elbowFlexZ = (0.06 + Math.cos(lowerArmTime * 0.7) * 0.008);
+                awakeElbowX = (isWalkingRef.current ? 0.1 : elbowFlexX) * xMult;
+                awakeElbowY = (leftElbowOffsetY - 0.2 + (isWalkingRef.current ? 0 : elbowSwayY)) * yMult;
+                awakeElbowZ = (isWalkingRef.current ? 0 : elbowFlexZ) * zMult;
+
+                const asleepElbowX = 0.08 * xMult;
+                const asleepElbowY = -0.15 * yMult;
+                const asleepElbowZ = 0 * zMult;
+
+                leftElbow.rotation.x = THREE.MathUtils.lerp(awakeElbowX, asleepElbowX, sleepProgressRef.current);
+                leftElbow.rotation.y = THREE.MathUtils.lerp(awakeElbowY, asleepElbowY, sleepProgressRef.current);
+                leftElbow.rotation.z = THREE.MathUtils.lerp(awakeElbowZ, asleepElbowZ, sleepProgressRef.current);
+              }
+              if (rightElbow) {
+                let awakeElbowX = 0;
+                let awakeElbowY = 0;
+                let awakeElbowZ = 0;
 
                 if (knockActive) {
-                  // Perform screen knocking pose and animation (raise arm forward and tap)
                   const easeVal = Math.sin((knockTimer / knockDuration) * Math.PI);
-                  awakeShoulderX = (0.8 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.4 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-1.0 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                } else if (dragStateProgress > 0) {
-                  // Right arm raises up sideways and sways (out of phase)
-                  awakeShoulderX = (0.15 + dragPitchAngle * 0.5) * xMult;
-                  awakeShoulderY = -0.08 * yMult;
-                  awakeShoulderZ = ((-1.25 + 0.45 * dragStateProgress) + Math.cos(dragDangleTimer * 0.8) * 0.08 * dragStateProgress) * zMult;
+                  const tapOffset = knockTimer < 0.45 ? Math.sin(knockTimer * Math.PI * 14) * 0.14 : 0;
+                  awakeElbowZ = ((-1.3 + tapOffset) * easeVal) * zMult;
+                  awakeElbowY = (rightElbowOffsetY + 0.2 * easeVal) * yMult;
+                  awakeElbowX = 0.3 * easeVal * xMult;
                 } else if (idleAnimState === 'greeting_wave') {
                   const t = idleAnimProgress / idleAnimDuration;
                   const easeVal = Math.sin(t * Math.PI);
-                  // Lift arm up and outwards naturally (Z = -0.4) and twist palm forward (Y = 0.7)
-                  awakeShoulderX = (0.3 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.7 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-0.4 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                } else if (idleAnimState === 'salute') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  // Crisp military salute: raise right arm to temple
-                  awakeShoulderX = (0.85 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.5 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-0.55 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                  rightElbowOffsetY = 1.6 * easeVal;
-                } else if (idleAnimState === 'cheering') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.6 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = -0.08 * yMult;
-                  awakeShoulderZ = (-0.2 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                } else if (idleAnimState === 'pointing') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.65 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.1 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-0.85 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                } else if (idleAnimState === 'shy_fidget') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.4 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (-0.2 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-1.05 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                  rightElbowOffsetY = -0.5 * easeVal;
-                } else if (idleAnimState === 'giggle_cover') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.75 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.45 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-0.6 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                  rightElbowOffsetY = -0.9 * easeVal;
-                } else if (idleAnimState === 'cat_stretch' || idleAnimState === 'neck_crack') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.9 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (-0.2 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-0.1 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                  rightElbowOffsetY = 0.8 * easeVal;
-                } else if (idleAnimState === 'peace_sign') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.75 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.35 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-0.65 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                  rightElbowOffsetY = 1.3 * easeVal;
-                } else if (idleAnimState === 'finger_guns') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.7 * easeVal + 0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (-0.15 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-0.7 * easeVal - 1.25 * (1 - easeVal)) * zMult;
-                  rightElbowOffsetY = 0.8 * easeVal;
-                } else if (idleAnimState === 'formal_bow' || idleAnimState === 'bow') {
-                  const t = idleAnimProgress / idleAnimDuration;
-                  const easeVal = Math.sin(t * Math.PI);
-                  awakeShoulderX = (0.15 * (1 - easeVal)) * xMult;
-                  awakeShoulderY = (0.25 * easeVal - 0.08 * (1 - easeVal)) * yMult;
-                  awakeShoulderZ = (-0.85 * easeVal - 1.25 * (1 - easeVal)) * zMult;
+                  awakeElbowZ = (1.4 * easeVal) * zMult;
+                  awakeElbowY = (rightElbowOffsetY + 1.6 * easeVal) * yMult;
+                  awakeElbowX = 0.4 * easeVal * xMult;
                 } else {
-                  const upperArmTime = time * 1.2 + 0.5;
-                  const multiSwayX = (Math.sin(upperArmTime) * 0.012 + Math.cos(upperArmTime * 2.3 + 0.8) * 0.006);
-                  const multiSwayZ = (Math.sin(upperArmTime * 0.9 + 0.2) * 0.016 + Math.cos(upperArmTime * 2.1) * 0.008);
-                  awakeShoulderX = (0.15 + multiSwayX) * xMult;
-                  awakeShoulderY = (-0.08 - Math.sin(upperArmTime * 0.7) * 0.008 + orbitSwayAngle * 0.3) * yMult;
-                  awakeShoulderZ = (rightArmOffsetZ - 1.25 - multiSwayZ + shiftCycle * 0.01) * zMult;
+                  const lowerArmTime = (time - 0.18) * 1.2 + 0.5; // 180ms kinetic phase lag behind upper arm
+                  const elbowSwayY = (Math.sin(lowerArmTime * 1.1) * 0.015 + Math.cos(lowerArmTime * 2.4 + 0.6) * 0.008);
+                  const elbowFlexX = (0.22 + Math.sin(lowerArmTime * 0.85 + 0.5) * 0.015); // natural relaxed X elbow bend forward
+                  const elbowFlexZ = (-0.06 - Math.cos(lowerArmTime * 0.7 + 0.5) * 0.008);
+                  awakeElbowX = (isWalkingRef.current ? 0.1 : elbowFlexX) * xMult;
+                  awakeElbowY = (rightElbowOffsetY + 0.2 + (isWalkingRef.current ? 0 : elbowSwayY)) * yMult;
+                  awakeElbowZ = (isWalkingRef.current ? 0 : elbowFlexZ) * zMult;
                 }
 
-                const asleepShoulderX = 0.06 * xMult;
-                const asleepShoulderY = -0.04 * yMult;
-                const asleepShoulderZ = -1.15 * zMult;
+                const asleepElbowX = 0.08 * xMult;
+                const asleepElbowY = 0.15 * yMult;
+                const asleepElbowZ = 0 * zMult;
 
-                rightShoulder.rotation.x = THREE.MathUtils.lerp(awakeShoulderX, asleepShoulderX, sleepProgressRef.current);
-                rightShoulder.rotation.y = THREE.MathUtils.lerp(awakeShoulderY, asleepShoulderY, sleepProgressRef.current);
-                rightShoulder.rotation.z = THREE.MathUtils.lerp(awakeShoulderZ, asleepShoulderZ, sleepProgressRef.current);
+                rightElbow.rotation.x = THREE.MathUtils.lerp(awakeElbowX, asleepElbowX, sleepProgressRef.current);
+                rightElbow.rotation.y = THREE.MathUtils.lerp(awakeElbowY, asleepElbowY, sleepProgressRef.current);
+                rightElbow.rotation.z = THREE.MathUtils.lerp(awakeElbowZ, asleepElbowZ, sleepProgressRef.current);
               }
 
-              // Bend knee of non-weight-bearing leg (procedural weight shifting / dangling)
-              if (dragStateProgress > 0) {
-                const dangleSwingLeft = Math.sin(dragDangleTimer) * 0.08 * dragStateProgress;
-                const dangleSwingRight = Math.cos(dragDangleTimer + 0.5) * 0.08 * dragStateProgress;
+              const leftHand = getBoneNode(vrm, 'leftHand');
+              const rightHand = getBoneNode(vrm, 'rightHand');
 
-                if (leftLeg) {
-                  leftLeg.rotation.x = (0.1 + dangleSwingLeft + dragPitchAngle * 0.4) * xMult;
-                  leftLeg.rotation.y = 0;
-                  leftLeg.rotation.z = -0.05 * dragStateProgress * zMult;
+              // Kinetic drag time with ~350ms phase lag behind shoulders
+              const handTimeL = (time - 0.35) * 1.2;
+              const handTimeR = (time - 0.35) * 1.2 + 0.5;
+
+              // Micro-fidget impulse generator for wrists (spikes periodically every ~4-6s)
+              const fidgetTriggerL = Math.max(0, Math.sin(time * 0.75) - 0.80) * 5.0;
+              const fidgetTriggerR = Math.max(0, Math.sin(time * 0.75 + 1.8) - 0.80) * 5.0;
+
+              const fidgetWristXL = Math.sin(time * 4.3) * 0.035 * fidgetTriggerL;
+              const fidgetWristYL = Math.cos(time * 3.7) * 0.045 * fidgetTriggerL;
+              const fidgetWristZL = Math.sin(time * 5.2) * 0.030 * fidgetTriggerL;
+
+              const fidgetWristXR = Math.sin(time * 4.1 + 0.5) * 0.035 * fidgetTriggerR;
+              const fidgetWristYR = Math.cos(time * 3.9 + 0.5) * 0.045 * fidgetTriggerR;
+              const fidgetWristZR = Math.sin(time * 4.9 + 0.5) * 0.030 * fidgetTriggerR;
+
+              if (leftHand && !isWalkingRef.current) {
+                let awakeX = (Math.sin(handTimeL * 1.3) * 0.020 + Math.cos(handTimeL * 2.7) * 0.008 + fidgetWristXL) * xMult;
+                let awakeY = (Math.sin(handTimeL * 0.95 + 0.4) * 0.030 + Math.cos(handTimeL * 1.8) * 0.012 + fidgetWristYL + orbitSwayAngle * 0.5) * yMult;
+                let awakeZ = (Math.cos(handTimeL * 1.1) * 0.018 + Math.sin(handTimeL * 2.2) * 0.007 + fidgetWristZL) * zMult;
+
+                leftHand.rotation.x = THREE.MathUtils.lerp(awakeX, 0.0, sleepProgressRef.current);
+                leftHand.rotation.y = THREE.MathUtils.lerp(awakeY, 0.0, sleepProgressRef.current);
+                leftHand.rotation.z = THREE.MathUtils.lerp(awakeZ, 0.0, sleepProgressRef.current);
+              }
+              if (rightHand && !isWalkingRef.current) {
+                let awakeX = 0;
+                let awakeY = 0;
+                let awakeZ = 0;
+                if (idleAnimState === 'greeting_wave') {
+                  const t = idleAnimProgress / idleAnimDuration;
+                  if (t > 0.26 && t < 0.73) {
+                    // Wave hand with smooth ease-in/out multiplier
+                    const waveEase = Math.sin((t - 0.15) / 0.7 * Math.PI);
+                    awakeY = Math.sin(time * 17) * 0.25 * waveEase * yMult;
+                  }
+                } else {
+                  awakeX = (Math.sin(handTimeR * 1.3) * 0.020 + Math.cos(handTimeR * 2.7) * 0.008 + fidgetWristXR) * xMult;
+                  awakeY = (-Math.sin(handTimeR * 0.95 + 0.4) * 0.030 - Math.cos(handTimeR * 1.8) * 0.012 + fidgetWristYR + orbitSwayAngle * 0.5) * yMult;
+                  awakeZ = (-Math.cos(handTimeR * 1.1) * 0.018 - Math.sin(handTimeR * 2.2) * 0.007 + fidgetWristZR) * zMult;
                 }
-                if (rightLeg) {
-                  rightLeg.rotation.x = (0.1 + dangleSwingRight + dragPitchAngle * 0.4) * xMult;
-                  rightLeg.rotation.y = 0;
-                  rightLeg.rotation.z = 0.05 * dragStateProgress * zMult;
+                rightHand.rotation.x = THREE.MathUtils.lerp(awakeX, 0.0, sleepProgressRef.current);
+                rightHand.rotation.y = THREE.MathUtils.lerp(awakeY, 0.0, sleepProgressRef.current);
+                rightHand.rotation.z = THREE.MathUtils.lerp(awakeZ, 0.0, sleepProgressRef.current);
+              }
+
+              // Procedural Hand & Finger Animation Layer
+              const enableFingerFidget = window.yukiDebugToggles ? window.yukiDebugToggles.fingerFidget : true;
+              if (fingerBonesRef.current && enableFingerFidget) {
+                const fingersObj = fingerBonesRef.current;
+                ['left', 'right'].forEach((side) => {
+                  const sideSign = side === 'left' ? 1.0 : -1.0;
+
+                  // Multipliers/Offsets based on active companion states
+                  const dragMultiplier = dragStateProgress; // 0 to 1
+                  const thinkAdd = isThinkingRef.current ? 0.08 : 0.0;
+                  const sleepAdd = sleepProgressRef.current * 0.20;
+
+                  // Audio-reactive flex (talking gesture)
+                  let speakFlex = 0.0;
+                  if (audioLevelRef.current > 0.015) {
+                    speakFlex = Math.sin(time * 10.0) * 0.06 * Math.min(audioLevelRef.current * 10.0, 1.0);
+                  }
+
+                  const fingers = ['index', 'middle', 'ring', 'little', 'thumb'];
+                  fingers.forEach((finger, fIndex) => {
+                    const bones = fingersObj[side]?.[finger];
+                    if (!bones) return;
+
+                    // Base curl angles for a natural, relaxed cup shape
+                    let baseCurl = 0.12;
+                    if (finger === 'index') baseCurl = 0.10;
+                    else if (finger === 'middle') baseCurl = 0.18;
+                    else if (finger === 'ring') baseCurl = 0.26;
+                    else if (finger === 'little') baseCurl = 0.34;
+                    else if (finger === 'thumb') baseCurl = 0.08;
+
+                    // Calculate target curl bend
+                    // Under drag/grab, fingers extend/splay wide (-0.12 rad target)
+                    const targetCurl = baseCurl * (1.0 - dragMultiplier) - 0.12 * dragMultiplier + thinkAdd + sleepAdd + speakFlex;
+
+                    // Micro-fidget twitches (using asynchronous prime frequencies and organic impulses)
+                    const fidgetFreq = 1.3 + fIndex * 0.47 + (side === 'left' ? 0.0 : 0.23);
+                    const fidgetMultiplier = THREE.MathUtils.lerp(1.0, 0.15, sleepProgressRef.current);
+
+                    // Organic impulse spike (occasional finger twitch)
+                    const fingerTrigger = Math.max(0, Math.sin(time * 0.6 + fIndex * 1.1 + (side === 'left' ? 0 : 2.0)) - 0.85) * 6.0;
+                    const organicTwitch = Math.sin(time * 6.5 + fIndex * 1.7) * 0.025 * fingerTrigger;
+
+                    const fidgetVal = (Math.sin(time * fidgetFreq) * 0.018 + organicTwitch) * (1.0 - dragMultiplier) * fidgetMultiplier;
+
+                    const finalCurl = targetCurl + fidgetVal;
+
+                    bones.forEach((joint, jIndex) => {
+                      // Bend joint on Z-axis (standard VRM humanoid finger bend axis)
+                      // Distal joint (2) bends slightly less
+                      const jointFactor = jIndex === 2 ? 0.75 : 1.0;
+                      joint.rotation.z = sideSign * finalCurl * jointFactor * zMult;
+
+                      // Slightly rotate the thumb on Y/X to curl inwards naturally
+                      if (finger === 'thumb' && jIndex === 0) {
+                        joint.rotation.y = sideSign * 0.06 * (1.0 - dragMultiplier) * yMult;
+                      }
+                    });
+                  });
+                });
+              }
+
+              // If exiting from a VRMA motion capture animation, smoothly interpolate ALL bones
+              // and scene origin from the exact final mocap pose into the live procedural idle pose!
+              if (vrmaExitBlendActiveRef.current) {
+                vrmaExitProgressRef.current += delta;
+                const exitT = Math.min(1.0, vrmaExitProgressRef.current / vrmaExitDurationRef.current);
+                // Cubic smoothstep curve for liquid-smooth deceleration
+                const alpha = exitT * exitT * (3 - 2 * exitT);
+
+                const lerpShortestAngle = (a, b, t) => {
+                  let diff = (b - a) % (Math.PI * 2);
+                  if (diff > Math.PI) diff -= Math.PI * 2;
+                  if (diff < -Math.PI) diff += Math.PI * 2;
+                  return a + diff * t;
+                };
+
+                vrmaExitSnapshotsRef.current.forEach((snap, node) => {
+                  node.rotation.x = lerpShortestAngle(snap.x, node.rotation.x, alpha);
+                  node.rotation.y = lerpShortestAngle(snap.y, node.rotation.y, alpha);
+                  node.rotation.z = lerpShortestAngle(snap.z, node.rotation.z, alpha);
+                });
+
+                // Smoothly interpolate hips local position from mocap final position to procedural idle position
+                const hipsNode = getBoneNode(vrm, 'hips');
+                if (hipsNode && vrmaExitHipsPosSnapRef.current) {
+                  hipsNode.position.x = THREE.MathUtils.lerp(vrmaExitHipsPosSnapRef.current.x, hipsNode.position.x, alpha);
+                  hipsNode.position.y = THREE.MathUtils.lerp(vrmaExitHipsPosSnapRef.current.y, hipsNode.position.y, alpha);
+                  hipsNode.position.z = THREE.MathUtils.lerp(vrmaExitHipsPosSnapRef.current.z, hipsNode.position.z, alpha);
                 }
-                if (leftLowerLeg) {
-                  leftLowerLeg.rotation.x = (0.25 + Math.sin(dragDangleTimer * 1.3) * 0.08) * dragStateProgress * xMult;
-                  leftLowerLeg.rotation.y = 0;
-                  leftLowerLeg.rotation.z = 0;
+
+                // Smoothly interpolate scene position from mocap final position to procedural floating position
+                vrm.scene.position.x = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.x, vrm.scene.position.x, alpha);
+                vrm.scene.position.y = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.y, vrm.scene.position.y, alpha);
+                vrm.scene.position.z = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.z, vrm.scene.position.z, alpha);
+
+                if (exitT >= 1.0) {
+                  vrmaExitBlendActiveRef.current = false;
+                  vrmaExitSnapshotsRef.current.clear();
                 }
-                if (rightLowerLeg) {
-                  rightLowerLeg.rotation.x = (0.25 + Math.cos(dragDangleTimer * 1.3 + 0.3) * 0.08) * dragStateProgress * xMult;
-                  rightLowerLeg.rotation.y = 0;
-                  rightLowerLeg.rotation.z = 0;
-                }
-              } else {
-                if (leftLeg) {
-                  const awakeVal = Math.max(0, shiftCycle) * 0.06;
-                  leftLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
-                  leftLeg.rotation.y = 0;
-                  leftLeg.rotation.z = floatLegAngle * zMult;
-                }
-                if (rightLeg) {
-                  const awakeVal = Math.max(0, -shiftCycle) * 0.06;
-                  rightLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
-                  rightLeg.rotation.y = 0;
-                  rightLeg.rotation.z = -floatLegAngle * zMult;
-                }
-                if (leftLowerLeg) {
-                  const awakeVal = Math.max(0, shiftCycle) * 0.1;
-                  leftLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
-                  leftLowerLeg.rotation.y = 0;
-                  leftLowerLeg.rotation.z = 0;
-                }
-                if (rightLowerLeg) {
-                  const awakeVal = Math.max(0, -shiftCycle) * 0.1;
-                  rightLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
-                  rightLowerLeg.rotation.y = 0;
-                  rightLowerLeg.rotation.z = 0;
-                }
+              }
+            }
+          } else {
+            // VRMA motion capture active: let Three.js AnimationMixer drive skeleton smoothly
+            if (dragStateProgress > 0) {
+              if (currentVrmaActionRef.current) {
+                currentVrmaActionRef.current.fadeOut(0.2);
+                currentVrmaActionRef.current = null;
+                isVrmaActiveRef.current = false;
+                isVrmaUpperBodyRef.current = false;
+                vrmaExitBlendActiveRef.current = false;
+                vrmaExitSnapshotsRef.current.clear();
+              }
+            } else if (isVrmaUpperBodyRef.current) {
+              // Floating upper-body animation: preserve Yuki's graceful floating hover and leg dangle!
+              vrm.scene.position.y = floatOffsetY;
+              vrm.scene.position.x = floatOffsetX;
+              vrm.scene.position.z = 0;
+
+              const hips = getBoneNode(vrm, 'hips');
+              if (hips && initialHipsPosRef.current) {
+                hips.position.y = initialHipsPosRef.current.y;
+                hips.position.z = initialHipsPosRef.current.z;
+                hips.rotation.y = 0;
+              }
+
+              const leftLeg = getBoneNode(vrm, 'leftUpperLeg');
+              const rightLeg = getBoneNode(vrm, 'rightUpperLeg');
+              const leftLowerLeg = getBoneNode(vrm, 'leftLowerLeg');
+              const rightLowerLeg = getBoneNode(vrm, 'rightLowerLeg');
+
+              if (leftLeg) {
+                const awakeVal = Math.max(0, shiftCycle) * 0.06;
+                leftLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
+                leftLeg.rotation.y = 0;
+                leftLeg.rotation.z = floatLegAngle * zMult;
+              }
+              if (rightLeg) {
+                const awakeVal = Math.max(0, -shiftCycle) * 0.06;
+                rightLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
+                rightLeg.rotation.y = 0;
+                rightLeg.rotation.z = -floatLegAngle * zMult;
+              }
+              if (leftLowerLeg) {
+                const awakeVal = Math.max(0, shiftCycle) * 0.1;
+                leftLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
+                leftLowerLeg.rotation.y = 0;
+                leftLowerLeg.rotation.z = 0;
+              }
+              if (rightLowerLeg) {
+                const awakeVal = Math.max(0, -shiftCycle) * 0.1;
+                rightLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
+                rightLowerLeg.rotation.y = 0;
+                rightLowerLeg.rotation.z = 0;
               }
               const leftFoot = getBoneNode(vrm, 'leftFoot');
               const rightFoot = getBoneNode(vrm, 'rightFoot');
@@ -3410,291 +3694,18 @@ const AvatarViewer = React.forwardRef(({
               const rightToes = getBoneNode(vrm, 'rightToes');
               if (leftToes) leftToes.rotation.set(0, 0, 0);
               if (rightToes) rightToes.rotation.set(0, 0, 0);
-            }
-
-            const leftElbow = getBoneNode(vrm, 'leftLowerArm');
-            const rightElbow = getBoneNode(vrm, 'rightLowerArm');
-            if (leftElbow) {
-              let awakeElbowX = 0;
-              let awakeElbowY = 0;
-              let awakeElbowZ = 0;
-
-              const lowerArmTime = (time - 0.18) * 1.2; // 180ms kinetic phase lag behind upper arm
-              const elbowSwayY = (Math.sin(lowerArmTime * 1.1) * 0.015 + Math.cos(lowerArmTime * 2.4 + 0.3) * 0.008);
-              const elbowFlexX = (0.22 + Math.sin(lowerArmTime * 0.85) * 0.015); // natural relaxed X elbow bend forward
-              const elbowFlexZ = (0.06 + Math.cos(lowerArmTime * 0.7) * 0.008);
-              awakeElbowX = (isWalkingRef.current ? 0.1 : elbowFlexX) * xMult;
-              awakeElbowY = (leftElbowOffsetY - 0.2 + (isWalkingRef.current ? 0 : elbowSwayY)) * yMult;
-              awakeElbowZ = (isWalkingRef.current ? 0 : elbowFlexZ) * zMult;
-
-              const asleepElbowX = 0.08 * xMult;
-              const asleepElbowY = -0.15 * yMult;
-              const asleepElbowZ = 0 * zMult;
-
-              leftElbow.rotation.x = THREE.MathUtils.lerp(awakeElbowX, asleepElbowX, sleepProgressRef.current);
-              leftElbow.rotation.y = THREE.MathUtils.lerp(awakeElbowY, asleepElbowY, sleepProgressRef.current);
-              leftElbow.rotation.z = THREE.MathUtils.lerp(awakeElbowZ, asleepElbowZ, sleepProgressRef.current);
-            }
-            if (rightElbow) {
-              let awakeElbowX = 0;
-              let awakeElbowY = 0;
-              let awakeElbowZ = 0;
-
-              if (knockActive) {
-                const easeVal = Math.sin((knockTimer / knockDuration) * Math.PI);
-                const tapOffset = knockTimer < 0.45 ? Math.sin(knockTimer * Math.PI * 14) * 0.14 : 0;
-                awakeElbowZ = ((-1.3 + tapOffset) * easeVal) * zMult;
-                awakeElbowY = (rightElbowOffsetY + 0.2 * easeVal) * yMult;
-                awakeElbowX = 0.3 * easeVal * xMult;
-              } else if (idleAnimState === 'greeting_wave') {
-                const t = idleAnimProgress / idleAnimDuration;
-                const easeVal = Math.sin(t * Math.PI);
-                awakeElbowZ = (1.4 * easeVal) * zMult;
-                awakeElbowY = (rightElbowOffsetY + 1.6 * easeVal) * yMult;
-                awakeElbowX = 0.4 * easeVal * xMult;
-              } else {
-                const lowerArmTime = (time - 0.18) * 1.2 + 0.5; // 180ms kinetic phase lag behind upper arm
-                const elbowSwayY = (Math.sin(lowerArmTime * 1.1) * 0.015 + Math.cos(lowerArmTime * 2.4 + 0.6) * 0.008);
-                const elbowFlexX = (0.22 + Math.sin(lowerArmTime * 0.85 + 0.5) * 0.015); // natural relaxed X elbow bend forward
-                const elbowFlexZ = (-0.06 - Math.cos(lowerArmTime * 0.7 + 0.5) * 0.008);
-                awakeElbowX = (isWalkingRef.current ? 0.1 : elbowFlexX) * xMult;
-                awakeElbowY = (rightElbowOffsetY + 0.2 + (isWalkingRef.current ? 0 : elbowSwayY)) * yMult;
-                awakeElbowZ = (isWalkingRef.current ? 0 : elbowFlexZ) * zMult;
-              }
-
-              const asleepElbowX = 0.08 * xMult;
-              const asleepElbowY = 0.15 * yMult;
-              const asleepElbowZ = 0 * zMult;
-
-              rightElbow.rotation.x = THREE.MathUtils.lerp(awakeElbowX, asleepElbowX, sleepProgressRef.current);
-              rightElbow.rotation.y = THREE.MathUtils.lerp(awakeElbowY, asleepElbowY, sleepProgressRef.current);
-              rightElbow.rotation.z = THREE.MathUtils.lerp(awakeElbowZ, asleepElbowZ, sleepProgressRef.current);
-            }
-
-            const leftHand = getBoneNode(vrm, 'leftHand');
-            const rightHand = getBoneNode(vrm, 'rightHand');
-
-            // Kinetic drag time with ~350ms phase lag behind shoulders
-            const handTimeL = (time - 0.35) * 1.2;
-            const handTimeR = (time - 0.35) * 1.2 + 0.5;
-
-            // Micro-fidget impulse generator for wrists (spikes periodically every ~4-6s)
-            const fidgetTriggerL = Math.max(0, Math.sin(time * 0.75) - 0.80) * 5.0;
-            const fidgetTriggerR = Math.max(0, Math.sin(time * 0.75 + 1.8) - 0.80) * 5.0;
-
-            const fidgetWristXL = Math.sin(time * 4.3) * 0.035 * fidgetTriggerL;
-            const fidgetWristYL = Math.cos(time * 3.7) * 0.045 * fidgetTriggerL;
-            const fidgetWristZL = Math.sin(time * 5.2) * 0.030 * fidgetTriggerL;
-
-            const fidgetWristXR = Math.sin(time * 4.1 + 0.5) * 0.035 * fidgetTriggerR;
-            const fidgetWristYR = Math.cos(time * 3.9 + 0.5) * 0.045 * fidgetTriggerR;
-            const fidgetWristZR = Math.sin(time * 4.9 + 0.5) * 0.030 * fidgetTriggerR;
-
-            if (leftHand && !isWalkingRef.current) {
-              let awakeX = (Math.sin(handTimeL * 1.3) * 0.020 + Math.cos(handTimeL * 2.7) * 0.008 + fidgetWristXL) * xMult;
-              let awakeY = (Math.sin(handTimeL * 0.95 + 0.4) * 0.030 + Math.cos(handTimeL * 1.8) * 0.012 + fidgetWristYL + orbitSwayAngle * 0.5) * yMult;
-              let awakeZ = (Math.cos(handTimeL * 1.1) * 0.018 + Math.sin(handTimeL * 2.2) * 0.007 + fidgetWristZL) * zMult;
-
-              leftHand.rotation.x = THREE.MathUtils.lerp(awakeX, 0.0, sleepProgressRef.current);
-              leftHand.rotation.y = THREE.MathUtils.lerp(awakeY, 0.0, sleepProgressRef.current);
-              leftHand.rotation.z = THREE.MathUtils.lerp(awakeZ, 0.0, sleepProgressRef.current);
-            }
-            if (rightHand && !isWalkingRef.current) {
-              let awakeX = 0;
-              let awakeY = 0;
-              let awakeZ = 0;
-              if (idleAnimState === 'greeting_wave') {
-                const t = idleAnimProgress / idleAnimDuration;
-                if (t > 0.26 && t < 0.73) {
-                  // Wave hand with smooth ease-in/out multiplier
-                  const waveEase = Math.sin((t - 0.15) / 0.7 * Math.PI);
-                  awakeY = Math.sin(time * 17) * 0.25 * waveEase * yMult;
-                }
-              } else {
-                awakeX = (Math.sin(handTimeR * 1.3) * 0.020 + Math.cos(handTimeR * 2.7) * 0.008 + fidgetWristXR) * xMult;
-                awakeY = (-Math.sin(handTimeR * 0.95 + 0.4) * 0.030 - Math.cos(handTimeR * 1.8) * 0.012 + fidgetWristYR + orbitSwayAngle * 0.5) * yMult;
-                awakeZ = (-Math.cos(handTimeR * 1.1) * 0.018 - Math.sin(handTimeR * 2.2) * 0.007 + fidgetWristZR) * zMult;
-              }
-              rightHand.rotation.x = THREE.MathUtils.lerp(awakeX, 0.0, sleepProgressRef.current);
-              rightHand.rotation.y = THREE.MathUtils.lerp(awakeY, 0.0, sleepProgressRef.current);
-              rightHand.rotation.z = THREE.MathUtils.lerp(awakeZ, 0.0, sleepProgressRef.current);
-            }
-
-            // Procedural Hand & Finger Animation Layer
-            const enableFingerFidget = window.yukiDebugToggles ? window.yukiDebugToggles.fingerFidget : true;
-            if (fingerBonesRef.current && enableFingerFidget) {
-              const fingersObj = fingerBonesRef.current;
-              ['left', 'right'].forEach((side) => {
-                const sideSign = side === 'left' ? 1.0 : -1.0;
-
-                // Multipliers/Offsets based on active companion states
-                const dragMultiplier = dragStateProgress; // 0 to 1
-                const thinkAdd = isThinkingRef.current ? 0.08 : 0.0;
-                const sleepAdd = sleepProgressRef.current * 0.20;
-
-                // Audio-reactive flex (talking gesture)
-                let speakFlex = 0.0;
-                if (audioLevelRef.current > 0.015) {
-                  speakFlex = Math.sin(time * 10.0) * 0.06 * Math.min(audioLevelRef.current * 10.0, 1.0);
-                }
-
-                const fingers = ['index', 'middle', 'ring', 'little', 'thumb'];
-                fingers.forEach((finger, fIndex) => {
-                  const bones = fingersObj[side]?.[finger];
-                  if (!bones) return;
-
-                  // Base curl angles for a natural, relaxed cup shape
-                  let baseCurl = 0.12;
-                  if (finger === 'index') baseCurl = 0.10;
-                  else if (finger === 'middle') baseCurl = 0.18;
-                  else if (finger === 'ring') baseCurl = 0.26;
-                  else if (finger === 'little') baseCurl = 0.34;
-                  else if (finger === 'thumb') baseCurl = 0.08;
-
-                  // Calculate target curl bend
-                  // Under drag/grab, fingers extend/splay wide (-0.12 rad target)
-                  const targetCurl = baseCurl * (1.0 - dragMultiplier) - 0.12 * dragMultiplier + thinkAdd + sleepAdd + speakFlex;
-
-                  // Micro-fidget twitches (using asynchronous prime frequencies and organic impulses)
-                  const fidgetFreq = 1.3 + fIndex * 0.47 + (side === 'left' ? 0.0 : 0.23);
-                  const fidgetMultiplier = THREE.MathUtils.lerp(1.0, 0.15, sleepProgressRef.current);
-
-                  // Organic impulse spike (occasional finger twitch)
-                  const fingerTrigger = Math.max(0, Math.sin(time * 0.6 + fIndex * 1.1 + (side === 'left' ? 0 : 2.0)) - 0.85) * 6.0;
-                  const organicTwitch = Math.sin(time * 6.5 + fIndex * 1.7) * 0.025 * fingerTrigger;
-
-                  const fidgetVal = (Math.sin(time * fidgetFreq) * 0.018 + organicTwitch) * (1.0 - dragMultiplier) * fidgetMultiplier;
-
-                  const finalCurl = targetCurl + fidgetVal;
-
-                  bones.forEach((joint, jIndex) => {
-                    // Bend joint on Z-axis (standard VRM humanoid finger bend axis)
-                    // Distal joint (2) bends slightly less
-                    const jointFactor = jIndex === 2 ? 0.75 : 1.0;
-                    joint.rotation.z = sideSign * finalCurl * jointFactor * zMult;
-
-                    // Slightly rotate the thumb on Y/X to curl inwards naturally
-                    if (finger === 'thumb' && jIndex === 0) {
-                      joint.rotation.y = sideSign * 0.06 * (1.0 - dragMultiplier) * yMult;
-                    }
-                  });
-                });
-              });
-            }
-
-            // If exiting from a VRMA motion capture animation, smoothly interpolate ALL bones
-            // and scene origin from the exact final mocap pose into the live procedural idle pose!
-            if (vrmaExitBlendActiveRef.current) {
-              vrmaExitProgressRef.current += delta;
-              const exitT = Math.min(1.0, vrmaExitProgressRef.current / vrmaExitDurationRef.current);
-              // Cubic smoothstep curve for liquid-smooth deceleration
-              const alpha = exitT * exitT * (3 - 2 * exitT);
-
-              const lerpShortestAngle = (a, b, t) => {
-                let diff = (b - a) % (Math.PI * 2);
-                if (diff > Math.PI) diff -= Math.PI * 2;
-                if (diff < -Math.PI) diff += Math.PI * 2;
-                return a + diff * t;
-              };
-
-              vrmaExitSnapshotsRef.current.forEach((snap, node) => {
-                node.rotation.x = lerpShortestAngle(snap.x, node.rotation.x, alpha);
-                node.rotation.y = lerpShortestAngle(snap.y, node.rotation.y, alpha);
-                node.rotation.z = lerpShortestAngle(snap.z, node.rotation.z, alpha);
-              });
-
-              // Smoothly interpolate hips local position from mocap final position to procedural idle position
-              const hipsNode = getBoneNode(vrm, 'hips');
-              if (hipsNode && vrmaExitHipsPosSnapRef.current) {
-                hipsNode.position.x = THREE.MathUtils.lerp(vrmaExitHipsPosSnapRef.current.x, hipsNode.position.x, alpha);
-                hipsNode.position.y = THREE.MathUtils.lerp(vrmaExitHipsPosSnapRef.current.y, hipsNode.position.y, alpha);
-                hipsNode.position.z = THREE.MathUtils.lerp(vrmaExitHipsPosSnapRef.current.z, hipsNode.position.z, alpha);
-              }
-
-              // Smoothly interpolate scene position from mocap final position to procedural floating position
-              vrm.scene.position.x = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.x, vrm.scene.position.x, alpha);
-              vrm.scene.position.y = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.y, vrm.scene.position.y, alpha);
-              vrm.scene.position.z = THREE.MathUtils.lerp(vrmaExitScenePosSnapRef.current.z, vrm.scene.position.z, alpha);
-
-              if (exitT >= 1.0) {
-                vrmaExitBlendActiveRef.current = false;
-                vrmaExitSnapshotsRef.current.clear();
-              }
+            } else {
+              // Full-body motion capture: smoothly transition scene origin towards floor base
+              vrm.scene.position.x += (0 - vrm.scene.position.x) * Math.min(1, delta * 5.0);
+              vrm.scene.position.y += (0 - vrm.scene.position.y) * Math.min(1, delta * 5.0);
+              vrm.scene.position.z += (0 - vrm.scene.position.z) * Math.min(1, delta * 5.0);
             }
           }
-        } else {
-          // VRMA motion capture active: let Three.js AnimationMixer drive skeleton smoothly
-          if (dragStateProgress > 0) {
-            if (currentVrmaActionRef.current) {
-              currentVrmaActionRef.current.fadeOut(0.2);
-              currentVrmaActionRef.current = null;
-              isVrmaActiveRef.current = false;
-              isVrmaUpperBodyRef.current = false;
-              vrmaExitBlendActiveRef.current = false;
-              vrmaExitSnapshotsRef.current.clear();
-            }
-          } else if (isVrmaUpperBodyRef.current) {
-            // Floating upper-body animation: preserve Yuki's graceful floating hover and leg dangle!
-            vrm.scene.position.y = floatOffsetY;
-            vrm.scene.position.x = floatOffsetX;
-            vrm.scene.position.z = 0;
 
-            const hips = getBoneNode(vrm, 'hips');
-            if (hips && initialHipsPosRef.current) {
-              hips.position.y = initialHipsPosRef.current.y;
-              hips.position.z = initialHipsPosRef.current.z;
-              hips.rotation.y = 0;
-            }
-
-            const leftLeg = getBoneNode(vrm, 'leftUpperLeg');
-            const rightLeg = getBoneNode(vrm, 'rightUpperLeg');
-            const leftLowerLeg = getBoneNode(vrm, 'leftLowerLeg');
-            const rightLowerLeg = getBoneNode(vrm, 'rightLowerLeg');
-
-            if (leftLeg) {
-              const awakeVal = Math.max(0, shiftCycle) * 0.06;
-              leftLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
-              leftLeg.rotation.y = 0;
-              leftLeg.rotation.z = floatLegAngle * zMult;
-            }
-            if (rightLeg) {
-              const awakeVal = Math.max(0, -shiftCycle) * 0.06;
-              rightLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.02, sleepProgressRef.current) * xMult;
-              rightLeg.rotation.y = 0;
-              rightLeg.rotation.z = -floatLegAngle * zMult;
-            }
-            if (leftLowerLeg) {
-              const awakeVal = Math.max(0, shiftCycle) * 0.1;
-              leftLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
-              leftLowerLeg.rotation.y = 0;
-              leftLowerLeg.rotation.z = 0;
-            }
-            if (rightLowerLeg) {
-              const awakeVal = Math.max(0, -shiftCycle) * 0.1;
-              rightLowerLeg.rotation.x = THREE.MathUtils.lerp(awakeVal, 0.04, sleepProgressRef.current) * xMult;
-              rightLowerLeg.rotation.y = 0;
-              rightLowerLeg.rotation.z = 0;
-            }
-            const leftFoot = getBoneNode(vrm, 'leftFoot');
-            const rightFoot = getBoneNode(vrm, 'rightFoot');
-            if (leftFoot) leftFoot.rotation.set(0.12 * xMult, 0, 0);
-            if (rightFoot) rightFoot.rotation.set(0.12 * xMult, 0, 0);
-            const leftToes = getBoneNode(vrm, 'leftToes');
-            const rightToes = getBoneNode(vrm, 'rightToes');
-            if (leftToes) leftToes.rotation.set(0, 0, 0);
-            if (rightToes) rightToes.rotation.set(0, 0, 0);
-          } else {
-            // Full-body motion capture: smoothly transition scene origin towards floor base
-            vrm.scene.position.x += (0 - vrm.scene.position.x) * Math.min(1, delta * 5.0);
-            vrm.scene.position.y += (0 - vrm.scene.position.y) * Math.min(1, delta * 5.0);
-            vrm.scene.position.z += (0 - vrm.scene.position.z) * Math.min(1, delta * 5.0);
+          // Update Three.js AnimationMixer for VRMA motion capture playback and smooth cross-fading
+          if (mixerRef.current) {
+            mixerRef.current.update(delta);
           }
-        }
-
-        // Update Three.js AnimationMixer for VRMA motion capture playback and smooth cross-fading
-        if (mixerRef.current) {
-          mixerRef.current.update(delta);
-        }
 
           // Ensure live active VRM is sanitized immediately even if hot-reloading
           if (vrm && !vrm._allEyeClosingIndices) {
@@ -3842,13 +3853,13 @@ const AvatarViewer = React.forwardRef(({
           const blendedAa = isSpeaking && isKokoro
             ? Math.min(0.85, Math.max(speechAa, extraMouthAa))
             : (speechAa > 0
-                ? (extraMouthAa > 0 ? Math.min(0.48, speechAa + (extraMouthAa * 0.20)) : speechAa)
-                : extraMouthAa);
+              ? (extraMouthAa > 0 ? Math.min(0.48, speechAa + (extraMouthAa * 0.20)) : speechAa)
+              : extraMouthAa);
           const blendedOh = isSpeaking && isKokoro
             ? Math.min(0.75, Math.max(speechOh, extraMouthOh))
             : (speechOh > 0
-                ? (extraMouthOh > 0 ? Math.min(0.35, speechOh + (extraMouthOh * 0.25)) : speechOh)
-                : extraMouthOh);
+              ? (extraMouthOh > 0 ? Math.min(0.35, speechOh + (extraMouthOh * 0.25)) : speechOh)
+              : extraMouthOh);
 
           setExpressionValue(vrm, 'aa', blendedAa);
           setExpressionValue(vrm, 'ih', speechIh);

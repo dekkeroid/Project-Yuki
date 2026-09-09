@@ -39,7 +39,6 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
   }
 
-
   // Enforce strict size constraints on move and resize events
   const enforceSize = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -57,64 +56,65 @@ function createWindow() {
   // })
   // mainWindow.webContents.openDevTools({ mode: 'detach' });
 
-  // Handle click-through toggle
-  ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (win) {
-      win.setIgnoreMouseEvents(ignore, options);
-    }
-  });
-
-  // Get screen bounds (adjusted for taskbar / workArea)
-  ipcMain.handle('get-screen-size', () => {
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width, height, x, y } = primaryDisplay.workArea;
-    return { width, height, x, y };
-  });
-
-  // Get current window bounds
-  ipcMain.handle('get-window-bounds', () => {
-    if (mainWindow) {
-      return mainWindow.getBounds();
-    }
-    return { x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT };
-  });
-
-  // Explicitly reposition the window
-  ipcMain.on('set-window-position', (event, { x, y }) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (win) {
-      win.setBounds({
-        x: Math.round(x),
-        y: Math.round(y),
-        width: WINDOW_WIDTH,
-        height: WINDOW_HEIGHT
-      });
-    }
-  });
-
-  // Center window on primary display
-  ipcMain.on('center-window', (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
-    if (win) {
-      const primaryDisplay = screen.getPrimaryDisplay();
-      const { width, height, x, y } = primaryDisplay.workArea;
-      const bounds = win.getBounds();
-      const centerX = Math.round(x + (width - bounds.width) / 2);
-      const centerY = Math.round(y + (height - bounds.height) / 2);
-      win.setBounds({
-        x: centerX,
-        y: centerY,
-        width: bounds.width,
-        height: bounds.height
-      });
-    }
-  });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
+
+// ---------------------------------------------------------------------------
+// IPC Handlers — registered once at module level, not inside createWindow(),
+// so they never accumulate duplicate listeners on macOS re-activation.
+// ---------------------------------------------------------------------------
+
+// Handle click-through toggle
+ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setIgnoreMouseEvents(ignore, options);
+  }
+});
+
+// Get screen bounds (adjusted for taskbar / workArea)
+ipcMain.handle('get-screen-size', () => {
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height, x, y } = primaryDisplay.workArea;
+  return { width, height, x, y };
+});
+
+// Get current window bounds
+ipcMain.handle('get-window-bounds', () => {
+  if (mainWindow) {
+    return mainWindow.getBounds();
+  }
+  return { x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT };
+});
+
+// Explicitly reposition the window (used during drag)
+ipcMain.on('set-window-position', (event, { x, y }) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setBounds({
+      x: Math.round(x),
+      y: Math.round(y),
+      width: WINDOW_WIDTH,
+      height: WINDOW_HEIGHT
+    });
+  }
+});
+
+// Center window on primary display work area.
+// Uses setPosition() + hardcoded constants so DPI-scaled getBounds() values
+// never corrupt the math, and to avoid triggering the enforceSize re-entrancy
+// that setBounds() causes (setBounds fires move+resize -> enforceSize -> setSize).
+ipcMain.on('center-window', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const { width, height, x, y } = screen.getPrimaryDisplay().workArea;
+  const centerX = Math.round(x + (width - WINDOW_WIDTH) / 2);
+  const centerY = Math.round(y + (height - WINDOW_HEIGHT) / 2);
+  mainWindow.setPosition(centerX, centerY);
+});
+
+// ---------------------------------------------------------------------------
 
 // Disable GPU acceleration if transparency issues occur (especially on virtual machines)
 // app.disableHardwareAcceleration();
