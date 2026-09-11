@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Suspense, lazy } from 'react';
-import { Heart, ShoppingBag, Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, RotateCcw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText, Star } from 'lucide-react';
+import { Coffee, ShoppingBag, Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, RotateCcw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText, Star } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 import { useBackendSocket } from './hooks/useBackendSocket';
@@ -84,6 +84,14 @@ const App = () => {
   const [isDateModeActive, setIsDateModeActive] = useState(false);
   const isDateModeActiveRef = useRef(false);
   isDateModeActiveRef.current = isDateModeActive;
+  const dateModeSpeakingRef = useRef(false);
+  const activeDateScenarioRef = useRef(null);
+  const toggleListeningRef = useRef(null);
+  const toggleVoiceCommandModeRef = useRef(null);
+  const toggleTalkModeRef = useRef(null);
+  const isListeningRef = useRef(false);
+  const muteVoiceRef = useRef(false);
+  const setMuteVoiceRef = useRef(null);
 
   // UI States
   const [inputText, setInputText] = useState('');
@@ -285,8 +293,17 @@ const App = () => {
       const active = Boolean(data?.active);
       setIsDateModeActive(active);
       isDateModeActiveRef.current = active;
-      if (active && stopAllPlaybackRef.current) {
-        stopAllPlaybackRef.current();
+      if (active) {
+        if (stopAllPlaybackRef.current) {
+          stopAllPlaybackRef.current();
+        }
+        if (!isVoiceCommandModeRef.current && !isTalkModeRef.current) {
+          toggleVoiceCommandModeRef.current?.();
+        }
+        startSessionTimeoutRef.current?.();
+        setTimeout(() => {
+          updateListeningStateRef.current?.();
+        }, 300);
       }
     });
 
@@ -295,12 +312,94 @@ const App = () => {
     try {
       dateChannel = new BroadcastChannel('yuki_date_mode_channel');
       dateChannel.onmessage = (evt) => {
-        const active = Boolean(evt.data?.active);
-        console.log('[DateMode BroadcastChannel]', evt.data);
-        setIsDateModeActive(active);
-        isDateModeActiveRef.current = active;
-        if (active && stopAllPlaybackRef.current) {
-          stopAllPlaybackRef.current();
+        if (!evt.data) return;
+        if (evt.data.type === 'yuki_speaking_state') {
+          const speaking = Boolean(evt.data.speaking);
+          dateModeSpeakingRef.current = speaking;
+          if (speaking) {
+            // Yuki is speaking in Date Mode -> pause active mic capture to prevent self-transcription
+            stopSpeechRecognitionRef.current?.(false, 'Date Mode Yuki Speaking');
+          } else {
+            // Yuki finished speaking in Date Mode -> trigger continuous listening handover!
+            if (evt.data.playback_finished) {
+              if (isVoiceCommandModeRef.current || isTalkModeRef.current) {
+                console.log('[DateMode Handover] Triggering continuous listening session timeout');
+                startSessionTimeoutRef.current?.();
+              }
+              setTimeout(() => {
+                updateListeningStateRef.current?.();
+              }, 700);
+            } else {
+              updateListeningStateRef.current?.();
+            }
+          }
+          return;
+        }
+        if (evt.data.type === 'toggle_listening' || evt.data.type === 'toggle_voice_input') {
+          if (isVoiceCommandModeRef.current || isTalkModeRef.current) {
+            // Voice mode is currently ON -> turn it OFF
+            if (isVoiceCommandModeRef.current) toggleVoiceCommandModeRef.current?.();
+            if (isTalkModeRef.current) toggleTalkModeRef.current?.();
+            stopSpeechRecognitionRef.current?.(true, 'User turned voice off in Date Mode');
+          } else {
+            // Voice mode is currently OFF -> turn ON Voice Command Mode and activate continuous listening
+            toggleVoiceCommandModeRef.current?.();
+            setTimeout(() => {
+              startSessionTimeoutRef.current?.();
+              updateListeningStateRef.current?.();
+            }, 100);
+          }
+          return;
+        }
+        if (evt.data.type === 'toggle_mute_voice') {
+          const targetMute = evt.data.muteVoice !== undefined ? evt.data.muteVoice : !muteVoiceRef.current;
+          setMuteVoiceRef.current?.(targetMute);
+          return;
+        }
+        if (evt.data.type === 'request_listening_state' || evt.data.type === 'request_voice_state') {
+          try {
+            dateChannel?.postMessage({
+              type: 'voice_state',
+              isVoiceCommandMode: isVoiceCommandModeRef.current,
+              isTalkMode: isTalkModeRef.current,
+              isSessionActive: isSessionActiveRef.current,
+              isListening: isListeningRef.current,
+              muteVoice: muteVoiceRef.current
+            });
+            dateChannel?.postMessage({ type: 'listening_state', isListening: isListeningRef.current });
+          } catch (_) {}
+          return;
+        }
+        if (evt.data.type === 'date_scenario_update') {
+          if (evt.data.scenario) {
+            activeDateScenarioRef.current = evt.data.scenario;
+          }
+          return;
+        }
+        if (evt.data.active !== undefined) {
+          const active = Boolean(evt.data.active);
+          console.log('[DateMode BroadcastChannel]', evt.data);
+          setIsDateModeActive(active);
+          isDateModeActiveRef.current = active;
+          try {
+            fetch(`${API_BASE}/api/date-mode/status`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ active })
+            }).catch(() => {});
+          } catch (_) {}
+          if (active) {
+            if (stopAllPlaybackRef.current) {
+              stopAllPlaybackRef.current();
+            }
+            if (!isVoiceCommandModeRef.current && !isTalkModeRef.current) {
+              toggleVoiceCommandModeRef.current?.();
+            }
+            startSessionTimeoutRef.current?.();
+            setTimeout(() => {
+              updateListeningStateRef.current?.();
+            }, 300);
+          }
         }
       };
     } catch (_) {}
@@ -310,8 +409,24 @@ const App = () => {
         const active = e.newValue === 'true';
         setIsDateModeActive(active);
         isDateModeActiveRef.current = active;
-        if (active && stopAllPlaybackRef.current) {
-          stopAllPlaybackRef.current();
+        try {
+          fetch(`${API_BASE}/api/date-mode/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active })
+          }).catch(() => {});
+        } catch (_) {}
+        if (active) {
+          if (stopAllPlaybackRef.current) {
+            stopAllPlaybackRef.current();
+          }
+          if (!isVoiceCommandModeRef.current && !isTalkModeRef.current) {
+            toggleVoiceCommandModeRef.current?.();
+          }
+          startSessionTimeoutRef.current?.();
+          setTimeout(() => {
+            updateListeningStateRef.current?.();
+          }, 300);
         }
       }
     };
@@ -320,9 +435,23 @@ const App = () => {
     if (localStorage.getItem('yuki_date_mode_active') === 'true') {
       setIsDateModeActive(true);
       isDateModeActiveRef.current = true;
+      try {
+        fetch(`${API_BASE}/api/date-mode/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active: true })
+        }).catch(() => {});
+      } catch (_) {}
       if (stopAllPlaybackRef.current) {
         stopAllPlaybackRef.current();
       }
+      if (!isVoiceCommandModeRef.current && !isTalkModeRef.current) {
+        toggleVoiceCommandModeRef.current?.();
+      }
+      startSessionTimeoutRef.current?.();
+      setTimeout(() => {
+        updateListeningStateRef.current?.();
+      }, 300);
     }
 
     return () => {
@@ -996,8 +1125,35 @@ const App = () => {
     },
     isSessionActiveRef,
     toggleMute: () => setMuteVoice(prev => !prev),
-    speakSystemMessage
+    speakSystemMessage,
+    isDateModeActiveRef,
+    dateModeSpeakingRef
   });
+
+  isListeningRef.current = isListening;
+  toggleListeningRef.current = toggleListening;
+  toggleVoiceCommandModeRef.current = toggleVoiceCommandMode;
+  toggleTalkModeRef.current = toggleTalkMode;
+  muteVoiceRef.current = muteVoice;
+  setMuteVoiceRef.current = setMuteVoice;
+
+  useEffect(() => {
+    isListeningRef.current = isListening;
+    muteVoiceRef.current = muteVoice;
+    try {
+      const channel = new BroadcastChannel('yuki_date_mode_channel');
+      channel.postMessage({
+        type: 'voice_state',
+        isVoiceCommandMode,
+        isTalkMode,
+        isSessionActive,
+        isListening,
+        muteVoice
+      });
+      channel.postMessage({ type: 'listening_state', isListening });
+      channel.close();
+    } catch (_) {}
+  }, [isListening, isVoiceCommandMode, isTalkMode, isSessionActive, muteVoice]);
 
   getIsVoiceCommandModeRef.current = () => isVoiceCommandModeRef.current;
   getIsTalkModeRef.current = () => isTalkModeRef.current;
@@ -1082,6 +1238,10 @@ const App = () => {
 
     // ── proactive_nudge: autonomous idle nudges / check-ins ──────────────
     if (msg.type === 'proactive_nudge') {
+      if (isDateModeActiveRef.current) {
+        // Suppress desktop proactive nudges while Date Mode is active
+        return;
+      }
       if (msg.anim) {
         setCustomAnimation({
           name: msg.anim,
@@ -3101,6 +3261,19 @@ const App = () => {
           disabled_animations: disabledAnimations
         }
       };
+      if (isDateModeActiveRef.current) {
+        payload.is_date_mode = true;
+        payload.context_mode = 'date_mode';
+        if (activeDateScenarioRef.current) {
+          payload.date_setting = {
+            id: activeDateScenarioRef.current.id,
+            title: activeDateScenarioRef.current.title,
+            subtitle: activeDateScenarioRef.current.subtitle,
+            atmosphere: activeDateScenarioRef.current.subtitle || activeDateScenarioRef.current.title,
+            custom_prompt: activeDateScenarioRef.current.customPrompt || activeDateScenarioRef.current.prompt
+          };
+        }
+      }
       if (hasAudioData) {
         payload.audio_data = extraOpts.audio_data;
         payload.audio_duration_ms = extraOpts.audio_duration_ms;
@@ -3553,7 +3726,7 @@ const App = () => {
             onClick={handleLaunchDateMode}
             title="Date Mode (Going Out)"
           >
-            <Heart className="w-5 h-5 text-pink-400" />
+            <Coffee className="w-5 h-5 text-pink-400" />
           </button>
           <button
             className={`desktop-menu-btn ${isChatOpen ? 'active' : ''}`}
@@ -6226,7 +6399,7 @@ const App = () => {
             transition: 'all 0.2s ease'
           }}
         >
-          <Heart className="w-3.5 h-3.5" />
+          <Coffee className="w-3.5 h-3.5" />
           Date Mode
         </button>
       </header>

@@ -184,19 +184,19 @@ export const ANIMATIONS = [
     blendShapes: { happy: 0.3, relaxed: 0.4 }
   },
   {
-    name: 'cheering',
-    alias: 'cheer',
+    name: 'mocking_laugh',
+    alias: 'mock',
     type: 'vrma',
     vrmaUrl: './animations/happy_gesture.vrma',
     duration: 2.63,
     upperBodyOnly: true,
     excludeFromRandomIdle: true,
-    llmTag: '<yuki_anim:cheer/>',
+    llmTag: '<yuki_anim:mock/>',
     commands: [
-      { cmd: '/ani-cheer', description: 'Joyful celebration gesture (mocap)' },
-      { cmd: '/ani-victory', description: 'Celebration gesture (alias)' }
+      { cmd: '/ani-mock', description: 'Mocking laugh — smug teasing laugh (mocap)' },
+      { cmd: '/ani-mocking_laugh', description: 'Mocking laugh (alias)' }
     ],
-    responseText: '*cheers with joyful hand gestures*',
+    responseText: '*laughs mockingly with a smug teasing laugh*',
     blendShapes: { happy: 0.95, surprised: 0.4 }
   },
   {
@@ -339,7 +339,7 @@ export const ANIMATIONS = [
     type: 'vrma',
     vrmaUrl: './animations/peace_sign.vrma',
     duration: 11.68,
-    upperBodyOnly: true,
+    upperBodyOnly: false,
     excludeFromRandomIdle: true,
     llmTag: '<yuki_anim:peace/>',
     commands: [
@@ -768,9 +768,10 @@ export const LLM_ANIMATION_MAP = {
   shy: 'shy_fidget',
   shy_fidget: 'shy_fidget',
   fidget: 'shy_fidget',
-  cheer: 'cheering',
-  cheering: 'cheering',
-  victory: 'cheering',
+  mock: 'mocking_laugh',
+  mocking_laugh: 'mocking_laugh',
+  mocking: 'mocking_laugh',
+  tease_laugh: 'mocking_laugh',
   point: 'pointing',
   pointing: 'pointing',
   show: 'pointing',

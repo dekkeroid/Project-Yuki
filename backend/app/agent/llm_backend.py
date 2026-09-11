@@ -100,9 +100,16 @@ class LLMBackend(ABC):
     @abstractmethod
     def build_payload(self, model: str, messages: List[Dict], temperature: float,
                       use_tools: bool = False, tools: list = None,
-                      stream: bool = False, context_length: int = None) -> Dict:
+                      stream: bool = False, context_length: int = None,
+                      reasoning_effort: str = "none") -> Dict:
         """Build the request payload for chat completion."""
         ...
+
+    def get_reasoning_payload(self, reasoning_effort: str) -> Dict[str, Any]:
+        """Return provider-specific extra payload keys for reasoning/thinking.
+        Override in subclasses that support reasoning (e.g. OpenAI, Gemini).
+        Returns empty dict for backends that don't support it."""
+        return {}
 
     @abstractmethod
     def supports_context_length(self) -> bool:
@@ -163,7 +170,8 @@ class LMStudioBackend(LLMBackend):
 
     def build_payload(self, model: str, messages: List[Dict], temperature: float,
                       use_tools: bool = False, tools: list = None,
-                      stream: bool = False, context_length: int = 8192) -> Dict:
+                      stream: bool = False, context_length: int = 8192,
+                      reasoning_effort: str = "none") -> Dict:
         payload = {
             "model": model,
             "messages": messages,
@@ -352,7 +360,8 @@ class OllamaBackend(LLMBackend):
 
     def build_payload(self, model: str, messages: List[Dict], temperature: float,
                       use_tools: bool = False, tools: list = None,
-                      stream: bool = False, context_length: int = None) -> Dict:
+                      stream: bool = False, context_length: int = None,
+                      reasoning_effort: str = "none") -> Dict:
         payload = {
             "model": model,
             "messages": messages,
@@ -540,7 +549,8 @@ class OpenAICompatibleBackend(LLMBackend):
 
     def build_payload(self, model: str, messages: List[Dict], temperature: float,
                       use_tools: bool = False, tools: list = None,
-                      stream: bool = False, context_length: int = None) -> Dict:
+                      stream: bool = False, context_length: int = None,
+                      reasoning_effort: str = "none") -> Dict:
         payload = {
             "model": model,
             "messages": messages,
@@ -551,7 +561,19 @@ class OpenAICompatibleBackend(LLMBackend):
         if use_tools and tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
+        # Merge reasoning/thinking parameters for cloud providers
+        reasoning_extra = self.get_reasoning_payload(reasoning_effort)
+        if reasoning_extra:
+            payload.update(reasoning_extra)
         return payload
+
+    def get_reasoning_payload(self, reasoning_effort: str) -> Dict[str, Any]:
+        """Map reasoning effort to provider-specific parameters.
+        All OpenAI-compatible endpoints (including Gemini /v1beta/openai)
+        use the standard 'reasoning_effort' string parameter."""
+        if not reasoning_effort or reasoning_effort == "none":
+            return {}
+        return {"reasoning_effort": reasoning_effort}
 
     async def health_check(self) -> bool:
         try:

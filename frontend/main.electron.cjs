@@ -28,6 +28,18 @@ app.on('web-contents-created', (_evt, contents) => {
 
 const BACKEND_PORT = 58392;
 
+// ---------- Process Role Detection & User Data Isolation ----------
+const isDateModeProcess = process.argv.includes('--date-mode');
+
+if (isDateModeProcess) {
+  try {
+    const baseUserData = app.getPath('userData');
+    app.setPath('userData', path.join(path.dirname(baseUserData), 'yuki-ai-date-mode'));
+  } catch (e) {
+    console.warn('[Electron:DateMode] Failed to set isolated userData path:', e.message);
+  }
+}
+
 // ---------- File Logging ----------
 const LOG_DIR = path.join(app.getPath('userData'), 'logs');
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
@@ -48,7 +60,8 @@ function localTimestampFull() {
 }
 
 const _sessionTs = localTimestamp();
-const LOG_FILE = path.join(LOG_DIR, `yuki-${_sessionTs}.log`);
+const logPrefix = isDateModeProcess ? 'yuki-date' : 'yuki';
+const LOG_FILE = path.join(LOG_DIR, `${logPrefix}-${_sessionTs}.log`);
 
 function logToFile(level, msg) {
   const line = `[${localTimestampFull()}] [${level}] ${msg}\n`;
@@ -64,7 +77,7 @@ console.warn = (...args) => { _origWarn(...args); logToFile('WARN', args.join(' 
 console.error = (...args) => { _origError(...args); logToFile('ERROR', args.join(' ')); };
 
 console.log(`[Electron] Log file: ${LOG_FILE}`);
-console.log(`[Electron] Platform: ${process.platform}, arch: ${process.arch}, packaged: ${app.isPackaged}`);
+console.log(`[Electron] Role: ${isDateModeProcess ? 'DateMode (Standalone Child)' : 'Main App'}, platform: ${process.platform}, arch: ${process.arch}, packaged: ${app.isPackaged}`);
 
 // ---------- Chromium Performance & VRAM Optimization Switches ----------
 // 1. Hard limit the Javascript V8 engine heap size to 256MB and expose V8 garbage collector
@@ -79,13 +92,20 @@ if (!app.isPackaged) {
 // 2. Prevent fallback to CPU software rasterization (SwiftShader) by ignoring GPU blocklists
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
-// 3. Set GPU process memory budget for high-performance 3D scenes (Date Mode)
-app.commandLine.appendSwitch('force-gpu-mem-available-mb', '1024');
-app.commandLine.appendSwitch('max-decoded-image-size-mb', '256');
-app.commandLine.appendSwitch('force_high_performance_gpu');
-app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
-app.commandLine.appendSwitch('enable-direct-composition-layers');
+if (isDateModeProcess) {
+  // Dedicated GPU & High-Performance Switches for Date Mode 3D scenes
+  app.commandLine.appendSwitch('force_high_performance_gpu');
+  app.commandLine.appendSwitch('force-gpu-mem-available-mb', '1024');
+  app.commandLine.appendSwitch('max-decoded-image-size-mb', '256');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+  app.commandLine.appendSwitch('enable-direct-composition-layers');
+} else {
+  // Integrated GPU & Energy-Saving Switches for Main Desktop Companion
+  app.commandLine.appendSwitch('force_low_power_gpu');
+  app.commandLine.appendSwitch('force-gpu-mem-available-mb', '256');
+  app.commandLine.appendSwitch('max-decoded-image-size-mb', '128');
+}
 
 // 4. Reduce Chromium renderer tile memory (helps GPU process RAM usage)
 app.commandLine.appendSwitch('num-raster-threads', '2');
@@ -97,23 +117,41 @@ app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess
 // ------------------------------------------------------------------------
 
 // ---------- Single Instance Lock ----------
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  console.log('[Electron] Another instance is already running. Quitting.');
-  app.quit();
-  process.exit(0);
+if (isDateModeProcess) {
+  const gotTheLock = app.requestSingleInstanceLock();
+  if (!gotTheLock) {
+    console.log('[Electron:DateMode] Another Date Mode instance is already running. Quitting.');
+    app.quit();
+    process.exit(0);
+  } else {
+    app.on('second-instance', () => {
+      console.log('[Electron:DateMode] Second instance detected — focusing existing Date Mode window.');
+      if (dateModeWindow && !dateModeWindow.isDestroyed()) {
+        if (dateModeWindow.isMinimized()) dateModeWindow.restore();
+        dateModeWindow.show();
+        dateModeWindow.focus();
+      }
+    });
+  }
 } else {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-    console.log('[Electron] Second instance detected — focusing existing window.');
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      showYuki();
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    } else if (setupWindow && !setupWindow.isDestroyed()) {
-      setupWindow.show();
-      setupWindow.focus();
-    }
-  });
+  const gotTheLock = app.requestSingleInstanceLock();
+  if (!gotTheLock) {
+    console.log('[Electron] Another instance is already running. Quitting.');
+    app.quit();
+    process.exit(0);
+  } else {
+    app.on('second-instance', (event, commandLine, workingDirectory) => {
+      console.log('[Electron] Second instance detected — focusing existing window.');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        showYuki();
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      } else if (setupWindow && !setupWindow.isDestroyed()) {
+        setupWindow.show();
+        setupWindow.focus();
+      }
+    });
+  }
 }
 // ------------------------------------------
 
@@ -376,6 +414,83 @@ function createChatWorkspaceWindow(payload = null) {
 }
 
 let dateModeWindow = null;
+let dateModeProcess = null;
+
+function launchDateModeProcess() {
+  if (dateModeProcess && !dateModeProcess.killed) {
+    console.log('[Electron] Date Mode child process already active.');
+    return;
+  }
+
+  // Notify main window to unload AvatarViewer to completely release WebGL context & VRAM
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('yuki:date-mode-change', { active: true });
+    hideYuki();
+  }
+
+  let spawnCmd = process.execPath;
+  let spawnArgs = [];
+
+  if (app.isPackaged) {
+    spawnArgs = ['--date-mode'];
+  } else {
+    // In dev mode, process.execPath is electron.exe, pass script path and flag
+    spawnArgs = [path.join(__dirname, 'main.electron.cjs'), '--date-mode'];
+  }
+
+  console.log(`[Electron] Spawning Date Mode standalone process on Dedicated GPU: ${spawnCmd} ${spawnArgs.join(' ')}`);
+
+  const spawnCwd = app.isPackaged ? path.dirname(process.execPath) : __dirname;
+
+  try {
+    dateModeProcess = spawn(spawnCmd, spawnArgs, {
+      cwd: spawnCwd,
+      stdio: 'inherit',
+      env: { ...process.env }
+    });
+
+    dateModeProcess.on('exit', (code, signal) => {
+      console.log(`[Electron] Date Mode child process exited (code ${code}, signal ${signal}). Restoring main desktop window...`);
+      dateModeProcess = null;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('yuki:date-mode-change', { active: false });
+        showYuki();
+      }
+    });
+
+    dateModeProcess.on('error', (err) => {
+      console.error('[Electron] Failed to launch Date Mode child process:', err);
+      dateModeProcess = null;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('yuki:date-mode-change', { active: false });
+        showYuki();
+      }
+    });
+  } catch (err) {
+    console.error('[Electron] Exception while spawning Date Mode child process:', err);
+    dateModeProcess = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('yuki:date-mode-change', { active: false });
+      showYuki();
+    }
+  }
+}
+
+function terminateDateModeProcess() {
+  if (dateModeProcess && !dateModeProcess.killed) {
+    console.log('[Electron] Terminating Date Mode child process...');
+    try {
+      if (process.platform === 'win32') {
+        spawn('taskkill', ['/pid', String(dateModeProcess.pid), '/T', '/F'], { stdio: 'ignore' });
+      } else {
+        dateModeProcess.kill('SIGTERM');
+      }
+    } catch (e) {
+      console.warn('[Electron] Error killing Date Mode process:', e.message);
+    }
+    dateModeProcess = null;
+  }
+}
 
 function createDateModeWindow() {
   if (dateModeWindow && !dateModeWindow.isDestroyed()) {
@@ -385,11 +500,17 @@ function createDateModeWindow() {
     return;
   }
 
-  // Notify main window to unload AvatarViewer to completely release WebGL context & VRAM
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('yuki:date-mode-change', { active: true });
-    hideYuki();
-  }
+  ipcMain.on('close-date-window', () => {
+    if (dateModeWindow && !dateModeWindow.isDestroyed()) {
+      dateModeWindow.close();
+    }
+  });
+
+  ipcMain.on('set-date-window-title', (event, title) => {
+    if (dateModeWindow && !dateModeWindow.isDestroyed() && typeof title === 'string') {
+      dateModeWindow.setTitle(title);
+    }
+  });
 
   const iconPath = path.join(__dirname, 'public', 'icon.png');
   dateModeWindow = new BrowserWindow({
@@ -419,12 +540,19 @@ function createDateModeWindow() {
     }
   });
 
+  dateModeWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    const lvl = level === 3 ? 'ERROR' : level === 2 ? 'WARN' : 'INFO';
+    logToFile(lvl, `[DateMode:Renderer] ${message} (${sourceId}:${line})`);
+  });
+
   loadWithRetry(dateModeWindow, [5178, 5179], 60, 500, 'date');
 
   dateModeWindow.on('closed', () => {
     dateModeWindow = null;
-    // Restore main window and reload avatar
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (isDateModeProcess) {
+      app.quit();
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      // Fallback if run in-process
       mainWindow.webContents.send('yuki:date-mode-change', { active: false });
       showYuki();
     }
@@ -1026,15 +1154,13 @@ function createWindow() {
     createChatWorkspaceWindow();
   });
 
-  // Dedicated Date Mode 3D Window
+  // Dedicated Date Mode 3D Window (Spawns independent process on Dedicated GPU)
   ipcMain.on('open-date-window', () => {
-    createDateModeWindow();
+    launchDateModeProcess();
   });
 
   ipcMain.on('close-date-window', () => {
-    if (dateModeWindow && !dateModeWindow.isDestroyed()) {
-      dateModeWindow.close();
-    }
+    terminateDateModeProcess();
   });
 
   ipcMain.handle('get-gpu-info', async () => {
@@ -1713,6 +1839,12 @@ app.whenReady().then(async () => {
     callback(allowed.includes(permission));
   });
 
+  if (isDateModeProcess) {
+    console.log('[Electron:DateMode] Standalone Date Mode process ready on Dedicated GPU. Creating 3D window...');
+    createDateModeWindow();
+    return;
+  }
+
   if (!app.isPackaged) {
     try {
       await session.defaultSession.clearCache();
@@ -1831,6 +1963,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
+  terminateDateModeProcess();
   stopBackend();
 });
 

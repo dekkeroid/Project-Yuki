@@ -221,6 +221,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeDateWindow: () => {
     ipcRenderer.send('close-date-window');
   },
+  setDateWindowTitle: (title) => {
+    ipcRenderer.send('set-date-window-title', title);
+  },
   onDateModeChange: (callback) => {
     const handler = (event, data) => callback(data);
     ipcRenderer.on('yuki:date-mode-change', handler);

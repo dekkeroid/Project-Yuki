@@ -990,8 +990,12 @@ const AvatarViewer = React.forwardRef(({
         // --- VRAM Optimization Triggers ---
         if (isElectron) {
           try {
-            VRMUtils.combineSkeletons(vrm.scene);
-            VRMUtils.combineMorphs(vrm);
+            if (typeof VRMUtils.removeUnnecessaryVertices === 'function') {
+              VRMUtils.removeUnnecessaryVertices(vrm.scene);
+            }
+            if (typeof VRMUtils.removeUnnecessaryJoints === 'function') {
+              VRMUtils.removeUnnecessaryJoints(vrm.scene);
+            }
           } catch (err) {
             console.warn("VRMUtils optimization failed:", err);
           }
@@ -2332,7 +2336,7 @@ const AvatarViewer = React.forwardRef(({
                   // Contextual high playfulness weighting
                   if (currentPlayfulness >= 60) {
                     const playFactor = (currentPlayfulness - 60) / 40;
-                    if (name.includes('groove') || name.includes('cheer')) weight += playFactor * 5;
+                    if (name.includes('groove') || name.includes('mocking')) weight += playFactor * 5;
                   }
 
                   return Math.max(0.01, weight);
@@ -2938,7 +2942,7 @@ const AvatarViewer = React.forwardRef(({
                     const t = idleAnimProgress / idleAnimDuration;
                     const easeVal = Math.sin(t * Math.PI);
                     neckAnimZ = 0.05 * easeVal;
-                  } else if (idleAnimState === 'cheering') {
+                  } else if (idleAnimState === 'mocking_laugh') {
                     const t = idleAnimProgress / idleAnimDuration;
                     const easeVal = Math.sin(t * Math.PI);
                     neckAnimX = (Math.sin(time * 15.0) * 0.06) * easeVal;
@@ -3209,7 +3213,7 @@ const AvatarViewer = React.forwardRef(({
                     awakeShoulderX = (0.15 + dragPitchAngle * 0.5) * xMult;
                     awakeShoulderY = 0.08 * yMult;
                     awakeShoulderZ = ((1.25 - 0.45 * dragStateProgress) + Math.sin(dragDangleTimer * 0.8) * 0.08 * dragStateProgress) * zMult;
-                  } else if (idleAnimState === 'cheering') {
+                  } else if (idleAnimState === 'mocking_laugh') {
                     const t = idleAnimProgress / idleAnimDuration;
                     const easeVal = Math.sin(t * Math.PI);
                     awakeShoulderX = (0.6 * easeVal + 0.15 * (1 - easeVal)) * xMult;
@@ -3291,7 +3295,7 @@ const AvatarViewer = React.forwardRef(({
                     awakeShoulderY = (0.5 * easeVal - 0.08 * (1 - easeVal)) * yMult;
                     awakeShoulderZ = (-0.55 * easeVal - 1.25 * (1 - easeVal)) * zMult;
                     rightElbowOffsetY = 1.6 * easeVal;
-                  } else if (idleAnimState === 'cheering') {
+                  } else if (idleAnimState === 'mocking_laugh') {
                     const t = idleAnimProgress / idleAnimDuration;
                     const easeVal = Math.sin(t * Math.PI);
                     awakeShoulderX = (0.6 * easeVal + 0.15 * (1 - easeVal)) * xMult;

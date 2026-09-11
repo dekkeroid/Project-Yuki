@@ -81,6 +81,12 @@ STABLE_HORDE_MODEL = os.environ.get("STABLE_HORDE_MODEL", "Pony Diffusion V6 XL"
 # Tool Operating Mode — "basic" (weak/local LLMs) vs "advanced" (frontier cloud LLMs with parallel multi-step execution)
 TOOL_MODE = os.environ.get("TOOL_MODE", "basic").strip().lower()
 
+# Reasoning / Thinking Effort — controls extended thinking depth for cloud LLMs (Gemini, OpenAI o-series, etc.)
+# "none" = off, "low" = minimal thinking, "medium" = moderate, "high" = deep reasoning
+# Local backends (LMStudio, Ollama) silently ignore this parameter.
+LLM_REASONING_EFFORT = os.environ.get("LLM_REASONING_EFFORT", "low").strip().lower()
+LLM_REASONING_EFFORT_SIMPLE = os.environ.get("LLM_REASONING_EFFORT_SIMPLE", "none").strip().lower()
+
 # User Location / Country setting ("Auto" for system detection, or custom country string)
 USER_COUNTRY = os.environ.get("USER_COUNTRY", "Auto")
 USER_LOCATION = os.environ.get("USER_LOCATION", "Auto")
@@ -291,6 +297,7 @@ COMPANION_NAP_ENERGY_PCT = int(os.environ.get("COMPANION_NAP_ENERGY_PCT", "30"))
 ACTIVE_VRM_MODEL = os.environ.get("ACTIVE_VRM_MODEL", "default.vrm")
 FAVORITE_VRM_MODELS: list = []
 AVATAR_POWER_PREFERENCE = os.environ.get("AVATAR_POWER_PREFERENCE", "default")
+IS_DATE_MODE = False
 
 
 

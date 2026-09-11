@@ -130,6 +130,8 @@ class MemoryManager:
                 "hotkey_turn_on_listening": True,
                 "listen_on_startup": config.LISTEN_ON_STARTUP,
                 "send_tools_in_simple": False,
+                "reasoning_effort": "low",
+                "reasoning_effort_simple": "none",
                 "endpoint_strategy": "single",
                 "llm_simple_backend": "lmstudio",
                 "llm_simple_base_url": "http://127.0.0.1:1234",
@@ -254,6 +256,8 @@ class MemoryManager:
                 config.CODEGRAPH_CODER_ENABLED = bool(data["settings"].get("codegraph_coder_enabled", getattr(config, "CODEGRAPH_CODER_ENABLED", False)))
                 config.CODEGRAPH_ADVANCED_ENABLED = bool(data["settings"].get("codegraph_advanced_enabled", getattr(config, "CODEGRAPH_ADVANCED_ENABLED", False)))
                 config.ENDPOINT_STRATEGY = data["settings"].get("endpoint_strategy", "single").strip().lower()
+                config.LLM_REASONING_EFFORT = data["settings"].get("reasoning_effort", getattr(config, "LLM_REASONING_EFFORT", "medium")).strip().lower()
+                config.LLM_REASONING_EFFORT_SIMPLE = data["settings"].get("reasoning_effort_simple", getattr(config, "LLM_REASONING_EFFORT_SIMPLE", "none")).strip().lower()
                 config.LLM_SIMPLE_BACKEND = data["settings"].get("llm_simple_backend", getattr(config, "LLM_SIMPLE_BACKEND", "lmstudio"))
                 config.LLM_SIMPLE_BASE_URL = data["settings"].get("llm_simple_base_url", getattr(config, "LLM_SIMPLE_BASE_URL", "http://127.0.0.1:1234"))
                 config.LLM_SIMPLE_MODEL = data["settings"].get("llm_simple_model", getattr(config, "LLM_SIMPLE_MODEL", ""))
@@ -676,6 +680,10 @@ class MemoryManager:
             config.NO_LLM_MODE = bool(value)
         elif key == "llm_mode":
             config.LLM_MODE = int(value)
+        elif key == "reasoning_effort":
+            config.LLM_REASONING_EFFORT = str(value).strip().lower()
+        elif key == "reasoning_effort_simple":
+            config.LLM_REASONING_EFFORT_SIMPLE = str(value).strip().lower()
         elif key == "codegraph_coder_enabled":
             config.CODEGRAPH_CODER_ENABLED = bool(value)
         elif key == "codegraph_advanced_enabled":

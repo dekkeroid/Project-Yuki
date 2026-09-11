@@ -6573,6 +6573,104 @@ const ControlDashboard = ({
                       </div>
                     )}
 
+                    {/* Thinking Effort / Reasoning Level — Complex Tasks */}
+                    {/* Visible when: Mode 3 (Dynamic Mixed), Mode 2 (Complex Only), or Mode 0 (auto) */}
+                    {(settings.llm_mode === 3 || settings.llm_mode === 2 || settings.llm_mode === 0 || !settings.llm_mode) && (
+                      <div className="identity-field" style={{ marginTop: '4px', marginBottom: '8px' }}>
+                        <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd' }}>
+                          Thinking Effort {settings.llm_mode === 3 || settings.llm_mode === 0 || !settings.llm_mode ? '(Complex Tasks)' : ''}
+                        </span>
+                        <select
+                          value={settings.reasoning_effort || 'low'}
+                          onChange={(e) => handleUpdateSetting('reasoning_effort', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(18, 12, 33, 0.85)',
+                            border: '1px solid rgba(167, 139, 250, 0.4)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            marginTop: '4px'
+                          }}
+                        >
+                          <option value="none" style={{ background: '#120c21', color: 'white' }}>
+                            None (Disabled)
+                          </option>
+                          <option value="minimal" style={{ background: '#120c21', color: 'white' }}>
+                            Minimal (Fastest, barely any reasoning)
+                          </option>
+                          <option value="low" style={{ background: '#120c21', color: 'white' }}>
+                            Low (Fast, light reasoning)
+                          </option>
+                          <option value="medium" style={{ background: '#120c21', color: 'white' }}>
+                            Medium (Balanced, recommended)
+                          </option>
+                          <option value="high" style={{ background: '#120c21', color: 'white' }}>
+                            High (Deep reasoning, slower)
+                          </option>
+                        </select>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '3px', display: 'block' }}>
+                          {settings.reasoning_effort === 'none' ? 'Extended thinking disabled -- faster responses, less accurate on hard tasks' :
+                           settings.reasoning_effort === 'minimal' ? 'Bare-minimum internal reasoning, fastest with thinking enabled' :
+                           settings.reasoning_effort === 'low' ? 'Brief internal reasoning before responding' :
+                           settings.reasoning_effort === 'high' ? 'Deep chain-of-thought -- best accuracy, highest latency' :
+                           'Moderate internal reasoning (recommended for most complex tasks)'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Thinking Effort / Reasoning Level — Simple Tasks */}
+                    {/* Visible ONLY when Mode 3 (Dynamic Mixed), Mode 1 (Simple Only), or Mode 0 (auto) — when simple tasks exist */}
+                    {(settings.llm_mode === 3 || settings.llm_mode === 1 || settings.llm_mode === 0 || !settings.llm_mode) && (
+                      <div className="identity-field" style={{ marginTop: '4px', marginBottom: '8px' }}>
+                        <span className="field-label" style={{ fontWeight: '600', color: '#c4b5fd' }}>
+                          Thinking Effort (Simple Tasks)
+                        </span>
+                        <select
+                          value={settings.reasoning_effort_simple || 'none'}
+                          onChange={(e) => handleUpdateSetting('reasoning_effort_simple', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            background: 'rgba(18, 12, 33, 0.85)',
+                            border: '1px solid rgba(167, 139, 250, 0.4)',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.78rem',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            marginTop: '4px'
+                          }}
+                        >
+                          <option value="none" style={{ background: '#120c21', color: 'white' }}>
+                            None (Disabled, recommended for simple)
+                          </option>
+                          <option value="minimal" style={{ background: '#120c21', color: 'white' }}>
+                            Minimal
+                          </option>
+                          <option value="low" style={{ background: '#120c21', color: 'white' }}>
+                            Low
+                          </option>
+                          <option value="medium" style={{ background: '#120c21', color: 'white' }}>
+                            Medium
+                          </option>
+                          <option value="high" style={{ background: '#120c21', color: 'white' }}>
+                            High
+                          </option>
+                        </select>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '3px', display: 'block' }}>
+                          {settings.reasoning_effort_simple === 'none' ? 'Simple chat usually needs no extended thinking' :
+                           settings.reasoning_effort_simple === 'minimal' ? 'Bare-minimum internal reasoning, fastest option' :
+                           settings.reasoning_effort_simple === 'low' ? 'Brief internal reasoning before responding' :
+                           settings.reasoning_effort_simple === 'high' ? 'Deep chain-of-thought -- may slow down casual chat' :
+                           'Moderate internal reasoning for simple tasks'}
+                        </span>
+                      </div>
+                    )}
+
                     {/* If DUAL Strategy Selected, render Simple Endpoint Sub-Card */}
                     {settings.endpoint_strategy === 'dual' && settings.llm_mode !== 1 && settings.llm_mode !== 2 && (
                       <div style={{ background: 'rgba(139, 92, 246, 0.08)', borderRadius: '10px', padding: '12px', marginBottom: '14px', border: '1px solid rgba(139, 92, 246, 0.25)' }}>

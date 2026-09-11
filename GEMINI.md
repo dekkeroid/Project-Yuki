@@ -249,6 +249,14 @@ Whenever making changes to any database structure or table (`vectors.db`, `yuki_
 
 ---
 
+## Yuki Blender Projects & 3D Asset Source Directory
+
+- **Canonical Path**: `D:\ProjectsNew\blenderProjects\Yuki3dAssets\` (and parent `D:\ProjectsNew\blenderProjects\`).
+- **Description**: The primary source directory for Yuki's 3D `.blend` scenes, stage maps, props, and asset pipelines (e.g., `cute_cafe_scene_final.blend`).
+- **Blender MCP Integration**: `blender-mcp` is active and connected to the user's running Blender instance. When debugging lighting, PBR materials, cameras, or transforms, query Blender directly via `execute_blender_code` or `get_scene_info`.
+
+---
+
 ## Packaging & Installer Bundling Protocol (`start_build.bat`)
 
 Whenever adding new dependencies, external binaries, AI models, or C-extensions to Project Yuki, **ALWAYS** follow this checklist to ensure they package into the Inno Setup installer and load cleanly at runtime:
@@ -298,6 +306,46 @@ JavaScript `const` and `let` variables are not hoisted. In large React component
 - **Dependencies Must Exist**: Before adding any state variable (e.g. `profile`, `settings`, `disabledAnimations`) to a `useEffect` or `useMemo` dependency array `[profile?.settings?.xyz]`, verify that the `const [profile, setProfile] = useState(...)` declaration physically precedes it in the file.
 - **Pre-Commit / Build Verification**: Whenever editing state hooks or effects in `App.jsx` or other core components, verify with a static check that no hook evaluates a variable before its declaration line.
 
+---
 
+## Blender MCP Access
 
+Live Blender sessions can be accessed directly via the `blender-mcp` MCP server:
+
+- **Setup / Status**: Enabled via Blender's `Interface: Blender MCP` addon (`Preferences -> Add-ons -> Start MCP Server` in N-panel sidebar).
+- **Tool Access**: Call lazy-loaded tools under server `blender-mcp` (e.g. `get_scene_info`, `get_object_info`, `get_viewport_screenshot`, `execute_blender_code`).
+- **Convention**: Pass the user's verbatim request string in `user_prompt` where required.
+
+---
+
+## 3D Scene & Asset Modeling Protocol (Blender & Three.js)
+
+When creating or modifying 3D environments, rooms, or props for Project Yuki (e.g. Date Mode scenes):
+
+### 1. Compound & Cloned Asset Hierarchy (Parenting Rule)
+- **Single Parent / Unified Mesh**: For any composite asset (e.g. potted plants, coffee mugs with crema/art, cakes, machines), join geometry into a single multi-material mesh or create **ONE** root parent asset with all constituents parented under it (`child.parent = parent`, `matrix_parent_inverse`).
+- **Cloning & Duplication**: When duplicating assets (tables, chairs, cups, plants), **ALWAYS clone the root parent asset** (`Shift+D`). Never spawn independent loose constituent parts into the scene outliner.
+- **Base Pivots**: Set root origins at the bottom contact surface (Z=0 on floor/table/sill) so props snap and sit flush without clipping.
+
+### 2. Watertight Room Architecture
+- Maintain continuous, sealed geometry across walls, ceilings, floors, baseboards, and window casings. Snapping coordinates must match exactly to avoid light leaks, floating gaps, or Z-fighting when the camera orbits.
+
+### 3. Celestial Environment & Sky Parallax
+- **Sky Backdrop**: Place the sky dome/backdrop at true astronomical distance (radius 50m–100m) fully enclosing the building.
+- **Single Sun**: Place a single celestial Sun at distance/elevation so sunlight angles naturally through windows; do not stick flat disks on window panes.
+- **Shadowless Clouds & Rotation**: 3D clouds must be shadow-free (unlit/pure diffuse) and parented under a dedicated root node (`Sky_Clouds_Root`) so Three.js can animate continuous sky drift via Y-axis rotation (`skyCloudsRoot.rotation.y += delta * speed`).
+
+### 4. GLTF / Three.js Material Compatibility
+- **Transparent Glass**: Use `Transmission Weight = 1.0`, `Alpha < 0.2`, `Roughness = 0.05`, and Blender blend mode `blend_method = 'BLEND'` (not OPAQUE) to prevent glass exporting as opaque plastic.
+- **PBR Materials**: Keep materials clean and simple with Principled BSDF for optimal WebGL performance and predictable Three.js rendering.
+
+### 5. Blender Project Source Files vs. Runtime GLB Assets
+- **External Storage Policy**: All master Blender project source files (`.blend`, `.blend1`, `.blend2`) MUST be saved in the dedicated external directory:
+  `D:\projectsNew\blenderProjects\Yuki3dAssets\` (or `D:\Projects New\blenderProjects\Yuki3dAssets\`).
+- **NEVER Store `.blend` Files in Repository**: Never save `.blend` files in `frontend/public/` or anywhere inside the project workspace. The web/Three.js frontend strictly consumes optimized `.glb` binary assets. Storing `.blend` files in the workspace causes `update_installed.ps1` to sync multi-megabyte binary bloat into production installations and risks git tracking accidents.
+- **Git & Robocopy Enforcement**: `.gitignore` and `update_installed.ps1` explicitly ignore and exclude `*.blend*`.
+
+### 6. Asset Optimization & Procedural Geometry Rule
+- Avoid multi-megabyte sample models (e.g. heavy sample models like `SheenChair.glb` ~4.1MB) for basic furniture.
+- Prefer lightweight custom low-poly `.glb` models (<100KB) or procedural Three.js geometry (`THREE.Group` with PBR materials). Procedural geometry incurs **zero bandwidth, zero download delay, and zero file bloat**.
 
