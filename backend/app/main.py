@@ -336,13 +336,18 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown logic for the FastAPI application."""
     global tts_online_status, agent_executor
 
-    # Set custom event loop exception handler to silence Windows Proactor connection resets
+    # Set custom event loop exception handler to silence Windows Proactor connection resets & harmless WebSocket disconnects
     try:
         loop = asyncio.get_running_loop()
         _original_handler = loop.get_exception_handler()
         def custom_exception_handler(loop, context):
             exception = context.get('exception')
             if isinstance(exception, ConnectionResetError) or (exception and "WinError 10054" in str(exception)):
+                return
+            # Silence benign WebSocket disconnects & keepalive ping timeouts logged by asyncio shielded futures
+            exc_name = type(exception).__name__ if exception else ""
+            msg = context.get("message", "")
+            if "ConnectionClosed" in exc_name or "keepalive ping timeout" in str(exception or "") or "ConnectionClosed" in msg:
                 return
             if _original_handler:
                 _original_handler(loop, context)
@@ -772,7 +777,7 @@ async def lifespan(app: FastAPI):
                     else:
                         print(f"[Presence] [LLM Nudge] No valid response received from LLM.")
         except Exception as _err:
-            print(f"[Presence] LLM proactive nudge skipped ({_err}), using versatile template.")
+            print(f"[Presence] LLM proactive nudge skipped ({type(_err).__name__}: {_err}), using versatile template.")
         return "", ""
 
     # 3. Background idle drift — step every 60 s so mood moves between messages.
@@ -851,13 +856,15 @@ async def lifespan(app: FastAPI):
 
                 if nudge_mode != "disabled":
                     sleep_check_str = "ASLEEP/AWAY" if (is_asleep_or_waking or approaching_sleep) else "AWAKE"
-                    print(
-                        f"[Presence] [Min Check] State: {state_str} ({sleep_check_str}) | "
-                        f"Silence: {silence_mins}m/{silence_target_mins}m ({'OK' if silence_ok else 'WAIT'}) | "
-                        f"Boredom: {boredom_pct}%/{boredom_target_pct}% ({'OK' if boredom_ok else 'WAIT'}) | "
-                        f"Cooldown: {cooldown_str} | Energy: {int(current_energy)}/100 | "
-                        f"App: {app_summary}"
-                    )
+                    date_mode_active = getattr(presence_manager, "is_date_mode", False) or getattr(config, "IS_DATE_MODE", False)
+                    if not date_mode_active:
+                        print(
+                            f"[Presence] [Min Check] State: {state_str} ({sleep_check_str}) | "
+                            f"Silence: {silence_mins}m/{silence_target_mins}m ({'OK' if silence_ok else 'WAIT'}) | "
+                            f"Boredom: {boredom_pct}%/{boredom_target_pct}% ({'OK' if boredom_ok else 'WAIT'}) | "
+                            f"Cooldown: {cooldown_str} | Energy: {int(current_energy)}/100 | "
+                            f"App: {app_summary}"
+                        )
 
                 if (
                     nudge_mode != "disabled"
@@ -866,22 +873,26 @@ async def lifespan(app: FastAPI):
                     and boredom_ok
                     and silence_ok
                     and cooldown_remain_sec == 0
+                    and not getattr(presence_manager, "is_date_mode", False)
+                    and not getattr(config, "IS_DATE_MODE", False)
                 ):
                     presence_manager.last_nudge_time = now_ts
                     dwell_mins = snapshot.get("active_window_dwell_mins", 0)
                     win_title = snapshot.get("active_window", "")
 
                     text, anim = "", ""
+                    actual_engine = nudge_engine
                     if nudge_engine == "llm" and not config.NO_LLM_MODE:
                         text, anim = await _generate_llm_proactive_nudge(win_title, dwell_mins, snapshot["boredom"], current_energy)
 
                     if not text:
+                        actual_engine = "template"
                         from app.memory.presence_engine import get_versatile_template_nudge
                         user_name = memory_manager.profile.get("user_name", "dekki") if hasattr(memory_manager, "profile") and memory_manager.profile else "dekki"
                         text, anim = get_versatile_template_nudge(win_title, dwell_mins, snapshot["boredom"], current_energy, user_name=user_name)
 
                     if text:
-                        print(f"[Presence] Dispatched proactive nudge ({nudge_mode}, engine: {nudge_engine}): {text}")
+                        print(f"[Presence] Dispatched proactive nudge ({nudge_mode}, engine: {actual_engine}): {text}")
                         # Record proactive check-in in conversation history with timestamp so the LLM and UI preserve it
                         try:
                             global global_chat_history
@@ -1508,6 +1519,105 @@ def get_alarm_tone_file(filename: str):
     return FileResponse(target)
 
 
+@app.post("/api/date/assets/upload")
+async def upload_date_asset(file: UploadFile = File(...)):
+    """Upload custom 3D model (.glb, .gltf) or 360 panorama (.png, .jpg, .webp) to %APPDATA%/Yuki AI/custom_date_assets/."""
+    from pathlib import Path
+    import os
+
+    allowed_exts = [".glb", ".gltf", ".png", ".jpg", ".jpeg", ".webp", ".hdr"]
+    if not file.filename:
+        return Response(status_code=400, content="Invalid filename")
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in allowed_exts:
+        return Response(status_code=400, content=f"Unsupported format. Allowed: {', '.join(allowed_exts)}")
+
+    date_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_date_assets"
+    date_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_filename = Path(file.filename).name.replace(" ", "_")
+    dest = date_dir / safe_filename
+    content = await file.read()
+    dest.write_bytes(content)
+
+    asset_type = "3d_model" if ext in [".glb", ".gltf"] else "panorama"
+    return {
+        "status": "ok",
+        "filename": safe_filename,
+        "type": asset_type,
+        "url": f"/api/date/assets/{safe_filename}",
+        "size": len(content)
+    }
+
+
+@app.get("/api/date/assets/{filename}")
+def get_date_asset_file(filename: str):
+    """Serve a custom date asset (3D model or panorama texture) or bundled date asset."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    import os
+
+    safe_name = Path(filename).name
+
+    # 1. Check custom uploaded assets
+    custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_date_assets"
+    target = custom_dir / safe_name
+    if target.exists():
+        media_type = "model/gltf-binary" if target.suffix.lower() in [".glb", ".gltf"] else None
+        return FileResponse(target, media_type=media_type)
+
+    # 2. Check bundled frontend/public/3d_assets/date/
+    for candidate_dir in [
+        BASE_DIR.parent / "frontend" / "public" / "3d_assets" / "date",
+        BASE_DIR.parent / "frontend" / "public" / "3d_assets" / "date" / "bg",
+        BASE_DIR / "3d_assets" / "date"
+    ]:
+        cand = candidate_dir / safe_name
+        if cand.exists():
+            media_type = "model/gltf-binary" if cand.suffix.lower() in [".glb", ".gltf"] else None
+            return FileResponse(cand, media_type=media_type)
+
+    return Response(status_code=404, content="Date asset not found")
+
+
+@app.get("/api/date/assets")
+def list_date_assets():
+    """List available custom and bundled date assets."""
+    from pathlib import Path
+    import os
+
+    custom_dir = Path(os.environ.get("APPDATA", "")) / "Yuki AI" / "custom_date_assets"
+    custom_assets = []
+    if custom_dir.exists():
+        for f in sorted(custom_dir.iterdir()):
+            if f.is_file() and f.suffix.lower() in [".glb", ".gltf", ".png", ".jpg", ".jpeg", ".webp", ".hdr"]:
+                custom_assets.append({
+                    "filename": f.name,
+                    "type": "3d_model" if f.suffix.lower() in [".glb", ".gltf"] else "panorama",
+                    "url": f"/api/date/assets/{f.name}",
+                    "size": f.stat().st_size
+                })
+
+    return {"status": "ok", "assets": custom_assets}
+
+
+@app.get("/api/date/scenarios")
+def get_date_scenarios():
+    """Get saved custom date scenarios from profile settings."""
+    scenarios = memory_manager.profile.get("settings", {}).get("custom_date_scenarios", [])
+    return {"status": "ok", "scenarios": scenarios}
+
+
+@app.post("/api/date/scenarios")
+async def save_date_scenarios(req: dict = Body(...)):
+    """Save custom date scenarios to profile settings."""
+    scenarios = req.get("scenarios", [])
+    memory_manager.update_setting("custom_date_scenarios", scenarios)
+    await broadcast_profile_update()
+    return {"status": "ok", "count": len(scenarios)}
+
+
 @app.get("/api/search/compare")
 async def api_search_compare(q: str = Query(..., description="Search query to compare")):
     from app.tools.web import compare_search_engines
@@ -1789,6 +1899,8 @@ class SettingsUpdateRequest(BaseModel):
     greeting_news_topics: Optional[str] = None
     send_tools_in_simple: Optional[bool] = None
     endpoint_strategy: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    reasoning_effort_simple: Optional[str] = None
     llm_simple_backend: Optional[str] = None
     llm_simple_base_url: Optional[str] = None
     llm_simple_api_key: Optional[str] = None
@@ -1957,6 +2069,18 @@ async def update_settings(req: SettingsUpdateRequest):
         if strat in ("single", "dual"):
             config.ENDPOINT_STRATEGY = strat
             memory_manager.update_setting("endpoint_strategy", strat)
+    if req.reasoning_effort is not None:
+        effort = req.reasoning_effort.strip().lower()
+        if effort in ("none", "minimal", "low", "medium", "high"):
+            config.LLM_REASONING_EFFORT = effort
+            memory_manager.update_setting("reasoning_effort", effort)
+            print(f"[Settings] Reasoning Effort (complex) updated to '{effort}'")
+    if req.reasoning_effort_simple is not None:
+        effort = req.reasoning_effort_simple.strip().lower()
+        if effort in ("none", "minimal", "low", "medium", "high"):
+            config.LLM_REASONING_EFFORT_SIMPLE = effort
+            memory_manager.update_setting("reasoning_effort_simple", effort)
+            print(f"[Settings] Reasoning Effort (simple) updated to '{effort}'")
     if req.llm_simple_backend is not None:
         config.LLM_SIMPLE_BACKEND = req.llm_simple_backend.strip()
         memory_manager.update_setting("llm_simple_backend", req.llm_simple_backend.strip())
@@ -4857,6 +4981,21 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
                 continue
 
+            if msg_type == "date_mode_status":
+                from app.memory.presence_engine import presence_manager
+                active = bool(data.get("active", False))
+                config.IS_DATE_MODE = active
+                presence_manager.is_date_mode = active
+                if active:
+                    presence_manager.boredom = 0.0
+                    presence_manager.sleep_state = "active"
+                print(f"[DateMode] Date Mode status updated via WS: active={active}")
+                await broadcast_ws_event({
+                    "type": "date_mode_status_changed",
+                    "active": active
+                })
+                continue
+
             if msg_type == "animation_triggered":
                 anim_name = data.get("name", "unknown")
                 category = str(data.get("category", "action")).upper()
@@ -4885,6 +5024,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             raw_audio_data = payload_data.get("audio_data")
                             is_wake_greeting = bool(payload_data.get("is_wake_greeting") or "[SYSTEM EVENT:" in raw_msg)
                             is_startup_greeting = bool(payload_data.get("is_startup_greeting") or raw_msg == "[STARTUP_GREETING]")
+                            is_date_proactive = bool(payload_data.get("is_proactive_date_topic") or raw_msg == "[SYSTEM EVENT: DATE_PROACTIVE_INITIATION]" or "[SYSTEM EVENT: DATE_PROACTIVE_INITIATION]" in raw_msg)
                             user_msg = raw_msg
                             if is_startup_greeting:
                                 try:
@@ -4901,6 +5041,18 @@ async def websocket_endpoint(websocket: WebSocket):
                                     memory_manager.record_session_active()
                                 except Exception as _greet_err:
                                     print(f"[Startup] Error generating dynamic startup greeting prompt: {_greet_err}")
+                            elif is_date_proactive:
+                                try:
+                                    from app.agent.prompts import generate_date_proactive_prompt
+                                    date_setting = payload_data.get("date_setting") or {}
+                                    user_msg = generate_date_proactive_prompt(
+                                        profile=memory_manager.profile,
+                                        date_setting=date_setting
+                                    )
+                                    is_wake_greeting = True
+                                    print(f"[DateMode] Generated proactive date conversation prompt: {user_msg[:60]}...")
+                                except Exception as _date_err:
+                                    print(f"[DateMode] Error generating proactive date prompt: {_date_err}")
                             stt_time_ms = payload_data.get("stt_time_ms")
 
                             input_audio = None
@@ -4927,10 +5079,15 @@ async def websocket_endpoint(websocket: WebSocket):
                                 print("[WebSocket] Discarding empty chat message with no audio payload")
                                 return
                             turn_id = None
-                            print(f"[WebSocket] Received chat message: '{user_msg}' (startup={is_startup_greeting}, direct_audio={bool(input_audio)})")
+                            print(f"[WebSocket] Received chat message: '{user_msg}' (startup={is_startup_greeting}, date_proactive={is_date_proactive}, direct_audio={bool(input_audio)})")
                             
-                            # 1. Send status indicating Yuki is thinking
-                            await websocket.send_json({"type": "status", "status": "thinking"})
+                            # 1. Send status indicating Yuki is thinking to current socket, and broadcast turn_start to all windows
+                            await broadcast_ws_event({
+                                "type": "turn_start",
+                                "user_message": "" if is_date_proactive else user_msg,
+                                "is_date_mode": bool(payload_data.get("is_date_mode") or payload_data.get("context_mode") == "date_mode")
+                            })
+                            await broadcast_ws_event({"type": "status", "status": "thinking"})
 
                             start_time = time.time()
                             ttft_duration = 0.0
@@ -4949,8 +5106,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             is_in_visual_transcript = False
 
                             def queue_sentence(sentence_text, idx):
-                                nonlocal tts_tasks_event, stream_done_flag, is_in_visual_transcript
-                                if not tts_online_status or is_coding_mode or is_in_visual_transcript:
+                                nonlocal tts_tasks_event, stream_done_flag
+                                if not tts_online_status or is_coding_mode:
                                     return
 
                                 async def synth():
@@ -4961,7 +5118,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                         try:
                                             from app.voice.tts import generate_speech_with_visemes
                                             speech_text = make_speech_friendly(sentence_text)
-                                            if not speech_text or not speech_text.strip():
+                                            if not speech_text or not re.sub(r'[^\w\s]', '', speech_text).strip():
                                                 return None
                                             # Use a timeout of 30.0 seconds for local Kokoro call
                                             t_start = time.time()
@@ -5070,7 +5227,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
                                 def find_sentence_boundary(text: str) -> int:
                                     min_idx = -1
-                                    terminators = [('? ', 1), ('! ', 1), ('. ', 1), ('\n', 0), ('? \n', 2), ('! \n', 2), ('. \n', 2)]
+                                    terminators = [
+                                        ('? ', 1), ('! ', 1), ('. ', 1), ('\n', 0),
+                                        ('? \n', 2), ('! \n', 2), ('. \n', 2),
+                                        ('?" ', 1), ('!" ', 1), ('." ', 1),
+                                        ('?” ', 1), ('!” ', 1), ('.” ', 1),
+                                    ]
                                     for term, offset in terminators:
                                         idx = text.find(term)
                                         if idx != -1:
@@ -5134,6 +5296,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                             overrides["no_tools"] = True
                                             overrides["tool_mode"] = "none"
                                             overrides["is_startup_greeting"] = True
+                                        if is_date_proactive:
+                                            overrides["no_tools"] = True
+                                            overrides["tool_mode"] = "none"
+                                            overrides["is_date_proactive"] = True
+                                            overrides["is_wake_greeting"] = True
                                         import uuid
                                         turn_id = uuid.uuid4().hex[:12]
                                         overrides["turn_id"] = turn_id
@@ -5145,8 +5312,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                             overrides["from_voice"] = True
                                         attachments = payload_data.get("attachments") or []
                                         gen = agent_executor.execute_chat_turn_stream(user_msg, global_chat_history, overrides=overrides, attachments=attachments, input_audio=input_audio)
-                                        # First crash-recovery checkpoint: prior history + the new user message (unless startup prompt).
-                                        if not is_startup_greeting:
+                                        # First crash-recovery checkpoint: prior history + the new user message (unless startup prompt or proactive date starter).
+                                        if not is_startup_greeting and not is_date_proactive:
                                             try:
                                                 from app.memory import db as memory_db
                                                 await asyncio.to_thread(memory_db.save_incomplete_turn, turn_id, list(global_chat_history) + [{"role": "user", "content": user_msg}])
@@ -5183,11 +5350,64 @@ async def websocket_endpoint(websocket: WebSocket):
                                                 elif event_type == "token":
                                                     if not is_in_visual_transcript:
                                                         _check_buf = sentence_buffer + value
-                                                        _m_vt = re.search(r'(?i)\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\]', _check_buf)
+                                                        _m_vt = re.search(r'(?i)\*{0,2}\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\]\*{0,2}:?', _check_buf)
                                                         if _m_vt:
                                                             is_in_visual_transcript = True
-                                                            sentence_buffer = _check_buf[:_m_vt.start()]
-                                                            # Flush any completed sentences from prior conversational dialogue
+                                                            convo_text = _check_buf[:_m_vt.start()]
+
+                                                            # Send any unsent conversational portion of this token chunk to frontend
+                                                            unsent_convo_len = max(0, _m_vt.start() - len(sentence_buffer))
+                                                            if unsent_convo_len > 0:
+                                                                val_convo = value[:unsent_convo_len]
+                                                                if val_convo:
+                                                                    if llm_start_time is None:
+                                                                        llm_start_time = time.time()
+                                                                        ttft_duration = llm_start_time - start_time
+                                                                    await broadcast_ws_event({
+                                                                        "type": "text_stream",
+                                                                        "text": val_convo,
+                                                                        "backend_used": backend_used,
+                                                                        "final": True
+                                                                    })
+
+                                                            # Flush all completed sentences from prior conversational dialogue
+                                                            flush_buf = convo_text
+                                                            while True:
+                                                                flush_buf = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', flush_buf, flags=re.IGNORECASE)
+                                                                if re.search(r'<(thought|think|reasoning)>(?![\s\S]*?</\1>)', flush_buf, flags=re.IGNORECASE):
+                                                                    break
+                                                                boundary = find_sentence_boundary(flush_buf)
+                                                                if boundary == -1:
+                                                                    break
+                                                                sentence = flush_buf[:boundary + 1].strip()
+                                                                flush_buf = flush_buf[boundary + 1:]
+                                                                clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
+                                                                clean_s = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', clean_s, flags=re.IGNORECASE).strip()
+                                                                if clean_s:
+                                                                    queue_sentence(clean_s, audio_idx)
+                                                                    audio_idx += 1
+
+                                                            # Flush any remaining conversational tail (did not end in a boundary delimiter)
+                                                            tail = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', flush_buf, flags=re.IGNORECASE).strip()
+                                                            tail = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', tail, flags=re.IGNORECASE).strip()
+                                                            if tail:
+                                                                queue_sentence(tail, audio_idx)
+                                                                audio_idx += 1
+
+                                                            sentence_buffer = ""
+                                                        else:
+                                                            sentence_buffer = _check_buf
+                                                            if llm_start_time is None:
+                                                                llm_start_time = time.time()
+                                                                ttft_duration = llm_start_time - start_time
+                                                            # Send token to frontend (pure conversational dialogue)
+                                                            await broadcast_ws_event({
+                                                                "type": "text_stream",
+                                                                "text": value,
+                                                                "backend_used": backend_used,
+                                                                "final": True
+                                                            })
+
                                                             while True:
                                                                 sentence_buffer = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', sentence_buffer, flags=re.IGNORECASE)
                                                                 if re.search(r'<(thought|think|reasoning)>(?![\s\S]*?</\1>)', sentence_buffer, flags=re.IGNORECASE):
@@ -5196,42 +5416,13 @@ async def websocket_endpoint(websocket: WebSocket):
                                                                 if boundary == -1:
                                                                     break
                                                                 sentence = sentence_buffer[:boundary + 1].strip()
-                                                                sentence_buffer = sentence_buffer[boundary + 1:]
+                                                                remaining_text = sentence_buffer[boundary + 1:]
+                                                                sentence_buffer = remaining_text
                                                                 clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
                                                                 clean_s = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', clean_s, flags=re.IGNORECASE).strip()
                                                                 if clean_s:
                                                                     queue_sentence(clean_s, audio_idx)
                                                                     audio_idx += 1
-                                                        else:
-                                                            sentence_buffer = _check_buf
-
-                                                    if not is_in_visual_transcript:
-                                                        if llm_start_time is None:
-                                                            llm_start_time = time.time()
-                                                            ttft_duration = llm_start_time - start_time
-                                                        # Send token to frontend (pure conversational dialogue)
-                                                        await broadcast_ws_event({
-                                                            "type": "text_stream",
-                                                            "text": value,
-                                                            "backend_used": backend_used,
-                                                            "final": True
-                                                        })
-
-                                                        while True:
-                                                            sentence_buffer = re.sub(r'<(thought|think|reasoning)>[\s\S]*?</\1>', '', sentence_buffer, flags=re.IGNORECASE)
-                                                            if re.search(r'<(thought|think|reasoning)>(?![\s\S]*?</\1>)', sentence_buffer, flags=re.IGNORECASE):
-                                                                break
-                                                            boundary = find_sentence_boundary(sentence_buffer)
-                                                            if boundary == -1:
-                                                                break
-                                                            sentence = sentence_buffer[:boundary + 1].strip()
-                                                            remaining_text = sentence_buffer[boundary + 1:]
-                                                            sentence_buffer = remaining_text
-                                                            clean_s = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence, flags=re.IGNORECASE).strip()
-                                                            clean_s = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', clean_s, flags=re.IGNORECASE).strip()
-                                                            if clean_s:
-                                                                queue_sentence(clean_s, audio_idx)
-                                                                audio_idx += 1
 
                                                 elif event_type == "thinking":
                                                     # Intermediate thinking/narration text (e.g. before a tool call).
@@ -5286,8 +5477,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                                         except Exception as _cp_err:
                                                             print(f"[Recovery] Checkpoint persist failed: {_cp_err}")
                                                 elif event_type == "final_history":
-                                                    if is_startup_greeting:
-                                                        # Keep ONLY the assistant's greeting in persistent history.
+                                                    if is_startup_greeting or is_date_proactive:
+                                                        # Keep ONLY the assistant's greeting / conversation starter in persistent history.
                                                         # The internal prompt instruction must NEVER be attributed to the user in chat.
                                                         global_chat_history = [
                                                             m for m in value 
@@ -5295,14 +5486,16 @@ async def websocket_endpoint(websocket: WebSocket):
                                                                 "[SCENARIO:" in m.get("content", "") or 
                                                                 "[STARTUP_GREETING]" in m.get("content", "") or 
                                                                 "[SYSTEM EVENT:" in m.get("content", "") or
+                                                                "[SYSTEM DIRECTIVE:" in m.get("content", "") or
                                                                 m.get("content") == user_msg
                                                             ))
                                                         ]
-                                                        # Save the assistant's greeting text to prevent repeating in upcoming sessions
-                                                        for m in reversed(global_chat_history):
-                                                            if m.get("role") == "assistant" and m.get("content"):
-                                                                assistant_greet = m.get("content")
-                                                                memory_manager.record_greeting(assistant_greet)
+                                                        if is_startup_greeting:
+                                                            # Save the assistant's greeting text to prevent repeating in upcoming sessions
+                                                            for m in reversed(global_chat_history):
+                                                                if m.get("role") == "assistant" and m.get("content"):
+                                                                    assistant_greet = m.get("content")
+                                                                    memory_manager.record_greeting(assistant_greet)
                                                                 try:
                                                                     # Dynamically register any discussed headlines in today's covered news registry
                                                                     from app.tools.context_feed import get_startup_context_block
@@ -5365,7 +5558,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 # Feed any remaining text in sentence buffer
                                 clean_remaining = re.sub(r'<(thought|think|reasoning)>[\s\S]*?(?:<\/\1>|$)', '', sentence_buffer, flags=re.IGNORECASE).strip()
                                 clean_remaining = re.sub(r'\[Transcribed:\s*["\']?[\s\S]*?["\']?\]\s*', '', clean_remaining, flags=re.IGNORECASE).strip()
-                                clean_remaining = re.sub(r'(?i)\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\][\s\S]*$', '', clean_remaining).strip()
+                                clean_remaining = re.sub(r'(?i)\*{0,2}\[(?:visual\s+transcript|screen\s+transcript|visual\s+breakdown)\]\*{0,2}:?[\s\S]*$', '', clean_remaining).strip()
                                 if clean_remaining:
                                     queue_sentence(clean_remaining, audio_idx)
                                     audio_idx += 1
@@ -5772,6 +5965,30 @@ async def serve_canvas_file(filename: str):
     raise HTTPException(status_code=404, detail="Canvas file not found")
 
 
+class DateModeStatusRequest(BaseModel):
+    active: bool = False
+
+@app.get("/api/date-mode/status")
+def get_date_mode_status():
+    from app.memory.presence_engine import presence_manager
+    return {
+        "active": getattr(presence_manager, "is_date_mode", False) or getattr(config, "IS_DATE_MODE", False)
+    }
+
+@app.post("/api/date-mode/status")
+async def set_date_mode_status(req: DateModeStatusRequest):
+    from app.memory.presence_engine import presence_manager
+    config.IS_DATE_MODE = req.active
+    presence_manager.is_date_mode = req.active
+    if req.active:
+        presence_manager.boredom = 0.0
+        presence_manager.sleep_state = "active"
+    print(f"[DateMode] Date Mode status updated via API: active={req.active}")
+    await broadcast_ws_event({
+        "type": "date_mode_status_changed",
+        "active": req.active
+    })
+    return {"status": "success", "active": req.active}
 
 if _frontend_dir.exists():
     from starlette.staticfiles import StaticFiles

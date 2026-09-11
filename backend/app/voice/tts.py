@@ -1228,8 +1228,9 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "localhost", text)
 
     # 6. Strip Markdown Headers (#, ##), Bullet Lists (- , * , 1. ), & Blockquotes (>)
-    text = re.sub(r'^[#>\-\*]+\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^[#>\-\*•·▪▫–—]+\s*', '', text, flags=re.MULTILINE)
     text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'(?:^|\s+)[•·▪▫–—]+(?:\s+|$)', ' ', text)
 
     # 7. KaTeX Math Formulas & Delimiter Cleanup
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'\1 over \2', text)
@@ -1443,7 +1444,7 @@ def clean_text_for_tts(text: str) -> str:
         'facepalm', 'point', 'cough', 'scream', 'whisper', 'stretch', 'dance',
         'guitar', 'sing', 'kiss', 'backflip', 'airplane', 'peace', 'crouch',
         'squat', 'sport', 'workout', 'spin', 'pose', 'turn', 'type', 'typing',
-        'salute', 'fidget', 'cheer', 'bounce', 'knock', 'shake', 'hop', 'sob',
+        'salute', 'fidget', 'cheer', 'mock', 'bounce', 'knock', 'shake', 'hop', 'sob',
         'recoil', 'inspect', 'groove'
     ]
     def replace_single(m):
@@ -1840,7 +1841,7 @@ async def generate_speech_with_visemes(
     """
     update_last_tts_time()
     text = clean_text_for_tts(text)
-    if not text.strip():
+    if not text.strip() or not re.sub(r'[^\w\s]', '', text).strip():
         return b"", []
 
     # Safeguard: limit text length to prevent local ONNX timeouts and CPU thrashing

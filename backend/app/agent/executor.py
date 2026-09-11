@@ -2319,7 +2319,7 @@ class AgentExecutor:
             return backend, model
         return get_backend(), config.LLM_MODEL
 
-    def _query_lmstudio_model(self, messages: List[Dict[str, str]], model_name: str, temperature: float = 0.7, use_tools: bool = False, backend=None, max_tokens: Optional[int] = None) -> Tuple[str, List[Dict[str, Any]], str]:
+    def _query_lmstudio_model(self, messages: List[Dict[str, str]], model_name: str, temperature: float = 0.7, use_tools: bool = False, backend=None, max_tokens: Optional[int] = None, reasoning_effort: str = "none") -> Tuple[str, List[Dict[str, Any]], str]:
         """
         Sends a request to the active LLM backend for the specified model.
         Returns (response_text, tool_calls, model_label).
@@ -2350,6 +2350,7 @@ class AgentExecutor:
             temperature=temperature,
             use_tools=use_tools,
             tools=tools,
+            reasoning_effort=reasoning_effort,
         )
         if max_tokens:
             payload["max_tokens"] = int(max_tokens)
@@ -2398,9 +2399,10 @@ class AgentExecutor:
             try:
                 label = "complex" if backend == "complex" else "simple"
                 temp = 0.2 if label == "complex" else 0.6
+                reasoning = getattr(config, "LLM_REASONING_EFFORT", "medium") if label == "complex" else getattr(config, "LLM_REASONING_EFFORT_SIMPLE", "none")
                 tb, tm = self._get_backend_and_model_for_task(label)
-                print(f"[Router][Mode 3] Task={label} -> using {tm} via {tb.name} with {'full' if label == 'complex' else 'lean'} prompt (temp={temp})")
-                return self._query_lmstudio_model(messages, tm, temperature=temp, use_tools=use_tools, backend=tb)
+                print(f"[Router][Mode 3] Task={label} -> using {tm} via {tb.name} with {'full' if label == 'complex' else 'lean'} prompt (temp={temp}, reasoning={reasoning})")
+                return self._query_lmstudio_model(messages, tm, temperature=temp, use_tools=use_tools, backend=tb, reasoning_effort=reasoning)
             except Exception as e:
                 tb_e, tm_e = self._get_backend_and_model_for_task(label)
                 return (
@@ -2410,8 +2412,9 @@ class AgentExecutor:
                 )
         elif backend == "complex":
             try:
-                print(f"[Router][Mode 2] Task=complex -> using {config.LLM_MODEL} with full prompt (temp=0.2)")
-                return self._query_lmstudio_model(messages, config.LLM_MODEL, temperature=0.2, use_tools=use_tools)
+                reasoning = getattr(config, "LLM_REASONING_EFFORT", "medium")
+                print(f"[Router][Mode 2] Task=complex -> using {config.LLM_MODEL} with full prompt (temp=0.2, reasoning={reasoning})")
+                return self._query_lmstudio_model(messages, config.LLM_MODEL, temperature=0.2, use_tools=use_tools, reasoning_effort=reasoning)
             except Exception as complex_err:
                 llm_backend = get_backend()
                 return (
@@ -2421,9 +2424,10 @@ class AgentExecutor:
                 )
         else:
             try:
+                reasoning = getattr(config, "LLM_REASONING_EFFORT_SIMPLE", "none")
                 tb, tm = self._get_backend_and_model_for_task("simple")
-                print(f"[Router][Mode 1] Task=simple -> using {tm} via {tb.name} with simple prompt (temp=0.6)")
-                return self._query_lmstudio_model(messages, tm, temperature=0.6, use_tools=use_tools, backend=tb)
+                print(f"[Router][Mode 1] Task=simple -> using {tm} via {tb.name} with simple prompt (temp=0.6, reasoning={reasoning})")
+                return self._query_lmstudio_model(messages, tm, temperature=0.6, use_tools=use_tools, backend=tb, reasoning_effort=reasoning)
             except Exception as e:
                 tb_e, tm_e = self._get_backend_and_model_for_task("simple")
                 return (
@@ -2683,7 +2687,7 @@ class AgentExecutor:
         print(f"[Tools] Sending {len(filtered_tools)} {source} tools to LLM (mode: {effective_tool_mode}): {', '.join(tool_names)}")
         return filtered_tools
 
-    async def _stream_request(self, session: aiohttp.ClientSession, url: str, model: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None, backend=None, allow_key_rotation: bool = False):
+    async def _stream_request(self, session: aiohttp.ClientSession, url: str, model: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", overrides: Optional[Dict[str, Any]] = None, backend=None, allow_key_rotation: bool = False, reasoning_effort: str = "none"):
         llm_backend = backend or get_backend()
         tools = None
         if use_tools:
@@ -2696,6 +2700,7 @@ class AgentExecutor:
             use_tools=use_tools,
             tools=tools,
             stream=True,
+            reasoning_effort=reasoning_effort,
         )
 
         _log_payload_stats(payload, model, tag="stream", endpoint=url)
@@ -2748,13 +2753,13 @@ class AgentExecutor:
                 break
 
 
-    async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", backend=None, overrides: Optional[Dict[str, Any]] = None, allow_key_rotation: bool = False):
+    async def _stream_lmstudio_model(self, session: aiohttp.ClientSession, model_name: str, messages: List[Dict[str, str]], temperature: float = 0.7, use_tools: bool = False, intent_tool_hint: str = "", backend=None, overrides: Optional[Dict[str, Any]] = None, allow_key_rotation: bool = False, reasoning_effort: str = "none"):
         if backend is None:
             llm_backend = get_backend()
         else:
             llm_backend = backend
         url = llm_backend.get_chat_url()
-        async for chunk in self._stream_request(session, url, model_name, messages, temperature=temperature, use_tools=use_tools, intent_tool_hint=intent_tool_hint, overrides=overrides, backend=llm_backend, allow_key_rotation=allow_key_rotation):
+        async for chunk in self._stream_request(session, url, model_name, messages, temperature=temperature, use_tools=use_tools, intent_tool_hint=intent_tool_hint, overrides=overrides, backend=llm_backend, allow_key_rotation=allow_key_rotation, reasoning_effort=reasoning_effort):
             yield chunk, self._get_model_label(model_name)
 
     async def _query_llm_stream(
@@ -2809,9 +2814,10 @@ class AgentExecutor:
                     task = self._classify_task(user_message) if user_message else "simple"
                     source = "regex"
                 temp = 0.75 if overrides.get("is_startup_greeting") else (0.1 if task in ("coder", "complex_coder") else (0.2 if task == "complex" else 0.6))
+                reasoning = getattr(config, "LLM_REASONING_EFFORT", "medium") if task == "complex" else (getattr(config, "LLM_REASONING_EFFORT", "medium") if task in ("coder", "complex_coder") else getattr(config, "LLM_REASONING_EFFORT_SIMPLE", "none"))
                 tb, tm = self._get_backend_and_model_for_task(task)
-                print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {tm} via {tb.name} with {'full' if task in ('complex', 'coder', 'complex_coder') else 'lean'} prompt (temp={temp})")
-                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides):
+                print(f"[Router][Mode 3] Task={task} (via {source}) -> streaming {tm} via {tb.name} with {'full' if task in ('complex', 'coder', 'complex_coder') else 'lean'} prompt (temp={temp}, reasoning={reasoning})")
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, backend=tb, overrides=overrides, reasoning_effort=reasoning):
                     yield chunk, label
             except Exception as e:
                 tb_e, tm_e = self._get_backend_and_model_for_task(task)
@@ -2820,8 +2826,9 @@ class AgentExecutor:
         elif backend == "complex":
             try:
                 temp = 0.75 if overrides.get("is_startup_greeting") else 0.2
-                print(f"[Router][Mode 2] Task=complex -> streaming {config.LLM_MODEL} with full prompt (temp={temp})")
-                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, overrides=overrides):
+                reasoning = getattr(config, "LLM_REASONING_EFFORT", "medium")
+                print(f"[Router][Mode 2] Task=complex -> streaming {config.LLM_MODEL} with full prompt (temp={temp}, reasoning={reasoning})")
+                async for chunk, label in self._stream_lmstudio_model(session, config.LLM_MODEL, messages, temperature=temp, use_tools=use_tools, intent_tool_hint=intent_tool_hint, overrides=overrides, reasoning_effort=reasoning):
                     yield chunk, label
             except Exception as e:
                 llm_backend = get_backend()
@@ -2831,8 +2838,9 @@ class AgentExecutor:
             try:
                 tb, tm = self._get_backend_and_model_for_task("simple")
                 temp = 0.75 if overrides.get("is_startup_greeting") else 0.6
-                print(f"[Router] Task=simple -> streaming {tm} via {tb.name} (temp={temp})")
-                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, backend=tb, overrides=overrides):
+                reasoning = getattr(config, "LLM_REASONING_EFFORT_SIMPLE", "none")
+                print(f"[Router] Task=simple -> streaming {tm} via {tb.name} (temp={temp}, reasoning={reasoning})")
+                async for chunk, label in self._stream_lmstudio_model(session, tm, messages, temperature=temp, use_tools=use_tools, backend=tb, overrides=overrides, reasoning_effort=reasoning):
                     yield chunk, label
             except Exception as e:
                 tb_e, tm_e = self._get_backend_and_model_for_task("simple")
@@ -4270,9 +4278,10 @@ class AgentExecutor:
                             for _b_idx in pending_visual_badge_indices:
                                 if 0 <= _b_idx < len(accumulated_response_total):
                                     orig_badge = accumulated_response_total[_b_idx]
+                                    _replacement = f'```tool_output\n{extracted_transcript}\n```'
                                     accumulated_response_total[_b_idx] = re.sub(
                                         r'```tool_output\n[\s\S]*?```',
-                                        f'```tool_output\n{extracted_transcript}\n```',
+                                        lambda _m, _r=_replacement: _r,
                                         orig_badge
                                     )
                             pending_visual_badge_indices.clear()
@@ -4357,9 +4366,10 @@ class AgentExecutor:
                     for _b_idx in pending_visual_badge_indices:
                         if 0 <= _b_idx < len(accumulated_response_total):
                             orig_badge = accumulated_response_total[_b_idx]
+                            _replacement = f'```tool_output\n{extracted_transcript}\n```'
                             accumulated_response_total[_b_idx] = re.sub(
                                 r'```tool_output\n[\s\S]*?```',
-                                f'```tool_output\n{extracted_transcript}\n```',
+                                lambda _m, _r=_replacement: _r,
                                 orig_badge
                             )
                     pending_visual_badge_indices.clear()

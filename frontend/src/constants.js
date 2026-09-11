@@ -538,7 +538,7 @@ export const cleanTextForTTS = (text) => {
     'facepalm', 'point', 'cough', 'scream', 'whisper', 'stretch', 'dance',
     'guitar', 'sing', 'kiss', 'backflip', 'airplane', 'peace', 'crouch',
     'squat', 'sport', 'workout', 'spin', 'pose', 'turn', 'type', 'typing',
-    'salute', 'fidget', 'cheer', 'bounce', 'knock', 'shake', 'hop', 'sob',
+    'salute', 'fidget', 'cheer', 'mock', 'bounce', 'knock', 'shake', 'hop', 'sob',
     'recoil', 'inspect', 'groove'
   ];
 

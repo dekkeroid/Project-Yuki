@@ -96,7 +96,8 @@ $installed3DAssets = Join-Path $installDir 'resources\frontend\dist\3d_assets'
 if ((-not (Test-Path $installed3DAssets)) -and (Test-Path "$frontendDir\public\3d_assets")) {
     $frontendChanged = $true
 } elseif (Test-Path "$frontendDir\public\3d_assets") {
-    $assetsSources = @(Get-ChildItem "$frontendDir\public\3d_assets" -Recurse -File -ErrorAction SilentlyContinue)
+    $assetsSources = @(Get-ChildItem "$frontendDir\public\3d_assets" -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -notin '.blend', '.blend1', '.blend2' })
     foreach ($a in $assetsSources) {
         $rel = $a.FullName.Substring((Join-Path $root "$frontendDir\public\").Length)
         $destFile = Join-Path $installDir "resources\frontend\dist\$rel"
@@ -343,7 +344,7 @@ if ($selFrontend) {
 
     # Explicitly ensure 3D non-VRM assets are synced to installed app
     if (Test-Path "$root\$frontendDir\public\3d_assets") {
-        robocopy "$root\$frontendDir\public\3d_assets" (Join-Path $installDir 'resources\frontend\dist\3d_assets') /E /NFL /NDL /NJH /NJS | Out-Null
+        robocopy "$root\$frontendDir\public\3d_assets" (Join-Path $installDir 'resources\frontend\dist\3d_assets') /E /NFL /NDL /NJH /NJS /XF *.blend *.blend1 *.blend2 | Out-Null
     }
 }
 
@@ -483,7 +484,7 @@ if ($selElectron) {
             robocopy "$root\$frontendDir\dist" (Join-Path $tempDir "dist") /E /NFL /NDL /NJH /NJS /XD models
         }
         if (Test-Path "$root\$frontendDir\public\3d_assets") {
-            robocopy "$root\$frontendDir\public\3d_assets" (Join-Path $tempDir "dist\3d_assets") /E /NFL /NDL /NJH /NJS | Out-Null
+            robocopy "$root\$frontendDir\public\3d_assets" (Join-Path $tempDir "dist\3d_assets") /E /NFL /NDL /NJH /NJS /XF *.blend *.blend1 *.blend2 | Out-Null
         }
         
         Push-Location "$root\$frontendDir"

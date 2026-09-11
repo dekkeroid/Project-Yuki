@@ -118,3 +118,8 @@ CrashReports/
 
 # Ignore 3d assets
 frontend/public/3d_assets/
+
+# Ignore Blender source files
+*.blend
+*.blend1
+*.blend2

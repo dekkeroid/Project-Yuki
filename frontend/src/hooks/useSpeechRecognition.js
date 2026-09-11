@@ -21,7 +21,9 @@ export function useSpeechRecognition(options = {}) {
     sendMessageText,
     isSessionActiveRef,
     speakSystemMessage,
-    llmSpeechInputEnabled
+    llmSpeechInputEnabled,
+    isDateModeActiveRef,
+    dateModeSpeakingRef
   } = options;
 
   const llmSpeechInputEnabledRef = useRef(!!llmSpeechInputEnabled);
@@ -238,6 +240,9 @@ export function useSpeechRecognition(options = {}) {
   const shouldListen = () => {
     const modeActive = isTalkModeRef.current || isVoiceCommandModeRef.current;
     let yukiBusy = isThinkingRef.current || isTranscribingRef.current;
+    if (isDateModeActiveRef?.current && dateModeSpeakingRef?.current) {
+      yukiBusy = true;
+    }
     if (!allowVoiceBargeInRef.current) {
       yukiBusy = yukiBusy || isPlayingRef.current || ttsStreamActiveRef.current || isNativeSpeakingRef.current || hasReceivedAudioRef.current;
     }
@@ -249,13 +254,21 @@ export function useSpeechRecognition(options = {}) {
       clearTimeout(sessionTimeoutRef.current);
       sessionTimeoutRef.current = null;
     }
-    setIsSessionActive(false);
+    if (!isDateModeActiveRef?.current) {
+      setIsSessionActive(false);
+    }
   };
 
   const startSessionTimeout = () => {
     if (sessionTimeoutRef.current) clearTimeout(sessionTimeoutRef.current);
     setIsSessionActive(true);
     
+    // In Date Mode, continuous listening mode is always active and never times out into wake-word mode
+    if (isDateModeActiveRef?.current) {
+      console.log('[STT] Date Mode active: continuous listening session set to stay perpetually active.');
+      return;
+    }
+
     // Parse value; default to 120s if null/undefined, but allow 0 to mean 'Never'
     let timeoutSec = options.continuedSessionTimeoutSec;
     if (timeoutSec === undefined || timeoutSec === null) {
@@ -296,7 +309,7 @@ export function useSpeechRecognition(options = {}) {
 
     // If voice command mode is active
     if (isVoiceCommandModeRef.current) {
-      const isSession = (isSessionActiveRef ? isSessionActiveRef.current : false) || isBargeIn;
+      const isSession = (isSessionActiveRef ? isSessionActiveRef.current : false) || isBargeIn || Boolean(isDateModeActiveRef?.current);
 
       // ─── Extensible Voice Commands List ───
       const voiceCommands = [
@@ -364,7 +377,9 @@ export function useSpeechRecognition(options = {}) {
         return;
       }
 
-      clearContinuedConversationSession();
+      if (!isDateModeActiveRef?.current) {
+        clearContinuedConversationSession();
+      }
       if (sendMessageText) sendMessageText(prompt, { stt_time_ms: sttTimeMs, stt_timing: sttTiming });
       return;
     }

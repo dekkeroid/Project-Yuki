@@ -293,6 +293,7 @@ class PresenceEngine:
         self.last_sleep_duration_sec: float = 0.0
         self.last_awakened_at: float = 0.0
         self.is_nap: bool = False
+        self.is_date_mode: bool = False
         self.sleep_state: str = "active"  # "active", "idle", "drowsy", "sleeping", "napping", "waking"
         self.boredom: float = 0.0         # 0.0 (fully engaged) to 1.0 (very bored)
         self.user_idle_seconds: float = 0.0
@@ -321,6 +322,9 @@ class PresenceEngine:
         self.user_idle_seconds = max(0.0, float(idle_seconds))
 
         if new_state in ("sleeping", "napping"):
+            if self.is_date_mode:
+                self.sleep_state = "active"
+                return
             self.is_nap = is_nap if new_state == "sleeping" else True
             # Guard: If user is watching a video / listening to audio, suppress false sleep (except quiet companion naps)
             if not self.is_nap and is_media_or_audio_playing():
@@ -402,6 +406,12 @@ class PresenceEngine:
             self.set_sleep_state("waking", is_nap=True)
             return "woke_from_nap"
 
+        if self.is_date_mode:
+            self.boredom = 0.0
+            if self.sleep_state in ("sleeping", "napping", "drowsy"):
+                self.sleep_state = "active"
+            return None
+
         if self.is_sleeping():
             self.boredom = 0.0
             return None
@@ -422,6 +432,7 @@ class PresenceEngine:
             "boredom_pct": int(round(self.boredom * 100)),
             "sleep_state": self.sleep_state,
             "is_nap": self.is_nap,
+            "is_date_mode": self.is_date_mode,
             "silence_seconds": int(max(0.0, now - self.last_interaction_time)),
             "user_idle_seconds": int(self.get_system_idle_seconds()),
             "is_media_playing": media_playing,
