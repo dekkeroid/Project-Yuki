@@ -308,77 +308,17 @@ JavaScript `const` and `let` variables are not hoisted. In large React component
 
 ---
 
-## Frontend Undefined Identifier & Ref-Naming Validation Rule (`ReferenceError: <x> is not defined`)
+## Frontend & 3D Runtime Traps (Crucial Checklist)
 
-Whenever adding or renaming state variables, `useRef` handles, animation mixers, math utilities, or physics velocities in large React components (`DateModeApp.jsx`, `AvatarViewer.jsx`, `App.jsx`):
-
-### 1. The Vite / ESBuild Global Variable Trap
-- **The Blindspot**: During `npm run build` (and development hot-reloading), Vite / ESBuild / Rollup treat undeclared identifiers as potential global variables on `window` or external ambient variables. They do **NOT** throw build-time syntax errors for undeclared identifiers like `playerVerticalVelRef` or `isPromenade`.
-- **The Failure**: The build exits with `code 0` (e.g. `✓ built in 53s`), but the moment that execution path runs at runtime (such as entering a scene, jumping, or triggering an animation loop), the browser / Electron crashes with:
-  `ReferenceError: <variable> is not defined` caught by the React ErrorBoundary modal.
-
-### 2. Common Causes in Project Yuki
-1. **Ref Naming Mismatches During Refactoring**:
-   - Declaring `const playerJumpVelRef = useRef(0.0)` at the top of the component, but writing `playerVerticalVelRef.current` in the animation loop.
-   - Declaring `const yukiJumpVelRef = useRef(0.0)`, but accessing `yukiVerticalVelRef.current`.
-2. **Scope Boundaries in Event Listeners vs. Render Loops**:
-   - Referencing render-loop scoped constants (like `isPromenade`, `transitionLocomotion`, `delta`) inside window event handlers (`handleKeyDown`, `handleResize`) declared outside `animate()`.
-3. **Property vs. Variable Confusion**:
-   - Accessing `isPromenade` instead of `currentDestId === 'marine_drive_night'`, or `vrmRef` instead of `vrmRef.current`.
-
-### 3. Mandatory Pre-Commit Validation Protocol
-  - Run a one-line Node check on the modified file to verify that all newly introduced identifier tokens exist as explicit declarations:
-      ```powershell
-      node -e "const fs = require('fs'); const content = fs.readFileSync('src/DateModeApp.jsx', 'utf-8'); ['var1', 'var2'].forEach(v => { if (!content.includes('const ' + v) && !content.includes('let ' + v)) throw new Error('Missing declaration: ' + v); }); console.log('All identifiers declared!');"
-      ```
-
----
-
-## Polymorphic Config Values & Defensive Normalization Rule (`TypeError: <x>.toLowerCase is not a function`)
-
-In 3D Three.js components and scenario configuration files, parameters such as colors, transforms, and thresholds often arrive in multiple polymorphic formats across different modules (e.g. hex number `0xffeedd`, CSS hex string `"#ffeedd"`, Three.js `Color` object, or undefined/null).
-
-- **The Pitfall**: Calling string methods (`.toLowerCase()`, `.startsWith()`, `.replace()`) or numeric methods (`.toFixed()`) directly on polymorphic config fields causes fatal crashes inside the animation render loop or UI controllers when the runtime value is a number, object, or null.
-- **Rules**:
-  1. **Universal Color Normalizer**: Never call `.toLowerCase()` directly on color inputs. Always pass colors through a universal normalizer function (e.g. `normalizeColorHex(c, fallback)`) that safely inspects `typeof` and handles integers, strings, and objects.
-  2. **Coerced Numeric Inputs**: Always coerce numeric form/slider inputs using `parseFloat(val) || fallback` or `Number(val)`. Never assume form state properties remain numbers after text input changes.
-
----
-
-## 3D Avatar Grounding & Mocap Skeletal Drop Protocol (Foot Sinking Prevention)
-
-In 3D avatar engines (VRM / Three.js):
-- **The Pitfall**: A VRM avatar's root scene origin (`vrm.scene.position.y = 0.0`) corresponds to the soles of the shoes **only in resting T-pose**. When realistic motion capture clips (`.vrma`) play (such as `idle_utsuwa_1.vrma` or `walk.vrma`), the natural knee flexion, hip shift, and pelvic translation lower the skeletal rig below the root origin. Clamping `vrm.scene.position.y` strictly to raycast ground height causes the avatar's shoes and ankles to submerge ~8–10cm beneath the pavement or floor.
-- **Rule**: Always calculate grounded avatar height with a sole grounding offset scaled by model height:
-  ```javascript
-  const yukiSoleOffset = 0.085 * (vrm.scene.scale?.y || 1.0);
-  const targetYukiFloorY = yukiFloorY + yukiSoleOffset;
-  ```
-
----
-
-## Mocap Retargeting Clothing Clearance & Arm Posture Protocol (Clipping Prevention)
-
-- **The Pitfall**: VRMA motion capture animations recorded from slender mocap actors feature arms hanging straight down parallel to the ribs. Stylized 3D models wearing thick oversized clothing (hoodies, coats, kimonos, puffy jackets) have mesh silhouettes that extend 5–10cm beyond the anatomical ribs. Retargeted mocap clips cause the wrists, forearms, and hands to clip straight through the clothing and kangaroo pockets.
-- **Rule**: In late animation update (after `AnimationMixer.update(delta)` and before `vrm.update(physicsDelta)`), apply subtle procedural outward flares to the upper and lower arm bones:
-  ```javascript
-  // Upper arm lateral abduction (-Z for left, +Z for right in normalized coordinates) and forward pitch (+X)
-  if (leftUpperArm) { leftUpperArm.rotation.z -= activeFlare * zMult; leftUpperArm.rotation.x += 0.04 * xMult; }
-  if (rightUpperArm) { rightUpperArm.rotation.z += activeFlare * zMult; rightUpperArm.rotation.x += 0.04 * xMult; }
-  // Do NOT artificially flex lower arm/elbow inward into the belly/pouch!
-  ```
-
----
-
-## 3D Scene Mesh Substring Traversal & Filtering Trap (Mesh Invisibility Bug)
-
-When traversing loaded glTF/GLB scenes to selectively hide, replace, or modify objects (e.g. hiding a static river mesh to replace it with a dynamic Three.js `Water` reflector):
-
-- **The Pitfall**: Loose substring matching like `cName.includes('water')` or `cName.includes('road')` unintentionally matches unrelated structural meshes that contain that substring as a compound word (e.g. `Waterfront_Railing`, `Waterfront_Seawall`, `Waterfront_Seawall_Capstone`, `Opposing_Waterfront_Quay`). Setting `c.visible = false` or modifying materials silently turns railings, curbs, and seawalls invisible in the scene.
-- **Rule**:
-  1. Always use exact node names or anchored prefix/regex checks (e.g. `cName === 'river_water_surface' || cName.startsWith('river_water')`).
-  2. If using substring checks, always add explicit negative assertions for known compound assets:
-     `cName.includes('water') && !cName.includes('waterfront')`.
+1. **Undeclared Identifiers (`ReferenceError: <x> is not defined`)**:
+   - Vite and Rollup do NOT fail build-time compilation for undeclared variables (treated as ambient/window globals). Always verify all referenced state/refs (`const <var> = ...`) are explicitly declared in scope above their use.
+2. **Polymorphic Config Values (`TypeError: <x>.toLowerCase is not a function`)**:
+   - Scene colors and parameters can arrive as hex integers (`0xffeedd`), strings, or Three.js objects. Always sanitize colors via `normalizeColorHex(c)` and numeric inputs via `parseFloat(val) || fallback` before calling string/number methods.
+3. **Scene Mesh Substring Traversal (Accidental Mesh Invisibility)**:
+   - Avoid loose substring checks (e.g. `cName.includes('water')` when hiding static water) as they unintentionally hide compound structural meshes like `Waterfront_Railing`, `Waterfront_Seawall`, or curbs. Use exact names or negative assertions (`!cName.includes('waterfront')`).
+4. **Avatar Grounding & Arm Clearance**:
+   - **Grounding Offset**: VRMA mocap clips lower the pelvic rig and flex knees, sinking shoes ~8–12cm into floors. Always apply a scaled sole offset: `const targetYukiFloorY = yukiFloorY + (devConfig.soleOffset ?? 0.125) * scale.y`.
+   - **Arm Flaring**: Mocap clips recorded on slender bodies cause oversized clothing (hoodies) to clip into ribs. In late update, flare upper arms laterally (`-Z` on left, `+Z` on right in normalized VRM coordinates) and avoid artificial lower arm inward flexion.
 
 ---
 
