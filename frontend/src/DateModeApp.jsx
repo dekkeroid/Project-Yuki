@@ -820,6 +820,31 @@ export const MAP_POSITION_PRESETS = {
   }
 };
 
+/**
+ * Normalizes any color representation (hex integer, 3-digit hex, 6-digit hex, 0x prefix, or THREE.Color)
+ * into a valid lowercase 7-character CSS hexadecimal string (#rrggbb).
+ */
+export function normalizeColorHex(color, fallback = '#ffffff') {
+  if (color === null || color === undefined) return fallback;
+  if (typeof color === 'string') {
+    let s = color.trim().toLowerCase();
+    if (s.startsWith('0x')) s = '#' + s.slice(2);
+    if (!s.startsWith('#') && /^[0-9a-f]{6}$/i.test(s)) s = '#' + s;
+    if (/^#[0-9a-f]{6}$/i.test(s)) return s;
+    if (/^#[0-9a-f]{3}$/i.test(s)) {
+      return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`;
+    }
+    return s || fallback;
+  }
+  if (typeof color === 'number' && !isNaN(color)) {
+    return '#' + ('000000' + (color & 0xffffff).toString(16)).slice(-6).toLowerCase();
+  }
+  if (typeof color === 'object' && typeof color?.getHexString === 'function') {
+    return '#' + color.getHexString().toLowerCase();
+  }
+  return fallback;
+}
+
 export const DEFAULT_SCENARIOS = {
   marine_drive_night: {
     id: 'marine_drive_night',
@@ -830,15 +855,15 @@ export const DEFAULT_SCENARIOS = {
     bg: null,
     cameraFar: 2000,
     customPrompt: 'You and Master are having a late night walk along a quiet marine drive promenade overlooking a vast, dark, reflective river with a breathtaking skyscraper skyline across the water. The atmosphere is romantic, peaceful, and delightfully chill with a touch of quiet midnight mystery. You are leaning close to Master near the waterfront railing or sitting together on the promenade bench, sharing soft whispered words and admiring the city lights.',
-    ambientColor: 0x181e36,
+    ambientColor: '#181e36',
     ambientIntensity: 0.95,
-    spotColor: 0xffdca8,
+    spotColor: '#ffdca8',
     spotIntensity: 1.2,
     mapLightsIntensity: 0.25,
     toneMapping: 'AgX',
     exposure: 1.05,
     envIntensity: 0.75,
-    candleColor: 0xffaa44,
+    candleColor: '#ffaa44',
     candleIntensity: 1.0,
     showDefaultTable: false,
     modelTransform: { posX: 0, posY: 0.0, posZ: 0, rotY: 0, scale: 1.0 },
@@ -853,15 +878,15 @@ export const DEFAULT_SCENARIOS = {
     assetUrl: resolveAssetPath('3d_assets/date/CuteCafeMap.glb'),
     bg: null,
     customPrompt: 'You and Master are having a relaxed coffee date in a lovely, cozy cafe. Yuki is in a sweet, playful mood, taking sips of warm latte and sharing pastries across the table.',
-    ambientColor: 0xfff6eb,
+    ambientColor: '#fff6eb',
     ambientIntensity: 0.9,
-    spotColor: 0xffeedd,
+    spotColor: '#ffeedd',
     spotIntensity: 1.0,
     mapLightsIntensity: 0.05,
     toneMapping: 'AgX',
     exposure: 0.9,
     envIntensity: 0.8,
-    candleColor: 0xffaa44,
+    candleColor: '#ffaa44',
     candleIntensity: 1.5,
     showDefaultTable: false,
     modelTransform: { posX: 0, posY: -0.2, posZ: 0, rotY: 0, scale: 1.0 },
@@ -876,11 +901,11 @@ export const DEFAULT_SCENARIOS = {
     assetUrl: resolveAssetPath('3d_assets/date/bg/tokyo_sky_lounge.png'),
     bg: resolveAssetPath('3d_assets/date/bg/tokyo_sky_lounge.png'),
     customPrompt: 'You and Master are having a private romantic dinner at the Tokyo Sky Lounge on the 52nd floor. The city lights glow below through the panoramic glass. Yuki is elegant, loving, and attentive, enjoying wine and dessert together.',
-    ambientColor: 0xff0000,
+    ambientColor: '#281932',
     ambientIntensity: 1.15,
-    spotColor: 0xffeedd,
+    spotColor: '#ffeedd',
     spotIntensity: 2.0,
-    candleColor: 0xff9933,
+    candleColor: '#ff9933',
     showDefaultTable: true,
     defaultPositions: MAP_POSITION_PRESETS.standard_dining.positions,
     welcomeDialogue: "This table has such a breathtaking view of the city tonight... I'm so glad we came here together."
@@ -893,11 +918,11 @@ export const DEFAULT_SCENARIOS = {
     assetUrl: resolveAssetPath('3d_assets/date/bg/beach_sunset.png'),
     bg: resolveAssetPath('3d_assets/date/bg/beach_sunset.png'),
     customPrompt: 'You and Master are on a beachside terrace date during golden hour. Soft ocean breezes blow and gentle waves lap the shore as the sun sinks below the horizon. Yuki is romantic, nostalgic, and loving.',
-    ambientColor: 0x3d1b14,
+    ambientColor: '#3d1b14',
     ambientIntensity: 1.5,
-    spotColor: 0xff8e40,
+    spotColor: '#ff8e40',
     spotIntensity: 2.2,
-    candleColor: 0xffc470,
+    candleColor: '#ffc470',
     showDefaultTable: true,
     defaultPositions: MAP_POSITION_PRESETS.lounge_relaxed.positions,
     welcomeDialogue: "Look at that sunset over the ocean... the golden colors are magical. Let's stay until the stars come out!"
@@ -910,11 +935,11 @@ export const DEFAULT_SCENARIOS = {
     assetUrl: resolveAssetPath('3d_assets/date/bg/cinema_lounge.png'),
     bg: resolveAssetPath('3d_assets/date/bg/cinema_lounge.png'),
     customPrompt: 'You and Master are sharing a private VIP cinema screening lounge with velvet seating. Yuki is cuddly, whispering playfully, and excited to watch something special together.',
-    ambientColor: 0x140a1c,
+    ambientColor: '#140a1c',
     ambientIntensity: 1.2,
-    spotColor: 0x8aa8ff,
+    spotColor: '#8aa8ff',
     spotIntensity: 1.8,
-    candleColor: 0xff9944,
+    candleColor: '#ff9944',
     showDefaultTable: true,
     defaultPositions: MAP_POSITION_PRESETS.intimate_close.positions,
     welcomeDialogue: "We have the whole VIP lounge to ourselves! What are you in the mood to watch tonight?"
@@ -1240,24 +1265,25 @@ export const DEFAULT_DATE_CONFIG = {
 
 export function computeConfigDiff(current, initial = DEFAULT_DATE_CONFIG) {
   const diff = {};
+  if (!current || !initial) return diff;
 
   // 1. Shaders
   const shaderDiff = {};
-  if (current.shaders?.toneMapping && current.shaders.toneMapping !== initial.shaders.toneMapping) {
+  if (current.shaders?.toneMapping && current.shaders.toneMapping !== initial.shaders?.toneMapping) {
     shaderDiff.toneMapping = current.shaders.toneMapping;
   }
-  if (current.shaders?.exposure !== undefined && Math.abs(current.shaders.exposure - initial.shaders.exposure) > 0.01) {
+  if (current.shaders?.exposure !== undefined && initial.shaders?.exposure !== undefined && Math.abs(current.shaders.exposure - initial.shaders.exposure) > 0.01) {
     shaderDiff.exposure = Number(current.shaders.exposure.toFixed(2));
   }
   if (Object.keys(shaderDiff).length > 0) diff.shaders = shaderDiff;
 
   // 2. Camera
   const camDiff = {};
-  if (current.camera?.fov !== undefined && Math.abs(current.camera.fov - initial.camera.fov) > 0.1) {
+  if (current.camera?.fov !== undefined && initial.camera?.fov !== undefined && Math.abs(current.camera.fov - initial.camera.fov) > 0.1) {
     camDiff.fov = Number(current.camera.fov.toFixed(1));
   }
   for (const axis of ['posX', 'posY', 'posZ']) {
-    if (current.camera?.[axis] !== undefined && Math.abs(current.camera[axis] - initial.camera[axis]) > 0.005) {
+    if (current.camera?.[axis] !== undefined && initial.camera?.[axis] !== undefined && Math.abs(current.camera[axis] - initial.camera[axis]) > 0.005) {
       camDiff[axis] = Number(current.camera[axis].toFixed(3));
     }
   }
@@ -1266,37 +1292,43 @@ export function computeConfigDiff(current, initial = DEFAULT_DATE_CONFIG) {
   // 3. Lights
   const lightsDiff = {};
   const ambDiff = {};
-  if (current.lights?.ambient?.color && current.lights.ambient.color.toLowerCase() !== initial.lights.ambient.color.toLowerCase()) {
-    ambDiff.color = current.lights.ambient.color;
+  const curAmbColor = normalizeColorHex(current.lights?.ambient?.color, '');
+  const initAmbColor = normalizeColorHex(initial.lights?.ambient?.color, '');
+  if (curAmbColor && initAmbColor && curAmbColor !== initAmbColor) {
+    ambDiff.color = curAmbColor;
   }
-  if (current.lights?.ambient?.intensity !== undefined && Math.abs(current.lights.ambient.intensity - initial.lights.ambient.intensity) > 0.02) {
+  if (current.lights?.ambient?.intensity !== undefined && initial.lights?.ambient?.intensity !== undefined && Math.abs(current.lights.ambient.intensity - initial.lights.ambient.intensity) > 0.02) {
     ambDiff.intensity = Number(current.lights.ambient.intensity.toFixed(2));
   }
   if (Object.keys(ambDiff).length > 0) lightsDiff.ambient = ambDiff;
 
   const keyDiff = {};
-  if (current.lights?.keySpot?.color && current.lights.keySpot.color.toLowerCase() !== initial.lights.keySpot.color.toLowerCase()) {
-    keyDiff.color = current.lights.keySpot.color;
+  const curKeyColor = normalizeColorHex(current.lights?.keySpot?.color, '');
+  const initKeyColor = normalizeColorHex(initial.lights?.keySpot?.color, '');
+  if (curKeyColor && initKeyColor && curKeyColor !== initKeyColor) {
+    keyDiff.color = curKeyColor;
   }
-  if (current.lights?.keySpot?.intensity !== undefined && Math.abs(current.lights.keySpot.intensity - initial.lights.keySpot.intensity) > 0.02) {
+  if (current.lights?.keySpot?.intensity !== undefined && initial.lights?.keySpot?.intensity !== undefined && Math.abs(current.lights.keySpot.intensity - initial.lights.keySpot.intensity) > 0.02) {
     keyDiff.intensity = Number(current.lights.keySpot.intensity.toFixed(2));
   }
   for (const axis of ['posX', 'posY', 'posZ']) {
-    if (current.lights?.keySpot?.[axis] !== undefined && Math.abs(current.lights.keySpot[axis] - initial.lights.keySpot[axis]) > 0.005) {
+    if (current.lights?.keySpot?.[axis] !== undefined && initial.lights?.keySpot?.[axis] !== undefined && Math.abs(current.lights.keySpot[axis] - initial.lights.keySpot[axis]) > 0.005) {
       keyDiff[axis] = Number(current.lights.keySpot[axis].toFixed(3));
     }
   }
   if (Object.keys(keyDiff).length > 0) lightsDiff.keySpot = keyDiff;
 
   const candleDiff = {};
-  if (current.lights?.candle?.color && current.lights.candle.color.toLowerCase() !== initial.lights.candle.color.toLowerCase()) {
-    candleDiff.color = current.lights.candle.color;
+  const curCandleColor = normalizeColorHex(current.lights?.candle?.color, '');
+  const initCandleColor = normalizeColorHex(initial.lights?.candle?.color, '');
+  if (curCandleColor && initCandleColor && curCandleColor !== initCandleColor) {
+    candleDiff.color = curCandleColor;
   }
-  if (current.lights?.candle?.intensity !== undefined && Math.abs(current.lights.candle.intensity - initial.lights.candle.intensity) > 0.02) {
+  if (current.lights?.candle?.intensity !== undefined && initial.lights?.candle?.intensity !== undefined && Math.abs(current.lights.candle.intensity - initial.lights.candle.intensity) > 0.02) {
     candleDiff.intensity = Number(current.lights.candle.intensity.toFixed(2));
   }
   for (const axis of ['posX', 'posY', 'posZ']) {
-    if (current.lights?.candle?.[axis] !== undefined && Math.abs(current.lights.candle[axis] - initial.lights.candle[axis]) > 0.005) {
+    if (current.lights?.candle?.[axis] !== undefined && initial.lights?.candle?.[axis] !== undefined && Math.abs(current.lights.candle[axis] - initial.lights.candle[axis]) > 0.005) {
       candleDiff[axis] = Number(current.lights.candle[axis].toFixed(3));
     }
   }
@@ -1305,34 +1337,36 @@ export function computeConfigDiff(current, initial = DEFAULT_DATE_CONFIG) {
 
   // 4. Objects
   const objectsDiff = {};
-  for (const [key, initObj] of Object.entries(initial.objects)) {
-    const curObj = current.objects?.[key];
-    if (!curObj) continue;
-    const objChanges = {};
-    for (const prop of ['posX', 'posY', 'posZ']) {
-      if (curObj[prop] !== undefined && Math.abs(curObj[prop] - initObj[prop]) > 0.005) {
-        objChanges[prop] = Number(curObj[prop].toFixed(3));
+  if (initial.objects) {
+    for (const [key, initObj] of Object.entries(initial.objects)) {
+      const curObj = current.objects?.[key];
+      if (!curObj || !initObj) continue;
+      const objChanges = {};
+      for (const prop of ['posX', 'posY', 'posZ']) {
+        if (curObj[prop] !== undefined && initObj[prop] !== undefined && Math.abs(curObj[prop] - initObj[prop]) > 0.005) {
+          objChanges[prop] = Number(curObj[prop].toFixed(3));
+        }
       }
-    }
-    if (curObj.rotY !== undefined && Math.abs(curObj.rotY - initObj.rotY) > 0.5) {
-      objChanges.rotY = Math.round(curObj.rotY);
-    }
-    if (curObj.scale !== undefined && Math.abs(curObj.scale - initObj.scale) > 0.01) {
-      objChanges.scale = Number(curObj.scale.toFixed(3));
-    }
-    for (const axis of ['scaleX', 'scaleY', 'scaleZ']) {
-      if (curObj[axis] !== undefined && initObj[axis] !== undefined && Math.abs(curObj[axis] - initObj[axis]) > 0.01) {
-        objChanges[axis] = Number(curObj[axis].toFixed(3));
+      if (curObj.rotY !== undefined && initObj.rotY !== undefined && Math.abs(curObj.rotY - initObj.rotY) > 0.5) {
+        objChanges.rotY = Math.round(curObj.rotY);
       }
-    }
-    if (Object.keys(objChanges).length > 0) {
-      objectsDiff[key] = { name: initObj.name, ...objChanges };
+      if (curObj.scale !== undefined && initObj.scale !== undefined && Math.abs(curObj.scale - initObj.scale) > 0.01) {
+        objChanges.scale = Number(curObj.scale.toFixed(3));
+      }
+      for (const axis of ['scaleX', 'scaleY', 'scaleZ']) {
+        if (curObj[axis] !== undefined && initObj[axis] !== undefined && Math.abs(curObj[axis] - initObj[axis]) > 0.01) {
+          objChanges[axis] = Number(curObj[axis].toFixed(3));
+        }
+      }
+      if (Object.keys(objChanges).length > 0) {
+        objectsDiff[key] = { name: initObj.name, ...objChanges };
+      }
     }
   }
   if (Object.keys(objectsDiff).length > 0) diff.objects = objectsDiff;
 
   // 5. Avatar Pose
-  if (current.avatarPose) {
+  if (current.avatarPose && initial.avatarPose) {
     const poseDiff = {};
     const poseSections = ['head', 'torso', 'hips', 'leftLeg', 'rightLeg', 'leftArm', 'rightArm'];
     for (const sec of poseSections) {
@@ -1407,6 +1441,43 @@ export function saveMapDefaultProfiles(mapProfiles) {
   } catch (e) {
     console.warn('[DateMode] Failed to save map default profiles:', e);
   }
+}
+
+/**
+ * Resolves the initial full DateConfig for a destination, prioritizing bound map profiles
+ * or merging scenario-defined shaders, lighting, and layout defaults cleanly over DEFAULT_DATE_CONFIG.
+ */
+export function getMapInitialConfig(destId, allScenarios = DEFAULT_SCENARIOS, savedProfiles = {}, mapDefaultProfiles = {}) {
+  const sc = allScenarios?.[destId] || DEFAULT_SCENARIOS[destId] || DEFAULT_SCENARIOS.marine_drive_night;
+  const boundProfId = mapDefaultProfiles?.[destId];
+  if (boundProfId && boundProfId !== 'default' && savedProfiles?.[boundProfId]?.config) {
+    return mergeConfig(DEFAULT_DATE_CONFIG, savedProfiles[boundProfId].config);
+  }
+
+  const base = JSON.parse(JSON.stringify(DEFAULT_DATE_CONFIG));
+  if (sc) {
+    if (sc.toneMapping) base.shaders.toneMapping = sc.toneMapping;
+    if (sc.exposure !== undefined) base.shaders.exposure = sc.exposure;
+    if (sc.envIntensity !== undefined) base.shaders.envIntensity = sc.envIntensity;
+    if (sc.ambientColor !== undefined) base.lights.ambient.color = normalizeColorHex(sc.ambientColor, '#fff5ea');
+    if (sc.ambientIntensity !== undefined) base.lights.ambient.intensity = sc.ambientIntensity;
+    if (sc.spotColor !== undefined) base.lights.keySpot.color = normalizeColorHex(sc.spotColor, '#ffeedd');
+    if (sc.spotIntensity !== undefined) base.lights.keySpot.intensity = sc.spotIntensity;
+    if (sc.candleColor !== undefined) base.lights.candle.color = normalizeColorHex(sc.candleColor, '#ff9933');
+    if (sc.candleIntensity !== undefined) base.lights.candle.intensity = sc.candleIntensity;
+    if (sc.mapLightsIntensity !== undefined) {
+      if (!base.lights.mapLights) base.lights.mapLights = { intensity: 0.05 };
+      base.lights.mapLights.intensity = sc.mapLightsIntensity;
+    }
+    const mapPos = sc.defaultPositions || MAP_POSITION_PRESETS[destId]?.positions || MAP_POSITION_PRESETS.standard_dining.positions;
+    if (mapPos?.camera) Object.assign(base.camera, mapPos.camera);
+    if (mapPos?.objects) {
+      for (const k in mapPos.objects) {
+        base.objects[k] = { ...(base.objects[k] || {}), ...mapPos.objects[k] };
+      }
+    }
+  }
+  return base;
 }
 
 export function createProceduralWaterNormalsTexture(size = 512) {
@@ -1506,10 +1577,19 @@ export default function DateModeApp() {
   // Scenarios & Destination Atmosphere
   const [customScenarios, setCustomScenarios] = useState(() => loadCustomScenarios());
   const allScenarios = useMemo(() => ({ ...DEFAULT_SCENARIOS, ...customScenarios }), [customScenarios]);
-  const [activeDest, setActiveDest] = useState('marine_drive_night');
+  const [activeDest, setActiveDest] = useState(() => {
+    try {
+      const saved = localStorage.getItem('yuki_date_active_dest');
+      if (saved && (DEFAULT_SCENARIOS[saved] || loadCustomScenarios()[saved])) return saved;
+    } catch (_) {}
+    return 'marine_drive_night';
+  });
   const activeDestRef = useRef(activeDest);
   useEffect(() => {
     activeDestRef.current = activeDest;
+    try {
+      localStorage.setItem('yuki_date_active_dest', activeDest);
+    } catch (_) {}
   }, [activeDest]);
   const isPromenade = activeDest === 'marine_drive_night';
   const [candleLit, setCandleLit] = useState(true);
@@ -1662,8 +1742,9 @@ export default function DateModeApp() {
   const [isMapLoading, setIsMapLoading] = useState(false);
   const [activeProfileId, setActiveProfileId] = useState(() => {
     try {
+      const savedDest = localStorage.getItem('yuki_date_active_dest') || 'marine_drive_night';
       const mapDefaults = loadMapDefaultProfiles();
-      const boundId = mapDefaults['marine_drive_night'];
+      const boundId = mapDefaults[savedDest];
       if (boundId) return boundId;
       return localStorage.getItem('yuki_date_active_profile_id') || 'default';
     } catch (_) {
@@ -1675,16 +1756,16 @@ export default function DateModeApp() {
   const [profileSaveSuccess, setProfileSaveSuccess] = useState(false);
 
   const [devConfig, setDevConfig] = useState(() => {
-    const profiles = loadSavedProfiles();
-    const mapDefaults = loadMapDefaultProfiles();
-    const boundId = mapDefaults['marine_drive_night'];
-    const storedId = boundId || (() => {
-      try { return localStorage.getItem('yuki_date_active_profile_id') || 'default'; } catch (_) { return 'default'; }
-    })();
-    if (storedId !== 'default' && profiles[storedId]?.config) {
-      return mergeConfig(DEFAULT_DATE_CONFIG, profiles[storedId].config);
+    try {
+      const savedDest = localStorage.getItem('yuki_date_active_dest') || 'marine_drive_night';
+      const profiles = loadSavedProfiles();
+      const mapDefaults = loadMapDefaultProfiles();
+      const customScenarios = loadCustomScenarios();
+      const allScenarios = { ...DEFAULT_SCENARIOS, ...customScenarios };
+      return getMapInitialConfig(savedDest, allScenarios, profiles, mapDefaults);
+    } catch (_) {
+      return JSON.parse(JSON.stringify(DEFAULT_DATE_CONFIG));
     }
-    return JSON.parse(JSON.stringify(DEFAULT_DATE_CONFIG));
   });
   const devConfigRef = useRef(devConfig);
   useEffect(() => {
@@ -2166,25 +2247,7 @@ export default function DateModeApp() {
 
     let targetCfg;
     if (profileId === 'default' || !savedProfiles[profileId]?.config) {
-      targetCfg = JSON.parse(JSON.stringify(DEFAULT_DATE_CONFIG));
-      const sc = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest];
-      if (sc) {
-        if (sc.defaultPositions?.camera) Object.assign(targetCfg.camera, sc.defaultPositions.camera);
-        if (sc.defaultPositions?.objects) {
-          for (const k in sc.defaultPositions.objects) {
-            targetCfg.objects[k] = { ...(targetCfg.objects[k] || {}), ...sc.defaultPositions.objects[k] };
-          }
-        }
-        if (sc.toneMapping) targetCfg.shaders.toneMapping = sc.toneMapping;
-        if (sc.exposure !== undefined) targetCfg.shaders.exposure = sc.exposure;
-        if (sc.ambientColor !== undefined) targetCfg.lights.ambient.color = sc.ambientColor;
-        if (sc.ambientIntensity !== undefined) targetCfg.lights.ambient.intensity = sc.ambientIntensity;
-        if (sc.spotColor !== undefined) targetCfg.lights.keySpot.color = sc.spotColor;
-        if (sc.spotIntensity !== undefined) targetCfg.lights.keySpot.intensity = sc.spotIntensity;
-        if (sc.candleColor !== undefined) targetCfg.lights.candle.color = sc.candleColor;
-        if (sc.candleIntensity !== undefined) targetCfg.lights.candle.intensity = sc.candleIntensity;
-        if (sc.mapLightsIntensity !== undefined) targetCfg.lights.mapLights.intensity = sc.mapLightsIntensity;
-      }
+      targetCfg = getMapInitialConfig(activeDest, allScenarios, savedProfiles, { [activeDest]: 'default' });
     } else {
       targetCfg = mergeConfig(DEFAULT_DATE_CONFIG, savedProfiles[profileId].config);
     }
@@ -2194,52 +2257,6 @@ export default function DateModeApp() {
   const handleSaveCurrentAsMapDefault = useCallback(() => {
     const currentScenario = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest] || DEFAULT_SCENARIOS.cute_cafe;
     if (!currentScenario) return;
-
-    const currentRotY = Math.round(((targetYawRef.current || 0) * 180) / Math.PI);
-    const currentRotX = Math.round(((targetPitchRef.current || 0) * 180) / Math.PI);
-
-    const currentPositions = {
-      camera: {
-        fov: devConfigRef.current.camera?.fov ?? 42,
-        posX: devConfigRef.current.camera?.posX ?? 0,
-        posY: devConfigRef.current.camera?.posY ?? 2.3,
-        posZ: devConfigRef.current.camera?.posZ ?? 0.45,
-        rotY: currentRotY,
-        rotX: currentRotX,
-        far: devConfigRef.current.camera?.far ?? 2000
-      },
-      objects: {}
-    };
-
-    ['playerPov', 'yuki', 'table', 'chair', 'candleGLB', 'vaseGLB', 'cake', 'herGlass', 'yourGlass', 'floor'].forEach((k) => {
-      if (devConfigRef.current.objects?.[k]) {
-        currentPositions.objects[k] = { ...devConfigRef.current.objects[k] };
-        if (k === 'playerPov') {
-          currentPositions.objects[k].rotY = currentRotY;
-          currentPositions.objects[k].rotX = currentRotX;
-        }
-      }
-    });
-
-    const updatedScenario = {
-      ...currentScenario,
-      defaultPositions: currentPositions,
-      toneMapping: devConfigRef.current.shaders?.toneMapping || currentScenario.toneMapping || 'AgX',
-      exposure: devConfigRef.current.shaders?.exposure ?? currentScenario.exposure ?? 0.9,
-      ambientColor: devConfigRef.current.lights?.ambient?.color ?? currentScenario.ambientColor,
-      ambientIntensity: devConfigRef.current.lights?.ambient?.intensity ?? currentScenario.ambientIntensity,
-      spotColor: devConfigRef.current.lights?.keySpot?.color ?? currentScenario.spotColor,
-      spotIntensity: devConfigRef.current.lights?.keySpot?.intensity ?? currentScenario.spotIntensity,
-      candleColor: devConfigRef.current.lights?.candle?.color ?? currentScenario.candleColor,
-      candleIntensity: devConfigRef.current.lights?.candle?.intensity ?? currentScenario.candleIntensity,
-      mapLightsIntensity: devConfigRef.current.lights?.mapLights?.intensity ?? currentScenario.mapLightsIntensity
-    };
-
-    setCustomScenarios((prev) => {
-      const updated = { ...prev, [activeDest]: updatedScenario };
-      saveCustomScenarios(updated);
-      return updated;
-    });
 
     if (activeProfileId !== 'default' && savedProfiles[activeProfileId]) {
       const updatedProfile = {
@@ -2263,8 +2280,54 @@ export default function DateModeApp() {
       setMapDefaultProfiles(updatedMapProfiles);
       saveMapDefaultProfiles(updatedMapProfiles);
 
-      setMapPositionsToast(`Saved "${savedProfiles[activeProfileId].name}" as default for "${currentScenario.title}"!`);
+      setMapPositionsToast(`Saved "${savedProfiles[activeProfileId].name}" as default preset for "${currentScenario.title}"!`);
     } else {
+      const currentRotY = Math.round(((targetYawRef.current || 0) * 180) / Math.PI);
+      const currentRotX = Math.round(((targetPitchRef.current || 0) * 180) / Math.PI);
+
+      const currentPositions = {
+        camera: {
+          fov: devConfigRef.current.camera?.fov ?? 42,
+          posX: devConfigRef.current.camera?.posX ?? 0,
+          posY: devConfigRef.current.camera?.posY ?? 2.3,
+          posZ: devConfigRef.current.camera?.posZ ?? 0.45,
+          rotY: currentRotY,
+          rotX: currentRotX,
+          far: devConfigRef.current.camera?.far ?? 2000
+        },
+        objects: {}
+      };
+
+      ['playerPov', 'yuki', 'table', 'chair', 'candleGLB', 'vaseGLB', 'cake', 'herGlass', 'yourGlass', 'floor'].forEach((k) => {
+        if (devConfigRef.current.objects?.[k]) {
+          currentPositions.objects[k] = { ...devConfigRef.current.objects[k] };
+          if (k === 'playerPov') {
+            currentPositions.objects[k].rotY = currentRotY;
+            currentPositions.objects[k].rotX = currentRotX;
+          }
+        }
+      });
+
+      const updatedScenario = {
+        ...currentScenario,
+        defaultPositions: currentPositions,
+        toneMapping: devConfigRef.current.shaders?.toneMapping || currentScenario.toneMapping || 'AgX',
+        exposure: devConfigRef.current.shaders?.exposure ?? currentScenario.exposure ?? 0.9,
+        ambientColor: normalizeColorHex(devConfigRef.current.lights?.ambient?.color, currentScenario.ambientColor),
+        ambientIntensity: devConfigRef.current.lights?.ambient?.intensity ?? currentScenario.ambientIntensity,
+        spotColor: normalizeColorHex(devConfigRef.current.lights?.keySpot?.color, currentScenario.spotColor),
+        spotIntensity: devConfigRef.current.lights?.keySpot?.intensity ?? currentScenario.spotIntensity,
+        candleColor: normalizeColorHex(devConfigRef.current.lights?.candle?.color, currentScenario.candleColor),
+        candleIntensity: devConfigRef.current.lights?.candle?.intensity ?? currentScenario.candleIntensity,
+        mapLightsIntensity: devConfigRef.current.lights?.mapLights?.intensity ?? currentScenario.mapLightsIntensity
+      };
+
+      setCustomScenarios((prev) => {
+        const updated = { ...prev, [activeDest]: updatedScenario };
+        saveCustomScenarios(updated);
+        return updated;
+      });
+
       const updatedMapProfiles = {
         ...mapDefaultProfiles,
         [activeDest]: 'default'
@@ -2272,7 +2335,7 @@ export default function DateModeApp() {
       setMapDefaultProfiles(updatedMapProfiles);
       saveMapDefaultProfiles(updatedMapProfiles);
 
-      setMapPositionsToast(`Saved current layout and lighting as default for "${currentScenario.title}"!`);
+      setMapPositionsToast(`Saved current layout, lighting & shaders as default for "${currentScenario.title}"!`);
     }
 
     setTimeout(() => setMapPositionsToast(''), 3500);
@@ -2288,24 +2351,7 @@ export default function DateModeApp() {
       return;
     }
 
-    const targetCfg = JSON.parse(JSON.stringify(DEFAULT_DATE_CONFIG));
-    const mapPos = sc?.defaultPositions || MAP_POSITION_PRESETS[activeDest]?.positions || MAP_POSITION_PRESETS.standard_dining.positions;
-    if (mapPos?.camera) Object.assign(targetCfg.camera, mapPos.camera);
-    if (mapPos?.objects) {
-      for (const k in mapPos.objects) {
-        targetCfg.objects[k] = { ...(targetCfg.objects[k] || {}), ...mapPos.objects[k] };
-      }
-    }
-    if (sc.toneMapping) targetCfg.shaders.toneMapping = sc.toneMapping;
-    if (sc.exposure !== undefined) targetCfg.shaders.exposure = sc.exposure;
-    if (sc.ambientColor !== undefined) targetCfg.lights.ambient.color = sc.ambientColor;
-    if (sc.ambientIntensity !== undefined) targetCfg.lights.ambient.intensity = sc.ambientIntensity;
-    if (sc.spotColor !== undefined) targetCfg.lights.keySpot.color = sc.spotColor;
-    if (sc.spotIntensity !== undefined) targetCfg.lights.keySpot.intensity = sc.spotIntensity;
-    if (sc.candleColor !== undefined) targetCfg.lights.candle.color = sc.candleColor;
-    if (sc.candleIntensity !== undefined) targetCfg.lights.candle.intensity = sc.candleIntensity;
-    if (sc.mapLightsIntensity !== undefined) targetCfg.lights.mapLights.intensity = sc.mapLightsIntensity;
-
+    const targetCfg = getMapInitialConfig(activeDest, allScenarios, savedProfiles, { [activeDest]: 'default' });
     setActiveProfileId('default');
     try { localStorage.setItem('yuki_date_active_profile_id', 'default'); } catch (_) {}
     applyConfigToScene(targetCfg);
@@ -2346,28 +2392,7 @@ export default function DateModeApp() {
       } catch (_) {}
     }
 
-    let targetCfg;
-    if (boundProfileId !== 'default' && savedProfiles[boundProfileId]?.config) {
-      targetCfg = mergeConfig(DEFAULT_DATE_CONFIG, savedProfiles[boundProfileId].config);
-    } else {
-      targetCfg = JSON.parse(JSON.stringify(DEFAULT_DATE_CONFIG));
-      const mapPos = scenario.defaultPositions || MAP_POSITION_PRESETS[activeDest]?.positions || MAP_POSITION_PRESETS.standard_dining.positions;
-      if (mapPos?.camera) Object.assign(targetCfg.camera, mapPos.camera);
-      if (mapPos?.objects) {
-        for (const k in mapPos.objects) {
-          targetCfg.objects[k] = { ...(targetCfg.objects[k] || {}), ...mapPos.objects[k] };
-        }
-      }
-      if (scenario.toneMapping) targetCfg.shaders.toneMapping = scenario.toneMapping;
-      if (scenario.exposure !== undefined) targetCfg.shaders.exposure = scenario.exposure;
-      if (scenario.ambientColor !== undefined) targetCfg.lights.ambient.color = scenario.ambientColor;
-      if (scenario.ambientIntensity !== undefined) targetCfg.lights.ambient.intensity = scenario.ambientIntensity;
-      if (scenario.spotColor !== undefined) targetCfg.lights.keySpot.color = scenario.spotColor;
-      if (scenario.spotIntensity !== undefined) targetCfg.lights.keySpot.intensity = scenario.spotIntensity;
-      if (scenario.candleColor !== undefined) targetCfg.lights.candle.color = scenario.candleColor;
-      if (scenario.candleIntensity !== undefined) targetCfg.lights.candle.intensity = scenario.candleIntensity;
-      if (scenario.mapLightsIntensity !== undefined) targetCfg.lights.mapLights.intensity = scenario.mapLightsIntensity;
-    }
+    const targetCfg = getMapInitialConfig(activeDest, allScenarios, savedProfiles, mapDefaultProfiles);
     applyConfigToScene(targetCfg);
 
     // Broadcast active scenario to App.jsx so main app speech/chat inherits date prompt
@@ -2416,27 +2441,26 @@ export default function DateModeApp() {
       }
     };
 
+    // Unload the previous map stage immediately on destination switch
+    unloadCurrentStage();
+
     // Handle 3D Stage Model vs 360 Panorama
     if (scenario.type === '3d_model') {
       if (bgMeshRef.current) {
         bgMeshRef.current.visible = false;
       }
+      const isNight = (scenario.id || '').includes('night') || (scenario.id || '') === 'marine_drive_night';
+      if (sceneRef.current) {
+        sceneRef.current.background = new THREE.Color(isNight ? 0x02040a : 0x6bc3fc);
+      }
 
       const modelUrl = scenario.assetUrl || scenario.bg;
       if (modelUrl && sceneRef.current) {
-        if (customStageMeshRef.current && loadedStageUrlRef.current === modelUrl) {
-          const tf = scenario.modelTransform || { posX: 0, posY: -0.2, posZ: 0, rotY: 0, scale: 1.0 };
-          const s = tf.scale || 1.0;
-          customStageMeshRef.current.scale.set(tf.scaleX ?? s, tf.scaleY ?? s, tf.scaleZ ?? s);
-          customStageMeshRef.current.position.set(tf.posX ?? 0, tf.posY ?? -0.2, tf.posZ ?? 0);
-          customStageMeshRef.current.rotation.y = (tf.rotY ?? 0) * (Math.PI / 180);
-        } else {
-          setIsMapLoading(true);
-          unloadCurrentStage();
-          loadedStageUrlRef.current = modelUrl;
+        setIsMapLoading(true);
+        loadedStageUrlRef.current = modelUrl;
 
-          const gltfLoader = new GLTFLoader();
-          gltfLoader.load(
+        const gltfLoader = new GLTFLoader();
+        gltfLoader.load(
             modelUrl,
             (gltf) => {
               setIsMapLoading(false);
@@ -2626,7 +2650,6 @@ export default function DateModeApp() {
             }
           );
         }
-      }
 
       // Toggle dining table & props visibility based on scenario settings
       const showTable = scenario.showDefaultTable !== false;
@@ -2703,34 +2726,11 @@ export default function DateModeApp() {
       }
     }
 
-    // Dynamic Lighting & Camera Exposure (Preserve active profile values)
-    const currentLights = devConfigRef.current?.lights || {};
-    if (ambientLightRef.current) {
-      const ambColor = currentLights.ambient?.color ?? scenario.ambientColor;
-      if (ambColor !== undefined) ambientLightRef.current.color.setHex(ambColor);
-      ambientLightRef.current.intensity = currentLights.ambient?.intensity ?? scenario.ambientIntensity ?? 0.45;
-    }
-    if (spotLightRef.current) {
-      const spotColor = currentLights.keySpot?.color ?? scenario.spotColor;
-      if (spotColor !== undefined) spotLightRef.current.color.setHex(spotColor);
-      spotLightRef.current.intensity = currentLights.keySpot?.intensity ?? scenario.spotIntensity ?? 1.0;
-    }
-    if (candleLightRef.current) {
-      const candleColor = currentLights.candle?.color ?? scenario.candleColor;
-      if (candleColor !== undefined) candleLightRef.current.color.setHex(candleColor);
-      candleLightRef.current.intensity = currentLights.candle?.intensity ?? scenario.candleIntensity ?? 1.5;
-    }
-    if (rendererRef.current) {
-      const activeTone = devConfigRef.current?.shaders?.toneMapping || scenario.toneMapping || 'AgX';
-      rendererRef.current.toneMapping = TONE_MAPPINGS[activeTone] || THREE.AgXToneMapping;
-      const activeExp = devConfigRef.current?.shaders?.exposure ?? scenario.exposure ?? 0.9;
-      rendererRef.current.toneMappingExposure = activeExp;
-    }
-
     return () => {
       isCancelled = true;
+      unloadCurrentStage();
     };
-  }, [activeDest, allScenarios, applyConfigToScene, sceneReady]);
+  }, [activeDest, allScenarios, mapDefaultProfiles, savedProfiles, applyConfigToScene, sceneReady]);
 
   // 2. KOKORO AUDIO PIPELINE & 256-FFT SPECTRAL ANALYSER (Strict Parity with useAudioPlayback)
   const setupAudioPipeline = useCallback(() => {
@@ -3146,14 +3146,14 @@ export default function DateModeApp() {
     const is3DModel = currentDest?.type === '3d_model';
     const showDefaultTable = currentDest?.showDefaultTable !== false;
     const ambCfg = activeCfg.lights?.ambient || DEFAULT_DATE_CONFIG.lights.ambient;
-    const ambColor = ambCfg.color ?? currentDest.ambientColor ?? 0xfff5ea;
+    const ambColor = normalizeColorHex(ambCfg.color ?? currentDest.ambientColor, '#fff5ea');
     const ambIntensity = ambCfg.intensity ?? currentDest.ambientIntensity ?? 0.45;
     const ambientLight = new THREE.AmbientLight(ambColor, ambIntensity);
     scene.add(ambientLight);
     ambientLightRef.current = ambientLight;
 
     const spotCfg = activeCfg.lights?.keySpot || DEFAULT_DATE_CONFIG.lights.keySpot;
-    const spotColor = spotCfg.color ?? currentDest.spotColor ?? 0xffeedd;
+    const spotColor = normalizeColorHex(spotCfg.color ?? currentDest.spotColor, '#ffeedd');
     const spotIntensity = spotCfg.intensity ?? currentDest.spotIntensity ?? 1.0;
     const keySpot = new THREE.DirectionalLight(spotColor, spotIntensity);
     keySpot.position.set(spotCfg.posX ?? 0.7, spotCfg.posY ?? -0.3, spotCfg.posZ ?? 1.7);
@@ -3166,7 +3166,8 @@ export default function DateModeApp() {
 
     // Warm Candle Point Light at tabletop (cube shadow disabled to protect MAX_FRAGMENT_UNIFORM_VECTORS limit)
     const candleCfg = activeCfg.lights?.candle || DEFAULT_DATE_CONFIG.lights.candle;
-    const candleLight = new THREE.PointLight(candleCfg.color || currentDest.candleColor, candleCfg.intensity ?? 1.5, 4.0, 2.0);
+    const candleColor = normalizeColorHex(candleCfg.color || currentDest.candleColor, '#ff9933');
+    const candleLight = new THREE.PointLight(candleColor, candleCfg.intensity ?? 1.5, 4.0, 2.0);
     candleLight.position.set(candleCfg.posX ?? 0.0, candleCfg.posY ?? 1.52, candleCfg.posZ ?? 0.22);
     candleLight.castShadow = false;
     scene.add(candleLight);
@@ -5249,8 +5250,13 @@ export default function DateModeApp() {
   };
 
   const updateLightParam = (lightKey, prop, value) => {
-    const isNum = typeof value === 'number' || (!isNaN(parseFloat(value)) && prop !== 'color');
-    const processedVal = isNum ? parseFloat(value) : value;
+    let processedVal;
+    if (prop === 'color') {
+      processedVal = normalizeColorHex(value);
+    } else {
+      const isNum = typeof value === 'number' || !isNaN(parseFloat(value));
+      processedVal = isNum ? parseFloat(value) : value;
+    }
 
     setDevConfig((prev) => ({
       ...prev,
@@ -7715,7 +7721,7 @@ export default function DateModeApp() {
                 }}
               >
                 <Save style={{ width: '11px', height: '11px' }} />
-                <span>Set as Default</span>
+                <span>Save as Default</span>
               </button>
 
               <button
@@ -8309,11 +8315,11 @@ export default function DateModeApp() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <input
                       type="color"
-                      value={devConfig.lights?.ambient?.color || '#281932'}
+                      value={normalizeColorHex(devConfig.lights?.ambient?.color, '#281932')}
                       onChange={(e) => updateLightParam('ambient', 'color', e.target.value)}
                       style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid rgba(63, 63, 70, 0.8)', background: 'transparent', cursor: 'pointer' }}
                     />
-                    <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#a1a1aa' }}>{devConfig.lights?.ambient?.color}</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#a1a1aa' }}>{normalizeColorHex(devConfig.lights?.ambient?.color, '#281932')}</span>
                   </div>
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#a1a1aa', marginBottom: '4px' }}>
@@ -8338,11 +8344,11 @@ export default function DateModeApp() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <input
                       type="color"
-                      value={devConfig.lights?.keySpot?.color || '#ffeedd'}
+                      value={normalizeColorHex(devConfig.lights?.keySpot?.color, '#ffeedd')}
                       onChange={(e) => updateLightParam('keySpot', 'color', e.target.value)}
                       style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid rgba(63, 63, 70, 0.8)', background: 'transparent', cursor: 'pointer' }}
                     />
-                    <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#a1a1aa' }}>{devConfig.lights?.keySpot?.color}</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#a1a1aa' }}>{normalizeColorHex(devConfig.lights?.keySpot?.color, '#ffeedd')}</span>
                   </div>
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#a1a1aa', marginBottom: '4px' }}>
@@ -8399,11 +8405,11 @@ export default function DateModeApp() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <input
                       type="color"
-                      value={devConfig.lights?.candle?.color || '#ff9933'}
+                      value={normalizeColorHex(devConfig.lights?.candle?.color, '#ff9933')}
                       onChange={(e) => updateLightParam('candle', 'color', e.target.value)}
                       style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid rgba(63, 63, 70, 0.8)', background: 'transparent', cursor: 'pointer' }}
                     />
-                    <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#a1a1aa' }}>{devConfig.lights?.candle?.color}</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#a1a1aa' }}>{normalizeColorHex(devConfig.lights?.candle?.color, '#ff9933')}</span>
                   </div>
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#a1a1aa', marginBottom: '4px' }}>
@@ -10194,8 +10200,8 @@ export default function DateModeApp() {
                       <label style={{ fontSize: '11px', color: '#a1a1aa' }}>Ambient Color</label>
                       <input
                         type="color"
-                        value={'#' + (typeof scenarioForm.ambientColor === 'number' ? scenarioForm.ambientColor.toString(16).padStart(6, '0') : 'ffeedd')}
-                        onChange={(e) => setScenarioForm((prev) => ({ ...prev, ambientColor: parseInt(e.target.value.replace('#', ''), 16) }))}
+                        value={normalizeColorHex(scenarioForm.ambientColor, '#ffeedd')}
+                        onChange={(e) => setScenarioForm((prev) => ({ ...prev, ambientColor: normalizeColorHex(e.target.value) }))}
                         style={{ border: 'none', width: '28px', height: '24px', borderRadius: '4px', cursor: 'pointer', background: 'transparent' }}
                       />
                     </div>
@@ -10203,8 +10209,8 @@ export default function DateModeApp() {
                       <label style={{ fontSize: '11px', color: '#a1a1aa' }}>Spotlight Color</label>
                       <input
                         type="color"
-                        value={'#' + (typeof scenarioForm.spotColor === 'number' ? scenarioForm.spotColor.toString(16).padStart(6, '0') : 'ffe8c0')}
-                        onChange={(e) => setScenarioForm((prev) => ({ ...prev, spotColor: parseInt(e.target.value.replace('#', ''), 16) }))}
+                        value={normalizeColorHex(scenarioForm.spotColor, '#ffe8c0')}
+                        onChange={(e) => setScenarioForm((prev) => ({ ...prev, spotColor: normalizeColorHex(e.target.value) }))}
                         style={{ border: 'none', width: '28px', height: '24px', borderRadius: '4px', cursor: 'pointer', background: 'transparent' }}
                       />
                     </div>
