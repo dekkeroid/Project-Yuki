@@ -1720,8 +1720,10 @@ export default function DateModeApp() {
   const [yukiStaminaUI, setYukiStaminaUI] = useState(100);
   const [isExhaustedUI, setIsExhaustedUI] = useState(false);
   const yukiIsFollowingRef = useRef(false);
-  const playerJumpVelRef = useRef(0.0);
-  const yukiJumpVelRef = useRef(0.0);
+  const playerVerticalVelRef = useRef(0.0);
+  const playerJumpVelRef = playerVerticalVelRef;
+  const yukiVerticalVelRef = useRef(0.0);
+  const yukiJumpVelRef = yukiVerticalVelRef;
   const playerIsGroundedRef = useRef(true);
   const yukiIsGroundedRef = useRef(true);
   const yukiJumpCooldownRef = useRef(0.0);
