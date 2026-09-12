@@ -308,6 +308,36 @@ JavaScript `const` and `let` variables are not hoisted. In large React component
 
 ---
 
+## Frontend Undefined Identifier & Ref-Naming Validation Rule (`ReferenceError: <x> is not defined`)
+
+Whenever adding or renaming state variables, `useRef` handles, animation mixers, math utilities, or physics velocities in large React components (`DateModeApp.jsx`, `AvatarViewer.jsx`, `App.jsx`):
+
+### 1. The Vite / ESBuild Global Variable Trap
+- **The Blindspot**: During `npm run build` (and development hot-reloading), Vite / ESBuild / Rollup treat undeclared identifiers as potential global variables on `window` or external ambient variables. They do **NOT** throw build-time syntax errors for undeclared identifiers like `playerVerticalVelRef` or `isPromenade`.
+- **The Failure**: The build exits with `code 0` (e.g. `✓ built in 53s`), but the moment that execution path runs at runtime (such as entering a scene, jumping, or triggering an animation loop), the browser / Electron crashes with:
+  `ReferenceError: <variable> is not defined` caught by the React ErrorBoundary modal.
+
+### 2. Common Causes in Project Yuki
+1. **Ref Naming Mismatches During Refactoring**:
+   - Declaring `const playerJumpVelRef = useRef(0.0)` at the top of the component, but writing `playerVerticalVelRef.current` in the animation loop.
+   - Declaring `const yukiJumpVelRef = useRef(0.0)`, but accessing `yukiVerticalVelRef.current`.
+2. **Scope Boundaries in Event Listeners vs. Render Loops**:
+   - Referencing render-loop scoped constants (like `isPromenade`, `transitionLocomotion`, `delta`) inside window event handlers (`handleKeyDown`, `handleResize`) declared outside `animate()`.
+3. **Property vs. Variable Confusion**:
+   - Accessing `isPromenade` instead of `currentDestId === 'marine_drive_night'`, or `vrmRef` instead of `vrmRef.current`.
+
+### 3. Mandatory Pre-Commit Validation Protocol
+Before concluding any frontend change involving new state, refs, or event listeners:
+1. **Direct Identifier Declaration Audit**:
+   - For every new ref or variable used in render loops or callbacks, grep or verify that `const <variable> = ...` is explicitly declared in the component body above its use.
+2. **Automated Verification Snippet**:
+   - Run a one-line Node check on the modified file to verify that all newly introduced identifier tokens exist as explicit declarations:
+     ```powershell
+     node -e "const fs = require('fs'); const content = fs.readFileSync('src/DateModeApp.jsx', 'utf-8'); ['var1', 'var2'].forEach(v => { if (!content.includes('const ' + v) && !content.includes('let ' + v)) throw new Error('Missing declaration: ' + v); }); console.log('All identifiers declared!');"
+     ```
+
+---
+
 ## Blender MCP Access
 
 Live Blender sessions can be accessed directly via the `blender-mcp` MCP server:
