@@ -327,14 +327,48 @@ Whenever adding or renaming state variables, `useRef` handles, animation mixers,
    - Accessing `isPromenade` instead of `currentDestId === 'marine_drive_night'`, or `vrmRef` instead of `vrmRef.current`.
 
 ### 3. Mandatory Pre-Commit Validation Protocol
-Before concluding any frontend change involving new state, refs, or event listeners:
-1. **Direct Identifier Declaration Audit**:
-   - For every new ref or variable used in render loops or callbacks, grep or verify that `const <variable> = ...` is explicitly declared in the component body above its use.
-2. **Automated Verification Snippet**:
-   - Run a one-line Node check on the modified file to verify that all newly introduced identifier tokens exist as explicit declarations:
-     ```powershell
-     node -e "const fs = require('fs'); const content = fs.readFileSync('src/DateModeApp.jsx', 'utf-8'); ['var1', 'var2'].forEach(v => { if (!content.includes('const ' + v) && !content.includes('let ' + v)) throw new Error('Missing declaration: ' + v); }); console.log('All identifiers declared!');"
-     ```
+  - Run a one-line Node check on the modified file to verify that all newly introduced identifier tokens exist as explicit declarations:
+      ```powershell
+      node -e "const fs = require('fs'); const content = fs.readFileSync('src/DateModeApp.jsx', 'utf-8'); ['var1', 'var2'].forEach(v => { if (!content.includes('const ' + v) && !content.includes('let ' + v)) throw new Error('Missing declaration: ' + v); }); console.log('All identifiers declared!');"
+      ```
+
+---
+
+## Polymorphic Config Values & Defensive Normalization Rule (`TypeError: <x>.toLowerCase is not a function`)
+
+In 3D Three.js components and scenario configuration files, parameters such as colors, transforms, and thresholds often arrive in multiple polymorphic formats across different modules (e.g. hex number `0xffeedd`, CSS hex string `"#ffeedd"`, Three.js `Color` object, or undefined/null).
+
+- **The Pitfall**: Calling string methods (`.toLowerCase()`, `.startsWith()`, `.replace()`) or numeric methods (`.toFixed()`) directly on polymorphic config fields causes fatal crashes inside the animation render loop or UI controllers when the runtime value is a number, object, or null.
+- **Rules**:
+  1. **Universal Color Normalizer**: Never call `.toLowerCase()` directly on color inputs. Always pass colors through a universal normalizer function (e.g. `normalizeColorHex(c, fallback)`) that safely inspects `typeof` and handles integers, strings, and objects.
+  2. **Coerced Numeric Inputs**: Always coerce numeric form/slider inputs using `parseFloat(val) || fallback` or `Number(val)`. Never assume form state properties remain numbers after text input changes.
+
+---
+
+## 3D Avatar Grounding & Mocap Skeletal Drop Protocol (Foot Sinking Prevention)
+
+In 3D avatar engines (VRM / Three.js):
+- **The Pitfall**: A VRM avatar's root scene origin (`vrm.scene.position.y = 0.0`) corresponds to the soles of the shoes **only in resting T-pose**. When realistic motion capture clips (`.vrma`) play (such as `idle_utsuwa_1.vrma` or `walk.vrma`), the natural knee flexion, hip shift, and pelvic translation lower the skeletal rig below the root origin. Clamping `vrm.scene.position.y` strictly to raycast ground height causes the avatar's shoes and ankles to submerge ~8–10cm beneath the pavement or floor.
+- **Rule**: Always calculate grounded avatar height with a sole grounding offset scaled by model height:
+  ```javascript
+  const yukiSoleOffset = 0.085 * (vrm.scene.scale?.y || 1.0);
+  const targetYukiFloorY = yukiFloorY + yukiSoleOffset;
+  ```
+
+---
+
+## Mocap Retargeting Clothing Clearance & Arm Posture Protocol (Clipping Prevention)
+
+- **The Pitfall**: VRMA motion capture animations recorded from slender mocap actors feature arms hanging straight down parallel to the ribs. Stylized 3D models wearing thick oversized clothing (hoodies, coats, kimonos, puffy jackets) have mesh silhouettes that extend 5–10cm beyond the anatomical ribs. Retargeted mocap clips cause the wrists, forearms, and hands to clip straight through the clothing and kangaroo pockets.
+- **Rule**: In late animation update (after `AnimationMixer.update(delta)` and before `vrm.update(physicsDelta)`), apply subtle procedural outward flares to the upper and lower arm bones:
+  ```javascript
+  // Upper arm lateral abduction (+Z for left, -Z for right in normalized coordinates) and forward pitch (+X)
+  if (leftUpperArm) { leftUpperArm.rotation.z += 0.14 * zMult; leftUpperArm.rotation.x += 0.04 * xMult; }
+  if (rightUpperArm) { rightUpperArm.rotation.z -= 0.14 * zMult; rightUpperArm.rotation.x += 0.04 * xMult; }
+  // Slight elbow bend to drape forearms clear of front pockets
+  if (leftLowerArm) { leftLowerArm.rotation.y -= 0.05; }
+  if (rightLowerArm) { rightLowerArm.rotation.y += 0.05; }
+  ```
 
 ---
 
