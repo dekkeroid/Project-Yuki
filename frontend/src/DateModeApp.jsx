@@ -788,7 +788,7 @@ export const MAP_POSITION_PRESETS = {
       camera: { fov: 48, posX: 2.2, posY: 1.68, posZ: 0.0, rotY: 90, rotX: -7, far: 2000 },
       objects: {
         playerPov: { posX: 2.2, posY: 1.68, posZ: 0.0, rotY: 90, rotX: -7, scale: 1.0, far: 2000 },
-        yuki: { posX: 2.2, posY: 0.0, posZ: 1.2, rotY: 270, scale: 1.10, scaleX: 1.10, scaleY: 1.10, scaleZ: 1.10 },
+        yuki: { posX: 2.2, posY: 0.085, posZ: 1.2, rotY: 270, scale: 1.10, scaleX: 1.10, scaleY: 1.10, scaleZ: 1.10 },
         chair: { posX: 6.2, posY: -10.0, posZ: 0.0, rotY: 180, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
         table: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
         candleGLB: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
@@ -4344,6 +4344,10 @@ export default function DateModeApp() {
 
           // Vertical Gravity & Jump for Yuki
           const yukiFloorY = getGroundHeight(vrm.scene.position.x, vrm.scene.position.z, vrm.scene.position.y);
+          // Sole grounding offset to compensate for mocap knee bend / pelvic dip in idle/walk
+          const yukiSoleOffset = 0.085 * (vrm.scene.scale?.y || 1.0);
+          const targetYukiFloorY = yukiFloorY + yukiSoleOffset;
+
           if (yukiJumpCooldownRef.current > 0) {
             yukiJumpCooldownRef.current -= delta;
           }
@@ -4351,13 +4355,13 @@ export default function DateModeApp() {
           if (!yukiIsGroundedRef.current || yukiVerticalVelRef.current > 0) {
             yukiVerticalVelRef.current -= 17.0 * delta;
             vrm.scene.position.y += yukiVerticalVelRef.current * delta;
-            if (vrm.scene.position.y <= yukiFloorY) {
-              vrm.scene.position.y = yukiFloorY;
+            if (vrm.scene.position.y <= targetYukiFloorY) {
+              vrm.scene.position.y = targetYukiFloorY;
               yukiVerticalVelRef.current = 0;
               yukiIsGroundedRef.current = true;
             }
           } else {
-            vrm.scene.position.y += (yukiFloorY - vrm.scene.position.y) * 0.25;
+            vrm.scene.position.y += (targetYukiFloorY - vrm.scene.position.y) * 0.25;
             yukiIsGroundedRef.current = true;
           }
 
@@ -4901,6 +4905,28 @@ export default function DateModeApp() {
             const pantHeave = Math.sin(elapsedTime * 13.5) * 0.04;
             if (chest) chest.rotation.x += pantHeave * xMult;
             if (spine) spine.rotation.x += (pantHeave * 0.6) * xMult;
+          }
+
+          // Natural arm clearance flare: prevents wrists, hands, and elbows from clipping
+          // into oversized panda hoodie and kangaroo pocket while standing, walking, or running
+          const leftUpperArm = getBoneNode(vrm, 'leftUpperArm');
+          const rightUpperArm = getBoneNode(vrm, 'rightUpperArm');
+          const leftLowerArm = getBoneNode(vrm, 'leftLowerArm');
+          const rightLowerArm = getBoneNode(vrm, 'rightLowerArm');
+
+          if (leftUpperArm) {
+            leftUpperArm.rotation.z += 0.14 * zMult;
+            leftUpperArm.rotation.x += 0.04 * xMult;
+          }
+          if (rightUpperArm) {
+            rightUpperArm.rotation.z -= 0.14 * zMult;
+            rightUpperArm.rotation.x += 0.04 * xMult;
+          }
+          if (leftLowerArm) {
+            leftLowerArm.rotation.y -= 0.05;
+          }
+          if (rightLowerArm) {
+            rightLowerArm.rotation.y += 0.05;
           }
         } else {
           // Upper body natural breathing & seated gestures
