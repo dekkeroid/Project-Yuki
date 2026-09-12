@@ -2567,6 +2567,19 @@ const App = () => {
   const handleUpdateSetting = async (keyOrObj, value) => {
     try {
       const payload = typeof keyOrObj === 'object' && keyOrObj !== null ? keyOrObj : { [keyOrObj]: value };
+      if (payload.active_vrm_model) {
+        try {
+          const ch = new BroadcastChannel('yuki_model_channel');
+          ch.postMessage({ type: 'model_changed', model: payload.active_vrm_model });
+          ch.close();
+        } catch (_) {}
+        try {
+          localStorage.setItem('yuki-active-model', payload.active_vrm_model);
+        } catch (_) {}
+        if (window.electronAPI?.setActiveVrmModel) {
+          window.electronAPI.setActiveVrmModel(payload.active_vrm_model);
+        }
+      }
       const response = await fetch(`${API_BASE}/api/settings/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

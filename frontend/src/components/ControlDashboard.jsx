@@ -2632,6 +2632,21 @@ const ControlDashboard = ({
     const updateKeys = Object.keys(updates);
     console.log(`[SETTINGS-UPDATE] ⚡ Sending:`, JSON.stringify(updates).substring(0, 200));
 
+    // Broadcast model changes dynamically for Date Mode / multi-window sync
+    if (updates.active_vrm_model) {
+      try {
+        const ch = new BroadcastChannel('yuki_model_channel');
+        ch.postMessage({ type: 'model_changed', model: updates.active_vrm_model });
+        ch.close();
+      } catch (_) {}
+      try {
+        localStorage.setItem('yuki-active-model', updates.active_vrm_model);
+      } catch (_) {}
+      if (window.electronAPI?.setActiveVrmModel) {
+        window.electronAPI.setActiveVrmModel(updates.active_vrm_model);
+      }
+    }
+
     // Snapshot before optimistic update
     const prevBaseUrl = settings.llm_base_url;
     const prevApiKey = settings.llm_api_key?.substring(0, 15);
