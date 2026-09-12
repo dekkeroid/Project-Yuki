@@ -788,7 +788,7 @@ export const MAP_POSITION_PRESETS = {
       camera: { fov: 48, posX: 2.2, posY: 1.68, posZ: 0.0, rotY: 90, rotX: -7, far: 2000 },
       objects: {
         playerPov: { posX: 2.2, posY: 1.68, posZ: 0.0, rotY: 90, rotX: -7, scale: 1.0, far: 2000 },
-        yuki: { posX: 2.2, posY: 0.085, posZ: 1.2, rotY: 270, scale: 1.10, scaleX: 1.10, scaleY: 1.10, scaleZ: 1.10 },
+        yuki: { posX: 2.2, posY: 0.125, posZ: 1.2, rotY: 270, scale: 1.10, scaleX: 1.10, scaleY: 1.10, scaleZ: 1.10 },
         chair: { posX: 6.2, posY: -10.0, posZ: 0.0, rotY: 180, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
         table: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
         candleGLB: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
@@ -870,6 +870,7 @@ export const DEFAULT_SCENARIOS = {
     waterLevel: -2.35,
     armFlare: 0.18,
     proactiveSilenceDelay: 90,
+    soleOffset: 0.125,
     defaultPositions: MAP_POSITION_PRESETS.promenade_edge.positions,
     welcomeDialogue: "The city lights across the water look breathtaking tonight... It's so peaceful and quiet here by the river. Just you and me."
   },
@@ -4353,7 +4354,8 @@ export default function DateModeApp() {
           // Vertical Gravity & Jump for Yuki
           const yukiFloorY = getGroundHeight(vrm.scene.position.x, vrm.scene.position.z, vrm.scene.position.y);
           // Sole grounding offset to compensate for mocap knee bend / pelvic dip in idle/walk
-          const yukiSoleOffset = 0.085 * (vrm.scene.scale?.y || 1.0);
+          const baseSoleOffset = devConfigRef.current?.soleOffset ?? 0.125;
+          const yukiSoleOffset = baseSoleOffset * (vrm.scene.scale?.y || 1.0);
           const targetYukiFloorY = yukiFloorY + yukiSoleOffset;
 
           if (yukiJumpCooldownRef.current > 0) {
@@ -10331,6 +10333,26 @@ export default function DateModeApp() {
                               if (waterMeshRef.current) {
                                 waterMeshRef.current.position.y = val;
                               }
+                            }}
+                            style={{ width: '100%', padding: '4px 6px', background: 'rgba(9, 13, 22, 0.8)', border: '1px solid rgba(63, 63, 70, 0.6)', borderRadius: '6px', color: '#fff', fontSize: '11px' }}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: '#a1a1aa' }}>Grounding Sole Offset</span>
+                            <span style={{ fontSize: '10px', color: '#38bdf8' }}>{scenarioForm.soleOffset ?? 0.125}m</span>
+                          </div>
+                          <input
+                            type="number"
+                            step="0.005"
+                            min="0.0"
+                            max="0.30"
+                            value={scenarioForm.soleOffset ?? 0.125}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0.125;
+                              setScenarioForm((prev) => ({ ...prev, soleOffset: val }));
+                              if (devConfigRef.current) devConfigRef.current.soleOffset = val;
                             }}
                             style={{ width: '100%', padding: '4px 6px', background: 'rgba(9, 13, 22, 0.8)', border: '1px solid rgba(63, 63, 70, 0.6)', borderRadius: '6px', color: '#fff', fontSize: '11px' }}
                           />
