@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Water } from 'three/examples/jsm/objects/Water.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
-import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
+import { VRMAnimationLoaderPlugin, createVRMAnimationClip, VRMLookAtQuaternionProxy } from '@pixiv/three-vrm-animation';
 import {
   Heart,
   Camera,
@@ -785,10 +785,10 @@ export const MAP_POSITION_PRESETS = {
     name: 'Promenade Waterfront Railing',
     desc: 'Standing side-by-side at the waterfront railing overlooking the river and illuminated skyline',
     positions: {
-      camera: { fov: 48, posX: 1.2, posY: 1.68, posZ: 0.0, rotY: 90, far: 2000 },
+      camera: { fov: 48, posX: 2.2, posY: 1.68, posZ: 0.0, rotY: 90, rotX: -7, far: 2000 },
       objects: {
-        playerPov: { posX: 1.2, posY: 1.68, posZ: 0.0, rotY: 90, scale: 1.0, far: 2000 },
-        yuki: { posX: 1.2, posY: 0.0, posZ: 0.85, rotY: 270, scale: 1.10, scaleX: 1.10, scaleY: 1.10, scaleZ: 1.10 },
+        playerPov: { posX: 2.2, posY: 1.68, posZ: 0.0, rotY: 90, rotX: -7, scale: 1.0, far: 2000 },
+        yuki: { posX: 2.2, posY: 0.0, posZ: 1.2, rotY: 270, scale: 1.10, scaleX: 1.10, scaleY: 1.10, scaleZ: 1.10 },
         chair: { posX: 6.2, posY: -10.0, posZ: 0.0, rotY: 180, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
         table: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
         candleGLB: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
@@ -867,6 +867,7 @@ export const DEFAULT_SCENARIOS = {
     candleIntensity: 1.0,
     showDefaultTable: false,
     modelTransform: { posX: 0, posY: 0.0, posZ: 0, rotY: 0, scale: 1.0 },
+    waterLevel: -2.35,
     defaultPositions: MAP_POSITION_PRESETS.promenade_edge.positions,
     welcomeDialogue: "The city lights across the water look breathtaking tonight... It's so peaceful and quiet here by the river. Just you and me."
   },
@@ -1718,6 +1719,12 @@ export default function DateModeApp() {
   const isExhaustedRef = useRef(false);
   const [yukiStaminaUI, setYukiStaminaUI] = useState(100);
   const [isExhaustedUI, setIsExhaustedUI] = useState(false);
+  const yukiIsFollowingRef = useRef(false);
+  const playerJumpVelRef = useRef(0.0);
+  const yukiJumpVelRef = useRef(0.0);
+  const playerIsGroundedRef = useRef(true);
+  const yukiIsGroundedRef = useRef(true);
+  const yukiJumpCooldownRef = useRef(0.0);
   const lastStaminaUiUpdateRef = useRef(0);
   const lastDialogueFatigueTimeRef = useRef(0);
 
@@ -2615,19 +2622,21 @@ export default function DateModeApp() {
                     waterNormals.wrapS = THREE.RepeatWrapping;
                     waterNormals.wrapT = THREE.RepeatWrapping;
 
-                    const waterGeometry = new THREE.PlaneGeometry(320, 1100);
+                    // Exact river dimensions: river spans X from -260 to 0 (width 260, center X = -130), Z from -550 to 550 (height 1100)
+                    const waterGeometry = new THREE.PlaneGeometry(260, 1100);
                     const water = new Water(waterGeometry, {
                       textureWidth: 1024,
                       textureHeight: 1024,
                       waterNormals: waterNormals,
-                      sunDirection: new THREE.Vector3(0.4, 0.8, 0.2).normalize(),
-                      sunColor: 0xffeedd,
-                      waterColor: 0x061528,
-                      distortionScale: 3.5,
+                      sunDirection: new THREE.Vector3(0.1, 0.9, 0.2).normalize(),
+                      sunColor: 0x223850,
+                      waterColor: 0x020814,
+                      distortionScale: 1.15,
                       fog: sceneRef.current.fog !== undefined
                     });
                     water.rotation.x = -Math.PI / 2;
-                    water.position.set(-130, -1.85, 0);
+                    const waterY = scenario.waterLevel ?? -2.35;
+                    water.position.set(-130, waterY, 0);
                     water.receiveShadow = true;
                     sceneRef.current.add(water);
                     waterMeshRef.current = water;
@@ -3625,6 +3634,12 @@ export default function DateModeApp() {
 
             // Initialize AnimationMixer for companion locomotion animations
             try {
+              if (vrm.lookAt && !vrm.scene.children.some((obj) => obj instanceof VRMLookAtQuaternionProxy)) {
+                const proxy = new VRMLookAtQuaternionProxy(vrm.lookAt);
+                proxy.name = 'VRMLookAtQuaternionProxy';
+                vrm.scene.add(proxy);
+              }
+
               const mixer = new THREE.AnimationMixer(vrm.scene);
               vrmAnimationMixerRef.current = mixer;
               vrmLocomotionActionsRef.current = {};
@@ -3648,7 +3663,12 @@ export default function DateModeApp() {
                   if (vrmAnim && vrmRef.current === vrm) {
                     const clip = createVRMAnimationClip(vrmAnim, vrm);
                     const action = mixer.clipAction(clip);
-                    action.setLoop(THREE.LoopRepeat);
+                    if (key === 'jump') {
+                      action.setLoop(THREE.LoopOnce);
+                      action.clampWhenFinished = true;
+                    } else {
+                      action.setLoop(THREE.LoopRepeat);
+                    }
                     vrmLocomotionActionsRef.current[key] = action;
                     if (key === 'idle') {
                       action.play();
@@ -3663,6 +3683,7 @@ export default function DateModeApp() {
               loadLocomotionClip('idle', './animations/idle_utsuwa_1.vrma');
               loadLocomotionClip('walk', './animations/walk.vrma');
               loadLocomotionClip('run', './animations/run.vrma');
+              loadLocomotionClip('jump', './animations/joyful_jump.vrma');
             } catch (mixerErr) {
               console.warn('[DateMode] AnimationMixer setup note:', mixerErr);
             }
@@ -3791,11 +3812,14 @@ export default function DateModeApp() {
     };
     window.addEventListener('resize', handleResize);
 
-    // Promenade First-Person Walking & Running Controls (WASD, Arrow Keys & Shift Sprint)
+    // Promenade First-Person Walking & Running Controls (WASD, Arrow Keys, Shift Sprint & Space Jump)
     const activeKeys = new Set();
     const handleKeyDown = (e) => {
       if (['INPUT', 'TEXTAREA'].includes(e.target?.tagName)) return;
-      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'].includes(e.code)) {
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space'].includes(e.code)) {
+        if (e.code === 'Space') {
+          e.preventDefault();
+        }
         activeKeys.add(e.code);
       }
     };
@@ -4228,7 +4252,7 @@ export default function DateModeApp() {
             nextAction.enabled = true;
             nextAction.setEffectiveTimeScale(speedRatio);
             nextAction.setEffectiveWeight(1.0);
-            prevAction.crossFadeTo(nextAction, 0.25, true);
+            prevAction.crossFadeTo(nextAction, newState === 'jump' ? 0.12 : 0.25, true);
             nextAction.play();
           } else {
             nextAction.reset();
@@ -4244,7 +4268,7 @@ export default function DateModeApp() {
       };
 
       if (isPromenade) {
-        // 1. Player First-Person Movement with Shift Sprint
+        // 1. Player First-Person Movement with Shift Sprint & Spacebar Jump
         let moveForward = 0;
         let moveSide = 0;
         if (activeKeys.has('KeyW') || activeKeys.has('ArrowUp')) moveForward += 1;
@@ -4266,90 +4290,158 @@ export default function DateModeApp() {
             .normalize()
             .multiplyScalar(playerSpeed);
 
-          camera.position.x = THREE.MathUtils.clamp(camera.position.x + moveVec.x, 0.8, 6.8);
+          // Boundaries on promenade deck: X in [1.0, 7.2], Z in [-52.0, 52.0]
+          camera.position.x = THREE.MathUtils.clamp(camera.position.x + moveVec.x, 1.0, 7.2);
           camera.position.z = THREE.MathUtils.clamp(camera.position.z + moveVec.z, -52.0, 52.0);
         }
 
-        // Dynamic organic head bob
-        const strollFreq = isPlayerRunning ? 13.5 : 8.0;
-        const strollAmp = isPlayerRunning ? 0.032 : 0.015;
-        const headBob = isMoving ? Math.sin(elapsedTime * strollFreq) * strollAmp : 0;
+        // Spacebar Jump Trigger for Player
+        if (activeKeys.has('Space') && playerIsGroundedRef.current) {
+          playerVerticalVelRef.current = 5.2;
+          playerIsGroundedRef.current = false;
 
-        // Ground Raycast Gravity for Player Camera
-        const playerGroundY = getGroundHeight(camera.position.x, camera.position.z, camera.position.y - 1.68);
-        const targetCamY = playerGroundY + 1.68 + headBob;
-        camera.position.y += (targetCamY - camera.position.y) * 0.18;
+          // Yuki jumps playfully with user if grounded
+          if (yukiIsGroundedRef.current && yukiJumpCooldownRef.current <= 0) {
+            yukiJumpCooldownRef.current = 0.8;
+            setTimeout(() => {
+              if (vrmRef.current?.scene && yukiIsGroundedRef.current) {
+                yukiVerticalVelRef.current = 4.8;
+                yukiIsGroundedRef.current = false;
+                transitionLocomotion('jump');
+              }
+            }, 120);
+          }
+        }
+
+        // Jump Physics & Ground Raycast Gravity for Player Camera
+        const playerFloorY = getGroundHeight(camera.position.x, camera.position.z, camera.position.y - 1.68);
+        const baseCamY = playerFloorY + 1.68;
+
+        if (!playerIsGroundedRef.current || playerVerticalVelRef.current > 0) {
+          playerVerticalVelRef.current -= 17.0 * delta;
+          camera.position.y += playerVerticalVelRef.current * delta;
+          if (camera.position.y <= baseCamY) {
+            camera.position.y = baseCamY;
+            playerVerticalVelRef.current = 0;
+            playerIsGroundedRef.current = true;
+          }
+        } else {
+          // Dynamic organic head bob on ground
+          const strollFreq = isPlayerRunning ? 13.5 : 8.0;
+          const strollAmp = isPlayerRunning ? 0.032 : 0.015;
+          const headBob = isMoving ? Math.sin(elapsedTime * strollFreq) * strollAmp : 0;
+          const targetCamY = baseCamY + headBob;
+          camera.position.y += (targetCamY - camera.position.y) * 0.25;
+          playerIsGroundedRef.current = true;
+        }
 
         // 2. Autonomous Companion Follow AI & Locomotion State Machine for Yuki
         if (vrmRef.current?.scene) {
           const vrm = vrmRef.current;
           const isVRM1 = !!vrm.isVRM1;
 
-          // Companion Target Position (1.3m to player's side / slightly behind)
-          const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), finalYaw);
-          const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), finalYaw);
+          // Vertical Gravity & Jump for Yuki
+          const yukiFloorY = getGroundHeight(vrm.scene.position.x, vrm.scene.position.z, vrm.scene.position.y);
+          if (yukiJumpCooldownRef.current > 0) {
+            yukiJumpCooldownRef.current -= delta;
+          }
 
-          let targetX = camera.position.x + right.x * 1.3 - forward.x * 0.4;
-          let targetZ = camera.position.z + right.z * 1.3 - forward.z * 0.4;
-          targetX = THREE.MathUtils.clamp(targetX, 0.9, 6.6);
-          targetZ = THREE.MathUtils.clamp(targetZ, -51.5, 51.5);
+          if (!yukiIsGroundedRef.current || yukiVerticalVelRef.current > 0) {
+            yukiVerticalVelRef.current -= 17.0 * delta;
+            vrm.scene.position.y += yukiVerticalVelRef.current * delta;
+            if (vrm.scene.position.y <= yukiFloorY) {
+              vrm.scene.position.y = yukiFloorY;
+              yukiVerticalVelRef.current = 0;
+              yukiIsGroundedRef.current = true;
+            }
+          } else {
+            vrm.scene.position.y += (yukiFloorY - vrm.scene.position.y) * 0.25;
+            yukiIsGroundedRef.current = true;
+          }
 
-          const dx = targetX - vrm.scene.position.x;
-          const dz = targetZ - vrm.scene.position.z;
-          const distToTarget = Math.hypot(dx, dz);
+          // Distance and vector from Yuki to Player (world space, completely independent of mouse look)
+          const toPlayerX = camera.position.x - vrm.scene.position.x;
+          const toPlayerZ = camera.position.z - vrm.scene.position.z;
+          const distToPlayer = Math.hypot(toPlayerX, toPlayerZ);
+
+          // State hysteresis: start following if player moves > 2.5m away; stop when within 1.5m
+          if (!yukiIsFollowingRef.current) {
+            if (distToPlayer > 2.5) {
+              yukiIsFollowingRef.current = true;
+            }
+          } else {
+            if (distToPlayer <= 1.5) {
+              yukiIsFollowingRef.current = false;
+            }
+          }
 
           let targetLocomotion = 'idle';
           let yukiSpeed = 0.0;
           let speedRatio = 1.0;
 
-          if (distToTarget > 0.45) {
-            const dirX = dx / distToTarget;
-            const dirZ = dz / distToTarget;
+          if (!yukiIsGroundedRef.current) {
+            targetLocomotion = 'jump';
+            speedRatio = 1.0;
+          } else if (yukiIsFollowingRef.current && distToPlayer > 1.4) {
+            // Companion target point ~1.3m from player along the line to Yuki
+            const dirX = toPlayerX / distToPlayer;
+            const dirZ = toPlayerZ / distToPlayer;
 
-            if (distToTarget >= 5.5) {
-              if (isExhaustedRef.current) {
-                targetLocomotion = 'slow_walk';
-                yukiSpeed = 1.6;
-                speedRatio = 0.95;
+            const targetX = camera.position.x - dirX * 1.3;
+            const targetZ = camera.position.z - dirZ * 1.3;
+            const stepX = targetX - vrm.scene.position.x;
+            const stepZ = targetZ - vrm.scene.position.z;
+            const distToStep = Math.hypot(stepX, stepZ);
+
+            if (distToStep > 0.05) {
+              const stepDirX = stepX / distToStep;
+              const stepDirZ = stepZ / distToStep;
+
+              if (distToPlayer >= 5.0) {
+                if (isExhaustedRef.current) {
+                  targetLocomotion = 'walk';
+                  yukiSpeed = 2.0;
+                  speedRatio = 1.0;
+                } else {
+                  targetLocomotion = 'run';
+                  yukiSpeed = 4.8;
+                  speedRatio = 1.0;
+                }
+              } else if (distToPlayer >= 2.8) {
+                targetLocomotion = 'walk';
+                yukiSpeed = 3.0;
+                speedRatio = 1.35;
               } else {
-                targetLocomotion = 'run';
-                yukiSpeed = 4.8;
-                speedRatio = 1.0;
+                targetLocomotion = 'walk';
+                yukiSpeed = 1.8;
+                speedRatio = 0.9;
               }
-            } else if (distToTarget >= 2.6) {
-              targetLocomotion = 'fast_walk';
-              yukiSpeed = 3.0;
-              speedRatio = 1.45;
+
+              const moveStep = Math.min(distToStep, yukiSpeed * delta);
+              vrm.scene.position.x += stepDirX * moveStep;
+              vrm.scene.position.z += stepDirZ * moveStep;
+              vrm.scene.position.x = THREE.MathUtils.clamp(vrm.scene.position.x, 0.9, 7.1);
+              vrm.scene.position.z = THREE.MathUtils.clamp(vrm.scene.position.z, -52.0, 52.0);
+
+              // Turn to face movement direction
+              // In VRM 1.0 forward is -Z (0 offset), in VRM 0.0 forward is +Z (+PI offset)
+              const moveAngle = Math.atan2(stepDirX, stepDirZ);
+              const targetRot = isVRM1 ? moveAngle : moveAngle + Math.PI;
+              vrm.scene.rotation.y = lerpAngle(vrm.scene.rotation.y, targetRot, delta * 8.0);
             } else {
-              targetLocomotion = 'slow_walk';
-              yukiSpeed = 1.8;
-              speedRatio = 1.0;
+              yukiIsFollowingRef.current = false;
+              targetLocomotion = 'idle';
             }
-
-            // Move Yuki towards target
-            vrm.scene.position.x += dirX * yukiSpeed * delta;
-            vrm.scene.position.z += dirZ * yukiSpeed * delta;
-            vrm.scene.position.x = THREE.MathUtils.clamp(vrm.scene.position.x, 0.8, 6.7);
-            vrm.scene.position.z = THREE.MathUtils.clamp(vrm.scene.position.z, -52.0, 52.0);
-
-            // Turn to face movement direction
-            const moveAngle = Math.atan2(dirX, dirZ);
-            const targetRot = isVRM1 ? moveAngle + Math.PI : moveAngle;
-            vrm.scene.rotation.y = lerpAngle(vrm.scene.rotation.y, targetRot, delta * 7.5);
           } else {
-            // Arrived at companion destination -> Idle and face player
+            // Idle and face player warmly
             targetLocomotion = 'idle';
             yukiSpeed = 0.0;
             speedRatio = 1.0;
 
-            const toPlayerAngle = Math.atan2(camera.position.x - vrm.scene.position.x, camera.position.z - vrm.scene.position.z);
-            const targetRot = isVRM1 ? toPlayerAngle + Math.PI : toPlayerAngle;
+            const toPlayerAngle = Math.atan2(toPlayerX, toPlayerZ);
+            const targetRot = isVRM1 ? toPlayerAngle : toPlayerAngle + Math.PI;
             vrm.scene.rotation.y = lerpAngle(vrm.scene.rotation.y, targetRot, delta * 4.0);
           }
-
-          // Ground Raycast Gravity for Yuki
-          const yukiGroundY = getGroundHeight(vrm.scene.position.x, vrm.scene.position.z, vrm.scene.position.y);
-          vrm.scene.position.y += (yukiGroundY - vrm.scene.position.y) * 0.22;
 
           // Cross-fade animation clip according to locomotion state
           transitionLocomotion(targetLocomotion, speedRatio);
@@ -4358,9 +4450,9 @@ export default function DateModeApp() {
           // 3. Stamina Quota & Fatigue Panting Engine
           if (targetLocomotion === 'run') {
             yukiStaminaRef.current = Math.max(0, yukiStaminaRef.current - delta * 12.0);
-          } else if (targetLocomotion === 'fast_walk') {
+          } else if (targetLocomotion === 'walk' && speedRatio > 1.1) {
             yukiStaminaRef.current = Math.max(0, yukiStaminaRef.current - delta * 2.5);
-          } else if (targetLocomotion === 'slow_walk') {
+          } else if (targetLocomotion === 'walk') {
             yukiStaminaRef.current = Math.min(100, yukiStaminaRef.current + delta * 3.5);
           } else {
             yukiStaminaRef.current = Math.min(100, yukiStaminaRef.current + delta * 9.0);
@@ -5472,6 +5564,7 @@ export default function DateModeApp() {
         spotIntensity: scenario.spotIntensity ?? 2.0,
         candleColor: scenario.candleColor ?? 0xffaa44,
         modelTransform: scenario.modelTransform || { posX: 0, posY: -0.2, posZ: 0, rotY: 0, scale: 1.0 },
+        waterLevel: scenario.waterLevel ?? (scenario.id === 'marine_drive_night' ? -2.35 : undefined),
         defaultPositions: scenario.defaultPositions || null
       });
       setEditingScenario(scenario.id);
@@ -10189,6 +10282,28 @@ export default function DateModeApp() {
                         </div>
                       </div>
                     </div>
+
+                    {scenarioForm.id === 'marine_drive_night' && (
+                      <div style={{ borderTop: '1px solid rgba(63, 63, 70, 0.4)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#a1a1aa' }}>Water Level Elevation (Y)</span>
+                          <span style={{ fontSize: '10px', color: '#38bdf8' }}>{scenarioForm.waterLevel ?? -2.35}m</span>
+                        </div>
+                        <input
+                          type="number"
+                          step="0.05"
+                          value={scenarioForm.waterLevel ?? -2.35}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || -2.35;
+                            setScenarioForm((prev) => ({ ...prev, waterLevel: val }));
+                            if (waterMeshRef.current) {
+                              waterMeshRef.current.position.y = val;
+                            }
+                          }}
+                          style={{ width: '100%', padding: '4px 6px', background: 'rgba(9, 13, 22, 0.8)', border: '1px solid rgba(63, 63, 70, 0.6)', borderRadius: '6px', color: '#fff', fontSize: '11px' }}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
