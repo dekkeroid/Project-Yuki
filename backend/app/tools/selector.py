@@ -193,6 +193,68 @@ _DEFAULT_CODING_TOOLS = {
     "jarvis_get_image", "jarvis_analyze_image", "jarvis_see_screen", "manage_todo", "ask_user"
 }
 
+# Date Mode Tool Configuration
+DATE_MODE_MAX_TOOLS = 8
+
+DATE_MODE_ALWAYS_INCLUDED_JARVIS = {
+    "jarvis_html_graphics",
+    "jarvis_see_screen",
+    "jarvis_open_or_play_file",
+    "jarvis_remember_user_fact",
+}
+
+DATE_MODE_ALWAYS_INCLUDED_BASIC = {
+    "html_graphics",
+    "take_screenshot",
+    "open_or_play_file",
+    "update_user_fact",
+}
+
+DATE_MODE_ALLOWED_JARVIS = {
+    "jarvis_html_graphics",
+    "jarvis_see_screen",
+    "jarvis_open_or_play_file",
+    "jarvis_remember_user_fact",
+    "jarvis_run_python",
+    "jarvis_change_avatar_outfit",
+    "jarvis_system_volume",
+    "jarvis_media_playback_control",
+    "jarvis_web_search",
+    "jarvis_web_scrape",
+    "jarvis_generate_image",
+    "jarvis_manage_timer_stopwatch_alarms",
+    "ask_user",
+}
+
+DATE_MODE_ALLOWED_BASIC = {
+    "html_graphics",
+    "take_screenshot",
+    "open_or_play_file",
+    "update_user_fact",
+    "run_python_script",
+    "change_avatar_outfit",
+    "set_system_volume",
+    "media_playback_control",
+    "web_search",
+    "generate_image",
+    "manage_timer_stopwatch_alarms",
+    "get_current_datetime",
+    "ask_user",
+}
+
+DATE_MODE_EXCLUDED_TOOLS = {
+    "jarvis_run_terminal", "run_terminal_command", "jarvis_send_stdin",
+    "jarvis_create_or_edit_file", "jarvis_replace_file_content", "jarvis_grep_files",
+    "jarvis_find_files_by_glob", "jarvis_read_file", "create_file", "edit_file", "delete_file",
+    "list_directory", "jarvis_list_dir_tree", "read_file_content", "search_files",
+    "jarvis_query_file_db", "read_and_review_file",
+    "jarvis_system_power", "system_power_control", "jarvis_close_app", "manage_process",
+    "jarvis_keyboard_mouse_input", "keyboard_mouse_input", "jarvis_window_control", "control_window",
+    "jarvis_system_diagnostics", "get_system_stats", "telegram_send_screenshot", "telegram_send_file",
+    "manage_todo", "jarvis_manage_scheduled_task", "jarvis_git_status",
+    "manage_personal_list", "jarvis_manage_personal_list",
+}
+
 _TOKEN_RE = re.compile(r"[a-z0-9_]+")
 
 _RECENT_TOOLS: list[str] = []
@@ -244,6 +306,7 @@ def select_relevant_tools(
     *,
     max_tools: int | None = None,   
     fallback_threshold: float = DEFAULT_FALLBACK_THRESHOLD,
+    is_date_mode: bool = False,
 ) -> list[dict[str, Any]]:
     """Return a compact, ranked tool list containing always-included core tools + query-matched tools + recent history tools."""
     if not tools:
@@ -252,19 +315,26 @@ def select_relevant_tools(
     # Detect if we are in Jarvis mode (contains jarvis_* tool definitions)
     is_jarvis = any(_tool_name(t).startswith("jarvis_") for t in tools)
 
-    if max_tools is None:
-        max_tools = DEFAULT_MAX_TOOLS_JARVIS if is_jarvis else DEFAULT_MAX_TOOLS
-
-    print(f"[MAX TOOLS] = {max_tools}")
-
-    if is_jarvis:
-        configured = getattr(config, "ALWAYS_INCLUDED_JARVIS_TOOLS", None)
-        if configured is not None:
-            always_names = set(configured)
-        else:
-            always_names = _ALWAYS_INCLUDED_JARVIS_TOOLS
+    if is_date_mode:
+        if max_tools is None or max_tools > DATE_MODE_MAX_TOOLS:
+            max_tools = DATE_MODE_MAX_TOOLS
+        always_names = DATE_MODE_ALWAYS_INCLUDED_JARVIS if is_jarvis else DATE_MODE_ALWAYS_INCLUDED_BASIC
+        allowed_names = DATE_MODE_ALLOWED_JARVIS if is_jarvis else DATE_MODE_ALLOWED_BASIC
+        tools = [t for t in tools if _tool_name(t) in allowed_names]
     else:
-        always_names = _ALWAYS_INCLUDED_BASIC_TOOLS
+        if max_tools is None:
+            max_tools = DEFAULT_MAX_TOOLS_JARVIS if is_jarvis else DEFAULT_MAX_TOOLS
+
+        if is_jarvis:
+            configured = getattr(config, "ALWAYS_INCLUDED_JARVIS_TOOLS", None)
+            if configured is not None:
+                always_names = set(configured)
+            else:
+                always_names = _ALWAYS_INCLUDED_JARVIS_TOOLS
+        else:
+            always_names = _ALWAYS_INCLUDED_BASIC_TOOLS
+
+    print(f"[MAX TOOLS] = {max_tools} (DateMode={is_date_mode})")
 
     always_tools = [t for t in tools if _tool_name(t) in always_names]
     always_tool_names = {_tool_name(t) for t in always_tools}
@@ -311,13 +381,20 @@ def select_relevant_tools(
         tools_by_name = {_tool_name(t): t for t in tools}
         appended_history = []
         for r_name in recent_names:
+            if is_date_mode and r_name not in allowed_names:
+                continue
             if r_name not in present_names and r_name in tools_by_name:
                 appended_history.append(tools_by_name[r_name])
                 present_names.add(r_name)
         if appended_history:
             history_names_str = ", ".join(_tool_name(t) for t in appended_history)
             print(f"[Tools] Appended {len(appended_history)} history tools to payload ({len(base_tools)} base -> {len(base_tools) + len(appended_history)} total): {history_names_str}")
-            return base_tools + appended_history
+            base_tools = base_tools + appended_history
+
+    if is_date_mode and len(base_tools) > max_tools:
+        always_set = [t for t in base_tools if _tool_name(t) in always_names]
+        other_set = [t for t in base_tools if _tool_name(t) not in always_names]
+        base_tools = (always_set + other_set)[:max_tools]
 
     return base_tools
 

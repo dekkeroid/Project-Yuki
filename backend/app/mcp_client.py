@@ -131,11 +131,16 @@ class StdioMCPToolBridge:
             print(f"[MCP] Failed to connect to stdio tool server: {exc}")
             return False
 
-    async def get_tool_definitions(self, user_message: str, dynamic: bool) -> list[dict[str, Any]]:
+    async def get_tool_definitions(
+        self,
+        user_message: str = "",
+        dynamic: bool = True,
+        is_date_mode: bool = False,
+    ) -> list:
         if await self.ensure_connected():
-            if not dynamic or config.MCP_SEND_ALL_TOOLS or config.TOOL_SELECTION_MODE == "all":
+            if (not dynamic or config.MCP_SEND_ALL_TOOLS or config.TOOL_SELECTION_MODE == "all") and not is_date_mode:
                 return list(self._tool_definitions)
-            if config.TOOL_SELECTION_MODE == "keyword":
+            if config.TOOL_SELECTION_MODE == "keyword" and not is_date_mode:
                 wanted_names = _tool_names(self._filtered_local_definitions(user_message))
                 filtered = [
                     tool for tool in self._tool_definitions
@@ -147,16 +152,21 @@ class StdioMCPToolBridge:
             return select_relevant_tools(
                 self._tool_definitions,
                 user_message,
-                max_tools=config.TOOL_SELECTION_MAX_TOOLS,
+                max_tools=8 if is_date_mode else config.TOOL_SELECTION_MAX_TOOLS,
                 fallback_threshold=config.TOOL_SELECTION_FALLBACK_THRESHOLD,
+                is_date_mode=is_date_mode,
             )
 
         if self.enabled and not self.fallback_enabled:
             reason = self._connect_error or "MCP stdio tool server is unavailable."
             raise RuntimeError(reason)
 
-        if dynamic:
-            return self._filtered_local_definitions(user_message)
+        if dynamic or is_date_mode:
+            defs = self._filtered_local_definitions(user_message)
+            if is_date_mode:
+                from app.tools.selector import select_relevant_tools
+                defs = select_relevant_tools(self._all_local_definitions(), user_message, max_tools=8, is_date_mode=True)
+            return defs
         return self._all_local_definitions()
 
     async def call_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> ToolCallResult:

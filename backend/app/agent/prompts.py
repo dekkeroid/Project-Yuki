@@ -882,7 +882,14 @@ IMPORTANT: The user is currently communicating with you remotely via Telegram on
     parts.append(EXAM_MATH_EXPLANATION_GUIDELINES)
     parts.append(ACOUSTIC_SOUND_CUES_GUIDELINE)
 
-    return _scrub_blocked_tools("\n\n".join(parts))
+    is_date_mode = bool((overrides or {}).get("is_date_mode") or (overrides or {}).get("context_mode") == "date_mode" or getattr(app.config, "IS_DATE_MODE", False))
+    excluded_tools = None
+    if is_date_mode:
+        from app.tools.selector import DATE_MODE_EXCLUDED_TOOLS
+        user_bl = set(getattr(app.config, "TOOL_BLACKLIST", None) or ())
+        excluded_tools = user_bl | DATE_MODE_EXCLUDED_TOOLS
+
+    return _scrub_blocked_tools("\n\n".join(parts), excluded=excluded_tools)
 
 
 def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, overrides: dict = None, mood_meta: dict = None, profile: dict = None) -> str:
@@ -901,6 +908,12 @@ def get_advanced_jarvis_system_prompt(memory_summary: str, mood: dict = None, ov
     outfit_block = build_avatar_outfit_prompt_block(profile=profile, is_jarvis=True) if (overrides or {}).get("prompt_expressions", True) else ""
     date_block = build_date_mode_prompt_block(overrides, mood)
     date_section = f"\n\n{date_block}" if date_block else ""
+    is_date_mode = bool((overrides or {}).get("is_date_mode") or (overrides or {}).get("context_mode") == "date_mode" or getattr(app.config, "IS_DATE_MODE", False))
+    excluded_tools = None
+    if is_date_mode:
+        from app.tools.selector import DATE_MODE_EXCLUDED_TOOLS
+        user_bl = set(getattr(app.config, "TOOL_BLACKLIST", None) or ())
+        excluded_tools = user_bl | DATE_MODE_EXCLUDED_TOOLS
     return _scrub_blocked_tools(f"""{persona_text}
 
 {mood_block}
@@ -1032,7 +1045,7 @@ IMPORTANT: The user is currently communicating with you remotely via Telegram on
 
 {EXAM_MATH_EXPLANATION_GUIDELINES}
 
-{ACOUSTIC_SOUND_CUES_GUIDELINE}""")
+{ACOUSTIC_SOUND_CUES_GUIDELINE}""", excluded=excluded_tools)
 
 
 def get_coding_agent_system_prompt(memory_summary: str = "", mood: dict = None, overrides: dict = None, profile: dict = None) -> str:

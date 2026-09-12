@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { Water } from 'three/examples/jsm/objects/Water.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
 import {
   Heart,
   Camera,
@@ -47,7 +49,8 @@ import {
   MapPin,
   User,
   Move,
-  ChevronUp
+  ChevronUp,
+  Loader2
 } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { stripAnimationTags, parseResponseTags } from './utils/responseParser';
@@ -221,6 +224,12 @@ class DateAmbienceEngine {
           [220.00, 261.63, 329.63, 392.00, 493.88],
           [146.83, 174.61, 220.00, 261.63, 329.63]
         ],
+        marine_drive_night: [
+          [155.56, 196.00, 233.08, 293.66, 349.23],
+          [196.00, 233.08, 293.66, 349.23, 392.00],
+          [174.61, 207.65, 261.63, 311.13, 349.23],
+          [116.54, 174.61, 233.08, 293.66, 329.63]
+        ],
         stargazing: [
           [110.00, 164.81, 220.00, 329.63],
           [98.00, 146.83, 196.00, 293.66],
@@ -229,7 +238,7 @@ class DateAmbienceEngine {
         ]
       };
 
-      const progression = chordsMap[scenarioId] || chordsMap.tokyo_sky_lounge || chordsMap.cute_cafe;
+      const progression = chordsMap[scenarioId] || chordsMap.marine_drive_night || chordsMap.tokyo_sky_lounge || chordsMap.cute_cafe;
       let chordIndex = 0;
 
       const filter = this.ctx.createBiquadFilter();
@@ -770,10 +779,72 @@ export const MAP_POSITION_PRESETS = {
         yourGlass: { posX: -0.09, posY: 1.58, posZ: 0.36, rotY: 0, scale: 0.6, scaleX: 0.6, scaleY: 0.6, scaleZ: 0.6 }
       }
     }
+  },
+  promenade_edge: {
+    id: 'promenade_edge',
+    name: 'Promenade Waterfront Railing',
+    desc: 'Standing side-by-side at the waterfront railing overlooking the river and illuminated skyline',
+    positions: {
+      camera: { fov: 48, posX: 1.2, posY: 1.68, posZ: 0.0, rotY: 90, far: 2000 },
+      objects: {
+        playerPov: { posX: 1.2, posY: 1.68, posZ: 0.0, rotY: 90, scale: 1.0, far: 2000 },
+        yuki: { posX: 1.2, posY: 0.0, posZ: 0.85, rotY: 270, scale: 1.10, scaleX: 1.10, scaleY: 1.10, scaleZ: 1.10 },
+        chair: { posX: 6.2, posY: -10.0, posZ: 0.0, rotY: 180, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
+        table: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
+        candleGLB: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
+        vaseGLB: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
+        cake: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
+        herGlass: { posX: 1.1, posY: 1.05, posZ: 0.6, rotY: 0, scale: 0.55, scaleX: 0.55, scaleY: 0.55, scaleZ: 0.55 },
+        yourGlass: { posX: 1.1, posY: 1.05, posZ: 0.2, rotY: 0, scale: 0.55, scaleX: 0.55, scaleY: 0.55, scaleZ: 0.55 }
+      }
+    }
+  },
+  promenade_bench: {
+    id: 'promenade_bench',
+    name: 'Promenade Seaside Bench',
+    desc: 'Seated together on the seaside wooden bench gazing out at the glowing river and city lights',
+    positions: {
+      camera: { fov: 46, posX: 6.05, posY: 1.15, posZ: -0.35, rotY: 90, far: 2000 },
+      objects: {
+        playerPov: { posX: 6.05, posY: 1.15, posZ: -0.35, rotY: 90, scale: 1.0, far: 2000 },
+        yuki: { posX: 6.05, posY: 0.45, posZ: 0.35, rotY: 270, scale: 1.10, scaleX: 1.10, scaleY: 1.10, scaleZ: 1.10 },
+        chair: { posX: 6.2, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
+        table: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
+        candleGLB: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
+        vaseGLB: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
+        cake: { posX: 0, posY: -10.0, posZ: 0, rotY: 0, scale: 0.001, scaleX: 0.001, scaleY: 0.001, scaleZ: 0.001 },
+        herGlass: { posX: 6.0, posY: 0.48, posZ: 0.1, rotY: 0, scale: 0.55, scaleX: 0.55, scaleY: 0.55, scaleZ: 0.55 },
+        yourGlass: { posX: 5.9, posY: 0.48, posZ: -0.1, rotY: 0, scale: 0.55, scaleX: 0.55, scaleY: 0.55, scaleZ: 0.55 }
+      }
+    }
   }
 };
 
 export const DEFAULT_SCENARIOS = {
+  marine_drive_night: {
+    id: 'marine_drive_night',
+    type: '3d_model',
+    title: 'Marine Drive Night',
+    subtitle: 'Midnight promenade with glowing skyline reflections and calm river breeze',
+    assetUrl: resolveAssetPath('3d_assets/date/MarineDriveNightMap.glb'),
+    bg: null,
+    cameraFar: 2000,
+    customPrompt: 'You and Master are having a late night walk along a quiet marine drive promenade overlooking a vast, dark, reflective river with a breathtaking skyscraper skyline across the water. The atmosphere is romantic, peaceful, and delightfully chill with a touch of quiet midnight mystery. You are leaning close to Master near the waterfront railing or sitting together on the promenade bench, sharing soft whispered words and admiring the city lights.',
+    ambientColor: 0x181e36,
+    ambientIntensity: 0.95,
+    spotColor: 0xffdca8,
+    spotIntensity: 1.2,
+    mapLightsIntensity: 0.25,
+    toneMapping: 'AgX',
+    exposure: 1.05,
+    envIntensity: 0.75,
+    candleColor: 0xffaa44,
+    candleIntensity: 1.0,
+    showDefaultTable: false,
+    modelTransform: { posX: 0, posY: 0.0, posZ: 0, rotY: 0, scale: 1.0 },
+    defaultPositions: MAP_POSITION_PRESETS.promenade_edge.positions,
+    welcomeDialogue: "The city lights across the water look breathtaking tonight... It's so peaceful and quiet here by the river. Just you and me."
+  },
   cute_cafe: {
     id: 'cute_cafe',
     type: '3d_model',
@@ -905,6 +976,20 @@ export const TONE_MAPPINGS = {
 };
 
 export const POSE_PRESETS = {
+  standing_promenade: {
+    id: 'standing_promenade',
+    label: 'Promenade Standing',
+    desc: 'Natural standing posture looking out over the water railing with gentle relaxed posture',
+    pose: {
+      head: { headPitch: 0.02, headYaw: -0.05, headRoll: 0.04, neckPitch: 0.01, neckYaw: -0.03, neckRoll: 0.02 },
+      torso: { spinePitch: 0.02, spineYaw: -0.04, spineRoll: 0.02, chestPitch: 0.01, chestYaw: -0.03, chestRoll: 0.01 },
+      hips: { posX: 0.0, posY: 0.0, posZ: 0.0, rotPitch: 0.0, rotYaw: -0.04, rotRoll: 0.02 },
+      leftArm: { upperPitch: 0.15, upperYaw: 0.12, upperRoll: 0.45, lowerFlex: 0.35, lowerTwist: -0.10, lowerAngle: 0.15, handPitch: 0.05, handYaw: 0.10, handRoll: 0.05 },
+      rightArm: { upperPitch: 0.18, upperYaw: -0.10, upperRoll: -0.45, lowerFlex: 0.38, lowerTwist: 0.10, lowerAngle: -0.15, handPitch: 0.05, handYaw: -0.10, handRoll: -0.05 },
+      leftLeg: { upperPitch: 0.04, upperYaw: 0.04, upperRoll: 0.02, lowerFlex: -0.04, lowerTwist: 0.0, footPitch: 0.0, footYaw: 0.02, footRoll: 0.0 },
+      rightLeg: { upperPitch: -0.02, upperYaw: -0.04, upperRoll: -0.02, lowerFlex: -0.02, lowerTwist: 0.0, footPitch: 0.0, footYaw: -0.02, footRoll: 0.0 }
+    }
+  },
   default: {
     id: 'default',
     label: 'Default Seated',
@@ -1044,7 +1129,8 @@ export const DEFAULT_DATE_CONFIG = {
     posY: 0.97,
     posZ: -0.5,
     rotY: 180,
-    rotX: 0
+    rotX: 0,
+    far: 2000
   },
   lights: {
     ambient: {
@@ -1302,6 +1388,78 @@ export function loadSavedProfiles() {
   return {};
 }
 
+export function loadMapDefaultProfiles() {
+  try {
+    const raw = localStorage.getItem('yuki_date_map_default_profiles');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch (e) {
+    console.warn('[DateMode] Failed to load map default profiles:', e);
+  }
+  return {};
+}
+
+export function saveMapDefaultProfiles(mapProfiles) {
+  try {
+    localStorage.setItem('yuki_date_map_default_profiles', JSON.stringify(mapProfiles));
+  } catch (e) {
+    console.warn('[DateMode] Failed to save map default profiles:', e);
+  }
+}
+
+export function createProceduralWaterNormalsTexture(size = 512) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(size, size);
+  const data = imgData.data;
+
+  // Multi-octave sinusoidal rippling water normal generator
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = (x / size) * Math.PI * 2;
+      const v = (y / size) * Math.PI * 2;
+
+      // Slopes dh/du and dh/dv for ripples
+      const dhdu =
+        Math.cos(u * 6.0 + v * 3.0) * 0.4 +
+        Math.cos(u * 12.0 - v * 8.0) * 0.25 +
+        Math.cos(u * 24.0 + v * 16.0) * 0.12 +
+        Math.cos(u * 4.0 - v * 10.0) * 0.3;
+
+      const dhdv =
+        Math.sin(u * 3.0 + v * 6.0) * 0.4 +
+        Math.sin(u * 8.0 - v * 12.0) * 0.25 +
+        Math.sin(u * 16.0 + v * 24.0) * 0.12 +
+        Math.sin(-u * 10.0 + v * 4.0) * 0.3;
+
+      let nx = -dhdu * 1.5;
+      let ny = -dhdv * 1.5;
+      let nz = 1.0;
+      const len = Math.hypot(nx, ny, nz) || 1.0;
+      nx /= len;
+      ny /= len;
+      nz /= len;
+
+      const idx = (y * size + x) * 4;
+      data[idx] = Math.floor((nx * 0.5 + 0.5) * 255);
+      data[idx + 1] = Math.floor((ny * 0.5 + 0.5) * 255);
+      data[idx + 2] = Math.floor((nz * 0.5 + 0.5) * 255);
+      data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 export function mergeConfig(base, custom) {
   if (!custom) return JSON.parse(JSON.stringify(base));
   const result = JSON.parse(JSON.stringify(base));
@@ -1348,7 +1506,11 @@ export default function DateModeApp() {
   // Scenarios & Destination Atmosphere
   const [customScenarios, setCustomScenarios] = useState(() => loadCustomScenarios());
   const allScenarios = useMemo(() => ({ ...DEFAULT_SCENARIOS, ...customScenarios }), [customScenarios]);
-  const [activeDest, setActiveDest] = useState('cute_cafe');
+  const [activeDest, setActiveDest] = useState('marine_drive_night');
+  const activeDestRef = useRef(activeDest);
+  useEffect(() => {
+    activeDestRef.current = activeDest;
+  }, [activeDest]);
   const [candleLit, setCandleLit] = useState(true);
   const [bgmMuted, setBgmMuted] = useState(false);
 
@@ -1436,6 +1598,7 @@ export default function DateModeApp() {
   const turnFinishedRef = useRef(false);
   const customStageMeshRef = useRef(null);
   const loadedStageUrlRef = useRef(null);
+  const waterMeshRef = useRef(null);
   const scenarioFileInputRef = useRef(null);
 
   // Facial Expressions, Gestures & Live Model Swapping Refs
@@ -1462,6 +1625,20 @@ export default function DateModeApp() {
   const mousePosRef = useRef({ x: 0, y: 0 });
   const animFrameIdRef = useRef(null);
   const isToastingRef = useRef(false);
+  const ledScreenAnimRef = useRef(null);
+  const rgbMaterialsRef = useRef([]);
+  const waterMatRef = useRef(null);
+
+  // VRMA Locomotion, Autonomous Follow AI & Stamina System
+  const vrmAnimationMixerRef = useRef(null);
+  const vrmLocomotionActionsRef = useRef({});
+  const locomotionStateRef = useRef('idle'); // 'idle' | 'slow_walk' | 'fast_walk' | 'run'
+  const yukiStaminaRef = useRef(100.0);
+  const isExhaustedRef = useRef(false);
+  const [yukiStaminaUI, setYukiStaminaUI] = useState(100);
+  const [isExhaustedUI, setIsExhaustedUI] = useState(false);
+  const lastStaminaUiUpdateRef = useRef(0);
+  const lastDialogueFatigueTimeRef = useRef(0);
 
   // First-Person 360° Mouse Look & Head Rotation State
   const [isDragging, setIsDragging] = useState(false);
@@ -1480,8 +1657,13 @@ export default function DateModeApp() {
   const [devTab, setDevTab] = useState('objects'); // 'objects' | 'pose' | 'lights' | 'shaders' | 'diff'
   const [selectedObjectId, setSelectedObjectId] = useState('yuki');
   const [savedProfiles, setSavedProfiles] = useState(() => loadSavedProfiles());
+  const [mapDefaultProfiles, setMapDefaultProfiles] = useState(() => loadMapDefaultProfiles());
+  const [isMapLoading, setIsMapLoading] = useState(false);
   const [activeProfileId, setActiveProfileId] = useState(() => {
     try {
+      const mapDefaults = loadMapDefaultProfiles();
+      const boundId = mapDefaults['marine_drive_night'];
+      if (boundId) return boundId;
       return localStorage.getItem('yuki_date_active_profile_id') || 'default';
     } catch (_) {
       return 'default';
@@ -1493,7 +1675,9 @@ export default function DateModeApp() {
 
   const [devConfig, setDevConfig] = useState(() => {
     const profiles = loadSavedProfiles();
-    const storedId = (() => {
+    const mapDefaults = loadMapDefaultProfiles();
+    const boundId = mapDefaults['marine_drive_night'];
+    const storedId = boundId || (() => {
       try { return localStorage.getItem('yuki_date_active_profile_id') || 'default'; } catch (_) { return 'default'; }
     })();
     if (storedId !== 'default' && profiles[storedId]?.config) {
@@ -1583,6 +1767,24 @@ export default function DateModeApp() {
   const visemeLevelsRef = useRef({ aa: 0, ih: 0, ou: 0, ee: 0, oh: 0, intensity: 0 });
   const currentVisemesRef = useRef(null);
   const socketRef = useRef(null);
+  const dateModeChannelRef = useRef(null);
+
+  const postDateModeMessage = useCallback((msg) => {
+    try {
+      if (!dateModeChannelRef.current) {
+        dateModeChannelRef.current = new BroadcastChannel('yuki_date_mode_channel');
+      }
+      dateModeChannelRef.current.postMessage(msg);
+    } catch (e) {
+      console.warn('[DateMode] BroadcastChannel postMessage error:', e);
+    }
+    try {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify(msg));
+      }
+    } catch (_) {}
+  }, []);
+
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const audioSourceRef = useRef(null);
@@ -1612,9 +1814,7 @@ export default function DateModeApp() {
 
     try {
       localStorage.setItem('yuki_date_mode_active', 'true');
-      const bc = new BroadcastChannel('yuki_date_mode_channel');
-      bc.postMessage({ active: true });
-      bc.close();
+      postDateModeMessage({ active: true });
       syncBackend(true);
     } catch (_) {}
 
@@ -1625,9 +1825,7 @@ export default function DateModeApp() {
           proactiveDateTimerRef.current = null;
         }
         localStorage.setItem('yuki_date_mode_active', 'false');
-        const bc = new BroadcastChannel('yuki_date_mode_channel');
-        bc.postMessage({ active: false });
-        bc.close();
+        postDateModeMessage({ active: false });
         syncBackend(false);
       } catch (_) {}
     };
@@ -1801,8 +1999,17 @@ export default function DateModeApp() {
       if (positions.camera.posX !== undefined) cameraRef.current.position.x = positions.camera.posX;
       if (positions.camera.posY !== undefined) cameraRef.current.position.y = positions.camera.posY;
       if (positions.camera.posZ !== undefined) cameraRef.current.position.z = positions.camera.posZ;
-      if (positions.camera.fov !== undefined) {
+      let needsUpdate = false;
+      if (positions.camera.fov !== undefined && cameraRef.current.fov !== positions.camera.fov) {
         cameraRef.current.fov = positions.camera.fov;
+        needsUpdate = true;
+      }
+      const targetFar = positions.camera.far ?? 2000;
+      if (cameraRef.current.far !== targetFar) {
+        cameraRef.current.far = targetFar;
+        needsUpdate = true;
+      }
+      if (needsUpdate) {
         cameraRef.current.updateProjectionMatrix();
       }
     }
@@ -1847,7 +2054,143 @@ export default function DateModeApp() {
     }
   }, []);
 
-  const handleSaveCurrentPositionsAsMapDefault = useCallback(() => {
+  // Unified 3D scene updater across renderer, camera, lights, meshes, and poses
+  const applyConfigToScene = useCallback((cfg) => {
+    if (!cfg) return;
+    setDevConfig(cfg);
+    devConfigRef.current = cfg;
+
+    if (rendererRef.current && cfg.shaders) {
+      if (cfg.shaders.toneMapping) {
+        rendererRef.current.toneMapping = TONE_MAPPINGS[cfg.shaders.toneMapping] || THREE.AgXToneMapping;
+      }
+      if (cfg.shaders.exposure !== undefined) {
+        rendererRef.current.toneMappingExposure = cfg.shaders.exposure;
+      }
+    }
+
+    if (cameraRef.current && cfg.camera) {
+      let needsUpdate = false;
+      if (cfg.camera.fov !== undefined && cameraRef.current.fov !== cfg.camera.fov) {
+        cameraRef.current.fov = cfg.camera.fov;
+        needsUpdate = true;
+      }
+      if (cfg.camera.posX !== undefined && cfg.camera.posY !== undefined && cfg.camera.posZ !== undefined) {
+        cameraRef.current.position.set(cfg.camera.posX, cfg.camera.posY, cfg.camera.posZ);
+      }
+      const targetFar = cfg.camera.far ?? 2000;
+      if (cameraRef.current.far !== targetFar) {
+        cameraRef.current.far = targetFar;
+        needsUpdate = true;
+      }
+      if (needsUpdate) {
+        cameraRef.current.updateProjectionMatrix?.();
+      }
+    }
+
+    const resolvedRotY = cfg.objects?.playerPov?.rotY ?? cfg.camera?.rotY;
+    if (resolvedRotY !== undefined) {
+      const rad = (resolvedRotY * Math.PI) / 180;
+      targetYawRef.current = rad;
+      camYawRef.current = rad;
+    }
+    const resolvedRotX = cfg.objects?.playerPov?.rotX ?? cfg.camera?.rotX;
+    if (resolvedRotX !== undefined) {
+      const rad = (resolvedRotX * Math.PI) / 180;
+      targetPitchRef.current = rad;
+      camPitchRef.current = rad;
+    }
+
+    if (cfg.lights) {
+      if (ambientLightRef.current && cfg.lights.ambient) {
+        if (cfg.lights.ambient.color !== undefined) ambientLightRef.current.color.set(cfg.lights.ambient.color);
+        if (cfg.lights.ambient.intensity !== undefined) ambientLightRef.current.intensity = cfg.lights.ambient.intensity;
+      }
+      if (spotLightRef.current && cfg.lights.keySpot) {
+        if (cfg.lights.keySpot.color !== undefined) spotLightRef.current.color.set(cfg.lights.keySpot.color);
+        if (cfg.lights.keySpot.intensity !== undefined) spotLightRef.current.intensity = cfg.lights.keySpot.intensity;
+        if (cfg.lights.keySpot.posX !== undefined) {
+          spotLightRef.current.position.set(cfg.lights.keySpot.posX, cfg.lights.keySpot.posY, cfg.lights.keySpot.posZ);
+        }
+      }
+      if (candleLightRef.current && cfg.lights.candle) {
+        if (cfg.lights.candle.color !== undefined) candleLightRef.current.color.set(cfg.lights.candle.color);
+        if (cfg.lights.candle.intensity !== undefined) candleLightRef.current.intensity = cfg.lights.candle.intensity;
+        if (cfg.lights.candle.posX !== undefined) {
+          candleLightRef.current.position.set(cfg.lights.candle.posX, cfg.lights.candle.posY, cfg.lights.candle.posZ);
+        }
+      }
+      if (cfg.lights.mapLights && stageLightsRef.current?.length > 0) {
+        const mlInt = cfg.lights.mapLights.intensity ?? 0.05;
+        stageLightsRef.current.forEach((l) => {
+          if (l.isLight) l.intensity = mlInt;
+        });
+      }
+    }
+
+    if (cfg.objects) {
+      for (const [key, objDef] of Object.entries(cfg.objects)) {
+        if (key === 'playerPov') continue;
+        const obj = sceneObjectsRef.current[key];
+        if (obj) {
+          if (objDef.posX !== undefined && objDef.posY !== undefined && objDef.posZ !== undefined) {
+            obj.position.set(objDef.posX, objDef.posY, objDef.posZ);
+          }
+          if (objDef.rotY !== undefined) {
+            if (key === 'yuki' && vrmRef.current?.isVRM1) {
+              obj.rotation.y = ((objDef.rotY - 180) * Math.PI) / 180;
+            } else {
+              obj.rotation.y = (objDef.rotY || 0) * (Math.PI / 180);
+            }
+          }
+          const sx = objDef.scaleX ?? objDef.scale ?? 1.0;
+          const sy = objDef.scaleY ?? objDef.scale ?? 1.0;
+          const sz = objDef.scaleZ ?? objDef.scale ?? 1.0;
+          obj.scale.set(sx, sy, sz);
+          obj.updateMatrix?.();
+        }
+      }
+    }
+
+    if (boxHelperRef.current) {
+      boxHelperRef.current.update();
+    }
+  }, []);
+
+  const handleSelectProfile = useCallback((profileId) => {
+    setActiveProfileId(profileId);
+    try {
+      localStorage.setItem('yuki_date_active_profile_id', profileId);
+    } catch (_) {}
+
+    let targetCfg;
+    if (profileId === 'default' || !savedProfiles[profileId]?.config) {
+      targetCfg = JSON.parse(JSON.stringify(DEFAULT_DATE_CONFIG));
+      const sc = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest];
+      if (sc) {
+        if (sc.defaultPositions?.camera) Object.assign(targetCfg.camera, sc.defaultPositions.camera);
+        if (sc.defaultPositions?.objects) {
+          for (const k in sc.defaultPositions.objects) {
+            targetCfg.objects[k] = { ...(targetCfg.objects[k] || {}), ...sc.defaultPositions.objects[k] };
+          }
+        }
+        if (sc.toneMapping) targetCfg.shaders.toneMapping = sc.toneMapping;
+        if (sc.exposure !== undefined) targetCfg.shaders.exposure = sc.exposure;
+        if (sc.ambientColor !== undefined) targetCfg.lights.ambient.color = sc.ambientColor;
+        if (sc.ambientIntensity !== undefined) targetCfg.lights.ambient.intensity = sc.ambientIntensity;
+        if (sc.spotColor !== undefined) targetCfg.lights.keySpot.color = sc.spotColor;
+        if (sc.spotIntensity !== undefined) targetCfg.lights.keySpot.intensity = sc.spotIntensity;
+        if (sc.candleColor !== undefined) targetCfg.lights.candle.color = sc.candleColor;
+        if (sc.candleIntensity !== undefined) targetCfg.lights.candle.intensity = sc.candleIntensity;
+        if (sc.mapLightsIntensity !== undefined) targetCfg.lights.mapLights.intensity = sc.mapLightsIntensity;
+      }
+    } else {
+      targetCfg = mergeConfig(DEFAULT_DATE_CONFIG, savedProfiles[profileId].config);
+    }
+    applyConfigToScene(targetCfg);
+  }, [activeDest, allScenarios, savedProfiles, applyConfigToScene]);
+
+  const handleSaveCurrentAsMapDefault = useCallback(() => {
     const currentScenario = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest] || DEFAULT_SCENARIOS.cute_cafe;
     if (!currentScenario) return;
 
@@ -1861,7 +2204,8 @@ export default function DateModeApp() {
         posY: devConfigRef.current.camera?.posY ?? 2.3,
         posZ: devConfigRef.current.camera?.posZ ?? 0.45,
         rotY: currentRotY,
-        rotX: currentRotX
+        rotX: currentRotX,
+        far: devConfigRef.current.camera?.far ?? 2000
       },
       objects: {}
     };
@@ -1878,7 +2222,16 @@ export default function DateModeApp() {
 
     const updatedScenario = {
       ...currentScenario,
-      defaultPositions: currentPositions
+      defaultPositions: currentPositions,
+      toneMapping: devConfigRef.current.shaders?.toneMapping || currentScenario.toneMapping || 'AgX',
+      exposure: devConfigRef.current.shaders?.exposure ?? currentScenario.exposure ?? 0.9,
+      ambientColor: devConfigRef.current.lights?.ambient?.color ?? currentScenario.ambientColor,
+      ambientIntensity: devConfigRef.current.lights?.ambient?.intensity ?? currentScenario.ambientIntensity,
+      spotColor: devConfigRef.current.lights?.keySpot?.color ?? currentScenario.spotColor,
+      spotIntensity: devConfigRef.current.lights?.keySpot?.intensity ?? currentScenario.spotIntensity,
+      candleColor: devConfigRef.current.lights?.candle?.color ?? currentScenario.candleColor,
+      candleIntensity: devConfigRef.current.lights?.candle?.intensity ?? currentScenario.candleIntensity,
+      mapLightsIntensity: devConfigRef.current.lights?.mapLights?.intensity ?? currentScenario.mapLightsIntensity
     };
 
     setCustomScenarios((prev) => {
@@ -1887,19 +2240,78 @@ export default function DateModeApp() {
       return updated;
     });
 
-    setMapPositionsToast(`Saved default positions for "${currentScenario.title}"!`);
-    setTimeout(() => setMapPositionsToast(''), 3000);
-  }, [activeDest, allScenarios]);
+    if (activeProfileId !== 'default' && savedProfiles[activeProfileId]) {
+      const updatedProfile = {
+        ...savedProfiles[activeProfileId],
+        updatedAt: new Date().toISOString(),
+        config: JSON.parse(JSON.stringify(devConfigRef.current))
+      };
+      const updatedProfiles = {
+        ...savedProfiles,
+        [activeProfileId]: updatedProfile
+      };
+      setSavedProfiles(updatedProfiles);
+      try {
+        localStorage.setItem('yuki_date_custom_profiles', JSON.stringify(updatedProfiles));
+      } catch (_) {}
+
+      const updatedMapProfiles = {
+        ...mapDefaultProfiles,
+        [activeDest]: activeProfileId
+      };
+      setMapDefaultProfiles(updatedMapProfiles);
+      saveMapDefaultProfiles(updatedMapProfiles);
+
+      setMapPositionsToast(`Saved "${savedProfiles[activeProfileId].name}" as default for "${currentScenario.title}"!`);
+    } else {
+      const updatedMapProfiles = {
+        ...mapDefaultProfiles,
+        [activeDest]: 'default'
+      };
+      setMapDefaultProfiles(updatedMapProfiles);
+      saveMapDefaultProfiles(updatedMapProfiles);
+
+      setMapPositionsToast(`Saved current layout and lighting as default for "${currentScenario.title}"!`);
+    }
+
+    setTimeout(() => setMapPositionsToast(''), 3500);
+  }, [activeDest, allScenarios, activeProfileId, savedProfiles, mapDefaultProfiles]);
 
   const handleResetToMapDefaults = useCallback(() => {
-    const sc = DEFAULT_SCENARIOS[activeDest] || allScenarios[activeDest] || DEFAULT_SCENARIOS.cute_cafe;
-    const mapPos = sc?.defaultPositions || MAP_POSITION_PRESETS[activeDest]?.positions || MAP_POSITION_PRESETS.standard_dining.positions;
-    if (mapPos) {
-      applyMapPositions(mapPos);
-      setMapPositionsToast(`Restored default positions for "${sc.title}"!`);
+    const sc = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest] || DEFAULT_SCENARIOS.cute_cafe;
+    const boundProfId = mapDefaultProfiles[activeDest];
+    if (boundProfId && boundProfId !== 'default' && savedProfiles[boundProfId]?.config) {
+      handleSelectProfile(boundProfId);
+      setMapPositionsToast(`Restored default profile "${savedProfiles[boundProfId].name}" for "${sc.title}"!`);
       setTimeout(() => setMapPositionsToast(''), 3000);
+      return;
     }
-  }, [activeDest, allScenarios, applyMapPositions]);
+
+    const targetCfg = JSON.parse(JSON.stringify(DEFAULT_DATE_CONFIG));
+    const mapPos = sc?.defaultPositions || MAP_POSITION_PRESETS[activeDest]?.positions || MAP_POSITION_PRESETS.standard_dining.positions;
+    if (mapPos?.camera) Object.assign(targetCfg.camera, mapPos.camera);
+    if (mapPos?.objects) {
+      for (const k in mapPos.objects) {
+        targetCfg.objects[k] = { ...(targetCfg.objects[k] || {}), ...mapPos.objects[k] };
+      }
+    }
+    if (sc.toneMapping) targetCfg.shaders.toneMapping = sc.toneMapping;
+    if (sc.exposure !== undefined) targetCfg.shaders.exposure = sc.exposure;
+    if (sc.ambientColor !== undefined) targetCfg.lights.ambient.color = sc.ambientColor;
+    if (sc.ambientIntensity !== undefined) targetCfg.lights.ambient.intensity = sc.ambientIntensity;
+    if (sc.spotColor !== undefined) targetCfg.lights.keySpot.color = sc.spotColor;
+    if (sc.spotIntensity !== undefined) targetCfg.lights.keySpot.intensity = sc.spotIntensity;
+    if (sc.candleColor !== undefined) targetCfg.lights.candle.color = sc.candleColor;
+    if (sc.candleIntensity !== undefined) targetCfg.lights.candle.intensity = sc.candleIntensity;
+    if (sc.mapLightsIntensity !== undefined) targetCfg.lights.mapLights.intensity = sc.mapLightsIntensity;
+
+    setActiveProfileId('default');
+    try { localStorage.setItem('yuki_date_active_profile_id', 'default'); } catch (_) {}
+    applyConfigToScene(targetCfg);
+
+    setMapPositionsToast(`Restored default layout and lighting for "${sc.title}"!`);
+    setTimeout(() => setMapPositionsToast(''), 3000);
+  }, [activeDest, allScenarios, mapDefaultProfiles, savedProfiles, applyConfigToScene, handleSelectProfile]);
 
   // 1. DEDICATED GPU CHECK ON MOUNT & SAFETY WATCHDOG
   useEffect(() => {
@@ -1924,38 +2336,93 @@ export default function DateModeApp() {
     const scenario = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest] || DEFAULT_SCENARIOS.cute_cafe;
     if (!scenario) return;
 
-    // Apply map-specific default positions on scenario change
-    const mapPos = scenario.defaultPositions || MAP_POSITION_PRESETS[activeDest]?.positions || MAP_POSITION_PRESETS.standard_dining.positions;
-    if (mapPos) {
-      applyMapPositions(mapPos);
+    // 1. Resolve and apply map-specific default profile and layout on destination change
+    const boundProfileId = mapDefaultProfiles[activeDest] || 'default';
+    if (boundProfileId !== activeProfileId) {
+      setActiveProfileId(boundProfileId);
+      try {
+        localStorage.setItem('yuki_date_active_profile_id', boundProfileId);
+      } catch (_) {}
     }
 
-    // Broadcast active scenario to App.jsx so main app speech/chat inherits date prompt
-    try {
-      const bc = new BroadcastChannel('yuki_date_mode_channel');
-      bc.postMessage({
-        type: 'date_scenario_update',
-        scenario: {
-          id: scenario.id,
-          title: scenario.title,
-          subtitle: scenario.subtitle,
-          customPrompt: scenario.customPrompt || scenario.prompt
+    let targetCfg;
+    if (boundProfileId !== 'default' && savedProfiles[boundProfileId]?.config) {
+      targetCfg = mergeConfig(DEFAULT_DATE_CONFIG, savedProfiles[boundProfileId].config);
+    } else {
+      targetCfg = JSON.parse(JSON.stringify(DEFAULT_DATE_CONFIG));
+      const mapPos = scenario.defaultPositions || MAP_POSITION_PRESETS[activeDest]?.positions || MAP_POSITION_PRESETS.standard_dining.positions;
+      if (mapPos?.camera) Object.assign(targetCfg.camera, mapPos.camera);
+      if (mapPos?.objects) {
+        for (const k in mapPos.objects) {
+          targetCfg.objects[k] = { ...(targetCfg.objects[k] || {}), ...mapPos.objects[k] };
         }
-      });
-      bc.close();
-    } catch (_) {}
+      }
+      if (scenario.toneMapping) targetCfg.shaders.toneMapping = scenario.toneMapping;
+      if (scenario.exposure !== undefined) targetCfg.shaders.exposure = scenario.exposure;
+      if (scenario.ambientColor !== undefined) targetCfg.lights.ambient.color = scenario.ambientColor;
+      if (scenario.ambientIntensity !== undefined) targetCfg.lights.ambient.intensity = scenario.ambientIntensity;
+      if (scenario.spotColor !== undefined) targetCfg.lights.keySpot.color = scenario.spotColor;
+      if (scenario.spotIntensity !== undefined) targetCfg.lights.keySpot.intensity = scenario.spotIntensity;
+      if (scenario.candleColor !== undefined) targetCfg.lights.candle.color = scenario.candleColor;
+      if (scenario.candleIntensity !== undefined) targetCfg.lights.candle.intensity = scenario.candleIntensity;
+      if (scenario.mapLightsIntensity !== undefined) targetCfg.lights.mapLights.intensity = scenario.mapLightsIntensity;
+    }
+    applyConfigToScene(targetCfg);
+
+    // Broadcast active scenario to App.jsx so main app speech/chat inherits date prompt
+    postDateModeMessage({
+      type: 'date_scenario_update',
+      scenario: {
+        id: scenario.id,
+        title: scenario.title,
+        subtitle: scenario.subtitle,
+        customPrompt: scenario.customPrompt || scenario.prompt
+      }
+    });
+
+    // Ensure camera far clipping plane accommodates vast outdoor scenarios like marine_drive_night
+    if (cameraRef.current) {
+      const scenarioFar = scenario.cameraFar ?? (scenario.id === 'marine_drive_night' ? 2000 : 2000);
+      if (cameraRef.current.far < scenarioFar) {
+        cameraRef.current.far = scenarioFar;
+        cameraRef.current.updateProjectionMatrix();
+      }
+    }
+
+    // Complete stage teardown helper: disposes meshes, water reflector, lights, canvas textures, and env maps
+    const unloadCurrentStage = () => {
+      if (customStageMeshRef.current && sceneRef.current) {
+        sceneRef.current.remove(customStageMeshRef.current);
+        disposeHierarchy(customStageMeshRef.current);
+        customStageMeshRef.current = null;
+        loadedStageUrlRef.current = null;
+      }
+      if (waterMeshRef.current && sceneRef.current) {
+        sceneRef.current.remove(waterMeshRef.current);
+        waterMeshRef.current.geometry?.dispose?.();
+        if (waterMeshRef.current.material) {
+          waterMeshRef.current.material.uniforms?.['mirrorSampler']?.value?.dispose?.();
+          waterMeshRef.current.material.dispose?.();
+        }
+        waterMeshRef.current = null;
+      }
+      stageLightsRef.current = [];
+      ledScreenAnimRef.current = null;
+      rgbMaterialsRef.current = [];
+      if (currentEnvTextureRef.current) {
+        currentEnvTextureRef.current.dispose?.();
+        currentEnvTextureRef.current = null;
+      }
+    };
 
     // Handle 3D Stage Model vs 360 Panorama
     if (scenario.type === '3d_model') {
-      // Hide panoramic sky dome
       if (bgMeshRef.current) {
         bgMeshRef.current.visible = false;
       }
 
-      // Load 3D GLB model
       const modelUrl = scenario.assetUrl || scenario.bg;
       if (modelUrl && sceneRef.current) {
-        // If the same model is already mounted, update its transform without re-downloading or re-parsing GLB
         if (customStageMeshRef.current && loadedStageUrlRef.current === modelUrl) {
           const tf = scenario.modelTransform || { posX: 0, posY: -0.2, posZ: 0, rotY: 0, scale: 1.0 };
           const s = tf.scale || 1.0;
@@ -1963,18 +2430,15 @@ export default function DateModeApp() {
           customStageMeshRef.current.position.set(tf.posX ?? 0, tf.posY ?? -0.2, tf.posZ ?? 0);
           customStageMeshRef.current.rotation.y = (tf.rotY ?? 0) * (Math.PI / 180);
         } else {
-          // Remove and dispose previous custom stage mesh if any
-          if (customStageMeshRef.current && sceneRef.current) {
-            sceneRef.current.remove(customStageMeshRef.current);
-            disposeHierarchy(customStageMeshRef.current);
-            customStageMeshRef.current = null;
-          }
+          setIsMapLoading(true);
+          unloadCurrentStage();
           loadedStageUrlRef.current = modelUrl;
 
           const gltfLoader = new GLTFLoader();
           gltfLoader.load(
             modelUrl,
             (gltf) => {
+              setIsMapLoading(false);
               if (isCancelled) {
                 disposeHierarchy(gltf.scene);
                 return;
@@ -2002,11 +2466,9 @@ export default function DateModeApp() {
                   }
                   const roomEnv = new RoomEnvironment();
                   const envTexture = pmremGeneratorRef.current.fromScene(roomEnv).texture;
-                  // Keep global scene.environment = null so VRM MToon anime shader is not washed out by 360° white lightbox
                   sceneRef.current.environment = null;
                   currentEnvTextureRef.current = envTexture;
 
-                  // Apply IBL specular gleam selectively to metallic, shiny, & glass materials on the stage
                   const targetIntensity = scenario.envIntensity ?? 0.8;
                   stage.traverse((c) => {
                     if (c.isMesh && c.material) {
@@ -2028,36 +2490,139 @@ export default function DateModeApp() {
                     }
                   });
                 }
-                // Restore procedural anime sky gradient (which glTF exporter could not export from Blender Color Ramp)
-                const skyTexture = createCuteSkyGradientTexture();
-                stage.traverse((c) => {
-                  if (c.isMesh) {
-                    const mNames = (Array.isArray(c.material) ? c.material : [c.material])
-                      .map((m) => (m?.name || '').toLowerCase());
-                    const isSky = (c.name || '').toLowerCase().includes('sky') ||
-                      mNames.some((n) => n.includes('sky'));
-                    if (isSky) {
-                      c.material = new THREE.MeshBasicMaterial({
-                        map: skyTexture,
-                        side: THREE.DoubleSide,
-                        depthWrite: false
-                      });
-                      c.material.needsUpdate = true;
+
+                const isNight = (scenario.id || '').includes('night') || (scenario.id || '') === 'marine_drive_night';
+                if (!isNight) {
+                  const skyTexture = createCuteSkyGradientTexture();
+                  stage.traverse((c) => {
+                    if (c.isMesh) {
+                      const mNames = (Array.isArray(c.material) ? c.material : [c.material])
+                        .map((m) => (m?.name || '').toLowerCase());
+                      const isSky = (c.name || '').toLowerCase().includes('sky') ||
+                        mNames.some((n) => n.includes('sky'));
+                      if (isSky) {
+                        c.material = new THREE.MeshBasicMaterial({
+                          map: skyTexture,
+                          side: THREE.DoubleSide,
+                          depthWrite: false
+                        });
+                        c.material.needsUpdate = true;
+                      }
                     }
+                  });
+                  if (sceneRef.current) {
+                    sceneRef.current.background = new THREE.Color(0x6bc3fc);
                   }
-                });
-                if (sceneRef.current) {
-                  sceneRef.current.background = new THREE.Color(0x6bc3fc);
+                } else {
+                  if (sceneRef.current) {
+                    sceneRef.current.background = new THREE.Color(0x02040a);
+                  }
+
+                  // 1. Initialize 3 Unique Animated LED Billboard Screens (Anime, Ads, News)
+                  const createScreenContext = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 512;
+                    canvas.height = 512;
+                    const ctx = canvas.getContext('2d');
+                    const tex = new THREE.CanvasTexture(canvas);
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                    tex.wrapS = THREE.ClampToEdgeWrapping;
+                    tex.wrapT = THREE.ClampToEdgeWrapping;
+                    const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+                    return { canvas, ctx, tex, mat };
+                  };
+
+                  const screenAnime = createScreenContext();
+                  const screenAds = createScreenContext();
+                  const screenNews = createScreenContext();
+
+                  ledScreenAnimRef.current = {
+                    anime: screenAnime,
+                    ads: screenAds,
+                    news: screenNews
+                  };
+
+                  // 2. Discover RGB Materials, Hide Static River Mesh, & Extract Normal Map
+                  const rgbList = [];
+                  let waterNormalMap = null;
+
+                  stage.traverse((c) => {
+                    if (c.isMesh) {
+                      const cName = (c.name || '').toLowerCase();
+                      if (cName.includes('led_screen_aurora')) {
+                        c.material = screenAnime.mat;
+                      } else if (cName.includes('led_screen_wf_r1')) {
+                        c.material = screenAds.mat;
+                      } else if (cName.includes('led_screen_wf_l2')) {
+                        c.material = screenNews.mat;
+                      } else if (cName.includes('water') || cName.includes('river')) {
+                        // Hide static glTF river surface to prevent z-fighting with the dynamic Water reflector
+                        c.visible = false;
+                        const m = Array.isArray(c.material) ? c.material[0] : c.material;
+                        if (m?.normalMap) {
+                          waterNormalMap = m.normalMap;
+                        }
+                      }
+
+                      const mats = Array.isArray(c.material) ? c.material : [c.material];
+                      mats.forEach((m) => {
+                        if (!m) return;
+                        const mName = (m.name || '').toLowerCase();
+                        if (mName.includes('cylinder_neon') ||
+                            mName.includes('diamond_truss') ||
+                            mName.includes('diamond_cyan') ||
+                            mName.includes('lotus_') ||
+                            mName.includes('solar_ring') ||
+                            mName.includes('spiralblue') ||
+                            mName.includes('swfc_portal')) {
+                          if (!rgbList.some((item) => item.mat === m)) {
+                            rgbList.push({ mat: m, name: mName });
+                          }
+                        }
+                      });
+                    }
+                  });
+                  rgbMaterialsRef.current = rgbList;
+
+                  // 3. Create Dynamic Water Reflector Plane for Marine Drive River
+                  if (scenario.id === 'marine_drive_night' && sceneRef.current) {
+                    const waterNormals = waterNormalMap || createProceduralWaterNormalsTexture();
+                    waterNormals.wrapS = THREE.RepeatWrapping;
+                    waterNormals.wrapT = THREE.RepeatWrapping;
+
+                    const waterGeometry = new THREE.PlaneGeometry(320, 1100);
+                    const water = new Water(waterGeometry, {
+                      textureWidth: 1024,
+                      textureHeight: 1024,
+                      waterNormals: waterNormals,
+                      sunDirection: new THREE.Vector3(0.4, 0.8, 0.2).normalize(),
+                      sunColor: 0xffeedd,
+                      waterColor: 0x061528,
+                      distortionScale: 3.5,
+                      fog: sceneRef.current.fog !== undefined
+                    });
+                    water.rotation.x = -Math.PI / 2;
+                    water.position.set(-130, -1.85, 0);
+                    water.receiveShadow = true;
+                    sceneRef.current.add(water);
+                    waterMeshRef.current = water;
+                  }
                 }
 
+                // Apply active toneMapping and exposure
                 if (rendererRef.current) {
-                  rendererRef.current.toneMapping = TONE_MAPPINGS[scenario.toneMapping || 'AgX'] || THREE.AgXToneMapping;
-                  rendererRef.current.toneMappingExposure = scenario.exposure ?? 0.9;
+                  const activeTone = devConfigRef.current?.shaders?.toneMapping || scenario.toneMapping || 'AgX';
+                  rendererRef.current.toneMapping = TONE_MAPPINGS[activeTone] || THREE.AgXToneMapping;
+                  const activeExp = devConfigRef.current?.shaders?.exposure ?? scenario.exposure ?? 0.9;
+                  rendererRef.current.toneMappingExposure = activeExp;
                 }
               }
             },
             undefined,
-            (err) => console.warn('[DateMode] 3D stage model load warning:', err)
+            (err) => {
+              setIsMapLoading(false);
+              console.warn('[DateMode] 3D stage model load warning:', err);
+            }
           );
         }
       }
@@ -2077,51 +2642,56 @@ export default function DateModeApp() {
       }
     } else {
       // Panorama Mode
-      if (customStageMeshRef.current && sceneRef.current) {
-        sceneRef.current.remove(customStageMeshRef.current);
-        disposeHierarchy(customStageMeshRef.current);
-        customStageMeshRef.current = null;
-        loadedStageUrlRef.current = null;
-      }
+      setIsMapLoading(true);
+      unloadCurrentStage();
 
       if (bgMeshRef.current) {
         bgMeshRef.current.visible = true;
         const imgUrl = scenario.assetUrl || scenario.bg;
         if (imgUrl) {
           const textureLoader = new THREE.TextureLoader();
-          textureLoader.load(imgUrl, (newTex) => {
-            if (isCancelled) {
-              newTex.dispose();
-              return;
-            }
-            newTex.colorSpace = THREE.SRGBColorSpace;
-            newTex.minFilter = THREE.LinearFilter;
-            newTex.magFilter = THREE.LinearFilter;
-            newTex.generateMipmaps = false;
-            if (rendererRef.current) {
-              newTex.anisotropy = rendererRef.current.capabilities.getMaxAnisotropy();
-            }
-            newTex.needsUpdate = true;
-            if (bgMeshRef.current?.material) {
-              if (bgMeshRef.current.material.map) {
-                bgMeshRef.current.material.map.dispose();
+          textureLoader.load(
+            imgUrl,
+            (newTex) => {
+              setIsMapLoading(false);
+              if (isCancelled) {
+                newTex.dispose();
+                return;
               }
-              bgMeshRef.current.material.map = newTex;
-              bgMeshRef.current.material.needsUpdate = true;
-            }
-            if (pmremGeneratorRef.current && sceneRef.current) {
-              if (currentEnvTextureRef.current) {
-                currentEnvTextureRef.current.dispose();
+              newTex.colorSpace = THREE.SRGBColorSpace;
+              newTex.minFilter = THREE.LinearFilter;
+              newTex.magFilter = THREE.LinearFilter;
+              newTex.generateMipmaps = false;
+              if (rendererRef.current) {
+                newTex.anisotropy = rendererRef.current.capabilities.getMaxAnisotropy();
               }
-              const panoEnv = pmremGeneratorRef.current.fromEquirectangular(newTex).texture;
-              sceneRef.current.environment = panoEnv;
-              currentEnvTextureRef.current = panoEnv;
-            }
-          });
+              newTex.needsUpdate = true;
+              if (bgMeshRef.current?.material) {
+                if (bgMeshRef.current.material.map) {
+                  bgMeshRef.current.material.map.dispose();
+                }
+                bgMeshRef.current.material.map = newTex;
+                bgMeshRef.current.material.needsUpdate = true;
+              }
+              if (pmremGeneratorRef.current && sceneRef.current) {
+                if (currentEnvTextureRef.current) {
+                  currentEnvTextureRef.current.dispose();
+                }
+                const panoEnv = pmremGeneratorRef.current.fromEquirectangular(newTex).texture;
+                sceneRef.current.environment = panoEnv;
+                currentEnvTextureRef.current = panoEnv;
+              }
+            },
+            undefined,
+            () => setIsMapLoading(false)
+          );
+        } else {
+          setIsMapLoading(false);
         }
+      } else {
+        setIsMapLoading(false);
       }
 
-      // Panoramas keep dining table & props visible
       ['table', 'herGlass', 'yourGlass', 'cake', 'chair', 'candleGLB', 'vaseGLB'].forEach((objKey) => {
         if (sceneObjectsRef.current[objKey]) {
           sceneObjectsRef.current[objKey].visible = true;
@@ -2132,51 +2702,34 @@ export default function DateModeApp() {
       }
     }
 
-    // Dynamic Lighting & Camera Exposure for Scenario
-    const isStage3D = scenario.type === '3d_model';
+    // Dynamic Lighting & Camera Exposure (Preserve active profile values)
+    const currentLights = devConfigRef.current?.lights || {};
     if (ambientLightRef.current) {
-      if (scenario.ambientColor !== undefined) ambientLightRef.current.color.setHex(scenario.ambientColor);
-      ambientLightRef.current.intensity = scenario.ambientIntensity ?? 0.45;
+      const ambColor = currentLights.ambient?.color ?? scenario.ambientColor;
+      if (ambColor !== undefined) ambientLightRef.current.color.setHex(ambColor);
+      ambientLightRef.current.intensity = currentLights.ambient?.intensity ?? scenario.ambientIntensity ?? 0.45;
     }
     if (spotLightRef.current) {
-      if (scenario.spotColor !== undefined) spotLightRef.current.color.setHex(scenario.spotColor);
-      spotLightRef.current.intensity = scenario.spotIntensity ?? 1.0;
+      const spotColor = currentLights.keySpot?.color ?? scenario.spotColor;
+      if (spotColor !== undefined) spotLightRef.current.color.setHex(spotColor);
+      spotLightRef.current.intensity = currentLights.keySpot?.intensity ?? scenario.spotIntensity ?? 1.0;
     }
     if (candleLightRef.current) {
-      if (scenario.candleColor !== undefined) candleLightRef.current.color.setHex(scenario.candleColor);
-      candleLightRef.current.intensity = scenario.candleIntensity ?? 1.5;
+      const candleColor = currentLights.candle?.color ?? scenario.candleColor;
+      if (candleColor !== undefined) candleLightRef.current.color.setHex(candleColor);
+      candleLightRef.current.intensity = currentLights.candle?.intensity ?? scenario.candleIntensity ?? 1.5;
     }
     if (rendererRef.current) {
-      rendererRef.current.toneMapping = TONE_MAPPINGS[scenario.toneMapping || 'AgX'] || THREE.AgXToneMapping;
-      if (scenario.exposure !== undefined) {
-        rendererRef.current.toneMappingExposure = scenario.exposure;
-      }
+      const activeTone = devConfigRef.current?.shaders?.toneMapping || scenario.toneMapping || 'AgX';
+      rendererRef.current.toneMapping = TONE_MAPPINGS[activeTone] || THREE.AgXToneMapping;
+      const activeExp = devConfigRef.current?.shaders?.exposure ?? scenario.exposure ?? 0.9;
+      rendererRef.current.toneMappingExposure = activeExp;
     }
-    if (sceneRef.current && scenario.envIntensity !== undefined) {
-      sceneRef.current.environmentIntensity = scenario.envIntensity;
-    }
-
-    setDevConfig((prev) => ({
-      ...prev,
-      lights: {
-        ...prev.lights,
-        ambient: { ...prev.lights?.ambient, intensity: scenario.ambientIntensity ?? 0.45 },
-        keySpot: { ...prev.lights?.keySpot, intensity: scenario.spotIntensity ?? 1.0 },
-        candle: { ...prev.lights?.candle, intensity: scenario.candleIntensity ?? 1.5 },
-        mapLights: { ...prev.lights?.mapLights, intensity: scenario.mapLightsIntensity ?? 0.05 }
-      },
-      shaders: {
-        ...prev.shaders,
-        toneMapping: scenario.toneMapping || 'AgX',
-        exposure: scenario.exposure ?? 0.9,
-        envIntensity: scenario.envIntensity ?? (isStage3D ? 0.8 : 1.0)
-      }
-    }));
 
     return () => {
       isCancelled = true;
     };
-  }, [activeDest, allScenarios, applyMapPositions, sceneReady]);
+  }, [activeDest, allScenarios, applyConfigToScene, sceneReady]);
 
   // 2. KOKORO AUDIO PIPELINE & 256-FFT SPECTRAL ANALYSER (Strict Parity with useAudioPlayback)
   const setupAudioPipeline = useCallback(() => {
@@ -2267,15 +2820,11 @@ export default function DateModeApp() {
     if (!audioQueueRef.current || audioQueueRef.current.length === 0) {
       isAudioPlayingRef.current = false;
       dateAmbienceEngine.setDucked(false);
-      try {
-        const bc = new BroadcastChannel('yuki_date_mode_channel');
-        bc.postMessage({
-          type: 'yuki_speaking_state',
-          speaking: false,
-          playback_finished: turnFinishedRef.current
-        });
-        bc.close();
-      } catch (_) {}
+      postDateModeMessage({
+        type: 'yuki_speaking_state',
+        speaking: false,
+        playback_finished: turnFinishedRef.current
+      });
       if (turnFinishedRef.current) {
         scheduleProactiveDateCheck();
       }
@@ -2284,11 +2833,7 @@ export default function DateModeApp() {
 
     isAudioPlayingRef.current = true;
     dateAmbienceEngine.setDucked(true);
-    try {
-      const bc = new BroadcastChannel('yuki_date_mode_channel');
-      bc.postMessage({ type: 'yuki_speaking_state', speaking: true });
-      bc.close();
-    } catch (_) {}
+    postDateModeMessage({ type: 'yuki_speaking_state', speaking: true });
 
     const nextItem = audioQueueRef.current.shift();
     currentVisemesRef.current = nextItem.visemes || null;
@@ -2311,15 +2856,11 @@ export default function DateModeApp() {
       isAudioPlayingRef.current = false;
       currentVisemesRef.current = null;
       dateAmbienceEngine.setDucked(false);
-      try {
-        const bc = new BroadcastChannel('yuki_date_mode_channel');
-        bc.postMessage({
-          type: 'yuki_speaking_state',
-          speaking: false,
-          playback_finished: turnFinishedRef.current
-        });
-        bc.close();
-      } catch (_) {}
+      postDateModeMessage({
+        type: 'yuki_speaking_state',
+        speaking: false,
+        playback_finished: turnFinishedRef.current
+      });
       if (turnFinishedRef.current) {
         scheduleProactiveDateCheck();
       }
@@ -2355,7 +2896,7 @@ export default function DateModeApp() {
         playNextAudioRef.current();
       }
     });
-  }, [setupAudioPipeline]);
+  }, [setupAudioPipeline, postDateModeMessage]);
 
   playNextAudioRef.current = playNextAudioInQueue;
 
@@ -2368,17 +2909,13 @@ export default function DateModeApp() {
     currentVisemesRef.current = null;
     isAudioPlayingRef.current = false;
     dateAmbienceEngine.setDucked(false);
-    try {
-      const bc = new BroadcastChannel('yuki_date_mode_channel');
-      bc.postMessage({ type: 'yuki_speaking_state', speaking: false, playback_finished: true });
-      bc.close();
-    } catch (_) {}
+    postDateModeMessage({ type: 'yuki_speaking_state', speaking: false, playback_finished: true });
     if (persistentAudioRef.current) {
       persistentAudioRef.current.pause();
       persistentAudioRef.current.removeAttribute('src');
       persistentAudioRef.current.load();
     }
-  }, []);
+  }, [postDateModeMessage]);
 
   // Connect to backend WebSocket for live chat, Kokoro TTS audio streaming, and viseme analysis
   useEffect(() => {
@@ -2472,11 +3009,7 @@ export default function DateModeApp() {
               turnFinishedRef.current = true;
               lastDialogueTimeRef.current = Date.now();
               if ((!audioQueueRef.current || audioQueueRef.current.length === 0) && !isAudioPlayingRef.current) {
-                try {
-                  const bc = new BroadcastChannel('yuki_date_mode_channel');
-                  bc.postMessage({ type: 'yuki_speaking_state', speaking: false, playback_finished: true });
-                  bc.close();
-                } catch (_) {}
+                postDateModeMessage({ type: 'yuki_speaking_state', speaking: false, playback_finished: true });
                 scheduleProactiveDateCheck();
               }
             } else if (data.type === 'mood_update') {
@@ -2509,6 +3042,16 @@ export default function DateModeApp() {
               setIsThinking(false);
               turnFinishedRef.current = true;
               stopAllDateAudio();
+            } else if (data.type === 'voice_state') {
+              setVoiceState(data);
+              setIsListening(Boolean(data.isListening));
+              if (data.muteVoice !== undefined) {
+                setMuteVoice(Boolean(data.muteVoice));
+              }
+            } else if (data.type === 'listening_state') {
+              const l = Boolean(data.isListening);
+              setIsListening(l);
+              setVoiceState((prev) => ({ ...prev, isListening: l }));
             }
           } catch (err) {
             console.warn('[DateMode] Error parsing WebSocket message:', err);
@@ -2589,27 +3132,28 @@ export default function DateModeApp() {
     currentEnvTextureRef.current = envTexture;
 
     // First-Person Perspective Camera (Eye-level seated position across the dining table)
+    const currentDest = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest] || DEFAULT_SCENARIOS.cute_cafe;
     const camCfg = activeCfg.camera || DEFAULT_DATE_CONFIG.camera;
-    const camera = new THREE.PerspectiveCamera(camCfg.fov ?? 42, width / height, 0.1, 100);
+    const targetFar = camCfg.far || currentDest?.cameraFar || 2000;
+    const camera = new THREE.PerspectiveCamera(camCfg.fov ?? 42, width / height, 0.1, targetFar);
     camera.rotation.order = 'YXZ';
     camera.position.set(camCfg.posX ?? 0, camCfg.posY ?? 2.3, camCfg.posZ ?? 0.45);
     cameraRef.current = camera;
     sceneObjectsRef.current.playerPov = camera;
 
     // Lighting Configuration
-    const currentDest = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest] || DEFAULT_SCENARIOS.cute_cafe;
     const is3DModel = currentDest?.type === '3d_model';
     const showDefaultTable = currentDest?.showDefaultTable !== false;
     const ambCfg = activeCfg.lights?.ambient || DEFAULT_DATE_CONFIG.lights.ambient;
-    const ambColor = currentDest.ambientColor ?? ambCfg.color ?? 0xfff5ea;
-    const ambIntensity = currentDest.ambientIntensity ?? ambCfg.intensity ?? 0.45;
+    const ambColor = ambCfg.color ?? currentDest.ambientColor ?? 0xfff5ea;
+    const ambIntensity = ambCfg.intensity ?? currentDest.ambientIntensity ?? 0.45;
     const ambientLight = new THREE.AmbientLight(ambColor, ambIntensity);
     scene.add(ambientLight);
     ambientLightRef.current = ambientLight;
 
     const spotCfg = activeCfg.lights?.keySpot || DEFAULT_DATE_CONFIG.lights.keySpot;
-    const spotColor = currentDest.spotColor ?? spotCfg.color ?? 0xffeedd;
-    const spotIntensity = currentDest.spotIntensity ?? spotCfg.intensity ?? 1.0;
+    const spotColor = spotCfg.color ?? currentDest.spotColor ?? 0xffeedd;
+    const spotIntensity = spotCfg.intensity ?? currentDest.spotIntensity ?? 1.0;
     const keySpot = new THREE.DirectionalLight(spotColor, spotIntensity);
     keySpot.position.set(spotCfg.posX ?? 0.7, spotCfg.posY ?? -0.3, spotCfg.posZ ?? 1.7);
     keySpot.castShadow = true;
@@ -3005,6 +3549,13 @@ export default function DateModeApp() {
             }
 
             // Cleanly remove and dispose any existing VRM before mounting the new one
+            if (vrmAnimationMixerRef.current) {
+              try {
+                vrmAnimationMixerRef.current.stopAllAction();
+              } catch (_) {}
+              vrmAnimationMixerRef.current = null;
+            }
+            vrmLocomotionActionsRef.current = {};
             if (vrmRef.current?.scene) {
               try {
                 scene.remove(vrmRef.current.scene);
@@ -3068,6 +3619,50 @@ export default function DateModeApp() {
               setExpressionValue(vrm, 'relaxed', 0.30);
             } catch (e) {
               console.warn('[DateMode] Initial expression setup note:', e);
+            }
+
+            // Initialize AnimationMixer for companion locomotion animations
+            try {
+              const mixer = new THREE.AnimationMixer(vrm.scene);
+              vrmAnimationMixerRef.current = mixer;
+              vrmLocomotionActionsRef.current = {};
+              locomotionStateRef.current = 'idle';
+
+              const vrmaLoader = new GLTFLoader();
+              vrmaLoader.register((parser) => {
+                const plugin = new VRMAnimationLoaderPlugin(parser);
+                const origAfterRoot = plugin.afterRoot.bind(plugin);
+                plugin.afterRoot = async (gltfAnim) => {
+                  const ext = parser.json?.extensions?.VRMC_vrm_animation;
+                  if (ext && !ext.specVersion) ext.specVersion = '1.0';
+                  return origAfterRoot(gltfAnim);
+                };
+                return plugin;
+              });
+
+              const loadLocomotionClip = (key, animPath) => {
+                vrmaLoader.load(animPath, (gltfAnim) => {
+                  const vrmAnim = gltfAnim.userData.vrmAnimation || gltfAnim.userData.vrmAnimations?.[0];
+                  if (vrmAnim && vrmRef.current === vrm) {
+                    const clip = createVRMAnimationClip(vrmAnim, vrm);
+                    const action = mixer.clipAction(clip);
+                    action.setLoop(THREE.LoopRepeat);
+                    vrmLocomotionActionsRef.current[key] = action;
+                    if (key === 'idle') {
+                      action.play();
+                      action.setEffectiveWeight(1.0);
+                    }
+                  }
+                }, undefined, (err) => {
+                  console.warn(`[DateMode] Locomotion clip note (${key}):`, err);
+                });
+              };
+
+              loadLocomotionClip('idle', './animations/idle_utsuwa_1.vrma');
+              loadLocomotionClip('walk', './animations/walk.vrma');
+              loadLocomotionClip('run', './animations/run.vrma');
+            } catch (mixerErr) {
+              console.warn('[DateMode] AnimationMixer setup note:', mixerErr);
             }
           } catch (err) {
             console.error('[DateMode] Error processing VRM model:', err);
@@ -3194,6 +3789,20 @@ export default function DateModeApp() {
     };
     window.addEventListener('resize', handleResize);
 
+    // Promenade First-Person Walking & Running Controls (WASD, Arrow Keys & Shift Sprint)
+    const activeKeys = new Set();
+    const handleKeyDown = (e) => {
+      if (['INPUT', 'TEXTAREA'].includes(e.target?.tagName)) return;
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'].includes(e.code)) {
+        activeKeys.add(e.code);
+      }
+    };
+    const handleKeyUp = (e) => {
+      activeKeys.delete(e.code);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
     // Persistent Expression State, Eyebrows & Procedural Wink
     let currentHappy = 0.20;
     let currentRelaxed = 0.30;
@@ -3226,6 +3835,324 @@ export default function DateModeApp() {
       const delta = Math.min(clock.getDelta(), 0.1);
       const elapsedTime = clock.getElapsedTime();
 
+      // Dynamic RGB Keyboard Color Waves on Skyscraper Landmarks
+      if (rgbMaterialsRef.current?.length > 0) {
+        const t = elapsedTime;
+        rgbMaterialsRef.current.forEach(({ mat, name }) => {
+          if (!mat) return;
+          if (name.includes('cylinder_neonpink')) {
+            const hue = (t * 0.25 + 0.9) % 1.0;
+            if (mat.color) mat.color.setHSL(hue, 0.95, 0.55);
+            if (mat.emissive) mat.emissive.setHSL(hue, 0.95, 0.55);
+          } else if (name.includes('cylinder_neoncyan')) {
+            const hue = (t * 0.25 + 0.45) % 1.0;
+            if (mat.color) mat.color.setHSL(hue, 0.95, 0.55);
+            if (mat.emissive) mat.emissive.setHSL(hue, 0.95, 0.55);
+          } else if (name.includes('diamond_truss') || name.includes('diamond_cyan')) {
+            const hue = (0.52 + 0.14 * Math.sin(t * 1.2)) % 1.0;
+            if (mat.color) mat.color.setHSL(hue, 0.9, 0.6);
+            if (mat.emissive) mat.emissive.setHSL(hue, 0.9, 0.6);
+          } else if (name.includes('lotus_')) {
+            const hue = (0.78 + 0.16 * Math.sin(t * 0.8)) % 1.0;
+            if (mat.color) mat.color.setHSL(hue, 0.92, 0.55);
+            if (mat.emissive) mat.emissive.setHSL(hue, 0.92, 0.55);
+          } else if (name.includes('solar_ring')) {
+            const hue = (0.08 + 0.05 * Math.sin(t * 1.5)) % 1.0;
+            if (mat.color) mat.color.setHSL(hue, 1.0, 0.55);
+            if (mat.emissive) mat.emissive.setHSL(hue, 1.0, 0.55);
+          } else if (name.includes('spiralblue')) {
+            const pulse = 0.7 + 0.3 * Math.sin(t * 3.0);
+            if (mat.color) mat.color.setRGB(0.1 * pulse, 0.85 * pulse, 1.0 * pulse);
+            if (mat.emissive) mat.emissive.setRGB(0.1 * pulse, 0.85 * pulse, 1.0 * pulse);
+          }
+        });
+      }
+
+      // 3 Unique Dynamic Waterfront LED Screens (Anime, Commercial Ads, Financial News)
+      if (ledScreenAnimRef.current) {
+        const t = elapsedTime;
+        const { anime, ads, news } = ledScreenAnimRef.current;
+
+        // 1. ANIME / YUKI LIVE CONCERT SCREEN
+        if (anime) {
+          const { ctx, tex, canvas } = anime;
+          const w = canvas.width;
+          const h = canvas.height;
+          const grad = ctx.createLinearGradient(0, 0, 0, h);
+          grad.addColorStop(0, '#1a0033');
+          grad.addColorStop(0.5, '#3b0066');
+          grad.addColorStop(1, '#0d001a');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.fillStyle = '#ff77e9';
+          for (let i = 0; i < 15; i++) {
+            const sx = (i * 37 + Math.sin(t + i) * 20) % w;
+            const sy = (i * 31 + Math.cos(t * 0.8 + i) * 20) % (h - 100);
+            ctx.fillRect(sx, sy, 3, 3);
+          }
+
+          ctx.fillStyle = '#ff0077';
+          ctx.fillRect(0, 0, w, 55);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 26px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('★ PROJECT YUKI LIVE TOUR ★', w / 2, 38);
+
+          const faceY = 160 + Math.sin(t * 4.0) * 8;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(w / 2, faceY, 55, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#ff3399';
+          ctx.beginPath();
+          ctx.moveTo(w / 2 - 40, faceY - 35);
+          ctx.lineTo(w / 2 - 60, faceY - 75);
+          ctx.lineTo(w / 2 - 20, faceY - 50);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(w / 2 + 40, faceY - 35);
+          ctx.lineTo(w / 2 + 60, faceY - 75);
+          ctx.lineTo(w / 2 + 20, faceY - 50);
+          ctx.fill();
+
+          const isBlink = Math.sin(t * 2.5) > 0.92;
+          ctx.fillStyle = '#331133';
+          if (isBlink) {
+            ctx.fillRect(w / 2 - 25, faceY - 5, 14, 3);
+            ctx.fillRect(w / 2 + 11, faceY - 5, 14, 3);
+          } else {
+            ctx.beginPath();
+            ctx.arc(w / 2 - 18, faceY - 5, 7, 0, Math.PI * 2);
+            ctx.arc(w / 2 + 18, faceY - 5, 7, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.fillStyle = 'rgba(255, 100, 150, 0.6)';
+          ctx.beginPath();
+          ctx.arc(w / 2 - 30, faceY + 12, 10, 0, Math.PI * 2);
+          ctx.arc(w / 2 + 30, faceY + 12, 10, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#ff3388';
+          ctx.font = '28px sans-serif';
+          const heartY1 = (h - 120 - ((t * 80) % 200));
+          const heartY2 = (h - 120 - (((t + 1) * 80) % 200));
+          ctx.fillText('♥', w / 2 - 110, heartY1);
+          ctx.fillText('♥', w / 2 + 110, heartY2);
+
+          const numBars = 16;
+          const barW = (w - 60) / numBars;
+          for (let b = 0; b < numBars; b++) {
+            const bh = 30 + Math.abs(Math.sin(t * 6.0 + b * 0.5)) * 90;
+            ctx.fillStyle = `hsl(${(t * 50 + b * 15) % 360}, 100%, 65%)`;
+            ctx.fillRect(30 + b * barW, h - 60 - bh, barW - 4, bh);
+          }
+
+          ctx.fillStyle = '#110022';
+          ctx.fillRect(0, h - 45, w, 45);
+          ctx.fillStyle = '#00ffff';
+          ctx.font = 'bold 20px monospace';
+          ctx.textAlign = 'left';
+          const lyricX = (w - ((t * 120) % (w + 600)));
+          ctx.fillText('♪ KISEKI NO YORU NI • WITH MASTER FOREVER ♪', lyricX, h - 16);
+
+          tex.needsUpdate = true;
+        }
+
+        // 2. COMMERCIAL BRAND ADS SCREEN
+        if (ads) {
+          const { ctx, tex, canvas } = ads;
+          const w = canvas.width;
+          const h = canvas.height;
+          const adCycle = Math.floor(t / 6) % 2;
+
+          if (adCycle === 0) {
+            const bgGrad = ctx.createLinearGradient(0, 0, w, h);
+            bgGrad.addColorStop(0, '#001a33');
+            bgGrad.addColorStop(1, '#000511');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, w, h);
+
+            ctx.strokeStyle = 'rgba(0, 229, 255, 0.4)';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 8; i++) {
+              const ly = 120 + i * 28;
+              const lx = ((t * 250 + i * 80) % (w + 100)) - 50;
+              ctx.beginPath();
+              ctx.moveTo(lx, ly);
+              ctx.lineTo(lx + 80, ly);
+              ctx.stroke();
+            }
+
+            ctx.strokeStyle = '#00e5ff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(w / 2 - 120, 230);
+            ctx.lineTo(w / 2 - 70, 195);
+            ctx.lineTo(w / 2 + 40, 195);
+            ctx.lineTo(w / 2 + 110, 230);
+            ctx.lineTo(w / 2 + 130, 250);
+            ctx.lineTo(w / 2 - 130, 250);
+            ctx.closePath();
+            ctx.stroke();
+
+            ctx.fillStyle = '#ffaa00';
+            ctx.beginPath();
+            ctx.arc(w / 2 - 75, 250, 18, 0, Math.PI * 2);
+            ctx.arc(w / 2 + 75, 250, 18, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('CYBER HORIZON EV', w / 2, 85);
+            ctx.fillStyle = '#00e5ff';
+            ctx.font = 'bold 20px sans-serif';
+            ctx.fillText('THE APEX OF ACCELERATION', w / 2, 120);
+
+            ctx.fillStyle = '#ffaa00';
+            ctx.font = 'bold 22px monospace';
+            ctx.fillText('0-100 KM/H IN 1.9S • RANGE 1,200KM', w / 2, 330);
+          } else {
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+            bgGrad.addColorStop(0, '#1f1500');
+            bgGrad.addColorStop(0.5, '#3d2c00');
+            bgGrad.addColorStop(1, '#0a0700');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, w, h);
+
+            ctx.save();
+            ctx.translate(w / 2, 200);
+            ctx.rotate(t * 0.5);
+            ctx.strokeStyle = '#ffd700';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(0, 0, 75, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.rotate(-t * 1.2);
+            ctx.strokeStyle = '#ff9900';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, 50, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 34px serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('CHRONO QUANTUM', w / 2, 75);
+            ctx.fillStyle = '#ffd700';
+            ctx.font = 'italic 18px serif';
+            ctx.fillText('GENEVA • SHANGHAI • TOKYO', w / 2, 105);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 20px sans-serif';
+            ctx.fillText('TIME IS THE ULTIMATE LUXURY', w / 2, 320);
+          }
+
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          ctx.fillRect(0, h - 40, w, 40);
+          ctx.fillStyle = '#aaaaaa';
+          ctx.font = '14px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('RESERVE YOUR ALLOCATION AT PUDONG FLAGSHIP', w / 2, h - 15);
+
+          tex.needsUpdate = true;
+        }
+
+        // 3. METROPOLIS FINANCIAL & WEATHER NEWS CHANNEL
+        if (news) {
+          const { ctx, tex, canvas } = news;
+          const w = canvas.width;
+          const h = canvas.height;
+
+          ctx.fillStyle = '#051025';
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.fillStyle = '#cc0022';
+          ctx.fillRect(0, 0, w, 55);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 26px sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText('● LIVE  METROPOLIS NEWS 24', 15, 38);
+
+          const d = new Date();
+          const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+          ctx.textAlign = 'right';
+          ctx.font = 'bold 22px monospace';
+          ctx.fillText(timeStr, w - 15, 38);
+
+          ctx.save();
+          ctx.translate(110, 160);
+          ctx.strokeStyle = '#005588';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, 0, 60, 0, Math.PI * 2);
+          ctx.arc(0, 0, 40, 0, Math.PI * 2);
+          ctx.arc(0, 0, 20, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.rotate(t * 2.0);
+          const radarGrad = ctx.createLinearGradient(0, 0, 60, 0);
+          radarGrad.addColorStop(0, 'rgba(0, 255, 128, 0.6)');
+          radarGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = radarGrad;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, 60, 0, 0.6);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+
+          ctx.textAlign = 'left';
+          ctx.fillStyle = '#00ffff';
+          ctx.font = 'bold 22px sans-serif';
+          ctx.fillText('SHANGHAI 24°C', 190, 135);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '16px sans-serif';
+          ctx.fillText('Humidity: 62%  Wind: 4 m/s', 190, 162);
+          ctx.fillStyle = '#00ff88';
+          ctx.fillText('Air Quality: 18 (EXCELLENT)', 190, 188);
+
+          ctx.fillStyle = '#0a1a36';
+          ctx.fillRect(15, 230, w - 30, 120);
+
+          ctx.font = 'bold 18px monospace';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText('SHCOMP', 25, 260);
+          ctx.fillStyle = '#00ff66';
+          ctx.fillText('3,482.10 ▲ +1.4%', 130, 260);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText('HANGSENG', 25, 292);
+          ctx.fillStyle = '#00ff66';
+          ctx.fillText('18,920.30 ▲ +1.8%', 130, 292);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText('NASDAQ', 25, 324);
+          ctx.fillStyle = '#00ff66';
+          ctx.fillText('19,240.50 ▲ +0.9%', 130, 324);
+
+          ctx.fillStyle = '#ffd700';
+          ctx.fillRect(0, h - 50, w, 50);
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 20px sans-serif';
+          const newsText = 'BREAKING: HUANGPU RIVER MIDNIGHT LIGHT FESTIVAL WELCOMES RECORD FLEET • AI COMPANION PROMENADE UNVEILED • ';
+          const newsX = (w - ((t * 130) % (w + 800)));
+          ctx.fillText(newsText + newsText, newsX, h - 18);
+
+          tex.needsUpdate = true;
+        }
+      }
+
+      // Flowing river water wave ripples animation
+      if (waterMatRef.current?.normalMap) {
+        waterMatRef.current.normalMap.offset.x = (elapsedTime * 0.015) % 1.0;
+        waterMatRef.current.normalMap.offset.y = (elapsedTime * 0.008) % 1.0;
+      }
+
       // Smooth interpolation for head rotation (Euler YXZ)
       camYawRef.current += (targetYawRef.current - camYawRef.current) * 0.08;
       camPitchRef.current += (targetPitchRef.current - camPitchRef.current) * 0.08;
@@ -3238,6 +4165,245 @@ export default function DateModeApp() {
       const finalPitch = THREE.MathUtils.clamp(camPitchRef.current + subtleGazePitch, -0.75, 0.75);
 
       camera.rotation.set(finalPitch, finalYaw, 0, 'YXZ');
+
+      // ========================================================================
+      // FIRST-PERSON NAVIGATION, AUTONOMOUS FOLLOW AI & GROUND RAYCAST GRAVITY
+      // ========================================================================
+      const currentDestId = activeDestRef.current || activeDest;
+      const isPromenade = currentDestId === 'marine_drive_night';
+
+      // Downward Surface Raycasting Gravity Engine
+      const downRaycaster = new THREE.Raycaster();
+      const downDir = new THREE.Vector3(0, -1, 0);
+
+      const getGroundHeight = (x, z, currentY = 0) => {
+        const colliders = [];
+        if (customStageMeshRef.current) colliders.push(customStageMeshRef.current);
+        if (floorMeshRef.current) colliders.push(floorMeshRef.current);
+        if (colliders.length === 0) return 0.0;
+
+        const rayOrigin = new THREE.Vector3(x, currentY + 2.5, z);
+        downRaycaster.set(rayOrigin, downDir);
+        downRaycaster.far = 10.0;
+
+        try {
+          const hits = downRaycaster.intersectObjects(colliders, true);
+          for (let i = 0; i < hits.length; i++) {
+            const hit = hits[i];
+            if (hit.face && hit.face.normal) {
+              const worldNorm = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+              if (worldNorm.y > 0.35) {
+                return hit.point.y;
+              }
+            } else {
+              return hit.point.y;
+            }
+          }
+        } catch (_) {}
+        return 0.0;
+      };
+
+      // Helper for shortest-path angular rotation interpolation
+      const lerpAngle = (from, to, t) => {
+        let diff = (to - from) % (Math.PI * 2);
+        if (diff < -Math.PI) diff += Math.PI * 2;
+        if (diff > Math.PI) diff -= Math.PI * 2;
+        return from + diff * Math.min(1.0, Math.max(0.0, t));
+      };
+
+      // Helper for cross-fading VRMA locomotion clips
+      const transitionLocomotion = (newState, speedRatio = 1.0) => {
+        const actions = vrmLocomotionActionsRef.current;
+        if (!actions) return;
+        const curState = locomotionStateRef.current;
+        const nextAction = actions[newState];
+        if (!nextAction) return;
+
+        if (curState !== newState) {
+          const prevAction = actions[curState];
+          if (prevAction && prevAction !== nextAction) {
+            nextAction.reset();
+            nextAction.enabled = true;
+            nextAction.setEffectiveTimeScale(speedRatio);
+            nextAction.setEffectiveWeight(1.0);
+            prevAction.crossFadeTo(nextAction, 0.25, true);
+            nextAction.play();
+          } else {
+            nextAction.reset();
+            nextAction.enabled = true;
+            nextAction.setEffectiveTimeScale(speedRatio);
+            nextAction.setEffectiveWeight(1.0);
+            nextAction.play();
+          }
+          locomotionStateRef.current = newState;
+        } else {
+          nextAction.setEffectiveTimeScale(speedRatio);
+        }
+      };
+
+      if (isPromenade) {
+        // 1. Player First-Person Movement with Shift Sprint
+        let moveForward = 0;
+        let moveSide = 0;
+        if (activeKeys.has('KeyW') || activeKeys.has('ArrowUp')) moveForward += 1;
+        if (activeKeys.has('KeyS') || activeKeys.has('ArrowDown')) moveForward -= 1;
+        if (activeKeys.has('KeyD') || activeKeys.has('ArrowRight')) moveSide += 1;
+        if (activeKeys.has('KeyA') || activeKeys.has('ArrowLeft')) moveSide -= 1;
+
+        const isMoving = moveForward !== 0 || moveSide !== 0;
+        const isPlayerRunning = isMoving && (activeKeys.has('ShiftLeft') || activeKeys.has('ShiftRight'));
+
+        if (isMoving) {
+          const playerSpeed = (isPlayerRunning ? 5.0 : 2.0) * delta;
+          const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), finalYaw);
+          const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), finalYaw);
+
+          const moveVec = new THREE.Vector3()
+            .addScaledVector(forward, moveForward)
+            .addScaledVector(right, moveSide)
+            .normalize()
+            .multiplyScalar(playerSpeed);
+
+          camera.position.x = THREE.MathUtils.clamp(camera.position.x + moveVec.x, 0.8, 6.8);
+          camera.position.z = THREE.MathUtils.clamp(camera.position.z + moveVec.z, -52.0, 52.0);
+        }
+
+        // Dynamic organic head bob
+        const strollFreq = isPlayerRunning ? 13.5 : 8.0;
+        const strollAmp = isPlayerRunning ? 0.032 : 0.015;
+        const headBob = isMoving ? Math.sin(elapsedTime * strollFreq) * strollAmp : 0;
+
+        // Ground Raycast Gravity for Player Camera
+        const playerGroundY = getGroundHeight(camera.position.x, camera.position.z, camera.position.y - 1.68);
+        const targetCamY = playerGroundY + 1.68 + headBob;
+        camera.position.y += (targetCamY - camera.position.y) * 0.18;
+
+        // 2. Autonomous Companion Follow AI & Locomotion State Machine for Yuki
+        if (vrmRef.current?.scene) {
+          const vrm = vrmRef.current;
+          const isVRM1 = !!vrm.isVRM1;
+
+          // Companion Target Position (1.3m to player's side / slightly behind)
+          const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), finalYaw);
+          const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), finalYaw);
+
+          let targetX = camera.position.x + right.x * 1.3 - forward.x * 0.4;
+          let targetZ = camera.position.z + right.z * 1.3 - forward.z * 0.4;
+          targetX = THREE.MathUtils.clamp(targetX, 0.9, 6.6);
+          targetZ = THREE.MathUtils.clamp(targetZ, -51.5, 51.5);
+
+          const dx = targetX - vrm.scene.position.x;
+          const dz = targetZ - vrm.scene.position.z;
+          const distToTarget = Math.hypot(dx, dz);
+
+          let targetLocomotion = 'idle';
+          let yukiSpeed = 0.0;
+          let speedRatio = 1.0;
+
+          if (distToTarget > 0.45) {
+            const dirX = dx / distToTarget;
+            const dirZ = dz / distToTarget;
+
+            if (distToTarget >= 5.5) {
+              if (isExhaustedRef.current) {
+                targetLocomotion = 'slow_walk';
+                yukiSpeed = 1.6;
+                speedRatio = 0.95;
+              } else {
+                targetLocomotion = 'run';
+                yukiSpeed = 4.8;
+                speedRatio = 1.0;
+              }
+            } else if (distToTarget >= 2.6) {
+              targetLocomotion = 'fast_walk';
+              yukiSpeed = 3.0;
+              speedRatio = 1.45;
+            } else {
+              targetLocomotion = 'slow_walk';
+              yukiSpeed = 1.8;
+              speedRatio = 1.0;
+            }
+
+            // Move Yuki towards target
+            vrm.scene.position.x += dirX * yukiSpeed * delta;
+            vrm.scene.position.z += dirZ * yukiSpeed * delta;
+            vrm.scene.position.x = THREE.MathUtils.clamp(vrm.scene.position.x, 0.8, 6.7);
+            vrm.scene.position.z = THREE.MathUtils.clamp(vrm.scene.position.z, -52.0, 52.0);
+
+            // Turn to face movement direction
+            const moveAngle = Math.atan2(dirX, dirZ);
+            const targetRot = isVRM1 ? moveAngle + Math.PI : moveAngle;
+            vrm.scene.rotation.y = lerpAngle(vrm.scene.rotation.y, targetRot, delta * 7.5);
+          } else {
+            // Arrived at companion destination -> Idle and face player
+            targetLocomotion = 'idle';
+            yukiSpeed = 0.0;
+            speedRatio = 1.0;
+
+            const toPlayerAngle = Math.atan2(camera.position.x - vrm.scene.position.x, camera.position.z - vrm.scene.position.z);
+            const targetRot = isVRM1 ? toPlayerAngle + Math.PI : toPlayerAngle;
+            vrm.scene.rotation.y = lerpAngle(vrm.scene.rotation.y, targetRot, delta * 4.0);
+          }
+
+          // Ground Raycast Gravity for Yuki
+          const yukiGroundY = getGroundHeight(vrm.scene.position.x, vrm.scene.position.z, vrm.scene.position.y);
+          vrm.scene.position.y += (yukiGroundY - vrm.scene.position.y) * 0.22;
+
+          // Cross-fade animation clip according to locomotion state
+          transitionLocomotion(targetLocomotion, speedRatio);
+          vrmAnimationMixerRef.current?.update(delta);
+
+          // 3. Stamina Quota & Fatigue Panting Engine
+          if (targetLocomotion === 'run') {
+            yukiStaminaRef.current = Math.max(0, yukiStaminaRef.current - delta * 12.0);
+          } else if (targetLocomotion === 'fast_walk') {
+            yukiStaminaRef.current = Math.max(0, yukiStaminaRef.current - delta * 2.5);
+          } else if (targetLocomotion === 'slow_walk') {
+            yukiStaminaRef.current = Math.min(100, yukiStaminaRef.current + delta * 3.5);
+          } else {
+            yukiStaminaRef.current = Math.min(100, yukiStaminaRef.current + delta * 9.0);
+          }
+
+          const stam = yukiStaminaRef.current;
+          if (stam < 20) {
+            if (!isExhaustedRef.current) {
+              isExhaustedRef.current = true;
+              setIsExhaustedUI(true);
+              const now = Date.now();
+              if (now - lastDialogueFatigueTimeRef.current > 22000) {
+                lastDialogueFatigueTimeRef.current = now;
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'assistant',
+                    content: "*pants heavily* Haa... haa... Wait for me, Master! You run too fast... I'm out of breath!",
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  }
+                ]);
+              }
+            }
+          } else if (stam > 50) {
+            if (isExhaustedRef.current) {
+              isExhaustedRef.current = false;
+              setIsExhaustedUI(false);
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: 'assistant',
+                  content: "*takes a deep breath and smiles* Phew... okay! I caught my breath. Let's keep going!",
+                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }
+              ]);
+            }
+          }
+
+          // Throttle UI update to avoid React render thrashing
+          if (elapsedTime - lastStaminaUiUpdateRef.current > 0.22) {
+            lastStaminaUiUpdateRef.current = elapsedTime;
+            setYukiStaminaUI(Math.round(stam));
+          }
+        }
+      }
 
       // Flickering romantic candle light
       if (candleLightRef.current) {
@@ -3272,6 +4438,11 @@ export default function DateModeApp() {
           if (minHand) minHand.rotation.y = -(m / 60) * Math.PI * 2;
           if (hourHand) hourHand.rotation.y = -(h / 12) * Math.PI * 2;
         }
+      }
+
+      // Real-time river water wave ripple animation
+      if (waterMeshRef.current?.material?.uniforms?.['time']) {
+        waterMeshRef.current.material.uniforms['time'].value += delta * 0.35;
       }
 
       // Procedural Wink Animation State Machine
@@ -3531,39 +4702,41 @@ export default function DateModeApp() {
         const lPose = activePose?.leftArm || DEFAULT_DATE_CONFIG.avatarPose.leftArm;
         const rPose = activePose?.rightArm || DEFAULT_DATE_CONFIG.avatarPose.rightArm;
 
-        // Apply seated dining posture on humanoid bones every frame (VRM 0 & VRM 1 coordinate parity)
-        const leftUpperLeg = getBoneNode(vrm, 'leftUpperLeg');
-        const rightUpperLeg = getBoneNode(vrm, 'rightUpperLeg');
-        const leftLowerLeg = getBoneNode(vrm, 'leftLowerLeg');
-        const rightLowerLeg = getBoneNode(vrm, 'rightLowerLeg');
+        // Apply seated dining posture on humanoid bones only when NOT in promenade stroll
+        if (!isPromenade) {
+          const leftUpperLeg = getBoneNode(vrm, 'leftUpperLeg');
+          const rightUpperLeg = getBoneNode(vrm, 'rightUpperLeg');
+          const leftLowerLeg = getBoneNode(vrm, 'leftLowerLeg');
+          const rightLowerLeg = getBoneNode(vrm, 'rightLowerLeg');
 
-        if (leftUpperLeg) leftUpperLeg.rotation.set((lLegPose.upperPitch ?? 1.45) * xMult, lLegPose.upperYaw ?? 0.04, (lLegPose.upperRoll ?? -0.05) * zMult);
-        if (rightUpperLeg) rightUpperLeg.rotation.set((rLegPose.upperPitch ?? 1.45) * xMult, rLegPose.upperYaw ?? -0.04, (rLegPose.upperRoll ?? 0.05) * zMult);
-        if (leftLowerLeg) leftLowerLeg.rotation.set((lLegPose.lowerFlex ?? -1.48) * xMult, lLegPose.lowerTwist ?? 0, 0);
-        if (rightLowerLeg) rightLowerLeg.rotation.set((rLegPose.lowerFlex ?? -1.48) * xMult, rLegPose.lowerTwist ?? 0, 0);
+          if (leftUpperLeg) leftUpperLeg.rotation.set((lLegPose.upperPitch ?? 1.45) * xMult, lLegPose.upperYaw ?? 0.04, (lLegPose.upperRoll ?? -0.05) * zMult);
+          if (rightUpperLeg) rightUpperLeg.rotation.set((rLegPose.upperPitch ?? 1.45) * xMult, rLegPose.upperYaw ?? -0.04, (rLegPose.upperRoll ?? 0.05) * zMult);
+          if (leftLowerLeg) leftLowerLeg.rotation.set((lLegPose.lowerFlex ?? -1.48) * xMult, lLegPose.lowerTwist ?? 0, 0);
+          if (rightLowerLeg) rightLowerLeg.rotation.set((rLegPose.lowerFlex ?? -1.48) * xMult, rLegPose.lowerTwist ?? 0, 0);
 
-        const leftFoot = getBoneNode(vrm, 'leftFoot');
-        const rightFoot = getBoneNode(vrm, 'rightFoot');
-        if (leftFoot) leftFoot.rotation.set((lLegPose.footPitch ?? 0.12) * xMult, lLegPose.footYaw ?? 0, (lLegPose.footRoll ?? 0) * zMult);
-        if (rightFoot) rightFoot.rotation.set((rLegPose.footPitch ?? 0.12) * xMult, rLegPose.footYaw ?? 0, (rLegPose.footRoll ?? 0) * zMult);
+          const leftFoot = getBoneNode(vrm, 'leftFoot');
+          const rightFoot = getBoneNode(vrm, 'rightFoot');
+          if (leftFoot) leftFoot.rotation.set((lLegPose.footPitch ?? 0.12) * xMult, lLegPose.footYaw ?? 0, (lLegPose.footRoll ?? 0) * zMult);
+          if (rightFoot) rightFoot.rotation.set((rLegPose.footPitch ?? 0.12) * xMult, rLegPose.footYaw ?? 0, (rLegPose.footRoll ?? 0) * zMult);
 
-        // Hips & Pelvis Position Offset and Rotation
-        const hips = getBoneNode(vrm, 'hips');
-        if (hips) {
-          if (!hips.userData.initialPosition) {
-            hips.userData.initialPosition = hips.position.clone();
+          // Hips & Pelvis Position Offset and Rotation
+          const hips = getBoneNode(vrm, 'hips');
+          if (hips) {
+            if (!hips.userData.initialPosition) {
+              hips.userData.initialPosition = hips.position.clone();
+            }
+            const initPos = hips.userData.initialPosition;
+            hips.position.set(
+              initPos.x + (hipsPose.posX ?? 0),
+              initPos.y + (hipsPose.posY ?? 0),
+              initPos.z + (hipsPose.posZ ?? 0)
+            );
+            hips.rotation.set(
+              (hipsPose.rotPitch ?? 0) * xMult,
+              (hipsPose.rotYaw ?? 0),
+              (hipsPose.rotRoll ?? 0) * zMult
+            );
           }
-          const initPos = hips.userData.initialPosition;
-          hips.position.set(
-            initPos.x + (hipsPose.posX ?? 0),
-            initPos.y + (hipsPose.posY ?? 0),
-            initPos.z + (hipsPose.posZ ?? 0)
-          );
-          hips.rotation.set(
-            (hipsPose.rotPitch ?? 0) * xMult,
-            (hipsPose.rotYaw ?? 0),
-            (hipsPose.rotRoll ?? 0) * zMult
-          );
         }
 
         // Seated Procedural Gestures Evaluation
@@ -3623,61 +4796,73 @@ export default function DateModeApp() {
           }
         }
 
-        // Upper body natural breathing & seated gestures
-        const spine = getBoneNode(vrm, 'spine');
-        const chest = getBoneNode(vrm, 'chest');
-        const neck = getBoneNode(vrm, 'neck');
-        const head = getBoneNode(vrm, 'head');
-
-        if (spine) {
-          spine.rotation.set(
-            ((torsoPose.spinePitch ?? -0.04) + Math.sin(elapsedTime * 1.8) * 0.012 + gestureSpinePitch) * xMult,
-            (torsoPose.spineYaw ?? 0),
-            ((torsoPose.spineRoll ?? 0) + Math.sin(elapsedTime * 0.9) * 0.005) * zMult
-          );
-        }
-        if (chest) {
-          chest.rotation.set(
-            ((torsoPose.chestPitch ?? -0.02) + Math.sin(elapsedTime * 1.8) * 0.008 + gestureChestPitch) * xMult,
-            (torsoPose.chestYaw ?? 0),
-            (torsoPose.chestRoll ?? 0) * zMult
-          );
-        }
-        if (neck) {
-          neck.rotation.set(
-            ((headPose.neckPitch ?? 0) + gestureNeckPitch) * xMult,
-            (headPose.neckYaw ?? 0) + gestureNeckYaw,
-            ((headPose.neckRoll ?? 0) + gestureNeckRoll) * zMult
-          );
-        }
-        if (head) {
-          head.rotation.set(
-            ((headPose.headPitch ?? 0) + gestureHeadPitch) * xMult,
-            (headPose.headYaw ?? 0) + gestureHeadYaw,
-            ((headPose.headRoll ?? 0) + gestureHeadRoll) * zMult
-          );
-        }
-
-        // Arms & Hands: Seated dining pose fine-tuning / raising for cheers
-        const leftUpperArm = getBoneNode(vrm, 'leftUpperArm');
-        const leftLowerArm = getBoneNode(vrm, 'leftLowerArm');
-        const leftHand = getBoneNode(vrm, 'leftHand');
-        const rightUpperArm = getBoneNode(vrm, 'rightUpperArm');
-        const rightLowerArm = getBoneNode(vrm, 'rightLowerArm');
-        const rightHand = getBoneNode(vrm, 'rightHand');
-
-        if (leftUpperArm) leftUpperArm.rotation.set((lPose.upperPitch ?? 0.70) * xMult, lPose.upperYaw ?? 0.15, (lPose.upperRoll ?? 0.90) * zMult);
-        if (leftLowerArm) leftLowerArm.rotation.set((lPose.lowerFlex ?? 0.95) * xMult, lPose.lowerTwist ?? -0.15, (lPose.lowerAngle ?? 0.35) * zMult);
-        if (leftHand) leftHand.rotation.set((lPose.handPitch ?? 0.0) * xMult, lPose.handYaw ?? 0.0, (lPose.handRoll ?? 0.0) * zMult);
-
-        if (isToastingRef.current) {
-          if (rightUpperArm) rightUpperArm.rotation.set(0.95 * xMult, -0.30, -0.45 * zMult);
-          if (rightLowerArm) rightLowerArm.rotation.set(0.85 * xMult, 0.20, 0.25 * zMult);
-          if (rightHand) rightHand.rotation.set(-0.10 * xMult, 0.10, 0.05 * zMult);
+        if (isPromenade) {
+          // In promenade stroll, AnimationMixer drives spine, chest, arms, and legs.
+          // Add heavy panting heave to chest & spine when exhausted
+          if (isExhaustedRef.current) {
+            const chest = getBoneNode(vrm, 'chest');
+            const spine = getBoneNode(vrm, 'spine');
+            const pantHeave = Math.sin(elapsedTime * 13.5) * 0.04;
+            if (chest) chest.rotation.x += pantHeave * xMult;
+            if (spine) spine.rotation.x += (pantHeave * 0.6) * xMult;
+          }
         } else {
-          if (rightUpperArm) rightUpperArm.rotation.set((rPose.upperPitch ?? 0.70) * xMult, rPose.upperYaw ?? -0.15, (rPose.upperRoll ?? -0.90) * zMult);
-          if (rightLowerArm) rightLowerArm.rotation.set((rPose.lowerFlex ?? 0.95) * xMult, rPose.lowerTwist ?? 0.15, (rPose.lowerAngle ?? -0.35) * zMult);
-          if (rightHand) rightHand.rotation.set((rPose.handPitch ?? 0.0) * xMult, rPose.handYaw ?? 0.0, (rPose.handRoll ?? 0.0) * zMult);
+          // Upper body natural breathing & seated gestures
+          const spine = getBoneNode(vrm, 'spine');
+          const chest = getBoneNode(vrm, 'chest');
+          const neck = getBoneNode(vrm, 'neck');
+          const head = getBoneNode(vrm, 'head');
+
+          if (spine) {
+            spine.rotation.set(
+              ((torsoPose.spinePitch ?? -0.04) + Math.sin(elapsedTime * 1.8) * 0.012 + gestureSpinePitch) * xMult,
+              (torsoPose.spineYaw ?? 0),
+              ((torsoPose.spineRoll ?? 0) + Math.sin(elapsedTime * 0.9) * 0.005) * zMult
+            );
+          }
+          if (chest) {
+            chest.rotation.set(
+              ((torsoPose.chestPitch ?? -0.02) + Math.sin(elapsedTime * 1.8) * 0.008 + gestureChestPitch) * xMult,
+              (torsoPose.chestYaw ?? 0),
+              (torsoPose.chestRoll ?? 0) * zMult
+            );
+          }
+          if (neck) {
+            neck.rotation.set(
+              ((headPose.neckPitch ?? 0) + gestureNeckPitch) * xMult,
+              (headPose.neckYaw ?? 0) + gestureNeckYaw,
+              ((headPose.neckRoll ?? 0) + gestureNeckRoll) * zMult
+            );
+          }
+          if (head) {
+            head.rotation.set(
+              ((headPose.headPitch ?? 0) + gestureHeadPitch) * xMult,
+              (headPose.headYaw ?? 0) + gestureHeadYaw,
+              ((headPose.headRoll ?? 0) + gestureHeadRoll) * zMult
+            );
+          }
+
+          // Arms & Hands: Seated dining pose fine-tuning / raising for cheers
+          const leftUpperArm = getBoneNode(vrm, 'leftUpperArm');
+          const leftLowerArm = getBoneNode(vrm, 'leftLowerArm');
+          const leftHand = getBoneNode(vrm, 'leftHand');
+          const rightUpperArm = getBoneNode(vrm, 'rightUpperArm');
+          const rightLowerArm = getBoneNode(vrm, 'rightLowerArm');
+          const rightHand = getBoneNode(vrm, 'rightHand');
+
+          if (leftUpperArm) leftUpperArm.rotation.set((lPose.upperPitch ?? 0.70) * xMult, lPose.upperYaw ?? 0.15, (lPose.upperRoll ?? 0.90) * zMult);
+          if (leftLowerArm) leftLowerArm.rotation.set((lPose.lowerFlex ?? 0.95) * xMult, lPose.lowerTwist ?? -0.15, (lPose.lowerAngle ?? 0.35) * zMult);
+          if (leftHand) leftHand.rotation.set((lPose.handPitch ?? 0.0) * xMult, lPose.handYaw ?? 0.0, (lPose.handRoll ?? 0.0) * zMult);
+
+          if (isToastingRef.current) {
+            if (rightUpperArm) rightUpperArm.rotation.set(0.95 * xMult, -0.30, -0.45 * zMult);
+            if (rightLowerArm) rightLowerArm.rotation.set(0.85 * xMult, 0.20, 0.25 * zMult);
+            if (rightHand) rightHand.rotation.set(-0.10 * xMult, 0.10, 0.05 * zMult);
+          } else {
+            if (rightUpperArm) rightUpperArm.rotation.set((rPose.upperPitch ?? 0.70) * xMult, rPose.upperYaw ?? -0.15, (rPose.upperRoll ?? -0.90) * zMult);
+            if (rightLowerArm) rightLowerArm.rotation.set((rPose.lowerFlex ?? 0.95) * xMult, rPose.lowerTwist ?? 0.15, (rPose.lowerAngle ?? -0.35) * zMult);
+            if (rightHand) rightHand.rotation.set((rPose.handPitch ?? 0.0) * xMult, rPose.handYaw ?? 0.0, (rPose.handRoll ?? 0.0) * zMult);
+          }
         }
 
         // Natural eye contact tracking with player camera
@@ -3713,6 +4898,14 @@ export default function DateModeApp() {
             setExpressionValue(vrm, 'ou', THREE.MathUtils.clamp(vLevels.ou || 0, 0, 0.56));
             setExpressionValue(vrm, 'ee', THREE.MathUtils.clamp(vLevels.ee || 0, 0, 0.36));
             setExpressionValue(vrm, 'oh', THREE.MathUtils.clamp(vLevels.oh || 0, 0, 0.70));
+          } else if (isPromenade && isExhaustedRef.current) {
+            // Rhythmic panting mouth opening
+            const pantOpen = 0.22 + Math.sin(elapsedTime * 13.5) * 0.16;
+            setExpressionValue(vrm, 'aa', pantOpen);
+            setExpressionValue(vrm, 'ih', 0);
+            setExpressionValue(vrm, 'ou', 0);
+            setExpressionValue(vrm, 'ee', 0);
+            setExpressionValue(vrm, 'oh', pantOpen * 0.35);
           } else {
             setExpressionValue(vrm, 'aa', 0);
             setExpressionValue(vrm, 'ih', 0);
@@ -3773,6 +4966,8 @@ export default function DateModeApp() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
 
       if (boxHelperRef.current) {
@@ -4002,6 +5197,8 @@ export default function DateModeApp() {
         if (prop === 'posX') cameraRef.current.position.x = numVal;
         else if (prop === 'posY') cameraRef.current.position.y = numVal;
         else if (prop === 'posZ') cameraRef.current.position.z = numVal;
+        else if (prop === 'fov') cameraRef.current.fov = numVal;
+        else if (prop === 'far') cameraRef.current.far = numVal;
         else if (prop === 'rotY') {
           const rad = (numVal * Math.PI) / 180;
           targetYawRef.current = rad;
@@ -4175,12 +5372,8 @@ export default function DateModeApp() {
   // LISTENING MODE & IMMERSION (HIDE UI) CONTROLS
   // --------------------------------------------------------------------------
   const handleToggleVoiceInput = useCallback(() => {
-    try {
-      const bc = new BroadcastChannel('yuki_date_mode_channel');
-      bc.postMessage({ type: 'toggle_voice_input' });
-      bc.close();
-    } catch (_) {}
-  }, []);
+    postDateModeMessage({ type: 'toggle_voice_input' });
+  }, [postDateModeMessage]);
 
   const handleToggleListening = handleToggleVoiceInput;
 
@@ -4190,20 +5383,18 @@ export default function DateModeApp() {
       try {
         localStorage.setItem('yuki-mute-voice', String(next));
       } catch (_) {}
-      try {
-        const bc = new BroadcastChannel('yuki_date_mode_channel');
-        bc.postMessage({ type: 'toggle_mute_voice', muteVoice: next });
-        bc.close();
-      } catch (_) {}
+      postDateModeMessage({ type: 'toggle_mute_voice', muteVoice: next });
       return next;
     });
-  }, []);
+  }, [postDateModeMessage]);
 
   // Listen for voice_state, listening_state, and mute_voice_state updates from App.jsx and request initial state
   useEffect(() => {
-    let dateChannel = null;
     try {
-      dateChannel = new BroadcastChannel('yuki_date_mode_channel');
+      if (!dateModeChannelRef.current) {
+        dateModeChannelRef.current = new BroadcastChannel('yuki_date_mode_channel');
+      }
+      const dateChannel = dateModeChannelRef.current;
       dateChannel.onmessage = (evt) => {
         if (!evt.data) return;
         if (evt.data.type === 'voice_state') {
@@ -4220,14 +5411,19 @@ export default function DateModeApp() {
           setMuteVoice(Boolean(evt.data.muteVoice));
         }
       };
-      dateChannel.postMessage({ type: 'request_voice_state' });
-      dateChannel.postMessage({ type: 'request_listening_state' });
+      postDateModeMessage({ type: 'request_voice_state' });
+      postDateModeMessage({ type: 'request_listening_state' });
     } catch (_) {}
 
     return () => {
-      try { dateChannel?.close(); } catch (_) {}
+      try {
+        if (dateModeChannelRef.current) {
+          dateModeChannelRef.current.close();
+          dateModeChannelRef.current = null;
+        }
+      } catch (_) {}
     };
-  }, []);
+  }, [postDateModeMessage]);
 
   // Hotkey listener: 'H' toggles hide/show UI, 'Escape' restores UI
   useEffect(() => {
@@ -4850,91 +6046,6 @@ export default function DateModeApp() {
       }
       return updated;
     });
-  };
-
-  // Unified 3D scene updater across renderer, camera, lights, meshes, and poses
-  const applyConfigToScene = (cfg) => {
-    setDevConfig(cfg);
-    devConfigRef.current = cfg;
-
-    if (rendererRef.current && cfg.shaders) {
-      if (cfg.shaders.toneMapping) {
-        rendererRef.current.toneMapping = TONE_MAPPINGS[cfg.shaders.toneMapping] || THREE.ACESFilmicToneMapping;
-      }
-      if (cfg.shaders.exposure !== undefined) {
-        rendererRef.current.toneMappingExposure = cfg.shaders.exposure;
-      }
-    }
-
-    if (cameraRef.current && cfg.camera) {
-      if (cfg.camera.fov !== undefined) cameraRef.current.fov = cfg.camera.fov;
-      if (cfg.camera.posX !== undefined && cfg.camera.posY !== undefined && cfg.camera.posZ !== undefined) {
-        cameraRef.current.position.set(cfg.camera.posX, cfg.camera.posY, cfg.camera.posZ);
-      }
-      cameraRef.current.updateProjectionMatrix?.();
-    }
-
-    if (cfg.lights) {
-      if (ambientLightRef.current && cfg.lights.ambient) {
-        if (cfg.lights.ambient.color) ambientLightRef.current.color.set(cfg.lights.ambient.color);
-        if (cfg.lights.ambient.intensity !== undefined) ambientLightRef.current.intensity = cfg.lights.ambient.intensity;
-      }
-      if (spotLightRef.current && cfg.lights.keySpot) {
-        if (cfg.lights.keySpot.color) spotLightRef.current.color.set(cfg.lights.keySpot.color);
-        if (cfg.lights.keySpot.intensity !== undefined) spotLightRef.current.intensity = cfg.lights.keySpot.intensity;
-        if (cfg.lights.keySpot.posX !== undefined) {
-          spotLightRef.current.position.set(cfg.lights.keySpot.posX, cfg.lights.keySpot.posY, cfg.lights.keySpot.posZ);
-        }
-      }
-      if (candleLightRef.current && cfg.lights.candle) {
-        if (cfg.lights.candle.color) candleLightRef.current.color.set(cfg.lights.candle.color);
-        if (cfg.lights.candle.intensity !== undefined) candleLightRef.current.intensity = cfg.lights.candle.intensity;
-        if (cfg.lights.candle.posX !== undefined) {
-          candleLightRef.current.position.set(cfg.lights.candle.posX, cfg.lights.candle.posY, cfg.lights.candle.posZ);
-        }
-      }
-    }
-
-    if (cfg.objects) {
-      for (const [key, objDef] of Object.entries(cfg.objects)) {
-        if (key === 'playerPov') continue;
-        const obj = sceneObjectsRef.current[key];
-        if (obj) {
-          if (objDef.posX !== undefined) obj.position.set(objDef.posX, objDef.posY, objDef.posZ);
-          if (objDef.rotY !== undefined) {
-            if (key === 'yuki' && vrmRef.current?.isVRM1) {
-              obj.rotation.y = ((objDef.rotY - 180) * Math.PI / 180);
-            } else {
-              obj.rotation.y = objDef.rotY * (Math.PI / 180);
-            }
-          }
-          const sx = objDef.scaleX ?? objDef.scale ?? 1.0;
-          const sy = objDef.scaleY ?? objDef.scale ?? 1.0;
-          const sz = objDef.scaleZ ?? objDef.scale ?? 1.0;
-          obj.scale.set(sx, sy, sz);
-          obj.updateMatrix?.();
-        }
-      }
-    }
-
-    if (boxHelperRef.current) {
-      boxHelperRef.current.update();
-    }
-  };
-
-  const handleSelectProfile = (profileId) => {
-    setActiveProfileId(profileId);
-    try {
-      localStorage.setItem('yuki_date_active_profile_id', profileId);
-    } catch (_) {}
-
-    let targetCfg;
-    if (profileId === 'default' || !savedProfiles[profileId]?.config) {
-      targetCfg = JSON.parse(JSON.stringify(DEFAULT_DATE_CONFIG));
-    } else {
-      targetCfg = mergeConfig(DEFAULT_DATE_CONFIG, savedProfiles[profileId].config);
-    }
-    applyConfigToScene(targetCfg);
   };
 
   const handleSaveCurrentAsProfile = (name) => {
@@ -6280,6 +7391,35 @@ export default function DateModeApp() {
         </div>
       </header>
 
+      {/* Dynamic Map Loading Spinner */}
+      {isMapLoading && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '12px 24px',
+            backgroundColor: 'rgba(9, 13, 22, 0.90)',
+            border: '1px solid rgba(139, 92, 246, 0.5)',
+            borderRadius: '16px',
+            boxShadow: '0 16px 48px rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'blur(16px)',
+            zIndex: 350,
+            color: '#f4f4f5',
+            fontSize: '13px',
+            fontWeight: 500,
+            pointerEvents: 'none'
+          }}
+        >
+          <Loader2 className="animate-spin" style={{ width: '18px', height: '18px', color: '#c084fc' }} />
+          <span>Loading destination...</span>
+        </div>
+      )}
+
       {/* -------------------------------------------------------------------- */}
       {/* DEV MODE FLOATING INSPECTOR PANEL */}
       {/* -------------------------------------------------------------------- */}
@@ -6537,22 +7677,27 @@ export default function DateModeApp() {
             )}
           </div>
 
-          {/* Active Map Positions Bar */}
+          {/* Active Map Configuration Bar */}
           <div style={{ padding: '8px 12px', background: 'rgba(124, 58, 237, 0.12)', borderBottom: '1px solid rgba(139, 92, 246, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
               <MapPin style={{ width: '13px', height: '13px', color: '#c084fc', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '9px', color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>Map Default Positions</div>
+                <div style={{ fontSize: '9px', color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>Map Default Configuration</div>
                 <div style={{ fontSize: '11px', fontWeight: 600, color: '#f4f4f5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {allScenarios[activeDest]?.title || 'Active Map'}
+                  {mapDefaultProfiles[activeDest] && savedProfiles[mapDefaultProfiles[activeDest]] && (
+                    <span style={{ marginLeft: '5px', fontSize: '10px', color: '#c4b5fd', fontWeight: 400 }}>
+                      ({savedProfiles[mapDefaultProfiles[activeDest]].name})
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
               <button
-                onClick={handleSaveCurrentPositionsAsMapDefault}
-                title="Save current 3D transforms as default for this map"
+                onClick={handleSaveCurrentAsMapDefault}
+                title="Save current preset/profile, lighting, exposure, and 3D layout as default for this map"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -6574,7 +7719,7 @@ export default function DateModeApp() {
 
               <button
                 onClick={handleResetToMapDefaults}
-                title="Restore this map's default positions"
+                title="Restore this map's default profile, lighting, and positions"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -9450,9 +10595,41 @@ export default function DateModeApp() {
               <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em', color: '#a78bfa', textTransform: 'uppercase', fontFamily: 'monospace' }}>Yuki</span>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#34d399' }} />
             </div>
-            {isThinking && (
-              <span style={{ fontSize: '12px', color: '#71717a', fontFamily: 'monospace', fontStyle: 'italic' }}>Yuki is thinking...</span>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {isPromenade && (
+                <div
+                  title={isExhaustedUI ? "Yuki is exhausted and out of breath!" : `Yuki's Stamina: ${yukiStaminaUI}%`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '3px 9px',
+                    borderRadius: '9999px',
+                    background: isExhaustedUI ? 'rgba(239, 68, 68, 0.15)' : 'rgba(24, 24, 27, 0.7)',
+                    border: isExhaustedUI ? '1px solid rgba(239, 68, 68, 0.45)' : '1px solid rgba(63, 63, 70, 0.5)',
+                    transition: 'all 0.25s ease'
+                  }}
+                >
+                  <Activity style={{ width: '12px', height: '12px', color: isExhaustedUI ? '#ef4444' : yukiStaminaUI < 40 ? '#f59e0b' : '#06b6d4' }} />
+                  <span style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.04em', fontFamily: 'monospace', color: isExhaustedUI ? '#fca5a5' : yukiStaminaUI < 40 ? '#fde68a' : '#a5f3fc' }}>
+                    {isExhaustedUI ? 'PANTING' : `${yukiStaminaUI}%`}
+                  </span>
+                  <div style={{ width: '38px', height: '4px', borderRadius: '2px', background: 'rgba(255, 255, 255, 0.12)', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${Math.max(0, Math.min(100, yukiStaminaUI))}%`,
+                        height: '100%',
+                        background: isExhaustedUI ? '#ef4444' : yukiStaminaUI < 40 ? '#f59e0b' : 'linear-gradient(90deg, #06b6d4, #10b981)',
+                        transition: 'width 0.2s ease, background 0.3s ease'
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+              {isThinking && (
+                <span style={{ fontSize: '12px', color: '#71717a', fontFamily: 'monospace', fontStyle: 'italic' }}>Yuki is thinking...</span>
+              )}
+            </div>
           </div>
 
           {/* Dialogue Text Box */}

@@ -349,3 +349,25 @@ When creating or modifying 3D environments, rooms, or props for Project Yuki (e.
 - Avoid multi-megabyte sample models (e.g. heavy sample models like `SheenChair.glb` ~4.1MB) for basic furniture.
 - Prefer lightweight custom low-poly `.glb` models (<100KB) or procedural Three.js geometry (`THREE.Group` with PBR materials). Procedural geometry incurs **zero bandwidth, zero download delay, and zero file bloat**.
 
+---
+
+## Internet & Downloaded Assets Licensing & Attribution Protocol
+
+Whenever importing or downloading assets from the internet (3D models, textures, audio/sound effects, fonts, icons, code libraries, or datasets):
+
+### 1. License Verification Before Ingestion
+- **Check License Type**: Explicitly inspect the source license before saving or bundling any external asset (e.g. CC0, CC-BY, CC-BY-SA, MIT, Apache 2.0, Royalty-Free, or proprietary/editorial restrictions).
+- **Prohibited / Restrictive Licenses**: Never import assets with non-commercial (NC) or share-alike (SA) restrictions into core redistributable bundles unless explicitly approved by the user. Editorial-use-only assets must not be used in production builds.
+
+### 2. Attribution & Credit Requirements (CC-BY, etc.)
+- If an asset requires attribution (e.g., Creative Commons Attribution / CC-BY):
+  - Record the **Asset Name / Title**, **Author / Creator**, **Source URL**, and **Exact License with Link** (e.g., `CC-BY 4.0`).
+  - Note whether modifications were made to the original asset.
+  - Maintain credits in the appropriate project notices/credits file (e.g., `THIRD_PARTY_LICENSES.md`, `ATTRIBUTION.md`, or asset-adjacent `README.txt` / metadata JSON).
+
+### 3. Clean Packaging & Distribution
+- When committing or packaging downloaded assets into `frontend/public/` or `backend/app/`:
+  - Retain original license notices, copyright headers, or vendor credit files provided with the asset.
+  - Keep models and textures optimized (prefer compressed glTF/GLB and web-ready formats) without stripping mandatory licensing metadata.
+
+

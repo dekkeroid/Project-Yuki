@@ -2624,7 +2624,8 @@ class AgentExecutor:
                     user_message = content
                     break
 
-        filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic)
+        is_date_mode = bool(overrides.get("is_date_mode") or overrides.get("context_mode") == "date_mode" or getattr(config, "IS_DATE_MODE", False))
+        filtered_tools = await self.mcp_tools.get_tool_definitions(user_message, use_dynamic, is_date_mode=is_date_mode)
 
         # Note: jarvis_get_image stays available for native vision models so the agent can
         # re-inspect previously attached images on demand by path in later turns.
@@ -2652,6 +2653,24 @@ class AgentExecutor:
                 if _name and _name in coding_allowed and _name not in _present:
                     filtered_tools.append(_def)
                     _present.add(_name)
+        elif is_date_mode:
+            from app.tools.selector import (
+                DATE_MODE_ALLOWED_JARVIS, DATE_MODE_ALLOWED_BASIC,
+                DATE_MODE_ALWAYS_INCLUDED_JARVIS, DATE_MODE_ALWAYS_INCLUDED_BASIC
+            )
+            date_allowed = DATE_MODE_ALLOWED_JARVIS if effective_tool_mode == "advanced" else DATE_MODE_ALLOWED_BASIC
+            always_date = DATE_MODE_ALWAYS_INCLUDED_JARVIS if effective_tool_mode == "advanced" else DATE_MODE_ALWAYS_INCLUDED_BASIC
+            filtered_tools = [t for t in filtered_tools if t.get("function", {}).get("name") in date_allowed]
+            _present = {t["function"]["name"] for t in filtered_tools}
+            for _def in _grep_tool_candidates(self.mcp_tools):
+                _name = _def.get("function", {}).get("name")
+                if _name and _name in always_date and _name not in _present:
+                    filtered_tools.append(_def)
+                    _present.add(_name)
+            if len(filtered_tools) > 8:
+                always_set = [t for t in filtered_tools if t["function"]["name"] in always_date]
+                other_set = [t for t in filtered_tools if t["function"]["name"] not in always_date]
+                filtered_tools = (always_set + other_set)[:8]
         elif effective_tool_mode == "basic":
             basic_allowed = {
                 "web_search", "read_file_content", "search_files", "list_directory",
