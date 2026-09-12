@@ -1511,6 +1511,7 @@ export default function DateModeApp() {
   useEffect(() => {
     activeDestRef.current = activeDest;
   }, [activeDest]);
+  const isPromenade = activeDest === 'marine_drive_night';
   const [candleLit, setCandleLit] = useState(true);
   const [bgmMuted, setBgmMuted] = useState(false);
 
