@@ -1445,9 +1445,21 @@ function createWindow() {
     };
   });
 
+  ipcMain.on('set-active-vrm-model', (event, modelName) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('yuki:active-model-changed', modelName);
+    }
+    if (dateModeWindow && !dateModeWindow.isDestroyed()) {
+      dateModeWindow.webContents.send('yuki:active-model-changed', modelName);
+    }
+  });
+
   ipcMain.on('set-skintone-color', (event, color) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('yuki-skintone-changed', color);
+    }
+    if (dateModeWindow && !dateModeWindow.isDestroyed()) {
+      dateModeWindow.webContents.send('yuki-skintone-changed', color);
     }
   });
 

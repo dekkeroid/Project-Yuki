@@ -1568,7 +1568,7 @@ const AvatarViewer = React.forwardRef(({
 
     // 8. Animation Loop variables
     let blinkTimer = 0;
-    let nextBlinkTime = 2 + Math.random() * 3;
+    let nextBlinkTime = 4 + Math.random() * 3;
     let isBlinking = false;
     let blinkProgress = 0;
 
@@ -2221,14 +2221,17 @@ const AvatarViewer = React.forwardRef(({
 
         // Check for inactivity to trigger procedural idle animations
         const isActive = (audioLevelRef.current > 0.015) || isThinkingRef.current || isListeningRef.current || isWalkingRef.current || isDragging || (dragStateProgress > 0);
+        const isCurrentlyAsleep = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping');
 
         if (startGreetingRef.current) {
           startGreetingRef.current = false;
-          idleAnimState = 'greeting_wave';
-          idleAnimDuration = 3.5;
-          idleAnimProgress = 0;
-          inactivityTimer = 0;
-          onAnimationTriggeredRef.current?.('greeting_wave', 'user_interaction', 'Startup greeting wave on avatar connect');
+          if (!isCurrentlyAsleep) {
+            idleAnimState = 'greeting_wave';
+            idleAnimDuration = 3.5;
+            idleAnimProgress = 0;
+            inactivityTimer = 0;
+            onAnimationTriggeredRef.current?.('greeting_wave', 'user_interaction', 'Startup greeting wave on avatar connect');
+          }
         }
 
         if (startCustomAnimationRef.current) {
@@ -2239,7 +2242,6 @@ const AvatarViewer = React.forwardRef(({
           startCustomAnimationRef.current = null;
 
           if (!disabledAnimationsRef.current.includes(customName)) {
-            const isCurrentlyAsleep = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping');
             // Guard: If sleeping/napping, do not interrupt sleep with arbitrary gestures (like peer, wave, grooving, etc.)
             // Only allow explicit wake-up gestures (like 'yawning' or 'waking')
             if (isCurrentlyAsleep && customName !== 'yawning' && customName !== 'waking') {
@@ -2270,7 +2272,16 @@ const AvatarViewer = React.forwardRef(({
           }
         }
 
-        if (isActive) {
+        if (isCurrentlyAsleep) {
+          inactivityTimer = 0;
+          if (idleAnimState !== 'none') {
+            if (isVrmaActiveRef.current) {
+              triggerVrmaExitBlend(vrmRef.current);
+            }
+            idleAnimState = 'none';
+            idleAnimProgress = 0;
+          }
+        } else if (isActive) {
           inactivityTimer = 0;
           if (idleAnimState !== 'none') {
             // If greeting_wave or any custom animation is running, don't interrupt it unless user is dragging
@@ -2397,7 +2408,7 @@ const AvatarViewer = React.forwardRef(({
         let microFidgetNeckY = 0;
         let microFidgetNeckZ = 0;
 
-        if (!isWalkingRef.current && idleAnimState === 'none') {
+        if (!isWalkingRef.current && idleAnimState === 'none' && !isCurrentlyAsleep) {
           microFidgetTimer += delta;
           if (!microFidgetActive && microFidgetTimer >= nextMicroFidgetTime) {
             microFidgetActive = true;
@@ -2488,7 +2499,6 @@ const AvatarViewer = React.forwardRef(({
             extraMouthAa = (0.22 + Math.sin(time * 20.0) * 0.12) * easeVal;
             neckOffsetX = 0.08 * easeVal;
           } else if (idleAnimState === 'napping') {
-            const isCurrentlyAsleep = (sleepStateRef.current === 'sleeping' || sleepStateRef.current === 'napping');
             if (isCurrentlyAsleep) {
               // During continuous companion nap, stay in peaceful resting pose without bounce
               neckOffsetX = -0.22 * easeVal;
@@ -3753,12 +3763,12 @@ const AvatarViewer = React.forwardRef(({
           const currentExpr = expressionRef.current;
           let blinkValue = 0;
 
-          // Modulate blink speed based on cognitive and emotional states
-          let blinkSpeed = 12.0; // base speed
+          // Modulate blink speed based on cognitive and emotional states (smooth natural duration ~220-300ms)
+          let blinkSpeed = 8.5; // base speed (was 12.0 - eliminated jittery rapid eyelid snap)
           if (isThinkingRef.current) {
-            blinkSpeed = 8.5;  // slower, more thoughtful blink
+            blinkSpeed = 6.5;  // slower, thoughtful blink
           } else if (currentExpr === 'happy') {
-            blinkSpeed = 14.5; // faster, fluttery blink
+            blinkSpeed = 9.5;  // gentle, warm flutter (was 14.5)
           }
 
           if (isBlinking && currentExpr !== 'wink') {
@@ -3780,24 +3790,24 @@ const AvatarViewer = React.forwardRef(({
                 nextSaccadeTime = 0.2 + Math.random() * 0.25; // delay next standard saccade
               }
 
-              // Introduce organic double-blink patterns
-              if (!pendingDoubleBlink && Math.random() < 0.18) {
+              // Introduce organic double-blink patterns (subtle, occasional 8% chance)
+              if (!pendingDoubleBlink && Math.random() < 0.08) {
                 pendingDoubleBlink = true;
-                doubleBlinkDelay = 0.08 + Math.random() * 0.1; // 80-180ms delay between blinks
+                doubleBlinkDelay = 0.12 + Math.random() * 0.12; // 120-240ms delay between blinks
               } else {
                 pendingDoubleBlink = false;
 
-                // Modulate next blink delay based on cognitive and emotional states
-                let baseMinTime = 2.0;
-                let baseRange = 4.5;
+                // Modulate next blink delay based on cognitive and emotional states (+2.0s extra gap)
+                let baseMinTime = 4.0; // 4.0s minimum gap (was 2.0s)
+                let baseRange = 4.5;   // 4.0s to 8.5s interval
                 if (isThinkingRef.current) {
-                  baseMinTime = 4.5; // concentrate/stare more
+                  baseMinTime = 6.5; // concentrate/stare more (was 4.5s)
                   baseRange = 6.0;
                 } else if (currentExpr === 'happy') {
-                  baseMinTime = 1.5; // blink slightly more frequently
-                  baseRange = 3.0;
+                  baseMinTime = 3.5; // relaxed conversation (was 1.5s)
+                  baseRange = 3.5;
                 } else if (currentExpr === 'surprised') {
-                  baseMinTime = 5.0; // wide-eyed surprise stares longer
+                  baseMinTime = 7.0; // wide-eyed surprise stares longer (was 5.0s)
                   baseRange = 5.0;
                 }
                 nextBlinkTime = baseMinTime + Math.random() * baseRange;

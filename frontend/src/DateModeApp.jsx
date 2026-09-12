@@ -673,6 +673,270 @@ export const setExpressionValue = (vrm, name, value) => {
   } catch (_) { }
 };
 
+// Sanitizes expressions on newly loaded VRM models so that 'relaxed' / 'happy' maintains open eyes,
+// and indexes all eye-closing morph targets to completely prevent double-blinking over closed eyes.
+export const sanitizeExpressions = (vrm) => {
+  if (!vrm) return;
+  const manager = vrm.expressionManager || vrm.blendShapeProxy;
+  if (!manager) return;
+
+  const blinkMorphIndices = new Set();
+  const allEyeClosingIndices = new Set();
+  const blinkPrimitives = new Set();
+
+  const getExpr = (name) => {
+    if (typeof manager.getExpression === 'function') return manager.getExpression(name);
+    if (manager.expressionMap) return manager.expressionMap[name];
+    if (typeof manager.getBlendShapeGroup === 'function') return manager.getBlendShapeGroup(name);
+    return null;
+  };
+
+  // 1. Identify all blink morph targets across blink expressions
+  ['blink', 'blinkLeft', 'blinkRight', 'blink_l', 'blink_r', 'Blink', 'BLINK'].forEach((name) => {
+    const expr = getExpr(name);
+    if (expr && expr._binds) {
+      expr._binds.forEach((bind) => {
+        if (bind.index !== undefined) {
+          blinkMorphIndices.add(bind.index);
+          allEyeClosingIndices.add(bind.index);
+          if (bind.primitives && Array.isArray(bind.primitives)) {
+            bind.primitives.forEach((p) => blinkPrimitives.add(p));
+          }
+        }
+      });
+    } else if (expr && expr.binds) {
+      expr.binds.forEach((bind) => {
+        if (bind.index !== undefined) {
+          blinkMorphIndices.add(bind.index);
+          allEyeClosingIndices.add(bind.index);
+        }
+      });
+    }
+  });
+
+  // 2. Discover ALL eye-closing / squinting morph targets across all meshes in the scene
+  vrm.scene.traverse((obj) => {
+    if (obj.isMesh && obj.morphTargetDictionary) {
+      blinkPrimitives.add(obj);
+      for (const [name, idx] of Object.entries(obj.morphTargetDictionary)) {
+        const lower = name.toLowerCase();
+        if (
+          /eye.*(close|shut|blink|relax|joy|fun|squint|sorrow)/i.test(lower) ||
+          /(close|shut|blink).*eye/i.test(lower) ||
+          lower.includes('fcl_all_fun') ||
+          lower.includes('fcl_all_joy') ||
+          lower.includes('fcl_all_sorrow')
+        ) {
+          allEyeClosingIndices.add(idx);
+        }
+      }
+    }
+  });
+
+  const getMorphName = (mesh, index) => {
+    if (!mesh || !mesh.morphTargetDictionary) return '';
+    for (const [name, idx] of Object.entries(mesh.morphTargetDictionary)) {
+      if (idx === index) return name;
+    }
+    return '';
+  };
+
+  const isEyeClosingMorphName = (name, index) => {
+    if (blinkMorphIndices.has(index)) return true;
+    const lower = (name || '').toLowerCase();
+    return (
+      /eye.*(close|shut|blink|relax|joy|fun|squint|sorrow)/i.test(lower) ||
+      /(close|shut|blink).*eye/i.test(lower) ||
+      lower.includes('fcl_eye_close') ||
+      lower.includes('eye_close') ||
+      lower.includes('eye_blink') ||
+      lower.includes('eye_relax') ||
+      lower.includes('eye_fun') ||
+      lower.includes('eye_joy')
+    );
+  };
+
+  // Helper to decompose compound ALL morphs (e.g. Fcl_ALL_Fun -> Fcl_MTH_Fun + Fcl_BRW_Fun)
+  const decomposeCompoundBind = (bind) => {
+    if (!bind || !bind.primitives || bind.primitives.length === 0) return null;
+    const mesh = bind.primitives[0];
+    const morphName = getMorphName(mesh, bind.index);
+    const lower = morphName.toLowerCase();
+
+    // Check if this is an all-in-one morph target like Fcl_ALL_Fun or Fcl_ALL_Joy
+    if (lower.startsWith('fcl_all_') || lower.includes('_all_') || lower.startsWith('all_')) {
+      const suffix = morphName.replace(/^.*all_/i, ''); // e.g. "Fun", "Joy"
+      const dict = mesh.morphTargetDictionary || {};
+      const newBinds = [];
+
+      // Find matching MOUTH morph (e.g. Fcl_MTH_Fun, Fcl_MTH_Joy, Fcl_MTH_Smile)
+      const mouthName = Object.keys(dict).find((k) =>
+        new RegExp(`^(fcl_)?mth_${suffix}$`, 'i').test(k) ||
+        new RegExp(`^mouth_${suffix}$`, 'i').test(k) ||
+        new RegExp(`^mth_${suffix}$`, 'i').test(k)
+      );
+      if (mouthName && dict[mouthName] !== undefined) {
+        const mthIndex = dict[mouthName];
+        const bindCtor = bind.constructor || Object;
+        const newBind = new bindCtor({
+          primitives: bind.primitives,
+          index: mthIndex,
+          weight: bind.weight
+        });
+        newBinds.push(newBind);
+      }
+
+      // Find matching BROW morph (e.g. Fcl_BRW_Fun, Fcl_BRW_Joy)
+      const browName = Object.keys(dict).find((k) =>
+        new RegExp(`^(fcl_)?brw_${suffix}$`, 'i').test(k) ||
+        new RegExp(`^brow_${suffix}$`, 'i').test(k) ||
+        new RegExp(`^brw_${suffix}$`, 'i').test(k)
+      );
+      if (browName && dict[browName] !== undefined) {
+        const brwIndex = dict[browName];
+        const bindCtor = bind.constructor || Object;
+        const newBind = new bindCtor({
+          primitives: bind.primitives,
+          index: brwIndex,
+          weight: bind.weight
+        });
+        newBinds.push(newBind);
+      }
+
+      if (newBinds.length > 0) {
+        console.log(`[DateMode] Decomposed compound morph '${morphName}' into [${mouthName || ''}, ${browName || ''}] with eyes open.`);
+        return newBinds;
+      }
+    }
+    return null;
+  };
+
+  // 3. Sanitize 'relaxed' (and aliases) and 'happy' so eyes stay open
+  ['relaxed', 'Relaxed', 'relax', 'RELAXED', 'happy', 'Joy', 'joy'].forEach((exprName) => {
+    const expr = getExpr(exprName);
+    if (expr) {
+      const bindsList = expr._binds || expr.binds;
+      if (bindsList && bindsList.length > 0) {
+        let updatedBinds = [];
+        let changed = false;
+
+        for (const bind of bindsList) {
+          const mesh = bind.primitives ? bind.primitives[0] : null;
+          const morphName = getMorphName(mesh, bind.index);
+
+          // Check if compound ALL_ morph
+          const decomp = decomposeCompoundBind(bind);
+          if (decomp) {
+            updatedBinds.push(...decomp);
+            changed = true;
+            continue;
+          }
+
+          // Check if individual eye closing morph
+          if (isEyeClosingMorphName(morphName, bind.index)) {
+            console.log(`[DateMode] Removed eye-closing bind '${morphName}' (index ${bind.index}) from '${exprName}'.`);
+            changed = true;
+            continue;
+          }
+
+          // Keep other binds (e.g. mouth, brow, materials)
+          updatedBinds.push(bind);
+        }
+
+        if (changed) {
+          // Fallback: If no mouth morph remained, look for any mouth smile in mesh
+          const hasMouth = updatedBinds.some((b) => {
+            const m = b.primitives ? b.primitives[0] : null;
+            return /mth|mouth|lip/i.test(getMorphName(m, b.index));
+          });
+
+          if (!hasMouth && bindsList[0] && bindsList[0].primitives && bindsList[0].primitives[0]) {
+            const mesh = bindsList[0].primitives[0];
+            const dict = mesh.morphTargetDictionary || {};
+            const smileKey = Object.keys(dict).find((k) =>
+              /^(fcl_)?mth_(smile|fun|joy|neutral)$/i.test(k) ||
+              /^mouth_(smile|fun|joy)$/i.test(k) ||
+              /smile/i.test(k)
+            );
+            if (smileKey && dict[smileKey] !== undefined) {
+              const bindCtor = bindsList[0].constructor || Object;
+              const smileBind = new bindCtor({
+                primitives: bindsList[0].primitives,
+                index: dict[smileKey],
+                weight: 1.0
+              });
+              updatedBinds.push(smileBind);
+              console.log(`[DateMode] Added fallback mouth smile '${smileKey}' to '${exprName}'.`);
+            }
+          }
+
+          if (expr._binds) expr._binds = updatedBinds;
+          else if (expr.binds) expr.binds = updatedBinds;
+        }
+      }
+    }
+  });
+
+  // 4. Cache for per-frame blink checks
+  vrm._blinkMorphIndices = blinkMorphIndices;
+  vrm._allEyeClosingIndices = allEyeClosingIndices;
+  vrm._blinkPrimitives = Array.from(blinkPrimitives);
+};
+
+// Applies customizable user skin tone to VRM meshes and MToon materials
+export const applySkinTone = (vrm, colorHex) => {
+  if (!vrm || !vrm.scene) return;
+
+  const tintColor = new THREE.Color(colorHex || '#ffffff');
+  const luminance = tintColor.r * 0.299 + tintColor.g * 0.587 + tintColor.b * 0.114;
+
+  vrm.scene.traverse((child) => {
+    if (child.isMesh && child.material) {
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((mat) => {
+        if (!mat || !mat.name) return;
+
+        const nameLower = mat.name.toLowerCase();
+        const isSkin = nameLower.includes('skin') ||
+          nameLower.includes('hand') ||
+          nameLower.includes('wrist') ||
+          nameLower.includes('finger') ||
+          nameLower.includes('nail') ||
+          (nameLower.includes('arm') && !nameLower.includes('band') && !nameLower.includes('guard') && !nameLower.includes('armor') && !nameLower.includes('warm')) ||
+          (nameLower.includes('face') && !nameLower.includes('eye') && !nameLower.includes('brow') && !nameLower.includes('line') && !nameLower.includes('extra') && !nameLower.includes('white') && !nameLower.includes('iris') && !nameLower.includes('mouth') && !nameLower.includes('tooth') && !nameLower.includes('teeth') && !nameLower.includes('tongue')) ||
+          (nameLower.includes('body') && !nameLower.includes('cloth') && !nameLower.includes('hair') && !nameLower.includes('acc') && !nameLower.includes('pant') && !nameLower.includes('shirt') && !nameLower.includes('dress') && !nameLower.includes('shoe') && !nameLower.includes('socks'));
+
+        if (isSkin) {
+          if (mat.color && typeof mat.color.copy === 'function') {
+            if (!mat.userData.origColor) {
+              mat.userData.origColor = mat.color.clone();
+            }
+            mat.color.copy(mat.userData.origColor).multiply(tintColor);
+          }
+
+          const shadeColorObj = mat.shadeColorFactor || mat.shadeColor;
+          if (shadeColorObj && typeof shadeColorObj.copy === 'function') {
+            if (!mat.userData.origShadeColor) {
+              mat.userData.origShadeColor = shadeColorObj.clone();
+            }
+            shadeColorObj.copy(mat.userData.origShadeColor).multiply(tintColor);
+          }
+
+          const rimColorObj = mat.rimColorFactor || mat.rimColor;
+          if (rimColorObj && typeof rimColorObj.copy === 'function') {
+            if (!mat.userData.origRimColor) {
+              mat.userData.origRimColor = rimColorObj.clone();
+            }
+            rimColorObj.copy(mat.userData.origRimColor).multiplyScalar(luminance);
+          }
+
+          mat.needsUpdate = true;
+        }
+      });
+    }
+  });
+};
+
 // Recreates the exact 5-stop anime sky gradient from Blender's Mat_CuteSkyBlue Color Ramp
 // (glTF 2.0 specification cannot export Blender's procedural node trees)
 export function createCuteSkyGradientTexture() {
@@ -1694,6 +1958,11 @@ export default function DateModeApp() {
   const activeModelNameRef = useRef(null);
   const vrmLoadSeqRef = useRef(0);
   const loadingModelUrlRef = useRef(null);
+  const fingerBonesRef = useRef({ left: {}, right: {} });
+  const skinToneRef = useRef(localStorage.getItem('yuki-avatar-skintone-color') || '#FFE5E5');
+  const [skinToneColor, setSkinToneColor] = useState(() => {
+    try { return localStorage.getItem('yuki-avatar-skintone-color') || '#FFE5E5'; } catch { return '#FFE5E5'; }
+  });
 
   // Three.js internal references
   const sceneRef = useRef(null);
@@ -2026,23 +2295,69 @@ export default function DateModeApp() {
     };
   }, []);
 
-  // Live VRM Model Swapping BroadcastChannel Listener
+  // Live VRM Model Swapping & Skin Tone Multi-Tier Synchronization
   useEffect(() => {
+    const triggerModelSwap = (newModel) => {
+      if (!newModel) return;
+      if (newModel !== activeModelNameRef.current || (!vrmRef.current && !loadingModelUrlRef.current)) {
+        console.log(`[DateMode] 🔄 Dynamic model swap requested: '${activeModelNameRef.current}' -> '${newModel}'`);
+        const modelUrl = `${API_BASE}/api/models/vrm/files/${encodeURIComponent(newModel)}?t=${Date.now()}`;
+        loadVrmModelRef.current?.(modelUrl, newModel);
+      }
+    };
+
+    const triggerSkinToneUpdate = (color) => {
+      if (!color) return;
+      skinToneRef.current = color;
+      setSkinToneColor(color);
+      try { localStorage.setItem('yuki-avatar-skintone-color', color); } catch (_) {}
+      if (vrmRef.current) {
+        applySkinTone(vrmRef.current, color);
+      }
+    };
+
     let modelChannel = null;
+    let skinChannel = null;
     try {
       modelChannel = new BroadcastChannel('yuki_model_channel');
       modelChannel.onmessage = (evt) => {
         if (evt.data?.type === 'model_changed' && evt.data.model) {
-          const newModel = evt.data.model;
-          if (newModel !== activeModelNameRef.current || (!vrmRef.current && !loadingModelUrlRef.current)) {
-            const modelUrl = `${API_BASE}/api/models/vrm/files/${encodeURIComponent(newModel)}?t=${Date.now()}`;
-            loadVrmModelRef.current?.(modelUrl, newModel);
-          }
+          triggerModelSwap(evt.data.model);
         }
       };
     } catch (_) {}
+
+    try {
+      skinChannel = new BroadcastChannel('yuki_skintone_channel');
+      skinChannel.onmessage = (evt) => {
+        if (evt.data?.type === 'skintone_changed' && evt.data.color) {
+          triggerSkinToneUpdate(evt.data.color);
+        }
+      };
+    } catch (_) {}
+
+    const handleStorage = (e) => {
+      if (e.key === 'yuki-active-model' && e.newValue) {
+        triggerModelSwap(e.newValue);
+      } else if (e.key === 'yuki-avatar-skintone-color' && e.newValue) {
+        triggerSkinToneUpdate(e.newValue);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    const unbindModelIpc = window.electronAPI?.onActiveModelChanged?.((modelName) => {
+      triggerModelSwap(modelName);
+    });
+    const unbindSkinIpc = window.electronAPI?.onSkinToneColorChanged?.((color) => {
+      triggerSkinToneUpdate(color);
+    });
+
     return () => {
       try { modelChannel?.close(); } catch (_) {}
+      try { skinChannel?.close(); } catch (_) {}
+      window.removeEventListener('storage', handleStorage);
+      unbindModelIpc?.();
+      unbindSkinIpc?.();
     };
   }, []);
 
@@ -2395,6 +2710,8 @@ export default function DateModeApp() {
     const scenario = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest] || DEFAULT_SCENARIOS.cute_cafe;
     if (!scenario) return;
 
+    console.log(`[DateMode:Stage] Destination change triggered: "${scenario.title}" (id: ${scenario.id}, type: ${scenario.type})`);
+
     // 1. Resolve and apply map-specific default profile and layout on destination change
     const boundProfileId = mapDefaultProfiles[activeDest] || 'default';
     if (boundProfileId !== activeProfileId) {
@@ -2429,6 +2746,9 @@ export default function DateModeApp() {
 
     // Complete stage teardown helper: disposes meshes, water reflector, lights, canvas textures, and env maps
     const unloadCurrentStage = () => {
+      if (sceneRef.current) {
+        sceneRef.current.background = null;
+      }
       if (customStageMeshRef.current && sceneRef.current) {
         sceneRef.current.remove(customStageMeshRef.current);
         disposeHierarchy(customStageMeshRef.current);
@@ -2467,6 +2787,7 @@ export default function DateModeApp() {
       }
 
       const modelUrl = scenario.assetUrl || scenario.bg;
+      console.log(`[DateMode:Stage] Loading 3D model stage: "${modelUrl}" for "${scenario.title}"`);
       if (modelUrl && sceneRef.current) {
         setIsMapLoading(true);
         loadedStageUrlRef.current = modelUrl;
@@ -2496,6 +2817,7 @@ export default function DateModeApp() {
                   if (c.isLight) embeddedLights.push(c);
                 });
                 stageLightsRef.current = embeddedLights;
+                console.log(`[DateMode:Stage] Successfully loaded 3D stage "${scenario.title}" (${embeddedLights.length} embedded lights, scale: ${s})`);
 
                 if (pmremGeneratorRef.current) {
                   if (currentEnvTextureRef.current) {
@@ -2661,7 +2983,8 @@ export default function DateModeApp() {
             undefined,
             (err) => {
               setIsMapLoading(false);
-              console.warn('[DateMode] 3D stage model load warning:', err);
+              console.error(`[DateMode:Stage] Failed to load 3D stage model from "${modelUrl}":`, err);
+              setMapPositionsToast(`Failed to load stage "${scenario.title}"`);
             }
           );
         }
@@ -2681,12 +3004,33 @@ export default function DateModeApp() {
       }
     } else {
       // Panorama Mode
+      console.log(`[DateMode:Pano] Switching to panorama scenario: "${scenario.title}" (${scenario.id})`);
       setIsMapLoading(true);
       unloadCurrentStage();
 
+      if (sceneRef.current) {
+        sceneRef.current.background = null;
+      }
+
       if (bgMeshRef.current) {
         bgMeshRef.current.visible = true;
+        if (bgMeshRef.current.material?.color) {
+          bgMeshRef.current.material.color.setHex(0xffffff);
+        }
+
+        const bgObj = targetCfg?.objects?.bgSphere || DEFAULT_DATE_CONFIG.objects.bgSphere;
+        if (bgObj) {
+          bgMeshRef.current.position.set(bgObj.posX ?? 0, bgObj.posY ?? -2, bgObj.posZ ?? -2.36);
+          bgMeshRef.current.rotation.y = (bgObj.rotY ?? 175) * (Math.PI / 180);
+          bgMeshRef.current.scale.set(
+            bgObj.scaleX ?? bgObj.scale ?? 1.0,
+            bgObj.scaleY ?? bgObj.scale ?? 1.0,
+            bgObj.scaleZ ?? bgObj.scale ?? 1.0
+          );
+        }
+
         const imgUrl = scenario.assetUrl || scenario.bg;
+        console.log(`[DateMode:Pano] Loading panorama texture: "${imgUrl}"`);
         if (imgUrl) {
           const textureLoader = new THREE.TextureLoader();
           textureLoader.load(
@@ -2710,6 +3054,9 @@ export default function DateModeApp() {
                   bgMeshRef.current.material.map.dispose();
                 }
                 bgMeshRef.current.material.map = newTex;
+                if (bgMeshRef.current.material.color) {
+                  bgMeshRef.current.material.color.setHex(0xffffff);
+                }
                 bgMeshRef.current.material.needsUpdate = true;
               }
               if (pmremGeneratorRef.current && sceneRef.current) {
@@ -2720,24 +3067,36 @@ export default function DateModeApp() {
                 sceneRef.current.environment = panoEnv;
                 currentEnvTextureRef.current = panoEnv;
               }
+              console.log(`[DateMode:Pano] Successfully loaded panorama "${scenario.title}" from "${imgUrl}"`);
             },
             undefined,
-            () => setIsMapLoading(false)
+            (err) => {
+              setIsMapLoading(false);
+              console.error(`[DateMode:Pano] Failed to load panorama texture "${imgUrl}":`, err);
+              setMapPositionsToast(`Failed to load panorama "${scenario.title}"`);
+            }
           );
         } else {
           setIsMapLoading(false);
+          console.warn(`[DateMode:Pano] No texture URL for scenario "${scenario.title}"`);
         }
       } else {
         setIsMapLoading(false);
+        console.warn('[DateMode:Pano] bgMeshRef.current is not ready');
       }
 
+      // Toggle dining table & props visibility based on scenario settings
+      const showTable = scenario.showDefaultTable !== false;
       ['table', 'herGlass', 'yourGlass', 'cake', 'chair', 'candleGLB', 'vaseGLB'].forEach((objKey) => {
         if (sceneObjectsRef.current[objKey]) {
-          sceneObjectsRef.current[objKey].visible = true;
+          sceneObjectsRef.current[objKey].visible = showTable;
         }
       });
       if (floorMeshRef.current) {
-        floorMeshRef.current.visible = true;
+        floorMeshRef.current.visible = showTable;
+      }
+      if (candleLightRef.current) {
+        candleLightRef.current.visible = showTable;
       }
     }
 
@@ -3043,8 +3402,18 @@ export default function DateModeApp() {
             } else if (data.type === 'profile_update') {
               const newModel = data.profile?.settings?.active_vrm_model;
               if (newModel && (newModel !== activeModelNameRef.current || (!vrmRef.current && !loadingModelUrlRef.current))) {
+                console.log(`[DateMode] 🔄 profile_update model swap: ${newModel}`);
                 const modelUrl = `${API_BASE}/api/models/vrm/files/${encodeURIComponent(newModel)}?t=${Date.now()}`;
                 loadVrmModelRef.current?.(modelUrl, newModel);
+              }
+              const newSkin = data.profile?.settings?.skin_tone_color;
+              if (newSkin && newSkin !== skinToneRef.current) {
+                skinToneRef.current = newSkin;
+                setSkinToneColor(newSkin);
+                try { localStorage.setItem('yuki-avatar-skintone-color', newSkin); } catch (_) {}
+                if (vrmRef.current) {
+                  applySkinTone(vrmRef.current, newSkin);
+                }
               }
             } else if (data.type === 'tool_result') {
               if (data.tool === 'change_avatar_outfit' || data.tool === 'jarvis_change_avatar_outfit') {
@@ -3274,8 +3643,12 @@ export default function DateModeApp() {
     } else {
       const bgGeo = new THREE.SphereGeometry(35, 60, 40);
       bgGeo.scale(-1, 1, 1);
-      const bgMat = new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: false });
+      const bgMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthWrite: false });
       const bgMesh = new THREE.Mesh(bgGeo, bgMat);
+      const bgObj = activeCfg.objects?.bgSphere || DEFAULT_DATE_CONFIG.objects.bgSphere;
+      bgMesh.position.set(bgObj.posX ?? 0, bgObj.posY ?? -2, bgObj.posZ ?? -2.36);
+      bgMesh.rotation.y = (bgObj.rotY ?? 175) * (Math.PI / 180);
+      bgMesh.scale.set(bgObj.scaleX ?? bgObj.scale ?? 1.0, bgObj.scaleY ?? bgObj.scale ?? 1.0, bgObj.scaleZ ?? bgObj.scale ?? 1.0);
       bgMesh.visible = false;
       scene.add(bgMesh);
       bgMeshRef.current = bgMesh;
@@ -3551,6 +3924,8 @@ export default function DateModeApp() {
       // 3. Monotonic sequence token: Discards superseded loads if model changes mid-download
       const currentLoadId = ++vrmLoadSeqRef.current;
 
+      console.log(`[DateMode:Avatar] Loading VRM avatar "${modelName || url}" from ${url}`);
+
       vrmLoader.load(
         url,
         (gltf) => {
@@ -3566,7 +3941,7 @@ export default function DateModeApp() {
           try {
             const vrm = gltf.userData.vrm;
             if (!vrm) {
-              console.warn('[DateMode] Loaded model does not contain VRM data:', gltf);
+              console.warn('[DateMode:Avatar] Loaded model does not contain VRM data:', gltf);
               return;
             }
 
@@ -3574,6 +3949,9 @@ export default function DateModeApp() {
             if (vrmAnimationMixerRef.current) {
               try {
                 vrmAnimationMixerRef.current.stopAllAction();
+                if (vrmRef.current?.scene) {
+                  vrmAnimationMixerRef.current.uncacheRoot(vrmRef.current.scene);
+                }
               } catch (_) {}
               vrmAnimationMixerRef.current = null;
             }
@@ -3591,6 +3969,7 @@ export default function DateModeApp() {
               } catch (_) {}
               sceneObjectsRef.current.yuki = null;
             }
+            THREE.Cache.clear();
 
             vrmRef.current = vrm;
             scene.add(vrm.scene);
@@ -3600,6 +3979,8 @@ export default function DateModeApp() {
             const isVRM1 = extensionsUsed.some(ext => ext.includes('VRMC_vrm'));
             vrm.isVRM1 = isVRM1;
 
+            console.log(`[DateMode:Avatar] Successfully mounted VRM avatar "${modelName || url}" (VRM 1.0: ${isVRM1})`);
+
             try {
               if (typeof VRMUtils.removeUnnecessaryVertices === 'function') {
                 VRMUtils.removeUnnecessaryVertices(vrm.scene);
@@ -3608,8 +3989,13 @@ export default function DateModeApp() {
                 VRMUtils.removeUnnecessaryJoints(vrm.scene);
               }
             } catch (err) {
-              console.warn("[DateMode] VRMUtils optimization note:", err);
+              console.warn("[DateMode:Avatar] VRMUtils optimization note:", err);
             }
+
+            // Sanitize expressions to prevent eye closure on happy/joy and index morph primitives
+            sanitizeExpressions(vrm);
+            // Apply customized user skin tone
+            applySkinTone(vrm, skinToneRef.current);
 
             // Position Yuki sitting naturally on the chair cushion across the table
             const yObj = devConfigRef.current?.objects?.yuki || DEFAULT_DATE_CONFIG.objects.yuki;
@@ -3630,17 +4016,50 @@ export default function DateModeApp() {
                       mat.alphaToCoverage = true;
                       mat.needsUpdate = true;
                     }
+                    const textureKeys = [
+                      'map',
+                      'shadeTexture',
+                      'rimTexture',
+                      'outlineWidthMultiplyTexture',
+                      'shadeMultiplierTexture'
+                    ];
+                    textureKeys.forEach((key) => {
+                      if (mat[key] && mat[key].isTexture) {
+                        mat[key].generateMipmaps = false;
+                        mat[key].minFilter = THREE.LinearFilter;
+                        mat[key].magFilter = THREE.LinearFilter;
+                        mat[key].needsUpdate = true;
+                      }
+                    });
                   });
                 }
               }
             });
 
-            // Initial pleasant expression using multi-version fallback
+            // Cache all finger bones for high-performance frame-level hand relaxation
+            const fingers = ['index', 'middle', 'ring', 'little', 'thumb'];
+            const joints = ['Proximal', 'Intermediate', 'Distal'];
+            const cachedBones = { left: {}, right: {} };
+            ['left', 'right'].forEach((side) => {
+              fingers.forEach((finger) => {
+                cachedBones[side][finger] = [];
+                joints.forEach((joint) => {
+                  const boneName = `${side}${finger.charAt(0).toUpperCase() + finger.slice(1)}${joint}`;
+                  const boneNode = getBoneNode(vrm, boneName);
+                  if (boneNode) {
+                    cachedBones[side][finger].push(boneNode);
+                  }
+                });
+              });
+            });
+            fingerBonesRef.current = cachedBones;
+
+            // Initial pleasant open-eyed warm smile
             try {
-              setExpressionValue(vrm, 'happy', 0.20);
+              setExpressionValue(vrm, 'happy', 0.0);
               setExpressionValue(vrm, 'relaxed', 0.30);
             } catch (e) {
-              console.warn('[DateMode] Initial expression setup note:', e);
+              console.warn('[DateMode:Avatar] Initial expression setup note:', e);
             }
 
             // Initialize AnimationMixer for companion locomotion animations
@@ -3685,9 +4104,10 @@ export default function DateModeApp() {
                       action.play();
                       action.setEffectiveWeight(1.0);
                     }
+                    console.log(`[DateMode:Locomotion] Loaded clip: "${key}" from ${animPath}`);
                   }
                 }, undefined, (err) => {
-                  console.warn(`[DateMode] Locomotion clip note (${key}):`, err);
+                  console.warn(`[DateMode:Locomotion] Failed to load clip "${key}" from ${animPath}:`, err);
                 });
               };
 
@@ -3696,10 +4116,10 @@ export default function DateModeApp() {
               loadLocomotionClip('run', './animations/run.vrma');
               loadLocomotionClip('jump', './animations/joyful_jump.vrma');
             } catch (mixerErr) {
-              console.warn('[DateMode] AnimationMixer setup note:', mixerErr);
+              console.warn('[DateMode:Locomotion] AnimationMixer setup note:', mixerErr);
             }
           } catch (err) {
-            console.error('[DateMode] Error processing VRM model:', err);
+            console.error('[DateMode:Avatar] Error processing VRM model:', err);
           } finally {
             setIsInitializing(false);
           }
@@ -3707,7 +4127,7 @@ export default function DateModeApp() {
         undefined,
         (err) => {
           loadingModelUrlRef.current = null;
-          console.error('[DateMode] Error loading VRM model from:', url, err);
+          console.error('[DateMode:Avatar] Error loading VRM model from:', url, err);
           setIsInitializing(false);
         }
       );
@@ -3715,11 +4135,14 @@ export default function DateModeApp() {
 
     loadVrmModelRef.current = loadVrmModel;
 
-    // Fetch user's active model from profile or fallback to default
+    // Fetch user's active model and skin tone from profile or fallback to default
     fetch(`${API_BASE}/api/profile`)
       .then((r) => r.json())
       .then((prof) => {
         const modelName = prof?.settings?.active_vrm_model || 'default.vrm';
+        const skinColor = prof?.settings?.skin_tone_color || localStorage.getItem('yuki-avatar-skintone-color') || '#FFE5E5';
+        skinToneRef.current = skinColor;
+        setSkinToneColor(skinColor);
         if (activeModelNameRef.current === modelName && (vrmRef.current || loadingModelUrlRef.current)) {
           return;
         }
@@ -3841,7 +4264,7 @@ export default function DateModeApp() {
     window.addEventListener('keyup', handleKeyUp);
 
     // Persistent Expression State, Eyebrows & Procedural Wink
-    let currentHappy = 0.20;
+    let currentHappy = 0.0;
     let currentRelaxed = 0.30;
     let currentSurprised = 0.0;
     let currentAngry = 0.0;
@@ -3863,12 +4286,29 @@ export default function DateModeApp() {
     let blinkTimer = 0;
     let blinkProgress = 0;
     let isBlinking = false;
-    let nextBlinkInterval = 3.5;
-    const blinkDuration = 0.22;
+    let nextBlinkInterval = 5.5;
+    let pendingDoubleBlink = false;
+    let doubleBlinkDelay = 0;
+
+    // Eye saccade variables
+    let saccadeTimer = 0;
+    let nextSaccadeTime = 0.2 + Math.random() * 0.25;
+    let saccadeX = 0;
+    let saccadeY = 0;
 
     const animate = () => {
       animFrameIdRef.current = requestAnimationFrame(animate);
+      try {
+        _runAnimationFrame();
+      } catch (renderErr) {
+        if (!window._lastDateRenderErr || Date.now() - window._lastDateRenderErr > 3000) {
+          window._lastDateRenderErr = Date.now();
+          console.error('[DateMode:RenderLoop] Frame animation error:', renderErr);
+        }
+      }
+    };
 
+    const _runAnimationFrame = () => {
       const delta = Math.min(clock.getDelta(), 0.1);
       const elapsedTime = clock.getElapsedTime();
 
@@ -4593,8 +5033,8 @@ export default function DateModeApp() {
       }
 
       // Dynamic Mood Expression Target Calculation
-      let targetHappy = 0.18;
-      let targetRelaxed = 0.28;
+      let targetHappy = 0.0;
+      let targetRelaxed = 0.30;
       let targetSurprised = 0.0;
       let targetAngry = 0.0;
       let targetSad = 0.0;
@@ -4605,18 +5045,18 @@ export default function DateModeApp() {
         const emotionDef = EMOTIONS[curExpr];
         if (curExpr === 'wink') {
           targetRelaxed = 0.55;
-          targetHappy = 0.20;
+          targetHappy = 0.0;
           targetBrowUp = 0.12;
         } else if (curExpr === 'smug') {
           targetHappy = 0.0;
           targetRelaxed = 0.85;
           targetBrowUp = 0.16;
         } else if (curExpr === 'happy') {
-          targetHappy = 0.35;
-          targetRelaxed = 0.70;
-          targetBrowUp = 0.15;
+          targetHappy = 0.0; // Open eyes: route happiness through relaxed smile to avoid VRM joy eye-closure
+          targetRelaxed = 1.0;
+          targetBrowUp = 0.12;
         } else if (curExpr === 'embarrassed' || curExpr === 'blush') {
-          targetHappy = 0.30;
+          targetHappy = 0.0;
           targetRelaxed = 0.40;
           targetBrowDown = 0.20;
           targetBrowUp = 0.15;
@@ -4627,8 +5067,8 @@ export default function DateModeApp() {
           targetAngry = bs.angry || 0.0;
           targetSurprised = bs.surprised || 0.0;
           targetRelaxed = bs.relaxed || 0.0;
-          targetBrowUp = (bs.browUp || 0.0) * 0.6;
-          targetBrowDown = (bs.browDown || 0.0) * 0.6;
+          targetBrowUp = (bs.browUp || 0.0) * 0.50;
+          targetBrowDown = (bs.browDown || 0.0) * 0.50;
         } else if (curExpr === 'sad') {
           targetSad = 0.75;
           targetBrowDown = 0.30;
@@ -4639,17 +5079,17 @@ export default function DateModeApp() {
           targetSurprised = 0.75;
           targetBrowUp = 0.45;
         } else if (curExpr === 'relaxed') {
-          targetRelaxed = 0.75;
+          targetRelaxed = 0.85;
           targetBrowUp = 0.08;
         }
       }
 
-      // Organic emotion decay: ease back toward warm resting smile after conversation pause
+      // Organic emotion decay: ease back toward warm open-eyed resting smile after conversation pause
       const timeSinceDialogue = Date.now() - lastDialogueTimeRef.current;
       if (turnFinishedRef.current && timeSinceDialogue > 4500) {
         const decayProgress = Math.min(1.0, (timeSinceDialogue - 4500) / 2500);
-        targetHappy = THREE.MathUtils.lerp(targetHappy, 0.18, decayProgress);
-        targetRelaxed = THREE.MathUtils.lerp(targetRelaxed, 0.28, decayProgress);
+        targetHappy = THREE.MathUtils.lerp(targetHappy, 0.0, decayProgress);
+        targetRelaxed = THREE.MathUtils.lerp(targetRelaxed, 0.30, decayProgress);
         targetSad = THREE.MathUtils.lerp(targetSad, 0.0, decayProgress);
         targetAngry = THREE.MathUtils.lerp(targetAngry, 0.0, decayProgress);
         targetSurprised = THREE.MathUtils.lerp(targetSurprised, 0.0, decayProgress);
@@ -4802,6 +5242,7 @@ export default function DateModeApp() {
         const isVRM1 = !!vrm.isVRM1;
         const xMult = isVRM1 ? -1 : 1;
         const zMult = isVRM1 ? -1 : 1;
+        const yMult = 1;
 
         const activePose = devConfigRef.current?.avatarPose || DEFAULT_DATE_CONFIG.avatarPose;
         const lLegPose = activePose?.leftLeg || DEFAULT_DATE_CONFIG.avatarPose.leftLeg;
@@ -4992,9 +5433,96 @@ export default function DateModeApp() {
           }
         }
 
-        // Natural eye contact tracking with player camera
+        // Procedural Hand & Finger Animation Layer (relaxed dining cup & micro-fidgets)
+        if (fingerBonesRef.current && !isPromenade) {
+          const fingersObj = fingerBonesRef.current;
+          const aVol = audioLevelRef.current || 0;
+          const time = elapsedTime;
+
+          ['left', 'right'].forEach((side) => {
+            const sideSign = side === 'left' ? 1.0 : -1.0;
+
+            // Audio-reactive flex (talking gesture)
+            let speakFlex = 0.0;
+            if (aVol > 0.015) {
+              speakFlex = Math.sin(time * 10.0) * 0.04 * Math.min(aVol * 10.0, 1.0);
+            }
+
+            const fingers = ['index', 'middle', 'ring', 'little', 'thumb'];
+            fingers.forEach((finger, fIndex) => {
+              const bones = fingersObj[side]?.[finger];
+              if (!bones || bones.length === 0) return;
+
+              // Base curl angles for a natural, relaxed cup shape resting on table
+              let baseCurl = 0.14;
+              if (finger === 'index') baseCurl = 0.10;
+              else if (finger === 'middle') baseCurl = 0.18;
+              else if (finger === 'ring') baseCurl = 0.26;
+              else if (finger === 'little') baseCurl = 0.32;
+              else if (finger === 'thumb') baseCurl = 0.08;
+
+              // In toasting pose, right hand grasps the glass slightly tighter
+              if (side === 'right' && isToastingRef.current) {
+                baseCurl += 0.25;
+              }
+
+              // Organic micro-fidget twitches using asynchronous prime frequencies
+              const fidgetFreq = 1.3 + fIndex * 0.47 + (side === 'left' ? 0.0 : 0.23);
+              const fingerTrigger = Math.max(0, Math.sin(time * 0.6 + fIndex * 1.1 + (side === 'left' ? 0 : 2.0)) - 0.85) * 6.0;
+              const organicTwitch = Math.sin(time * 6.5 + fIndex * 1.7) * 0.02 * fingerTrigger;
+              const fidgetVal = Math.sin(time * fidgetFreq) * 0.012 + organicTwitch;
+
+              const finalCurl = baseCurl + fidgetVal + speakFlex;
+
+              bones.forEach((joint, jIndex) => {
+                const jointFactor = jIndex === 2 ? 0.75 : 1.0;
+                joint.rotation.z = sideSign * finalCurl * jointFactor * zMult;
+
+                if (finger === 'thumb' && jIndex === 0) {
+                  joint.rotation.y = sideSign * 0.06 * yMult;
+                }
+              });
+            });
+          });
+        }
+
+        // Eye Saccades (Micro-Adjustments)
+        saccadeTimer += delta;
+        if (saccadeTimer >= nextSaccadeTime) {
+          saccadeTimer = 0;
+          nextSaccadeTime = 0.18 + Math.random() * 0.25; // every 180-430ms
+          saccadeX = (Math.random() - 0.5) * 0.024;
+          saccadeY = (Math.random() - 0.5) * 0.024;
+        }
+
+        // Natural eye contact tracking with player camera & physiological micro-saccades
         if (vrm.lookAt) {
-          vrm.lookAt.target = camera;
+          vrm.lookAt.autoUpdate = false;
+          const camWorldPos = new THREE.Vector3();
+          camera.getWorldPosition(camWorldPos);
+          vrm.lookAt.lookAt(camWorldPos);
+
+          // Clamped yaw & pitch to human anatomical limits with saccadic jitter
+          const saccadeDegY = saccadeY * (180 / Math.PI);
+          const saccadeDegX = saccadeX * (180 / Math.PI);
+          const clampedYaw = Math.max(-12, Math.min(12, vrm.lookAt._yaw)) + saccadeDegY;
+          const clampedPitch = Math.max(-6, Math.min(6, vrm.lookAt._pitch)) + saccadeDegX;
+
+          if (vrm.lookAt.applier?.applyYawPitch) {
+            vrm.lookAt.applier.applyYawPitch(clampedYaw, clampedPitch);
+          }
+          vrm.lookAt._needsUpdate = false;
+        } else {
+          const leftEye = getBoneNode(vrm, 'leftEye');
+          const rightEye = getBoneNode(vrm, 'rightEye');
+          if (leftEye && rightEye) {
+            const eyeYaw = Math.max(-0.12, Math.min(0.12, saccadeY));
+            const eyePitch = Math.max(-0.06, Math.min(0.06, saccadeX));
+            leftEye.rotation.y = eyeYaw * yMult;
+            leftEye.rotation.x = eyePitch * xMult;
+            rightEye.rotation.y = eyeYaw * yMult;
+            rightEye.rotation.x = eyePitch * xMult;
+          }
         }
 
         // Speech Ducking & Lip-Sync Morph Application (Identical parity with AvatarViewer.jsx)
@@ -5041,26 +5569,114 @@ export default function DateModeApp() {
             setExpressionValue(vrm, 'oh', 0);
           }
 
-          // Natural periodic eye blinking & procedural wink coordination
-          blinkTimer += delta;
-          if (blinkTimer >= nextBlinkInterval) {
-            isBlinking = true;
-            blinkProgress += delta / blinkDuration;
-            if (blinkProgress >= 1.0) {
-              isBlinking = false;
-              blinkProgress = 0;
-              blinkTimer = 0;
-              nextBlinkInterval = 3.0 + Math.random() * 4.0;
+          if (typeof vrm.expressionManager?.update === 'function') {
+            vrm.expressionManager.update();
+          }
+
+          // Safety re-check if expressions are indexed
+          if (vrm && !vrm._allEyeClosingIndices) {
+            sanitizeExpressions(vrm);
+          }
+
+          // Check if eyes are already closed on the avatar (e.g. from wink or an eye-closing expression)
+          let activeEyeClosure = (curExpr === 'wink' && winkVal > 0.45) ? winkVal : 0;
+          if (vrm && vrm._allEyeClosingIndices && vrm._blinkPrimitives) {
+            for (let i = 0; i < vrm._blinkPrimitives.length; i++) {
+              const prim = vrm._blinkPrimitives[i];
+              if (prim && prim.morphTargetInfluences) {
+                for (const idx of vrm._allEyeClosingIndices) {
+                  const influence = prim.morphTargetInfluences[idx] || 0;
+                  if (influence > activeEyeClosure) {
+                    activeEyeClosure = influence;
+                  }
+                }
+              }
             }
           }
-          const blinkVal = isBlinking ? Math.sin(blinkProgress * Math.PI) : 0.0;
+
+          // Suppress blinking entirely when eyes are already closed (prevents double-blinking, eyelid clipping, and twitching)
+          const eyesAreClosed = activeEyeClosure >= 0.45;
+
+          if (eyesAreClosed) {
+            isBlinking = false;
+            blinkTimer = 0;
+            blinkProgress = 0;
+          } else {
+            blinkTimer += delta;
+            if (!isBlinking && blinkTimer >= nextBlinkInterval) {
+              isBlinking = true;
+              blinkTimer = 0;
+              blinkProgress = 0;
+            }
+          }
+
+          let blinkValue = 0;
+
+          // Modulate blink speed based on cognitive and emotional states (smooth natural duration ~220-300ms)
+          let blinkSpeed = 8.5; // base speed (was 12.0 - eliminated jittery rapid eyelid snap)
+          if (isThinkingRef.current) {
+            blinkSpeed = 6.5;  // slower, thoughtful blink
+          } else if (curExpr === 'happy') {
+            blinkSpeed = 9.5;  // gentle, warm flutter (was 14.5)
+          }
+
+          if (isBlinking && curExpr !== 'wink') {
+            blinkProgress += delta * blinkSpeed;
+            if (blinkProgress <= 1.0) {
+              blinkValue = blinkProgress;
+            } else if (blinkProgress <= 2.0) {
+              blinkValue = 2.0 - blinkProgress;
+            } else {
+              isBlinking = false;
+              blinkValue = 0;
+
+              // Post-blink saccadic alignment (immediate micro-re-focusing)
+              saccadeX = (Math.random() - 0.5) * 0.035;
+              saccadeY = (Math.random() - 0.5) * 0.035;
+              saccadeTimer = 0;
+              nextSaccadeTime = 0.2 + Math.random() * 0.25;
+
+              // Introduce organic double-blink patterns (subtle, occasional 8% chance)
+              if (!pendingDoubleBlink && Math.random() < 0.08) {
+                pendingDoubleBlink = true;
+                doubleBlinkDelay = 0.12 + Math.random() * 0.12; // 120-240ms delay between double blinks
+              } else {
+                pendingDoubleBlink = false;
+
+                // Modulate next blink delay based on cognitive and emotional states (+2.0s extra gap)
+                let baseMinTime = 4.0; // 4.0s minimum gap (was 2.0s)
+                let baseRange = 4.5;   // 4.0s to 8.5s interval
+                if (isThinkingRef.current) {
+                  baseMinTime = 6.5; // concentrate/stare more (was 4.5s)
+                  baseRange = 6.0;
+                } else if (curExpr === 'happy') {
+                  baseMinTime = 3.5; // relaxed conversation (was 1.5s)
+                  baseRange = 3.5;
+                } else if (curExpr === 'surprised') {
+                  baseMinTime = 7.0; // wide-eyed surprise stares longer (was 5.0s)
+                  baseRange = 5.0;
+                }
+                nextBlinkInterval = baseMinTime + Math.random() * baseRange;
+              }
+            }
+          }
+
+          // Handle scheduled double blinks
+          if (pendingDoubleBlink && !isBlinking && !eyesAreClosed) {
+            doubleBlinkDelay -= delta;
+            if (doubleBlinkDelay <= 0) {
+              isBlinking = true;
+              blinkProgress = 0;
+              pendingDoubleBlink = false;
+            }
+          }
 
           if (curExpr === 'wink' && winkVal > 0) {
             setExpressionValue(vrm, 'blinkRight', winkVal);
             setExpressionValue(vrm, 'blink', 0);
           } else {
             setExpressionValue(vrm, 'blinkRight', 0);
-            setExpressionValue(vrm, 'blink', blinkVal);
+            setExpressionValue(vrm, 'blink', blinkValue);
           }
 
           if (typeof vrm.expressionManager?.update === 'function') {

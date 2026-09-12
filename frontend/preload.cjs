@@ -232,6 +232,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getGPUInfo: () => {
     return ipcRenderer.invoke('get-gpu-info');
   },
+  setActiveVrmModel: (modelName) => {
+    ipcRenderer.send('set-active-vrm-model', modelName);
+  },
+  onActiveModelChanged: (callback) => {
+    const handler = (event, modelName) => callback(modelName);
+    ipcRenderer.on('yuki:active-model-changed', handler);
+    return () => ipcRenderer.removeListener('yuki:active-model-changed', handler);
+  },
   platform: process.platform,
   isElectron: true
 });
