@@ -868,6 +868,8 @@ export const DEFAULT_SCENARIOS = {
     showDefaultTable: false,
     modelTransform: { posX: 0, posY: 0.0, posZ: 0, rotY: 0, scale: 1.0 },
     waterLevel: -2.35,
+    armFlare: 0.18,
+    proactiveSilenceDelay: 90,
     defaultPositions: MAP_POSITION_PRESETS.promenade_edge.positions,
     welcomeDialogue: "The city lights across the water look breathtaking tonight... It's so peaceful and quiet here by the river. Just you and me."
   },
@@ -2589,8 +2591,9 @@ export default function DateModeApp() {
                         c.material = screenAds.mat;
                       } else if (cName.includes('led_screen_wf_l2')) {
                         c.material = screenNews.mat;
-                      } else if (cName.includes('water') || cName.includes('river')) {
-                        // Hide static glTF river surface to prevent z-fighting with the dynamic Water reflector
+                      } else if (cName === 'river_water_surface' || cName.startsWith('river_water') || (cName.includes('water') && !cName.includes('waterfront'))) {
+                        // Hide only static glTF river water surface to prevent z-fighting with the dynamic Water reflector.
+                        // CRITICAL: Preserve Waterfront_Railing, Waterfront_Seawall, Waterfront_Seawall_Capstone, and Opposing_Waterfront_Quay!
                         c.visible = false;
                         const m = Array.isArray(c.material) ? c.material[0] : c.material;
                         if (m?.normalMap) {
@@ -2787,9 +2790,12 @@ export default function DateModeApp() {
     if (voiceStateRef.current?.isListening || isListeningRef.current) return;
     // 5. Is WebSocket open?
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
-    // 6. Has at least 8 seconds elapsed since Yuki's last speech / turn?
+    // 6. Has sufficient silence elapsed since Yuki's last speech / turn?
+    const dest = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest] || DEFAULT_SCENARIOS.marine_drive_night;
+    const baseQuietSec = dest?.proactiveSilenceDelay ?? 90;
+    const minSilenceSec = Math.max(30, Math.round(baseQuietSec * 0.5));
     const elapsedSinceDialogue = (Date.now() - (lastDialogueTimeRef.current || 0)) / 1000;
-    if (elapsedSinceDialogue < 8) return;
+    if (elapsedSinceDialogue < minSilenceSec) return;
 
     console.log('[DateMode] Proactive conversation starter triggered after', Math.round(elapsedSinceDialogue), 'seconds of quiet.');
 
@@ -2797,7 +2803,6 @@ export default function DateModeApp() {
     accumulatedDialogueRef.current = '';
     turnFinishedRef.current = false;
 
-    const dest = allScenarios[activeDest] || DEFAULT_SCENARIOS['cute_cafe'];
     socketRef.current.send(JSON.stringify({
       type: 'chat',
       message: '[SYSTEM EVENT: DATE_PROACTIVE_INITIATION]',
@@ -2819,12 +2824,15 @@ export default function DateModeApp() {
       clearTimeout(proactiveDateTimerRef.current);
       proactiveDateTimerRef.current = null;
     }
-    // Random quiet duration between 10 and 30 seconds (10000ms - 30000ms)
-    const randomDelayMs = Math.floor(Math.random() * 20000) + 10000;
+    const dest = allScenarios[activeDest] || DEFAULT_SCENARIOS[activeDest] || DEFAULT_SCENARIOS.marine_drive_night;
+    const baseQuietSec = dest?.proactiveSilenceDelay ?? 90;
+    // Jitter +/- 25% around configured delay (e.g. 90s -> ~68s to 112s)
+    const jitter = (Math.random() - 0.5) * 0.5 * baseQuietSec;
+    const randomDelayMs = Math.max(35000, Math.round((baseQuietSec + jitter) * 1000));
     proactiveDateTimerRef.current = setTimeout(() => {
       triggerProactiveDateInitiation();
     }, randomDelayMs);
-  }, [triggerProactiveDateInitiation]);
+  }, [activeDest, allScenarios, triggerProactiveDateInitiation]);
 
   scheduleProactiveDateCheckRef.current = scheduleProactiveDateCheck;
 
@@ -4911,22 +4919,17 @@ export default function DateModeApp() {
           // into oversized panda hoodie and kangaroo pocket while standing, walking, or running
           const leftUpperArm = getBoneNode(vrm, 'leftUpperArm');
           const rightUpperArm = getBoneNode(vrm, 'rightUpperArm');
-          const leftLowerArm = getBoneNode(vrm, 'leftLowerArm');
-          const rightLowerArm = getBoneNode(vrm, 'rightLowerArm');
+          const activeFlare = devConfigRef.current?.armFlare ?? 0.20;
 
           if (leftUpperArm) {
-            leftUpperArm.rotation.z += 0.14 * zMult;
+            // In normalized coordinates, subtracting Z rotates left arm laterally outward away from ribs/hoodie
+            leftUpperArm.rotation.z -= activeFlare * zMult;
             leftUpperArm.rotation.x += 0.04 * xMult;
           }
           if (rightUpperArm) {
-            rightUpperArm.rotation.z -= 0.14 * zMult;
+            // In normalized coordinates, adding Z rotates right arm laterally outward away from ribs/hoodie
+            rightUpperArm.rotation.z += activeFlare * zMult;
             rightUpperArm.rotation.x += 0.04 * xMult;
-          }
-          if (leftLowerArm) {
-            leftLowerArm.rotation.y -= 0.05;
-          }
-          if (rightLowerArm) {
-            rightLowerArm.rotation.y += 0.05;
           }
         } else {
           // Upper body natural breathing & seated gestures
@@ -10312,24 +10315,66 @@ export default function DateModeApp() {
                     </div>
 
                     {scenarioForm.id === 'marine_drive_night' && (
-                      <div style={{ borderTop: '1px solid rgba(63, 63, 70, 0.4)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#a1a1aa' }}>Water Level Elevation (Y)</span>
-                          <span style={{ fontSize: '10px', color: '#38bdf8' }}>{scenarioForm.waterLevel ?? -2.35}m</span>
+                      <div style={{ borderTop: '1px solid rgba(63, 63, 70, 0.4)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: '#a1a1aa' }}>Water Level Elevation (Y)</span>
+                            <span style={{ fontSize: '10px', color: '#38bdf8' }}>{scenarioForm.waterLevel ?? -2.35}m</span>
+                          </div>
+                          <input
+                            type="number"
+                            step="0.05"
+                            value={scenarioForm.waterLevel ?? -2.35}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || -2.35;
+                              setScenarioForm((prev) => ({ ...prev, waterLevel: val }));
+                              if (waterMeshRef.current) {
+                                waterMeshRef.current.position.y = val;
+                              }
+                            }}
+                            style={{ width: '100%', padding: '4px 6px', background: 'rgba(9, 13, 22, 0.8)', border: '1px solid rgba(63, 63, 70, 0.6)', borderRadius: '6px', color: '#fff', fontSize: '11px' }}
+                          />
                         </div>
-                        <input
-                          type="number"
-                          step="0.05"
-                          value={scenarioForm.waterLevel ?? -2.35}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || -2.35;
-                            setScenarioForm((prev) => ({ ...prev, waterLevel: val }));
-                            if (waterMeshRef.current) {
-                              waterMeshRef.current.position.y = val;
-                            }
-                          }}
-                          style={{ width: '100%', padding: '4px 6px', background: 'rgba(9, 13, 22, 0.8)', border: '1px solid rgba(63, 63, 70, 0.6)', borderRadius: '6px', color: '#fff', fontSize: '11px' }}
-                        />
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: '#a1a1aa' }}>Arm Clearance Flare</span>
+                            <span style={{ fontSize: '10px', color: '#38bdf8' }}>{scenarioForm.armFlare ?? 0.20}</span>
+                          </div>
+                          <input
+                            type="number"
+                            step="0.02"
+                            min="0"
+                            max="0.5"
+                            value={scenarioForm.armFlare ?? 0.20}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0.20;
+                              setScenarioForm((prev) => ({ ...prev, armFlare: val }));
+                              if (devConfigRef.current) devConfigRef.current.armFlare = val;
+                            }}
+                            style={{ width: '100%', padding: '4px 6px', background: 'rgba(9, 13, 22, 0.8)', border: '1px solid rgba(63, 63, 70, 0.6)', borderRadius: '6px', color: '#fff', fontSize: '11px' }}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: '#a1a1aa' }}>Silence Trigger Delay (Seconds)</span>
+                            <span style={{ fontSize: '10px', color: '#38bdf8' }}>{scenarioForm.proactiveSilenceDelay ?? 90}s</span>
+                          </div>
+                          <input
+                            type="number"
+                            step="10"
+                            min="20"
+                            max="600"
+                            value={scenarioForm.proactiveSilenceDelay ?? 90}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 90;
+                              setScenarioForm((prev) => ({ ...prev, proactiveSilenceDelay: val }));
+                              scheduleProactiveDateCheckRef.current?.();
+                            }}
+                            style={{ width: '100%', padding: '4px 6px', background: 'rgba(9, 13, 22, 0.8)', border: '1px solid rgba(63, 63, 70, 0.6)', borderRadius: '6px', color: '#fff', fontSize: '11px' }}
+                          />
+                        </div>
                       </div>
                     )}
                   </div>

@@ -362,13 +362,23 @@ In 3D avatar engines (VRM / Three.js):
 - **The Pitfall**: VRMA motion capture animations recorded from slender mocap actors feature arms hanging straight down parallel to the ribs. Stylized 3D models wearing thick oversized clothing (hoodies, coats, kimonos, puffy jackets) have mesh silhouettes that extend 5–10cm beyond the anatomical ribs. Retargeted mocap clips cause the wrists, forearms, and hands to clip straight through the clothing and kangaroo pockets.
 - **Rule**: In late animation update (after `AnimationMixer.update(delta)` and before `vrm.update(physicsDelta)`), apply subtle procedural outward flares to the upper and lower arm bones:
   ```javascript
-  // Upper arm lateral abduction (+Z for left, -Z for right in normalized coordinates) and forward pitch (+X)
-  if (leftUpperArm) { leftUpperArm.rotation.z += 0.14 * zMult; leftUpperArm.rotation.x += 0.04 * xMult; }
-  if (rightUpperArm) { rightUpperArm.rotation.z -= 0.14 * zMult; rightUpperArm.rotation.x += 0.04 * xMult; }
-  // Slight elbow bend to drape forearms clear of front pockets
-  if (leftLowerArm) { leftLowerArm.rotation.y -= 0.05; }
-  if (rightLowerArm) { rightLowerArm.rotation.y += 0.05; }
+  // Upper arm lateral abduction (-Z for left, +Z for right in normalized coordinates) and forward pitch (+X)
+  if (leftUpperArm) { leftUpperArm.rotation.z -= activeFlare * zMult; leftUpperArm.rotation.x += 0.04 * xMult; }
+  if (rightUpperArm) { rightUpperArm.rotation.z += activeFlare * zMult; rightUpperArm.rotation.x += 0.04 * xMult; }
+  // Do NOT artificially flex lower arm/elbow inward into the belly/pouch!
   ```
+
+---
+
+## 3D Scene Mesh Substring Traversal & Filtering Trap (Mesh Invisibility Bug)
+
+When traversing loaded glTF/GLB scenes to selectively hide, replace, or modify objects (e.g. hiding a static river mesh to replace it with a dynamic Three.js `Water` reflector):
+
+- **The Pitfall**: Loose substring matching like `cName.includes('water')` or `cName.includes('road')` unintentionally matches unrelated structural meshes that contain that substring as a compound word (e.g. `Waterfront_Railing`, `Waterfront_Seawall`, `Waterfront_Seawall_Capstone`, `Opposing_Waterfront_Quay`). Setting `c.visible = false` or modifying materials silently turns railings, curbs, and seawalls invisible in the scene.
+- **Rule**:
+  1. Always use exact node names or anchored prefix/regex checks (e.g. `cName === 'river_water_surface' || cName.startsWith('river_water')`).
+  2. If using substring checks, always add explicit negative assertions for known compound assets:
+     `cName.includes('water') && !cName.includes('waterfront')`.
 
 ---
 
