@@ -4996,6 +4996,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
                 continue
 
+            if msg_type == "yuki_speaking_state":
+                await broadcast_ws_event({
+                    "type": "yuki_speaking_state",
+                    "speaking": bool(data.get("speaking", False)),
+                    "playback_finished": bool(data.get("playback_finished", False))
+                })
+                continue
+
+            if msg_type in ("toggle_voice_input", "toggle_listening", "request_voice_state", "voice_state", "listening_state", "toggle_mute_voice"):
+                await broadcast_ws_event(data)
+                continue
+
             if msg_type == "animation_triggered":
                 anim_name = data.get("name", "unknown")
                 category = str(data.get("category", "action")).upper()

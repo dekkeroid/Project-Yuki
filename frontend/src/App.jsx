@@ -317,18 +317,22 @@ const App = () => {
           const speaking = Boolean(evt.data.speaking);
           dateModeSpeakingRef.current = speaking;
           if (speaking) {
-            // Yuki is speaking in Date Mode -> pause active mic capture to prevent self-transcription
-            stopSpeechRecognitionRef.current?.(false, 'Date Mode Yuki Speaking');
+            // Yuki is speaking in Date Mode -> pause active mic capture immediately (force abort so room audio isn't transcribed)
+            stopSpeechRecognitionRef.current?.(true, 'Date Mode Yuki Speaking');
           } else {
             // Yuki finished speaking in Date Mode -> trigger continuous listening handover!
+            if (!isVoiceCommandModeRef.current && !isTalkModeRef.current) {
+              toggleVoiceCommandModeRef.current?.();
+            }
             if (evt.data.playback_finished) {
-              if (isVoiceCommandModeRef.current || isTalkModeRef.current) {
-                console.log('[DateMode Handover] Triggering continuous listening session timeout');
-                startSessionTimeoutRef.current?.();
-              }
+              console.log('[DateMode Handover] Triggering continuous listening session timeout');
+              startSessionTimeoutRef.current?.();
               setTimeout(() => {
                 updateListeningStateRef.current?.();
               }, 700);
+              setTimeout(() => {
+                updateListeningStateRef.current?.();
+              }, 1200);
             } else {
               updateListeningStateRef.current?.();
             }
@@ -358,15 +362,19 @@ const App = () => {
         }
         if (evt.data.type === 'request_listening_state' || evt.data.type === 'request_voice_state') {
           try {
-            dateChannel?.postMessage({
+            const vState = {
               type: 'voice_state',
               isVoiceCommandMode: isVoiceCommandModeRef.current,
               isTalkMode: isTalkModeRef.current,
               isSessionActive: isSessionActiveRef.current,
               isListening: isListeningRef.current,
               muteVoice: muteVoiceRef.current
-            });
+            };
+            dateChannel?.postMessage(vState);
             dateChannel?.postMessage({ type: 'listening_state', isListening: isListeningRef.current });
+            if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+              socketRef.current.send(JSON.stringify(vState));
+            }
           } catch (_) {}
           return;
         }
@@ -1562,6 +1570,55 @@ const App = () => {
       } else if (msg.text) {
         speakSystemMessage(msg.text, 'surprised');
       }
+    } else if (msg.type === 'yuki_speaking_state') {
+      const speaking = Boolean(msg.speaking);
+      dateModeSpeakingRef.current = speaking;
+      if (speaking) {
+        // Yuki speaking in Date Mode -> pause mic capture immediately
+        stopSpeechRecognitionRef.current?.(true, 'Date Mode Yuki Speaking (WS)');
+      } else {
+        // Yuki finished speaking in Date Mode -> trigger continuous listening handover!
+        if (!isVoiceCommandModeRef.current && !isTalkModeRef.current) {
+          toggleVoiceCommandModeRef.current?.();
+        }
+        if (msg.playback_finished) {
+          console.log('[DateMode Handover:WS] Triggering continuous listening session handover');
+          startSessionTimeoutRef.current?.();
+          setTimeout(() => {
+            updateListeningStateRef.current?.();
+          }, 700);
+          setTimeout(() => {
+            updateListeningStateRef.current?.();
+          }, 1200);
+        } else {
+          updateListeningStateRef.current?.();
+        }
+      }
+    } else if (msg.type === 'toggle_voice_input' || msg.type === 'toggle_listening') {
+      if (isVoiceCommandModeRef.current || isTalkModeRef.current) {
+        if (isVoiceCommandModeRef.current) toggleVoiceCommandModeRef.current?.();
+        if (isTalkModeRef.current) toggleTalkModeRef.current?.();
+        stopSpeechRecognitionRef.current?.(true, 'User turned voice off in Date Mode (WS)');
+      } else {
+        toggleVoiceCommandModeRef.current?.();
+        setTimeout(() => {
+          startSessionTimeoutRef.current?.();
+          updateListeningStateRef.current?.();
+        }, 100);
+      }
+    } else if (msg.type === 'request_voice_state') {
+      try {
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          socketRef.current.send(JSON.stringify({
+            type: 'voice_state',
+            isVoiceCommandMode: isVoiceCommandModeRef.current,
+            isTalkMode: isTalkModeRef.current,
+            isSessionActive: isSessionActiveRef.current,
+            isListening: isListeningRef.current,
+            muteVoice: muteVoiceRef.current
+          }));
+        }
+      } catch (_) {}
     } else if (msg.type === 'alarm_triggered') {
       const enrichedMsg = {
         ...msg,

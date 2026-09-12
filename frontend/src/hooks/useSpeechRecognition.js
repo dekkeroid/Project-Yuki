@@ -239,10 +239,12 @@ export function useSpeechRecognition(options = {}) {
 
   const shouldListen = () => {
     const modeActive = isTalkModeRef.current || isVoiceCommandModeRef.current;
-    let yukiBusy = isThinkingRef.current || isTranscribingRef.current;
-    if (isDateModeActiveRef?.current && dateModeSpeakingRef?.current) {
-      yukiBusy = true;
+    if (isDateModeActiveRef?.current) {
+      // In Date Mode, Yuki's speech and thinking are governed exclusively by dateModeSpeakingRef, isThinkingRef, and active STT transcription
+      const yukiBusy = isThinkingRef.current || isTranscribingRef.current || Boolean(dateModeSpeakingRef?.current);
+      return modeActive && !yukiBusy;
     }
+    let yukiBusy = isThinkingRef.current || isTranscribingRef.current;
     if (!allowVoiceBargeInRef.current) {
       yukiBusy = yukiBusy || isPlayingRef.current || ttsStreamActiveRef.current || isNativeSpeakingRef.current || hasReceivedAudioRef.current;
     }
@@ -515,21 +517,26 @@ export function useSpeechRecognition(options = {}) {
           const totalRecordingDurationMs = Date.now() - recordingStartTime;
           console.log(`[STT-DIAG] MediaRecorder stopped. Total active duration: ${totalRecordingDurationMs}ms, Chunks: ${localChunks.length}`);
 
-          if (micStreamRef.current) {
-            micStreamRef.current.getTracks().forEach(track => track.stop());
+          // Stop THIS session's tracks without wiping out newer active sessions
+          stream.getTracks().forEach(track => track.stop());
+          if (micStreamRef.current === stream) {
             micStreamRef.current = null;
           }
 
-          if (micAudioContextRef.current) {
-            try { micAudioContextRef.current.close(); } catch (e) { }
+          try { micAudioCtx.close(); } catch (e) { }
+          if (micAudioContextRef.current === micAudioCtx) {
             micAudioContextRef.current = null;
           }
-          micAnalyserRef.current = null;
+          if (micAnalyserRef.current === micAnalyser) {
+            micAnalyserRef.current = null;
+          }
 
           if (!isRecordingRef.current) {
             console.log("[STT] Recording aborted. Ignoring data.");
-            setIsListening(false);
-            isSpeechRecActiveRef.current = false;
+            if (mediaRecorderRef.current === null || mediaRecorderRef.current === mediaRecorder) {
+              setIsListening(false);
+              isSpeechRecActiveRef.current = false;
+            }
             return;
           }
 
@@ -908,6 +915,7 @@ export function useSpeechRecognition(options = {}) {
     isSpeechRecActiveRef.current = false;
     if (forceAbort) {
       isRecordingRef.current = false;
+      setIsListening(false);
     }
 
     if (useLocalWhisperRef.current) {
@@ -917,13 +925,28 @@ export function useSpeechRecognition(options = {}) {
       }
       vadActiveRef.current = false;
 
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      if (mediaRecorderRef.current) {
         try {
-          mediaRecorderRef.current.stop();
+          if (mediaRecorderRef.current.state === "recording") {
+            mediaRecorderRef.current.stop();
+          }
         } catch (e) {
           console.warn("[STT] Error stopping MediaRecorder:", e);
         }
-      } else {
+      }
+      if (forceAbort) {
+        if (micStreamRef.current) {
+          try {
+            micStreamRef.current.getTracks().forEach(track => track.stop());
+            micStreamRef.current = null;
+          } catch (e) { }
+        }
+        if (micAudioContextRef.current) {
+          try { micAudioContextRef.current.close(); } catch (e) { }
+          micAudioContextRef.current = null;
+        }
+        micAnalyserRef.current = null;
+      } else if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== "recording") {
         if (micStreamRef.current) {
           try {
             micStreamRef.current.getTracks().forEach(track => track.stop());
