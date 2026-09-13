@@ -120,8 +120,13 @@ frontendUnityV2/Assets/TextMesh Pro.meta
 sysinfo
 CrashReports/
 
-# Ignore 3d assets
-frontend/public/3d_assets/
+# Ignore temporary backups
+*.bak
+
+# Unreferenced 3D test assets (active date maps/props are tracked)
+frontend/public/3d_assets/date/WaterBottle.glb
+frontend/public/3d_assets/date/bg/theater_real_4k.png
+frontend/public/3d_assets/date/textures/
 
 # Ignore Blender source files
 *.blend
