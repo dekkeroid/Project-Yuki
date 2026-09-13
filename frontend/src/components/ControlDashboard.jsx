@@ -29,6 +29,17 @@ export const normalizePersonaKey = (raw) => {
   return legacyMap[raw] || raw;
 };
 
+export const formatCrawlerDuration = (seconds) => {
+  if (seconds === null || seconds === undefined || isNaN(seconds) || seconds <= 0) return 'N/A';
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m ${sec}s`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+};
+
 export const SearchableModelSelect = ({ value, onChange, options = [], placeholder = "Select or search a model..." }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -2783,6 +2794,19 @@ const ControlDashboard = ({
       }
     } catch (e) {
       console.error('Failed to trigger recrawl:', e);
+    }
+  };
+
+  const handleStartCrawlerNow = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/crawler/start-now`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        fetchCrawlerStatus();
+      }
+    } catch (e) {
+      console.error('Failed to start crawler now:', e);
     }
   };
 
@@ -10657,12 +10681,81 @@ const ControlDashboard = ({
                   <span className="card-group-title">Background File Crawler</span>
                 </div>
 
+                {/* Startup Delay Notice Banner */}
+                {crawlerStatus?.startup_delay_active && (
+                  <div
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.12)',
+                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      borderRadius: '8px',
+                      padding: '10px 12px',
+                      marginTop: '10px',
+                      marginBottom: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                      fontSize: '0.74rem',
+                      color: '#fef3c7'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: '#fbbf24' }}>
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Startup Grace Period Active</span>
+                      </div>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f59e0b' }}>
+                        {crawlerStatus.startup_delay_remaining_seconds}s remaining
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#cbd5e1', lineHeight: '1.3' }}>
+                      Yuki delays the file crawler for 2 minutes after launch to keep system startup smooth and responsive.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleStartCrawlerNow}
+                      style={{
+                        alignSelf: 'flex-start',
+                        padding: '4px 10px',
+                        fontSize: '0.7rem',
+                        borderRadius: '6px',
+                        fontWeight: 600,
+                        background: 'rgba(245, 158, 11, 0.25)',
+                        border: '1px solid rgba(245, 158, 11, 0.5)',
+                        color: '#fbbf24',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.4)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.25)'}
+                    >
+                      Start Crawler Now
+                    </button>
+                  </div>
+                )}
+
                 {/* Crawler Status Stats */}
                 <div className="spec-list-table" style={{ marginTop: '8px' }}>
                   <div className="spec-row">
                     <span className="spec-label">File Crawler Status</span>
-                    <span className="spec-val font-semibold" style={{ color: crawlerStatus.paused ? '#c084fc' : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle' ? '#38bdf8' : '#2dd4bf') }}>
-                      {crawlerStatus.paused ? 'Paused' : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle' ? `Scanning ${crawlerStatus.roots_current}/${crawlerStatus.roots_total}` : 'Idle / Watching')}
+                    <span
+                      className="spec-val font-semibold"
+                      style={{
+                        color: crawlerStatus?.startup_delay_active
+                          ? '#f59e0b'
+                          : (crawlerStatus.paused
+                            ? '#c084fc'
+                            : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle'
+                              ? '#38bdf8'
+                              : '#2dd4bf'))
+                      }}
+                    >
+                      {crawlerStatus?.startup_delay_active
+                        ? `Startup Delay (${crawlerStatus.startup_delay_remaining_seconds}s remaining)`
+                        : (crawlerStatus.paused
+                          ? 'Paused'
+                          : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle'
+                            ? `Scanning ${crawlerStatus.roots_current}/${crawlerStatus.roots_total}`
+                            : 'Idle / Watching'))}
                     </span>
                   </div>
                   <div className="spec-row">
@@ -10675,6 +10768,24 @@ const ControlDashboard = ({
                     <span className="spec-label">Initial Full Cycle</span>
                     <span className="spec-val font-semibold" style={{ color: crawlerStatus.first_cycle_done ? '#2dd4bf' : '#38bdf8' }}>
                       {crawlerStatus.first_cycle_done ? 'Completed' : 'Scanning'}
+                    </span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">Cycles Completed</span>
+                    <span className="spec-val font-semibold" style={{ color: '#38bdf8' }}>
+                      {crawlerStatus.crawl_cycles_completed ?? (crawlerStatus.first_cycle_done ? 1 : 0)}
+                    </span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">Last Cycle Done</span>
+                    <span className="spec-val font-semibold" style={{ color: crawlerStatus.last_cycle_completed_at ? '#2dd4bf' : 'var(--text-muted)' }}>
+                      {crawlerStatus.last_cycle_completed_at || 'Never (will record on cycle completion)'}
+                    </span>
+                  </div>
+                  <div className="spec-row">
+                    <span className="spec-label">Last Cycle Duration</span>
+                    <span className="spec-val font-semibold" style={{ color: crawlerStatus.last_cycle_duration_seconds ? '#38bdf8' : 'var(--text-muted)' }}>
+                      {formatCrawlerDuration(crawlerStatus.last_cycle_duration_seconds)}
                     </span>
                   </div>
                   <div className="spec-row">

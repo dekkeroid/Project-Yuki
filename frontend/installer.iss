@@ -51,6 +51,8 @@ Source: "release\win-unpacked\*"; DestDir: "{app}"; Flags: ignoreversion recurse
 Type: filesandordirs; Name: "{app}\resources\backend\_internal"
 Type: files; Name: "{app}\resources\backend\backend.exe"
 Type: files; Name: "{app}\resources\backend\.yuki-ready"
+Type: filesandordirs; Name: "{app}\resources\backend\prompt_logs"
+Type: filesandordirs; Name: "{app}\resources\backend\response_logs"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

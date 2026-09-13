@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import time
+import datetime
 import json
 import string
 import threading
@@ -1023,6 +1024,31 @@ def _index_rules_signature() -> str:
     return hashlib.md5(payload.encode("utf-8")).hexdigest()
 
 
+def _record_cycle_completed(duration_seconds: float):
+    """
+    Records a completed crawl cycle into crawler_state.
+    Increments completed cycle count, stores formatted timestamp and duration.
+    """
+    raw_count = db.get_crawler_state("crawl_cycles_completed")
+    first_cycle_done = (db.get_crawler_state("first_cycle_done") == "true")
+    if raw_count is not None:
+        try:
+            cycles_completed = int(raw_count)
+        except (ValueError, TypeError):
+            cycles_completed = 0
+    else:
+        cycles_completed = 1 if first_cycle_done else 0
+
+    cycles_completed += 1
+    db.set_crawler_state("crawl_cycles_completed", str(cycles_completed))
+
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.set_crawler_state("last_cycle_completed_at", now_str)
+    db.set_crawler_state("last_cycle_duration_seconds", str(round(max(0.1, duration_seconds), 1)))
+    db.set_crawler_state("current_cycle_accumulated_seconds", "0.0")
+    log_message(f"[Crawler] Crawl cycle #{cycles_completed} completed in {round(duration_seconds, 1)}s at {now_str}")
+
+
 def run_crawl():
     """
     Main background crawl worker loop.
@@ -1053,6 +1079,7 @@ def run_crawl():
             db.set_crawler_state("first_time_priority_done", "false")
             db.set_crawler_state("first_cycle_done", "false")
             db.set_crawler_state("completed_roots_in_cycle", "[]")
+            db.set_crawler_state("current_cycle_accumulated_seconds", "0.0")
             STARTUP_PRIORITY_SCAN_COMPLETED = False
             
             # Clear directories cache to force walking all folders
@@ -1073,6 +1100,7 @@ def run_crawl():
             db.set_crawler_state("first_time_priority_done", "false")
             db.set_crawler_state("first_cycle_done", "false")
             db.set_crawler_state("completed_roots_in_cycle", "[]")
+            db.set_crawler_state("current_cycle_accumulated_seconds", "0.0")
             STARTUP_PRIORITY_SCAN_COMPLETED = False
             
             # Clear directories cache to force walking all folders
@@ -1124,18 +1152,27 @@ def run_crawl():
             log_message("[Crawler] First cycle is complete. Starting a new full crawl cycle...")
             completed_roots = []
             db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
+            db.set_crawler_state("current_cycle_accumulated_seconds", "0.0")
+            cycle_duration = 0.0
             
             for idx, root_dir in enumerate(all_targets):
                 log_message(f"[DEBUG] New cycle: scanning root {idx+1}/{len(all_targets)}: {root_dir}")
                 check_idle_and_game_pacing()
                 CRAWL_ROOTS_CURRENT = idx + 1
+                t0 = time.time()
                 scan_ok = scan_target_root(root_dir, all_targets)
+                root_elapsed = time.time() - t0
+                cycle_duration += root_elapsed
+                db.set_crawler_state("current_cycle_accumulated_seconds", str(round(cycle_duration, 2)))
                 if scan_ok:
                     completed_roots.append(root_dir)
                     db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
                 else:
                     log_message(f"[Crawler] Root '{root_dir}' scan FAILED — will retry next cycle")
             
+            # Record cycle completion metrics
+            _record_cycle_completed(cycle_duration)
+
             # Cycle complete - clear completed roots but keep first_cycle_done/first_time_priority_done true
             completed_roots = []
             db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
@@ -1150,6 +1187,13 @@ def run_crawl():
             CRAWL_ROOTS_CURRENT_PATH = "Idle"
             return
             
+        # Initial / Resumed Crawl Cycle
+        try:
+            raw_accum = db.get_crawler_state("current_cycle_accumulated_seconds")
+            cycle_duration = float(raw_accum) if raw_accum else 0.0
+        except (ValueError, TypeError):
+            cycle_duration = 0.0
+
         # Scenario A: First time priority scan is NOT done yet
         if not first_time_priority_done:
             log_message("[Crawler] First-time priority scan not done. Initiating priority scan...")
@@ -1165,7 +1209,11 @@ def run_crawl():
                     log_message(f"[DEBUG] Priority scan: skipping already completed root: {root_dir}")
                     continue
                     
+                t0 = time.time()
                 scan_ok = scan_target_root(root_dir, all_targets)
+                root_elapsed = time.time() - t0
+                cycle_duration += root_elapsed
+                db.set_crawler_state("current_cycle_accumulated_seconds", str(round(cycle_duration, 2)))
                 if scan_ok:
                     completed_roots.append(root_dir)
                     db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
@@ -1203,7 +1251,11 @@ def run_crawl():
                 log_message(f"[DEBUG] Resume cycle: skipping already completed root: {root_dir}")
                 continue
                 
+            t0 = time.time()
             scan_ok = scan_target_root(root_dir, all_targets)
+            root_elapsed = time.time() - t0
+            cycle_duration += root_elapsed
+            db.set_crawler_state("current_cycle_accumulated_seconds", str(round(cycle_duration, 2)))
             if scan_ok:
                 completed_roots.append(root_dir)
                 db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
@@ -1215,6 +1267,9 @@ def run_crawl():
         db.set_crawler_state("first_cycle_done", "true")
         first_cycle_done = True
         
+        # Record cycle completion metrics
+        _record_cycle_completed(cycle_duration)
+
         # Clear completed roots
         completed_roots = []
         db.set_crawler_state("completed_roots_in_cycle", json.dumps(completed_roots))
@@ -1230,6 +1285,7 @@ def run_crawl():
         db.set_crawler_state("first_time_priority_done", "false")
         db.set_crawler_state("first_cycle_done", "false")
         db.set_crawler_state("completed_roots_in_cycle", "[]")
+        db.set_crawler_state("current_cycle_accumulated_seconds", "0.0")
         _set_force_reset_flag(False, "CrawlAbortException handler")
         STARTUP_PRIORITY_SCAN_COMPLETED = False
         # Re-trigger crawl walk from scratch
@@ -1795,6 +1851,22 @@ def get_crawler_status_metrics() -> Dict[str, Any]:
             
     remaining_roots = [t for t in all_targets if t not in completed_roots]
     
+    raw_cycles = db.get_crawler_state("crawl_cycles_completed")
+    if raw_cycles is not None:
+        try:
+            cycles_completed = int(raw_cycles)
+        except (ValueError, TypeError):
+            cycles_completed = 0
+    else:
+        cycles_completed = 1 if first_cycle_done else 0
+        
+    last_cycle_completed_at = db.get_crawler_state("last_cycle_completed_at")
+    raw_duration = db.get_crawler_state("last_cycle_duration_seconds")
+    try:
+        last_cycle_duration_seconds = float(raw_duration) if raw_duration is not None else None
+    except (ValueError, TypeError):
+        last_cycle_duration_seconds = None
+
     return {
         "initial_crawl_completed": first_cycle_done,
         "first_time_priority_done": first_time_priority_done,
@@ -1804,7 +1876,10 @@ def get_crawler_status_metrics() -> Dict[str, Any]:
         "roots_total": len(all_targets),
         "roots_current": CRAWL_ROOTS_CURRENT,
         "current_root_path": CRAWL_ROOTS_CURRENT_PATH,
-        "watchdog_active": (WATCHDOG_OBSERVER is not None and WATCHDOG_OBSERVER.is_alive())
+        "watchdog_active": (WATCHDOG_OBSERVER is not None and WATCHDOG_OBSERVER.is_alive()),
+        "crawl_cycles_completed": cycles_completed,
+        "last_cycle_completed_at": last_cycle_completed_at,
+        "last_cycle_duration_seconds": last_cycle_duration_seconds
     }
 
 def force_recrawl():
@@ -1828,6 +1903,7 @@ def force_recrawl():
         db.set_crawler_state("first_time_priority_done", "false")
         db.set_crawler_state("first_cycle_done", "false")
         db.set_crawler_state("completed_roots_in_cycle", "[]")
+        db.set_crawler_state("current_cycle_accumulated_seconds", "0.0")
         global STARTUP_PRIORITY_SCAN_COMPLETED
         STARTUP_PRIORITY_SCAN_COMPLETED = False
         _set_force_reset_flag(False, "force_recrawl() - thread not alive, starting fresh")

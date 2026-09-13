@@ -1422,10 +1422,17 @@ class AgentExecutor:
                 temperature=0.5,
             )
             _log_payload_stats(payload, config.LLM_MODEL, tag="exception_explain", endpoint=url)
+            ex_start = time.time()
             async with persistent_session_context() as session:
                 async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                     resp.raise_for_status()
-                    data = await resp.json()
+                    raw_text = await resp.text()
+                    try:
+                        from app.utils.response_logger import log_llm_response
+                        log_llm_response(raw_text, model=config.LLM_MODEL, tag="exception_explain", endpoint=url, status_code=resp.status, duration_sec=time.time() - ex_start)
+                    except Exception:
+                        pass
+                    data = json.loads(raw_text)
                     choices = data.get("choices", [])
                     if choices:
                         explanation = choices[0].get("message", {}).get("content", "").strip()
@@ -2172,6 +2179,7 @@ class AgentExecutor:
         _log_payload_stats(payload, config.LLM_MODEL, tag="intent_check", endpoint=backend.get_chat_url())
 
         try:
+            intent_start = time.time()
             async with persistent_session_context() as check_session:
                 async with check_session.post(
                     backend.get_chat_url(),
@@ -2179,10 +2187,26 @@ class AgentExecutor:
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=timeout),
                 ) as resp:
+                    raw_text = await resp.text()
+                    try:
+                        from app.utils.response_logger import log_llm_response
+                        log_llm_response(
+                            raw_text,
+                            model=config.LLM_MODEL,
+                            tag="intent_check",
+                            endpoint=backend.get_chat_url(),
+                            status_code=resp.status,
+                            duration_sec=time.time() - intent_start,
+                        )
+                    except Exception:
+                        pass
                     if resp.status != 200:
                         print(f"[IntentCheck] Non-200 response ({resp.status}) — defaulting to tool")
                         return "tool", "", "LLM intent check"
-                    data = await resp.json()
+                    try:
+                        data = json.loads(raw_text)
+                    except Exception:
+                        data = {}
                     choices = data.get("choices", [])
                     if not choices:
                         return "tool", "", "LLM intent check"
@@ -2359,12 +2383,27 @@ class AgentExecutor:
         if "Authorization" not in headers and not _is_local_url(url):
             return f"Missing API key for {url}. Add a valid API key for this endpoint, then try again.", None, self._get_model_label(model_name)
         session = _get_shared_sync_session()
+        query_start = time.time()
         response = session.post(
             url,
             headers=headers,
             json=payload,
             timeout=120,
         )
+        query_duration = time.time() - query_start
+        try:
+            from app.utils.response_logger import log_llm_response
+            log_llm_response(
+                response.text,
+                model=model_name,
+                tag="query",
+                endpoint=url,
+                status_code=response.status_code,
+                duration_sec=query_duration,
+            )
+        except Exception as log_err:
+            print(f"[Query] Response logging error: {log_err}")
+
         if response.status_code == 429 or "RESOURCE_EXHAUSTED" in response.text or "quota" in response.text.lower():
             print(f"[KeyPool] ⚠️ 429 Rate Limit/Quota Exceeded (non-coder mode, no key rotation).")
 
@@ -2729,6 +2768,7 @@ class AgentExecutor:
             if "Authorization" not in headers and not _is_local_url(url):
                 yield {"content": f"Missing API key for {url}. Add a valid API key for this endpoint in the workspace's Coder Endpoint settings (e.g. your OpenRouter key), then try again."}
                 return
+            stream_start = time.time()
             async with session.post(url, json=payload, headers=headers, timeout=120) as resp:
                 if resp.status != 200:
                     try:
@@ -2744,14 +2784,33 @@ class AgentExecutor:
                         print(f"[KeyPool][Stream] ⚠️ 429 Rate Limit/Quota Exceeded! Rotating key and retrying (attempt {attempt+2}/{max_attempts})...")
                         continue
 
+                    try:
+                        from app.utils.response_logger import log_llm_response
+                        log_llm_response(
+                            err_text,
+                            model=model,
+                            tag="stream_error",
+                            endpoint=url,
+                            status_code=resp.status,
+                            duration_sec=time.time() - stream_start,
+                        )
+                    except Exception:
+                        pass
+
                     print(f"[Stream] Error from {url}: {err_msg}")
                     yield {"content": f"Error from brain server: {err_msg}"}
                     return
+
+                raw_sse_chunks: List[str] = []
+                assembled_contents: List[str] = []
+                assembled_reasonings: List[str] = []
+                assembled_tools: Dict[int, Dict[str, Any]] = {}
 
                 async for line_bytes in resp.content:
                     line = line_bytes.decode("utf-8").strip()
                     if not line:
                         continue
+                    raw_sse_chunks.append(line)
                     if line.startswith("event: error"):
                         continue
                     if line.startswith("data: "):
@@ -2766,9 +2825,53 @@ class AgentExecutor:
                             choices = data.get("choices", [])
                             if choices:
                                 delta = choices[0].get("delta", {})
+                                c = delta.get("content")
+                                if c:
+                                    assembled_contents.append(c)
+                                r = delta.get("reasoning_content") or delta.get("reasoning")
+                                if r:
+                                    assembled_reasonings.append(r)
+                                tc_list = delta.get("tool_calls")
+                                if tc_list:
+                                    for tc in tc_list:
+                                        tc_idx = tc.get("index", 0)
+                                        if tc_idx not in assembled_tools:
+                                            assembled_tools[tc_idx] = {
+                                                "id": tc.get("id", ""),
+                                                "function": {
+                                                    "name": tc.get("function", {}).get("name", ""),
+                                                    "arguments": tc.get("function", {}).get("arguments", "")
+                                                }
+                                            }
+                                        else:
+                                            if tc.get("id"):
+                                                assembled_tools[tc_idx]["id"] = tc.get("id")
+                                            fn = tc.get("function", {})
+                                            if fn.get("name"):
+                                                assembled_tools[tc_idx]["function"]["name"] += fn.get("name")
+                                            if fn.get("arguments"):
+                                                assembled_tools[tc_idx]["function"]["arguments"] += fn.get("arguments")
                                 yield delta
                         except Exception:
                             pass
+
+                try:
+                    from app.utils.response_logger import log_llm_response
+                    log_llm_response(
+                        response=None,
+                        model=model,
+                        tag="stream",
+                        endpoint=url,
+                        status_code=resp.status,
+                        duration_sec=time.time() - stream_start,
+                        raw_chunks=raw_sse_chunks,
+                        assembled_content="".join(assembled_contents),
+                        assembled_reasoning="".join(assembled_reasonings),
+                        assembled_tool_calls=list(assembled_tools.values()) if assembled_tools else None,
+                    )
+                except Exception as log_err:
+                    print(f"[Stream] Response logging error: {log_err}")
+
                 break
 
 
@@ -2896,12 +2999,12 @@ class AgentExecutor:
 
         # 2. Match patterns: default_api:tool_name{...}, tool_name(...), api:tool_name{...}, tool_name
         m = re.match(
-            r'^(?:call:)?(?:[a-zA-Z0-9_]+[:.])?([a-zA-Z0-9_]+)\s*(?:[{(\[]\s*([\s\S]*?)\s*[})\]]|\s*$)',
+            r'^(?:call:)?(?:[a-zA-Z0-9_]+[:.])?([a-zA-Z0-9_]+)\s*(?:\{([\s\S]*?)\}|\(([\s\S]*?)\)|\[([\s\S]*?)\]|\s*$)',
             cleaned
         )
         if m:
             fn_name = m.group(1).strip()
-            body = (m.group(2) or "").strip()
+            body = (m.group(2) if m.group(2) is not None else (m.group(3) if m.group(3) is not None else (m.group(4) or ""))).strip()
             norm_name = self._normalize_tool_name(fn_name)
 
             # Ensure the extracted tool is a registered tool or known tool pattern
@@ -2917,28 +3020,33 @@ class AgentExecutor:
                     else:
                         args_dict = json.loads("{" + body + "}")
                 except Exception:
-                    args_dict = self._parse_python_args(norm_name, body)
+                    # Check single primary argument block first (e.g. code:..., command:..., query:...)
+                    m_code = re.match(r'^(code|command|query|prompt|script|pattern|items|message)\s*[:=]\s*([\s\S]+)$', body.strip(), re.IGNORECASE)
+                    if m_code:
+                        args_dict = {m_code.group(1).lower(): m_code.group(2).strip()}
+                    else:
+                        args_dict = self._parse_python_args(norm_name, body)
                     if not args_dict:
                         # Loose key-value parser for unquoted values (e.g. window_title:active, query:who is this)
-                        pattern = re.compile(r'([a-zA-Z0-9_]+)\s*[:=]\s*(?:"([^"]*)"|\'([^\']*)\'|([^,{}()]+))')
-                        for km in pattern.finditer(body):
-                            k = km.group(1).strip()
-                            val = km.group(2) if km.group(2) is not None else (km.group(3) if km.group(3) is not None else km.group(4).strip())
-                            val_lower = val.lower()
-                            if val_lower == 'true':
-                                args_dict[k] = True
-                            elif val_lower == 'false':
-                                args_dict[k] = False
-                            elif val_lower in ('null', 'none'):
-                                args_dict[k] = None
-                            else:
-                                try:
-                                    args_dict[k] = int(val)
-                                except ValueError:
+                            pattern = re.compile(r'([a-zA-Z0-9_]+)\s*[:=]\s*(?:"([^"]*)"|\'([^\']*)\'|([^,{}()]+))')
+                            for km in pattern.finditer(body):
+                                k = km.group(1).strip()
+                                val = km.group(2) if km.group(2) is not None else (km.group(3) if km.group(3) is not None else km.group(4).strip())
+                                val_lower = val.lower()
+                                if val_lower == 'true':
+                                    args_dict[k] = True
+                                elif val_lower == 'false':
+                                    args_dict[k] = False
+                                elif val_lower in ('null', 'none'):
+                                    args_dict[k] = None
+                                else:
                                     try:
-                                        args_dict[k] = float(val)
+                                        args_dict[k] = int(val)
                                     except ValueError:
-                                        args_dict[k] = val
+                                        try:
+                                            args_dict[k] = float(val)
+                                        except ValueError:
+                                            args_dict[k] = val
 
             return [{
                 "id": self._unique_tool_call_id(f"tag_{norm_name}"),
@@ -2963,9 +3071,9 @@ class AgentExecutor:
         extracted = []
         first_match_start = None
 
-        # Pattern 1: XML/tag-based tool calls: <tool_call>...</tool_call>, <function_call>...</function_call>, [TOOL_CALL]...[/TOOL_CALL]
+        # Pattern 1: XML/tag-based tool calls: <tool_call>...</tool_call>, <function_call>...</function_call>, <s_tool_call>...</s_tool_call>, [TOOL_CALL]...[/TOOL_CALL]
         tag_pattern = re.compile(
-            r'(?:<tool_call>|<function_call>|\[TOOL_CALL\])\s*([\s\S]*?)\s*(?:</tool_call>|</function_call>|\[/TOOL_CALL\])',
+            r'(?:<tool_call>|<function_call>|<s_tool_call>|<tool_code>|\[TOOL_CALL\])\s*([\s\S]*?)\s*(?:</tool_call>|</function_call>|</s_tool_call>|</tool_code>|\[/TOOL_CALL\])',
             re.IGNORECASE
         )
         for m in tag_pattern.finditer(text):
@@ -2979,6 +3087,58 @@ class AgentExecutor:
                 tag_calls = self._parse_tag_tool_payload(raw_payload)
                 if tag_calls:
                     extracted.extend(tag_calls)
+
+        # Pattern 1b: XML action tags with attributes or body: <action:tool_name attr="val".../> or <action:tool_name>...</action>
+        action_tag_pattern = re.compile(
+            r'<action:([a-zA-Z0-9_]+)\s*([^>]*?)(?:/>|>\s*([\s\S]*?)\s*</action>)',
+            re.IGNORECASE
+        )
+        for m in action_tag_pattern.finditer(text):
+            fn_name = m.group(1).strip()
+            norm_name = self._normalize_tool_name(fn_name)
+            # Only treat as tool call if tool name matches a registered tool
+            if hasattr(self, "tools") and self.tools:
+                if not (norm_name in self.tools or fn_name in self.tools or norm_name.startswith("jarvis_") or fn_name.startswith("jarvis_")):
+                    continue
+            if first_match_start is None or m.start() < first_match_start:
+                first_match_start = m.start()
+            attrs_str = (m.group(2) or "").strip()
+            body_str = (m.group(3) or "").strip() if len(m.groups()) >= 3 and m.group(3) else ""
+            args_dict = {}
+            if attrs_str:
+                for attr_m in re.finditer(r'([a-zA-Z0-9_]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))', attrs_str):
+                    k = attr_m.group(1)
+                    v = attr_m.group(2) if attr_m.group(2) is not None else (attr_m.group(3) if attr_m.group(3) is not None else attr_m.group(4))
+                    v_lower = str(v).lower()
+                    if v_lower == 'true':
+                        args_dict[k] = True
+                    elif v_lower == 'false':
+                        args_dict[k] = False
+                    elif v_lower in ('null', 'none'):
+                        args_dict[k] = None
+                    else:
+                        try:
+                            args_dict[k] = int(v)
+                        except ValueError:
+                            try:
+                                args_dict[k] = float(v)
+                            except ValueError:
+                                args_dict[k] = v
+            if body_str:
+                try:
+                    b_json = json.loads(body_str)
+                    if isinstance(b_json, dict):
+                        args_dict.update(b_json)
+                except Exception:
+                    args_dict["content"] = body_str
+            extracted.append({
+                "id": self._unique_tool_call_id(f"action_{norm_name}"),
+                "type": "function",
+                "function": {
+                    "name": norm_name,
+                    "arguments": json.dumps(args_dict)
+                }
+            })
 
         # Pattern 2: Markdown blocks ```tool_args or ```json if no tag calls found
         if not extracted:
@@ -3005,15 +3165,15 @@ class AgentExecutor:
                 return parsed_calls, ""
 
         # Pattern 4: Python-style function calls (e.g. jarvis_see_screen(), tool_name(...))
-        # Matches standalone lines or code-fenced lines where the function name matches a registered tool
+        # Matches standalone lines, inline calls, or code-fenced lines where the function name matches a registered tool
         if not extracted:
             py_call_pattern = re.compile(
-                r'(?:```(?:python|py)?\s*\n)?(?:^|\n)\s*`?\s*(?:await\s+)?([a-zA-Z0-9_]+)\s*\(([\s\S]*?)\)\s*`?(?:\s*\n```)?(?=\n|$)',
+                r'(?:```(?:python|py)?\s*\n)?(?:^|\n|(?<=[.\s>]))\s*(?:<([a-zA-Z0-9_]+)>)?\s*`?\s*(?:await\s+)?([a-zA-Z0-9_]+)\s*\(([\s\S]*?)\)\s*`?(?:</\1>)?(?:\s*\n```)?(?=[.\s\n<]|$)',
                 re.IGNORECASE
             )
             for m in py_call_pattern.finditer(text):
-                fn_name = m.group(1).strip()
-                raw_args = m.group(2).strip()
+                fn_name = m.group(2).strip()
+                raw_args = m.group(3).strip()
                 norm_name = self._normalize_tool_name(fn_name)
                 # Ensure the matched function name is a valid registered tool or known tool alias
                 if not (norm_name in self.tools or fn_name in self.tools or fn_name.startswith("jarvis_")):
@@ -3034,11 +3194,14 @@ class AgentExecutor:
 
         if extracted:
             cleaned_narration = text[:first_match_start].strip() if first_match_start is not None else ""
+            cleaned_narration = tag_pattern.sub("", cleaned_narration)
+            cleaned_narration = action_tag_pattern.sub("", cleaned_narration).strip()
             return extracted, cleaned_narration
 
-        # Even if extraction didn't match a valid tool, strip any raw <tool_call>...</tool_call> tags from output text
+        # Even if extraction didn't match a valid tool, strip any raw tag markers from output text
         # so raw markup never leaks into conversational chat UI or TTS
-        cleaned_text = tag_pattern.sub("", text).strip()
+        cleaned_text = tag_pattern.sub("", text)
+        cleaned_text = action_tag_pattern.sub("", cleaned_text).strip()
         return [], cleaned_text
 
     def _parse_python_args(self, tool_name: str, args_str: str) -> dict:

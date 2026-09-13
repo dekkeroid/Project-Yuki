@@ -81,7 +81,13 @@ Write-Host ""
 Write-Host "Checking for changes..."
 
 $backendSources = @(Get-ChildItem "$backendDir\app" -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -notmatch '\\__pycache__\\' -and $_.Extension -notin '.pyc', '.pyo', '.db', '.db-wal', '.db-shm' })
+    Where-Object { 
+        $_.FullName -notmatch '\\__pycache__\\' -and 
+        $_.FullName -notmatch '[\\/](prompt_logs|response_logs)([\\/]|$)' -and 
+        $_.FullName -notmatch '[\\/]bin[\\/]lsp[\\/]node_modules([\\/]|$)' -and 
+        $_.FullName -notmatch '[\\/]\.pytest_cache([\\/]|$)' -and 
+        $_.Extension -notin '.pyc', '.pyo', '.db', '.db-wal', '.db-shm' 
+    })
 $backendSources += @(Get-Item "$backendDir\run.py", "$backendDir\requirements.txt", "$backendDir\yuki-backend.spec" -ErrorAction SilentlyContinue)
 $backendChanged = Is-AnyNewer (Join-Path $installDir 'resources\backend\backend.exe') $backendSources
 
@@ -97,7 +103,7 @@ if ((-not (Test-Path $installed3DAssets)) -and (Test-Path "$frontendDir\public\3
     $frontendChanged = $true
 } elseif (Test-Path "$frontendDir\public\3d_assets") {
     $assetsSources = @(Get-ChildItem "$frontendDir\public\3d_assets" -Recurse -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Extension -notin '.blend', '.blend1', '.blend2' })
+        Where-Object { $_.Extension -notin '.blend', '.blend1', '.blend2', '.bak', '.tmp' })
     foreach ($a in $assetsSources) {
         $rel = $a.FullName.Substring((Join-Path $root "$frontendDir\public\").Length)
         $destFile = Join-Path $installDir "resources\frontend\dist\$rel"
@@ -344,7 +350,7 @@ if ($selFrontend) {
 
     # Explicitly ensure 3D non-VRM assets are synced to installed app
     if (Test-Path "$root\$frontendDir\public\3d_assets") {
-        robocopy "$root\$frontendDir\public\3d_assets" (Join-Path $installDir 'resources\frontend\dist\3d_assets') /E /NFL /NDL /NJH /NJS /XF *.blend *.blend1 *.blend2 | Out-Null
+        robocopy "$root\$frontendDir\public\3d_assets" (Join-Path $installDir 'resources\frontend\dist\3d_assets') /E /NFL /NDL /NJH /NJS /XF *.blend *.blend1 *.blend2 *.bak *.tmp | Out-Null
     }
 }
 
@@ -359,10 +365,10 @@ if ($selBackend) {
         $destRootApp     = Join-Path $installDir 'resources\backend\app'
         $localDistApp    = "$root\$backendDir\dist\backend\_internal\app"
         
-        $rc1 = robocopy "$root\$backendDir\app" $destInternalApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo *.db *.db-wal *.db-shm /XD __pycache__
-        $rc2 = robocopy "$root\$backendDir\app" $destRootApp     /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo *.db *.db-wal *.db-shm /XD __pycache__
+        $rc1 = robocopy "$root\$backendDir\app" $destInternalApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo *.db *.db-wal *.db-shm /XD __pycache__ prompt_logs response_logs .pytest_cache
+        $rc2 = robocopy "$root\$backendDir\app" $destRootApp     /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo *.db *.db-wal *.db-shm /XD __pycache__ prompt_logs response_logs .pytest_cache
         if (Test-Path "$root\$backendDir\dist\backend\_internal") {
-            $rc3 = robocopy "$root\$backendDir\app" $localDistApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo *.db *.db-wal *.db-shm /XD __pycache__
+            $rc3 = robocopy "$root\$backendDir\app" $localDistApp /E /NFL /NDL /NJH /NJS /XF *.pyc *.pyo *.db *.db-wal *.db-shm /XD __pycache__ prompt_logs response_logs .pytest_cache
         }
 
         # Automatically detect and sync any newly installed or updated packages from venv to installed app
@@ -439,7 +445,7 @@ if ($selBackend) {
         Remove-Item (Join-Path $installDir 'resources\backend\_internal\app') -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $installDir 'resources\backend\app') -Recurse -Force -ErrorAction SilentlyContinue
 
-        $rc = robocopy "$root\$backendDir\dist\backend" (Join-Path $installDir 'resources\backend') /E /XF .env *.db *.db-wal *.db-shm /NFL /NDL /NJH /NJS
+        $rc = robocopy "$root\$backendDir\dist\backend" (Join-Path $installDir 'resources\backend') /E /XF .env *.db *.db-wal *.db-shm /XD prompt_logs response_logs .pytest_cache /NFL /NDL /NJH /NJS
         if ($rc -ge 8) { Write-Host ""; Write-Host "COPY FAILED (robocopy code $rc)."; exit 1 }
 
         # Restore preserved vectors.db
@@ -484,7 +490,7 @@ if ($selElectron) {
             robocopy "$root\$frontendDir\dist" (Join-Path $tempDir "dist") /E /NFL /NDL /NJH /NJS /XD models
         }
         if (Test-Path "$root\$frontendDir\public\3d_assets") {
-            robocopy "$root\$frontendDir\public\3d_assets" (Join-Path $tempDir "dist\3d_assets") /E /NFL /NDL /NJH /NJS /XF *.blend *.blend1 *.blend2 | Out-Null
+            robocopy "$root\$frontendDir\public\3d_assets" (Join-Path $tempDir "dist\3d_assets") /E /NFL /NDL /NJH /NJS /XF *.blend *.blend1 *.blend2 *.bak *.tmp | Out-Null
         }
         
         Push-Location "$root\$frontendDir"

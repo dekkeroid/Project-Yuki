@@ -307,7 +307,25 @@ export function useSpeechRecognition(options = {}) {
     // Clean punctuation for command checks
     const cleaned = transcript.trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "");
     const lower = cleaned.toLowerCase().trim();
+
+    // Anti-hallucination filter: discard whole message if known Whisper outro artifact, prompt leak, or repetition loop is present
+    const normTranscript = lower.replace(/['’]/g, "'");
+    const thankMatches = normTranscript.match(/\bthanks?\b/gi);
+    const hasMultipleThanks = thankMatches && thankMatches.length > 1;
+    const hasOutroPhrase = /\band\s+(?:i'?ll|i\s+will)\s+see\s+you\s+in\s+the\s+next\s+video\b/i.test(normTranscript);
+    const hasPromptLeak = /\byou\s+can\s+execute\s+a\s+command\s+such\s+as\s+taking\s+a\s+screenshot\b/i.test(normTranscript);
+
+    if (hasOutroPhrase || hasPromptLeak || hasMultipleThanks) {
+      logSTTStatus(`[STT] Filtered known hallucination: "${transcript}"`);
+      if (logToTerminal) logToTerminal(`[STT] Filtered known hallucination: "${transcript}"`);
+      updateListeningState();
+      return;
+    }
+
+
+
     logSTTStatus(`Processing transcript: "${transcript}" (cleaned: "${cleaned}", isVoiceCommandMode=${isVoiceCommandModeRef.current}, isTalkMode=${isTalkModeRef.current}, isBargeIn=${isBargeIn})`);
+
 
     // If voice command mode is active
     if (isVoiceCommandModeRef.current) {

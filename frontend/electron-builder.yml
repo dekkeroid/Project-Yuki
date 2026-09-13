@@ -21,6 +21,10 @@ extraResources:
     to: backend
     filter:
       - "**/*"
+      - '!prompt_logs/**/*'
+      - '!prompt_logs'
+      - '!response_logs/**/*'
+      - '!response_logs'
   - from: ../backend/.env.default
     to: backend/.env
     filter:

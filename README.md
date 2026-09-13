@@ -1,121 +1,213 @@
 # Project Yuki
 
-Project Yuki is an Electron + React desktop companion with a FastAPI backend, local LM Studio chat completions, speech/TTS support, file search, and desktop-control tools.
+<div align="center">
+  <h3>Next-Generation Desktop AI Companion with Voice, Vision, Memory, and System Control</h3>
+  <p>An open, customizable 3D anime companion engineered in Electron, React, Three.js, and FastAPI.</p>
+</div>
 
-## Architecture overview
+---
+
+## Highlights
+
+- **Interactive 3D Avatar (VRM / Three.js)**: Full 3D companion with procedural physics, realistic eyelid blinking, micro-saccades, gaze tracking, emotion blend shapes, and custom VRMA motion capture playback.
+- **Intimate Date Mode**: Dedicated secondary standalone stage featuring romantic 3D environments (Tokyo Sky Lounge, Marine Drive, Sakura River, Cozy Cafe), custom camera perspectives, reactive animations, and proactive conversational initiatives.
+- **Flexible LLM Backends**: Seamless support for local models via **LM Studio** and **Ollama**, as well as cloud frontier APIs (**OpenAI**, **Gemini**, or any OpenAI-compatible endpoint). Dual-endpoint strategy allows lightweight models for conversation and frontier models for complex tool execution.
+- **Autonomous System Control & Desktop Vision**: Powered by Model Context Protocol (FastMCP) and native execution tools. Yuki can search and index local files, read/edit documents, view screen state, control multimedia, open applications, execute shell tasks, and browse the web.
+- **Natural Voice & Streaming Speech**: Real-time Voice Activity Detection (VAD) via `@ricky0123/vad-web` + Silero VAD, fast local speech-to-text with Faster-Whisper, and low-latency natural text-to-speech with Kokoro ONNX and edge TTS fallbacks.
+- **Local Neural Memory & Semantic Search**: Automated background crawler and vector database (`vectors.db`) that indexes personal files, documents, project directories, and conversational memories without sending private data to cloud services.
+
+---
+
+## Architecture Overview
 
 ```text
-Electron/React UI
-  ├─ WebSocket chat stream + confirmation dialogs
-  ├─ /open and /play quick commands
-  └─ VRM avatar + desktop chat bubble
+Electron Desktop Application
+  ├── Main Floating Companion Window (Transparent glassmorphic avatar + chat bubble)
+  ├── Detached Control Dashboard Window (Full settings, memory inspector, crawler stats)
+  └── Standalone Date Mode Window (Immersive full 3D date environment & romantic stage)
 
-FastAPI backend (`backend/app/main.py`)
-  ├─ AgentExecutor (`backend/app/agent/executor.py`)
-  ├─ LM Studio `/v1/chat/completions`
-  ├─ StdioMCPToolBridge (`backend/app/mcp_client.py`)
-  ├─ Safety policy + one-time grants (`backend/app/tools/safety.py`)
-  └─ Local fallback tool dispatcher
+React + Three.js Frontend
+  ├── VRM Avatar Engine (@pixiv/three-vrm, procedural animations, blend shapes, lookAt)
+  ├── Web VAD + Speech Recognition Hook (Continuous listening, wake words, barge-in)
+  └── WebSocket State Bridge (Real-time token streaming, thinking status, audio visemes)
 
-Stdio MCP subprocess (`backend/app/mcp_server.py`)
-  └─ Existing Yuki tools in `backend/app/tools/*`
+FastAPI Backend (`backend/app/main.py`)
+  ├── Agent Executor (`backend/app/agent/executor.py`) — Multi-turn reasoning & tool execution
+  ├── LLM Backend Providers (`backend/app/agent/llm_backend.py`) — Local & Cloud streaming
+  ├── FastMCP Stdio Bridge (`backend/app/mcp_server.py`) — Standardized tool isolation
+  ├── Safety Sandbox (`backend/app/tools/safety.py`) — Confirmation tokens & permission gates
+  ├── Semantic File Crawler & Vector DB (`backend/app/memory/crawler.py`) — Local search index
+  └── Kokoro ONNX Audio Engine (`backend/app/voice/tts.py`) — High-fidelity local speech synthesis
 ```
 
-## MCP migration
+---
 
-Yuki's local tools are now exposed as a stdio MCP server via `python -m app.mcp_server`. The backend defaults to `YUKI_TOOL_TRANSPORT=mcp-stdio`, so tool discovery and execution go through MCP first, then fall back to the legacy in-process dispatcher when `YUKI_MCP_FALLBACK_TO_LOCAL=true`.
+## Getting Started & Installation
 
-See [`backend/MCP.md`](backend/MCP.md) for host configuration, environment variables, and the stdio logging rule.
+### Option 1: Pre-Built Windows Installer (Recommended)
+Download the latest `YukiAI-Setup.exe` from the [GitHub Releases](https://github.com/dekkeroid/Project-Yuki/releases) page and run the installer. Yuki installs into your local application directory and launches immediately.
 
-## Tool selection / tool-search-style routing
+### Option 2: Running from Source
 
-Claude's official tool-search tool dynamically loads a small number of relevant tools from a large catalog using deferred tool definitions (`defer_loading: true`) and search result references. The docs describe regex and BM25 variants that search tool names, descriptions, argument names, and argument descriptions: <https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool>.
+#### Prerequisites
+- **OS**: Windows 10/11 (64-bit)
+- **Node.js**: v18 or later (`node -v` / `npm -v`)
+- **Python**: 3.10 or 3.11 (`python --version`)
+- **Git**
+- *(Optional)* [LM Studio](https://lmstudio.ai/) or [Ollama](https://ollama.com/) running locally.
 
-LM Studio/OpenAI-style local tool calling does not provide Claude's `tool_reference` expansion protocol, so Yuki implements the closest compatible pattern locally:
-
-- MCP discovers the full tool catalog.
-- `backend/app/tools/selector.py` scores tool names, descriptions, and JSON-schema text against the current user message.
-- The backend sends the highest scoring tools to LM Studio.
-- If confidence is weak, it sends all tools instead of hiding the tool Yuki might need.
-
-This keeps prompts smaller without the fragile old keyword-only buckets.
-
-## Safety sandbox
-
-Tool execution is guarded twice: before the backend dispatches to MCP/local fallback, and inside the MCP server itself.
-
-Risky actions require a backend-issued, one-time confirmation grant. Model-supplied `confirmed: true`, client-supplied `force: true`, or external MCP host arguments do not authorize execution by themselves. This specifically protects against speech-to-text hallucinations such as a misheard shutdown request.
-
-The frontend receives only a non-executable pending confirmation token before the user approves. The backend creates the executable grant after approval and consumes it immediately at the MCP/local execution boundary.
-
-Default policy:
-
-- Terminal commands are confirmation-gated, with destructive shell patterns blocked.
-- Shutdown/restart are blocked by default.
-- File create/edit/delete, app launch, process kill, keyboard/mouse input, window close, and non-media open/play actions require user approval.
-- Read-only tools such as date/time, system stats, directory listing, search, and web search remain available without confirmation.
-
-## UI improvements
-
-Long desktop chat bubbles are clamped to the Electron window viewport using `frontend/src/utils/desktopBubblePosition.js`. The bubble now has max width/height, scroll handling, and robust word wrapping so longer 4-5 line messages no longer clip through the window.
-
-## Building the app
-
-The build pipeline runs four sequential steps. Each step depends on the previous one completing successfully.
-
-To run the whole pipeline at once, from the repo root:
-
+#### 1. Clone the Repository
 ```bash
+git clone https://github.com/dekkeroid/Project-Yuki.git
+cd Project-Yuki
+```
+
+#### 2. Backend Setup
+```powershell
+cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cp .env.default .env
+```
+*Review `.env` if you wish to configure default API keys, voice selection, or custom directories.*
+
+#### 3. Frontend Setup
+```powershell
+cd ..\frontend
+npm install
+```
+
+#### 4. Launching Development Mode
+From the root directory, simply run:
+```bat
+"start yuki ai (2 windows).bat"
+```
+This starts:
+- The FastAPI backend with automatic reloading on port 8000.
+- The Vite development server on port 5173 with hot-module replacement.
+- Electron in development mode with automatic restart on main-process edits.
+
+---
+
+## Configuration & Feature Wiki
+
+### 1. LLM Endpoint Strategies & Models
+Yuki supports three operational LLM strategies configured under **Settings > Models**:
+- **Single Endpoint**: One model handles all conversational queries and system tools (ideal when using powerful frontier models like Gemini 2.5 Flash / Pro or GPT-4o).
+- **Dual Strategy (Speed & Cost Optimization)**:
+  - **Chat/Simple Model**: A fast, lightweight local or cloud model (e.g. Qwen 2.5 7B, Llama 3.2 3B) for instant casual banter and chitchat.
+  - **Tool/Complex Model**: A capable frontier model called dynamically only when system tools, code writing, or multi-step reasoning are required.
+- **Thinking & Reasoning Depth**: Control internal chain-of-thought depth with the `Thinking Effort` selector (`none`, `minimal`, `low`, `medium`, `high`) to balance accuracy and response latency across Gemini and OpenAI o-series models.
+
+### 2. Autonomous Tools & FastMCP Architecture
+Yuki local tools are exposed as a stdio Model Context Protocol (MCP) server via `python -m app.mcp_server`:
+- **Discovery**: Full catalog loaded dynamically without prompt bloat.
+- **Dynamic Scoring**: `backend/app/tools/selector.py` scores tool schemas against the user's intent so models only receive tools pertinent to the immediate task.
+- **Supported Toolsets**:
+  - `web_search` & `web_scrape`: Live internet search and page extraction.
+  - `see_screen` & `take_screenshot`: Visual inspection of desktop windows.
+  - `read_file`, `create_file`, `edit_file`: Full filesystem manipulation.
+  - `execute_terminal_command`: PowerShell command execution.
+  - `keyboard_mouse_input`: Automated UI clicking, typing, and hotkeys.
+  - `system_status`: Hardware telemetry (CPU, GPU, RAM, VRAM, Temperatures).
+
+### 3. Tool Safety Sandbox & Permissions
+Tool execution is guarded twice: before dispatch and inside the MCP server itself.
+- Destructive commands, system power management, and file deletions require explicit UI confirmation grants. Misheard speech recognition utterances cannot trigger unconfirmed destructive actions.
+- Safe read-only operations (reading time, checking specs, file searches) run instantly without friction.
+
+### 4. Background File Crawler & Local Search
+Yuki includes an automated, non-intrusive background file crawler:
+- **Startup Grace Period**: Suspended for the first 2 minutes after application launch to keep system startup instantaneous. A manual "Start Crawler Now" button is available in the dashboard.
+- **Resource Respect**: Throttles I/O and pauses automatically during active user conversations.
+- **Real-Time Watchdog**: Listens for file modifications in configured target folders and updates semantic indexes instantly.
+
+### 5. Date Mode (Immersive 3D Experience)
+Accessible from the companion menu or `/date` command:
+- Opens a dedicated, high-fidelity 3D window loaded with detailed romantic environments (Tokyo Sky Lounge, Cafe, Riverside).
+- Seated avatar poses, eye contact tracking with anatomical saccades, and reactive emotional animations.
+- Proactive conversational prompts: Yuki organically initiates topics or couple games during comfortable silences.
+- Continuous listening mode remains active without requiring wake words.
+
+### 6. Avatar Customization & Animations
+- **Custom VRM Models**: Drop any `.vrm` (1.0 or 0.x) file into `frontend/public/` or select via the Avatar settings tab.
+- **Motion Capture (.vrma)**: Place animation clips in `frontend/public/animations/`. Yuki automatically retargets bone hierarchies, lip-syncs, and blends facial expressions.
+- **Slash Commands**: Trigger animations manually in chat using commands such as `/wave`, `/nod`, `/blush`, `/dance`, `/cheers`, or `/think`.
+
+---
+
+## Building the Installer
+
+The complete Windows installer build pipeline is automated via `start_build.bat`:
+
+```cmd
 start_build.bat
 ```
 
-Or run each step manually:
+This sequentially:
+1. Compiles and bundles the React frontend (`npm run build:frontend`).
+2. Bundles the standalone Python backend with PyInstaller (`pyinstaller yuki-backend.spec`).
+3. Packages the Electron shell (`npm run build:electron`).
+4. Generates the final Windows installer with Inno Setup into `frontend/installer-output/YukiAI-0.3.6-beta-Setup.exe`.
 
-```bash
-# 1. Build the React frontend
-\frontend > npm run build:frontend
-
-# 2. Bundle the Python backend with PyInstaller
-\backend > venv\Scripts\pyinstaller.exe yuki-backend.spec --noconfirm
-
-# 3. Package the Electron app
-\frontend > npm run build:electron
-
-# 4. Create the Windows installer with Inno Setup
-\frontend > & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer.iss
+### Fast Updates (No Reinstall Required)
+For personal daily testing on your installed application, run:
+```bat
+update_installed.bat
 ```
+This dynamically locates your installed Yuki application, detects modified components (frontend, backend, or electron shell), and fast-syncs them directly into your installation directory without touching user databases, profiles, or `.env` configuration.
 
-The final installer is output to `frontend/installer-output/`.
+---
 
-**Prerequisites:**
-- Node.js and npm (for frontend and Electron builds)
-- Python venv with all backend dependencies installed in `backend/venv`
-- [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed at the default location
+## Development Checks
 
-## Development vs. fast updates
-
-You do not need to build an installer for every change.
-
-- **Daily iteration:** run `start yuki ai (2 windows).bat`. Vite hot-reloads frontend changes and uvicorn auto-reloads backend Python changes — no builds at all. Editing `main.electron.cjs` or `preload.cjs` now auto-restarts Electron (see `frontend/dev-main-watch.mjs`).
-- **Update your installed app quickly:** run `update_installed.bat`. It auto-locates your installed Yuki, detects what changed (backend / frontend / electron shell), shows a preview, and asks which parts to include in that update before rebuilding and copying them straight over the installed app — no installer, no reinstall, and your user data (`.db`, `.env`, attachments) is preserved. You can opt out of any component for a given update.
-
-Since the packaged app loads the frontend from `resources/frontend/dist` (outside the asar), frontend-only updates skip electron-builder entirely and finish in seconds.
-
-- **Distribution:** use `start_build.bat` to produce a fresh installer for other machines.
-
-## Development checks
-
-Backend:
-
+**Backend:**
 ```bash
 PYTHONPATH=backend python -m unittest discover -s backend/tests
 PYTHONPATH=backend python -c "import app.mcp_server"
 ```
 
-Frontend:
-
+**Frontend:**
 ```bash
 cd frontend
 node src/utils/desktopBubblePosition.test.mjs
 npm run build
 ```
+
+---
+
+## Project Structure
+
+```text
+Project Yuki/
+├── backend/
+│   ├── app/
+│   │   ├── agent/        # LLM dispatcher, executor, and system prompts
+│   │   ├── memory/       # SQLite profiles, vector store, and file crawler
+│   │   ├── tools/        # System actions, file managers, and safety policies
+│   │   ├── utils/        # Prompt & response logging, screen capture utilities
+│   │   ├── voice/        # Whisper STT, Kokoro ONNX TTS, and audio streaming
+│   │   ├── config.py     # Global configuration & environment settings
+│   │   └── main.py       # FastAPI application and WebSocket endpoints
+│   ├── yuki-backend.spec # PyInstaller packaging specification
+│   └── requirements.txt  # Python package dependencies
+├── frontend/
+│   ├── src/
+│   │   ├── components/   # AvatarViewer, ControlDashboard, ChatOverlay
+│   │   ├── hooks/        # Speech recognition, audio processing, telemetry
+│   │   ├── utils/        # Text parsers, response formatters, bubble positioning
+│   │   ├── App.jsx       # Floating companion application entry point
+│   │   └── DateModeApp.jsx # Dedicated 3D romantic date mode application
+│   ├── installer.iss     # Inno Setup Windows installer compiler script
+│   └── package.json      # Frontend package configuration
+├── start_build.bat       # Full production build and installer script
+├── update_installed.bat  # Fast sync updater for installed builds
+└── README.md             # Project documentation
+```
+
+---
+
+## License
+
+This project is licensed under the **PolyForm Noncommercial License 1.0.0**. See the [LICENSE](LICENSE) file for details.

@@ -1346,6 +1346,7 @@ const ChatOverlay = ({
   onReset,
   onStartNewSession,
   isThinking,
+  thinkingStatusText = '',
   currentSpeechText,
   isPanelOpen,
   setIsPanelOpen,
@@ -1821,6 +1822,11 @@ const ChatOverlay = ({
                 <span className="thinking-dot" style={{ animationDelay: '0ms' }}></span>
                 <span className="thinking-dot" style={{ animationDelay: '150ms' }}></span>
                 <span className="thinking-dot" style={{ animationDelay: '300ms' }}></span>
+                {thinkingStatusText && (
+                  <span className="chat-thinking-status-text" title={thinkingStatusText}>
+                    {thinkingStatusText}
+                  </span>
+                )}
               </div>
             </div>
           )}

@@ -1388,6 +1388,46 @@ body.desktop-overlay .interactive-element {
   white-space: pre-wrap;
 }
 
+.desktop-bubble-thinking-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  padding: 2px 0;
+}
+
+.thinking-dots-container {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.desktop-bubble-status-text {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  font-weight: 500;
+  color: var(--accent-teal, #2dd4bf);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+  animation: fade-in 0.2s ease-out;
+}
+
+.chat-thinking-status-text {
+  font-size: 0.8rem;
+  color: var(--accent-teal, #2dd4bf);
+  font-weight: 500;
+  margin-left: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+  animation: fade-in 0.2s ease-out;
+}
+
 /* Floating Chat Input bar */
 .desktop-chat-input-container {
   position: absolute;
