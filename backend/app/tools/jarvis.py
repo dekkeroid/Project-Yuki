@@ -603,7 +603,20 @@ def _analyze_image_file(image_path: str, prompt: str) -> str:
             log_llm_prompt(payload, model=vision_model, tag="vision_analyze", endpoint=url)
         except Exception:
             pass
+        v_start = time.time()
         resp = requests.post(url, headers=headers, json=payload, timeout=60)
+        try:
+            from app.utils.response_logger import log_llm_response
+            log_llm_response(
+                resp.text,
+                model=vision_model,
+                tag="vision_analyze",
+                endpoint=url,
+                status_code=resp.status_code,
+                duration_sec=time.time() - v_start,
+            )
+        except Exception:
+            pass
         if resp.status_code == 200:
             data = resp.json()
             choices = data.get("choices", [])
@@ -631,7 +644,20 @@ def _analyze_image_file(image_path: str, prompt: str) -> str:
                 log_llm_prompt(g_payload, model=vision_model, tag="vision_gemini_fallback", endpoint=g_url)
             except Exception:
                 pass
+            g_start = time.time()
             g_resp = requests.post(g_url, json=g_payload, timeout=60)
+            try:
+                from app.utils.response_logger import log_llm_response
+                log_llm_response(
+                    g_resp.text,
+                    model=vision_model,
+                    tag="vision_gemini_fallback",
+                    endpoint=g_url,
+                    status_code=g_resp.status_code,
+                    duration_sec=time.time() - g_start,
+                )
+            except Exception:
+                pass
             if g_resp.status_code == 200:
                 g_data = g_resp.json()
                 try:
@@ -1183,7 +1209,20 @@ def jarvis_generate_image(prompt: str, aspect_ratio: str = "1:1", style: str = "
                 log_llm_prompt(chat_payload, model=chat_payload["model"], tag="image_gen_chat", endpoint=chat_url)
             except Exception:
                 pass
+            c_start = time.time()
             c_resp = requests.post(chat_url, headers=headers, json=chat_payload, timeout=60)
+            try:
+                from app.utils.response_logger import log_llm_response
+                log_llm_response(
+                    c_resp.text,
+                    model=chat_payload["model"],
+                    tag="image_gen_chat",
+                    endpoint=chat_url,
+                    status_code=c_resp.status_code,
+                    duration_sec=time.time() - c_start,
+                )
+            except Exception:
+                pass
             if c_resp.status_code == 200:
                 c_data = c_resp.json()
                 c_text = c_data.get("choices", [{}])[0].get("message", {}).get("content", "")

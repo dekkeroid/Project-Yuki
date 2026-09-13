@@ -153,15 +153,30 @@ async def _validate_cloud_key():
             print(f"[Startup] WARNING: API key validation failed for {backend.name}: {e}.")
 
 
+CRAWLER_STARTUP_GRACE_PERIOD_SEC = 120
+crawler_startup_start_time = time.time()
+crawler_startup_done = False
+crawler_skip_grace_event: Optional[asyncio.Event] = None
+
 async def _start_crawler_bg():
     """Background: init DB and start file crawler after server is live."""
+    global crawler_startup_start_time, crawler_startup_done, crawler_skip_grace_event
     from app.memory.crawler import start_watchdog_services
     try:
         start_watchdog_services()
     except Exception as e:
         print(f"[Startup] Failed to start watchdog services: {e}")
 
-    await asyncio.sleep(120)  # 2-min grace period after startup (crawler only)
+    crawler_startup_start_time = time.time()
+    crawler_skip_grace_event = asyncio.Event()
+    try:
+        await asyncio.wait_for(crawler_skip_grace_event.wait(), timeout=CRAWLER_STARTUP_GRACE_PERIOD_SEC)
+        print("[Startup] Crawler grace period bypassed by user/recrawl request.")
+    except asyncio.TimeoutError:
+        print("[Startup] Crawler 2-min grace period elapsed.")
+    finally:
+        crawler_startup_done = True
+
     print("[Startup] Initializing file crawler and indexing database...")
     try:
         from app.memory import crawler
@@ -359,6 +374,13 @@ async def lifespan(app: FastAPI):
 
     # ── Startup — lightweight tasks only (server starts accepting ASAP) ──
     print("[Startup] Server is live — deferring heavy initialization to background...")
+
+    # Clean up stale response and prompt logs from before yesterday
+    try:
+        from app.utils.response_logger import cleanup_all_old_logs
+        cleanup_all_old_logs()
+    except Exception as e:
+        print(f"[Startup] Error cleaning up old logs: {e}")
 
     # Ensure database schema (tables/indexes/migrations) is initialized before any tools query it
     try:
@@ -709,16 +731,26 @@ async def lifespan(app: FastAPI):
             from app.utils.prompt_logger import log_llm_prompt
             log_llm_prompt(payload, model=model_name, tag="presence_nudge", endpoint=chat_url)
             
+            nudge_start = time.time()
             async with persistent_session_context() as session:
                 async with session.post(chat_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=25.0)) as resp:
                     resp_data = None
+                    raw_nudge_text = await resp.text()
+                    try:
+                        from app.utils.response_logger import log_llm_response
+                        log_llm_response(raw_nudge_text, model=model_name, tag="presence_nudge", endpoint=chat_url, status_code=resp.status, duration_sec=time.time() - nudge_start)
+                    except Exception:
+                        pass
                     if resp.status == 200:
-                        resp_data = await resp.json()
+                        try:
+                            resp_data = json.loads(raw_nudge_text)
+                        except Exception:
+                            resp_data = None
                         if is_multimodal:
                             _VISION_CAPABILITY_CACHE[model_name] = True
                     elif is_multimodal:
                         # Multimodal payload failed (e.g. model doesn't support image inputs)
-                        err_text = await resp.text()
+                        err_text = raw_nudge_text
                         print(f"[Presence] [LLM Nudge] Model '{model_name}' rejected image payload (HTTP {resp.status}: {err_text[:120]}). Caching vision=False.")
                         _VISION_CAPABILITY_CACHE[model_name] = False
 
@@ -743,9 +775,19 @@ async def lifespan(app: FastAPI):
                             use_tools=False
                         )
                         log_llm_prompt(text_payload, model=model_name, tag="presence_nudge_retry", endpoint=chat_url)
+                        retry_start = time.time()
                         async with session.post(chat_url, json=text_payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10.0)) as retry_resp:
+                            retry_raw_text = await retry_resp.text()
+                            try:
+                                from app.utils.response_logger import log_llm_response
+                                log_llm_response(retry_raw_text, model=model_name, tag="presence_nudge_retry", endpoint=chat_url, status_code=retry_resp.status, duration_sec=time.time() - retry_start)
+                            except Exception:
+                                pass
                             if retry_resp.status == 200:
-                                resp_data = await retry_resp.json()
+                                try:
+                                    resp_data = json.loads(retry_raw_text)
+                                except Exception:
+                                    resp_data = None
 
                     if resp_data:
                         raw_text = resp_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
@@ -3442,8 +3484,13 @@ async def transcribe_endpoint(file: UploadFile = File(...), model: Optional[str]
                     ),
                     timeout=35.0
                 )
+                from app.voice.stt import is_whisper_hallucination
+                if is_whisper_hallucination(transcript):
+                    print(f"[STT] Filtered known hallucination from '{stt_provider}': '{transcript}'")
+                    transcript = ""
                 print(f"[STT] Transcribed via '{stt_provider}' ({len(content)} bytes) → '{transcript}'")
                 return {"text": transcript or ""}
+
             except STTProviderError as e:
                 print(f"[STT] Cloud provider '{stt_provider}' failed: {e}")
                 return Response(
@@ -4867,6 +4914,15 @@ def get_crawler_status():
 
     metrics = crawler.get_crawler_status_metrics()
 
+    # Startup grace period tracking
+    startup_delay_active = False
+    startup_delay_remaining = 0
+    if not crawler_startup_done and crawler_startup_start_time > 0:
+        elapsed = time.time() - crawler_startup_start_time
+        if elapsed < CRAWLER_STARTUP_GRACE_PERIOD_SEC:
+            startup_delay_active = True
+            startup_delay_remaining = max(0, int(CRAWLER_STARTUP_GRACE_PERIOD_SEC - elapsed))
+
     return {
         "paused": crawler.is_crawler_paused(),
         "tagger_paused": crawler.is_tagger_paused(),
@@ -4882,11 +4938,28 @@ def get_crawler_status():
         "roots_total": metrics["roots_total"],
         "roots_current": metrics["roots_current"],
         "current_root_path": metrics["current_root_path"],
-        "watchdog_active": metrics["watchdog_active"]
+        "watchdog_active": metrics["watchdog_active"],
+        "crawl_cycles_completed": metrics.get("crawl_cycles_completed", 0),
+        "last_cycle_completed_at": metrics.get("last_cycle_completed_at"),
+        "last_cycle_duration_seconds": metrics.get("last_cycle_duration_seconds"),
+        "startup_delay_active": startup_delay_active,
+        "startup_delay_remaining_seconds": startup_delay_remaining,
+        "startup_delay_total_seconds": CRAWLER_STARTUP_GRACE_PERIOD_SEC
     }
+
+@app.post("/api/crawler/start-now")
+def trigger_start_crawler_now():
+    global crawler_skip_grace_event
+    if crawler_skip_grace_event is not None and not crawler_startup_done:
+        crawler_skip_grace_event.set()
+        return {"message": "Crawler startup grace period skipped, starting now."}
+    return {"message": "Crawler is already running or grace period expired."}
 
 @app.post("/api/crawler/recrawl")
 def trigger_force_recrawl():
+    global crawler_skip_grace_event
+    if crawler_skip_grace_event is not None:
+        crawler_skip_grace_event.set()
     from app.memory import crawler
     crawler.force_recrawl()
     return {"message": "Full recrawl started successfully."}

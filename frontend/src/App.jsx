@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Suspense, lazy } from 'react';
-import { Coffee, ShoppingBag, Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, RotateCcw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText, Star } from 'lucide-react';
+import { Coffee, ShoppingBag, Sparkles, Terminal, MessageSquare, ShieldAlert, Settings, Square, Volume2, VolumeX, X, Send, RefreshCw, RotateCcw, Play, Trash2, Cpu, User, Plus, UserCheck, HardDrive, Database, Mic, MicOff, Eye, EyeOff, History, Monitor, Music, Film, File, Upload, Download, ExternalLink, Paperclip, FileText, Star, Clock } from 'lucide-react';
 import { API_BASE, WS_BASE } from './api';
 import { ANIMATIONS } from './animationsRegistry';
 import { useBackendSocket } from './hooks/useBackendSocket';
@@ -8,6 +8,7 @@ import { useAudioPlayback } from './hooks/useAudioPlayback';
 import { useSystemMonitor } from './hooks/useSystemMonitor';
 import { SLASH_COMMANDS } from './constants';
 import { parseResponseTags, stripAnimationTags } from './utils/responseParser';
+import { formatToolStatus } from './utils/toolStatusFormatter';
 
 import AlarmOverlay from './components/AlarmOverlay';
 import StopwatchOverlay from './components/StopwatchOverlay';
@@ -42,6 +43,17 @@ const App = () => {
   const safeDecode = (str, fallback = '') => {
     if (!str) return fallback;
     try { return decodeURIComponent(str); } catch { return str; }
+  };
+
+  const formatCrawlerDuration = (seconds) => {
+    if (seconds === null || seconds === undefined || isNaN(seconds) || seconds <= 0) return 'N/A';
+    const s = Math.round(seconds);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}h ${m}m ${sec}s`;
+    if (m > 0) return `${m}m ${sec}s`;
+    return `${sec}s`;
   };
 
   if (isAlarmMode) {
@@ -578,9 +590,20 @@ const App = () => {
   const [visemeLevels, setVisemeLevels] = useState(null);
   const [isThinking, setIsThinkingState] = useState(false);
   const isThinkingRef = useRef(false);
+  const [thinkingStatusText, setThinkingStatusText] = useState('');
+  const thinkingStatusTextRef = useRef('');
+  const setThinkingStatus = (val) => {
+    const text = val || '';
+    thinkingStatusTextRef.current = text;
+    setThinkingStatusText(text);
+  };
   const setIsThinking = (val) => {
     isThinkingRef.current = val;
     setIsThinkingState(val);
+    if (!val) {
+      thinkingStatusTextRef.current = '';
+      setThinkingStatusText('');
+    }
   };
   const [cameraTrackingState, setCameraTrackingState] = useState(() => {
     try { return localStorage.getItem('yuki-camera-tracking') !== 'false'; } catch { return true; }
@@ -1332,6 +1355,11 @@ const App = () => {
           sleepTypeRef.current = null;
         }
         setIsThinking(true);
+        if (msg.tool_name) {
+          setThinkingStatus(formatToolStatus(msg.tool_name, msg.tool_args));
+        } else {
+          setThinkingStatus('');
+        }
         setTtsStreamActive(true); // WebSocket stream starts
         // Clear speech bubble immediately since a new response generation starts
         setCurrentSpeechText('');
@@ -1346,10 +1374,11 @@ const App = () => {
         }
       }
     } else if (msg.type === 'tool_start') {
-      // Build the live 🛠️ tool badge inline into the last assistant message so
-      // tool activity is visible during the turn and matches the persisted cards.
       const toolName = msg.tool_name || 'tool';
       const toolArgs = msg.tool_args || {};
+      setThinkingStatus(formatToolStatus(toolName, toolArgs));
+      // Build the live 🛠️ tool badge inline into the last assistant message so
+      // tool activity is visible during the turn and matches the persisted cards.
       const toolTarget = toolArgs.file_path || toolArgs.path || toolArgs.command || toolArgs.url || '';
       const targetInfo = toolTarget ? ` (\`${toolTarget}\`)` : '';
       const argsBlock = Object.keys(toolArgs).length
@@ -1370,6 +1399,7 @@ const App = () => {
         return newMessages;
       });
     } else if (msg.type === 'tool_result') {
+      setThinkingStatus('Processing results...');
       try {
         if (msg.result && typeof msg.result === 'string' && msg.result.includes('window_control')) {
           const data = JSON.parse(msg.result);
@@ -1441,6 +1471,9 @@ const App = () => {
       if (msg.final === false) {
         setTtsStreamActive(true);
         return;
+      }
+      if (thinkingStatusTextRef.current) {
+        setThinkingStatus('');
       }
       // Keep isThinking true so the bubble thinking animation remains active
       setTtsStreamActive(true);
@@ -2718,6 +2751,19 @@ const App = () => {
     }
   };
 
+  const handleStartCrawlerNow = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/crawler/start-now`, {
+        method: 'POST',
+      });
+      if (res.ok && isSettingsOpen && activeTab === 'crawler') {
+        fetchCrawlerStatus();
+      }
+    } catch (e) {
+      console.warn("Failed to start crawler now:", e);
+    }
+  };
+
 
 
 
@@ -3877,10 +3923,17 @@ const App = () => {
         {(isThinking || ttsStreamActive) && !currentSpeechText && (
           <div className="desktop-speech-bubble interactive-element">
             <span className="desktop-bubble-tag">Yuki</span>
-            <div style={{ display: 'flex', gap: '5px', alignItems: 'center', height: '20px', padding: '4px 0' }}>
-              <div className="thinking-dot" style={{ animationDelay: '0s' }}></div>
-              <div className="thinking-dot" style={{ animationDelay: '0.2s' }}></div>
-              <div className="thinking-dot" style={{ animationDelay: '0.4s' }}></div>
+            <div className="desktop-bubble-thinking-content">
+              <div className="thinking-dots-container">
+                <div className="thinking-dot" style={{ animationDelay: '0s' }}></div>
+                <div className="thinking-dot" style={{ animationDelay: '0.2s' }}></div>
+                <div className="thinking-dot" style={{ animationDelay: '0.4s' }}></div>
+              </div>
+              {thinkingStatusText && (
+                <span className="desktop-bubble-status-text" title={thinkingStatusText}>
+                  {thinkingStatusText}
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -6110,6 +6163,57 @@ const App = () => {
 
                 {activeTab === 'crawler' && (
                   <>
+                    {/* Startup Delay Notice Banner */}
+                    {crawlerStatus?.startup_delay_active && (
+                      <div
+                        style={{
+                          background: 'rgba(245, 158, 11, 0.12)',
+                          border: '1px solid rgba(245, 158, 11, 0.35)',
+                          borderRadius: '8px',
+                          padding: '8px 10px',
+                          marginBottom: '10px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px',
+                          fontSize: '0.72rem',
+                          color: '#fef3c7'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: '#fbbf24' }}>
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>Startup Grace Period Active</span>
+                          </div>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f59e0b' }}>
+                            {crawlerStatus.startup_delay_remaining_seconds}s remaining
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: '#cbd5e1', lineHeight: '1.3' }}>
+                          Yuki delays the file crawler for 2 minutes after launch to keep system startup smooth and responsive.
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleStartCrawlerNow}
+                          style={{
+                            alignSelf: 'flex-start',
+                            padding: '4px 10px',
+                            fontSize: '0.68rem',
+                            borderRadius: '4px',
+                            fontWeight: 600,
+                            background: 'rgba(245, 158, 11, 0.25)',
+                            border: '1px solid rgba(245, 158, 11, 0.5)',
+                            color: '#fbbf24',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.4)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.25)'}
+                        >
+                          Start Crawler Now
+                        </button>
+                      </div>
+                    )}
+
                     {/* Indexer Status Diagnostics */}
                     <div className="card-group">
                       <div className="card-group-header teal">
@@ -6120,41 +6224,77 @@ const App = () => {
                       <div className="spec-list-table" style={{ fontSize: '0.72rem' }}>
                         <div className="spec-row">
                           <span className="spec-label">Scan State</span>
-                          <span className="spec-val" style={{ color: crawlerStatus.paused ? '#c084fc' : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle' ? '#38bdf8' : '#2dd4bf'), fontWeight: 600 }}>
-                            {crawlerStatus.paused ? 'Paused' : (crawlerStatus.current_root_path && crawlerStatus.current_root_path !== 'Idle' ? `Scanning (${crawlerStatus.roots_current}/${crawlerStatus.roots_total})` : 'Idle / Watching')}
+                          <span
+                            className="spec-val"
+                            style={{
+                              color: crawlerStatus?.startup_delay_active
+                                ? '#f59e0b'
+                                : (crawlerStatus?.paused
+                                  ? '#c084fc'
+                                  : (crawlerStatus?.current_root_path && crawlerStatus.current_root_path !== 'Idle'
+                                    ? '#38bdf8'
+                                    : '#2dd4bf')),
+                              fontWeight: 600
+                            }}
+                          >
+                            {crawlerStatus?.startup_delay_active
+                              ? `Startup Delay (${crawlerStatus.startup_delay_remaining_seconds}s remaining)`
+                              : (crawlerStatus?.paused
+                                ? 'Paused'
+                                : (crawlerStatus?.current_root_path && crawlerStatus.current_root_path !== 'Idle'
+                                  ? `Scanning (${crawlerStatus.roots_current}/${crawlerStatus.roots_total})`
+                                  : 'Idle / Watching'))}
                           </span>
                         </div>
                         <div className="spec-row">
                           <span className="spec-label">Priority Phase</span>
-                          <span className="spec-val" style={{ color: crawlerStatus.first_time_priority_done ? '#2dd4bf' : '#38bdf8', fontWeight: 600 }}>
-                            {crawlerStatus.first_time_priority_done ? 'Completed' : 'Pending / Scanning'}
+                          <span className="spec-val" style={{ color: crawlerStatus?.first_time_priority_done ? '#2dd4bf' : '#38bdf8', fontWeight: 600 }}>
+                            {crawlerStatus?.first_time_priority_done ? 'Completed' : 'Pending / Scanning'}
                           </span>
                         </div>
                         <div className="spec-row">
                           <span className="spec-label">Initial Full Cycle</span>
-                          <span className="spec-val" style={{ color: crawlerStatus.first_cycle_done ? '#2dd4bf' : '#38bdf8', fontWeight: 600 }}>
-                            {crawlerStatus.first_cycle_done ? 'Completed' : 'Scanning'}
+                          <span className="spec-val" style={{ color: crawlerStatus?.first_cycle_done ? '#2dd4bf' : '#38bdf8', fontWeight: 600 }}>
+                            {crawlerStatus?.first_cycle_done ? 'Completed' : 'Scanning'}
+                          </span>
+                        </div>
+                        <div className="spec-row">
+                          <span className="spec-label">Cycles Completed</span>
+                          <span className="spec-val" style={{ fontWeight: 600, color: '#38bdf8' }}>
+                            {crawlerStatus?.crawl_cycles_completed ?? 0}
+                          </span>
+                        </div>
+                        <div className="spec-row">
+                          <span className="spec-label">Last Cycle Done</span>
+                          <span className="spec-val" style={{ fontWeight: 600, color: crawlerStatus?.last_cycle_completed_at ? '#2dd4bf' : 'var(--text-muted)' }}>
+                            {crawlerStatus?.last_cycle_completed_at || 'Never'}
+                          </span>
+                        </div>
+                        <div className="spec-row">
+                          <span className="spec-label">Last Cycle Duration</span>
+                          <span className="spec-val" style={{ fontWeight: 600, color: crawlerStatus?.last_cycle_duration_seconds ? '#38bdf8' : 'var(--text-muted)' }}>
+                            {formatCrawlerDuration(crawlerStatus?.last_cycle_duration_seconds)}
                           </span>
                         </div>
                         <div className="spec-row">
                           <span className="spec-label">Real-time Watchdog</span>
-                          <span className="spec-val" style={{ color: crawlerStatus.watchdog_active ? '#2dd4bf' : '#ef4444', fontWeight: 600 }}>
-                            {crawlerStatus.watchdog_active ? 'Active' : 'Offline'}
+                          <span className="spec-val" style={{ color: crawlerStatus?.watchdog_active ? '#2dd4bf' : '#ef4444', fontWeight: 600 }}>
+                            {crawlerStatus?.watchdog_active ? 'Active' : 'Offline'}
                           </span>
                         </div>
                         <div className="spec-row">
                           <span className="spec-label">AI Tagger Status</span>
-                          <span className="spec-val" style={{ color: crawlerStatus.tagger_paused ? '#c084fc' : '#2dd4bf', fontWeight: 600 }}>
-                            {crawlerStatus.tagger_paused ? 'Paused' : 'Active'}
+                          <span className="spec-val" style={{ color: crawlerStatus?.tagger_paused ? '#c084fc' : '#2dd4bf', fontWeight: 600 }}>
+                            {crawlerStatus?.tagger_paused ? 'Paused' : 'Active'}
                           </span>
                         </div>
                         <div className="spec-row">
                           <span className="spec-label">Indexed Files</span>
-                          <span className="spec-val" style={{ fontWeight: 600 }}>{crawlerStatus.total_files}</span>
+                          <span className="spec-val" style={{ fontWeight: 600 }}>{crawlerStatus?.total_files ?? 0}</span>
                         </div>
                         <div className="spec-row">
                           <span className="spec-label">Pending AI Tags</span>
-                          <span className="spec-val" style={{ fontWeight: 600 }}>{crawlerStatus.pending_enrichment}</span>
+                          <span className="spec-val" style={{ fontWeight: 600 }}>{crawlerStatus?.pending_enrichment ?? 0}</span>
                         </div>
                       </div>
 
@@ -6530,6 +6670,7 @@ const App = () => {
           onReset={handleReset}
           onStartNewSession={handleStartNewSession}
           isThinking={isThinking || ttsStreamActive}
+          thinkingStatusText={thinkingStatusText}
           currentSpeechText={currentSpeechText}
           isPanelOpen={isPanelOpen}
           setIsPanelOpen={setIsPanelOpen}

@@ -540,12 +540,25 @@ def ask_llm_to_resolve_match(query: str, candidates: List[Dict], is_generic: boo
             log_llm_prompt(payload, model=config.LLM_MODEL, tag="file_rank", endpoint=url)
         except Exception:
             pass
+        rank_start = time.time()
         resp = requests.post(
             url,
             headers=llm_backend.build_headers(),
             json=payload,
             timeout=10
         )
+        try:
+            from app.utils.response_logger import log_llm_response
+            log_llm_response(
+                resp.text,
+                model=config.LLM_MODEL,
+                tag="file_rank",
+                endpoint=url,
+                status_code=resp.status_code,
+                duration_sec=time.time() - rank_start,
+            )
+        except Exception:
+            pass
         if resp.status_code == 200:
             raw = resp.json()["choices"][0]["message"]["content"].strip()
             if raw.startswith("```"):

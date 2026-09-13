@@ -30,9 +30,36 @@ Whenever adding, updating, or modifying any configuration setting, VAD parameter
 
 ---
 
-## New Tool Integration Protocol (Foolproof 8-Step Checklist)
+## Dual Settings Architecture (Electron Standalone Window vs. Web / In-App Overlay Modal)
 
-Whenever adding a new AI action tool or system capability to Project Yuki, **ALWAYS** follow this end-to-end 8-step checklist to ensure proper schema exposure, executor routing, safety checks, MCP compatibility, and prompt formatting:
+Project Yuki has **TWO distinct settings interfaces** that exist concurrently in the frontend codebase. Whenever adding, modifying, or styling any settings option, diagnostic table, telemetry readout, VAD threshold, or feature toggle, you **MUST ALWAYS update BOTH interfaces** to prevent UI divergence:
+
+### 1. Electron Standalone Settings Window (`frontend/src/components/ControlDashboard.jsx` & `frontend/src/SettingsApp.jsx`)
+- **How It Opens**: Spawned as a dedicated, resizable secondary native Electron window via IPC (`window.electronAPI.openSettings()`).
+- **Target Audience / Context**: Primary desktop settings window for Electron users (often accessed via the tray or desktop menu).
+- **Root Components**: `frontend/src/SettingsApp.jsx` mounts and renders `<ControlDashboard profile={profile} ... />`.
+- **Tabs Available**: `PERSONA`, `TASKS`, `SETTINGS`, `CRAWLER`, `INFO`.
+- **State & Data Flow**: `ControlDashboard.jsx` maintains its own local state (e.g. `const [crawlerStatus, setCrawlerStatus] = useState(...)`), polling intervals (`fetchCrawlerStatus`, `fetchGpuMem`), and direct API calls (`/api/profile/update`, `/api/crawler/recrawl`, etc.).
+- **Rule**: When adding new fields, cards, toggles, or diagnostic tables (like Crawler stats, memory cards, or audio controls), ensure they are implemented inside `ControlDashboard.jsx`!
+
+### 2. Web / In-App Overlay Settings Modal (`frontend/src/App.jsx`)
+- **How It Opens**: Triggered directly inside the main transparent companion window as a glassmorphic overlay modal via `setIsSettingsOpen(true)` (clicking the gear icon or companion menu).
+- **Target Audience / Context**: Browser / Web mode, compact desktop view, or quick in-app overlay tweaks without opening the detached window.
+- **Root Components**: Rendered directly in `frontend/src/App.jsx` inside the `{isSettingsOpen && ...}` overlay container.
+- **Tabs Available**: `Memory`, `Settings`, `Crawler`.
+- **State & Data Flow**: Driven by custom hooks hosted in `App.jsx` (`useSystemMonitor.js`, `useBackendSocket.js`, `useSpeechRecognition.js`, etc.) with handlers like `handleTriggerRecrawl`, `handleUpdateSetting`.
+- **Rule**: Ensure the exact same controls, toggles, and diagnostic readouts are also reflected in `App.jsx`!
+
+### Strict Synchronization Checklist for Any Settings Changes:
+1. Did you update the standalone Electron window in `ControlDashboard.jsx`?
+2. Did you update the in-app overlay modal in `App.jsx`?
+3. Are the field names, labels, and state behaviors completely consistent between both?
+
+---
+
+## New Tool Integration Protocol (Foolproof 9-Step Checklist)
+
+Whenever adding a new AI action tool or system capability to Project Yuki, **ALWAYS** follow this end-to-end 9-step checklist to ensure proper schema exposure, executor routing, safety checks, MCP compatibility, and prompt formatting:
 
 ### 1. Tool Implementation (`backend/app/tools/<module>.py` or `AgentExecutor`)
 - **Standalone / System Tools**: Implement the function in a tool module (e.g. `backend/app/tools/system.py`, `files.py`, `web.py`, or a new dedicated module).
@@ -123,6 +150,13 @@ Whenever adding a new AI action tool or system capability to Project Yuki, **ALW
   - If the tool can be invoked by background watchers/intervals, add its name to `get_scheduled_task_schema()` under `run_tool` description.
 - **PyInstaller Hidden Imports (`backend/yuki-backend.spec`)**:
   - If you created a new tool module (e.g. `backend/app/tools/my_tool.py`) or introduced new packages/libraries, add `'app.tools.my_tool'` to `manual_hidden`. If binary DLLs or assets are needed, follow the **Packaging & Installer Bundling Protocol**.
+
+### 9. Thinking Speech Bubble Tool Status (`frontend/src/utils/toolStatusFormatter.js`)
+- Add an entry for the tool in `TOOL_STATUS_MAP`:
+  ```javascript
+  my_tool: (args) => `Doing action with ${args?.target || 'target'}...`,
+  ```
+  *(Displays a friendly, human status in Yuki's thinking speech bubble while the tool executes instead of generic dots).*
 
 ---
 

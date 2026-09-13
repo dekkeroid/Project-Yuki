@@ -1,9 +1,54 @@
 import os
+import io
+import re
 import time
 from pathlib import Path
 import asyncio
 import threading
+from typing import Union, BinaryIO, Dict, Any, Optional
 from app import config
+
+def is_whisper_hallucination(text: str) -> bool:
+    """
+    Checks if a transcript contains known Whisper hallucination artifacts.
+    - Notorious outro phrases like 'and I'll see you in the next video' inside the message.
+    - Repetitive loops: more than one 'thank' or 'thanks' in the same message.
+    - Known isolated full-utterance hallucinations (e.g. 'thank you', 'thanks for watching').
+    """
+    if not text or not text.strip():
+        return False
+
+    lower_text = text.lower().strip(' .?!,"\'')
+    exact_hallucinations = {
+        "thank you", "thanks for watching", "thank you for watching", 
+        "thanks", "you", "thank you so much"
+    }
+    if lower_text in exact_hallucinations:
+        return True
+
+    normalized_text = re.sub(r"[^\w\s']", " ", text.lower().replace("’", "'"))
+
+    # Check for notorious YouTube outro artifacts inside the message.
+    # If whisper says "and I'll see you in the next video" in exact words
+    # inside the message, assume the whole message is a hallucination.
+    if re.search(r"\band\s+(?:i'?ll|i\s+will)\s+see\s+you\s+in\s+the\s+next\s+video\b", normalized_text):
+        return True
+
+    # Prompt leak artifact: Whisper echoing its initial prompt back out into the transcript
+    # If the message contains "you can execute a command such as taking a screenshot" somewhere inside
+    if re.search(r"\byou\s+can\s+execute\s+a\s+command\s+such\s+as\s+taking\s+a\s+screenshot\b", normalized_text):
+        return True
+
+    # Repetition loop artifact: more than one "thank" or "thanks" in the same message
+    # (users usually only say thanks once per sentence; multiple is a Whisper hallucination loop)
+    thank_count = len(re.findall(r"\bthanks?\b", normalized_text))
+    if thank_count > 1:
+        return True
+
+    return False
+
+
+
 
 VOICE_DIR = Path(__file__).parent.resolve()
 WHISPER_MODEL_DIR = VOICE_DIR / "whisper-base"
@@ -287,14 +332,10 @@ async def transcribe_audio_file(audio_input: Union[str, bytes, io.BytesIO], mode
             inference_ms = round((time.time() - t0) * 1000, 2)
             
             # Anti-hallucination post-filter for notorious Whisper YouTube artifacts
-            lower_text = text.lower().strip(' .?!,"\'')
-            hallucinations = [
-                "thank you", "thanks for watching", "thank you for watching", 
-                "thanks", "you", "thank you so much"
-            ]
-            if lower_text in hallucinations:
+            if is_whisper_hallucination(text):
                 print(f"[STT] Filtered known Whisper hallucination: '{text}'")
                 text = ""
+
 
             # Audio Event Detection (AED) for non-speech physical cues (sneeze, cough, etc.)
             aed_events = []

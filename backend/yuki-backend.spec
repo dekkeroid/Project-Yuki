@@ -127,6 +127,7 @@ manual_hidden = [
     'win32con',
     'app.utils.screen_capture',
     'app.utils.prompt_logger',
+    'app.utils.response_logger',
     'app.tools.vrm_catalog',
 
     # Windows audio

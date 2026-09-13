@@ -38,6 +38,8 @@ echo ============================================
 pushd backend
 call venv\Scripts\pyinstaller.exe yuki-backend.spec --noconfirm
 if errorlevel 1 goto :fail
+if exist "dist\backend\prompt_logs" rmdir /s /q "dist\backend\prompt_logs"
+if exist "dist\backend\response_logs" rmdir /s /q "dist\backend\response_logs"
 popd
 
 set "STEP=3/4 - electron build (npm run build:electron)"

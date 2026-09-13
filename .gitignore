@@ -30,6 +30,8 @@ backend/app/memory/vectors.db*
 backend/.tool_cache/
 backend/prompt_logs/
 prompt_logs/
+backend/response_logs/
+response_logs/
 *.srt
 yuki_crawler.log
 metadata_tagger.log
@@ -85,6 +87,8 @@ frontend/installer-output/
 
 *.bat
 !start_build.bat
+!update_installed.bat
+!start yuki ai (2 windows).bat
 
 # Unity frontend generated files
 frontendUnityV2/Library/
