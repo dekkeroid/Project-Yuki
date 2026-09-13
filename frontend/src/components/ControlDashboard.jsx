@@ -2574,7 +2574,7 @@ const ControlDashboard = ({
   }, [isOpen, activeTab]);
 
   useEffect(() => {
-    if (isOpen && (settings.tool_mode || 'basic') === 'advanced') {
+    if (isOpen && (settings.tool_mode || 'advanced') === 'advanced') {
       const hasJarvis = (toolsList || []).some(t => String(t.name || '').startsWith('jarvis_'));
       if (!hasJarvis) fetchToolsList('advanced');
     }
@@ -6416,8 +6416,8 @@ const ControlDashboard = ({
                           style={{
                             padding: '9px 10px',
                             borderRadius: '10px',
-                            border: (settings.tool_mode || 'basic') === 'basic' ? '1.5px solid #a78bfa' : '1px solid rgba(255,255,255,0.1)',
-                            background: (settings.tool_mode || 'basic') === 'basic' ? 'rgba(167,139,250,0.18)' : 'rgba(0,0,0,0.3)',
+                            border: (settings.tool_mode || 'advanced') === 'basic' ? '1.5px solid #a78bfa' : '1px solid rgba(255,255,255,0.1)',
+                            background: (settings.tool_mode || 'advanced') === 'basic' ? 'rgba(167,139,250,0.18)' : 'rgba(0,0,0,0.3)',
                             color: 'white',
                             cursor: 'pointer',
                             textAlign: 'left',
@@ -6439,8 +6439,8 @@ const ControlDashboard = ({
                           style={{
                             padding: '9px 10px',
                             borderRadius: '10px',
-                            border: settings.tool_mode === 'advanced' ? '1.5px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
-                            background: settings.tool_mode === 'advanced' ? 'rgba(56,189,248,0.18)' : 'rgba(0,0,0,0.3)',
+                            border: (settings.tool_mode || 'advanced') === 'advanced' ? '1.5px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                            background: (settings.tool_mode || 'advanced') === 'advanced' ? 'rgba(56,189,248,0.18)' : 'rgba(0,0,0,0.3)',
                             color: 'white',
                             cursor: 'pointer',
                             textAlign: 'left',
@@ -6459,7 +6459,7 @@ const ControlDashboard = ({
                     </div>
 
                     {/* Always Included Tools (Dynamic Mode) */}
-                    {(settings.tool_mode || 'basic') === 'advanced' && (
+                    {(settings.tool_mode || 'advanced') === 'advanced' && (
                       <div className="identity-field" style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.08)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
                           <span className="field-label" style={{ color: '#38bdf8' }}>Always Included Tools (Dynamic Mode)</span>
@@ -11097,7 +11097,7 @@ const ControlDashboard = ({
                         textTransform: 'capitalize'
                       }}
                     >
-                      {m === 'active' ? `Active (${settings.tool_mode || 'basic'})` : m}
+                      {m === 'active' ? `Active (${settings.tool_mode || 'advanced'})` : m}
                     </button>
                   ))}
                 </div>

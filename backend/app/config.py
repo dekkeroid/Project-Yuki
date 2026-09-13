@@ -81,7 +81,7 @@ STABLE_HORDE_API_KEY = os.environ.get("STABLE_HORDE_API_KEY", "0000000000")
 STABLE_HORDE_MODEL = os.environ.get("STABLE_HORDE_MODEL", "Pony Diffusion V6 XL")
 
 # Tool Operating Mode — "basic" (weak/local LLMs) vs "advanced" (frontier cloud LLMs with parallel multi-step execution)
-TOOL_MODE = os.environ.get("TOOL_MODE", "basic").strip().lower()
+TOOL_MODE = os.environ.get("TOOL_MODE", "advanced").strip().lower()
 
 # Reasoning / Thinking Effort — controls extended thinking depth for cloud LLMs (Gemini, OpenAI o-series, etc.)
 # "none" = off, "low" = minimal thinking, "medium" = moderate, "high" = deep reasoning
