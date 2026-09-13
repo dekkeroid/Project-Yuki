@@ -11,8 +11,9 @@
 
 - **Interactive 3D Avatar (VRM / Three.js)**: Full 3D companion with procedural physics, realistic eyelid blinking, micro-saccades, gaze tracking, emotion blend shapes, and custom VRMA motion capture playback.
 - **Intimate Date Mode**: Dedicated secondary standalone stage featuring romantic 3D environments (Tokyo Sky Lounge, Marine Drive, Sakura River, Cozy Cafe), custom camera perspectives, reactive animations, and proactive conversational initiatives.
+- **Bidirectional Telegram Mobile Companion**: Connect your personal Telegram bot to message Yuki on the go, send/receive voice notes with natural speech, share photos for vision analysis, manage desktop files, and receive proactive reminders anywhere.
 - **Flexible LLM Backends**: Seamless support for local models via **LM Studio** and **Ollama**, as well as cloud frontier APIs (**OpenAI**, **Gemini**, or any OpenAI-compatible endpoint). Dual-endpoint strategy allows lightweight models for conversation and frontier models for complex tool execution.
-- **Autonomous System Control & Desktop Vision**: Powered by Model Context Protocol (FastMCP) and native execution tools. Yuki can search and index local files, read/edit documents, view screen state, control multimedia, open applications, execute shell tasks, and browse the web.
+- **Autonomous System Control & Desktop Vision**: Yuki can search and index local files, read/edit documents, view screen state, control multimedia, open applications, execute shell tasks, and browse the web.
 - **Natural Voice & Streaming Speech**: Real-time Voice Activity Detection (VAD) via `@ricky0123/vad-web` + Silero VAD, fast local speech-to-text with Faster-Whisper, and low-latency natural text-to-speech with Kokoro ONNX and edge TTS fallbacks.
 - **Local Neural Memory & Semantic Search**: Automated background crawler and vector database (`vectors.db`) that indexes personal files, documents, project directories, and conversational memories without sending private data to cloud services.
 
@@ -32,9 +33,9 @@ React + Three.js Frontend
   └── WebSocket State Bridge (Real-time token streaming, thinking status, audio visemes)
 
 FastAPI Backend (`backend/app/main.py`)
-  ├── Agent Executor (`backend/app/agent/executor.py`) — Multi-turn reasoning & tool execution
+  ├── Agent Executor (`backend/app/agent/executor.py`) — Multi-turn reasoning & desktop tool execution
   ├── LLM Backend Providers (`backend/app/agent/llm_backend.py`) — Local & Cloud streaming
-  ├── FastMCP Stdio Bridge (`backend/app/mcp_server.py`) — Standardized tool isolation
+  ├── Telegram Bot Service (`backend/app/channels/telegram_service.py`) — Bidirectional mobile companion
   ├── Safety Sandbox (`backend/app/tools/safety.py`) — Confirmation tokens & permission gates
   ├── Semantic File Crawler & Vector DB (`backend/app/memory/crawler.py`) — Local search index
   └── Kokoro ONNX Audio Engine (`backend/app/voice/tts.py`) — High-fidelity local speech synthesis
@@ -99,23 +100,24 @@ Yuki supports three operational LLM strategies configured under **Settings > Mod
   - **Chat/Simple Model**: A fast, lightweight local or cloud model (e.g. Qwen 2.5 7B, Llama 3.2 3B) for instant casual banter and chitchat.
   - **Tool/Complex Model**: A capable frontier model called dynamically only when system tools, code writing, or multi-step reasoning are required.
 - **Thinking & Reasoning Depth**: Control internal chain-of-thought depth with the `Thinking Effort` selector (`none`, `minimal`, `low`, `medium`, `high`) to balance accuracy and response latency across Gemini and OpenAI o-series models.
+- **Hardware Recommendation (Average PCs)**: For average PC setups without dedicated high-end GPUs, we strongly recommend using **cloud APIs** rather than running local models. In particular, **Gemini Flash Lite** via **Google AI Studio** offers generous free API access, near-zero VRAM footprint (leaving your GPU completely free for the 3D VRM avatar), lightning-fast voice turnarounds, and exceptional autonomous tool-calling precision.
 
-### 2. Autonomous Tools & FastMCP Architecture
-Yuki local tools are exposed as a stdio Model Context Protocol (MCP) server via `python -m app.mcp_server`:
-- **Discovery**: Full catalog loaded dynamically without prompt bloat.
-- **Dynamic Scoring**: `backend/app/tools/selector.py` scores tool schemas against the user's intent so models only receive tools pertinent to the immediate task.
+### 2. Autonomous Desktop Tools & System Control
+Yuki features a full autonomous system control suite:
+- **Dynamic Semantic Selection**: Tools are scored against your message intent in real-time (`backend/app/tools/selector.py`) so models only receive tools pertinent to the immediate task, avoiding context bloat and hallucination.
+- **Parallel Multi-Step ReAct**: In Autonomous Jarvis mode, Yuki plans, calls multiple tools in parallel or sequence, evaluates outcomes, and self-corrects until tasks are resolved.
 - **Supported Toolsets**:
-  - `web_search` & `web_scrape`: Live internet search and page extraction.
-  - `see_screen` & `take_screenshot`: Visual inspection of desktop windows.
-  - `read_file`, `create_file`, `edit_file`: Full filesystem manipulation.
-  - `execute_terminal_command`: PowerShell command execution.
-  - `keyboard_mouse_input`: Automated UI clicking, typing, and hotkeys.
-  - `system_status`: Hardware telemetry (CPU, GPU, RAM, VRAM, Temperatures).
+  - `web_search` & `web_scrape`: Live internet search and deep page extraction.
+  - `see_screen` & `take_screenshot`: Real-time visual desktop understanding with vision models.
+  - `read_file`, `create_file`, `edit_file`: Full filesystem inspection and manipulation.
+  - `execute_terminal_command`: PowerShell and shell execution with sandboxing.
+  - `keyboard_mouse_input`: Automated clicking, mouse navigation, and hotkey shortcuts.
+  - `system_status`: Hardware telemetry (CPU, GPU, RAM, VRAM, and temperatures).
 
 ### 3. Tool Safety Sandbox & Permissions
-Tool execution is guarded twice: before dispatch and inside the MCP server itself.
+Tool execution is protected by multi-layer safety policies:
 - Destructive commands, system power management, and file deletions require explicit UI confirmation grants. Misheard speech recognition utterances cannot trigger unconfirmed destructive actions.
-- Safe read-only operations (reading time, checking specs, file searches) run instantly without friction.
+- Safe read-only operations (reading time, checking hardware specs, searching files) run instantly without friction.
 
 ### 4. Background File Crawler & Local Search
 Yuki includes an automated, non-intrusive background file crawler:

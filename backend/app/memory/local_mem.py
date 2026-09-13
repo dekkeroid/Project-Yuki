@@ -123,7 +123,7 @@ class MemoryManager:
                 "avatar_power_preference": "default",
                 "chat_mode": False,
                 "keep_memory_saving": True,
-                "tool_mode": "basic",
+                "tool_mode": "advanced",
                 "hotkey_shortcut": "Alt+S",
                 "hotkey_focus_chat": True,
                 "hotkey_open_logs": False,
@@ -240,7 +240,7 @@ class MemoryManager:
                 config.AED_ENABLED = bool(data["settings"].get("aed_enabled", getattr(config, "AED_ENABLED", True)))
                 config.AED_CONFIDENCE_THRESHOLD = float(data["settings"].get("aed_confidence_threshold", getattr(config, "AED_CONFIDENCE_THRESHOLD", 0.45)))
                 config.AED_FAST_REFLEX = bool(data["settings"].get("aed_fast_reflex", getattr(config, "AED_FAST_REFLEX", True)))
-                config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "basic")).strip().lower()
+                config.TOOL_MODE = data["settings"].get("tool_mode", getattr(config, "TOOL_MODE", "advanced")).strip().lower()
                 config.DISABLED_ANIMATIONS = list(data["settings"].get("disabled_animations", []))
                 config.USER_COUNTRY = data["settings"].get("user_country", getattr(config, "USER_COUNTRY", "Auto"))
                 config.USER_LOCATION = data["settings"].get("user_location", getattr(config, "USER_LOCATION", "Auto"))

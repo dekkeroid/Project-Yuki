@@ -127,3 +127,5 @@ frontend/public/3d_assets/
 *.blend
 *.blend1
 *.blend2
+
+build_input.txt

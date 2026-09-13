@@ -236,24 +236,24 @@ def _setup_database():
 
 
 def _verify_lmstudio():
-    """Check LLM backend is reachable."""
-    from app.agent.llm_backend import get_backend
-    backend = get_backend()
-    _set_progress(f"Verifying {backend.name}", 0.73)
+    """Informational check for configured LLM backend without blocking setup."""
     try:
+        from app.agent.llm_backend import get_backend
+        backend = get_backend()
+        _set_progress(f"Checking {backend.name}", 0.74)
         req = urllib.request.Request(
             backend.get_models_url(),
             headers={"User-Agent": "YukiSetup/1.0"}
         )
         if config.LLM_API_KEY:
             req.add_header("Authorization", f"Bearer {config.LLM_API_KEY}")
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
             models_key = "data" if "data" in data else "models"
             models = [m.get("id", "") for m in data.get(models_key, [])]
-            _set_progress(f"Verifying {backend.name}", 0.80, f"Found {len(models)} model(s): {', '.join(models[:3])}")
-    except Exception as e:
-        _set_progress(f"Verifying {backend.name}", 0.80, f"Warning: {backend.name} not reachable ({e}). You can start it later.")
+            _set_progress(f"Checking {backend.name}", 0.85, f"Found {len(models)} model(s): {', '.join(models[:2])}")
+    except Exception:
+        _set_progress("Finalizing setup", 0.85, "Ready. Configure your LLM anytime in Settings > Models")
 
 
 def _create_marker():
