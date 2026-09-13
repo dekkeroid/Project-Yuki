@@ -6,19 +6,18 @@ echo ============================================
 echo   Yuki AI - Full Build Pipeline
 echo ============================================
 
+if not defined USER_SHUTDOWN set /p "USER_SHUTDOWN=Shutdown PC after build completes? [y/N]: "
 set "SHUTDOWN_AFTER=N"
-set /p "USER_SHUTDOWN=Shutdown PC after build completes? [y/N]: "
 if /i "%USER_SHUTDOWN%"=="y" set "SHUTDOWN_AFTER=Y"
 if /i "%USER_SHUTDOWN%"=="yes" set "SHUTDOWN_AFTER=Y"
 
 set "LAUNCH_SETUP=Y"
 if "%SHUTDOWN_AFTER%"=="N" (
-    set /p "USER_LAUNCH=Launch the newly built setup after build completes? [Y/n]: "
-    if /i "%USER_LAUNCH%"=="n" set "LAUNCH_SETUP=N"
-    if /i "%USER_LAUNCH%"=="no" set "LAUNCH_SETUP=N"
-) else (
-    set "LAUNCH_SETUP=N"
+    if not defined USER_LAUNCH set /p "USER_LAUNCH=Launch the newly built setup after build completes? [Y/n]: "
 )
+if /i "%USER_LAUNCH%"=="n" set "LAUNCH_SETUP=N"
+if /i "%USER_LAUNCH%"=="no" set "LAUNCH_SETUP=N"
+if "%SHUTDOWN_AFTER%"=="Y" set "LAUNCH_SETUP=N"
 
 set "STEP=1/4 - frontend build (npm run build:frontend)"
 echo.
