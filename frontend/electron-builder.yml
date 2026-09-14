@@ -25,6 +25,10 @@ extraResources:
       - '!prompt_logs'
       - '!response_logs/**/*'
       - '!response_logs'
+      - '!profile*.json'
+      - '!*profile*.json'
+      - '!*.db*'
+      - '!telegram_sessions.json'
   - from: ../backend/.env.default
     to: backend/.env
     filter:
