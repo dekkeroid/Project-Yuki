@@ -48,14 +48,14 @@ FastAPI Backend (`backend/app/main.py`)
 
 ## Getting Started & Installation
 
-### Option 1: Pre-Built Windows Installer (Recommended)
+### Option 1: Pre-Built Windows Installer (Simplest) (Pros: Stable and Fast)
 Download the latest `YukiAI-Setup.exe` from the [GitHub Releases](https://github.com/dekkeroid/Project-Yuki/releases) page and run the installer. Yuki installs into your local application directory and launches immediately.
 
 After installing you need to go to settings -> Ai brain, to set up your LLM. I will recommend using Local LLMs only for users with a good setup. Avoid using <7B models they are not good at tool calling. 
 
 For average users I recommend using Cloud API,  `Gemini Flash lite` from `Google Ai Studio` is fast, cheap and good at roleplay. Google Ai studio has one of the most generous `Free tier` out there.
 
-### Option 2: Running from Source in Dev mode for testing
+### Option 2: Running from Source in Dev mode for testing (Pros: latest code, Cons: Very slow)
 
 #### Prerequisites
 - **OS**: Windows 10/11 (64-bit)
@@ -95,6 +95,12 @@ This starts:
 - The FastAPI backend with automatic reloading on port 8000.
 - The Vite development server on port 5173 with hot-module replacement.
 - Electron in development mode with automatic restart on main-process edits.
+
+
+### Option 3: Best of both, install using the installer and clone repo as well (Best method, Recommended for devs) 
+Simply install and clone as well, and in repo there is `update_installed.bat` which updates the installed app as the code in your repo changes. Use update_installed.bat to keep your installed app updated.
+
+Pros: Fastest startup. You can update the installed app as you wish or as repo changes.
 
 ---
 
