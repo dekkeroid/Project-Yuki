@@ -100,6 +100,8 @@ This starts:
 ### Option 3: Best of both, install using the installer and clone repo as well (Best method, Recommended for devs) 
 Simply install and clone as well, and in repo there is `update_installed.bat` which updates the installed app as the code in your repo changes. Use update_installed.bat to keep your installed app updated.
 
+You can install and clone repo independently wherever you want, they dont need to be at same place, update_installed.bat in our repo automatically detects the installed location of app.
+
 Pros: Fastest startup. You can update the installed app as you wish or as repo changes.
 
 ---
