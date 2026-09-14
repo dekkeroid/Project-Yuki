@@ -53,7 +53,7 @@ Download the latest `YukiAI-Setup.exe` from the [GitHub Releases](https://github
 
 After installing you need to go to settings -> Ai brain, to set up your LLM. I will recommend using Local LLMs only for users with a good setup. Avoid using <7B models they are not good at tool calling. 
 
-For average users I recommend using Cloud API,  `Gemini flash lite` from `Google Ai Studio` is fast, cheap and good at roleplay.
+For average users I recommend using Cloud API,  `Gemini Flash lite` from `Google Ai Studio` is fast, cheap and good at roleplay. Google Ai studio is has one of the most generous `Free tier` out there.
 
 ### Option 2: Running from Source
 
