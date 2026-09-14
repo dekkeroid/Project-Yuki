@@ -55,14 +55,14 @@ After installing you need to go to settings -> Ai brain, to set up your LLM. I w
 
 For average users I recommend using Cloud API,  `Gemini Flash lite` from `Google Ai Studio` is fast, cheap and good at roleplay. Google Ai studio has one of the most generous `Free tier` out there.
 
-### Option 2: Running from Source
+### Option 2: Running from Source in Dev mode for testing
 
 #### Prerequisites
 - **OS**: Windows 10/11 (64-bit)
 - **Node.js**: v18 or later (`node -v` / `npm -v`)
 - **Python**: 3.10 or 3.11 (`python --version`)
 - **Git**
-- *(Optional)* [LM Studio](https://lmstudio.ai/) or [Ollama](https://ollama.com/) running locally.
+- [LM Studio](https://lmstudio.ai/) or [Ollama](https://ollama.com/) running locally, or a cloud API.
 
 #### 1. Clone the Repository
 ```bash
