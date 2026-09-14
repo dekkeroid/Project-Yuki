@@ -1,5 +1,8 @@
 # Project Yuki
 
+<img width="1397" height="910" alt="image" src="https://github.com/user-attachments/assets/95437cc4-6824-44c3-9d13-bed24fefc19e" />
+
+
 <div align="center">
   <h3>Next-Generation Desktop AI Companion with Voice, Vision, Memory, and System Control</h3>
   <p>An open, customizable 3D anime companion engineered in Electron, React, Three.js, and FastAPI.</p>
@@ -47,6 +50,10 @@ FastAPI Backend (`backend/app/main.py`)
 
 ### Option 1: Pre-Built Windows Installer (Recommended)
 Download the latest `YukiAI-Setup.exe` from the [GitHub Releases](https://github.com/dekkeroid/Project-Yuki/releases) page and run the installer. Yuki installs into your local application directory and launches immediately.
+
+After installing you need to go to settings -> Ai brain, to set up your LLM. I will recommend using Local LLMs only for users with a good setup. Avoid using <7B models they are not good at tool calling. 
+
+For average users I recommend using Cloud API,  `Gemini flash lite` from `Google Ai Studio` is fast, cheap and good at roleplay.
 
 ### Option 2: Running from Source
 
