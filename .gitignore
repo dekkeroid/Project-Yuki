@@ -57,6 +57,11 @@ backend/.venv/
 
 # Local personal runtime states
 backend/profile.json
+backend/profile*.json
+backend/*profile*.json
+backend/*backup*.json
+*profile_backup*
+*.backup.json
 backend/telegram_sessions.json
 backend/.yuki_confirmation_grants.json
 backend/.yuki_confirmation_grants.json.*
